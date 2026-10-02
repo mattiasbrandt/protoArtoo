@@ -935,6 +935,27 @@ INVENTORY_CITATION_RE = re.compile(r"^(?P<path>\S+) - (?P<text>.+)$", re.DOTALL)
 INVENTORY_ANCHOR_RE = re.compile(r"`([^`]+)`")
 # A line number, or a range of them, on the end of a cited path.
 INVENTORY_LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")
+# An anchor that is one identifier, bare or written as a call (`name()`).
+INVENTORY_IDENT_ANCHOR_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(\(\))?$")
+
+
+def inventory_anchor_in(anchor: str, text: str) -> bool:
+    """Whether a cited file's text carries an anchor.
+
+    An identifier is matched as an identifier, never as a run of letters:
+    `configSave` is not found inside `configSaveWifi`, and `auxLedQueue` is
+    not found inside `auxLedQueueSetColor`. Written as a call, `name()`, it
+    must be followed by an opening parenthesis in the file - the call or the
+    declaration, whatever its arguments, so `processCommand()` holds against
+    `processCommand(cmd)`. Any other anchor - a statement, a quoted string, a
+    table row - is a literal substring.
+    """
+    ident = INVENTORY_IDENT_ANCHOR_RE.match(anchor)
+    if ident is None:
+        return anchor in text
+    name = re.escape(ident.group(1))
+    tail = r"\(" if ident.group(2) else r"(?![A-Za-z0-9_])"
+    return re.search(rf"(?<![A-Za-z0-9_]){name}{tail}", text) is not None
 
 
 def check_inventory_citations(errors: list[str],
@@ -950,11 +971,19 @@ def check_inventory_citations(errors: list[str],
 
         src/web/api_seq.cpp - `handleSeqStopPost()` calls `sequenceStopRequest()`
 
-    Each span in backticks is an anchor: text that must appear, as written, in
-    the cited file. This check fails when the file is gone, when the citation
-    carries no anchor, when an anchor is no longer in the file, or when the
-    path still ends in a line number. An anchor survives the code moving up or
-    down; a rename or a move to another file is the drift it is here to catch.
+    Each span in backticks is an anchor: text the cited file must carry
+    (inventory_anchor_in(): an identifier whole, a `name()` wherever the file
+    opens its parenthesis, anything else as written). This check fails when
+    the file is gone, when the citation carries no anchor, when an anchor is
+    no longer in the file, or when the path still ends in a line number. An
+    anchor survives the code moving up or down; a rename or a move to another
+    file is the drift it is here to catch.
+
+    The file is read whole, comments included, and that is deliberate: some
+    citations rightly point at a comment (the `$` command table in
+    include/audio_dollar_parser.h's header). So a mention in a comment still
+    satisfies an anchor. Anchor the call or the declaration as the file
+    writes it when the claim is that the code does something.
 
     What it does not prove is the sentence around the anchors: that a symbol
     is "the definition", or that one calls another, is still the author's
@@ -1006,7 +1035,7 @@ def check_inventory_citations(errors: list[str],
                     )
                     continue
                 for anchor in anchors:
-                    if anchor not in text:
+                    if not inventory_anchor_in(anchor, text):
                         errors.append(f"{where}: `{anchor}` is not in {path}")
 
 

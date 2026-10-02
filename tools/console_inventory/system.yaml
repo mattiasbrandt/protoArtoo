@@ -200,7 +200,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/reboot", WebMethod::kPost, handleRebootPost)`
   - include/api_system.h - `handleRebootPost` declaration
   - src/web/api_system.cpp - `handleRebootPost` definition
-  - src/web/api_system.cpp - `requestSystemRestart`()
+  - src/web/api_system.cpp - `requestSystemRestart()`
   executor_or_core: requestSystemRestart
   missing_metadata: []
   notes: ''
@@ -220,7 +220,7 @@ rows:
   - include/console_direct_action_system.h - `g_systemDirectActionExecutors`[] registration, inside the
   - include/console_direct_action_system.h - `consoleExecuteDirectRebootWifiModule` definition
   - src/console/console_module.cpp - `consoleFindDirectActionExecutor()` lookup, the one call site
-  - src/console/console_catalog.cpp - `PA_CAP_HOSTED_WIFI` as this row's `available_on_board`, the generated board gate
+  - "src/console/console_catalog.cpp - `PA_CAP_HOSTED_WIFI`, this row's available_on_board in the generated table: the board gate"
   - src/console/console_module.cpp - `entry->available_on_board`, read before any executor lookup
   - include/hosted_link_c6_reset.h - `hostedLinkResetCoprocessor()` declaration header
   - src/web/web_network_manager_hosted.cpp - `hostedLinkResetCoprocessor()` definition, the enable-line pulse itself
@@ -304,7 +304,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/mood", WebMethod::kPost, handleMoodPost)`
   - include/api_audio.h - `handleMoodPost` declaration
   - src/web/api_audio.cpp - `handleMoodPost` definition
-  - src/web/api_audio.cpp - `applyMood`(mood)
+  - src/web/api_audio.cpp - `applyMood((uint8_t)mood)`
   executor_or_core: applyMood
   missing_metadata: []
   notes: ''
@@ -365,8 +365,8 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp - `webRegisterUploadRoute("/upload/filesystem", handleFilesystemUploadChunk,`
   - src/web/api_upload.cpp - void `handleFilesystemUploadChunk` streams chunks to partition
-  - src/web/api_upload.cpp - `handleUploadChunk`() called to write directly via Update library
-  - "src/web/api_upload.cpp - `Streaming OTA upload endpoints, ported to the WebRequest seam (ADR 0021)`, the file's own header: a bulk stream written to flash as it arrives, with no executor queue"
+  - src/web/api_upload.cpp - `handleUploadChunk()` called to write directly via Update library
+  - "src/web/api_upload.cpp - `Update.write(const_cast<uint8_t*>(data), len)`, each chunk written to flash as it arrives: a bulk stream with no executor queue"
   executor_or_core: none
   missing_metadata: []
   notes: 'Bulk streaming OTA upload (#206): chunks written directly to flash partition via Update library, no executor queue (out-of-scope)'
@@ -385,8 +385,8 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp - `webRegisterUploadRoute("/upload/firmware", handleFirmwareUploadChunk,`
   - src/web/api_upload.cpp - void `handleFirmwareUploadChunk` streams chunks to flash
-  - src/web/api_upload.cpp - `handleUploadChunk`() called to write directly via Update library
-  - "src/web/api_upload.cpp - `Streaming OTA upload endpoints, ported to the WebRequest seam (ADR 0021)`, the file's own header: a bulk stream written to flash as it arrives, with no executor queue"
+  - src/web/api_upload.cpp - `handleUploadChunk()` called to write directly via Update library
+  - "src/web/api_upload.cpp - `Update.write(const_cast<uint8_t*>(data), len)`, each chunk written to flash as it arrives: a bulk stream with no executor queue"
   executor_or_core: none
   missing_metadata: []
   notes: 'Bulk streaming OTA upload (#206): chunks written directly to flash partition via Update library, no executor queue (out-of-scope)'
@@ -593,7 +593,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -614,7 +614,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -635,7 +635,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -656,7 +656,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -677,7 +677,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -698,7 +698,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -719,7 +719,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -740,7 +740,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -761,7 +761,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -782,7 +782,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -803,7 +803,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -824,7 +824,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -845,7 +845,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -866,7 +866,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -887,7 +887,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -908,7 +908,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
   - include/api_config_apply.h - `configApply` Apply Core
   - src/tasks/mood.cpp - `prefs.putUChar("last_mood", moodId)` persistence, inside `applyMood`
-  - include/config_store.h - bool `configSave`(Preferences&, `ConfigSnapshot`&)
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: applyMood
   missing_metadata:
   - parameter schema (type/values/default not in registry)
@@ -956,9 +956,9 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: none
   evidence:
-  - src/web/web_server.cpp - `webEventStreamBroadcast`(`"status"`, ...) emits only status, rc, log
-  - src/web/web_server.cpp - `webEventStreamBroadcast`(`"rc"`, ...) second of three broadcast events
-  - src/web/web_server.cpp - `webEventStreamBroadcast`(`"log"`, ...) third broadcast event; boot-complete not among them
+  - src/web/web_server.cpp - `webEventStreamBroadcast("status",` ...) emits only status, rc, log
+  - src/web/web_server.cpp - `webEventStreamBroadcast("rc",` ...) second of three broadcast events
+  - src/web/web_server.cpp - `webEventStreamBroadcast("log",` ...) third broadcast event; boot-complete not among them
   - "docs/action-registry.yaml - `- name: system.event.boot-complete` entry, marked sources: [internal] and sse_event: null; not exposed"
   executor_or_core: none
   missing_metadata: []
@@ -976,9 +976,9 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: none
   evidence:
-  - src/web/web_server.cpp - `webEventStreamBroadcast`(`"status"`, ...) emits only status, rc, log
-  - src/web/web_server.cpp - `webEventStreamBroadcast`(`"rc"`, ...) second of three broadcast events
-  - src/web/web_server.cpp - `webEventStreamBroadcast`(`"log"`, ...) third broadcast event; dome-enabled not among them
+  - src/web/web_server.cpp - `webEventStreamBroadcast("status",` ...) emits only status, rc, log
+  - src/web/web_server.cpp - `webEventStreamBroadcast("rc",` ...) second of three broadcast events
+  - src/web/web_server.cpp - `webEventStreamBroadcast("log",` ...) third broadcast event; dome-enabled not among them
   - "docs/action-registry.yaml - `- name: system.event.dome-enabled` entry, marked sources: [internal] and sse_event: null; not exposed"
   executor_or_core: none
   missing_metadata: []
@@ -996,9 +996,9 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: none
   evidence:
-  - src/web/web_server.cpp - `webEventStreamBroadcast`(`"status"`, ...) emits only status, rc, log
-  - src/web/web_server.cpp - `webEventStreamBroadcast`(`"rc"`, ...) second of three broadcast events
-  - src/web/web_server.cpp - `webEventStreamBroadcast`(`"log"`, ...) third broadcast event; drives-engaged not among them
+  - src/web/web_server.cpp - `webEventStreamBroadcast("status",` ...) emits only status, rc, log
+  - src/web/web_server.cpp - `webEventStreamBroadcast("rc",` ...) second of three broadcast events
+  - src/web/web_server.cpp - `webEventStreamBroadcast("log",` ...) third broadcast event; drives-engaged not among them
   - "docs/action-registry.yaml - `- name: system.event.drives-engaged` entry, marked sources: [internal] and sse_event: null; not exposed"
   executor_or_core: none
   missing_metadata: []
@@ -1018,7 +1018,7 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/status", WebMethod::kGet, handleStatusGet)`
   - include/api_status.h - `handleStatusGet` declaration
-  - src/web/api_status.cpp - `buildStatusJson`(body, `sizeof(body)`)
+  - src/web/api_status.cpp - `buildStatusJson(body, sizeof(scratch->text))`
   - src/web/web_server.cpp - `bool buildStatusJson(char* buffer, size_t bufferSize)` builds the status document the browser works the health lights out from
   executor_or_core: buildStatusJson
   missing_metadata: []
@@ -1038,9 +1038,9 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/health", WebMethod::kGet, handleHealthGet)`
   - include/api_status.h - void `handleHealthGet(WebRequest& req)` declaration
-  - src/web/api_status.cpp - void `handleHealthGet(WebRequest& req)` definition; calls `buildHealthJson`()
+  - src/web/api_status.cpp - void `handleHealthGet(WebRequest& req)` definition; calls `buildHealthJson()`
   - include/api_status.h - `captureHealthSnapshot(HealthSnapshot* out)` declaration
-  - src/web/api_status_serializers.cpp - `captureHealthSnapshot`() definition; `formatHealthJson`()'s JSON keys
+  - src/web/api_status_serializers.cpp - `captureHealthSnapshot()` definition; `formatHealthJson()`'s JSON keys
   executor_or_core: captureHealthSnapshot
   missing_metadata: []
   notes: '#223: reclassified from aggregate-field to api. GET /api/health is its own standalone endpoint with its own JSON shape (buildHealthJson/formatHealthJson), not a field inside /api/status - the prior evidence citing api_status.cpp:104/handleStatusGet was wrong (that line is /api/status''s handler, not /api/health''s). Promoted to a real console query; captureHealthSnapshot() is the Zone Snapshot capture both handleHealthGet() and the Console module call (ADR 0036).'
@@ -1059,9 +1059,9 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/logs", WebMethod::kGet, handleLogsGet)`
   - include/api_logs.h - void `handleLogsGet(WebRequest& req)` declaration
-  - src/web/api_logs.cpp - `handleLogsGet`() definition; calls `recentLogsBodyBuffer`()/`copyRecentLogs()`
+  - src/web/api_logs.cpp - `handleLogsGet()` definition; calls `recentLogsBodyBuffer()`/`copyRecentLogs()`
   - include/web_server.h - `getLogBufferCount()`/`copyLogLineAt()` declarations
-  - src/console/console_module.cpp - `consoleExecuteSystemStatusLogs()` calls `getLogBufferCount()`/`copyLogLineAt()` directly, not `recentLogsBodyBuffer()`/`copyRecentLogs()` (#239 - that buffer is sized and synchronised for exactly one caller, the REST handler above)
+  - src/console/console_module.cpp - `consoleExecuteSystemStatusLogs()` calls `getLogBufferCount()`/`copyLogLineAt()` directly, not recentLogsBodyBuffer()/copyRecentLogs() (#239 - that buffer is sized and synchronised for exactly one caller, the REST handler above)
   executor_or_core: copyLogLineAt
   missing_metadata: []
   notes: '#239: reclassified from aggregate-field to api. The prior evidence (web_server.cpp:295, "logs array in buildStatusJson") does not exist in the source - buildStatusJson() never emits a logs field. GET /api/logs is its own standalone text/plain endpoint (src/web/api_logs.cpp), not a field inside /api/status. Promoted to a real console query answering item records (docs/console-protocol.md s.3.1) rather than the fields:/JSON-key model #223 established for scalar aggregate rows; the REST handler and the Console executor deliberately read the log ring through two different functions (see evidence) instead of sharing recentLogsBodyBuffer(), which stays scoped to its one existing caller.'
@@ -1080,7 +1080,7 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/status", WebMethod::kGet, handleStatusGet)`
   - include/api_status.h - `handleStatusGet` declaration
-  - src/web/api_status.cpp - `buildStatusJson`(body, `sizeof(body)`)
+  - src/web/api_status.cpp - `buildStatusJson(body, sizeof(scratch->text))`
   - src/web/web_server.cpp - mood field in `buildStatusJson`
   executor_or_core: buildStatusJson
   missing_metadata: []
@@ -1100,7 +1100,7 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/status", WebMethod::kGet, handleStatusGet)`
   - include/api_status.h - `handleStatusGet` declaration
-  - src/web/api_status.cpp - `buildStatusJson`(body, `sizeof(body)`)
+  - src/web/api_status.cpp - `buildStatusJson(body, sizeof(scratch->text))`
   - src/web/web_server.cpp - `sleepMode` field in `buildStatusJson`
   executor_or_core: buildStatusJson
   missing_metadata: []
@@ -1140,9 +1140,9 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/wifi", WebMethod::kGet, handleWifiGet)`
   - include/api_status.h - void `handleWifiGet(WebRequest& req)` declaration
-  - src/web/api_status.cpp - void `handleWifiGet(WebRequest& req)` definition; calls `buildWifiJson`()
+  - src/web/api_status.cpp - void `handleWifiGet(WebRequest& req)` definition; calls `buildWifiJson()`
   - include/api_status.h - `captureWifiStatusSnapshot(WifiStatusSnapshot* out)` declaration
-  - src/web/api_status_serializers.cpp - `captureWifiStatusSnapshot`() definition; `formatWifiJson`()'s JSON keys
+  - src/web/api_status_serializers.cpp - `captureWifiStatusSnapshot()` definition; `formatWifiJson()`'s JSON keys
   executor_or_core: captureWifiStatusSnapshot
   missing_metadata: []
   notes: '#223: reclassified from aggregate-field to api. GET /api/wifi is its own standalone endpoint with its own JSON shape (buildWifiJson/formatWifiJson), not a field inside /api/status - the prior evidence citing api_status.cpp:104/handleStatusGet was wrong (that line is /api/status''s handler, not /api/wifi''s; /api/status carries overlapping but distinct scalar wifi* fields, not a nested "wifi" object). Promoted to a real console query; captureWifiStatusSnapshot() is the Zone Snapshot capture both handleWifiGet() and the Console module call (ADR 0036).'
@@ -1161,9 +1161,9 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/wifi", WebMethod::kPost, handleWifiPost)`
   - include/config_cache.h - `void configCacheReadWifi(WifiConfig* out)` read path, the same one the WiFi apply seeds its working copy from
-  - include/api_wifi_apply.h - `wifiApply`(const `ConfigParamSource`&, `WifiConfig`*, `WifiApplyResult`*) apply core (ADR 0011)
+  - include/api_wifi_apply.h - `void wifiApply(const ConfigParamSource& params, WifiConfig* working, WifiApplyResult* result)` apply core (ADR 0011)
   - "src/web/api_wifi_apply.cpp - `wifiCommitApplied` Commit Step (ADR 0036): `configSaveWifi(prefs, *working)` to NVS, then config-cache staging (ADR 0015 Staged Network Switch) and the status broadcast"
-  - src/config_serializer.cpp - `configSerializeWifi`() writes `wifi_prov`/`wifi_mode`/`wifi_sta_ssid`/`wifi_sta_pw`/`wifi_ap_ssid`/`wifi_ap_pw`
+  - src/config_serializer.cpp - `configSerializeWifi()` writes `wifi_prov`/`wifi_mode`/`wifi_sta_ssid`/`wifi_sta_pw`/`wifi_ap_ssid`/`wifi_ap_pw`
   executor_or_core: wifiApply
   missing_metadata: []
   notes: 'Grouped config write (#227). The registry names wifiApply as the executor because that

@@ -95,7 +95,11 @@ this both ways, by three separate checks:
 - `check_inventory_citations()` holds each `evidence` line to the file it
   names (#459). A citation reads
   ``src/web/api_seq.cpp - `handleSeqStopPost` calls `sequenceStopRequest()` ``:
-  every span in backticks must appear, as written, in that file. A missing
+  every span in backticks must be in that file. An identifier is matched
+  whole (`configSave` is not found in `configSaveWifi`), a `name()` wherever
+  the file opens its parenthesis, anything else as written. The file is read
+  with its comments, so a mention in a comment satisfies an anchor: cite the
+  call or the declaration as the file writes it. A missing
   file, a citation with nothing in backticks, an anchor the file no longer
   contains, or a path that ends in a line number is reported as drift. Cite a
   symbol and never a line: the rows used to cite `file:line`, nothing read the

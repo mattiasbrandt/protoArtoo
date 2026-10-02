@@ -67,7 +67,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DOME_ACTION_SEQ` enum constant"
       - "src/rc_action_dispatcher.cpp - case `DOME_ACTION_SEQ`: dispatches to `res.domeTxCmd`"
-      - "src/rc_dispatcher_helpers.cpp - `rcDispatchSingleAction` calls `sequenceStart`(`res.domeTxCmd`, `SRC_SBUS`)"
+      - "src/rc_dispatcher_helpers.cpp - `rcDispatchSingleAction` calls `sequenceStart(res.domeTxCmd, src)`"
       - "docs/action-registry.yaml - `rc_token` `dome_seq`"
     executor_or_core: "sequenceStart"
     missing_metadata: []
@@ -89,7 +89,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DROID_SEQ_BEEP_CANTINA` enum constant"
       - "src/rc_action_dispatcher.cpp - case `DROID_SEQ_BEEP_CANTINA`: dispatches body action"
-      - "src/rc_dispatcher_helpers.cpp - `sequenceStart`(`res.domeTxCmd`, `SRC_SBUS`)"
+      - "src/rc_dispatcher_helpers.cpp - `sequenceStart(res.domeTxCmd, src)`"
       - "docs/action-registry.yaml - `rc_token` `droid_seq_beep_cantina`"
     executor_or_core: "sequenceStart"
     missing_metadata: []
@@ -111,7 +111,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DROID_SEQ_CANTINA` enum constant"
       - "src/rc_action_dispatcher.cpp - case `DROID_SEQ_CANTINA`: dispatches body action"
-      - "src/rc_dispatcher_helpers.cpp - `sequenceStart`(`res.domeTxCmd`, `SRC_SBUS`)"
+      - "src/rc_dispatcher_helpers.cpp - `sequenceStart(res.domeTxCmd, src)`"
       - "docs/action-registry.yaml - `rc_token` `droid_seq_cantina`"
     executor_or_core: "sequenceStart"
     missing_metadata: []
@@ -133,7 +133,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DROID_SEQ_DISCO` enum constant"
       - "src/rc_action_dispatcher.cpp - case `DROID_SEQ_DISCO`: dispatches body action"
-      - "src/rc_dispatcher_helpers.cpp - `sequenceStart`(`res.domeTxCmd`, `SRC_SBUS`)"
+      - "src/rc_dispatcher_helpers.cpp - `sequenceStart(res.domeTxCmd, src)`"
       - "docs/action-registry.yaml - `rc_token` `droid_seq_disco`"
     executor_or_core: "sequenceStart"
     missing_metadata: []
@@ -155,7 +155,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DROID_SEQ_FAINT` enum constant"
       - "src/rc_action_dispatcher.cpp - case `DROID_SEQ_FAINT`: dispatches body action"
-      - "src/rc_dispatcher_helpers.cpp - `sequenceStart`(`res.domeTxCmd`, `SRC_SBUS`)"
+      - "src/rc_dispatcher_helpers.cpp - `sequenceStart(res.domeTxCmd, src)`"
       - "docs/action-registry.yaml - `rc_token` `droid_seq_faint`"
     executor_or_core: "sequenceStart"
     missing_metadata: []
@@ -177,7 +177,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DROID_SEQ_FAST_WAVE` enum constant"
       - "src/rc_action_dispatcher.cpp - case `DROID_SEQ_FAST_WAVE`: dispatches body action"
-      - "src/rc_dispatcher_helpers.cpp - `sequenceStart`(`res.domeTxCmd`, `SRC_SBUS`)"
+      - "src/rc_dispatcher_helpers.cpp - `sequenceStart(res.domeTxCmd, src)`"
       - "docs/action-registry.yaml - `rc_token` `droid_seq_fast_wave`"
     executor_or_core: "sequenceStart"
     missing_metadata: []
@@ -199,7 +199,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DROID_SEQ_LEIA` enum constant"
       - "src/rc_action_dispatcher.cpp - case `DROID_SEQ_LEIA`: dispatches body action"
-      - "src/rc_dispatcher_helpers.cpp - `sequenceStart`(`res.domeTxCmd`, `SRC_SBUS`)"
+      - "src/rc_dispatcher_helpers.cpp - `sequenceStart(res.domeTxCmd, src)`"
       - "docs/action-registry.yaml - `rc_token` `droid_seq_leia`"
     executor_or_core: "sequenceStart"
     missing_metadata: []
@@ -221,7 +221,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DROID_SEQ_OPEN_WAVE` enum constant"
       - "src/rc_action_dispatcher.cpp - case `DROID_SEQ_OPEN_WAVE`: dispatches body action"
-      - "src/rc_dispatcher_helpers.cpp - `sequenceStart`(`res.domeTxCmd`, `SRC_SBUS`)"
+      - "src/rc_dispatcher_helpers.cpp - `sequenceStart(res.domeTxCmd, src)`"
       - "docs/action-registry.yaml - `rc_token` `droid_seq_open_wave`"
     executor_or_core: "sequenceStart"
     missing_metadata: []
@@ -243,7 +243,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DROID_SEQ_SCREAM` enum constant"
       - "src/rc_action_dispatcher.cpp - case `DROID_SEQ_SCREAM`: dispatches body action"
-      - "src/rc_dispatcher_helpers.cpp - `sequenceStart`(`res.domeTxCmd`, `SRC_SBUS`)"
+      - "src/rc_dispatcher_helpers.cpp - `sequenceStart(res.domeTxCmd, src)`"
       - "docs/action-registry.yaml - `rc_token` `droid_seq_scream`"
     executor_or_core: "sequenceStart"
     missing_metadata: []
@@ -265,7 +265,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DROID_SEQ_SCREAMS` enum constant"
       - "src/rc_action_dispatcher.cpp - case `DROID_SEQ_SCREAMS`: dispatches body action"
-      - "src/rc_dispatcher_helpers.cpp - `sequenceStart`(`res.domeTxCmd`, `SRC_SBUS`)"
+      - "src/rc_dispatcher_helpers.cpp - `sequenceStart(res.domeTxCmd, src)`"
       - "docs/action-registry.yaml - `rc_token` `droid_seq_screams`"
     executor_or_core: "sequenceStart"
     missing_metadata: []
@@ -287,7 +287,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DROID_SEQ_WAVE` enum constant"
       - "src/rc_action_dispatcher.cpp - case `DROID_SEQ_WAVE`: dispatches body action"
-      - "src/rc_dispatcher_helpers.cpp - `sequenceStart`(`res.domeTxCmd`, `SRC_SBUS`)"
+      - "src/rc_dispatcher_helpers.cpp - `sequenceStart(res.domeTxCmd, src)`"
       - "docs/action-registry.yaml - `rc_token` `droid_seq_wave`"
     executor_or_core: "sequenceStart"
     missing_metadata: []
@@ -309,7 +309,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DROID_SEQ_WIGGLE` enum constant"
       - "src/rc_action_dispatcher.cpp - case `DROID_SEQ_WIGGLE`: dispatches body action"
-      - "src/rc_dispatcher_helpers.cpp - `sequenceStart`(`res.domeTxCmd`, `SRC_SBUS`)"
+      - "src/rc_dispatcher_helpers.cpp - `sequenceStart(res.domeTxCmd, src)`"
       - "docs/action-registry.yaml - `rc_token` `droid_seq_wiggle`"
     executor_or_core: "sequenceStart"
     missing_metadata: []
@@ -330,7 +330,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DOME_ACTION_MARCDUINO_CMD` enum constant"
       - "src/rc_action_dispatcher.cpp - case `DOME_ACTION_MARCDUINO_CMD`: builds `res.marcduinoCmd`"
-      - "src/rc_dispatcher_helpers.cpp - `parseMarcduinoCommand`(`res.marcduinoCmd`)"
+      - "src/rc_dispatcher_helpers.cpp - `routeMarcduinoLine(res.marcduinoCmd)` hands a `:` or `#` line to the Marcduino router"
       - "docs/action-registry.yaml - `rc_token` cmd"
     executor_or_core: "parseMarcduinoCommand"
     missing_metadata: []
@@ -351,7 +351,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DOME_ACTION_MARCDUINO_SEQ` enum constant"
       - "src/rc_action_dispatcher.cpp - case `DOME_ACTION_MARCDUINO_SEQ`: builds `res.marcduinoCmd`"
-      - "src/rc_dispatcher_helpers.cpp - `parseMarcduinoCommand`(`res.marcduinoCmd`)"
+      - "src/rc_dispatcher_helpers.cpp - `routeMarcduinoLine(res.marcduinoCmd)` hands a `:` or `#` line to the Marcduino router"
       - "docs/action-registry.yaml - `rc_token` seq"
     executor_or_core: "parseMarcduinoCommand"
     missing_metadata: []
@@ -460,7 +460,7 @@ rows:
     evidence:
       - "include/rc_action_types.h - `DOME_ACTION_SPEED` analog enum"
       - "src/tasks/rc_input.cpp - `rcDispatchDome(output.domeRawFiltered, mapping, output.domeFiltered)`"
-      - "include/rc_dispatcher_helpers.h - void `rcDispatchDome`(int `domeRawFiltered`, ...)"
+      - "include/rc_dispatcher_helpers.h - void `rcDispatchDome(int domeRawFiltered,` ...)"
       - "src/rc_dispatcher_helpers.cpp - `xQueueSend(domeCmdQueue, &domeCmd, 0)`"
     executor_or_core: "domeCmdQueue"
     missing_metadata: []
@@ -515,8 +515,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp - `webRegisterRoute(\"/api/seq/pose\", WebMethod::kPost, handleSeqPosePost)`"
       - "include/api_seq.h - `void handleSeqPosePost(WebRequest& req)`"
-      - "src/web/api_seq.cpp - `handleSeqPosePost`(): `sequencePoseRefusal()`, then `sequencePoseRequest`(name, t, `SRC_WEB_API`)"
-      - "src/tasks/sequence_dispatcher.cpp - `sequencePosePlan`() once per request, `poseOneCommand()` one command per turn"
+      - "src/web/api_seq.cpp - `handleSeqPosePost()`: `sequencePoseRefusal()`, then `sequencePoseRequest(name, (uint32_t)atMs, SRC_WEB_API)`"
+      - "src/tasks/sequence_dispatcher.cpp - `sequencePosePlan()` once per request, `poseOneCommand()` one command per turn"
     executor_or_core: "sequencePoseRequest"
     missing_metadata:
       - "parameter 'name' lacks description/default/enum values"
@@ -537,7 +537,7 @@ rows:
       - "src/web/web_seam_routes.cpp - `webRegisterRoute(\"/api/dome/layout\", WebMethod::kGet, handleDomeLayoutGet)`"
       - "include/api_dome.h - `void handleDomeLayoutGet(WebRequest& req)`"
       - "src/web/api_dome.cpp - `void handleDomeLayoutGet(WebRequest& req)`"
-      - "src/web/api_dome.cpp - `req.sendChunked`(..., `fillDomeLayoutResponse`)"
+      - "src/web/api_dome.cpp - `req.sendChunked(\"application/json\", fillDomeLayoutResponse)`"
     executor_or_core: "domeLayoutCacheReadChunk"
     missing_metadata: []
     notes: ""
@@ -561,7 +561,7 @@ rows:
       - "src/web/web_seam_routes.cpp - `webRegisterRoute(\"/api/seq\", WebMethod::kGet, handleSeqGet)`"
       - "include/api_seq.h - `void handleSeqGet(WebRequest& req)`"
       - "src/web/api_seq.cpp - `void handleSeqGet(WebRequest& req)`"
-      - "src/web/api_seq.cpp - `req.sendChunked`(..., `seqFileFiller`)"
+      - "src/web/api_seq.cpp - `req.sendChunked(\"application/json\", seqFileFiller)`"
     executor_or_core: "seqStoreReadFileSlice"
     missing_metadata:
       - "parameter 'name' lacks description/default/enum values"
@@ -646,8 +646,8 @@ rows:
     evidence:
       - "src/drivers/dome_cue_handler.cpp - `void handleDomeCue(const char* cue)`"
       - "src/drivers/dome_cue_handler.cpp - `strcmp(cue, \"ALARM\") == 0`"
-      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlayCategory`(`AUDIO_CATEGORY_ALERT`, ...)"
-      - "include/audio_task.h - bool `audioQueuePlayCategory`(...)"
+      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlayCategory(AUDIO_CATEGORY_ALERT,` ...)"
+      - "include/audio_task.h - `bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fallbackSlot,`"
     executor_or_core: "audioQueuePlayCategory"
     missing_metadata: []
     notes: ""
@@ -666,8 +666,8 @@ rows:
     evidence:
       - "src/drivers/dome_cue_handler.cpp - `void handleDomeCue(const char* cue)`"
       - "src/drivers/dome_cue_handler.cpp - `strcmp(cue, \"CANTINA\") == 0`"
-      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlaySlot`(`AUDIO_SLOT_NAMED_CANTINA_L`, ...)"
-      - "include/audio_task.h - bool `audioQueuePlaySlot`(`AudioPlaybackSlot` slot, ...)"
+      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlaySlot(AUDIO_SLOT_NAMED_CANTINA_L,` ...)"
+      - "include/audio_task.h - bool `audioQueuePlaySlot(AudioPlaybackSlot slot,` ...)"
     executor_or_core: "audioQueuePlaySlot"
     missing_metadata: []
     notes: ""
@@ -686,8 +686,8 @@ rows:
     evidence:
       - "src/drivers/dome_cue_handler.cpp - `void handleDomeCue(const char* cue)`"
       - "src/drivers/dome_cue_handler.cpp - `strcmp(cue, \"HAPPY\") == 0`"
-      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlayCategory`(`AUDIO_CATEGORY_HAPPY`, ...)"
-      - "include/audio_task.h - bool `audioQueuePlayCategory`(...)"
+      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlayCategory(AUDIO_CATEGORY_HAPPY,` ...)"
+      - "include/audio_task.h - `bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fallbackSlot,`"
     executor_or_core: "audioQueuePlayCategory"
     missing_metadata: []
     notes: ""
@@ -706,8 +706,8 @@ rows:
     evidence:
       - "src/drivers/dome_cue_handler.cpp - `void handleDomeCue(const char* cue)`"
       - "src/drivers/dome_cue_handler.cpp - `strcmp(cue, \"HEART\") == 0`"
-      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlayCategory`(`AUDIO_CATEGORY_SENTIMENTAL`, ...)"
-      - "include/audio_task.h - bool `audioQueuePlayCategory`(...)"
+      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlayCategory(AUDIO_CATEGORY_SENTIMENTAL,` ...)"
+      - "include/audio_task.h - `bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fallbackSlot,`"
     executor_or_core: "audioQueuePlayCategory"
     missing_metadata: []
     notes: ""
@@ -726,8 +726,8 @@ rows:
     evidence:
       - "src/drivers/dome_cue_handler.cpp - `void handleDomeCue(const char* cue)`"
       - "src/drivers/dome_cue_handler.cpp - `strcmp(cue, \"HELLO\") == 0`"
-      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlayCategory`(`AUDIO_CATEGORY_GENERAL`, ...)"
-      - "include/audio_task.h - bool `audioQueuePlayCategory`(...)"
+      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlayCategory(AUDIO_CATEGORY_GENERAL,` ...)"
+      - "include/audio_task.h - `bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fallbackSlot,`"
     executor_or_core: "audioQueuePlayCategory"
     missing_metadata: []
     notes: ""
@@ -746,8 +746,8 @@ rows:
     evidence:
       - "src/drivers/dome_cue_handler.cpp - `void handleDomeCue(const char* cue)`"
       - "src/drivers/dome_cue_handler.cpp - `strcmp(cue, \"LEIA\") == 0`"
-      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlaySlot`(`AUDIO_SLOT_NAMED_LEIA`, ...)"
-      - "include/audio_task.h - bool `audioQueuePlaySlot`(`AudioPlaybackSlot` slot, ...)"
+      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlaySlot(AUDIO_SLOT_NAMED_LEIA,` ...)"
+      - "include/audio_task.h - bool `audioQueuePlaySlot(AudioPlaybackSlot slot,` ...)"
     executor_or_core: "audioQueuePlaySlot"
     missing_metadata: []
     notes: ""
@@ -766,8 +766,8 @@ rows:
     evidence:
       - "src/drivers/dome_cue_handler.cpp - `void handleDomeCue(const char* cue)`"
       - "src/drivers/dome_cue_handler.cpp - `strcmp(cue, \"OVERLOAD\") == 0`"
-      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlayCategory`(`AUDIO_CATEGORY_SAD`, ...)"
-      - "include/audio_task.h - bool `audioQueuePlayCategory`(...)"
+      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlayCategory(AUDIO_CATEGORY_SAD,` ...)"
+      - "include/audio_task.h - `bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fallbackSlot,`"
     executor_or_core: "audioQueuePlayCategory"
     missing_metadata: []
     notes: ""
@@ -806,8 +806,8 @@ rows:
     evidence:
       - "src/drivers/dome_cue_handler.cpp - `void handleDomeCue(const char* cue)`"
       - "src/drivers/dome_cue_handler.cpp - `strcmp(cue, \"ROCKMARCH\") == 0`"
-      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlaySlot`(`AUDIO_SLOT_NAMED_IMP_MARCH`, ...)"
-      - "include/audio_task.h - bool `audioQueuePlaySlot`(`AudioPlaybackSlot` slot, ...)"
+      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlaySlot(AUDIO_SLOT_NAMED_IMP_MARCH,` ...)"
+      - "include/audio_task.h - bool `audioQueuePlaySlot(AudioPlaybackSlot slot,` ...)"
     executor_or_core: "audioQueuePlaySlot"
     missing_metadata: []
     notes: ""
@@ -826,8 +826,8 @@ rows:
     evidence:
       - "src/drivers/dome_cue_handler.cpp - `void handleDomeCue(const char* cue)`"
       - "src/drivers/dome_cue_handler.cpp - `strcmp(cue, \"SCREAM\") == 0`"
-      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlayCategory`(`AUDIO_CATEGORY_SCREAM`, ...)"
-      - "include/audio_task.h - bool `audioQueuePlayCategory`(...)"
+      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlayCategory(AUDIO_CATEGORY_SCREAM,` ...)"
+      - "include/audio_task.h - `bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fallbackSlot,`"
     executor_or_core: "audioQueuePlayCategory"
     missing_metadata: []
     notes: ""
@@ -846,8 +846,8 @@ rows:
     evidence:
       - "src/drivers/dome_cue_handler.cpp - `void handleDomeCue(const char* cue)`"
       - "src/drivers/dome_cue_handler.cpp - `strcmp(cue, \"VADER\") == 0`"
-      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlaySlot`(`AUDIO_SLOT_NAMED_IMP_MARCH`, ...)"
-      - "include/audio_task.h - bool `audioQueuePlaySlot`(`AudioPlaybackSlot` slot, ...)"
+      - "src/drivers/dome_cue_handler.cpp - `audioQueuePlaySlot(AUDIO_SLOT_NAMED_IMP_MARCH,` ...)"
+      - "include/audio_task.h - bool `audioQueuePlaySlot(AudioPlaybackSlot slot,` ...)"
     executor_or_core: "audioQueuePlaySlot"
     missing_metadata: []
     notes: ""
@@ -1204,8 +1204,8 @@ rows:
       - "include/api_status.h - `void handleStatusGet(WebRequest& req)`"
       - "src/web/api_status.cpp - `void handleStatusGet(WebRequest& req)`"
       - "include/api_status.h - `captureDomeStatusSnapshot(DomeStatusSnapshot* out)` declaration"
-      - "src/web/api_status_serializers.cpp - `captureDomeStatusSnapshot`() definition"
-      - "src/web/web_server.cpp - `buildStatusJson`() calls `captureDomeStatusSnapshot()` for `domeTargetSpeed`/`domeEnabled` (#223)"
+      - "src/web/api_status_serializers.cpp - `captureDomeStatusSnapshot()` definition"
+      - "src/web/web_server.cpp - `buildStatusJson()` calls `captureDomeStatusSnapshot()` for `domeTargetSpeed`/`domeEnabled` (#223)"
     executor_or_core: "captureDomeStatusSnapshot"
     missing_metadata: []
     notes: "Status query via /api/status SSE stream. #223: promoted to a real console query; captureDomeStatusSnapshot() is the Zone Snapshot capture buildStatusJson() and the Console module both call (ADR 0036)."

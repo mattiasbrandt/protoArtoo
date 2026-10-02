@@ -55,7 +55,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/aux-led/color", WebMethod::kPost, handleAuxLedColorPost)`
   - include/api_aux_led.h - `void handleAuxLedColorPost(WebRequest& req)`
   - src/web/api_aux_led.cpp - `void handleAuxLedColorPost(WebRequest& req)`
-  - src/web/api_aux_led.cpp - `auxLedQueueSetColor(target, r, g, b, SRC_WEB_API)` queues to `auxLedQueue`
+  - src/web/api_aux_led.cpp - `auxLedQueueSetColor(target, r, g, b, SRC_WEB_API)` queues to AuxLedTask's queue
   executor_or_core: auxLedQueue
   missing_metadata: []
   notes: Requires webControlEnabled. Queue capacity guarded.
@@ -108,7 +108,7 @@ rows:
   evidence:
   - include/servo_output_row.h - `uint8_t` `led_count`, on the addressed Servo Output row
   - include/board_outputs.h - `lightCapable`, which Outputs a light (and its count) may go on
-  - src/web/api_config_apply.cpp - the row door's `ledCount`, checked 1..255 on a light-capable Output (ADR 0068)
+  - src/config_settings.cpp - `{"ledCount", ApplyTiming::AtReboot, RowSettingStore::Row, RowSettingOn::LightCapable,` declares the row Setting and its 1..255 rule, on a light-capable Output (ADR 0068)
   - "include/servo_output_row.h - `SERVO_ROW_FIELD_EDITED(\"ledCount\", SERVO_ROW_FIELD_U8, led_count, SERVO_FIELD_LED_COUNT)`, the row door's field table: an edit that names it records the field"
   - include/config_store.h - bool `configSaveServoOutputs` (Commit Step)
   executor_or_core: configApply
@@ -186,7 +186,7 @@ rows:
   evidence:
   - "include/rc_action_types.h - `DRIVE_ACTION_SPEED`, // Analog: forward/back movement"
   - src/rc_channel_mapper.cpp - `readChannelRaw` processes `driveSpeed` binding
-  - src/tasks/rc_input.cpp - `rcDispatchDrive`(`backbone.driveSpeed`, `backbone.driveSteer`, false)
+  - src/tasks/rc_input.cpp - `rcDispatchDrive(output.backbone.driveSpeed, output.backbone.driveSteer, false)`
   executor_or_core: driveArbiterSubmit
   missing_metadata: []
   notes: 'Analog RC. SBUS: rc_sbus_drive_speed; PWM: rc_pwm_drive_speed. Speed cap enforced. No additional guard (arbiter applies caps).'
@@ -309,7 +309,7 @@ rows:
   evidence:
   - "include/rc_action_types.h - `DRIVE_ACTION_STEER`, // Analog: left/right steering"
   - src/rc_channel_mapper.cpp - `readChannelRaw` processes `driveSteer` binding
-  - src/tasks/rc_input.cpp - `rcDispatchDrive`(`backbone.driveSpeed`, `backbone.driveSteer`, false)
+  - src/tasks/rc_input.cpp - `rcDispatchDrive(output.backbone.driveSpeed, output.backbone.driveSteer, false)`
   executor_or_core: driveArbiterSubmit
   missing_metadata: []
   notes: 'Analog RC. SBUS: rc_sbus_drive_steer; PWM: rc_pwm_drive_steer. No guard (steering follows speed arbiter).'
@@ -411,7 +411,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/actions/test", WebMethod::kPost, handleActionsTestPost)`
   - include/api_actions.h - `void handleActionsTestPost(WebRequest& req)`
   - src/web/api_actions.cpp - `void handleActionsTestPost(WebRequest& req)`
-  - src/web/api_actions.cpp - `dispatchRcTriggerActionTest`(target, "", true) is the core
+  - src/web/api_actions.cpp - `dispatchRcTriggerActionTest(target, "", true, SRC_WEB_API)` is the core
   executor_or_core: dispatchRcTriggerActionTest
   missing_metadata: []
   notes: 'Web-API. Calls dispatchRcTriggerActionTest (RC task core). Guard: webControlEnabledForActionTest at api_actions.cpp:100.'
@@ -543,7 +543,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
   - include/api_servo.h - `void handleServoPost(WebRequest& req)`
   - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
-  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand()`
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web+RC. No webControlEnabled guard, like every /api/servo action (ADR 0064). Queue guarded.
@@ -570,7 +570,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
   - include/api_servo.h - `void handleServoPost(WebRequest& req)`
   - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
-  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand()`
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web+RC. No webControlEnabled guard, like every /api/servo action (ADR 0064). Queue guarded.
@@ -599,7 +599,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
   - include/api_servo.h - `void handleServoPost(WebRequest& req)`
   - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
-  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand()`
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web-API. No webControlEnabled guard, like every /api/servo action (ADR 0064). Position 500-2500us. Queue guarded.
@@ -624,7 +624,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
   - include/api_servo.h - `void handleServoPost(WebRequest& req)`
   - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
-  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand()`
   - src/tasks/servo_task.cpp - `SERVO_CMD_NUDGE` case in `processCommand()` -> `beginNudge()`; the pair from include/`servo_nudge.h`
   executor_or_core: servoCmdQueue
   missing_metadata: []
@@ -650,7 +650,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
   - include/api_servo.h - `void handleServoPost(WebRequest& req)`
   - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
-  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand()`
   - src/tasks/servo_task.cpp - `SERVO_CMD_TRAVEL` case in `processCommand()` -> `beginTravel()`; the two ends from include/`servo_travel.h`
   executor_or_core: servoCmdQueue
   missing_metadata: []
@@ -680,7 +680,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
   - include/api_servo.h - `void handleServoPost(WebRequest& req)`
   - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
-  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand()`
   - src/tasks/servo_task.cpp - `case SERVO_CMD_HOLD:` in `processCommand()` -> `holdOutput(slot, cmd.positionUs, cmd.source,`
   - src/tasks/servo_task.cpp - `expireHolds()` applies both bounds each frame; the rule is include/`servo_hold.h`
   executor_or_core: servoCmdQueue
@@ -708,7 +708,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
   - include/api_servo.h - `void handleServoPost(WebRequest& req)`
   - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
-  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand()`
   - src/tasks/servo_task.cpp - `case SERVO_CMD_RELEASE:` in `processCommand()` -> `releaseOutput(slot, SERVO_LIMP_RELEASED)`
   - src/drivers/ledc_pwm.cpp - `ledcPwmRelease()` writes duty 0, the one place a pulse comes off a pin
   executor_or_core: servoCmdQueue
@@ -732,7 +732,7 @@ rows:
   - include/api_servo.h - `void handleServoCentrePost(WebRequest& req)`
   - src/web/api_servo.cpp - `void handleServoCentrePost(WebRequest& req)`
   - src/web/api_servo.cpp - `robotState.bulkCentreRequest = SRC_WEB_API`
-  - src/tasks/sequence_dispatcher.cpp - `sequenceBulkCentreStart`() on the Coordinator's next tick
+  - src/tasks/sequence_dispatcher.cpp - `sequenceBulkCentreStart()` on the Coordinator's next tick
   - src/tasks/sequence_dispatcher.cpp - `centreOneOutput()`, one Output per turn
   - include/sequence_bulk_centre.h - `SEQ_CADENCE_FLOOR_MS`, the default of the pace the sweep holds
   - src/config_store.cpp - `configCacheCadenceFloorMs()`, the stored pace in use
@@ -755,7 +755,7 @@ rows:
   - include/config_store.h - `uint16_t cadence_floor_ms`
   - src/config_settings.cpp - the Setting `cadenceFloorMs`, 50..5000 ms, default `SEQ_CADENCE_FLOOR_MS`
   - src/config_store.cpp - `configCacheCadenceFloorMs()`, read by the Sequence Coordinator each time it paces
-  - src/console/console_module.cpp - `g_settingOps` row, written through `configApply()`
+  - src/console/console_module.cpp - `g_settingOps` row, executed by `consoleExecuteSettingOp()`
   executor_or_core: configApply
   missing_metadata: []
   notes: The Cadence Floor (#453, CONTEXT.md). NVS key cad_floor_ms, GET path servo.cadenceFloorMs, Immediate. The default is the dome's measured figure; the body's is unmeasured (#355).
@@ -775,7 +775,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
   - include/api_servo.h - `void handleServoPost(WebRequest& req)`
   - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
-  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand()`
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web-API. No webControlEnabled guard, like every /api/servo action (ADR 0064). Queue guarded.
@@ -912,9 +912,9 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo/outputs", WebMethod::kGet, handleServoOutputsGet)`
   - include/api_config.h - `void handleServoOutputsGet(WebRequest& req)`
-  - src/web/api_config.cpp - `handleServoOutputsGet`() reads each live row with `configCacheReadServoOutput(i, &row)`
+  - src/web/api_config.cpp - `handleServoOutputsGet()` reads each live row with `configCacheReadServoOutput(i, &row)`
   - src/console/console_module.cpp - `consoleExecuteServoApiGetOutputs()` reads the same rows, one item each
-  - src/web/api_status_serializers.cpp - `captureServoOutputCommanded`(), the one read of a commanded position both adapters share
+  - src/web/api_status_serializers.cpp - `captureServoOutputCommanded()`, the one read of a commanded position both adapters share
   executor_or_core: configCacheReadServoOutput
   missing_metadata: []
   notes: "Added by #347 for the Parts destination; #362 gave it a Console record shape (item-indexed,

@@ -280,9 +280,9 @@ rows:
   anchor_kind: api
   evidence:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/audio/query", WebMethod::kPost, handleAudioQueryPost)`
-  - include/api_audio.h - handler declaration void `handleAudioQueryPost`()
+  - include/api_audio.h - handler declaration void `handleAudioQueryPost()`
   - src/web/api_audio.cpp - `handleAudioQueryPost` enqueues status query
-  - include/audio_task.h - `audioQueueQueryStatus`() queues `AUDIO_CMD_QUERY_STATUS`
+  - include/audio_task.h - `audioQueueQueryStatus()` queues `AUDIO_CMD_QUERY_STATUS`
   executor_or_core: audioQueueQueryStatus
   missing_metadata:
   - executor reference not in registry
@@ -668,7 +668,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/audio/category-range", WebMethod::kPost,` `handleAudioCategoryRangePost`
   - include/api_audio.h - `void handleAudioCategoryRangePost(WebRequest& req)`
   - src/web/api_audio.cpp - `void handleAudioCategoryRangePost(WebRequest& req)`
-  - src/web/api_audio.cpp - `audioCategoryRangeApply`(params, &result)
+  - src/web/api_audio.cpp - `audioCategoryRangeApply(params, catalogSupported, working, result)`
   executor_or_core: audioCategoryRangeApply
   missing_metadata:
   - parameter range not in registry (lo/hi bounds)
@@ -756,8 +756,8 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/audio", WebMethod::kPost, handleAudioPost)`
   - include/api_audio.h - handler declaration void `handleAudioPost()`
-  - src/web/api_audio.cpp - `handleAudioPost` action=stop calls `audioQueueTrackStop`()
-  - include/audio_task.h - `audioQueueTrackStop`() queues `AUDIO_CMD_TRACK_STOP`
+  - src/web/api_audio.cpp - `handleAudioPost` action=stop calls `audioQueueTrackStop()`
+  - include/audio_task.h - `audioQueueTrackStop()` queues `AUDIO_CMD_TRACK_STOP`
   executor_or_core: audioQueueTrackStop
   missing_metadata:
   - executor reference not in registry
@@ -776,7 +776,7 @@ rows:
   anchor_kind: api
   evidence:
   - include/audio_dollar_parser.h - `//   $-     --  volume down by 1`
-  - include/audio_task.h - `AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30`
+  - include/audio_task.h - `AUDIO_CMD_SET_VOLUME`, the queue command that sets an absolute volume
   - include/audio_task.h - `bool audioQueueSetVolume(uint8_t vol, CommandSource src)`
   - src/tasks/audio_task_step.cpp - `action.type == AUDIO_ACTION_VOLUME_DOWN` becomes `AUDIO_PLAYBACK_REQ_SET_VOLUME`, one step under the current volume
   executor_or_core: audioQueueSetVolume
@@ -797,7 +797,7 @@ rows:
   anchor_kind: api
   evidence:
   - include/audio_dollar_parser.h - `//   $f     --  volume to max (30)`
-  - include/audio_task.h - `AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30`
+  - include/audio_task.h - `AUDIO_CMD_SET_VOLUME`, the queue command that sets an absolute volume
   - include/audio_task.h - `bool audioQueueSetVolume(uint8_t vol, CommandSource src)`
   - src/tasks/audio_dollar_parser.cpp - `action.type = AUDIO_ACTION_VOLUME_SET; action.volume = AUDIO_VOLUME_MAX;`
   - src/tasks/audio_task_step.cpp - `action.type == AUDIO_ACTION_VOLUME_SET` becomes `AUDIO_PLAYBACK_REQ_SET_VOLUME`
@@ -819,7 +819,7 @@ rows:
   anchor_kind: api
   evidence:
   - include/audio_dollar_parser.h - `//   $m     --  volume to mid (15)`
-  - include/audio_task.h - `AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30`
+  - include/audio_task.h - `AUDIO_CMD_SET_VOLUME`, the queue command that sets an absolute volume
   - include/audio_task.h - `bool audioQueueSetVolume(uint8_t vol, CommandSource src)`
   - src/tasks/audio_dollar_parser.cpp - `action.type = AUDIO_ACTION_VOLUME_SET; action.volume = AUDIO_VOLUME_MID;`
   - src/tasks/audio_task_step.cpp - `action.type == AUDIO_ACTION_VOLUME_SET` becomes `AUDIO_PLAYBACK_REQ_SET_VOLUME`
@@ -841,7 +841,7 @@ rows:
   anchor_kind: api
   evidence:
   - include/audio_dollar_parser.h - `//   $p     --  volume to min (0)`
-  - include/audio_task.h - `AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30`
+  - include/audio_task.h - `AUDIO_CMD_SET_VOLUME`, the queue command that sets an absolute volume
   - include/audio_task.h - `bool audioQueueSetVolume(uint8_t vol, CommandSource src)`
   - src/tasks/audio_dollar_parser.cpp - `action.type = AUDIO_ACTION_VOLUME_SET; action.volume = AUDIO_VOLUME_MIN;`
   - src/tasks/audio_task_step.cpp - `action.type == AUDIO_ACTION_VOLUME_SET` becomes `AUDIO_PLAYBACK_REQ_SET_VOLUME`
@@ -863,7 +863,7 @@ rows:
   anchor_kind: api
   evidence:
   - include/audio_dollar_parser.h - `//   $+     --  volume up by 1`
-  - include/audio_task.h - `AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30`
+  - include/audio_task.h - `AUDIO_CMD_SET_VOLUME`, the queue command that sets an absolute volume
   - include/audio_task.h - `bool audioQueueSetVolume(uint8_t vol, CommandSource src)`
   - src/tasks/audio_task_step.cpp - `action.type == AUDIO_ACTION_VOLUME_UP` becomes `AUDIO_PLAYBACK_REQ_SET_VOLUME`, one step over the current volume
   executor_or_core: audioQueueSetVolume
@@ -886,7 +886,7 @@ rows:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/audio/catalog", WebMethod::kGet, handleAudioCatalogGet)`
   - include/api_audio.h - `void handleAudioCatalogGet(WebRequest& req)`
   - src/web/api_audio.cpp - `void handleAudioCatalogGet(WebRequest& req)`
-  - include/audio_task.h - `audioGetCatalogEntries`() returns catalog entries
+  - include/audio_task.h - `audioGetCatalogEntries()` returns catalog entries
   executor_or_core: audioGetCatalogEntries
   missing_metadata:
   - executor reference not in registry
@@ -961,9 +961,9 @@ rows:
   anchor_kind: api
   evidence:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/audio/catalog/refresh", WebMethod::kPost,` `handleAudioCatalogRefreshPost`
-  - include/api_audio.h - handler declaration void `handleAudioCatalogRefreshPost`()
+  - include/api_audio.h - handler declaration void `handleAudioCatalogRefreshPost()`
   - src/web/api_audio.cpp - `handleAudioCatalogRefreshPost` enqueues refresh
-  - include/audio_task.h - `audioQueueRefreshCatalog`() queues `AUDIO_CMD_REFRESH_CATALOG`
+  - include/audio_task.h - `audioQueueRefreshCatalog()` queues `AUDIO_CMD_REFRESH_CATALOG`
   executor_or_core: audioQueueRefreshCatalog
   missing_metadata:
   - executor reference not in registry
@@ -1048,7 +1048,7 @@ rows:
   anchor_kind: aggregate-field
   evidence:
   - include/config_store.h - `snd_cat_gen_lo` and category range fields in `AudioConfig`
-  - src/web/api_config.cpp - `handleConfigPost`() accepts category range fields in JSON
+  - src/web/api_config.cpp - `handleConfigPost()` accepts category range fields in JSON
   - src/tasks/audio_config_map.cpp - `categoryRanges` populated from config fields
   - include/config_store.h - `bool configSaveAudio(Preferences& prefs, const AudioConfig& config)`
   executor_or_core: audioCategoryRangeApply
@@ -1267,7 +1267,7 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - include/config_store.h - `snd_sys_`* fields in `AudioConfig` (boot/mode/drive/dome)
+  - include/config_store.h - `uint16_t snd_sys_boot;` and its sibling system-sound fields in `AudioConfig` (boot/mode/drive/dome)
   - src/config_settings.cpp - `PA_OPTIONAL_TRACK("sys_boot", "snd_sys_boot"` and the other system-sound rows declare the Settings audioTracksApply() checks
   - src/tasks/audio_config_map.cpp - `out->slotTracks[AUDIO_SLOT_SYS_NET_DOWN] = cfg.audio.snd_sys_net_down` and its sibling system slots, from config
   - include/config_store.h - `bool configSaveAudio(Preferences& prefs, const AudioConfig& config)`
@@ -1334,7 +1334,7 @@ rows:
   anchor_kind: config
   evidence:
   - include/config_store.h - `uint8_t audioVolume;`
-  - src/web/api_audio.cpp - `audioSetVolumeCommitApplied`() applies through the audio queue and persists the level as the boot default
+  - src/web/api_audio.cpp - `audioSetVolumeCommitApplied()` applies through the audio queue and persists the level as the boot default
   - src/web/api_audio.cpp - `strcmp(action, "volume") == 0`, where POST /api/audio action=volume reaches that same Commit Step
   - src/tasks/audio_task.cpp - `tickIn.configVolume = cfg.audio.audioVolume;`
   - include/config_store.h - `bool configSaveAudio(Preferences& prefs, const AudioConfig& config)`
@@ -1361,7 +1361,7 @@ rows:
   - src/web/api_audio.cpp - void `handleAudioGet(WebRequest& req)` definition
   - src/web/api_audio.cpp - `currentTrack` = `robotState.audio_module_current_track`; core reads state
   - include/api_audio.h - `captureAudioStatusSnapshot(AudioStatusSnapshot* out)` declaration
-  - src/web/api_audio.cpp - `captureAudioStatusSnapshot`() definition; `handleAudioGet()` calls it (#223)
+  - src/web/api_audio.cpp - `captureAudioStatusSnapshot()` definition; `handleAudioGet()` calls it (#223)
   executor_or_core: captureAudioStatusSnapshot
   missing_metadata: []
   notes: 'live status snapshot: driver name, active flag, play state, device, track counts, RX diagnostics. #223: executor corrected from the placeholder "Core 0" to the real capture function; fields corrected from the invented audioActive/audioLinkOk/activeMood (activeMood does not exist in this response at all) to formatAudioStatusJson()''s real JSON keys.'
