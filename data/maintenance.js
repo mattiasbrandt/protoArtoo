@@ -33,9 +33,14 @@
       setFeedbackState(rebootFeedback, "Still saving a component change. Press again in a moment.", "warning");
       return;
     }
-    if (!confirm("Restart the Body Controller? This page drops for about 10 seconds.")) {
-      return;
-    }
+    const restart = await window.PAOverlay.ask({
+      title: "Restart the Body Controller?",
+      body: "This page drops for about 10 seconds.",
+      yes: "Restart it",
+      no: "Not now",
+      near: rebootButton,
+    });
+    if (!restart) return;
     if (!window.PAApi) return;
     setFeedbackState(rebootFeedback, "Sending restart...");
     try {
@@ -841,14 +846,14 @@
 
   // ---- ASK BEFORE ANYTHING IS WRITTEN ----
   // Both answers - the parts and the copy - are in before the first request
-  // that changes the droid, so Cancel means nothing was touched (wizard-import.js
-  // :1014).
+  // that changes the droid, so Keep what I have means nothing was touched
+  // (wizard-import.js :1014).
   const askToReplace = () => {
     const parts = tickedParts();
     if (parts.length === 0 || !facts?.library || !question) return;
     const names = parts.map((part) => part.label);
     const said = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-    if (questionText) questionText.textContent = `Replace the droid's ${said}? What is on it now goes.`;
+    if (questionText) questionText.textContent = `What is on the droid now goes. Replace its ${said}?`;
     question.hidden = false;
     if (restoreBtn) restoreBtn.disabled = true;
   };
