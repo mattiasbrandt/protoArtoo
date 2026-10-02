@@ -251,8 +251,9 @@ Its steps run where the step sits, loaded fresh on every run, so improving the
 phrase improves every sequence that holds it. On save: the phrase must be on
 the droid and not a toggle, a sequence cannot reach itself, phrases nest at
 most three deep, the whole run must fit 96 steps, and a phrase cannot sit
-inside a loop. A phrase deleted later is left out of the run, and the log
-says so.
+inside a loop. In a sequence with a close half, each half is held to these
+rules and counted to 96 by itself. A phrase deleted later is left out of the
+run, and the log says so.
 
 ## The Rehearsal
 

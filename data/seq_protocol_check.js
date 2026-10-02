@@ -1392,7 +1392,7 @@
           };
         }
         if (kept === "none" && toggleGroup !== "none") {
-          return { ok: false, field: "toggleGroup", error: `A retrained ${name} stays in no interrupt group, as the Factory one is` };
+          return { ok: false, field: "toggleGroup", error: `${name} is a Factory sequence in no interrupt group, so a retrained one stays in none.` };
         }
       }
 
