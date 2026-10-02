@@ -26,6 +26,8 @@ enum SequenceDispatchTarget : uint8_t {
     SEQ_DISPATCH_AUDIO_STOP,       // audioQueueTrackStop(SRC_SEQ)
     SEQ_DISPATCH_BODY_MOVE,        // resolve the Part against the Servo Output
                                    // rows, then servoCmdQueue
+    SEQ_DISPATCH_DOME_BEARING,     // domeBearingStepPlan(), then a DOME_CMD_TURN_TO
+                                   // on domeCmdQueue or a report (#445)
     SEQ_DISPATCH_GESTURE,          // hand to the Coordinator's Gesture run, which
                                    // copies the step and expands it on its own
                                    // cursor (include/sequence_gesture.h)

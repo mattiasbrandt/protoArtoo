@@ -450,6 +450,12 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             a.domeSpeedPct = step.params.speedPct;
             a.domeDurationMs = step.params.durationMs;
             break;
+        case STEP_DOME_BEARING:
+            // The target travels as written. Its bearing, the dome's belief and
+            // the calibration are all the Coordinator's to read at dispatch.
+            a.kind = SEQ_ACT_DOME_BEARING;
+            setPayload(a, step.payload);
+            break;
         case STEP_AUDIO_STOP:
             a.kind = SEQ_ACT_AUDIO_STOP;
             break;
@@ -735,8 +741,11 @@ void seqEngineCommit(SeqEngineState& st) {
         }
     } else if (st.pending.kind == SEQ_ACT_GESTURE && st.pending.gesture != nullptr) {
         recordGestureRingOpen(st, *st.pending.gesture);
-    } else if (st.pending.kind == SEQ_ACT_DOME_ROTATE &&
-               st.pending.domeSpeedPct != 0) {
+    } else if ((st.pending.kind == SEQ_ACT_DOME_ROTATE && st.pending.domeSpeedPct != 0) ||
+               st.pending.kind == SEQ_ACT_DOME_BEARING) {
+        // A bearing step may not have turned the dome at all - it reports and
+        // carries on - and the neutral cleanup sends then is a stop the dome
+        // was already at.
         st.domeRotateActive = true;
     }
     // SEQ_ACT_BODY_MOVE records nothing here, and that absence is the decision

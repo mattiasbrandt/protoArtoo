@@ -26,7 +26,13 @@
 //     (recordRingOpenState(), src/tasks/sequence_engine.cpp);
 //   - a random step's panel. The pick is made at run time, so no instant has
 //     one;
-//   - a dome turn. It is a motion over time, not a position to go to;
+//   - a dome turn. A timed one is a motion over time, not a position to go
+//     to. A bearing step (#445) does name a position, and is still not sent:
+//     it turns the whole dome from wherever it believes it points, it may not
+//     run at all - the bearing unknown, the dome not calibrated - and a
+//     marker dragged along the timeline would swing the dome with every
+//     press. The dome stays where it is, and the Dome Bearing's marker says
+//     where that is;
 //   - a raw light code (@..., *...). Its target is the dome's addressing, not
 //     a Part; the four structured light modes (DV:, DL:, DT:, DH:) are.
 // A light mode is started again with its whole duration, as the sound is.
@@ -383,8 +389,8 @@ inline void visit(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs, uint3
             visitGesture(plan, step, fireMs, atMs, endMs);
             break;
         default:
-            // A random step's pick, a dome turn, a latch reset: nothing an
-            // instant can be sent to (see the header comment).
+            // A random step's pick, a dome turn - timed or to a bearing - a
+            // latch reset: nothing a pose sends (see the header comment).
             break;
     }
 }

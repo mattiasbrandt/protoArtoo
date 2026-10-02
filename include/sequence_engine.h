@@ -80,6 +80,15 @@ enum SeqStepType : uint8_t {
                               // never nests its cursor. One that reaches the
                               // engine was not spliced -- its sequence is gone --
                               // and fires nothing.
+    STEP_DOME_BEARING   = 12, // A bearing step (ADR 0051, #445): turn the dome
+                              // until a target faces front. payload carries the
+                              // target -- `front`, or a dome Part's catalog id,
+                              // whose bearing is resolved when the step RUNS so
+                              // a corrected `bearing_deg` reaches every saved
+                              // step (include/dome_bearing_act.h). Beside
+                              // STEP_DOME_ROTATE, which is untouched: a duration
+                              // always completes and a bearing may not, so they
+                              // are different contracts. No params.
 };
 
 // -----------------------------------------------------------------------------
@@ -263,8 +272,9 @@ inline uint8_t seqBodyHowFar(const SeqStepParams& p) {
 //
 // tMs:  Milliseconds from sequence start (or from iteration start for steps
 //       inside a STEP_LOOP body) when this step fires.
-// payload: Dome command (STEP_DOME_CMD), audio $-command (STEP_AUDIO), or the
-//          Droid Parts Catalog id of the Part a STEP_BODY moves.
+// payload: Dome command (STEP_DOME_CMD), audio $-command (STEP_AUDIO), the
+//          Droid Parts Catalog id of the Part a STEP_BODY moves, or the target a
+//          STEP_DOME_BEARING turns to front.
 //          64 bytes  --  matches DomeTxCmd.buf.
 // -----------------------------------------------------------------------------
 struct SeqStep {
@@ -373,6 +383,11 @@ enum SeqActionKind : uint8_t {
     SEQ_ACT_GESTURE        = 7,  // `gesture` -> the Sequence Coordinator, which
                                  // resolves the set against the droid as it is
                                  // and performs it by owner (ADR 0046).
+    SEQ_ACT_DOME_BEARING   = 8,  // payload (`front` or a dome Part id) -> the
+                                 // Sequence Coordinator, which resolves it and
+                                 // the dome's belief at dispatch and sends a
+                                 // turn to that Dome Bearing, or reports why
+                                 // not and carries on (#445).
 };
 
 struct SeqAction {
@@ -464,8 +479,10 @@ struct SeqEngineState {
 
     SeqToggleState latches;
 
-    // True after a committed non-zero STEP_DOME_ROTATE. Terminal and abnormal
-    // cleanup emit a neutral rotation action through the same body-owned path.
+    // True after a committed non-zero STEP_DOME_ROTATE, or a STEP_DOME_BEARING.
+    // Terminal and abnormal cleanup emit a neutral rotation action through the
+    // same body-owned path, so a bearing turn still running when the sequence
+    // ends is stopped the way a timed one is.
     bool      domeRotateActive;
 
     // True once this run dispatched any DV:<name> dome visual preset. Terminal

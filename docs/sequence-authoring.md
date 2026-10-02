@@ -22,6 +22,7 @@ Every choreography is built from core step kinds:
 | `dome` | send a dome command (`:OP`/`:CL`/`:OF` panel intent, `@...` logic/PSI, `*...` holo, `:SE##`) |
 | `audio` | play a body sound ($-command; named roles preferred -- see below) |
 | `domeRotate` | body-owned timed dome rotation (speed -100..100%, duration in ms) |
+| `domeBearing` | turn the dome until front, or a dome Part, faces front (see below) |
 | `body` | move one body **Part** -- a door, an arm, the dataport (see below) |
 | `loop` | beat/BPM iteration; repeats a body of steps |
 | `random` | runtime panel pick; emits a random panel intent command |
@@ -97,6 +98,27 @@ Dome rotation does **not** depend on RC/SBUS input and requires no manual cleanu
 the motor automatically on terminal, abort, preempt, or estop.
 
 In Factory Sequences, use the `SEQ_DOME_ROTATE(t, speedPct, durationMs)` macro.
+
+### Turning to a bearing
+
+A bearing step turns the dome until a target faces the droid's front: `front`
+itself, or a dome Part by its catalog id.
+
+```json
+{ "t": 1200, "type": "domeBearing", "target": "pie3" }
+```
+
+It turns the short way round from where the dome **believes** it points, at the
+speed its full turn was timed at, and stops on time (the Dome page records the
+full turn). The Part's bearing is read when the step runs, so a corrected
+`bearing_deg` reaches every saved step.
+
+It is a different promise from `domeRotate`: a duration always completes, and a
+bearing may not. With the bearing unknown (after a boot, an estop or Sleep
+Mode, until **Front is here**), the dome not calibrated or the Dome ESC off, the
+step does not move the dome; the run reports `bearing-unknown`,
+`dome-not-calibrated` or `component-disabled` and carries on. It saves either
+way. A pose press (the timeline's send to this moment) does not turn the dome.
 
 ## Moving a body part
 
@@ -341,7 +363,7 @@ model -- no `fx` field (inferred), no manual cleanup steps (automatic).
   "closeSteps": [] }
 ```
 
-- `type` is one of `dome | audio | body | gesture | sequence | loop | random | audioCat | domeRotate | end`.
+- `type` is one of `dome | audio | body | gesture | sequence | loop | random | audioCat | domeRotate | domeBearing | end`.
 - `dome` steps carry a single panel intent or Advanced dome command string.
 - A `loop` header is followed by its `body` steps (relative `t`); loops do not
   nest, and a `sequence` step cannot sit in a loop body.
@@ -376,6 +398,7 @@ the format cannot express a bypass for.
 | `:SE` | exactly 2 digits (e.g. `:SE09`); not allowed inside loops or random |
 | `@`/`*`/`$` | length- and charset-bounded; recognised prefix |
 | `domeRotate` | speedPct -100..100; durationMs positive (or 0 paired with speedPct=0 for neutral stop) |
+| `domeBearing` | `target` is `front` or a dome Part the catalog gives a bearing; nothing about the dome's calibration or belief is checked on save |
 | `body` | `part` in the Droid Parts Catalog; `shape` open/close/flutter; `howFar` 1..100; a flutter's `flutterMs` 50..60000 and no duration on any other shape |
 | `loop` | period 100..60000, duration `<=120000`, no nesting, body within branch |
 | `random` | set: ring/pie/all/hold; mode: flutter/open/close; jitter `<=2000`, move `<=5000` |

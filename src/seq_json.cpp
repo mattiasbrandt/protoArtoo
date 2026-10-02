@@ -509,6 +509,20 @@ static ProtocolCheckResult parseStepFields(const char* label, JsonObjectConst ob
         s.params.durationMs = durationMs;
         return pcOk();
     }
+    if (strcmp(type, "domeBearing") == 0) {
+        s.type = STEP_DOME_BEARING;
+        const char* target = obj["target"] | (const char*)nullptr;
+        if (target == nullptr) {
+            return pcFailAt(label, idx, "target", "missing target");
+        }
+        if (strnlen(target, sizeof(s.payload)) >= sizeof(s.payload)) {
+            return pcFailAt(label, idx, "target", "target too long");
+        }
+        // `front` or a Part id, as written. Whether it is one is
+        // protocolCheck()'s to say, like a Body Step's Part.
+        strncpy(s.payload, target, sizeof(s.payload) - 1);
+        return pcOk();
+    }
     if (strcmp(type, "body") == 0) {
         s.type = STEP_BODY;
         const char* part = obj["part"] | (const char*)nullptr;
@@ -869,6 +883,10 @@ static void serializeBranch(JsonArray arr, const SeqStep* steps, uint8_t count) 
                 o["type"] = "domeRotate";
                 o["speedPct"] = s.params.speedPct;
                 o["durationMs"] = s.params.durationMs;
+                break;
+            case STEP_DOME_BEARING:
+                o["type"] = "domeBearing";
+                o["target"] = s.payload;
                 break;
             case STEP_BODY:
                 // Each of the three is written only when it says something the
