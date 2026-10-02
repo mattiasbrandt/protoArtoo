@@ -174,20 +174,26 @@
     };
   };
 
-  // The question, after the reference's displacement dialog, taken nearly
-  // verbatim: it names both Parts, says what the loser is left with, and the
-  // button that agrees is the verb (r2d2-astromech-simulator v1.79.0; #347).
+  // The question, after the reference's displacement dialog: it names both
+  // Parts and says what the Output it leaves is left with
+  // (r2d2-astromech-simulator v1.79.0; #347). The title is the question, the
+  // body the consequence, and both buttons are verbs - the one that keeps
+  // things says what is kept, never "Cancel" (#456). Shaped as
+  // window.PAOverlay.ask() takes a question.
   const announcement = (move) => {
     const part = partLabel(move.part);
     const from = move.leaves.name;
     const to = move.arrives.name;
-    const lines = [`${part} is on ${from}. Move it to ${to} and unwire it from ${from}?`];
-    lines.push(move.keeps.length ? `${from} keeps ${listParts(move.keeps)}.` : `${from} will have nothing on it.`);
+    const lines = [
+      move.keeps.length
+        ? `It comes off ${from}, which keeps ${listParts(move.keeps)}.`
+        : `It comes off ${from}, which is left with nothing on it.`,
+    ];
     if (move.joins.length) {
       const verb = move.joins.length === 1 ? "is" : "are";
-      lines.push(`${listParts(move.joins)} ${verb} on ${to} too — they will move together.`);
+      lines.push(`${listParts(move.joins)} ${verb} on ${to} too, and will move with it.`);
     }
-    return { title: "Part already wired", body: lines.join(" "), confirm: "Move it", cancel: "Cancel" };
+    return { title: `Move ${part} to ${to}?`, body: lines.join(" "), yes: "Move it", no: "Leave it where it is" };
   };
 
   /**
@@ -197,7 +203,8 @@
    *
    * @param {object} hosts
    * @param {HTMLDialogElement} hosts.dialog - the question, carrying
-   *   .move-title, .move-body, .move-confirm and .move-cancel
+   *   .move-title, .move-body, .move-confirm and .move-cancel; the words on
+   *   all four are written here, from announcement()
    * @param {function} hosts.say - (text, level) the surface's feedback line
    * @param {function} hosts.reload - reads the outputs again after a move
    * @param {function} hosts.repaint - draws the controls back to the truth
@@ -206,39 +213,24 @@
   const mover = ({ dialog, say, reload, repaint, onSending = () => {} }) => {
     const title = dialog.querySelector(".move-title");
     const body = dialog.querySelector(".move-body");
+    const confirmButton = dialog.querySelector(".move-confirm");
+    const cancelButton = dialog.querySelector(".move-cancel");
     let pendingPart = null;
     let asking = null;
 
     // The question covers the surface it belongs to and never the chrome
-    // around it (ADR 0048, #359). A native showModal() makes everything
-    // outside the dialog inert, the shell's STOP included, so the dialog is
-    // opened non-modally and what goes inert is the surface: at each level
-    // from the dialog up to its .surface, every sibling of the path. Inert is
-    // inherited, so the path itself stays live and the dialog can be answered.
-    // The Sequences dialogs make the same move (data/seq.js showModal()).
-    let heldInert = [];
-    const holdSurface = () => {
-      // Never above the surface: with no .surface around it, only the dialog's
-      // own siblings go inert, so the climb can never reach the chrome.
-      const surface = dialog.closest?.(".surface") || dialog.parentElement;
-      let node = dialog;
-      while (node && node !== surface && node.parentElement) {
-        const parent = node.parentElement;
-        [...parent.children].forEach((sibling) => {
-          if (sibling !== node && !sibling.inert) {
-            sibling.inert = true;
-            heldInert.push(sibling);
-          }
-        });
-        node = parent;
-      }
-    };
-    const releaseSurface = () => {
-      heldInert.forEach((node) => {
-        node.inert = false;
-      });
-      heldInert = [];
-    };
+    // around it (ADR 0048, #359): opened non-modally, with the surface held
+    // inert by the shared climb (data/overlay.js holdSurface()).
+    let releaseSurface = () => {};
+
+    // Escape is "leave it where it is", through the one shared guard, so a
+    // question opened over this one takes the key first and this one never
+    // hears it (data/overlay.js escGuard()). A question on a surface that was
+    // navigated away from is not on top of anything.
+    const escape = window.PAOverlay.escGuard(
+      () => asking !== null && dialog.open && dialog.isConnected,
+      () => answer(false)
+    );
 
     const send = async (move) => {
       const label = partLabel(move.part);
@@ -271,19 +263,21 @@
       const { move, control } = asking;
       asking = null;
       pendingPart = null;
+      escape.unbind();
       if (dialog.open) dialog.close();
       releaseSurface();
+      releaseSurface = () => {};
       if (confirmed) {
         send(move);
         return;
       }
-      // Cancelled: the control goes back to the truth, and focus to the control.
+      // Left where it is: the control goes back to the truth, and focus to it.
       repaint();
       control?.focus?.();
     };
 
     // `control` is the one the builder chose with, and it is where focus goes
-    // back to if they cancel.
+    // back to if they leave the Part where it is.
     const request = (move, control) => {
       if (pendingPart !== null) {
         say(`One move at a time: wait for ${partLabel(pendingPart)} to land.`, "warning");
@@ -297,24 +291,20 @@
       const words = announcement(move);
       title.textContent = words.title;
       body.textContent = words.body;
+      if (confirmButton) confirmButton.textContent = words.yes;
+      if (cancelButton) cancelButton.textContent = words.no;
       asking = { move, control };
       pendingPart = move.part;
       dialog.show();
-      holdSurface();
-      // Focus on the safe answer. Not a trap: Tab leaves the dialog for the
-      // chrome, which is where STOP is.
-      dialog.querySelector(".move-cancel")?.focus?.();
+      releaseSurface = window.PAOverlay.holdSurface(dialog);
+      escape.bind();
+      // Focus on the answer that keeps things. Not a trap: Tab leaves the
+      // dialog for the chrome, which is where STOP is.
+      cancelButton?.focus?.();
     };
 
-    dialog.querySelector(".move-confirm")?.addEventListener("click", () => answer(true));
-    dialog.querySelector(".move-cancel")?.addEventListener("click", () => answer(false));
-    // Escape is a cancel, not a dialog left open with no question on it. A
-    // non-modal dialog fires no "cancel" event, so the key is read here.
-    dialog.addEventListener("keydown", (event) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault?.();
-      answer(false);
-    });
+    confirmButton?.addEventListener("click", () => answer(true));
+    cancelButton?.addEventListener("click", () => answer(false));
 
     return { request, pending: () => pendingPart };
   };
@@ -722,7 +712,7 @@
         here ? here.address : null,
         (address) => {
           // The control the builder chose with, which is where focus goes back
-          // to if they cancel.
+          // to if they leave the Part where it is.
           const control = Array.from(bar.querySelectorAll("button")).find((each) => each.dataset.value === address);
           move.request(moveFor(OUTPUTS.list(), part.id, address), control || null);
         }
