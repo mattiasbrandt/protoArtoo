@@ -1600,8 +1600,11 @@
       // Which sequence it is, and the label a reader of the file sees: its
       // name now, as the step list's card writes it.
       const choice = phraseChoices().find((each) => each.id === raw);
-      if (!choice || raw === step.ref) return;
+      if (!choice) return;
+      // Pressed again on the one it is, it changes nothing - and asks again
+      // for a phrase whose read failed.
       phraseAgain(raw);
+      if (raw === step.ref) return;
       step.ref = choice.id;
       step.name = choice.label;
     } else if (field === "motion" && step.type === "body") {
@@ -1996,6 +1999,50 @@
     landed([made]);
   };
 
+  // What Split into steps shares, for a Gesture and for a sequence inside
+  // this one. Each replaces the one picked step with the steps it becomes.
+  //
+  // loopRepeating(): the loop that repeats the step at `at`, as its unit, or
+  // undefined. A step a loop repeats is timed from the pass.
+  const loopRepeating = (steps, at) =>
+    stepUnits(steps).find((unit) => unit.size > 1 && at > unit.at && at < unit.at + unit.size);
+
+  // splitPlace(): how the steps made go in, for the routine and for the copy
+  // it is tried on: in the place of the step at `at`, and the loop that
+  // repeated that step repeats the steps it becomes.
+  const splitPlace = (loop, at) => (list, made) => {
+    if (loop) list[loop.at].body += made.length - 1;
+    list.splice(at, 1, ...made);
+  };
+
+  // splitOverfull(): whether `made` steps in place of one is more than a
+  // sequence holds; it says so on the stage.
+  const splitOverfull = (made) => {
+    const most = SeqProtocolCheck.MAX_STEPS;
+    const count = editorState.current.steps.length - 1 + made;
+    if (count > most) sayOnStage(`That would make ${count} steps. A sequence can have at most ${most}.`, "error");
+    return count > most;
+  };
+
+  // splitRefused(): the split tried on a copy of the routine - `write()`
+  // makes the steps and `place(list, made)` puts them in - and Protocol
+  // Check's verdict on it: on each step made, whatever else the routine has
+  // wrong, and on the whole routine when it was one the droid accepts. Not
+  // ok, nothing lands, and the stage says Protocol Check's reason.
+  const splitRefused = (write, place) => {
+    const trial = JSON.parse(JSON.stringify(editorState.current));
+    const tried = write();
+    place(trial.steps, tried);
+    trial.steps = stepOrder(trial.steps).map((from) => trial.steps[from]);
+    const refusedStep = tried
+      .map((made) => SeqProtocolCheck.validateStep(made, trial.steps.indexOf(made), trial.steps, true))
+      .find((verdict) => !verdict.ok);
+    const refused = refusedStep
+      || (SeqProtocolCheck.validateSequence(editorState.current).ok ? SeqProtocolCheck.validateSequence(trial) : { ok: true });
+    if (!refused.ok) sayOnStage(refused.error, "error");
+    return !refused.ok;
+  };
+
   // Split into steps: the picked body Gesture is replaced by the moves it
   // already makes, written out as Body Steps, in one entry of the history.
   //
@@ -2028,7 +2075,7 @@
     const steps = editorState.current.steps;
     const run = SeqProtocolCheck.resolveBeats(editorState.current).steps[at];
     // A step a loop repeats is timed from the pass, where the end is not.
-    const loop = stepUnits(steps).find((unit) => unit.size > 1 && at > unit.at && at < unit.at + unit.size);
+    const loop = loopRepeating(steps, at);
     const endAt = steps.findIndex((each) => each?.type === "end");
     const last = loop || endAt === -1 ? Infinity : Number(steps[endAt].t) || 0;
     const moves = G.bodyMoves(run, Number(run.t) || 0).filter((move) => move.t < last);
@@ -2040,12 +2087,7 @@
       sayOnStage("Set how long it flutters (Lasts) before splitting.", "error");
       return;
     }
-    const most = SeqProtocolCheck.MAX_STEPS;
-    const count = steps.length - 1 + moves.length;
-    if (count > most) {
-      sayOnStage(`That would make ${count} steps. A sequence can have at most ${most}.`, "error");
-      return;
-    }
+    if (splitOverfull(moves.length)) return;
     const period = loop ? Number(steps[loop.at].periodMs) || 0 : Infinity;
     if (moves.some((move) => move.t >= period)) {
       sayOnStage(`Its moves run past the loop's ${period} ms pass, so it cannot be split inside the loop.`, "error");
@@ -2059,25 +2101,8 @@
       ...(step.howFar === undefined ? {} : { howFar: step.howFar }),
       ...(move.shape === "flutter" && step.flutterMs !== undefined ? { flutterMs: step.flutterMs } : {}),
     }));
-    // The loop that repeats the Gesture repeats the steps it becomes.
-    const place = (list, made) => {
-      if (loop) list[loop.at].body += made.length - 1;
-      list.splice(at, 1, ...made);
-    };
-
-    const trial = JSON.parse(JSON.stringify(editorState.current));
-    const tried = write();
-    place(trial.steps, tried);
-    trial.steps = stepOrder(trial.steps).map((from) => trial.steps[from]);
-    const refusedStep = tried
-      .map((made) => SeqProtocolCheck.validateStep(made, trial.steps.indexOf(made), trial.steps, true))
-      .find((verdict) => !verdict.ok);
-    const refused = refusedStep
-      || (SeqProtocolCheck.validateSequence(editorState.current).ok ? SeqProtocolCheck.validateSequence(trial) : { ok: true });
-    if (!refused.ok) {
-      sayOnStage(refused.error, "error");
-      return;
-    }
+    const place = splitPlace(loop, at);
+    if (splitRefused(write, place)) return;
 
     const made = write();
     historyPush();
@@ -2112,10 +2137,10 @@
   // The phrase is already read - an unread one offers no split - so nothing
   // here waits on the droid, and the one entry is made in one go.
   //
-  // Tried on a copy first, as splitGesture() tries: a result Protocol Check
-  // refuses - more steps than a sequence holds, a step past the end, a
-  // sequence that would land inside a loop - lands nothing, and the stage
-  // says Protocol Check's reason.
+  // More steps than a sequence holds is refused first (splitOverfull()). Then
+  // it is tried on a copy (splitRefused()): a result Protocol Check refuses -
+  // a step past the end, a sequence that would land inside a loop - lands
+  // nothing, and the stage says Protocol Check's reason.
   const splitPhrase = () => {
     const picked = pickedStep();
     if (!picked || picked.step.type !== "sequence" || historyBusy()) return;
@@ -2137,33 +2162,10 @@
       if (outer.has(index)) made.t = (Number(made.t) || 0) + startsAt;
       return made;
     });
-    // A loop that repeats the phrase step - which Protocol Check refuses
-    // already - repeats the steps it becomes.
-    const loop = stepUnits(steps).find((unit) => unit.size > 1 && at > unit.at && at < unit.at + unit.size);
-    const place = (list, made) => {
-      if (loop) list[loop.at].body += made.length - 1;
-      list.splice(at, 1, ...made);
-    };
-
-    const most = SeqProtocolCheck.MAX_STEPS;
-    const count = steps.length - 1 + runs.length;
-    if (count > most) {
-      sayOnStage(`That would make ${count} steps. A sequence can have at most ${most}.`, "error");
-      return;
-    }
-    const trial = JSON.parse(JSON.stringify(editorState.current));
-    const tried = write();
-    place(trial.steps, tried);
-    trial.steps = stepOrder(trial.steps).map((from) => trial.steps[from]);
-    const refusedStep = tried
-      .map((made) => SeqProtocolCheck.validateStep(made, trial.steps.indexOf(made), trial.steps, true))
-      .find((verdict) => !verdict.ok);
-    const refused = refusedStep
-      || (SeqProtocolCheck.validateSequence(editorState.current).ok ? SeqProtocolCheck.validateSequence(trial) : { ok: true });
-    if (!refused.ok) {
-      sayOnStage(refused.error, "error");
-      return;
-    }
+    // A loop cannot repeat a sequence (Protocol Check), and a routine that
+    // has one doing so is split by the same rule as any step a loop repeats.
+    const place = splitPlace(loopRepeating(steps, at), at);
+    if (splitOverfull(runs.length) || splitRefused(write, place)) return;
 
     const made = write();
     historyPush();
