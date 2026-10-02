@@ -2787,7 +2787,7 @@
     let typeName = stepTypeName[step.type] || step.type;
     // For dome steps, derive identity from cmd sub-mode (DV:, DL:)
     if (step.type === "dome") {
-      typeName = domeSubmodeName(step.cmd);
+      typeName = domeStepName(step);
     }
     const preview = stepPreview(step);
 
