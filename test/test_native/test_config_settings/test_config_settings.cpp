@@ -60,6 +60,7 @@ const KeyPin kStoredKeys[] = {
     {"enableRcCh6", "en_rc_ch6", SettingStorage::Bool},       {"enableDrive", "en_drive", SettingStorage::Bool},
     {"enableAudio", "en_audio", SettingStorage::Bool},        {"soundMember", "snd_member", SettingStorage::U8},
     {"enableProtoR2link", "en_r2link", SettingStorage::Bool}, {"enableArm1", "en_arm1", SettingStorage::Bool},
+    {"bodyServoMember", "srv_member", SettingStorage::U8},     {"pcaAddress", "pca_addr", SettingStorage::U8},
     {"enableArm2", "en_arm2", SettingStorage::Bool},          {"enableAux1", "en_aux1", SettingStorage::Bool},
     {"enableAux2", "en_aux2", SettingStorage::Bool},          {"enableAux3", "en_aux3", SettingStorage::Bool},
     {"domeEscNeutralUs", "dome_neu", SettingStorage::U16},   {"domeEscMinPulseUs", "dome_minp", SettingStorage::U16},
