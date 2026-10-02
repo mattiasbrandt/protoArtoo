@@ -6724,6 +6724,19 @@ body[data-page="maintenance"] .status-item .hint {
   border: 1px dashed var(--text-faint);
 }
 
+/* A Gesture: one block on the lane of each Part it spreads across. It is an
+   outline with a heavier leading edge and almost no fill, so the moves it
+   becomes read inside it. One the dome performs has no length the body knows
+   and is as wide as a dome flutter's mark. */
+.tl-gesture {
+  top: 1px;
+  bottom: 1px;
+  min-width: 10px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 40%, transparent);
+  border-left: 3px solid var(--text-dim);
+}
+
 .tl-tick {
   top: 2px;
   bottom: 2px;
@@ -6783,7 +6796,9 @@ body[data-page="maintenance"] .status-item .hint {
   user-select: none;
 }
 
-.tl-item[data-edit~="can-move"] {
+/* A move a Gesture becomes is taken hold of as the Gesture it belongs to. */
+.tl-item[data-edit~="can-move"],
+.tl-item[data-of] {
   cursor: grab;
   touch-action: none;
 }
