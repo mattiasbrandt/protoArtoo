@@ -4381,7 +4381,9 @@
     renderEditorView(currentEditingSeq);
   };
 
-  const WIPE_TITLE = "Wipe this sequence off the droid?";
+  // The question as the markup asks it; a wipe that leaves bindings dangling
+  // retitles the dialog as a message, and the next prompt puts this back.
+  const WIPE_TITLE = els.wipeTitle.textContent;
 
   const handleMemoryWipePrompt = (seqName) => {
     _pendingWipeSeqName = seqName;
