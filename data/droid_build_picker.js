@@ -89,14 +89,11 @@
   // ---------------------------------------------------------------------------
   // The dome's own report, set against the stated Dome Design
   // ---------------------------------------------------------------------------
+  // The sentence is the comparison's own (data/dome_layout.js
+  // statedDesignDifference()), the one Wiring's dome row says too.
   const domeDifferenceText = () => {
     const difference = window.DomeLayout?.statedDesignDifference?.();
-    if (!difference || !difference.comparable) return "";
-    const clauses = [];
-    if (difference.domeOnly.length > 0) clauses.push(`has ${difference.domeOnly.join(", ")}`);
-    if (difference.designOnly.length > 0) clauses.push(`lacks ${difference.designOnly.join(", ")}`);
-    if (clauses.length === 0) return "";
-    return `The connected dome differs from ${difference.designLabel}: it ${clauses.join(" and ")}. Your answer stands until you change it.`;
+    return difference && difference.comparable ? difference.sentence : "";
   };
 
   // ---------------------------------------------------------------------------

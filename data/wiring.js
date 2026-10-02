@@ -1076,18 +1076,15 @@
       return row({ ...base, observed: "Nothing to compare", state: STATES.declared,
         why: "Your dome design records no panel list to check the dome against." });
     }
-    const clauses = [];
-    if (difference.domeOnly.length > 0) clauses.push(`has ${difference.domeOnly.join(", ")}`);
-    if (difference.designOnly.length > 0) clauses.push(`lacks ${difference.designOnly.join(", ")}`);
     const declared = difference.designLabel;
-    if (clauses.length === 0) return row({ ...base, declared, observed: "The same panels", state: STATES.observed });
+    if (!difference.differs) return row({ ...base, declared, observed: "The same panels", state: STATES.observed });
     return row({
       ...base,
       declared,
-      observed: `It ${clauses.join(" and ")}`,
+      observed: `It ${difference.differs}`,
       light: "warn",
       state: STATES.contradicted,
-      why: `The connected dome differs from ${declared}: it ${clauses.join(" and ")}. Your answer stands until you change it.`,
+      why: difference.sentence,
       move: MOVES.configuration,
     });
   };
