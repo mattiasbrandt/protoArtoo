@@ -179,9 +179,10 @@
     formData.append("firmware", file, file.name);
     const upload = await window.PAOverlay.ask({
       title: "Upload this firmware?",
-      body: "The droid restarts on it. Keep the power on until this page reloads.",
+      body: "The droid restarts into it. Keep the power on until this page reloads.",
       yes: "Upload it",
       no: "Not now",
+      danger: true,
       near: uploadButton,
     });
     if (!upload) {
@@ -229,6 +230,7 @@
       body: "The web UI is replaced and the droid restarts. Keep the power on until this page reloads.",
       yes: "Upload it",
       no: "Not now",
+      danger: true,
       near: uploadFsButton,
     });
     if (!upload) {

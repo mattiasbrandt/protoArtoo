@@ -28,19 +28,24 @@
     // controller restarts under it. Restart shared a page with the component
     // toggles until #404 and was greyed out while one saved; now the two are
     // separate surfaces, so Configuration publishes the answer and this asks
-    // it at the press.
-    if (window.PAConfigurationSave?.isPending()) {
+    // it at the press - and again at the answer: the question does not block
+    // the page the way confirm() did, and the chrome stays live under it, so a
+    // save can start while it is open.
+    const savePending = () => {
+      if (!window.PAConfigurationSave?.isPending()) return false;
       setFeedbackState(rebootFeedback, "Still saving a component change. Press again in a moment.", "warning");
-      return;
-    }
+      return true;
+    };
+    if (savePending()) return;
     const restart = await window.PAOverlay.ask({
       title: "Restart the Body Controller?",
-      body: "This page drops for about 10 seconds.",
+      body: "Every output cuts out, and this page drops for about 10 seconds.",
       yes: "Restart it",
       no: "Not now",
+      danger: true,
       near: rebootButton,
     });
-    if (!restart) return;
+    if (!restart || savePending()) return;
     if (!window.PAApi) return;
     setFeedbackState(rebootFeedback, "Sending restart...");
     try {
