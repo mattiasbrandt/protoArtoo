@@ -47,7 +47,9 @@ const install = async (page, { sequences, lastRun = { valid: false, note: 'no se
     if (method === 'GET' && apiPath === '/api/seq/list') {
       // What the list row says without the file (handleSeqListGet(),
       // src/web/api_seq.cpp): the step count, the end step's time and the
-      // first 40 characters of the purpose.
+      // start of the purpose. The droid keeps 40 bytes, cut on a whole
+      // character; 40 characters here is the same for the plain text a
+      // fixture carries.
       return json([...droid.sequences.values()].map((seq) => {
         const steps = Array.isArray(seq.steps) ? seq.steps : [];
         const last = steps[steps.length - 1];
