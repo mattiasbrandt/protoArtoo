@@ -475,6 +475,7 @@
       if (phraseSource(ref)?.url !== entry.url) phrases.read.delete(ref);
     });
     paintParts();
+    updateValidationSummary();
     sessionTimeline.refresh(rehearsalContext());
     loadPhrases();
   };
@@ -1929,8 +1930,8 @@
       const trial = JSON.parse(JSON.stringify(editorState.current));
       place(trial.steps);
       trial.steps = stepOrder(trial.steps).map((from) => trial.steps[from]);
-      const refused = SeqProtocolCheck.validateSequence(trial);
-      if (SeqProtocolCheck.validateSequence(editorState.current).ok && !refused.ok) {
+      const refused = routineVerdict(trial);
+      if (routineVerdict(editorState.current).ok && !refused.ok) {
         sayOnStage(refused.error, "error");
         return;
       }
@@ -1969,8 +1970,8 @@
       // it is said in Protocol Check's own words.
       const trial = JSON.parse(JSON.stringify(editorState.current));
       wrap(trial.steps);
-      const refused = SeqProtocolCheck.validateSequence(trial);
-      if (SeqProtocolCheck.validateSequence(editorState.current).ok && !refused.ok) {
+      const refused = routineVerdict(trial);
+      if (routineVerdict(editorState.current).ok && !refused.ok) {
         sayOnStage(refused.error, "error");
         return;
       }
@@ -2042,7 +2043,7 @@
       .map((made) => SeqProtocolCheck.validateStep(made, trial.steps.indexOf(made), trial.steps, true))
       .find((verdict) => !verdict.ok);
     const refused = refusedStep
-      || (SeqProtocolCheck.validateSequence(editorState.current).ok ? SeqProtocolCheck.validateSequence(trial) : { ok: true });
+      || (routineVerdict(editorState.current).ok ? routineVerdict(trial) : { ok: true });
     if (!refused.ok) sayOnStage(refused.error, "error");
     return !refused.ok;
   };
@@ -2899,9 +2900,11 @@
   // then the Factory list by name. Null for one that is not on this droid.
   const phraseSource = (ref) => {
     const learned = sequences.find((x) => (x.id && x.id === ref) || x.name === ref);
-    if (learned) return { name: learned.name, url: `/api/seq?name=${encodeURIComponent(learned.name)}` };
+    if (learned) return { name: learned.name, toggleGroup: learned.toggleGroup || "none", url: `/api/seq?name=${encodeURIComponent(learned.name)}` };
     const factory = builtins.find((x) => x.name === ref);
-    return factory ? { name: factory.name, url: `/api/seq/builtins?name=${encodeURIComponent(factory.name)}` } : null;
+    return factory
+      ? { name: factory.name, toggleGroup: factory.toggleGroup || "none", url: `/api/seq/builtins?name=${encodeURIComponent(factory.name)}` }
+      : null;
   };
 
   const phraseRead = (ref) => {
@@ -2909,6 +2912,23 @@
     return entry && !entry.failed ? entry : null;
   };
   const phraseSteps = (ref) => phraseRead(ref)?.steps || null;
+
+  // Protocol Check on the routine being edited, or on a copy of it an edit is
+  // tried on: with what this page knows of the sequences it names, so the
+  // rules the droid applies to them at save are applied here too
+  // (SeqProtocolCheck._validateNesting()). Nothing is said of whether a
+  // phrase is on the droid until both lists have answered. A phrase is found
+  // under any reference that resolves to where it was read from: its id and
+  // its name are the one sequence.
+  const routineVerdict = (seq) => SeqProtocolCheck.validateSequence(seq, {
+    self: { id: editorState.current?.id, name: editorState.current?.name },
+    listed: (ref) => (learnedAnswered && factoryAnswered ? phraseSource(ref) || false : null),
+    phrase: (ref) => {
+      const url = phraseSource(ref)?.url;
+      const read = phraseRead(ref) || [...phrases.read.values()].find((entry) => !entry.failed && entry.url === url);
+      return read ? { steps: read.seq.steps, toggleGroup: read.seq.toggleGroup || "none" } : null;
+    },
+  });
 
   // Read every phrase the routine names that has not been read, one after the
   // other. It is not an edit and records nothing: when a phrase lands, the
@@ -2947,8 +2967,12 @@
         // reads it from there.
         if (phraseSource(ref)?.url !== source.url) continue;
         mine.read.set(ref, entry);
-        if (!entry.failed) sessionTimeline?.refresh(rehearsalContext());
-        else sayOnStage(refused, "error");
+        if (!entry.failed) {
+          // What was read counts toward the steps the routine holds once
+          // spliced, so the verdict is read again with it.
+          updateValidationSummary();
+          sessionTimeline?.refresh(rehearsalContext());
+        } else sayOnStage(refused, "error");
       }
     } finally {
       mine.reading = false;
@@ -4086,7 +4110,7 @@
   };
 
   const updateValidationSummary = () => {
-    const validation = SeqProtocolCheck.validateSequence(editorState.current);
+    const validation = routineVerdict(editorState.current);
     const summaryEl = document.getElementById("seq-editor-validation-summary");
     if (!summaryEl) return;
 
@@ -5372,7 +5396,7 @@
   };
 
   const handleSave = async () => {
-    const validation = SeqProtocolCheck.validateSequence(editorState.current);
+    const validation = routineVerdict(editorState.current);
     if (!validation.ok) {
       showEditorFeedback(validation.error || "Fix validation errors before saving.", "error");
       return;

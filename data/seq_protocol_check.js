@@ -32,6 +32,8 @@
     REPEAT_MS: Object.freeze([100, 60000]),
     EXTENT_MS_MAX: 120000,
   });
+  // How deep sequences nest: PC_NEST_DEPTH_MAX (include/protocol_check.h).
+  const NEST_DEPTH_MAX = 3;
   // A sequence reference: a name, or a saved sequence's id (protocolCheckSeqRefValid()).
   const SEQ_REF = new RegExp(`^(${NAME_PATTERN}|[0-9a-z]{1,16})$`);
   const AUDIO_CATEGORIES = [
@@ -1388,10 +1390,16 @@
 
     /**
      * Validate entire sequence.
+     *
+     * `nest` is what a caller knows of the sequences this one names, for the
+     * rules the droid applies to them at save (_validateNesting()). Only the
+     * editor has it. Without it those rules are not applied, and the verdict
+     * is the one a sequence gets read by itself.
      * @param {object} seq
+     * @param {{self?: {id?: string, name?: string}, listed?: Function, phrase?: Function}|null} nest
      * @returns {{ok: boolean, field?: string, error?: string}}
      */
-    validateSequence(seq) {
+    validateSequence(seq, nest = null) {
       if (!seq || typeof seq !== "object") {
         return { ok: false, error: "This sequence is missing its details" };
       }
@@ -1463,7 +1471,7 @@
         if (!close.ok) return close;
       }
 
-      return { ok: true };
+      return nest ? this._validateNesting(steps, nest) : { ok: true };
     },
 
     // What the wire's parser holds one branch to as it reads it
@@ -1482,6 +1490,65 @@
       }
       if (steps.filter((step) => step && step.type === "sequence").length > 8) {
         return { ok: false, field: label, error: "A sequence can hold at most 8 others" };
+      }
+      return { ok: true };
+    },
+
+    // A sequence holding sequences, by the rules the droid applies when it
+    // is saved (protocolCheckNesting(), src/protocol_check.cpp), in the
+    // droid's own words, as far as the caller's facts reach. The droid reads
+    // every phrase's file under its lock; a browser knows only what it has
+    // been told:
+    //   nest.self         the sequence being checked: its `id` and its `name`
+    //   nest.listed(ref)  the droid's list entry for a reference (at least
+    //                     its `toggleGroup`), false when no list has it, or
+    //                     null while the lists have not answered - and then
+    //                     there is no verdict on whether it is on the droid
+    //   nest.phrase(ref)  a phrase the caller has read, as {steps,
+    //                     toggleGroup}, or null for one it has not
+    //
+    // Refused, in the droid's order for each reference: one that names this
+    // sequence, or a phrase already on the path to it (a cycle); one not on
+    // this droid; a toggle sequence; and more steps than a sequence holds
+    // once every phrase is spliced in, each phrase step becoming its
+    // phrase's steps less their end.
+    //
+    // Two things the droid checks are out of reach here, and Save can still
+    // refuse them. A phrase the caller has not read adds nothing to the
+    // count and is not followed, so a cycle or an overflow that only shows
+    // through it is not seen. And "sequences nest at most 3 deep" is not
+    // refused: the walk stops at that depth, because a path that long is
+    // only known when every phrase on it has been read, which a caller that
+    // reads one level does not do.
+    //
+    // Like the droid, only the steps are walked, not the close half.
+    _validateNesting(steps, nest) {
+      const self = nest.self || {};
+      const same = (a, b) => typeof a === "string" && a !== "" && a === b;
+      const names = (list) => list.filter((step) => step && step.type === "sequence" && typeof step.ref === "string");
+      let total = steps.length;
+      const walk = (ref, path) => {
+        if (same(ref, self.id) || same(ref, self.name) || path.includes(ref)) return "a sequence cannot contain itself";
+        if (path.length >= NEST_DEPTH_MAX) return null;
+        const listed = typeof nest.listed === "function" ? nest.listed(ref) : null;
+        if (listed === false) return "not a sequence on this droid";
+        const inner = typeof nest.phrase === "function" ? nest.phrase(ref) : null;
+        const group = inner?.toggleGroup ?? (listed ? listed.toggleGroup : undefined);
+        if (group !== undefined && group !== "none") return "a toggle sequence cannot sit inside another";
+        if (!inner || !Array.isArray(inner.steps)) return null;
+        total = total - 1 + Math.max(0, inner.steps.length - 1);
+        if (total > this.MAX_STEPS) return `too many steps once inside (max ${this.MAX_STEPS})`;
+        for (const step of names(inner.steps)) {
+          const deeper = walk(step.ref, [...path, ref]);
+          if (deeper) return deeper;
+        }
+        return null;
+      };
+      for (let i = 0; i < steps.length; i += 1) {
+        const step = steps[i];
+        if (!step || step.type !== "sequence" || typeof step.ref !== "string") continue;
+        const error = walk(step.ref, []);
+        if (error) return { ok: false, field: `steps[${i}].ref`, error };
       }
       return { ok: true };
     },
