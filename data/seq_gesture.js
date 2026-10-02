@@ -41,12 +41,13 @@
   // The Motion Profile's own easing words; absent is the Output's own.
   const EASINGS = Object.freeze(["none", "soft", "overshoot"]);
 
-  // Bounds (protocol_check.h PC_GESTURE_*), and the pace a Gesture takes with
-  // no tempo to lend it a beat (SEQ_GESTURE_STEP_DEFAULT_MS).
-  const STEP_MS = [50, 60000];
-  const SPEED_MS = [50, 5000];
-  const REPEAT_MS = [100, 60000];
-  const EXTENT_MS_MAX = 120000;
+  // Bounds (protocol_check.h PC_GESTURE_*). Protocol Check's mirror has them
+  // (data/seq_protocol_check.js GESTURE_MS), and they are read from it rather
+  // than kept a second time, so this file loads after that one: every page
+  // that loads it does (seq.html's data-scripts).
+  const { STEP_MS, SPEED_MS, REPEAT_MS, EXTENT_MS_MAX } = window.SeqProtocolCheck.GESTURE_MS;
+  // The pace a Gesture takes with no tempo to lend it a beat
+  // (SEQ_GESTURE_STEP_DEFAULT_MS).
   const STEP_DEFAULT_MS = 500;
   const MEMBERS_MAX = 24;
 

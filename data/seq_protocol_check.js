@@ -21,6 +21,17 @@
   // (PC_BODY_FLUTTER_MS_MIN / _MAX, include/protocol_check.h).
   const BODY_SHAPES = ["open", "close", "flutter"];
   const BODY_FLUTTER_MS = Object.freeze([50, 60000]);
+  // A Gesture's times (PC_GESTURE_*, include/protocol_check.h), each as
+  // [least, most] in ms: the pace between Parts, a full throw, how often it
+  // repeats, and the longest it may go on repeating. Their one home in the
+  // browser: the Gesture vocabulary (data/seq_gesture.js) reads them from
+  // here, and so does every control that sets one.
+  const GESTURE_MS = Object.freeze({
+    STEP_MS: Object.freeze([50, 60000]),
+    SPEED_MS: Object.freeze([50, 5000]),
+    REPEAT_MS: Object.freeze([100, 60000]),
+    EXTENT_MS_MAX: 120000,
+  });
   // A sequence reference: a name, or a saved sequence's id (protocolCheckSeqRefValid()).
   const SEQ_REF = new RegExp(`^(${NAME_PATTERN}|[0-9a-z]{1,16})$`);
   const AUDIO_CATEGORIES = [
@@ -297,6 +308,9 @@
     // control that sets one offers, read from here rather than kept again.
     BODY_FLUTTER_MS,
 
+    // A Gesture's times, each as [least, most] in ms, and the longest extent.
+    GESTURE_MS,
+
     // How many beats a span, or a Gesture's pace, repeat or extent, may be, as
     // [least, most] (_validateBeats()): what a control that sets one offers.
     SPAN_BEATS: Object.freeze([1, TEMPO_BEAT_MAX]),
@@ -505,10 +519,11 @@
       // How far is not one of them: a stated 0 is refused there.
       const timed = (value, lo, hi) => value === null || value === 0 || inRange(value, lo, hi);
       if (!inRange(step.howFar, 1, 100)) return fail("howFar", "How far is 1 to 100 percent");
-      if (!timed(step.stepMs, 50, 60000)) return fail("stepMs", "The pace is 50 to 60000 ms");
-      if (!timed(step.speedMs, 50, 5000)) return fail("speedMs", "A full throw takes 50 to 5000 ms");
-      if (!timed(step.repeatMs, 100, 60000)) return fail("repeatMs", "It repeats every 100 to 60000 ms");
-      if (!timed(step.extentMs, 0, 120000)) return fail("extentMs", "It repeats for at most 120000 ms");
+      const { STEP_MS, SPEED_MS, REPEAT_MS, EXTENT_MS_MAX } = GESTURE_MS;
+      if (!timed(step.stepMs, ...STEP_MS)) return fail("stepMs", `The pace is ${STEP_MS[0]} to ${STEP_MS[1]} ms`);
+      if (!timed(step.speedMs, ...SPEED_MS)) return fail("speedMs", `A full throw takes ${SPEED_MS[0]} to ${SPEED_MS[1]} ms`);
+      if (!timed(step.repeatMs, ...REPEAT_MS)) return fail("repeatMs", `It repeats every ${REPEAT_MS[0]} to ${REPEAT_MS[1]} ms`);
+      if (!timed(step.extentMs, 0, EXTENT_MS_MAX)) return fail("extentMs", `It repeats for at most ${EXTENT_MS_MAX} ms`);
       if (step.extentMs && !step.repeatMs) return fail("extentMs", "Set how often it repeats first");
       // An absent duration is stored as 0, and the firmware judges the 0.
       // Any other shape may say 0, as on a Body Step. A flutter is where the
