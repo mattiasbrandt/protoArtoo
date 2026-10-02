@@ -50,6 +50,7 @@
 #include "logging.h"
 #include "robot_state.h"
 #include "seq_store_index.h"   // Learned Sequence names accepted for RC binding
+#include "sequence_bulk_centre.h"  // SEQ_CADENCE_FLOOR_MS - the dome's figure, the floor's default
 #include "servo_component_helpers.h"
 #include "aux_led.h"  // auxLedWireAtStart() - what each wire carried at start
 #include "output_wire.h"  // outputWirePinKeptForLight() - whether that was a Light Type
@@ -497,9 +498,16 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
         }
     }
 
-    // Readings beside the Settings: which preset is active, and each Component
-    // Toggle's label on the running board.
+    // Readings beside the Settings: which preset is active, whose figure the
+    // Cadence Floor is, and each Component Toggle's label on the running board.
     root["drive"]["speedPreset"] = speedPresetIdToString(snap.drive.speedPresetActive);
+    // "dome" while the floor is the dome's measured figure, the default, and
+    // "builder" once somebody has set another. Wiring says the first is the
+    // dome's and never says the second is, without holding the dome's number
+    // itself (#453). Neither word says the body's has been measured: it has not
+    // (include/sequence_bulk_centre.h).
+    root["servo"]["cadenceFloorSource"] =
+        (snap.system.cadence_floor_ms == SEQ_CADENCE_FLOOR_MS) ? "dome" : "builder";
     JsonObject components = root["components"];
     for (const ComponentLabel& entry : kComponentLabels) {
         if (const char* label = getComponentLabel(entry.component)) {

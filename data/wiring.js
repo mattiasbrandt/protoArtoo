@@ -68,12 +68,10 @@
   const PROMISE = "every signal this image puts on a wire";
   const SCOPE = "signal + ground only, power wiring is up to you";
 
-  // The pace the droid holds between outputs it starts itself. Typed here, and
-  // that is worth saying out loud: SEQ_CADENCE_FLOOR_MS lives in
-  // include/sequence_bulk_centre.h and NOTHING reports it, so a page that wants
-  // to say it has to carry it. Whoever takes the body's own measurement (#355)
-  // changes it in both places.
-  const CADENCE = "~450 ms (one servo at a time)";
+  // The pace the droid holds between outputs it starts itself is the droid's
+  // to say: GET /api/config reports it (`servo.cadenceFloorMs`) and whose
+  // figure it is (`servo.cadenceFloorSource`), and cadenceOf() below reads both
+  // (#453). No number is typed here.
 
   // The plate headings. They are the generator's for the same reason
   // the promise is: the screen writes them into its plates and the saved file
@@ -580,13 +578,14 @@
   };
 
   // ---------------------------------------------------------------------------
-  // The two pieces that do not depend on what the droid answered
+  // The subtitle and the rail line
   //
-  // They are generated anyway, and that is the point: the subtitle and the
-  // cadence have exactly one home each, so the screen header and the bench
-  // copy's header cannot come to say different things. Putting either in
-  // data/wiring.html as well would be the second copy this whole view exists
-  // to abolish.
+  // Both are generated, and that is the point: each has exactly one home, so
+  // the screen and the bench copy cannot come to say different things. Putting
+  // either in data/wiring.html as well would be the second copy this whole
+  // view exists to abolish. The subtitle depends on nothing the droid answers;
+  // the rail line takes its figure from the droid, and stands without one
+  // until the droid has answered.
   // ---------------------------------------------------------------------------
   const promiseHtml = () => esc(SUBTITLE);
 
@@ -597,16 +596,32 @@
   // The cadence carries its provenance in the line after it, and that is not
   // padding. CONTEXT.md "Cadence Floor" puts "the ~450 ms cadence (that figure
   // is the dome's)" in its _Avoid_ list, and include/sequence_bulk_centre.h
-  // says why both are true: 450 ms is the DOME's measured figure, adopted
+  // says why both are true: the default is the DOME's measured figure, adopted
   // deliberately and explicitly as the body's stand-in until the body's own is
   // taken (#355), with "do not quietly let it become one". Stating it attributed
   // is the opposite of adopting it quietly.
-  const railHtml = () =>
+  //
+  // The figure is the droid's stored one, and so is whose it is. One a builder
+  // set is not called the dome's, and either way the body's is still
+  // unmeasured, which the line goes on saying. Until the droid has answered
+  // there is no figure to state, and none is invented.
+  const cadenceOf = (config) => {
+    const servo = config && typeof config.servo === "object" && config.servo ? config.servo : {};
+    const ms = Number(servo.cadenceFloorMs);
+    return Number.isFinite(ms) && ms > 0 ? { ms, dome: servo.cadenceFloorSource === "dome" } : null;
+  };
+
+  const UNMEASURED = "Nobody has measured the body's yet.";
+
+  const railHtml = (cadence = null) =>
     `<p class="hint">Every servo shares one supply, and too many starting at once sag it. ` +
-    `So the droid starts its own moves, like centring every output, <b>${esc(CADENCE)}</b> ` +
-    `apart.</p>` +
-    `<p class="hint">That figure is the dome's, from its seven ring servos. Nobody has ` +
-    `measured the body's yet.</p>` +
+    `So the droid starts its own moves, like centring every output, ` +
+    (cadence
+      ? `<b>${esc(`~${cadence.ms} ms (one servo at a time)`)}</b> apart.</p>` +
+        `<p class="hint">${
+          cadence.dome ? "That figure is the dome's, from its seven ring servos." : "That figure was set on this droid."
+        } ${UNMEASURED}</p>`
+      : `one servo at a time.</p>`) +
     `<div class="note note-info"><b>Power wiring is up to you; nothing here draws it.</b> ` +
     `Size the rail for stall current: a servo fighting a linkage pulls several times its ` +
     `idle draw.</div>`;
@@ -808,9 +823,8 @@
     return {
       promise: PROMISE,
       scope: SCOPE,
-      cadence: CADENCE,
       promiseHtml: promiseHtml(),
-      railHtml: railHtml(),
+      railHtml: railHtml(model.cadence || null),
       plates: PLATES,
       droidName,
       stamp,
@@ -1227,11 +1241,11 @@
     SUBTITLE,
     PROMISE,
     SCOPE,
-    CADENCE,
     PLATES,
     sheetWires,
     loomRows,
     promiseHtml,
+    cadenceOf,
     railHtml,
     sheetStamp,
     wiringDocument,
@@ -1346,6 +1360,7 @@
     capabilities: identity?.board_capabilities || {},
     boardName: window.ComponentPicker?.artPartFor?.(BOARD_GPIO_PRODUCT)?.name || "",
     droidName: typeof identity?.droidName === "string" ? identity.droidName : "",
+    cadence: cadenceOf(config),
   });
 
   // The pieces that do not wait for the droid: the two sentences and the
@@ -1461,6 +1476,8 @@
   // screenshot of them says when it was true, the same as the saved copy does.
   const paint = (stamp = sheetStamp()) => {
     const sheet = wiringDocument({ ...sheetModel(), stamp });
+    // The droid has answered, so the rail line can state its figure.
+    write("wiring-rail", sheet.railHtml);
     write("wiring-wires-summary", sheet.wiresSummary);
     write("wiring-wires", sheet.wiresHtml);
     fillBoardArt();
