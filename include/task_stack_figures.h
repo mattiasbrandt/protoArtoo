@@ -49,28 +49,30 @@ struct TaskStackFigure {
 // that turns the capability on elsewhere fails config.h's static_assert rather
 // than inheriting a figure measured on someone else's silicon.
 #if defined(PA_CHIP_TARGET_ESP32P4)
-constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 5088;
-constexpr uint32_t DRIVE_TASK_STACK_BYTES = 6656;  // the rule: 5088 -> 6360 -> 6656
+constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 5104;
+constexpr uint32_t DRIVE_TASK_STACK_BYTES = 6656;  // the rule: 5104 -> 6380 -> 6656
 constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5632;
 constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;  // the rule: 5632 -> 7040 -> 7168
 constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3840;
 constexpr uint32_t SERVO_TASK_STACK_BYTES = 5120;  // the rule: 3840 -> 4800 -> 5120
 constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 4128;
 constexpr uint32_t DOME_TASK_STACK_BYTES = 5632;  // the rule: 4128 -> 5160 -> 5632
-constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 7120;
-constexpr uint32_t AUDIO_TASK_STACK_BYTES = 9216;  // the rule: 7120 -> 8900 -> 9216
+constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 7136;
+constexpr uint32_t AUDIO_TASK_STACK_BYTES = 9216;  // the rule: 7136 -> 8920 -> 9216
 constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 5456;
 constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 7168;  // the rule: 5456 -> 6820 -> 7168
-constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 9712;
-constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 12288;  // the rule: 9712 -> 12140 -> 12288
+constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 9728;
+constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 12288;  // the rule: 9728 -> 12160 -> 12288
 constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3824;
 constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 5120;  // the rule: 3824 -> 4780 -> 5120
-constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 6128;
-constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 7680;  // the rule: 6128 -> 7660 -> 7680
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 11536;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 14848;  // the rule: 11536 -> 14420 -> 14848
+constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 6112;
+constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 7680;  // the rule: 6112 -> 7640 -> 7680
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 11552;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 14848;  // the rule: 11552 -> 14440 -> 14848
 constexpr uint32_t REACTION_TASK_MEASURED_CHAIN_BYTES = 5216;
 constexpr uint32_t REACTION_TASK_STACK_BYTES = 6656;  // the rule: 5216 -> 6520 -> 6656
+constexpr uint32_t PCA9685_TASK_MEASURED_CHAIN_BYTES = 3808;
+constexpr uint32_t PCA9685_TASK_STACK_BYTES = 5120;  // the rule: 3808 -> 4760 -> 5120
 constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 7264;
 constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 9216;  // the rule: 7264 -> 9080 -> 9216
 constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 6416;
@@ -90,6 +92,7 @@ constexpr TaskStackFigure TASK_STACK_FIGURES[] = {
     {"SeqDisp", SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES, SEQ_DISPATCHER_TASK_STACK_BYTES},
     {"Console", CONSOLE_TASK_MEASURED_CHAIN_BYTES, CONSOLE_TASK_STACK_BYTES},
     {"ReactionTask", REACTION_TASK_MEASURED_CHAIN_BYTES, REACTION_TASK_STACK_BYTES},
+    {"Pca9685Task", PCA9685_TASK_MEASURED_CHAIN_BYTES, PCA9685_TASK_STACK_BYTES},
     {"WebEvents", WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES, WEB_EVENTS_TASK_STACK_BYTES},
     {"ArduinoOTA", OTA_TASK_MEASURED_CHAIN_BYTES, OTA_TASK_STACK_BYTES},
     {"HostedRecovery", HOSTED_RECOVERY_TASK_MEASURED_CHAIN_BYTES, HOSTED_RECOVERY_TASK_STACK_BYTES},
@@ -107,17 +110,19 @@ constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 4240;
 constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;  // above the rule (5632), the recipe says why
 constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 2752;
 constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 4096;  // above the rule (3584), the recipe says why
-constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 6112;
+constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 6128;
 constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 6144;  // rule declined (7680), the recipe says why
 constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3088;
 constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4608;  // above the rule (4096), the recipe says why
-constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 3792;
-constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5120;  // the rule: 3792 -> 4740 -> 5120
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8768;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 11264;  // the rule: 8768 -> 10960 -> 11264
+constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 3872;
+constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5120;  // the rule: 3872 -> 4840 -> 5120
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8784;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 11264;  // the rule: 8784 -> 10980 -> 11264
 constexpr uint32_t REACTION_TASK_MEASURED_CHAIN_BYTES = 4320;
 constexpr uint32_t REACTION_TASK_STACK_BYTES = 5632;  // the rule: 4320 -> 5400 -> 5632
-constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 4992;
+constexpr uint32_t PCA9685_TASK_MEASURED_CHAIN_BYTES = 2784;
+constexpr uint32_t PCA9685_TASK_STACK_BYTES = 3584;  // the rule: 2784 -> 3480 -> 3584
+constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5008;
 constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 6144;  // rule declined (6656), the recipe says why
 constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 3440;
 constexpr uint32_t OTA_TASK_STACK_BYTES = 4096;  // rule declined (4608), the recipe says why
@@ -134,6 +139,7 @@ constexpr TaskStackFigure TASK_STACK_FIGURES[] = {
     {"SeqDisp", SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES, SEQ_DISPATCHER_TASK_STACK_BYTES},
     {"Console", CONSOLE_TASK_MEASURED_CHAIN_BYTES, CONSOLE_TASK_STACK_BYTES},
     {"ReactionTask", REACTION_TASK_MEASURED_CHAIN_BYTES, REACTION_TASK_STACK_BYTES},
+    {"Pca9685Task", PCA9685_TASK_MEASURED_CHAIN_BYTES, PCA9685_TASK_STACK_BYTES},
     {"WebEvents", WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES, WEB_EVENTS_TASK_STACK_BYTES},
     {"ArduinoOTA", OTA_TASK_MEASURED_CHAIN_BYTES, OTA_TASK_STACK_BYTES},
 };

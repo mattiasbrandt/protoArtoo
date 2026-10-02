@@ -1334,11 +1334,20 @@
     const found = [];
     PRODUCT_FAMILIES.forEach(({ family, toggle = "", outputs = false, title = "" }) => {
       if (toggle && !switchedOn(toggles, toggle)) return;
-      const part = picker.productOf(family);
-      if (!part) return;
-      // A Board Lane's key is its Component Toggle's, folded to lower case
-      // (componentIndex() above).
-      found.push({ id: part.id, name: part.name, family, title, lane: toggle.toLowerCase(), outputs: outputs ? part.protocol : "" });
+      const chosen = picker.productOf(family);
+      // The Outputs' family keeps the board's own GPIO whatever is chosen: a
+      // PCA9685 adds its Outputs beside the board's, which keep working
+      // (#444), so both are on the droid. The chosen member joins it when it
+      // is another product and the image carries a card for it.
+      const parts = outputs
+        ? [picker.partOf(BOARD_GPIO_PRODUCT),
+          chosen && chosen.id !== BOARD_GPIO_PRODUCT && Object.hasOwn(productCards, chosen.id) ? chosen : null]
+        : [chosen];
+      parts.filter(Boolean).forEach((part) => {
+        // A Board Lane's key is its Component Toggle's, folded to lower case
+        // (componentIndex() above).
+        found.push({ id: part.id, name: part.name, family, title, lane: toggle.toLowerCase(), outputs: outputs ? part.protocol : "" });
+      });
     });
     if (!picker.isRadioNotFitted()) {
       // The radio and the receiver it talks to are two products of one

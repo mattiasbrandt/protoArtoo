@@ -47,7 +47,8 @@ struct ServoRunTakeInputs {
     bool litAtStart;     // LEDC was kept off its pin at start for a light (output_wire.h)
     bool lightNow;       // its wire names a Light Type now
     uint8_t partCount;   // Parts on its row now
-    bool ledcReady;      // the LEDC timer came up, so a channel can be attached
+    bool backendReady;   // its backend can put a pulse on it: the LEDC timer came up, or the
+                         // PCA9685 was chosen and is answering - so a channel can be attached
 };
 
 // -----------------------------------------------------------------------------
@@ -60,7 +61,7 @@ struct ServoRunTakeInputs {
 // share it. Every answer is "no" unless all of them say "free".
 // -----------------------------------------------------------------------------
 inline bool servoRunMayTake(const ServoRunTakeInputs& in) {
-    return in.ledcReady && !in.drivenNow && !in.wiredAtStart && !in.litAtStart && !in.lightNow &&
+    return in.backendReady && !in.drivenNow && !in.wiredAtStart && !in.litAtStart && !in.lightNow &&
            in.partCount == 0;
 }
 

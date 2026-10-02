@@ -231,6 +231,19 @@ struct SystemConfig {
     // builder's statement of their product, kept on the droid so every browser
     // shows the same one.
     uint8_t rc_member;
+    // Which body servo controller drives the body's Servo Outputs beside the
+    // board's own (#444): a Component Registry part `value` in the Body servo
+    // controller family, resolved through componentResolveMember() like
+    // sound_member. Choosing the PCA9685 adds its sixteen Outputs and the
+    // board's GPIO Outputs keep working (operator, 2026-09-30; the ADR 0042
+    // note). Read once at start (ADR 0027).
+    uint8_t body_servo_member;
+    // The PCA9685's I2C address, one board's (include/pca9685.h): 0x40 unless
+    // its address jumpers are bridged. Never one of 0x70-0x73: every PCA9685
+    // on the bus answers 0x70 (LED All Call), and the sub-addresses 0x71-0x73
+    // are kept clear by decision - configApply() refuses them, and so does
+    // pca9685Begin(). Read once at start.
+    uint8_t pca_address;
     // The Cadence Floor (CONTEXT.md): the least time, in ms, the Sequence
     // Coordinator leaves between two body Outputs it starts itself. Its
     // default is the dome's measured figure, standing in for the body's, which
@@ -328,6 +341,13 @@ struct ConfigSnapshot {
 // #453 added SystemConfig.cadence_floor_ms, the Cadence Floor, and the number
 // did NOT move either: two bytes, in the padding after rc_member. Still 916 B.
 //
+// #444 grew it to 920 B: SystemConfig.body_servo_member took the one byte of
+// padding left after rc_member, and pca_address, the PCA9685's I2C address,
+// had no hole to go in - so SystemConfig grew by two (it is 2-byte aligned) and
+// ConfigSnapshot, 4-byte aligned, by four. Measured off a host build of this
+// header, and the Console task's chain re-walked with
+// tools/check_task_stack_chains.py on both chips before this number moved.
+//
 // A field addition that moves the number is a decision, not an accident: it
 // changes what every seam that crosses this struct costs, so re-measure the
 // Console task's chain before updating the value here. The recipe moved out of
@@ -335,7 +355,7 @@ struct ConfigSnapshot {
 // tools/task_stack_recipes.json, and tools/check_task_stack_chains.py re-walks
 // it against a linked image, so the re-measure is a re-run rather than a
 // procedure to follow by hand.
-static_assert(sizeof(ConfigSnapshot) == 916,
+static_assert(sizeof(ConfigSnapshot) == 920,
               "ConfigSnapshot changed size - re-derive the Console task stack from a fresh "
               "chain measurement before moving this number");
 

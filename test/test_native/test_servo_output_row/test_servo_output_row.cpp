@@ -1201,7 +1201,7 @@ void test_an_output_address_is_one_token_with_one_spelling() {
 
     // Only an address the driver has: the dome ESC is spelled like an Output and
     // is not one.
-    const char* const kNotOutputs[] = {"ledc:2", "ledc:", ":3", "pca:1", "ledc:3x", "ledc:256",
+    const char* const kNotOutputs[] = {"ledc:2", "ledc:", ":3", "pca:16", "ledc:3x", "ledc:256",
                                        "ledc", "", "ledc:-1"};
     for (const char* raw : kNotOutputs) {
         TEST_ASSERT_FALSE_MESSAGE(servoOutputParseAddress(raw, &driver, &channel), raw);

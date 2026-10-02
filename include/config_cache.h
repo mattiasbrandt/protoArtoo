@@ -39,12 +39,12 @@ void configCacheReadDome(DomeConfig* out);
 bool configCacheDomeEnabled();
 // Whether the Output at `boardOutputIndex` in include/board_outputs.h's
 // BOARD_OUTPUTS is ticked as wired - boardOutputIsWired() on the live config,
-// without copying a 916 B snapshot onto the caller's frame to ask one bit.
+// without copying a 920 B snapshot onto the caller's frame to ask one bit.
 bool configCacheOutputIsWired(size_t boardOutputIndex);
 void configCacheReadWifi(WifiConfig* out);
 
 // The narrow reads an RC dispatch makes on Core 1 (src/tasks/rc_input.cpp),
-// each by field so a dispatch copies what it uses rather than a 916 B
+// each by field so a dispatch copies what it uses rather than a 920 B
 // ConfigSnapshot onto the real-time task's stack or into a static (#428).
 //
 // configCacheReadRcActionContext: the twelve sound-category ranges an RC
@@ -177,6 +177,15 @@ uint8_t configCacheServoOutputPartCountAt(ServoOutputDriver driver, uint8_t chan
 // after a request's Parts have moved, so an Output with a Part on it is wired
 // and one with none is free whatever wrote the tick before.
 void configCacheTicksFollowParts(SystemConfig* system);
+
+// configCacheAddServoOutputRows: a member's Outputs as rows of the live table,
+// each one the table does not hold yet appended at its defaults
+// (servoOutputTableAddDriverRows()). Returns how many were added; `missing` is
+// how many channels a full table left without a row. The boot path calls it
+// for a fitted PCA9685, after the stored rows are loaded and before any task
+// reads the table (#444).
+uint8_t configCacheAddServoOutputRows(ServoOutputDriver driver, uint8_t channelCount,
+                                      uint8_t* missing);
 
 // The Records - the Droid Build and guided Setup's record - are not here:
 // each Record's module keeps its own live copy, filled on the boot path and
@@ -363,6 +372,16 @@ uint8_t configCacheReadActiveSoundMember();
 // whole configCacheRead(), because its readers are status handlers whose
 // frames are measured (#370).
 uint8_t configCacheReadSoundMember();
+
+// configCacheSetActiveBodyServoMember / configCacheReadActiveBodyServoMember:
+// which body servo controller this boot runs (#444), as a Component Registry
+// part `value` - the board's GPIO alone, or the PCA9685 beside it. The same
+// pair as Sound's, for the same reason: the saved choice is read once at start
+// (ADR 0027), so what a surface shows as chosen and what ServoTask drives can
+// differ until the droid restarts. Set once by setup(), resolved, before
+// servoTaskInit() reads it.
+void configCacheSetActiveBodyServoMember(uint8_t memberValue);
+uint8_t configCacheReadActiveBodyServoMember();
 
 // configCacheReadRcMember: the Radio Controller's stored Component Member, as
 // a Component Registry part `value` - the radio the builder picked. Unlike

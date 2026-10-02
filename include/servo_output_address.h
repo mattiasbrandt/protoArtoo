@@ -18,10 +18,15 @@
 #include <stdint.h>
 
 // An expander adds a driver here and rows to the table; it never adds a field
-// to the row. `ledc` is the ESP32 PWM peripheral this controller drives today.
+// to the row. `ledc` is the ESP32 PWM peripheral on the board's own GPIO
+// Outputs; `pca` is the PCA9685 expander on the I2C header (include/pca9685.h),
+// whose sixteen channels are `pca:0`-`pca:15`. A stored row record names its
+// driver by word (servoOutputDriverToString()), so the word is the part that
+// must never change.
 enum ServoOutputDriver : uint8_t {
     SERVO_DRIVER_LEDC = 0,
-    SERVO_DRIVER_COUNT = 1,
+    SERVO_DRIVER_PCA9685 = 1,
+    SERVO_DRIVER_COUNT = 2,
 };
 
 // A channel value that is not an address on any driver. Rows past the table's

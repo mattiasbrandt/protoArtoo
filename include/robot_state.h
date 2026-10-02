@@ -228,6 +228,11 @@ enum ServoLimpReason : uint8_t {
     // Its Output Release: the row's release time ran out after its move
     // arrived (ADR 0043, #443). Appended, so every value above keeps its number.
     SERVO_LIMP_OUTPUT_RELEASE,
+    // Its backend cannot be reached: the PCA9685 it is on did not answer at
+    // start, or stopped answering (ADR 0043, "a bus drop is reported, not
+    // escalated"; #444). Nothing can put a pulse on it until the droid
+    // restarts with the expander answering.
+    SERVO_LIMP_UNREACHABLE,
 };
 
 // The token a surface reads for it: GET /api/servo/outputs' `limp` value and
@@ -246,6 +251,8 @@ inline const char* servoLimpReasonToString(ServoLimpReason reason) {
             return "sleep";
         case SERVO_LIMP_OUTPUT_RELEASE:
             return "release";
+        case SERVO_LIMP_UNREACHABLE:
+            return "unreachable";
         case SERVO_LIMP_OFF:
         default:
             return "off";

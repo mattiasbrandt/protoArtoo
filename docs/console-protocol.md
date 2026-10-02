@@ -290,7 +290,10 @@ never type an ID.
 - An Output is named by what the running board prints beside it (ADR 0033
   Amendment 2026-09-19), so a servo `target=` takes that word - `arm3` or
   `"ARM 3"` on the Artoo PCB, `gpio49` or `"GPIO 49"` on the FireBeetle 2, case
-  and spaces set aside - or `both`. A word the board does not print is refused
+  and spaces set aside - or `both`. An Output on a PCA9685 expander is named
+  by its address, `target=pca:3` (`pca:0`..`pca:15`, #444), since no board
+  prints a word for it; `accepts`, `target_accepts` and Tab list the board's
+  own words only. A word the board does not print is refused
   `out-of-range` with an `accepts` field listing the words it does take, and
   `help` lists them as `target_accepts`; Tab completes `target=` to them:
 

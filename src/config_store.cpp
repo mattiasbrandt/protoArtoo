@@ -180,6 +180,8 @@ uint16_t activeComponentToggleMask = 0;
 // The Sound Component Member as booted. 0 is no row's `value`, so "setup() has
 // not run yet" is distinguishable from any real member.
 uint8_t activeSoundMember = 0;
+// The body servo controller as booted (#444), on the same terms.
+uint8_t activeBodyServoMember = 0;
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 
 // The addressed Servo Output rows, live (ADR 0041).
@@ -366,6 +368,15 @@ void configCacheTicksFollowParts(SystemConfig* system) {
         boardOutputTickFollowsParts(
             system, &output, configCacheServoOutputPartCountAt(SERVO_DRIVER_LEDC, output.channel));
     }
+}
+
+uint8_t configCacheAddServoOutputRows(ServoOutputDriver driver, uint8_t channelCount,
+                                      uint8_t* missing) {
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t added =
+        servoOutputTableAddDriverRows(&servoOutputCache, driver, channelCount, missing);
+    taskEXIT_CRITICAL(&configCacheMux);
+    return added;
 }
 
 uint8_t configCacheServoOutputPartCountAt(ServoOutputDriver driver, uint8_t channel) {
@@ -719,6 +730,22 @@ uint8_t configCacheReadSoundMember() {
     uint8_t result;
     taskENTER_CRITICAL(&configCacheMux);
     result = configCache.system.sound_member;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return result;
+}
+
+// See declaration comment in config_cache.h.
+void configCacheSetActiveBodyServoMember(uint8_t memberValue) {
+    taskENTER_CRITICAL(&configCacheMux);
+    activeBodyServoMember = memberValue;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// See declaration comment in config_cache.h.
+uint8_t configCacheReadActiveBodyServoMember() {
+    uint8_t result;
+    taskENTER_CRITICAL(&configCacheMux);
+    result = activeBodyServoMember;
     taskEXIT_CRITICAL(&configCacheMux);
     return result;
 }

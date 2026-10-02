@@ -73,6 +73,12 @@
       param: "rcMember",
       saved: (config) => config?.rc?.member,
     },
+    // The board's GPIO alone, or a PCA9685 beside it (#444): bound once at
+    // start, like the sound module.
+    body_servo_controller: {
+      param: "bodyServoMember",
+      saved: (config) => config?.components?.bodyServo?.member,
+    },
   };
   const memberTiming = (family) =>
     MEMBER_FIELDS[family] ? window.PAApi.timingOf(MEMBER_FIELDS[family].param) : null;
@@ -711,6 +717,9 @@
   // until the lineup and the config have both answered.
   const productOf = (family) => (MEMBER_FIELDS[family] ? chosenPart(family) : fittedPart(family));
 
+  // One lineup entry by its id, or null before the lineup has answered.
+  const partOf = (id) => (lineup?.parts || []).find((part) => part.id === id) || null;
+
   const shownCard = (part) => {
     const plate = element("div", "droid-build-plate component-plate is-chosen component-plate-shown");
     plate.dataset.option = part.id;
@@ -759,6 +768,7 @@
     chosenReceiverPart,
     fittedPart,
     productOf,
+    partOf,
     isRadioNotFitted,
     footDriveReportsFeedback,
     shownCard,

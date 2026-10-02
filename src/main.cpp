@@ -44,6 +44,8 @@
 #include "safety.h"
 #include "seq_store.h"
 #include "sequence_dispatcher.h"
+#include "pca9685.h"        // the PCA9685's bring-up and sender (#444)
+#include "servo_backend.h"  // servoBackendMemberIsPca9685()
 #include "servo_task.h"
 #include "web_server.h"
 
@@ -326,6 +328,29 @@ void loadConfigToState() {
         PA_LOG_ERROR("config", "failed to load NVS config (schema or migration error); using safe defaults");
     }
 
+    // A fitted PCA9685's sixteen Outputs are rows beside the board's own
+    // (#444): with it the chosen body servo controller, every one of its
+    // channels the table does not hold yet is appended at its defaults. Every
+    // start, and idempotent - a row a builder has calibrated and saved is
+    // found and kept - so the stored count can stay at the board's five until
+    // the first save writes the rest. Before the ticks below and before any
+    // task reads the table. The member is resolved, not trusted, exactly as
+    // setup() latches it.
+    if (servoBackendMemberIsPca9685(componentResolveMember(COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER,
+                                                           snap.system.body_servo_member))) {
+        uint8_t missing = 0;
+        const uint8_t added =
+            configCacheAddServoOutputRows(SERVO_DRIVER_PCA9685, PCA9685_CHANNEL_COUNT, &missing);
+        if (added > 0) {
+            PA_LOG_INFO("config", "PCA9685 chosen: %u output row(s) added for %s", (unsigned)added,
+                        PCA9685_OUTPUT_SPAN);
+        }
+        if (missing > 0) {
+            PA_LOG_ERROR("config", "the output table is full - %u of %s have no row and cannot move",
+                         (unsigned)missing, PCA9685_OUTPUT_SPAN);
+        }
+    }
+
     // A stored row that could not be read has already taken its safe defaults.
     // Say so: a value changing under somebody is the thing this project says
     // out loud, and an output that quietly lost its calibration is exactly the
@@ -435,6 +460,12 @@ void setup() {
     // task exists is also what lets those Core 0 readers take the pointer
     // without a lock (#380).
     audioBindSoundMember(configCacheReadActiveSoundMember());
+    // The body servo controller, latched the same way and for the same reason
+    // (#444): ServoTask reads which one this boot runs, and the surfaces show
+    // it beside the saved choice.
+    const ComponentPartEntry* bootServoMember = componentResolveMember(
+        COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, bootCfg.system.body_servo_member);
+    configCacheSetActiveBodyServoMember(bootServoMember != nullptr ? bootServoMember->value : 0);
     RcInputStartupPlan rcPlan = rcInputStepStartupPlan(activeRc);
 
     // Layer 4: Task Watchdog Timer.
@@ -491,6 +522,18 @@ void setup() {
     audioCmdQueue = xQueueCreate(8, sizeof(AudioCommand));
     domeTxQueue = xQueueCreate(16, sizeof(DomeTxCmd));
     sequenceDispatcherInit();
+
+    // The PCA9685, when it is this boot's body servo controller (#444):
+    // brought up here, before servoTaskInit() reads whether it answered, and
+    // its sender started on Core 0 only once it has. Not answering is
+    // reported, never escalated (ADR 0043): pca9685Begin() logs the board,
+    // its span and the consequence, its Outputs read unreachable, and drive,
+    // estop and failsafe are untouched. This is where the I2C driver takes its
+    // buffers and its device handle, so nothing on the bus allocates after
+    // setup() (include/pca9685.h).
+    if (servoBackendMemberIsPca9685(bootServoMember) && pca9685Begin(bootCfg.system.pca_address)) {
+        pca9685StartSender();
+    }
 
     // ServoTask owns LEDC hardware init and applies AUX LED channel skip policy.
     servoTaskInit();
