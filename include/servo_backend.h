@@ -245,7 +245,8 @@ static_assert(servo_backend_detail::firstSlotOf(SERVO_DRIVER_PCA9685) == BOARD_O
 // nothing into its own frame.
 inline const char* servoOutputSlotName(uint8_t slot) {
     if (slot < BOARD_OUTPUT_COUNT) {
-        return boardOutputLabel(BOARD_OUTPUTS[slot]);
+        const char* label = boardOutputLabel(BOARD_OUTPUTS[slot]);
+        return label != nullptr ? label : "no output";
     }
     const ServoOutputAddress output = servoOutputSlotAddress(slot);
     return output.driver == SERVO_DRIVER_PCA9685 ? pca9685OutputName(output.channel)
