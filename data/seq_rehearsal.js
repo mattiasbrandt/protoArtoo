@@ -41,6 +41,9 @@
 //   body-overlap            ADR 0049: the Cadence Floor paces only what the body
 //                           generates, so hand-written overlaps are advised on.
 //   part-left-open          ADR 0049: the engine undoes nothing a body step did.
+//   flutter-cut             #453: the droid ends a flutter at its run's end
+//                           step and commands nothing there, so a flutter
+//                           still going is shorter than it was written.
 //   audio-outlives-show     #16: DM:VADER's $M played on for three minutes.
 //   dome-how-far            ADR 0046: how far is resolved by the dome, and
 //                           our fork has no part-way move for PP3 and PP5.
@@ -105,11 +108,28 @@
   // so the load order of the page's modules does not matter.
   const motion = () => window.ServoMotion || null;
 
-  // The Cadence Floor: 450 ms, the DOME's measured figure, which the body
-  // adopts as a stand-in because nobody has measured the body's own
-  // (include/sequence_bulk_centre.h). Any sentence that quotes it says whose it
-  // is.
-  const cadenceFloorMs = () => motion()?.SEQ_CADENCE_FLOOR_MS ?? null;
+  // The dome's measured cadence between panel moves: 450 ms, the figure the
+  // 2026-06-17 brownout gave (include/sequence_bulk_centre.h). It is what the
+  // rules about dome panels judge by. It is not the body's Cadence Floor,
+  // which a builder may set: a floor set for the body's Outputs does not
+  // change what browned the dome out.
+  const domeCadenceMs = () => motion()?.SEQ_CADENCE_FLOOR_MS ?? null;
+
+  // The Cadence Floor: the least time the body holds between two Outputs it
+  // starts itself. The droid says its own (GET /api/config,
+  // `servo.cadenceFloorMs`) and whose figure it is (`servo.cadenceFloorSource`):
+  // the dome's, which the body adopts as a stand-in because nobody has
+  // measured the body's own, until a builder sets another (#453). Until the
+  // droid has answered, the generated default, which is the dome's. As
+  // {ms, dome}, or null. Any sentence that quotes it says whose it is.
+  const cadenceFloor = (context) => {
+    const config = context?.config;
+    const servo = config && typeof config.servo === "object" && config.servo ? config.servo : {};
+    const ms = Number(servo.cadenceFloorMs);
+    if (Number.isFinite(ms) && ms > 0) return { ms, dome: servo.cadenceFloorSource === "dome" };
+    const generated = domeCadenceMs();
+    return generated === null ? null : { ms: generated, dome: true };
+  };
 
   // What a builder calls a Part: its catalog name, or the id where the catalog
   // does not know it.
@@ -200,7 +220,10 @@
           events.push({
             ...meta,
             t: move.t,
-            def: { type: "body", part: move.part, shape: move.shape, howFar: event.def.howFar, speedMs: event.def.speedMs, easing: event.def.easing },
+            def: {
+              type: "body", part: move.part, shape: move.shape, howFar: event.def.howFar, speedMs: event.def.speedMs, easing: event.def.easing,
+              ...(move.shape === "flutter" ? { flutterMs: gestureFlutterMs(event.def) } : {}),
+            },
           }),
         );
         domePanelsOf(event.def).forEach((cmd) => events.push({ ...meta, t, def: { type: "dome", cmd } }));
@@ -211,6 +234,12 @@
       .map((event, order) => ({ ...event, order }))
       .sort((a, b) => a.t - b.t || a.order - b.order);
   };
+
+  // How long each member of a flutter Gesture flutters: what the Gesture
+  // states, or one step of its own pace when it states none
+  // (seqGestureFlutterMs(), include/sequence_gesture.h).
+  const gestureFlutterMs = (def) =>
+    Number(def?.flutterMs) || Number(def?.stepMs) || window.SeqGesture?.STEP_DEFAULT_MS || 0;
 
   // A dome Gesture's panels as its `$` command leaves them: a together open or
   // close as written, a flutter as the dome's to know (nothing), every other
@@ -332,13 +361,16 @@
 
   // seqBodyTargetUs() (include/sequence_body_step.h): how far is measured along
   // the shape's own direction of travel, rounded half away from zero on a
-  // reversed pair too, and a flutter lands where an open does. Then the row's
+  // reversed pair too. A flutter resolves to the closed end, whatever its how
+  // far, because a flutter ends closed (ADR 0049, amended 2026-10-02): this
+  // is where it leaves the Part, not the swing on the way. Then the row's
   // component band bounds it (servoOutputClampPulse()).
   const targetOf = (output, shape, howFar) => {
     const span = output.openUs - output.closeUs;
     const bias = span >= 0 ? 50 : -50;
     const travelled = Math.trunc((span * howFar + bias) / 100);
-    const target = shape === "close" ? output.openUs - travelled : output.closeUs + travelled;
+    const target = shape === "flutter" ? output.closeUs
+      : shape === "close" ? output.openUs - travelled : output.closeUs + travelled;
     const bounded = Math.min(0xffff, Math.max(0, target));
     return output.bandHiUs > 0 ? Math.min(output.bandHiUs, Math.max(output.bandLoUs, bounded)) : bounded;
   };
@@ -406,7 +438,7 @@
   // Panel moves closer than the dome's measured cadence: what browned the dome
   // out was the burst, never a single close.
   const servoBurst = (events) => {
-    const floor = cadenceFloorMs();
+    const floor = domeCadenceMs();
     if (floor === null) return [];
     const panels = events.filter((event) => event.def.type === "dome" && panelIntent(event.def.cmd) && !event.generated);
     const { tight, worst } = tightPairs(panels, floor);
@@ -437,7 +469,7 @@
       const group = groupOf(event.def.cmd);
       if (group) groups.add(event.def.cmd, { event, group });
     });
-    const floor = cadenceFloorMs();
+    const floor = domeCadenceMs();
     return groups.each(({ n, first }) => {
       const untouched = groupMembers(first.group).filter((id) => !touched.has(id));
       // A few are named; more than that is a count, or the sentence is a list.
@@ -465,6 +497,8 @@
   // short needs (r2d2-astromech-simulator v1.79.0, lint.js:109). A dome panel's
   // travel is the dome's, so its reversal half stays the dome-timing Gap.
   const retargetBeforeArrival = (events, context) => {
+    const end = events.find((event) => event.def.type === "end");
+    const endT = end ? end.t : Infinity;
     const last = new Map();
     const runs = new Map();
     const groups = grouped();
@@ -503,8 +537,13 @@
       }
       const SM = motion();
       if (move.shape === "flutter") {
-        // A flutter is no single move: it ends open, flutterMs later (ADR 0049).
-        runs.set(key, { from: move.targetUs, target: move.targetUs, dir: 0, start: event.t + (Number(def.flutterMs) || 0) });
+        // A flutter is no single move: it ends closed (ADR 0049, amended
+        // 2026-10-02) - `targetUs` is the closed end, the end
+        // seqBodyTargetUs() measures how far from - when its length has run,
+        // or at the end step where that comes first
+        // (include/sequence_flutter.h "HOW IT ENDS").
+        const over = Math.max(event.t, Math.min(event.t + (Number(def.flutterMs) || 0), endT));
+        runs.set(key, { from: move.targetUs, target: move.targetUs, dir: 0, start: over });
         return;
       }
       // Where the Part starts is where the move before left it; the first move
@@ -686,10 +725,15 @@
   // Hand-written body moves on different Parts, started closer together than
   // the Cadence Floor. The floor paces only what the body generates itself
   // (ADR 0049); an author's own timing is advised on and never rewritten, and
-  // the number is the dome's, which the sentence says.
-  const bodyOverlap = (events) => {
-    const floor = cadenceFloorMs();
-    if (floor === null) return [];
+  // the sentence says whose number it is: the dome's, or the one set on this
+  // droid.
+  const bodyOverlap = (events, context) => {
+    const cadence = cadenceFloor(context);
+    if (cadence === null) return [];
+    const floor = cadence.ms;
+    const whose = cadence.dome
+      ? `${floor} ms is the dome's measured spacing; the body's own is unmeasured.`
+      : `${floor} ms is the spacing set on this droid.`;
     const moves = events.filter((event) => event.def.type === "body" && event.def.part && !event.generated);
     const { tight, worst } = tightPairs(moves, floor, (a, b) => a.def.part === b.def.part);
     if (!worst) return [];
@@ -697,7 +741,7 @@
       finding(
         "warning",
         "body-overlap",
-        `${plural(tight, "body move starts", "body moves start")} less than ${floor} ms after the one before -- ${pairWords(worst, (e) => partName(e.def.part))}. ${floor} ms is the dome's measured spacing; the body's own is unmeasured.`,
+        `${plural(tight, "body move starts", "body moves start")} less than ${floor} ms after the one before -- ${pairWords(worst, (e) => partName(e.def.part))}. ${whose}`,
         "Spread the moves out, one part at a time.",
         { step: worst.after.step, n: tight },
       ),
@@ -711,8 +755,10 @@
         lastShape.set(event.def.part, { shape: event.def.shape || "open", step: event.step });
       }
     });
+    // Only an open leaves it open: a flutter ends closed (ADR 0049, amended
+    // 2026-10-02).
     return [...lastShape.entries()]
-      .filter(([, last]) => last.shape !== "close")
+      .filter(([, last]) => last.shape === "open")
       .map(([part, last]) =>
         finding(
           "note",
@@ -722,6 +768,39 @@
           { step: last.step, part },
         ),
       );
+  };
+
+  // A flutter still going when the end step comes. The droid ends a flutter
+  // there and commands nothing: it starts no swing that would not be back
+  // first, so the Part is closed, and the flutter is shorter than it was
+  // written (include/sequence_flutter.h "HOW IT ENDS"). A Note, not a
+  // Warning: nothing is left open. One line for a Part a Body Step flutters,
+  // and one for a body Gesture, whichever of its members are cut. A flutter
+  // that starts at or after the end never runs, and a Gesture's is
+  // gesture-cut's to say.
+  const flutterCut = (events, steps) => {
+    const end = steps.find((step) => step && step.type === "end");
+    if (!end) return [];
+    const endT = Number(end.t) || 0;
+    const groups = grouped();
+    events.forEach((event) => {
+      const def = event.def;
+      if (def.type !== "body" || !def.part || def.shape !== "flutter") return;
+      if (!(event.t < endT && event.t + (Number(def.flutterMs) || 0) > endT)) return;
+      if (event.generated) groups.add(`gesture:${event.step}`, { event });
+      else groups.add(`part:${def.part}`, { event, part: def.part });
+    });
+    return groups.each(({ n, first }) =>
+      finding(
+        "note",
+        "flutter-cut",
+        first.part
+          ? `${partName(first.part)}'s flutter is cut short by the end${n > 1 ? ` (${n} times)` : ""}.`
+          : "This gesture's flutter is cut short by the end.",
+        "Move the end later, or make the flutter shorter.",
+        first.part ? { step: first.event.step, part: first.part, n } : { step: first.event.step },
+      ),
+    );
   };
 
   // A named track that rings out past the show. A Note, not a Warning: it plays
@@ -768,12 +847,12 @@
   // so what falls at or after the end is never sent. A body Gesture's moves are
   // paced at least the Cadence Floor apart, which this counts; each Output's
   // own throw can push them later still, so the count is the least that is cut.
-  const gestureCut = (events, steps) => {
+  const gestureCut = (events, steps, context) => {
     const G = window.SeqGesture;
     const end = steps.find((step) => step && step.type === "end");
     if (!G || !end) return [];
     const endT = Number(end.t) || 0;
-    const floor = cadenceFloorMs() || 0;
+    const floor = cadenceFloor(context)?.ms || 0;
     const out = [];
     events
       .filter((event) => event.def.type === "gesture" && !event.generated)
@@ -913,7 +992,8 @@
   // of it is optional: a rule that needs something not read stays silent, and
   // the Gap lines say what could not be checked.
   //   outputs    GET /api/servo/outputs, as data/outputs.js reads each row
-  //   config     GET /api/config (its `components`)
+  //   config     GET /api/config (its `components`, and the Cadence Floor
+  //              under `servo`)
   //   layout     the connected dome's layout model (data/dome_layout.js)
   //   maxBytes   the droid's per-file cap (GET /api/identity)
   //   trackHash  the fingerprint of a track the builder dropped in, if any
@@ -934,11 +1014,12 @@
       ...rawLightCode(events),
       ...switchedOff(events, context),
       ...domeUnavailable(events, context),
-      ...bodyOverlap(events),
+      ...bodyOverlap(events, context),
       ...partLeftOpen(events),
+      ...flutterCut(events, steps),
       ...audioOutlivesShow(events),
       ...gestureDome(events),
-      ...gestureCut(events, steps),
+      ...gestureCut(events, steps, context),
       ...domeHowFar(events),
       ...tempoConfidence(seq),
       ...tempoHash(seq, context),
@@ -1108,6 +1189,7 @@
     // from the same reading of a routine the rules judge it by (#440).
     expand,
     bodyMove,
+    gestureFlutterMs,
     unavailableMessage,
     unmeasuredOutputs,
     countsHtml,
