@@ -1191,6 +1191,9 @@
       next[field] = raw;
     }
     if (next[field] === fields[field]) return undefined;
+    // Only a new text is encoded. An edit to any other field writes the
+    // stored text back as it was stored (lightFields()' `encoded`).
+    if (field === "text") delete next.encoded;
     if (field === "effect") {
       // The new effect's rule decides what the command may keep: a color it
       // does not take goes back to DEFAULT, and its number goes unless the
@@ -2042,6 +2045,12 @@
   // none of the four. A field the command leaves off reads as what leaving it
   // off means: the color DEFAULT, and "" for no duration or count. A field
   // the grammar requires and the command lacks reads as a new step's.
+  //
+  // A logic text is two fields: `text` as a builder reads it, and `encoded`,
+  // the stored slot exactly as it is. One text has many encodings - a space
+  // or %20, %3A or %3a, a comma or %2C - and they differ in length against a
+  // cap, so lightCmd() writes the stored one back and encodes afresh only
+  // when there is none: a text just typed.
   const lightFields = (cmd) => {
     const kind = lightKind(cmd);
     if (!kind) return null;
@@ -2053,8 +2062,10 @@
         return { kind, preset: String(cmd).slice(3) };
       case "DL":
         return { kind, target: at(1), mode: at(2), color: parts[3] || "DEFAULT", seconds: parts[4] ?? "" };
-      case "DT":
-        return { kind, target: at(1), color: at(2), seconds: at(3), speed: at(4), text: decodeLightText(parts.slice(5).join(":")) };
+      case "DT": {
+        const encoded = parts.slice(5).join(":");
+        return { kind, target: at(1), color: at(2), seconds: at(3), speed: at(4), text: decodeLightText(encoded), encoded };
+      }
       default:
         return { kind, target: at(1), effect: at(2), color: parts[3] || "DEFAULT", count: parts[4] ?? "" };
     }
@@ -2073,7 +2084,7 @@
       case "DL":
         return `DL:${fields.target}:${fields.mode}${tail(fields.color, fields.seconds)}`;
       case "DT": {
-        const encoded = encodeLightText(fields.text);
+        const encoded = fields.encoded ?? encodeLightText(fields.text);
         return encoded === null ? null : `DT:${fields.target}:${fields.color}:${fields.seconds}:${fields.speed}:${encoded}`;
       }
       default:
