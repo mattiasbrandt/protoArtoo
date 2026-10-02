@@ -8049,7 +8049,8 @@ body[data-page="maintenance"] .status-item .hint {
   font-weight: 600;
 }
 
-.outputs-row.is-held th {
+/* On the row's first cell, its tick's, so the edge is the row's own. */
+.outputs-row.is-held .outputs-pick-cell {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
@@ -8275,7 +8276,7 @@ body[data-page="maintenance"] .status-item .hint {
   min-height: 28px;
 }
 
-/* The line under the rows (#457) offers the same choices in the same bar. */
+/* The apply line (#457) offers the same choices in the same bar. */
 .outputs-settings .seg,
 .outputs-apply .seg {
   display: inline-flex;
@@ -8849,11 +8850,9 @@ body[data-page="maintenance"] .status-item .hint {
   margin-block: var(--space-sm);
 }
 
-/* Back to centre, over the rows (#412, #399): send every Output to centre,
-   on the right, with its one line of answer before the button. Find by
-   Moving shared this line from the left until it went to Wiring (#411), and
-   .outputs-find below is Wiring's now; alone on the line, the button is
-   held to the right. */
+/* Back to centre, over the rows: the one act on the line, held to the right,
+   with its one line of answer before the button. .outputs-find below is
+   Wiring's Find by Moving line. */
 .outputs-tools {
   display: flex;
   flex-wrap: wrap;
@@ -8891,28 +8890,30 @@ body[data-page="maintenance"] .status-item .hint {
   margin: 0 0 var(--space-sm);
 }
 
-/* A row's tick (#457): the page's own mark of which rows the line under the
-   table sets a value on. A plain box in the interaction blue, in a cell no
-   wider than it. */
+/* A row's tick (#457): the page's own mark of which rows the apply line sets
+   a value on. A plain box in the interaction blue, in a cell no wider than
+   it, top-aligned as the row's name is. */
 .outputs-table .outputs-main > .outputs-pick-cell {
   width: 1%;
   padding-right: 0;
+  vertical-align: top;
 }
 
+/* The top margin sets the box on the middle of the name's first line. */
 .outputs-pick {
   display: block;
   width: 15px;
   height: 15px;
-  margin: 0;
+  margin: 2px 0 0;
   accent-color: var(--accent);
   cursor: pointer;
 }
 
-/* The line under the rows that sets one value on every ticked one (#457): the
-   two tick acts as quiet words, what to set as one joined bar, its value, and
-   the one act with the count in its label. A seam parts it from the rows, and
-   its answer sits at its foot. It moves nothing, so it is nowhere near back
-   to centre. */
+/* The line that sets one value on every ticked row (#457): the two tick acts
+   as quiet words, what to set as one joined bar, its value, and the one act
+   with the count in its label. It moves nothing, so it comes after the rows,
+   the dial and their answer, across a seam, and its own answer sits at its
+   foot. */
 .outputs-apply {
   margin-top: var(--space-md);
   padding: var(--space-md) var(--space-md) 0;

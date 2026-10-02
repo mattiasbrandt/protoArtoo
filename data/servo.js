@@ -54,9 +54,10 @@
 // never changes it.
 //
 // Several Outputs take one of those Settings in one press (#318, #457): each
-// row has a tick, and the line under the rows sets one value on every ticked
-// Output that can take it. It moves nothing, so it sits apart from back to
-// centre, and who takes the value is decided before anything is sent.
+// row has a tick, and the line under the rows and the dial sets one value on
+// every ticked Output that can take it. It moves nothing, so it sits apart
+// from back to centre and below the dial, and who takes the value is decided
+// before anything is sent.
 // =============================================================================
 (() => {
   const catalog = window.DroidParts;
@@ -161,8 +162,9 @@
   // either is open. The <tbody> carries data-output, so every lookup below
   // finds its cells in either line. The drive cell comes before the settings
   // line on purpose: .outputs-drive-note and .outputs-drive-acts are looked up
-  // by their first match. The row opens with its tick (#457), which is painted
-  // from the page's own set and never read back from the box.
+  // by their first match. The row opens with its tick (#457), painted from the
+  // page's own set: a press on the box changes the set, and a repaint never
+  // reads the box.
   const outputRowHtml = (output) => {
     const label = output.name;
     return (
@@ -508,9 +510,9 @@
   // over one row it cannot take (docs/api.md, "the row door"), and
   // data/outputs.js throws before sending on a field a row cannot save, so a
   // row left to the droid to sort out would cost every other row its save.
-  // The answer counts who was left out and why. An Output that is not
-  // calibrated is this page's rule, as on its row, not a refusal of the
-  // droid's, and is never called one.
+  // The answer counts who was left out and which kind of row each is. An
+  // Output that is not calibrated is this page's rule, as on its row, not a
+  // refusal of the droid's, and is never called one.
   //
   // The value goes as the row sends it. What a Setting accepts is ruled on by
   // the droid, once: this page keeps no range.
@@ -526,18 +528,23 @@
   const applySaid = applyBar.querySelector(".feedback");
   const sayApplied = (text, level) => window.PAUtils.showFeedback(applySaid, text, level);
 
+  const capital = (words) => words.charAt(0).toUpperCase() + words.slice(1);
+
   // What the line can set: the Settings each row carries, under the words the
   // row uses, each with the rule its row offers it on. A field with `choices`
-  // is picked from the row's own; the other two are times, typed.
+  // is picked from the row's own; the other two are times, typed. `said` is
+  // the answer's opening, for the value as it is shown: "Ease set to soft",
+  // and for power-up the choice itself, "Home and hold at power-up".
+  const setTo = (label) => (shown) => `${capital(label)} set to ${shown}`;
   const BULK_FIELDS = [
-    { key: "throwMs", label: "time to full throw", open: motionOpen, motion: true },
-    { key: "accelMs", label: "time to get up to speed", open: motionOpen, motion: true },
-    { key: "ease", label: "ease", open: motionOpen, motion: true, choices: OUTPUTS.EASES, ask: "Pick an ease." },
+    { key: "throwMs", label: "time to full throw", open: motionOpen, said: setTo("time to full throw") },
+    { key: "accelMs", label: "time to get up to speed", open: motionOpen, said: setTo("time to get up to speed") },
+    { key: "ease", label: "ease", open: motionOpen, said: setTo("ease"), choices: OUTPUTS.EASES, ask: "Pick an ease." },
     {
       key: "boot",
       label: "at power-up",
       open: bootOpen,
-      motion: false,
+      said: (shown) => `${capital(shown)} at power-up`,
       choices: OUTPUTS.BOOTS,
       ask: "Pick what they do at power-up.",
     },
@@ -571,11 +578,10 @@
       .join("");
   const applyMs = applyValue.querySelector(".outputs-apply-ms");
   const applyTime = applyValue.querySelector(".outputs-apply-time");
-  // Hold's one-sentence risk, shown while hold is the pick, as on the row.
+  // Hold's one-sentence risk, as on the row (paintApply() says when).
   const applyRisk = applyBar.querySelector(".outputs-boot-risk");
   const applyChoices = Array.from(applyValue.querySelectorAll("[data-bulk-choices]"));
 
-  const capital = (words) => words.charAt(0).toUpperCase() + words.slice(1);
   const lit = (button, on) => {
     button.classList.toggle("active", on);
     button.setAttribute("aria-checked", on ? "true" : "false");
@@ -608,33 +614,52 @@
         lit(button, !bar.hidden && button.dataset.bulkValue === bulk.values[field.key])
       );
     });
-    applyRisk.hidden = !(field.key === "boot" && bulk.values.boot === "home-hold");
+    // The grind risk is only true of a hold that never lets go (paintMotion(),
+    // #443), so it shows only while hold is the pick and a ticked row that
+    // would take it has no release time.
+    applyRisk.hidden = !(
+      field.key === "boot" &&
+      bulk.values.boot === "home-hold" &&
+      outputs.some((output) => ticked.has(output.address) && bootOpen(output) && !letsGo(output))
+    );
   };
 
   const outputsCount = (count) => `${count} ${count === 1 ? "output" : "outputs"}`;
 
-  // Why a ticked Output is left out, for the answer. Only ever asked of one
-  // its row's own rule (field.open) has already turned down: this words the
-  // rule's answer and decides nothing.
+  // Which kind of row a ticked Output is, when its row's own rule (field.open)
+  // has already turned it down: a tag that reads alone and after a count. The
+  // field is named by the answer, so the tag only says which kind of row.
+  const SKIP_TAGS = {
+    light: {
+      alone: (count) => (count === 1 ? "a light" : "lights"),
+      counted: (count) => `${count} ${count === 1 ? "light" : "lights"}`,
+    },
+    uncalibrated: { alone: () => "not calibrated yet", counted: (count) => `${count} not calibrated yet` },
+    none: { alone: () => "nothing to set", counted: (count) => `${count} with nothing to set` },
+  };
+  // This words the rule's answer and decides nothing, and IT MUST FOLLOW
+  // motionOpen() AND bootOpen(), clause by clause: a clause added to either
+  // without its tag here is counted under "nothing to set".
   const leftOut = (output, field) => {
-    if (isLightRow(output)) return field.motion ? "a light has no motion" : "a light has no power-up setting";
-    if (field.motion && isDriveable(output) && output.motionSettable && !output.calibrated) return "not calibrated yet";
-    return "nothing to set on it";
+    if (isLightRow(output)) return "light";
+    if (field.open === motionOpen && isDriveable(output) && output.motionSettable && !output.calibrated) return "uncalibrated";
+    return "none";
   };
 
-  // "1 skipped: not calibrated yet", or each reason with its own count when
-  // there is more than one.
+  // "1 skipped — a light.", or each kind with its own count when there is
+  // more than one: "2 skipped — 1 light, 1 not calibrated yet." The form back
+  // to centre's receipt uses on this page.
   const skippedSaid = (skipped, field) => {
-    const reasons = new Map();
+    const kinds = new Map();
     skipped.forEach((output) => {
-      const why = leftOut(output, field);
-      reasons.set(why, (reasons.get(why) || 0) + 1);
+      const kind = leftOut(output, field);
+      kinds.set(kind, (kinds.get(kind) || 0) + 1);
     });
     const said =
-      reasons.size === 1
-        ? Array.from(reasons.keys())[0]
-        : Array.from(reasons, ([why, count]) => `${count} ${why}`).join(", ");
-    return `${skipped.length} skipped: ${said}`;
+      kinds.size === 1
+        ? SKIP_TAGS[Array.from(kinds.keys())[0]].alone(skipped.length)
+        : Array.from(kinds, ([kind, count]) => SKIP_TAGS[kind].counted(count)).join(", ");
+    return `${skipped.length} skipped — ${said}.`;
   };
 
   const applyTicked = async () => {
@@ -666,7 +691,7 @@
     const skipped = picked.filter((output) => !field.open(output));
     const left = skipped.length > 0 ? skippedSaid(skipped, field) : "";
     if (taking.length === 0) {
-      sayApplied(`Nothing sent - ${left}.`, "warning");
+      sayApplied(`Nothing sent. ${left}`, "warning");
       return;
     }
     const changes = {};
@@ -678,19 +703,26 @@
     try {
       await OUTPUTS.saveAll(changes);
     } catch (error) {
-      // The door takes every row or none, and data/outputs.js has read the
-      // rows again, so they show what the droid holds. Only a refusal is
-      // known to have changed nothing: a save whose answer never came may
-      // have landed, and is not called either way.
-      const said = window.PAApi.messageFor(error);
-      sayApplied(error?.kind === "http" ? `Nothing changed: ${said}.` : `No answer from the droid: ${said}.`, "error");
+      // Each failure says only what is known. One data/outputs.js marks
+      // `unsent` was thrown before anything went out - rowsFor(), on an
+      // Output that changed under the press - so the droid was never asked.
+      // A refusal changed nothing: the door takes every row or none. A save
+      // whose answer never came - a timeout, the network, an answer that did
+      // not parse - may have landed, so it is called neither way; and an
+      // error of this page's after the request went out claims nothing about
+      // the droid at all. data/outputs.js has read the rows again.
+      const message = error && error.message ? error.message : error;
+      if (error?.unsent) sayApplied(`Nothing sent: ${message}.`, "error");
+      else if (error?.name !== "ApiError") sayApplied(`Not confirmed: ${message}.`, "error");
+      else if (error.kind === "http") sayApplied(`Nothing changed: ${window.PAApi.messageFor(error)}.`, "error");
+      else sayApplied("No answer from the droid; the rows show what it holds.", "error");
       return;
     } finally {
       bulk.busy = false;
       paint();
     }
     sayApplied(
-      `${capital(field.label)} set to ${shown} on ${outputsCount(taking.length)}${left ? ` - ${left}` : ""}.`,
+      `${field.said(shown)} on ${outputsCount(taking.length)}.${left ? ` ${left}` : ""}`,
       left ? "warning" : "success"
     );
   };
