@@ -1140,9 +1140,13 @@
           + color("colors", domeLights.colors)
           + settingRow("Runs for", `<span class="seq-row-ctl">${numberCell("seconds", fields.seconds, STEP_LIMITS.lightCount, "Runs for, in seconds", "s", true)}<span class="hint">empty: until the next mode</span></span>`);
       case "DT":
+        // The line break written straight after <textarea> is not part of
+        // the text: the HTML parser drops one there, so without it a text
+        // that starts with a line break would lose it in the box, and the
+        // next edit would store it without.
         return shows
           + settingRow("Lights", segOf("target", words("textTargets", domeLights.textTargets), fields.target, "Which displays"))
-          + settingRow("Text", `<textarea class="number-cell text-cell seq-light-text" rows="2" maxlength="${LIGHT_TEXT_CHARS}" data-picked="text" aria-label="Text, at most ${LIGHT_TEXT_CHARS} characters and one line break">${esc(fields.text)}</textarea>`)
+          + settingRow("Text", `<textarea class="number-cell text-cell seq-light-text" rows="2" maxlength="${LIGHT_TEXT_CHARS}" data-picked="text" aria-label="Text, at most ${LIGHT_TEXT_CHARS} characters and one line break">\n${esc(fields.text)}</textarea>`)
           + color("textColors", domeLights.textColors)
           + settingRow("Runs for", numberCell("seconds", fields.seconds, STEP_LIMITS.lightCount, "Runs for, in seconds", "s"))
           + settingRow("Scroll", numberCell("speed", fields.speed, STEP_LIMITS.scroll, "Scroll speed", ""));
