@@ -2168,18 +2168,42 @@
     return { list: trial[key], refused: verdict.ok ? null : verdict };
   };
 
-  // Insert what was dragged from the library at `at` ms. Whatever lands is
-  // one entry in the history, so one Undo takes the whole drop away; a drop
-  // that lands nothing records nothing. Where the routine is what turns it
-  // away - a loop with nothing to repeat, a step Protocol Check refuses -
-  // the stage says why. A pill for something the library does not list - a
-  // Part, a set or a sequence that is not there - lands nothing and says
-  // nothing: no such pill is drawn.
+  // Insert what was dragged from the library at `at` ms, into the half on the
+  // stage. Whatever lands is one entry in the history, so one Undo takes the
+  // whole drop away; a drop that lands nothing records nothing. Where the
+  // routine is what turns it away - a loop with nothing to repeat, a step
+  // Protocol Check refuses, one step more than a sequence holds - the stage
+  // says why. A pill for something the library does not list - a Part, a set
+  // or a sequence that is not there - lands nothing and says nothing: no such
+  // pill is drawn.
+  //
+  // EVERY DROP IS TRIED ON A COPY FIRST (land()): a drop never turns a
+  // sequence the droid accepts into one it refuses. What refuses it is said
+  // in Protocol Check's own words. Each kind of drop is therefore a
+  // `place(list)`: it puts fresh steps into the list it is given - the copy's,
+  // then the routine's - and answers the steps it made. Where they go is
+  // worked out from the routine once, here, and holds for the copy, which is
+  // the same list.
   const dropOnTimeline = (lib, at) => {
     const [group, id] = libraryKey(lib);
     const steps = stageSteps();
     const endAt = steps.findIndex((step) => step?.type === "end");
     const inLoop = SeqProtocolCheck.loopBodySteps(steps);
+    const land = (place) => {
+      const { refused } = triedOnCopy(place);
+      if (refused) {
+        sayOnStage(refused.error, "error");
+        return;
+      }
+      historyPush();
+      landed(place(steps));
+    };
+    // Before the end step, or last where there is none.
+    const beforeEnd = (make) => (list) => {
+      const made = make();
+      list.splice(endAt === -1 ? list.length : endAt, 0, ...made);
+      return made;
+    };
 
     if (group === "part") {
       // What the Part makes is partDrop()'s to say; every listed Part makes
@@ -2199,17 +2223,14 @@
       if (!drop) return;
       const last = endAt === -1 ? STEP_LIMITS.t[1] : Number(steps[endAt].t) || 0;
       const closes = Math.min(at + DROPPED_OPEN_MS, last);
-      const made = drop.lights
+      land(beforeEnd(() => (drop.lights
         ? [{ t: at, type: "dome", cmd: lightCmd({ ...lightFields(DOME_SUBMODES.DL.starts), target: drop.lights }) }]
         : drop.body
           ? [{ t: at, type: "body", part: part.id }, { t: closes, type: "body", part: part.id, shape: "close" }]
           : [
             { t: at, type: "dome", cmd: drop.panel },
             { t: closes, type: "dome", cmd: window.DomeCommandMap.resolvePanelCommand(part.shorthand, "close") },
-          ];
-      historyPush();
-      steps.splice(endAt === -1 ? steps.length : endAt, 0, ...made);
-      landed(made);
+          ])));
       return;
     }
 
@@ -2219,10 +2240,7 @@
       // from the front, at the pace a Gesture takes - so it is stored only
       // where a builder makes it differ.
       if (!librarySets().some((set) => set.id === id)) return;
-      const made = { t: at, type: "gesture", set: id };
-      historyPush();
-      steps.splice(endAt === -1 ? steps.length : endAt, 0, made);
-      landed([made]);
+      land(beforeEnd(() => [{ t: at, type: "gesture", set: id }]));
       return;
     }
 
@@ -2230,25 +2248,12 @@
       // One step that names the sequence, and nothing more: its reference,
       // and its name now as the label a reader of the file sees. The droid's
       // copy of it is read after it lands (edited() asks), and that is no
-      // edit: one Undo takes the step away.
-      //
-      // Tried on a copy first, as a loop is below: a sequence holds only so
-      // many others, and only so many steps.
+      // edit: one Undo takes the step away. A phrase whose read failed is
+      // asked for again by the drop.
       const choice = phraseChoices().find((each) => each.id === id);
       if (!choice) return;
-      const place = (list) => {
-        const made = { t: at, type: "sequence", ref: choice.id, name: choice.label };
-        list.splice(endAt === -1 ? list.length : endAt, 0, made);
-        return made;
-      };
-      const { refused } = triedOnCopy(place);
-      if (refused) {
-        sayOnStage(refused.error, "error");
-        return;
-      }
       phraseAgain(choice.id);
-      historyPush();
-      landed([place(steps)]);
+      land(beforeEnd(() => [{ t: at, type: "sequence", ref: choice.id, name: choice.label }]));
       return;
     }
 
@@ -2273,19 +2278,11 @@
           delete step.beat;
         });
         list.splice(first, 0, loop);
-        return loop;
+        return [loop];
       };
-      // Tried on a copy first: a drop never turns a routine the droid accepts
-      // into one it refuses - a loop is one more step in a routine that may
-      // be full, and there are commands a loop may not repeat. What refuses
-      // it is said in Protocol Check's own words.
-      const { refused } = triedOnCopy(wrap);
-      if (refused) {
-        sayOnStage(refused.error, "error");
-        return;
-      }
-      historyPush();
-      landed([wrap(steps)]);
+      // A loop is one more step in a routine that may be full, and there are
+      // commands a loop may not repeat.
+      land(wrap);
       return;
     }
 
@@ -2299,19 +2296,22 @@
       return;
     }
 
-    const dome = libraryDome(id);
-    const made = dome
-      ? { t: at, type: "dome", cmd: dome.starts }
-      : { t: at, type: id, ...stepTypeDefaults[id] };
-    historyPush();
     if (id === "end") {
-      // The end closes the routine, so it lands no earlier than its last step.
-      made.t = Math.max(at, ...steps.filter((_, i) => !inLoop.has(i)).map((step) => Number(step?.t) || 0));
-      steps.push(made);
-    } else {
-      steps.splice(endAt === -1 ? steps.length : endAt, 0, made);
+      // The end closes the routine, so it lands last and no earlier than the
+      // last step before it.
+      const last = Math.max(at, ...steps.filter((_, i) => !inLoop.has(i)).map((step) => Number(step?.t) || 0));
+      land((list) => {
+        const made = { t: last, type: "end", ...stepTypeDefaults.end };
+        list.push(made);
+        return [made];
+      });
+      return;
     }
-    landed([made]);
+
+    const dome = libraryDome(id);
+    land(beforeEnd(() => [dome
+      ? { t: at, type: "dome", cmd: dome.starts }
+      : { t: at, type: id, ...stepTypeDefaults[id] }]));
   };
 
   // What Split into steps shares, for a Gesture and for a sequence inside
