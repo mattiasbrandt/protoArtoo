@@ -64,15 +64,29 @@ enum RobotActionId : uint8_t {
 // -----------------------------------------------------------------------------
 // Tier 2 Trigger/Button Binding
 // Extends backbone binding with action target and optional Marcduino payload
+//
+// A Reaction (ADR 0053, #450) is this same binding with a droid condition as
+// its source, and it is stored in these same slots: one binding editor, one
+// stored form, one scan when a Sequence is deleted. A droid condition has no
+// calibration, so on a Reaction the calibration fields carry what it does
+// have, and are read only through rcReactionThreshold() / rcReactionQuietS()
+// below:
+//   min      the threshold, in the source's own unit (rcReactionThresholdMax())
+//   max      how long it stays quiet after firing, in seconds
+//   center, deadband, reverse   0, 0, false - one spelling per Reaction
+// Slots of its own were the other choice and were not taken: each would add 30
+// bytes to ConfigSnapshot, which every seam that crosses it pays for in stack
+// (include/config_store.h, the 916-byte assertion).
 // -----------------------------------------------------------------------------
 struct RcTriggerBinding {
-    RcBindingSource source;     // PWM, SBUS1, SBUS2, or NONE
-    uint8_t channel;            // Channel number (1-6 for PWM, 1-18 for SBUS)
+    RcBindingSource source;     // PWM, SBUS1, SBUS2, a droid condition, or NONE
+    uint8_t channel;            // Channel number (1-6 for PWM, 1-18 for SBUS); the
+                                // wheel for a per-wheel droid condition, else 1
     RobotActionId target;      // What action this binding triggers
     char marcduinoPayload[16];  // Payload for SEQ/CMD targets (e.g., "SE30", ":OP01")
-    uint16_t min;               // Calibration: minimum raw value
+    uint16_t min;               // Calibration: minimum raw value (Reaction: threshold)
     uint16_t center;            // Calibration: center raw value
-    uint16_t max;               // Calibration: maximum raw value
+    uint16_t max;               // Calibration: maximum raw value (Reaction: quiet seconds)
     uint16_t deadband;          // Calibration: deadband around center
     bool reverse;               // Calibration: reverse direction
 };
@@ -175,6 +189,47 @@ inline RcTriggerBinding makeRcTriggerBinding(RcBindingSource source, uint8_t cha
 inline RcTriggerBinding disabledRcTriggerBinding() {
     return makeRcTriggerBinding(RC_BINDING_NONE, 0, ROBOT_ACTION_NONE, nullptr, 1000, 1500, 2000, 0,
                                 false);
+}
+
+// =============================================================================
+// Reactions - a trigger binding whose source is a droid condition
+// =============================================================================
+
+inline uint16_t rcReactionThreshold(const RcTriggerBinding& binding) { return binding.min; }
+inline uint16_t rcReactionQuietS(const RcTriggerBinding& binding) { return binding.max; }
+
+// The longest quiet period a Reaction may store: an hour.
+static constexpr uint16_t RC_REACTION_QUIET_MAX_S = 3600;
+// What a Reaction nobody set a quiet period on holds. A starting value, not a
+// measurement: long enough that a droid creeping across a threshold does not
+// chatter, short enough that the second hard stop of a demo still answers.
+static constexpr uint16_t RC_REACTION_QUIET_DEFAULT_S = 5;
+
+// The largest threshold each droid condition accepts, in its own unit; the
+// smallest is 1 everywhere a threshold exists, and a source with no threshold
+// answers 0 and stores 0.
+//   speed, hstop   drive units, the resolved output's own (-1000..1000)
+//   rest           tenths of a second the drive has been at rest
+//   wspeed         RPM, as the drive reports it
+//   wamps          A x 100, as the drive reports it
+uint16_t rcReactionThresholdMax(RcBindingSource source);
+
+// What a Reaction nobody set a threshold on holds. Every one is a stated
+// starting value: nobody has measured a droid to find them, and each is the
+// builder's to change in the binding editor.
+uint16_t rcReactionThresholdDefault(RcBindingSource source);
+
+// What a Reaction may do. Everything a radio trigger may, less three: the
+// estop (the guard every caller of the action door makes before it,
+// evaluateActionTestGuard() in include/api_actions.h), and the two that act on
+// the drive path - the drive lock and the speed preset - because the droid's
+// own motion must never be what changes how it drives.
+bool robotActionValidForReaction(RobotActionId target);
+
+inline RcTriggerBinding makeRcReactionBinding(RcBindingSource source, uint8_t channel,
+                                              RobotActionId target, const char* payload,
+                                              uint16_t threshold, uint16_t quietS) {
+    return makeRcTriggerBinding(source, channel, target, payload, threshold, 0, quietS, 0, false);
 }
 
 // Calibration wrappers (thin delegation to backbone functions, worth staying inline)

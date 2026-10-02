@@ -72,6 +72,13 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
             continue;
         }
 
+        // A Reaction is never evaluated on an RC frame, whatever the filter
+        // says: its condition is the droid's own state, read by ReactionTask
+        // whether or not a radio is fitted (#450).
+        if (rcBindingSourceIsDroidCondition(binding.source)) {
+            continue;
+        }
+
         // Filter triggers by source (SBUS1, SBUS2, PWM)
         if (input.sourceFilter != RC_BINDING_NONE && binding.source != input.sourceFilter) {
             continue;

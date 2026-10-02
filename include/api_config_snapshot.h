@@ -32,6 +32,14 @@ struct RcMapEntry {
     uint8_t channel;
     RobotActionId action;
     char payload[16];
+    // A Reaction's two numbers (a droid-condition source; include/
+    // rc_action_types.h). One a request leaves out keeps what the stored
+    // Reaction on that condition holds, or takes its default, the way a radio
+    // binding keeps its calibration.
+    bool hasThreshold;
+    uint16_t threshold;
+    bool hasQuietS;
+    uint16_t quietS;
 };
 
 bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap);
