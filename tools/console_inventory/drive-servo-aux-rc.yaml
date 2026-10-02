@@ -7,13 +7,15 @@
 #   anchor_kind:        api | rc_internal | event | config | aggregate-field | none
 #                       aggregate-field = describes one field/section inside a larger query's
 #                       response; stays metadata, cites the owning aggregate + builder line
-#   evidence:           list of "file:line - what it shows" citations. Required per anchor_kind:
+#   evidence:           list of "file - what it shows" citations. What the file must contain goes
+#                       in `backticks`, and `make check-action-drift` fails when it no longer
+#                       does: a symbol, never a line number (#459). Required per anchor_kind:
 #                         api          -> route registration + handler declaration header + definition + domain core
 #                         rc_internal  -> dispatcher site + enum/token + owning queue or core
 #                         event        -> emitter + SSE registration
 #                         config       -> read path + apply path + persistence path
 #                         aggregate-field -> owning aggregate query name + the builder line that emits it
-#                         none         -> explicit file:line evidence that NO executor exists
+#                         none         -> explicit evidence, cited the same way, that NO executor exists
 #   executor_or_core:   the function/core the Console must call (or "none")
 #   missing_metadata:   registry fields the Console needs that are absent (argument schema, alias,
 #                       availability metadata, executor reference) - [] if none
@@ -50,10 +52,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:92 - webRegisterRoute("/api/aux-led/color", kPost, handleAuxLedColorPost)
-  - include/api_aux_led.h:22 - void handleAuxLedColorPost(WebRequest& req)
-  - src/web/api_aux_led.cpp:180 - void handleAuxLedColorPost(WebRequest& req) {
-  - src/web/api_aux_led.cpp:260 - auxLedQueueSetColor(target, r, g, b, SRC_WEB_API) queues to auxLedQueue
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/aux-led/color", WebMethod::kPost, handleAuxLedColorPost)`
+  - include/api_aux_led.h - `void handleAuxLedColorPost(WebRequest& req)`
+  - src/web/api_aux_led.cpp - `void handleAuxLedColorPost(WebRequest& req)`
+  - src/web/api_aux_led.cpp - `auxLedQueueSetColor(target, r, g, b, SRC_WEB_API)` queues to `auxLedQueue`
   executor_or_core: auxLedQueue
   missing_metadata: []
   notes: Requires webControlEnabled. Queue capacity guarded.
@@ -75,10 +77,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:93 - webRegisterRoute("/api/aux-led/effect", kPost, handleAuxLedEffectPost)
-  - include/api_aux_led.h:23 - void handleAuxLedEffectPost(WebRequest& req)
-  - src/web/api_aux_led.cpp:197 - void handleAuxLedEffectPost(WebRequest& req) {
-  - src/web/api_aux_led.cpp:281 - auxLedQueueSetEffect(target, effect, SRC_WEB_API) queues
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/aux-led/effect", WebMethod::kPost, handleAuxLedEffectPost)`
+  - include/api_aux_led.h - `void handleAuxLedEffectPost(WebRequest& req)`
+  - src/web/api_aux_led.cpp - `void handleAuxLedEffectPost(WebRequest& req)`
+  - src/web/api_aux_led.cpp - `auxLedQueueSetEffect(target, effect, SRC_WEB_API)` queues
   executor_or_core: auxLedQueue
   missing_metadata: []
   notes: 'Requires webControlEnabled. Queue guarded. Valid: solid, blink, pulse, off.'
@@ -104,11 +106,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - include/servo_output_row.h:222 - uint8_t led_count, on the addressed Servo Output row
-  - include/board_outputs.h:95 - lightCapable, which Outputs a light (and its count) may go on
-  - src/web/api_config_apply.cpp:711 - the row door's ledCount, checked 1..255 on a light-capable Output (ADR 0068)
-  - src/web/api_config_apply.cpp:723 - SERVO_FIELD_LED_COUNT recorded on the addressed edit
-  - include/config_store.h:522 - bool configSaveServoOutputs (Commit Step)
+  - include/servo_output_row.h - `uint8_t` `led_count`, on the addressed Servo Output row
+  - include/board_outputs.h - `lightCapable`, which Outputs a light (and its count) may go on
+  - src/web/api_config_apply.cpp - the row door's `ledCount`, checked 1..255 on a light-capable Output (ADR 0068)
+  - "include/servo_output_row.h - `SERVO_ROW_FIELD_EDITED(\"ledCount\", SERVO_ROW_FIELD_U8, led_count, SERVO_FIELD_LED_COUNT)`, the row door's field table: an edit that names it records the field"
+  - include/config_store.h - bool `configSaveServoOutputs` (Commit Step)
   executor_or_core: configApply
   missing_metadata: []
   notes: 'No NVS key of its own since #413: a light''s settings live on the Servo
@@ -128,8 +130,8 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: aggregate-field
   evidence:
-  - src/web/api_status.cpp:97 - void handleStatusGet(WebRequest& req)
-  - src/web/web_server.cpp:407 - lights JSON object emitted in status response, one entry per lit Output
+  - src/web/api_status.cpp - `void handleStatusGet(WebRequest& req)`
+  - src/web/status_json.cpp - `\"lights\":%s`, the object the status document carries, one entry per lit Output
   executor_or_core: buildStatusJson
   missing_metadata: []
   notes: Aggregate-field in /api/status response. Read-only status snapshot.
@@ -156,10 +158,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:81 - webRegisterRoute("/api/drive", kPost, handleDrivePost)
-  - include/api_drive.h:28 - void handleDrivePost(WebRequest& req)
-  - src/web/api_drive.cpp:307 - void handleDrivePost(WebRequest& req) {
-  - src/web/api_drive.cpp:346 - driveArbiterSubmit(DriveSource::WEB_API, clampedSpeed, clampedSteer, millis())
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/drive", WebMethod::kPost, handleDrivePost)`
+  - include/api_drive.h - `void handleDrivePost(WebRequest& req)`
+  - src/web/api_drive.cpp - `void handleDrivePost(WebRequest& req)`
+  - src/web/api_drive.cpp - `driveArbiterSubmit(DriveSource::WEB_API, clampedSpeed, clampedSteer, millis())`
   executor_or_core: driveArbiterSubmit
   missing_metadata: []
   notes: 'Guard at api_drive.cpp:329-330: blocked if estop OR stationary OR (!sbusHealthy AND !webControlEnabled). Speed cap enforced. Queue guarded.'
@@ -182,9 +184,9 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: rc_internal
   evidence:
-  - 'include/rc_action_types.h:23 - DRIVE_ACTION_SPEED, // Analog: forward/back movement'
-  - src/rc_channel_mapper.cpp:17 - readChannelRaw processes driveSpeed binding
-  - src/tasks/rc_input.cpp:198 - rcDispatchDrive(backbone.driveSpeed, backbone.driveSteer, false)
+  - "include/rc_action_types.h - `DRIVE_ACTION_SPEED`, // Analog: forward/back movement"
+  - src/rc_channel_mapper.cpp - `readChannelRaw` processes `driveSpeed` binding
+  - src/tasks/rc_input.cpp - `rcDispatchDrive`(`backbone.driveSpeed`, `backbone.driveSteer`, false)
   executor_or_core: driveArbiterSubmit
   missing_metadata: []
   notes: 'Analog RC. SBUS: rc_sbus_drive_speed; PWM: rc_pwm_drive_speed. Speed cap enforced. No additional guard (arbiter applies caps).'
@@ -203,9 +205,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: rc_internal
   evidence:
-  - include/rc_action_types.h:61 - DRIVE_ACTION_SPEED_PRESET_CYCLE
-  - 'src/rc_action_dispatcher.cpp:168 - case DRIVE_ACTION_SPEED_PRESET_CYCLE:'
-  - src/drive_speed_preset.cpp:56 - applySpeedPresetRuntime(nextSpeedPreset(...))
+  - include/rc_action_types.h - `DRIVE_ACTION_SPEED_PRESET_CYCLE`
+  - src/rc_action_dispatcher.cpp - `case DRIVE_ACTION_SPEED_PRESET_CYCLE:`
+  - src/rc_action_dispatcher.cpp - `res.newSpeedPreset = nextSpeedPreset(input.currentSpeedPreset)`
+  - src/rc_dispatcher_helpers.cpp - `applySpeedPresetRuntime(res.newSpeedPreset)`
+  - src/drive_speed_preset.cpp - `bool applySpeedPresetRuntime(SpeedPresetId preset)` definition
   executor_or_core: applySpeedPresetRuntime
   missing_metadata: []
   notes: RC button action. Cycles Slow->Normal->Turbo. No additional guard (preset stored, applied by arbiter).
@@ -227,10 +231,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:82 - webRegisterRoute("/api/drive/speed-preset", kPost, handleSpeedPresetPost)
-  - include/api_drive.h:29 - void handleSpeedPresetPost(WebRequest& req)
-  - src/web/api_drive.cpp:263 - void handleSpeedPresetPost(WebRequest& req) {
-  - src/web/api_drive.cpp:276 - applySpeedPresetPersisted(preset) is the core
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/drive/speed-preset", WebMethod::kPost, handleSpeedPresetPost)`
+  - include/api_drive.h - `void handleSpeedPresetPost(WebRequest& req)`
+  - src/web/api_drive.cpp - `void handleSpeedPresetPost(WebRequest& req)`
+  - src/web/api_drive.cpp - `applySpeedPresetPersisted(preset)` is the core
   executor_or_core: applySpeedPresetRuntime
   missing_metadata: []
   notes: Web-API only. Preset constrained to 'normal'. No guard in POST handler (config apply level).
@@ -252,10 +256,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:82 - webRegisterRoute("/api/drive/speed-preset", kPost, handleSpeedPresetPost)
-  - include/api_drive.h:29 - void handleSpeedPresetPost(WebRequest& req)
-  - src/web/api_drive.cpp:263 - void handleSpeedPresetPost(WebRequest& req) {
-  - src/web/api_drive.cpp:276 - applySpeedPresetPersisted(preset) is the core
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/drive/speed-preset", WebMethod::kPost, handleSpeedPresetPost)`
+  - include/api_drive.h - `void handleSpeedPresetPost(WebRequest& req)`
+  - src/web/api_drive.cpp - `void handleSpeedPresetPost(WebRequest& req)`
+  - src/web/api_drive.cpp - `applySpeedPresetPersisted(preset)` is the core
   executor_or_core: applySpeedPresetRuntime
   missing_metadata: []
   notes: Web-API only. Preset constrained to 'slow'. No guard in POST handler (config apply level).
@@ -277,10 +281,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:82 - webRegisterRoute("/api/drive/speed-preset", kPost, handleSpeedPresetPost)
-  - include/api_drive.h:29 - void handleSpeedPresetPost(WebRequest& req)
-  - src/web/api_drive.cpp:263 - void handleSpeedPresetPost(WebRequest& req) {
-  - src/web/api_drive.cpp:276 - applySpeedPresetPersisted(preset) is the core
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/drive/speed-preset", WebMethod::kPost, handleSpeedPresetPost)`
+  - include/api_drive.h - `void handleSpeedPresetPost(WebRequest& req)`
+  - src/web/api_drive.cpp - `void handleSpeedPresetPost(WebRequest& req)`
+  - src/web/api_drive.cpp - `applySpeedPresetPersisted(preset)` is the core
   executor_or_core: applySpeedPresetRuntime
   missing_metadata: []
   notes: Web-API only. Preset constrained to 'turbo'. No guard in POST handler (config apply level).
@@ -303,9 +307,9 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: rc_internal
   evidence:
-  - 'include/rc_action_types.h:24 - DRIVE_ACTION_STEER, // Analog: left/right steering'
-  - src/rc_channel_mapper.cpp:17 - readChannelRaw processes driveSteer binding
-  - src/tasks/rc_input.cpp:198 - rcDispatchDrive(backbone.driveSpeed, backbone.driveSteer, false)
+  - "include/rc_action_types.h - `DRIVE_ACTION_STEER`, // Analog: left/right steering"
+  - src/rc_channel_mapper.cpp - `readChannelRaw` processes `driveSteer` binding
+  - src/tasks/rc_input.cpp - `rcDispatchDrive`(`backbone.driveSpeed`, `backbone.driveSteer`, false)
   executor_or_core: driveArbiterSubmit
   missing_metadata: []
   notes: 'Analog RC. SBUS: rc_sbus_drive_steer; PWM: rc_pwm_drive_steer. No guard (steering follows speed arbiter).'
@@ -322,10 +326,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - include/config_store.h:180 - int16_t speedLimitMax
-  - src/web/api_config_apply.cpp:205 - paramInt16 parsing speedLimitMax
-  - src/web/api_config_apply.cpp:206 - working->drive.speedLimitMax applied
-  - include/config_store.h:443 - bool configSaveDrive (Commit Step)
+  - include/config_store.h - `int16_t speedLimitMax`
+  - src/config_settings.cpp - `PA_RANGE("speedLimitMax", "drive.speedLimitMax", "spd_max"` declares the Setting configApply() checks and applies
+  - src/web/api_config_apply.cpp - `working->drive.speedLimitMax` applied
+  - include/config_store.h - bool `configSaveDrive` (Commit Step)
   executor_or_core: configApply
   missing_metadata:
   - parameter name not in registry
@@ -344,8 +348,8 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: event
   evidence:
-  - src/failsafe_gate.cpp:74 - void failsafeTrigger(FailsafeLayer layer)
-  - src/web/api_status.cpp:97 - handleStatusGet emits failsafeCount, failsafeTriggerMs
+  - src/failsafe_gate.cpp - `void failsafeTrigger(FailsafeLayer layer)`
+  - src/web/status_json.cpp - `formatStatusJson` writes `failsafeCount` and `failsafeTriggerMs` into the status document
   executor_or_core: failsafeTrigger
   missing_metadata: []
   notes: Safety event. Latching estop trigger. Status field, not a guarded action.
@@ -362,8 +366,8 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: aggregate-field
   evidence:
-  - src/web/api_status.cpp:97 - void handleStatusGet(WebRequest& req)
-  - src/web/web_server.cpp:296 - driveSpeed = robotState.driveOutputSpeed
+  - src/web/api_status.cpp - `void handleStatusGet(WebRequest& req)`
+  - src/web/web_server.cpp - `driveSpeed = robotState.driveOutputSpeed`
   executor_or_core: buildStatusJson
   missing_metadata: []
   notes: Aggregate-field in /api/status. Motor outputs via snapshot. Read-only status (no guard needed).
@@ -380,10 +384,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:61 - webRegisterRoute("/api/rc/map", kPost, handleRcMapPost)
-  - include/api_config.h:27 - void handleRcMapPost(WebRequest& req)
-  - src/web/api_config.cpp:673 - void handleRcMapPost(WebRequest& req) {
-  - src/web/api_rc_map_apply.cpp:85 - void rcMapApply (Apply Core per ADR 0011)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/rc/map", WebMethod::kPost, handleRcMapPost)`
+  - include/api_config.h - `void handleRcMapPost(WebRequest& req)`
+  - src/web/api_config.cpp - `void handleRcMapPost(WebRequest& req)`
+  - src/web/api_rc_map_apply.cpp - void `rcMapApply` (Apply Core per ADR 0011)
   executor_or_core: rcMapApply
   missing_metadata: []
   notes: Web-API. Apply Core (ADR 0011).
@@ -404,10 +408,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:39 - webRegisterRoute("/api/actions/test", kPost, handleActionsTestPost)
-  - include/api_actions.h:40 - void handleActionsTestPost(WebRequest& req)
-  - src/web/api_actions.cpp:64 - void handleActionsTestPost(WebRequest& req) {
-  - src/web/api_actions.cpp:115 - dispatchRcTriggerActionTest(target, "", true) is the core
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/actions/test", WebMethod::kPost, handleActionsTestPost)`
+  - include/api_actions.h - `void handleActionsTestPost(WebRequest& req)`
+  - src/web/api_actions.cpp - `void handleActionsTestPost(WebRequest& req)`
+  - src/web/api_actions.cpp - `dispatchRcTriggerActionTest`(target, "", true) is the core
   executor_or_core: dispatchRcTriggerActionTest
   missing_metadata: []
   notes: 'Web-API. Calls dispatchRcTriggerActionTest (RC task core). Guard: webControlEnabledForActionTest at api_actions.cpp:100.'
@@ -424,10 +428,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:99 - webRegisterRoute("/api/rc/debug", kPost, handleRcDebugPost)
-  - include/api_rc.h:16 - void handleRcDebugPost(WebRequest& req)
-  - src/web/api_rc.cpp:51 - void handleRcDebugPost(WebRequest& req) {
-  - src/web/api_rc.cpp:80 - commandedSetRcDebug(enabled, SRC_WEB_API) is the core
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/rc/debug", WebMethod::kPost, handleRcDebugPost)`
+  - include/api_rc.h - `void handleRcDebugPost(WebRequest& req)`
+  - src/web/api_rc.cpp - `void handleRcDebugPost(WebRequest& req)`
+  - src/web/api_rc.cpp - `commandedSetRcDebug(enabled, SRC_WEB_API)` is the core
   executor_or_core: commandedSetRcDebug
   missing_metadata: []
   notes: Web-API. Calls commandedSetRcDebug (robot state command setter). No web control guard.
@@ -444,10 +448,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:38 - webRegisterRoute("/api/actions", kGet, handleActionsGet)
-  - src/web/api_actions_json.cpp:87 - void handleActionsGet(WebRequest& req)
-  - src/web/api_actions_json.cpp:88 - fillActionsResponse called via req.sendChunked
-  - src/web/api_actions_json.cpp:72 - defined, generates runtime action registry JSON
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/actions", WebMethod::kGet, handleActionsGet)`
+  - src/web/api_actions_json.cpp - `void handleActionsGet(WebRequest& req)`
+  - src/web/api_actions_json.cpp - `fillActionsResponse` called via `req.sendChunked`
+  - src/web/api_actions_json.cpp - `size_t fillActionsResponse(uint8_t* output, size_t capacity, size_t offset)` definition, writes the runtime action registry as JSON
   executor_or_core: fillActionsResponse
   missing_metadata: []
   notes: Web-API handler for runtime action registry. Calls fillActionsResponse to generate JSON payload.
@@ -464,11 +468,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:60 - webRegisterRoute("/api/rc/map", WebMethod::kGet, handleRcMapGet)
-  - src/web/api_config.cpp:651 - void handleRcMapGet(WebRequest& req)
-  - src/web/api_config.cpp:655 - populateRcMapJson(doc, snap) called
-  - include/api_config_snapshot.h:37 - bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap)
-  - src/web/api_config.cpp:227 - defined, serializes RC map bindings to JSON
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/rc/map", WebMethod::kGet, handleRcMapGet)`
+  - src/web/api_config.cpp - `void handleRcMapGet(WebRequest& req)`
+  - src/web/api_config.cpp - `populateRcMapJson(doc, snap)` called
+  - include/api_config_snapshot.h - `bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap)`
+  - src/web/api_config.cpp - `bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap)` definition, serializes the RC map bindings to JSON
   executor_or_core: populateRcMapJson
   missing_metadata: []
   notes: Web-API only. Reads robotState snapshot..
@@ -485,10 +489,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - include/config_store.h:362 - RcInputMode rc_input_mode
-  - src/web/api_config_apply.cpp:318 - mode parsing from params
-  - src/web/api_config_apply.cpp:322 - working->sys.rc_input_mode = mode (applied)
-  - include/config_store.h:447 - bool configSaveSystem (Commit Step)
+  - include/config_store.h - `RcInputMode rc_input_mode`
+  - src/config_settings.cpp - `PA_WORDS("rcInputMode", "rc.inputMode", "rc_mode"` declares the Setting and its words
+  - src/web/api_config_apply.cpp - `configSettingApply(setting, raw, working` writes a declared Setting, this one into `working->system.rc_input_mode`
+  - include/config_store.h - bool `configSaveSystem` (Commit Step)
   executor_or_core: configApply
   missing_metadata:
   - enum values not in registry
@@ -509,10 +513,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:98 - webRegisterRoute("/api/rc", kGet, handleRcGet)
-  - include/api_rc.h:13 - void handleRcGet(WebRequest& req)
-  - src/web/api_rc.cpp:37 - void handleRcGet(WebRequest& req) {
-  - src/web/rc_diagnostics_snapshot.cpp:288 - populateRcDiagnosticsJson builds snapshot
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/rc", WebMethod::kGet, handleRcGet)`
+  - include/api_rc.h - `void handleRcGet(WebRequest& req)`
+  - src/web/api_rc.cpp - `void handleRcGet(WebRequest& req)`
+  - src/web/rc_diagnostics_snapshot.cpp - `populateRcDiagnosticsJson` builds snapshot
   executor_or_core: captureRcDiagnosticsSnapshot
   missing_metadata: []
   notes: Web-API only. Builds diagnostics snapshot..
@@ -536,10 +540,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:90 - webRegisterRoute("/api/servo", kPost, handleServoPost)
-  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
+  - include/api_servo.h - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web+RC. No webControlEnabled guard, like every /api/servo action (ADR 0064). Queue guarded.
@@ -563,10 +567,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:90 - webRegisterRoute("/api/servo", kPost, handleServoPost)
-  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
+  - include/api_servo.h - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web+RC. No webControlEnabled guard, like every /api/servo action (ADR 0064). Queue guarded.
@@ -592,10 +596,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:90 - webRegisterRoute("/api/servo", kPost, handleServoPost)
-  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
+  - include/api_servo.h - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web-API. No webControlEnabled guard, like every /api/servo action (ADR 0064). Position 500-2500us. Queue guarded.
@@ -617,11 +621,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:104 - webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)
-  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
-  - src/tasks/servo_task.cpp - SERVO_CMD_NUDGE case in processCommand() -> beginNudge(); the pair from include/servo_nudge.h
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
+  - include/api_servo.h - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
+  - src/tasks/servo_task.cpp - `SERVO_CMD_NUDGE` case in `processCommand()` -> `beginNudge()`; the pair from include/`servo_nudge.h`
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web-API (#363, ADR 0050). No webControlEnabled guard, like every /api/servo action (ADR 0064). No width param - ServoTask computes the +-100 us pair inside SERVO_BAND_STD from the pin. target=both refused with 400 at the route and at ServoTask. Queue guarded.
@@ -643,11 +647,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:104 - webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)
-  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
-  - src/tasks/servo_task.cpp:809 - SERVO_CMD_TRAVEL case in processCommand() -> beginTravel(); the two ends from include/servo_travel.h
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
+  - include/api_servo.h - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
+  - src/tasks/servo_task.cpp - `SERVO_CMD_TRAVEL` case in `processCommand()` -> `beginTravel()`; the two ends from include/`servo_travel.h`
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web-API (#352, ADR 0063). No webControlEnabled guard, like every /api/servo action (ADR 0064). No width param - ServoTask reads the Endpoint Pair off the Output's row, so no source can name a position. Refused on an output with no pulse, on one no row describes, and on one whose calibrated bit is unset. target=both refused with 400 at the route and at ServoTask. Does not touch nudgesDone. Queue guarded.
@@ -673,12 +677,12 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:104 - webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)
-  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
-  - src/tasks/servo_task.cpp:689 - case SERVO_CMD_HOLD in processCommand() -> holdArm() at :558
-  - src/tasks/servo_task.cpp:588 - expireHolds() applies both bounds each frame; the rule is include/servo_hold.h
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
+  - include/api_servo.h - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
+  - src/tasks/servo_task.cpp - `case SERVO_CMD_HOLD:` in `processCommand()` -> `holdOutput(slot, cmd.positionUs, cmd.source,`
+  - src/tasks/servo_task.cpp - `expireHolds()` applies both bounds each frame; the rule is include/`servo_hold.h`
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web-API (#364, ADR 0064). No webControlEnabled guard, like every /api/servo action (ADR 0064 decides that for browser motion generally). target=both refused with 400 at the route (oneOutputOnly in kServoActions) - a dial stands on one row. The hold is bounded by SERVO_HOLD_EXPIRY_MS (3000) and SERVO_HOLD_CEILING_MS (600000), include/config.h; neither is reachable from a request. Queue guarded.
@@ -701,12 +705,12 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:104 - webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)
-  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
-  - src/tasks/servo_task.cpp:699 - case SERVO_CMD_RELEASE in processCommand() -> releaseArm() at :506
-  - src/drivers/ledc_pwm.cpp:187 - ledcPwmRelease() writes duty 0, the one place a pulse comes off a pin
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
+  - include/api_servo.h - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
+  - src/tasks/servo_task.cpp - `case SERVO_CMD_RELEASE:` in `processCommand()` -> `releaseOutput(slot, SERVO_LIMP_RELEASED)`
+  - src/drivers/ledc_pwm.cpp - `ledcPwmRelease()` writes duty 0, the one place a pulse comes off a pin
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web-API (#364, ADR 0043). No width - a release commands no position, so the part ends wherever gravity and friction leave it. releaseArm() is also what the estop and Sleep Mode edge calls for every enabled output (releaseAllOutputs() at servo_task.cpp:534), replacing the park D4 built. target=both releases the first two Outputs only, like the other broadcasts. Queue guarded.
@@ -724,14 +728,14 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:112 - webRegisterRoute("/api/servo/centre", WebMethod::kPost, handleServoCentrePost)
-  - include/api_servo.h:52 - void handleServoCentrePost(WebRequest& req)
-  - src/web/api_servo.cpp:218 - void handleServoCentrePost(WebRequest& req) {
-  - src/web/api_servo.cpp:220 - robotState.bulkCentreRequest = SRC_WEB_API
-  - src/tasks/sequence_dispatcher.cpp:570 - sequenceBulkCentreStart() on the Coordinator's next tick
-  - src/tasks/sequence_dispatcher.cpp:582 - centreOneOutput(), one Output per turn
-  - include/sequence_bulk_centre.h:85 - SEQ_CADENCE_FLOOR_MS, the default of the pace the sweep holds
-  - src/config_store.cpp:584 - configCacheCadenceFloorMs(), the stored pace in use
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo/centre", WebMethod::kPost, handleServoCentrePost)`
+  - include/api_servo.h - `void handleServoCentrePost(WebRequest& req)`
+  - src/web/api_servo.cpp - `void handleServoCentrePost(WebRequest& req)`
+  - src/web/api_servo.cpp - `robotState.bulkCentreRequest = SRC_WEB_API`
+  - src/tasks/sequence_dispatcher.cpp - `sequenceBulkCentreStart`() on the Coordinator's next tick
+  - src/tasks/sequence_dispatcher.cpp - `centreOneOutput()`, one Output per turn
+  - include/sequence_bulk_centre.h - `SEQ_CADENCE_FLOOR_MS`, the default of the pace the sweep holds
+  - src/config_store.cpp - `configCacheCadenceFloorMs()`, the stored pace in use
   executor_or_core: robotState.bulkCentreRequest
   missing_metadata: []
   notes: Web-API and Console (#318, #365). A transient flag, like dome.action.sequence-stop - no queue send in the handler, so no queue-full answer. The expansion is the Sequence Coordinator's: one Servo Output per turn, spaced by the Output's own throw time floored at the Cadence Floor, rows with no travel skipped. Estop, Sleep Mode, a web stop and a sequence starting each end the sweep where it got to.
@@ -748,10 +752,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - include/config_store.h:240 - uint16_t cadence_floor_ms
-  - src/config_settings.cpp:176 - the Setting cadenceFloorMs, 50..5000 ms, default SEQ_CADENCE_FLOOR_MS
-  - src/config_store.cpp:584 - configCacheCadenceFloorMs(), read by the Sequence Coordinator each time it paces
-  - src/console/console_module.cpp:2086 - g_settingOps row, written through configApply()
+  - include/config_store.h - `uint16_t cadence_floor_ms`
+  - src/config_settings.cpp - the Setting `cadenceFloorMs`, 50..5000 ms, default `SEQ_CADENCE_FLOOR_MS`
+  - src/config_store.cpp - `configCacheCadenceFloorMs()`, read by the Sequence Coordinator each time it paces
+  - src/console/console_module.cpp - `g_settingOps` row, written through `configApply()`
   executor_or_core: configApply
   missing_metadata: []
   notes: The Cadence Floor (#453, CONTEXT.md). NVS key cad_floor_ms, GET path servo.cadenceFloorMs, Immediate. The default is the dome's measured figure; the body's is unmeasured (#355).
@@ -768,10 +772,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:90 - webRegisterRoute("/api/servo", kPost, handleServoPost)
-  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)`
+  - include/api_servo.h - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `void handleServoPost(WebRequest& req)`
+  - src/web/api_servo.cpp - `xQueueSend(servoCmdQueue, &cmd, 0)` in `servoSubmitCommand`()
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web-API. No webControlEnabled guard, like every /api/servo action (ADR 0064). Queue guarded.
@@ -789,9 +793,9 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: rc_internal
   evidence:
-  - include/rc_action_types.h:28 - SERVO_ACTION_ARM1_TOGGLE
-  - src/rc_action_dispatcher.cpp:61 - case SERVO_ACTION_ARM1_TOGGLE in rcDispatchAction
-  - src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch
+  - include/rc_action_types.h - `SERVO_ACTION_ARM1_TOGGLE`
+  - src/rc_action_dispatcher.cpp - case `SERVO_ACTION_ARM1_TOGGLE` in `rcDispatchAction`
+  - src/rc_dispatcher_helpers.cpp - `queueServoCommand` dispatch
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: SBUS button. Toggles the first Output (ARM1 on the Artoo PCB). Queue guarded at rc_dispatcher_helpers.cpp:101.
@@ -809,9 +813,9 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: rc_internal
   evidence:
-  - include/rc_action_types.h:29 - SERVO_ACTION_ARM2_TOGGLE
-  - src/rc_action_dispatcher.cpp:62 - case SERVO_ACTION_ARM2_TOGGLE in rcDispatchAction
-  - src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch
+  - include/rc_action_types.h - `SERVO_ACTION_ARM2_TOGGLE`
+  - src/rc_action_dispatcher.cpp - case `SERVO_ACTION_ARM2_TOGGLE` in `rcDispatchAction`
+  - src/rc_dispatcher_helpers.cpp - `queueServoCommand` dispatch
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: SBUS button. Toggles the second Output (ARM2 on the Artoo PCB). Queue guarded at rc_dispatcher_helpers.cpp:101.
@@ -829,9 +833,9 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: rc_internal
   evidence:
-  - include/rc_action_types.h:30 - SERVO_ACTION_AUX1_TOGGLE
-  - src/rc_action_dispatcher.cpp:63 - case SERVO_ACTION_AUX1_TOGGLE in rcDispatchAction
-  - src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch
+  - include/rc_action_types.h - `SERVO_ACTION_AUX1_TOGGLE`
+  - src/rc_action_dispatcher.cpp - case `SERVO_ACTION_AUX1_TOGGLE` in `rcDispatchAction`
+  - src/rc_dispatcher_helpers.cpp - `queueServoCommand` dispatch
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: SBUS button. Toggles the third Output (ARM3 on the Artoo PCB). Queue guarded at rc_dispatcher_helpers.cpp:101.
@@ -849,9 +853,9 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: rc_internal
   evidence:
-  - include/rc_action_types.h:31 - SERVO_ACTION_AUX2_TOGGLE
-  - src/rc_action_dispatcher.cpp:64 - case SERVO_ACTION_AUX2_TOGGLE in rcDispatchAction
-  - src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch
+  - include/rc_action_types.h - `SERVO_ACTION_AUX2_TOGGLE`
+  - src/rc_action_dispatcher.cpp - case `SERVO_ACTION_AUX2_TOGGLE` in `rcDispatchAction`
+  - src/rc_dispatcher_helpers.cpp - `queueServoCommand` dispatch
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: SBUS button. Toggles the fourth Output (ARM4 on the Artoo PCB). Queue guarded at rc_dispatcher_helpers.cpp:101.
@@ -869,9 +873,9 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: rc_internal
   evidence:
-  - include/rc_action_types.h:32 - SERVO_ACTION_AUX3_TOGGLE
-  - src/rc_action_dispatcher.cpp:65 - case SERVO_ACTION_AUX3_TOGGLE in rcDispatchAction
-  - src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch
+  - include/rc_action_types.h - `SERVO_ACTION_AUX3_TOGGLE`
+  - src/rc_action_dispatcher.cpp - case `SERVO_ACTION_AUX3_TOGGLE` in `rcDispatchAction`
+  - src/rc_dispatcher_helpers.cpp - `queueServoCommand` dispatch
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: SBUS button. Toggles the fifth Output (ARM5 on the Artoo PCB). Queue guarded at rc_dispatcher_helpers.cpp:101.
@@ -888,8 +892,8 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: aggregate-field
   evidence:
-  - src/web/api_status.cpp:97 - void handleStatusGet(WebRequest& req)
-  - src/web/api_status_serializers.cpp:54 - emits servo state fields
+  - src/web/api_status.cpp - `void handleStatusGet(WebRequest& req)`
+  - src/web/status_json.cpp - `formatStatusJson` adds a key per enabled Output through `appendPeripheralStatus(`
   executor_or_core: buildStatusJson
   missing_metadata: []
   notes: Aggregate-field in /api/status. Servo open/close state.
@@ -906,11 +910,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:105 - webRegisterRoute("/api/servo/outputs", kGet, handleServoOutputsGet)
-  - include/api_config.h:127 - void handleServoOutputsGet(WebRequest& req)
-  - src/web/api_config.cpp - handleServoOutputsGet() reads each live row with configCacheReadServoOutput(i, &row)
-  - src/console/console_module.cpp - consoleExecuteServoApiGetOutputs() reads the same rows, one item each
-  - src/web/api_status_serializers.cpp - captureServoOutputCommanded(), the one read of a commanded position both adapters share
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/servo/outputs", WebMethod::kGet, handleServoOutputsGet)`
+  - include/api_config.h - `void handleServoOutputsGet(WebRequest& req)`
+  - src/web/api_config.cpp - `handleServoOutputsGet`() reads each live row with `configCacheReadServoOutput(i, &row)`
+  - src/console/console_module.cpp - `consoleExecuteServoApiGetOutputs()` reads the same rows, one item each
+  - src/web/api_status_serializers.cpp - `captureServoOutputCommanded`(), the one read of a commanded position both adapters share
   executor_or_core: configCacheReadServoOutput
   missing_metadata: []
   notes: "Added by #347 for the Parts destination; #362 gave it a Console record shape (item-indexed,

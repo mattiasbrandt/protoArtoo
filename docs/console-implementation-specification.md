@@ -272,7 +272,7 @@ The action registry (`docs/action-registry.yaml`) is the single source of truth 
 
 Inventory files (`tools/console_inventory/*.yaml`) provide evidence that every registry entry has:
 - A real executor core (not an HTTP adapter)
-- Required citations (file:line)
+- Required citations (the file, and the symbol it must contain)
 - Configuration rows cite their Commit Step (ADR 0011)
 
 The drift checker (`tools/check_action_registry_drift.py`) enforces:
