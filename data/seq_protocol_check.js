@@ -7,7 +7,12 @@
 // =============================================================================
 
 (() => {
-  const REGEX_NAME = /^DM:[A-Z0-9_]{1,18}$/;
+  // How many characters a sequence's name holds after its DM:
+  // (PC_NAME_BODY_MAX, include/protocol_check.h). The one copy in the browser:
+  // both patterns below are built from it, and the editor reads it from here.
+  const NAME_CHARS_MAX = 18;
+  const NAME_PATTERN = `DM:[A-Z0-9_]{1,${NAME_CHARS_MAX}}`;
+  const REGEX_NAME = new RegExp(`^${NAME_PATTERN}$`);
   const SUPPRESS_MS_MIN = 1000;
   const SUPPRESS_MS_MAX = 120000;
   const TOGGLE_GROUPS = ["none", "pies", "low", "all"];
@@ -17,7 +22,7 @@
   const BODY_SHAPES = ["open", "close", "flutter"];
   const BODY_FLUTTER_MS = Object.freeze([50, 60000]);
   // A sequence reference: a name, or a saved sequence's id (protocolCheckSeqRefValid()).
-  const SEQ_REF = /^(DM:[A-Z0-9_]{1,18}|[0-9a-z]{1,16})$/;
+  const SEQ_REF = new RegExp(`^(${NAME_PATTERN}|[0-9a-z]{1,16})$`);
   const AUDIO_CATEGORIES = [
     "alert",
     "chatty",
@@ -261,6 +266,9 @@
     // The Rehearsal's size figure reads it from here rather than keep its own.
     MAX_STEPS: 96,
 
+    // How many characters a sequence's name holds after its DM:.
+    NAME_CHARS_MAX,
+
     // How long a body flutter may last, in ms, as [least, most]: the bounds a
     // control that sets one offers, read from here rather than kept again.
     BODY_FLUTTER_MS,
@@ -303,7 +311,7 @@
         return {
           ok: false,
           error:
-            "The name must start with DM: then 1-18 capital letters, numbers, or underscores (for example, DM:ROCKMARCH)",
+            `The name must start with DM: then 1-${NAME_CHARS_MAX} capital letters, numbers, or underscores (for example, DM:ROCKMARCH)`,
         };
       }
       return { ok: true };

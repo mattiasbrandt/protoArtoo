@@ -105,9 +105,9 @@
   // A run still open is an edit not yet on the stack.
   const runChanged = () => history.run !== null && historyCapture() !== history.run;
 
-  // How many characters a sequence's name holds after its DM: (Protocol
-  // Check's name rule, data/seq_protocol_check.js).
-  const SEQ_NAME_CHARS = 18;
+  // How many characters a sequence's name holds after its DM:. Protocol
+  // Check's name rule has the number (data/seq_protocol_check.js).
+  const SEQ_NAME_CHARS = SeqProtocolCheck.NAME_CHARS_MAX;
 
   // How many Learned Sequences this droid lets a builder save. It is a board
   // fact the droid reports - five on the artoo-esp32, ten elsewhere (ADR 0065,
