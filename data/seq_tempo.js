@@ -335,6 +335,13 @@
     return { index, bar, beat: inBar, strong: inBar === 1 };
   };
 
+  // A beat in words, as the editor says it wherever it names one: beside a
+  // step that is on it, and on the line a drag lands by.
+  const beatWords = (tempo, index) => {
+    const name = beatName(tempo, index);
+    return name.bar === 0 ? `pickup beat ${name.beat}` : `bar ${name.bar}, beat ${name.beat}`;
+  };
+
   // Every beat from beat 0 through the bar that holds `untilMs`, grouped by
   // bar. `untilMs` is how far the routine reaches; the list runs to the end
   // of that bar so the last step always has a beat after it to move to.
@@ -393,6 +400,7 @@
     analyzedTempo,
     moveDownbeat,
     beatName,
+    beatWords,
     bars,
     retime,
   });

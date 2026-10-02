@@ -790,26 +790,28 @@ static bool nestSame(const char* a, const char* b) {
     return a != nullptr && b != nullptr && a[0] != '\0' && strcmp(a, b) == 0;
 }
 
-ProtocolCheckResult protocolCheckNesting(const SeqDraft& draft, const char* selfId,
-                                         const char* selfName, SeqNestLookup lookup, void* ctx) {
-    if (draft.steps == nullptr || lookup == nullptr) return pcOk();
-    bool any = false;
-    for (uint8_t i = 0; i < draft.stepCount; ++i) {
-        if (draft.steps[i].type == STEP_SEQUENCE) any = true;
+static bool nestNamesAny(const SeqStep* steps, uint8_t count) {
+    for (uint8_t i = 0; steps != nullptr && i < count; ++i) {
+        if (steps[i].type == STEP_SEQUENCE) return true;
     }
-    if (!any) return pcOk();
+    return false;
+}
 
-    NestWalk* walk = (NestWalk*)malloc(sizeof(NestWalk));
-    if (walk == nullptr) return pcFail("steps", "out of memory checking sequences inside");
-
+// One branch, walked. `label` is the branch's key ("steps" or "closeSteps"),
+// which a refusal names in its field. The count of steps once every phrase is
+// spliced in is the branch's own: a run splices each branch by itself, and
+// each holds PC_MAX_STEPS (seqStorePrepare(), src/seq_store.cpp).
+static ProtocolCheckResult nestWalkBranch(const char* label, const SeqStep* steps, uint8_t count,
+                                          NestWalk* walk, const char* selfId, const char* selfName,
+                                          SeqNestLookup lookup, void* ctx) {
     ProtocolCheckResult result = pcOk();
     // Steps the run holds once every phrase is spliced in: each phrase step
     // becomes its phrase's steps less their end.
-    uint32_t total = draft.stepCount;
-    for (uint8_t i = 0; i < draft.stepCount && result.ok; ++i) {
-        if (draft.steps[i].type != STEP_SEQUENCE) continue;
+    uint32_t total = count;
+    for (uint8_t i = 0; i < count && result.ok; ++i) {
+        if (steps[i].type != STEP_SEQUENCE) continue;
         uint8_t depth = 0;  // levels on the path
-        const char* ref = draft.steps[i].payload;
+        const char* ref = steps[i].payload;
         while (result.ok) {
             if (ref != nullptr) {
                 // A reference back to the sequence being saved, or to a phrase
@@ -817,11 +819,11 @@ ProtocolCheckResult protocolCheckNesting(const SeqDraft& draft, const char* self
                 bool cycle = nestSame(ref, selfId) || nestSame(ref, selfName);
                 for (uint8_t d = 0; d < depth && !cycle; ++d) cycle = nestSame(ref, walk->level[d].via);
                 if (cycle) {
-                    result = pcFailAt("steps", i, "ref", "a sequence cannot contain itself");
+                    result = pcFailAt(label, i, "ref", "a sequence cannot contain itself");
                     break;
                 }
                 if (depth >= PC_NEST_DEPTH_MAX) {
-                    result = pcFailAt("steps", i, "ref", "sequences nest at most 3 deep");
+                    result = pcFailAt(label, i, "ref", "sequences nest at most 3 deep");
                     break;
                 }
                 NestLevel& lv = walk->level[depth];
@@ -829,16 +831,16 @@ ProtocolCheckResult protocolCheckNesting(const SeqDraft& draft, const char* self
                 strncpy(lv.via, ref, sizeof(lv.via) - 1);
                 lookup(ref, &lv.info, ctx);
                 if (!lv.info.found) {
-                    result = pcFailAt("steps", i, "ref", "not a sequence on this droid");
+                    result = pcFailAt(label, i, "ref", "not a sequence on this droid");
                     break;
                 }
                 if (lv.info.toggle) {
-                    result = pcFailAt("steps", i, "ref", "a toggle sequence cannot sit inside another");
+                    result = pcFailAt(label, i, "ref", "a toggle sequence cannot sit inside another");
                     break;
                 }
                 total = total - 1u + (lv.info.stepCount > 0 ? lv.info.stepCount - 1u : 0u);
                 if (total > PC_MAX_STEPS) {
-                    result = pcFailAt("steps", i, "ref", "too many steps once inside (max 96)");
+                    result = pcFailAt(label, i, "ref", "too many steps once inside (max 96)");
                     break;
                 }
                 ++depth;
@@ -853,6 +855,29 @@ ProtocolCheckResult protocolCheckNesting(const SeqDraft& draft, const char* self
                 ref = nullptr;
             }
         }
+    }
+    return result;
+}
+
+// Both branches are walked, the steps and then the close half: a run splices
+// its phrases into both (seqStorePrepare(), src/seq_store.cpp), so a sequence
+// step in the close half faces exactly the rules one in the steps does.
+ProtocolCheckResult protocolCheckNesting(const SeqDraft& draft, const char* selfId,
+                                         const char* selfName, SeqNestLookup lookup, void* ctx) {
+    if (draft.steps == nullptr || lookup == nullptr) return pcOk();
+    if (!nestNamesAny(draft.steps, draft.stepCount) &&
+        !nestNamesAny(draft.closeSteps, draft.closeStepCount)) {
+        return pcOk();
+    }
+
+    NestWalk* walk = (NestWalk*)malloc(sizeof(NestWalk));
+    if (walk == nullptr) return pcFail("steps", "out of memory checking sequences inside");
+
+    ProtocolCheckResult result =
+        nestWalkBranch("steps", draft.steps, draft.stepCount, walk, selfId, selfName, lookup, ctx);
+    if (result.ok && draft.closeSteps != nullptr) {
+        result = nestWalkBranch("closeSteps", draft.closeSteps, draft.closeStepCount, walk,
+                                selfId, selfName, lookup, ctx);
     }
     free(walk);
     return result;

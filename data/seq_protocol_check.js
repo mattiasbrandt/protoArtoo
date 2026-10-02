@@ -101,6 +101,12 @@
   };
   const tempoBeatMs = (tempo, beat) => (Number(tempo?.phase) || 0) + tempoSpanMs(tempo, beat);
 
+  // Whether a step's duration can be a span of beats: a turn that moves, and
+  // a body flutter (src/seq_json.cpp parseStepBeats()).
+  const spansBeats = (step) =>
+    Boolean(step) && ((step.type === "domeRotate" && Number(step.speedPct) !== 0)
+      || (step.type === "body" && step.shape === "flutter"));
+
   // How many steps the loop at `at` takes as its body, in a list that may not
   // have that many after it. validateStep() refuses a loop that reaches past
   // the last step; this reading is for everything that walks a sequence
@@ -1195,6 +1201,8 @@
     tempoBeatMs,
     /** How long `beats` beats last, in ms, on this tempo (seqTempoSpanMs()). */
     tempoSpanMs,
+    /** Whether a step's duration can be kept as a span of beats. */
+    spansBeats,
 
     /**
      * The sequence as the droid will run it: every step placed on a beat at
@@ -1304,9 +1312,7 @@
           if (!isWhole(step.spanBeats) || step.spanBeats < 1 || step.spanBeats > TEMPO_BEAT_MAX) {
             return { ok: false, field: `${label}[${i}].spanBeats`, error: `A span is 1 to ${TEMPO_BEAT_MAX} beats` };
           }
-          const turns = step.type === "domeRotate" && Number(step.speedPct) !== 0;
-          const flutters = step.type === "body" && step.shape === "flutter";
-          if (!turns && !flutters) {
+          if (!spansBeats(step)) {
             return { ok: false, field: `${label}[${i}].spanBeats`, error: "Only a dome turn or a flutter lasts a number of beats" };
           }
         }
@@ -1317,12 +1323,16 @@
     /**
      * Validate entire sequence.
      *
-     * `nest` is what a caller knows of the sequences this one names, for the
-     * rules the droid applies to them at save (_validateNesting()). Only the
-     * editor has it. Without it those rules are not applied, and the verdict
-     * is the one a sequence gets read by itself.
+     * `nest` is what a caller knows of the droid's other sequences: those
+     * this one names, for the rules the droid applies to them at save
+     * (_validateNesting()), and the Factory catalog, for the rule on a
+     * sequence saved under a Factory name - `nest.factory(name)` answers
+     * that Factory sequence's entry (at least its `toggleGroup`), or
+     * nothing where there is none or the catalog has not been read. Only
+     * the editor has it. Without it those rules are not applied, and the
+     * verdict is the one a sequence gets read by itself.
      * @param {object} seq
-     * @param {{self?: {id?: string, name?: string}, listed?: Function, phrase?: Function}|null} nest
+     * @param {{self?: {id?: string, name?: string}, listed?: Function, phrase?: Function, factory?: Function}|null} nest
      * @returns {{ok: boolean, field?: string, error?: string}}
      */
     validateSequence(seq, nest = null) {
@@ -1366,12 +1376,32 @@
         };
       }
 
+      // A sequence saved under a Factory name retrains that Factory sequence,
+      // and keeps its interrupt group: a Factory one in a group stays in that
+      // group, and one in none stays in none (protocolCheckMeta(),
+      // src/protocol_check.cpp). Applied where the caller knows the Factory
+      // catalog (`nest.factory`).
+      const factory = nest && typeof nest.factory === "function" ? nest.factory(name) : null;
+      if (factory) {
+        const kept = factory.toggleGroup || "none";
+        if (kept !== "none" && toggleGroup !== kept) {
+          return {
+            ok: false,
+            field: "toggleGroup",
+            error: `A retrained ${name} stays in its Factory interrupt group, ${kept[0].toUpperCase()}${kept.slice(1)}`,
+          };
+        }
+        if (kept === "none" && toggleGroup !== "none") {
+          return { ok: false, field: "toggleGroup", error: `${name} is a Factory sequence in no interrupt group, so a retrained one stays in none.` };
+        }
+      }
+
       // Steps array
       if (!Array.isArray(steps)) {
         return { ok: false, field: "steps", error: "This sequence has no steps" };
       }
       if (steps.length === 0) {
-        return { ok: false, error: "Add at least one step to the sequence" };
+        return { ok: false, field: "steps", error: "Add at least one step to the sequence" };
       }
       const main = this._validateBranch(steps, "steps");
       if (!main.ok) return main;
@@ -1397,7 +1427,12 @@
         if (!close.ok) return close;
       }
 
-      return nest ? this._validateNesting(steps, nest) : { ok: true };
+      // The sequences each half names, the steps and then the close half, as
+      // the droid walks them at save.
+      if (!nest) return { ok: true };
+      const nested = this._validateNesting(steps, nest, "steps");
+      if (!nested.ok || !hasClose) return nested;
+      return this._validateNesting(closeSteps, nest, "closeSteps");
     },
 
     // What the wire's parser holds one branch to as it reads it
@@ -1447,8 +1482,13 @@
     // only known when every phrase on it has been read, which a caller that
     // reads one level does not do.
     //
-    // Like the droid, only the steps are walked, not the close half.
-    _validateNesting(steps, nest) {
+    // One branch is walked at a call, and the caller hands over each half in
+    // turn: the droid splices its phrases into both when it runs
+    // (seqStorePrepare(), src/seq_store.cpp), so a sequence in the close half
+    // faces the rules one in the steps does. `label` is the branch's key,
+    // "steps" or "closeSteps", which a refusal names in its field; the count
+    // of steps once spliced is the branch's own.
+    _validateNesting(steps, nest, label) {
       const self = nest.self || {};
       const same = (a, b) => typeof a === "string" && a !== "" && a === b;
       const names = (list) => list.filter((step) => step && step.type === "sequence" && typeof step.ref === "string");
@@ -1474,7 +1514,7 @@
         const step = steps[i];
         if (!step || step.type !== "sequence" || typeof step.ref !== "string") continue;
         const error = walk(step.ref, []);
-        if (error) return { ok: false, field: `steps[${i}].ref`, error };
+        if (error) return { ok: false, field: `${label}[${i}].ref`, error };
       }
       return { ok: true };
     },
@@ -1482,9 +1522,14 @@
     // One branch at the milliseconds it runs at, by the rules the droid
     // applies to the steps and to the close half alike
     // (protocolCheckBranch(), src/protocol_check.cpp).
+    //
+    // Every refusal names its half: its field starts with `label`, the
+    // branch's key - `steps[3].cmd` for a step's own rule, the bare key for
+    // one about the branch as a whole - so a reader with two halves can say
+    // which one it is in without checking either again.
     _validateBranch(steps, label) {
       if (steps.length > this.MAX_STEPS) {
-        return { ok: false, error: `A sequence can have at most ${this.MAX_STEPS} steps` };
+        return { ok: false, field: label, error: `A sequence can have at most ${this.MAX_STEPS} steps` };
       }
 
       // One Sequence End, and it is the last step: the droid stops reading a
@@ -1496,7 +1541,7 @@
       }
       const lastStep = steps[steps.length - 1];
       if (!lastStep || lastStep.type !== "end") {
-        return { ok: false, error: "The sequence must finish with a Sequence End step" };
+        return { ok: false, field: label, error: "The sequence must finish with a Sequence End step" };
       }
 
       // Identify loop body step indices so we can skip outer non-decreasing time
@@ -1513,7 +1558,7 @@
         if (!stepVal.ok) {
           return {
             ok: false,
-            field: stepVal.field || `${label}[${i}]`,
+            field: stepVal.field ? `${label}[${i}].${stepVal.field}` : `${label}[${i}]`,
             error: stepVal.error,
           };
         }

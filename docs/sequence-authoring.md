@@ -251,8 +251,9 @@ Its steps run where the step sits, loaded fresh on every run, so improving the
 phrase improves every sequence that holds it. On save: the phrase must be on
 the droid and not a toggle, a sequence cannot reach itself, phrases nest at
 most three deep, the whole run must fit 96 steps, and a phrase cannot sit
-inside a loop. A phrase deleted later is left out of the run, and the log
-says so.
+inside a loop. In a sequence with a close half, each half is held to these
+rules and counted to 96 by itself. A phrase deleted later is left out of the
+run, and the log says so.
 
 ## The Rehearsal
 
@@ -272,7 +273,7 @@ and a fix:
 | `dispatch-spacing` | warning | dome commands less than 200 ms apart, or at the same moment | the dome's eight-entry command queue dropped a close on 2026-06-18 |
 | `retarget-before-arrival` | warning | the same open or close sent again to a panel or Part with nothing in between | `DM:HELLO`'s five identical opens made one |
 | `quiet-in-sequence` | warning | a `$s` step | it turned idle chatter off until reboot on 2026-06-17 |
-| `part-left-open` | note | a body Part whose last step is not a close | the body undoes nothing (ADR 0049) |
+| `part-left-open` | note | a body Part whose last step is an open; not said on a toggle's opening half of a Part its close half closes | the body undoes nothing (ADR 0049) |
 | `gesture-dome` | warning | a dome Gesture the dome performs only in part, or not at all | a dome Gesture is the dome's `$` command (ADR 0046) |
 | `dome-how-far` | warning | a part-way move of PP3 or PP5 | our dome firmware has no part-way move for them |
 | `tempo-confidence` | warning | a tempo that is only a guess (confidence under 0.5) | Cantina's ~200 BPM read as 127.8 (ADR 0058) |

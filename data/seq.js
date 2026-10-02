@@ -1299,6 +1299,12 @@
     `<span class="seq-pills" role="radiogroup" aria-label="${label}">${options
       .map(([value, words]) => `<button type="button" class="seq-pill" role="radio" data-picked="${field}" data-value="${value}" aria-checked="${value === current}">${words}</button>`)
       .join("")}</span>`;
+  // A length that can be kept in beats (spansBeats()), in a routine with a
+  // tempo: the milliseconds, and beside them the beats, empty where the
+  // length is in milliseconds alone. Without a tempo, the milliseconds.
+  const lengthCells = (step, msCell) => (tempoOf() && spansBeats(step)
+    ? `<span class="seq-row-ctl">${msCell}${numberCell("spanBeats", step.spanBeats ?? "", SeqProtocolCheck.SPAN_BEATS, "Runs for, in beats", "beats", true)}</span>`
+    : msCell);
   const faderOf = (field, value, bounds, label) =>
     `<input class="fader" type="range" ${limits(bounds)} step="1" value="${value}" data-picked="${field}" aria-label="${label}">`;
   const capital = (word) => word[0].toUpperCase() + word.slice(1);
@@ -1466,7 +1472,7 @@
       ? settingRow("Brightness", faderOf("howFar", far, STEP_LIMITS.howFar, "Brightness, percent of full"), `${far}%`)
       : settingRow("Opens to", faderOf("howFar", far, STEP_LIMITS.howFar, "Opens to, percent of its throw"), `${far}%`);
     const runsFor = move.shape === "flutter"
-      ? settingRow("Runs for", numberCell("flutterMs", step.flutterMs ?? "", SeqProtocolCheck.BODY_FLUTTER_MS, "Runs for, in milliseconds"))
+      ? settingRow("Runs for", lengthCells(step, numberCell("flutterMs", step.flutterMs ?? "", SeqProtocolCheck.BODY_FLUTTER_MS, "Runs for, in milliseconds")))
       : pair ? settingRow("Runs for", numberCell("runs", Math.round(pair.ms), STEP_LIMITS.t, "Runs for, in milliseconds")) : "";
     return runsFor + howFar + motion;
   };
@@ -1606,7 +1612,7 @@
       case "domeRotate": {
         const speed = Math.abs(fieldOf(step, "speedPct"));
         const stopped = speed === 0;
-        return settingRow("Runs for", numberCell("durationMs", fieldOf(step, "durationMs"), STEP_LIMITS.turnMs, "Runs for, in milliseconds"))
+        return settingRow("Runs for", lengthCells(step, numberCell("durationMs", fieldOf(step, "durationMs"), STEP_LIMITS.turnMs, "Runs for, in milliseconds")))
           + settingRow("Way", segOf("way", [["left", "Left", stopped], ["right", "Right", stopped]], stopped ? "" : step.speedPct < 0 ? "left" : "right", "Way"))
           + settingRow("Speed", faderOf("speed", speed, STEP_LIMITS.speed, "Dome speed, percent"), `${speed}%`);
       }
@@ -1683,6 +1689,17 @@
     const startsAt = settingRow("Starts at",
       `<span class="seq-row-ctl">${numberCell("start", Math.round(block.t0), STEP_LIMITS.t, "Starts at, in milliseconds")}`
       + `${beat ? `<span class="seq-unit">${esc(beat)}</span><button type="button" class="seq-act" data-picked="off-beat">Off the beat</button>` : ""}</span>`);
+    // Picking a beat (ADR 0060): the bars and their beats, under where the
+    // block starts, for a routine with a tempo. A step a loop repeats is
+    // timed from its pass and gets none, as on its card.
+    // Only the beats the block can be moved to are offered: those inside
+    // the limits a move of it keeps (the timeline's pickedRange()).
+    const range = sessionTimeline?.pickedRange();
+    const reachable = (index) => Boolean(range)
+      && range.from <= SeqProtocolCheck.tempoBeatMs(tempoOf(), index) && SeqProtocolCheck.tempoBeatMs(tempoOf(), index) <= range.to;
+    const beatRow = tempoOf() && window.SeqTempo && !SeqProtocolCheck.loopBodySteps(stageSteps()).has(at)
+      ? settingRow("Beat", beatBarsHtml(step, stageReachMs(), "", (index) => `data-picked="beat" data-value="${index}"`, reachable))
+      : "";
     const move = moveOf(step);
     const jumps = move?.settles && firstMoveJumps(step, move)
       ? `<p class="hint seq-brick">${esc(catalogPart(step.part)?.name || step.part)} has no recorded ends, so its first move is a jump, not a ramp.</p>`
@@ -1705,7 +1722,7 @@
     const split = (G && !G.onDome(step)) || (phrase && phraseRead(step.ref))
       ? '<button type="button" class="seq-act" data-picked="split">Split into steps</button>' : "";
     return head((phrase ? phraseName(step) : block.name) || block.words || stepKindName(step), `${stepKindName(step)}${lights ? ` · ${lights}` : ""} · step ${at + 1}`)
-      + `<div class="setting-rows seq-picked-rows">${startsAt}${kindRows(step, at)}</div>`
+      + `<div class="setting-rows seq-picked-rows">${startsAt}${beatRow}${kindRows(step, at)}</div>`
       + (unread ? `<p class="hint seq-brick">${unread}</p>` : "")
       + domeSays
       + (G ? gestureMore(step) : "")
@@ -1958,6 +1975,18 @@
       sessionTimeline.movePickedTo(Number(raw));
     } else if (field === "runs") {
       sessionTimeline.sizeStanding(at, Number(raw));
+    } else if (field === "beat") {
+      // The beat picked: the whole block starts there, moved as Starts at
+      // moves it - within its limits, back in time order, one entry - and
+      // placed on the beat (movePickedTo()'s `landed`).
+      const beat = parseInt(raw, 10);
+      if (Number.isInteger(beat) && tempoOf()) sessionTimeline.movePickedTo(SeqProtocolCheck.tempoBeatMs(tempoOf(), beat), true);
+    } else if (field === "spanBeats") {
+      // The length in beats, within what a span holds; emptied, the length
+      // is its milliseconds again.
+      const beats = parseInt(raw, 10);
+      const [least, most] = SeqProtocolCheck.SPAN_BEATS;
+      setStepBeat(at, { spanBeats: Number.isInteger(beats) ? Math.max(least, Math.min(most, beats)) : null });
     } else if (GESTURE_BEATS.includes(field)) {
       // A Gesture's pace or repeat in beats: resolved from the tempo as the
       // droid resolves it, and one entry of its own (setStepBeat()).
@@ -2175,7 +2204,7 @@
   // An edit tried on a copy first: `change(list)` is made to the half on the
   // stage in a copy of the whole sequence, the copy's steps are put in the
   // order the routine's would be, and Protocol Check reads the copy - both
-  // halves, and the sequences the opening half names. Answers {list,
+  // halves, and the sequences either half names. Answers {list,
   // refused}: the copy's stage list, and Protocol Check's verdict where the
   // edit would turn a sequence the droid accepts into one it refuses, else
   // null. An edit to a sequence the droid already refuses is not held to
@@ -2210,6 +2239,11 @@
     const steps = stageSteps();
     const endAt = steps.findIndex((step) => step?.type === "end");
     const inLoop = SeqProtocolCheck.loopBodySteps(steps);
+    // The beat the drop landed on, where the landing line named one (the
+    // timeline's aim()): the first step made, where it starts there, is
+    // placed on that beat and not at its millisecond, as a block dragged
+    // onto a beat is (ADR 0060).
+    const beat = sessionTimeline.beatAt(at);
     // `first` is run once the copy is accepted, before anything lands.
     const land = (place, first = () => {}) => {
       const { refused } = triedOnCopy(place);
@@ -2219,7 +2253,9 @@
       }
       first();
       historyPush();
-      landed(place(steps));
+      const made = place(steps);
+      if (beat !== null && made[0] && made[0].t === at) made[0].beat = beat;
+      landed(made);
     };
     // Before the end step, or last where there is none.
     const beforeEnd = (make) => (list) => {
@@ -2274,19 +2310,15 @@
       // edit: one Undo takes the step away. A phrase whose read failed is
       // asked for again by a drop that lands.
       //
-      // Into Opens only. The rules for a sequence inside another - that it is
-      // on the droid, is no toggle, closes no cycle and fits once spliced in -
-      // are applied to the opening half alone, here and by the droid at Save
-      // (protocolCheckNesting(), src/protocol_check.cpp), while the droid
-      // splices both halves when it runs (seqStorePrepare(),
-      // src/seq_store.cpp). One dropped into Closes would save and then be
-      // left out of the run, or stop it.
+      // Into either half. The rules for a sequence inside another - that it
+      // is on the droid, is no toggle, closes no cycle and fits once spliced
+      // in - are applied to both halves, here and by the droid at Save
+      // (protocolCheckNesting(), src/protocol_check.cpp), as the droid
+      // splices both when it runs (seqStorePrepare(), src/seq_store.cpp). So
+      // what turns one away from Closes is what turns one away from Opens:
+      // Protocol Check, in its own words (land()).
       const choice = phraseChoices().find((each) => each.id === id);
       if (!choice) return;
-      if (editorState.half === "closes") {
-        sayOnStage("A sequence inside this one goes in Opens only.", "error");
-        return;
-      }
       land(beforeEnd(() => [{ t: at, type: "sequence", ref: choice.id, name: choice.label }]), () => phraseAgain(choice.id));
       return;
     }
@@ -2324,7 +2356,7 @@
       // A routine has one end. Dropped again it is that end, moved - later, or
       // earlier as far as a drag of it would go, which is to its last step.
       sessionTimeline.pick([endAt]);
-      sessionTimeline.movePickedTo(at);
+      sessionTimeline.movePickedTo(at, true);
       sayOnStage("");
       showTab("block");
       return;
@@ -3174,16 +3206,18 @@
     return tempo && SeqProtocolCheck.validateTempo(tempo).ok ? tempo : null;
   };
 
-  // How far a routine reaches, for how long the beat list runs.
+  // How far a routine reaches, for how long the beat list runs: the opening
+  // half for the step list's card, and the half on the stage for the
+  // inspector.
   const routineReachMs = () =>
     Math.max(...(editorState.current?.steps || []).map((step) => Number(step?.t) || 0), 0);
+  const stageReachMs = () => Math.max(...stageRun().map((step) => Number(step?.t) || 0), 0);
 
   // The beat a step is placed on, in words, or "" when it is on none.
   const beatWords = (step) => {
     const tempo = tempoOf();
     if (!tempo || !Number.isInteger(step.beat) || !window.SeqTempo) return "";
-    const name = window.SeqTempo.beatName(tempo, step.beat);
-    return name.bar === 0 ? `pickup beat ${name.beat}` : `bar ${name.bar}, beat ${name.beat}`;
+    return window.SeqTempo.beatWords(tempo, step.beat);
   };
 
   const beatLabel = (step) => {
@@ -3191,10 +3225,8 @@
     return words ? ` &middot; ${words}` : "";
   };
 
-  // Steps whose duration can be a span of beats: a turn that moves, and a
-  // body flutter (src/seq_json.cpp parseStepBeats()).
-  const spansBeats = (step) =>
-    (step.type === "domeRotate" && Number(step.speedPct) !== 0) || (step.type === "body" && step.shape === "flutter");
+  // Steps whose duration can be a span of beats: Protocol Check's rule.
+  const spansBeats = (step) => SeqProtocolCheck.spansBeats(step);
 
   // ---------------------------------------------------------------------------
   // A sequence inside a sequence (ADR 0046). A step names its phrase by the
@@ -3281,9 +3313,13 @@
   // (SeqProtocolCheck._validateNesting()). Nothing is said of whether a
   // phrase is on the droid until both lists have answered. A phrase is found
   // under any reference that resolves to where it was read from: its id and
-  // its name are the one sequence.
+  // its name are the one sequence. And with the Factory catalog, so a
+  // sequence under a Factory name is held to that Factory sequence's
+  // interrupt group; until the catalog has answered there is none to hold
+  // it to.
   const routineVerdict = (seq) => SeqProtocolCheck.validateSequence(seq, {
     self: { id: editorState.current?.id, name: editorState.current?.name },
+    factory: (name) => builtins.find((entry) => entry.name === name) || null,
     listed: (ref) => (listsAnswered() ? phraseSource(ref) || false : null),
     phrase: (ref) => {
       const url = phraseSource(ref)?.url;
@@ -3307,8 +3343,8 @@
     try {
       for (;;) {
         if (mine !== phrases || !editorState.current) return;
-        // Either half can name one - a file written by hand, never a drop
-        // here - and the droid splices its phrases into both (seqStorePrepare(),
+        // Either half can name one, dropped here or written by hand, and the
+        // droid splices its phrases into both (seqStorePrepare(),
         // src/seq_store.cpp).
         const ref = [...(editorState.current.steps || []), ...(editorState.current.closeSteps || [])]
           .map((step) => (step?.type === "sequence" ? step.ref : null))
@@ -3369,24 +3405,32 @@
   const GESTURE_NUMBER_FIELDS = ["howFar", ...GESTURE_TIMES];
   const GESTURE_WORD_FIELDS = ["set", ...GESTURE_DEFAULTED, "easing"];
 
-  const renderBeatPicker = (step, idx) => {
-    const tempo = tempoOf();
-    if (!tempo || !window.SeqTempo) return "";
-    if (SeqProtocolCheck.loopBodySteps(editorState.current.steps).has(idx)) return "";
-    // Each bar is its number and its beats as one joined bar, the first beat
-    // weighted; the bars sit side by side and wrap.
-    const bars = window.SeqTempo.bars(tempo, Math.max(routineReachMs(), Number(step.t) || 0))
+  // The beats a step can be put on, to pick from: each bar is its number and
+  // its beats as one joined bar, the first beat weighted; the bars sit side
+  // by side and wrap. The one markup, for the inspector and the step list's
+  // card. `reachMs` is how far the routine it is in reaches, `cls` the class
+  // a beat's button takes, `attrs(index)` what makes it the caller's to
+  // hear, and `offered(index)` whether the step can be put there at all - a
+  // beat it cannot reach is drawn and cannot be pressed.
+  const beatBarsHtml = (step, reachMs, cls, attrs, offered = () => true) =>
+    `<div class="seq-bars">${window.SeqTempo.bars(tempoOf(), Math.max(reachMs, Number(step.t) || 0))
       .map((bar) => {
         const name = bar.bar === 0 ? "Pickup" : `Bar ${bar.bar}`;
         const beats = bar.beats
           .map(
             (b) =>
-              `<button type="button" class="step-beat-pick${b.strong ? " strong" : ""}" data-beat="${b.index}" aria-pressed="${step.beat === b.index ? "true" : "false"}" aria-label="${name}, beat ${b.beat}">${b.beat}</button>`,
+              `<button type="button" class="${cls}${b.strong ? " strong" : ""}" ${attrs(b.index)} aria-pressed="${step.beat === b.index ? "true" : "false"}"${offered(b.index) ? "" : " disabled"} aria-label="${name}, beat ${b.beat}">${b.beat}</button>`,
           )
           .join("");
         return `<span class="seq-bar"><span class="seq-bar-num" aria-hidden="true">${bar.bar === 0 ? "-" : bar.bar}</span><span class="seg seg-sm seq-beats" role="group" aria-label="${name}">${beats}</span></span>`;
       })
-      .join("");
+      .join("")}</div>`;
+
+  const renderBeatPicker = (step, idx) => {
+    const tempo = tempoOf();
+    if (!tempo || !window.SeqTempo) return "";
+    if (SeqProtocolCheck.loopBodySteps(editorState.current.steps).has(idx)) return "";
+    const bars = beatBarsHtml(step, routineReachMs(), "step-beat-pick", (index) => `data-beat="${index}"`);
     const clear = Number.isInteger(step.beat)
       ? `<button type="button" class="seq-act step-beat-clear">Off the beat</button>`
       : "";
@@ -3400,7 +3444,7 @@
     return `
       <div class="seq-rows">
         <span class="seq-row-label">Beat</span>
-        <div class="seq-row-ctl"><div class="seq-bars">${bars}</div>${clear}</div>
+        <div class="seq-row-ctl">${bars}${clear}</div>
         ${span}
       </div>`;
   };
@@ -4627,22 +4671,12 @@
 
   // Which half a refusal is in, for a sequence that has two: "Opens",
   // "Closes", or "" for one that is in neither - its name, its mute period,
-  // its group, its tempo. Protocol Check reads both halves and says the half
-  // only on some refusals (`closeSteps[2].beat`): one from a step's own rules
-  // names the step's field alone (`cmd`, `t`), and the step cap and a missing
-  // Sequence End name no field. For those the opening half is read again by
-  // itself, and without what it names: a refusal about a sequence inside it
-  // says `steps[n].ref` and is placed above. Accepted alone, the refusal is
-  // in the close half.
-  const SEQUENCE_FIELDS = ["name", "suppressMs", "toggleGroup"];
+  // its group, its tempo. Protocol Check names the half in the field of
+  // every refusal that is in one (`closeSteps[2].beat`, `steps`).
   const refusedHalf = (verdict) => {
-    const seq = editorState.current;
-    if (verdict.ok || !hasCloseHalf(seq)) return "";
+    if (verdict.ok || !hasCloseHalf(editorState.current)) return "";
     const field = verdict.field || "";
-    if (SEQUENCE_FIELDS.includes(field) || field.startsWith("tempo")) return "";
-    if (field.startsWith("closeSteps")) return "Closes";
-    if (field.startsWith("steps")) return "Opens";
-    return SeqProtocolCheck.validateSequence({ ...seq, toggleGroup: "none", closeSteps: [] }).ok ? "Closes" : "Opens";
+    return field.startsWith("closeSteps") ? "Closes" : field.startsWith("steps") ? "Opens" : "";
   };
 
   // The Rehearsal reads one run, and a toggle is two: each half is rehearsed

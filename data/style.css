@@ -6699,7 +6699,8 @@ body[data-page="maintenance"] .status-item .hint {
   border-bottom-color: var(--border-strong);
 }
 
-.tl-ruler-row .tl-name {
+.tl-ruler-row .tl-name,
+.tl-bars-row .tl-name {
   color: var(--text-faint);
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
@@ -6729,6 +6730,32 @@ body[data-page="maintenance"] .status-item .hint {
   font-size: var(--fs-hint);
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* The Bars row under the seconds, drawn only for a routine with a tempo: a
+   line at every beat, heavier at a bar's first, which carries the bar's
+   number. */
+.tl-bars-row {
+  min-height: 18px;
+  border-bottom-color: var(--border-strong);
+}
+
+.tl-beat {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding-left: var(--space-2xs);
+  border-left: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  line-height: 18px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tl-beat.is-bar {
+  border-left-color: var(--text-faint);
 }
 
 .tl-item {
@@ -7303,8 +7330,14 @@ body[data-page="maintenance"] .status-item .hint {
 
 .seq-picked-rows .setting-row > .seg,
 .seq-picked-rows .setting-row > .seq-pills,
+.seq-picked-rows .setting-row > .seq-bars,
 .seq-picked-rows .setting-row > .switch {
   justify-self: start;
+}
+
+/* The beat picker's bars run to several lines: its name stays on the first. */
+.seq-picked-rows .setting-row:has(> .seq-bars) {
+  align-items: start;
 }
 
 /* A row of pills runs to several lines: its name stays on the first. */

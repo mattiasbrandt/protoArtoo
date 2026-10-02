@@ -187,7 +187,9 @@ typedef void (*SeqNestLookup)(const char* ref, SeqNestInfo* out, void* ctx);
 // phrase exists on this droid and is not a toggle, nothing reaches back to the
 // sequence being saved or to a phrase already on its own path (a cycle), no
 // path is deeper than PC_NEST_DEPTH_MAX, and the whole run, spliced, fits in
-// PC_MAX_STEPS. `selfId` and `selfName` are the sequence being saved; either
+// PC_MAX_STEPS. The steps and the close half are both held to them, each
+// counted by itself, and a refusal names its half in its field. `selfId` and
+// `selfName` are the sequence being saved; either
 // may be empty. The walk holds its state on the heap, not on the caller's
 // stack; an allocation failure refuses the save rather than skipping the
 // check.
