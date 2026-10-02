@@ -11,7 +11,11 @@
   const SUPPRESS_MS_MIN = 1000;
   const SUPPRESS_MS_MAX = 120000;
   const TOGGLE_GROUPS = ["none", "pies", "low", "all"];
-  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "gesture", "sequence", "end"];
+  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "body", "gesture", "sequence", "end"];
+  // A Body Step's Move Shapes, and how long a body flutter may last
+  // (PC_BODY_FLUTTER_MS_MIN / _MAX, include/protocol_check.h).
+  const BODY_SHAPES = ["open", "close", "flutter"];
+  const BODY_FLUTTER_MS = Object.freeze([50, 60000]);
   // A sequence reference: a name, or a saved sequence's id (protocolCheckSeqRefValid()).
   const SEQ_REF = /^(DM:[A-Z0-9_]{1,18}|[0-9a-z]{1,16})$/;
   const AUDIO_CATEGORIES = [
@@ -251,6 +255,10 @@
     // The Rehearsal's size figure reads it from here rather than keep its own.
     MAX_STEPS: 96,
 
+    // How long a body flutter may last, in ms, as [least, most]: the bounds a
+    // control that sets one offers, read from here rather than kept again.
+    BODY_FLUTTER_MS,
+
     /**
      * The dome's light vocabulary: which targets it answers to, the modes and
      * colors each takes, and the label to show for every token. Frozen, so a
@@ -369,6 +377,7 @@
         case "random":   return this._validateRandomStep(step);
         case "audioCat": return this._validateAudioCatStep(step);
         case "domeRotate": return this._validateDomeRotateStep(step);
+        case "body":     return this._validateBodyStep(step, stepIndex, allSteps);
         case "gesture":  return this._validateGestureStep(step, stepIndex, allSteps);
         case "sequence":
           return typeof step.ref === "string" && SEQ_REF.test(step.ref)
@@ -377,6 +386,45 @@
         case "end":      return { ok: true };
         default:         return { ok: true };
       }
+    },
+
+    // A Body Step's form: the wire's rules (parseStep(), src/seq_json.cpp) and
+    // Protocol Check's (STEP_BODY in protocolCheckBranch(),
+    // src/protocol_check.cpp), which is the one place the firmware judges one.
+    // Form and only form (ADR 0044): whether an Output claims the Part is the
+    // Rehearsal's, and a Part nothing is wired to still saves.
+    //
+    // A key the wire reads as absent - missing, or null - is absent here. The
+    // catalog is checked where the page has loaded it, as the Gesture's is.
+    _validateBodyStep(step, stepIndex, allSteps) {
+      const fail = (field, error) => ({ ok: false, field, error });
+      const said = (value) => value !== undefined && value !== null;
+      const catalog = window.DroidParts?.parts;
+      if (typeof step.part !== "string" || step.part === "") return fail("part", "Pick a part");
+      if (Array.isArray(catalog) && !catalog.some((part) => part.id === step.part)) {
+        return fail("part", "The part must be one from the parts list");
+      }
+      if (said(step.shape) && !BODY_SHAPES.includes(step.shape)) return fail("shape", "Pick open, close or flutter");
+      if (said(step.howFar) && !(isWhole(step.howFar) && step.howFar >= 1 && step.howFar <= 100)) {
+        return fail("howFar", "How far is 1 to 100 percent");
+      }
+      // An absent duration is stored as 0, and the firmware judges the 0: a
+      // flutter with none is refused, and any other shape may say 0.
+      const flutterMs = said(step.flutterMs) ? step.flutterMs : 0;
+      if (step.shape !== "flutter") {
+        return flutterMs === 0 ? { ok: true } : fail("flutterMs", "Only a flutter lasts a time");
+      }
+      const [least, most] = BODY_FLUTTER_MS;
+      if (!isWhole(flutterMs) || flutterMs < least || flutterMs > most) {
+        return fail("flutterMs", `A flutter lasts ${least} to ${most} ms`);
+      }
+      // A flutter ends open and owes a close (ADR 0049): a later body step in
+      // the same branch that closes this Part.
+      const closes = (other) => other && other.type === "body" && other.shape === "close" && other.part === step.part;
+      if (!allSteps.slice(stepIndex + 1).some(closes)) {
+        return fail("shape", "A flutter must be closed later. Add a close of the same part.");
+      }
+      return { ok: true };
     },
 
     // A Gesture's form (checkGesture(), src/protocol_check.cpp). Whether the
