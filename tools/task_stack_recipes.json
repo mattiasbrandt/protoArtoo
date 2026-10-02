@@ -81,7 +81,7 @@
           "frames": [],
           "chain_bytes": 5104,
           "stack_bytes": 6656,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: driveTask -> driveBackendBegin() -> HardwareSerial::begin() -> uartBegin -> uartSetPins -> hardware_serial_end -> ...; widest frames driveTask 1328 B, _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B. It grew 16 B when ConfigSnapshot, which driveTask's frame holds, grew 916 -> 920 B for the Dome Bearing's calibration (#445)."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: driveTask -> driveBackendBegin() -> HardwareSerial::begin() -> uartBegin -> uartSetPins -> hardware_serial_end -> ...; widest frames driveTask 1328 B, _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B. It grew 16 B when ConfigSnapshot, which driveTask's frame holds, reached 924 B: #444 and #445 each added 4 B, and the frame moved one 16 B step."
         }
       }
     },
@@ -194,7 +194,7 @@
           "frames": [],
           "chain_bytes": 7136,
           "stack_bytes": 9216,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: audioTask -> publishCatalogObservation() -> Preferences::begin() -> nvs_flash_init_partition -> nvs::NVSPartitionManager::init_partition() -> nvs::NVSPartitionManager::init_custom() -> ...; widest frames audioTask 1536 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, uw_init_context_1 432 B. The root frame grew 1504 -> 1520 B when the idle chatter began to read whether the droid is driving - the drive output and both wheels, and the settle it measures across ticks (#450). It grew 16 B when ConfigSnapshot, which audioTask's frame holds, grew 916 -> 920 B for the Dome Bearing's calibration (#445)."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: audioTask -> publishCatalogObservation() -> Preferences::begin() -> nvs_flash_init_partition -> nvs::NVSPartitionManager::init_partition() -> nvs::NVSPartitionManager::init_custom() -> ...; widest frames audioTask 1536 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, uw_init_context_1 432 B. The root frame grew 1504 -> 1520 B when the idle chatter began to read whether the droid is driving - the drive output and both wheels, and the settle it measures across ticks (#450). It grew 16 B when ConfigSnapshot, which audioTask's frame holds, reached 924 B: #444 and #445 each added 4 B, and the frame moved one 16 B step."
         }
       }
     },
@@ -252,7 +252,7 @@
           "frames": [],
           "chain_bytes": 9728,
           "stack_bytes": 12288,
-          "note": "This task's own frame is about 2.2 KB on RISC-V, and GCC allocates it with two `addi sp,sp,-N` instructions because it exceeds the 12-bit immediate; tools/stack_usage_report.py adds both (#250). On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: domeLinkTask -> fetchDomeLayoutOverWifi() [clone .isra.0] -> HTTPClient::GET() -> HTTPClient::sendRequest() -> HTTPClient::handleHeaderResponse() -> HTTPClient::setCookie() -> ...; widest frames domeLinkTask 2208 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, _Unwind_Resume_or_Rethrow 912 B. It grew 16 B when ConfigSnapshot, which domeLinkTask's frame holds, grew 916 -> 920 B for the Dome Bearing's calibration (#445)."
+          "note": "This task's own frame is about 2.2 KB on RISC-V, and GCC allocates it with two `addi sp,sp,-N` instructions because it exceeds the 12-bit immediate; tools/stack_usage_report.py adds both (#250). On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: domeLinkTask -> fetchDomeLayoutOverWifi() [clone .isra.0] -> HTTPClient::GET() -> HTTPClient::sendRequest() -> HTTPClient::handleHeaderResponse() -> HTTPClient::setCookie() -> ...; widest frames domeLinkTask 2208 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, _Unwind_Resume_or_Rethrow 912 B. It grew 16 B when ConfigSnapshot, which domeLinkTask's frame holds, reached 924 B: #444 and #445 each added 4 B, and the frame moved one 16 B step."
         }
       }
     },
@@ -437,9 +437,9 @@
             }
           ],
           "stitch_reason": "As on artoo-esp32: the command callback is reached through `cli->onCommand`, and a status, api, direct-action or audio-config op through a pointer read from g_statusExecutors, one of the six g_*DirectActionExecutors tables or g_audioConfigExecutors; the Setting ops are direct calls (#431).",
-          "chain_bytes": 11552,
+          "chain_bytes": 11600,
           "stack_bytes": 14848,
-          "note": "The same config-write route as the artoo-esp32 arm, from consoleExecuteSoundVolumeConfig through saveConfigToNvs and configPersist to configWriteWindowExpectHeld's log line, under the two stitched frames. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: consoleTask -> embeddedCliProcess -> onCliCommand -> consoleExecuteCommand() -> consoleExecuteSoundVolumeConfig() -> audioSetVolumeWriteWindow() -> ...; widest frames consoleExecuteCommand() 1888 B, _Unwind_RaiseException 1296 B, audioSetVolumeCommitApplied() [clone .part.0] 1200 B, _svfprintf_r 1152 B. It grew 16 B when ConfigSnapshot, which consoleExecuteCommand()'s frame holds, grew 916 -> 920 B for the Dome Bearing's calibration (#445)."
+          "note": "The same config-write route as the artoo-esp32 arm, from consoleExecuteSoundVolumeConfig through saveConfigToNvs and configPersist to configWriteWindowExpectHeld's log line, under the two stitched frames. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: consoleTask -> embeddedCliProcess -> onCliCommand -> consoleExecuteCommand() -> consoleExecuteSoundVolumeConfig() -> audioSetVolumeWriteWindow() -> ...; widest frames consoleExecuteCommand() 1888 B, _Unwind_RaiseException 1296 B, audioSetVolumeCommitApplied() [clone .part.0] 1216 B, _svfprintf_r 1152 B. The ConfigSnapshot on this route is 924 B, 4 B each from #444's body servo controller and #445's Dome Bearing calibration: 11536 -> 11600 B across the two."
         }
       }
     },
@@ -524,7 +524,7 @@
           "frames": [],
           "chain_bytes": 7280,
           "stack_bytes": 9216,
-          "note": "The status build: buildStatusJson captures and formatStatusJson serialises on this task, and the serializer's number formatting reaches newlib. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: eventStreamTask -> buildStatusJson() [clone .part.0] -> networkManagerQueryConnectivity() -> wifiNetworkManagerQueryConnectivityCommon() -> IPAddress::toString() const -> _Unwind_Resume -> ...; widest frames buildStatusJson() [clone .part.0] 1504 B, _svfprintf_r 1152 B, eventStreamTask 912 B, _Unwind_Resume 912 B. buildStatusJson grew 16 B for the Dome Bearing (#445): the reading in its dome snapshot, and the ConfigSnapshot it captures from, 4 B larger for the calibration."
+          "note": "The status build: buildStatusJson captures and formatStatusJson serialises on this task, and the serializer's number formatting reaches newlib. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: eventStreamTask -> buildStatusJson() [clone .part.0] -> networkManagerQueryConnectivity() -> wifiNetworkManagerQueryConnectivityCommon() -> IPAddress::toString() const -> _Unwind_Resume -> ...; widest frames buildStatusJson() [clone .part.0] 1504 B, _svfprintf_r 1152 B, eventStreamTask 912 B, _Unwind_Resume 912 B. buildStatusJson grew 16 B: the Dome Bearing's reading in its dome snapshot (#445), and the ConfigSnapshot it captures from, 924 B after #444 and #445 each added 4 B."
         }
       }
     },
