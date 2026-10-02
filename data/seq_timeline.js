@@ -82,6 +82,10 @@
   // The arrow keys move the selected blocks this far; Shift, the bigger step.
   const NUDGE_MS = 10;
   const NUDGE_BIG_MS = 100;
+  // How long a body flutter may last, as [least, most]: Protocol Check's own
+  // bounds, which a typed or dragged length is held to. Without them, the
+  // limits any length has here.
+  const flutterRange = () => window.SeqProtocolCheck?.BODY_FLUTTER_MS || [MIN_LENGTH_MS, STEP_T_MAX_MS];
 
   // Logic and PSI targets that name more than one light Part, as the dome
   // command grammar spells them (kDlTargets, src/protocol_check.cpp). A single
@@ -171,7 +175,11 @@
   //   steps    the indices of the steps a drag of the body moves in time
   //   l, r     what dragging that edge changes, as {step, field}: field "t" is
   //            that step's time (a Part standing open ends at its close step),
-  //            any other field is the step's own duration
+  //            any other field is the step's own duration. `with` on `r` is a
+  //            second step whose time that edge moves too: the close a body
+  //            flutter owes
+  // A Part standing open (`open`) also carries `sent`: when the command that
+  // opened it was sent, which for a body Part is before it stands open.
   // An item with no `steps` is derived and is not draggable: a later pass of a
   // loop, a move a Gesture becomes, what the droid does after the end.
   //
@@ -210,7 +218,7 @@
           short: part && part.shorthand ? part.shorthand : "",
           items: [],
           changes: [],
-          state: { open: false, since: 0, sinceGhost: false, sinceStep: null, fromUs: null },
+          state: { open: false, since: 0, sent: 0, sinceGhost: false, sinceStep: null, flutter: null, fromUs: null },
         });
       }
       return lanes.get(id);
@@ -233,11 +241,15 @@
       step === null ? {} : { steps: [step], l: { step, field }, r: { step, field } };
 
     // A dome panel or a body Part told to open, close or flutter. `step` is
-    // the written step that did it, or null.
-    const openFrom = (lane, t, ghost, step) => {
+    // the written step that did it, or null. `t` is when the Part stands open
+    // and `sent` when the command that opens it is sent: the same moment for a
+    // dome panel, and for a body Part the start of the travel or the flutter
+    // that comes first.
+    const openFrom = (lane, t, ghost, step, sent = t) => {
       if (!lane.state.open) {
         lane.state.open = true;
         lane.state.since = t;
+        lane.state.sent = sent;
         lane.state.sinceGhost = ghost;
         lane.state.sinceStep = step;
       }
@@ -251,10 +263,24 @@
       const l = { step: opened, field: "t" };
       return closed === null ? { steps: [opened], l } : { steps: [...new Set([opened, closed])], l, r: { step: closed, field: "t" } };
     };
+    // A body flutter that opened the Part is one block with the close it
+    // owes, as an open is: it has a length of its own, so it is the block a
+    // builder sees and takes hold of, and its body moves the pair. Its right
+    // edge takes the close with it (`r.with`), so the flutter never runs on
+    // past the close it owes, and `until` is where that close is, which its
+    // left edge may not pass: a flutter after its own close is refused.
     const closeAt = (lane, t, step) => {
       if (lane.state.open) {
-        add(lane, { kind: "open", t0: lane.state.since, t1: t, ghost: lane.state.sinceGhost, ...standing(lane.state.sinceStep, step) });
+        const pair = standing(lane.state.sinceStep, step);
+        add(lane, { kind: "open", t0: lane.state.since, t1: t, sent: lane.state.sent, ghost: lane.state.sinceGhost, ...pair });
+        if (lane.state.flutter && pair.r) {
+          const flutter = lane.state.flutter;
+          flutter.steps = pair.steps;
+          flutter.r = { ...flutter.r, with: pair.r.step };
+          flutter.until = t;
+        }
         lane.state.open = false;
+        lane.state.flutter = null;
       }
     };
 
@@ -355,15 +381,17 @@
           }
           if (shape === "flutter") {
             const flutterMs = Number(def.flutterMs) || 0;
-            add(lane, { kind: "flutter", t0: t, t1: t + flutterMs, label, ghost, ...lasts(step, "flutterMs") });
-            openFrom(lane, t + flutterMs, ghost, step);
+            const wasOpen = lane.state.open;
+            const item = add(lane, { kind: "flutter", t0: t, t1: t + flutterMs, label, ghost, ...lasts(step, "flutterMs") });
+            openFrom(lane, t + flutterMs, ghost, step, t);
+            if (!wasOpen && step !== null) lane.state.flutter = item;
           } else {
             // How long the Part takes to get there is the Output's, not the
             // step's (ADR 0052), so a move is dragged and never resized.
             if (travel > 0) add(lane, { kind: "move", t0: t, t1: t + travel, label, ghost, ...drawnFrom(step) });
             else add(lane, { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
             if (shape === "close") closeAt(lane, t, step);
-            else openFrom(lane, t + travel, ghost, step);
+            else openFrom(lane, t + travel, ghost, step, t);
           }
           const howFar = Number(def.howFar) || 100;
           lane.changes.push({ t, at: shape === "close" ? 0 : Math.min(100, Math.max(5, howFar)) / 100 });
@@ -708,11 +736,14 @@
       }
       const within = (block, other) =>
         other !== block && other.steps.length > block.steps.length && block.steps.every((index) => other.steps.includes(index));
+      // A block starts where the earliest of its details does: a body Part
+      // standing open is drawn from the end of its travel or its flutter,
+      // and the block starts at the step that sent it there.
       return all
         .filter((block) => !all.some((other) => within(block, other)))
         .map((block) => ({
           steps: block.steps,
-          t0: block.t0,
+          t0: Math.min(block.t0, ...all.filter((detail) => within(detail, block)).map((detail) => detail.t0)),
           name: block.part && block.lanes.size === 1 ? [...block.lanes][0] : "",
           // A Part standing open has no words of its own: it takes those of
           // the command that opened it.
@@ -887,7 +918,8 @@
     // it runs against it (the length of a block whose start is being dragged).
     const write = (steps, index, field, sign) => {
       const step = steps[index];
-      const [min, max] = field === "t" ? timeRange(steps, index) : [MIN_LENGTH_MS, STEP_T_MAX_MS];
+      const [min, max] = field === "t" ? timeRange(steps, index)
+        : field === "flutterMs" ? flutterRange() : [MIN_LENGTH_MS, STEP_T_MAX_MS];
       return { step, field, sign, from: Number(step[field]) || 0, min, max, beat: step.beat, spanBeats: step.spanBeats };
     };
 
@@ -905,9 +937,17 @@
         const writes = [write(steps, side.step, "t", 1)];
         return edge === "l" ? { writes, lo: -Infinity, hi: length } : { writes, lo: -length, hi: Infinity };
       }
-      return edge === "l"
-        ? { writes: [write(steps, side.step, "t", 1), write(steps, side.step, side.field, -1)], lo: -Infinity, hi: Infinity }
-        : { writes: [write(steps, side.step, side.field, 1)], lo: -Infinity, hi: Infinity };
+      // A body flutter tied to its close: the right edge moves that close as
+      // far as it changes the length, and the left edge stops at the close.
+      if (edge === "l") {
+        return {
+          writes: [write(steps, side.step, "t", 1), write(steps, side.step, side.field, -1)],
+          lo: -Infinity,
+          hi: item.until === undefined ? Infinity : Math.max(0, item.until - item.t0),
+        };
+      }
+      const tied = side.with === undefined ? [] : [write(steps, side.with, "t", 1)];
+      return { writes: [write(steps, side.step, side.field, 1), ...tied], lo: -Infinity, hi: Infinity };
     };
 
     // How far the plan can actually go: every write stays inside its range.
@@ -1105,8 +1145,9 @@
     };
 
     // A Part standing open is one block made of two steps. By the step that
-    // opens it: the step that closes it and how long it stands, or null when
-    // no written step closes it.
+    // opens it: the step that closes it and how long the block runs, from the
+    // step that opens it to the step that closes it - a body Part's travel or
+    // flutter included - or null when no written step closes it.
     const standingItem = (index) => {
       for (const lane of model.parts) {
         const item = lane.items.find((each) => each.kind === "open" && each.l && each.l.step === index && each.r);
@@ -1116,19 +1157,35 @@
     };
     const standing = (index) => {
       const item = standingItem(index);
-      return item ? { close: item.r.step, ms: item.t1 - item.t0 } : null;
+      return item ? { close: item.r.step, ms: item.t1 - item.sent } : null;
     };
-    // Typed rather than dragged: the block the step at `index` opens stands
-    // for `ms`, its close moved as a drag of that edge moves it, as far as
-    // its limits allow, and it is one edit.
+    // Typed rather than dragged: the block the step at `index` opens runs
+    // for `ms`, its close moved as far as its limits allow, and it is one
+    // edit. The close comes no earlier than the step that opens the Part; one
+    // that comes before a body Part has arrived is the Rehearsal's to say, not
+    // a limit here (ADR 0052).
+    //
+    // A body flutter with a close is a pair too, and the flutter lasts the
+    // pair: its length follows the close, within a flutter's own bounds.
     const sizeStanding = (index, ms) => {
       const item = standingItem(index);
       if (drag || !item || !Number.isFinite(ms)) return;
-      const plan = planFor(item, "r");
+      const steps = seqNow().steps;
+      const opener = steps[index];
+      const flutters = opener.type === "body" && opener.shape === "flutter";
+      const [least, most] = flutterRange();
+      const span = item.t1 - item.sent;
+      const plan = { writes: [write(steps, item.r.step, "t", 1)], lo: (flutters ? least : 0) - span, hi: Infinity };
       const [lo, hi] = reach(plan);
-      const by = Math.max(lo, Math.min(hi, Math.round(ms) - (item.t1 - item.t0)));
+      const by = Math.min(hi, Math.max(lo, Math.round(ms) - span));
       const before = edit.begin();
       apply(plan, by);
+      const lasts = Math.max(least, Math.min(most, span + by));
+      if (flutters && lasts !== opener.flutterMs) {
+        opener.flutterMs = lasts;
+        // A length in milliseconds is no longer a span of beats (ADR 0058).
+        delete opener.spanBeats;
+      }
       edit.commit(before);
     };
 

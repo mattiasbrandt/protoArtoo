@@ -7,13 +7,22 @@
 // =============================================================================
 
 (() => {
-  const REGEX_NAME = /^DM:[A-Z0-9_]{1,18}$/;
+  // How many characters a sequence's name holds after its DM:
+  // (PC_NAME_BODY_MAX, include/protocol_check.h). The one copy in the browser:
+  // both patterns below are built from it, and the editor reads it from here.
+  const NAME_CHARS_MAX = 18;
+  const NAME_PATTERN = `DM:[A-Z0-9_]{1,${NAME_CHARS_MAX}}`;
+  const REGEX_NAME = new RegExp(`^${NAME_PATTERN}$`);
   const SUPPRESS_MS_MIN = 1000;
   const SUPPRESS_MS_MAX = 120000;
   const TOGGLE_GROUPS = ["none", "pies", "low", "all"];
-  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "gesture", "sequence", "end"];
+  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "body", "gesture", "sequence", "end"];
+  // A Body Step's Move Shapes, and how long a body flutter may last
+  // (PC_BODY_FLUTTER_MS_MIN / _MAX, include/protocol_check.h).
+  const BODY_SHAPES = ["open", "close", "flutter"];
+  const BODY_FLUTTER_MS = Object.freeze([50, 60000]);
   // A sequence reference: a name, or a saved sequence's id (protocolCheckSeqRefValid()).
-  const SEQ_REF = /^(DM:[A-Z0-9_]{1,18}|[0-9a-z]{1,16})$/;
+  const SEQ_REF = new RegExp(`^(${NAME_PATTERN}|[0-9a-z]{1,16})$`);
   const AUDIO_CATEGORIES = [
     "alert",
     "chatty",
@@ -44,6 +53,30 @@
   const TEMPO_HASH = /^[0-9a-f]{1,64}$/;
 
   const isWhole = (value) => Number.isInteger(value);
+
+  // A logic text as the bytes the droid decodes it to, or null where it
+  // refuses the encoding (percentDecode(), src/protocol_check.cpp): an escape
+  // is % and two hex digits whose letters are all capitals or all small - it
+  // has no reading for %aC - and stands for any byte but a carriage return;
+  // anything else is printable ASCII as typed, and never a colon.
+  const DT_ESCAPE = /^(?:[0-9A-F]{2}|[0-9a-f]{2})$/;
+  const decodeTextBytes = (encoded) => {
+    const bytes = [];
+    for (let i = 0; i < encoded.length; i++) {
+      const ch = encoded[i];
+      if (ch === "%") {
+        const hex = encoded.slice(i + 1, i + 3);
+        if (!DT_ESCAPE.test(hex) || parseInt(hex, 16) === 0x0d) return null;
+        bytes.push(parseInt(hex, 16));
+        i += 2;
+      } else if (ch === ":" || ch < " " || ch > "~") {
+        return null;
+      } else {
+        bytes.push(ch.charCodeAt(0));
+      }
+    }
+    return bytes;
+  };
   const bpmTenths = (tempo) => Math.round(Number(tempo?.bpm) * 10);
 
   // seqTempoSpanMs() / seqTempoBeatMs(): round(beats * 60000 / bpm), in the
@@ -55,6 +88,12 @@
   };
   const tempoBeatMs = (tempo, beat) => (Number(tempo?.phase) || 0) + tempoSpanMs(tempo, beat);
 
+  // How many steps the loop at `at` takes as its body, in a list that may not
+  // have that many after it. validateStep() refuses a loop that reaches past
+  // the last step; this reading is for everything that walks a sequence
+  // whether it is valid or not, so it never reaches past the list itself.
+  const loopBodyCount = (steps, at) => Math.min(steps[at].body, steps.length - at - 1);
+
   // The indices of steps inside a loop body: timed from the loop pass, so a
   // beat there counts from nothing the grid knows.
   const loopBodyIndices = (steps) => {
@@ -63,7 +102,7 @@
     while (j < steps.length) {
       const s = steps[j];
       if (s && s.type === "loop" && typeof s.body === "number" && s.body > 0) {
-        const count = Math.min(s.body, steps.length - j - 1);
+        const count = loopBodyCount(steps, j);
         for (let k = 1; k <= count; k++) body.add(j + k);
         j += count + 1;
       } else {
@@ -116,7 +155,7 @@
   // Logic Text (DT:) — multi-line text display on FLD/RLD.
   // Grammar: DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
   // Text is percent-encoded; newline=%0A, %=%25, :=%3A; spaces literal.
-  // Encoded text <= 40 chars; decoded text <= 32 chars; max one newline.
+  // Encoded text <= 40 chars; decoded text <= 32 bytes; max one newline.
   const DT_TARGETS = new Set([
     "FLD", "RLD", "LOGIC",
   ]);
@@ -251,6 +290,13 @@
     // The Rehearsal's size figure reads it from here rather than keep its own.
     MAX_STEPS: 96,
 
+    // How many characters a sequence's name holds after its DM:.
+    NAME_CHARS_MAX,
+
+    // How long a body flutter may last, in ms, as [least, most]: the bounds a
+    // control that sets one offers, read from here rather than kept again.
+    BODY_FLUTTER_MS,
+
     /**
      * The dome's light vocabulary: which targets it answers to, the modes and
      * colors each takes, and the label to show for every token. Frozen, so a
@@ -289,7 +335,7 @@
         return {
           ok: false,
           error:
-            "The name must start with DM: then 1-18 capital letters, numbers, or underscores (for example, DM:ROCKMARCH)",
+            `The name must start with DM: then 1-${NAME_CHARS_MAX} capital letters, numbers, or underscores (for example, DM:ROCKMARCH)`,
         };
       }
       return { ok: true };
@@ -365,10 +411,11 @@
       switch (type) {
         case "audio":    return this._validateAudioStep(step);
         case "dome":     return this._validateDomeStep(step);
-        case "loop":     return this._validateLoopStep(step, allSteps);
+        case "loop":     return this._validateLoopStep(step, stepIndex, allSteps);
         case "random":   return this._validateRandomStep(step);
         case "audioCat": return this._validateAudioCatStep(step);
         case "domeRotate": return this._validateDomeRotateStep(step);
+        case "body":     return this._validateBodyStep(step, stepIndex, allSteps);
         case "gesture":  return this._validateGestureStep(step, stepIndex, allSteps);
         case "sequence":
           return typeof step.ref === "string" && SEQ_REF.test(step.ref)
@@ -377,6 +424,45 @@
         case "end":      return { ok: true };
         default:         return { ok: true };
       }
+    },
+
+    // A Body Step's form: the wire's rules (parseStep(), src/seq_json.cpp) and
+    // Protocol Check's (STEP_BODY in protocolCheckBranch(),
+    // src/protocol_check.cpp), which is the one place the firmware judges one.
+    // Form and only form (ADR 0044): whether an Output claims the Part is the
+    // Rehearsal's, and a Part nothing is wired to still saves.
+    //
+    // A key the wire reads as absent - missing, or null - is absent here. The
+    // catalog is checked where the page has loaded it, as the Gesture's is.
+    _validateBodyStep(step, stepIndex, allSteps) {
+      const fail = (field, error) => ({ ok: false, field, error });
+      const said = (value) => value !== undefined && value !== null;
+      const catalog = window.DroidParts?.parts;
+      if (typeof step.part !== "string" || step.part === "") return fail("part", "Pick a part");
+      if (Array.isArray(catalog) && !catalog.some((part) => part.id === step.part)) {
+        return fail("part", "The part must be one from the parts list");
+      }
+      if (said(step.shape) && !BODY_SHAPES.includes(step.shape)) return fail("shape", "Pick open, close or flutter");
+      if (said(step.howFar) && !(isWhole(step.howFar) && step.howFar >= 1 && step.howFar <= 100)) {
+        return fail("howFar", "How far is 1 to 100 percent");
+      }
+      // An absent duration is stored as 0, and the firmware judges the 0: a
+      // flutter with none is refused, and any other shape may say 0.
+      const flutterMs = said(step.flutterMs) ? step.flutterMs : 0;
+      if (step.shape !== "flutter") {
+        return flutterMs === 0 ? { ok: true } : fail("flutterMs", "Only a flutter lasts a time");
+      }
+      const [least, most] = BODY_FLUTTER_MS;
+      if (!isWhole(flutterMs) || flutterMs < least || flutterMs > most) {
+        return fail("flutterMs", `A flutter lasts ${least} to ${most} ms`);
+      }
+      // A flutter ends open and owes a close (ADR 0049): a later body step in
+      // the same branch that closes this Part.
+      const closes = (other) => other && other.type === "body" && other.shape === "close" && other.part === step.part;
+      if (!allSteps.slice(stepIndex + 1).some(closes)) {
+        return fail("shape", "A flutter must be closed later. Add a close of the same part.");
+      }
+      return { ok: true };
     },
 
     // A Gesture's form (checkGesture(), src/protocol_check.cpp). Whether the
@@ -555,7 +641,7 @@
       };
     },
 
-    _validateLoopStep(step, _allSteps) {
+    _validateLoopStep(step, stepIndex, allSteps) {
       const { body, periodMs, durationMs } = step;
 
       if (typeof body !== "number" || body < 1 || body > 96) {
@@ -563,6 +649,26 @@
           ok: false,
           field: "body",
           error: "A loop must repeat between 1 and 96 steps",
+        };
+      }
+
+      // The steps it repeats are the ones after it, and it may not reach past
+      // the last step of its branch ("loop body overruns the branch",
+      // protocolCheckBranch(), src/protocol_check.cpp).
+      if (stepIndex + body >= allSteps.length) {
+        return {
+          ok: false,
+          field: "body",
+          error: "A loop can't repeat more steps than come after it",
+        };
+      }
+
+      // No loop inside another's body ("nested loops are not allowed").
+      if (allSteps.slice(stepIndex + 1, stepIndex + 1 + body).some((inner) => inner && inner.type === "loop")) {
+        return {
+          ok: false,
+          field: "body",
+          error: "A loop can't repeat another loop",
         };
       }
 
@@ -574,19 +680,14 @@
         };
       }
 
-      if (typeof durationMs !== "number" || durationMs < 100 || durationMs > 120000) {
+      // 1..120000, and no rule ties it to the interval: the droid takes a loop
+      // that runs for less than one interval, which makes the one pass
+      // (protocolCheckBranch(), src/protocol_check.cpp).
+      if (typeof durationMs !== "number" || durationMs < 1 || durationMs > 120000) {
         return {
           ok: false,
           field: "durationMs",
-          error: "The loop must run for between 100 and 120000 milliseconds",
-        };
-      }
-
-      if (periodMs > durationMs) {
-        return {
-          ok: false,
-          field: "periodMs",
-          error: "The repeat interval can't be longer than the loop's total run time",
+          error: "The loop must run for between 1 and 120000 milliseconds",
         };
       }
 
@@ -802,7 +903,7 @@
     _validateDTTextCommand(cmd) {
       // DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
       // Text is percent-encoded; newline=%0A, %=%25, :=%3A; spaces literal
-      // Encoded text <= 40 chars; decoded text <= 32 chars; max one newline
+      // Encoded text <= 40 chars; decoded text <= 32 bytes; max one newline
       const parts = cmd.split(":");
       if (parts.length < 5 || parts[0] !== "DT") {
         return {
@@ -816,6 +917,8 @@
       const color = parts[2];
       const durationStr = parts[3];
       const speedStr = parts[4];
+      // The text is everything after the fifth colon, so a colon typed into
+      // it raw shows up as a field too many.
       const encodedText = parts.slice(5).join(":");
 
       // Validate command length (must be <= 63)
@@ -874,11 +977,28 @@
         };
       }
 
-      // Decode and validate the text
-      let decodedText = "";
-      try {
-        decodedText = decodeURIComponent(encodedText);
-      } catch (e) {
+      // What may stand in the text as typed (percentDecode(),
+      // src/protocol_check.cpp): printable ASCII, and never a colon, which
+      // would read as the next field. Anything else travels as an escape.
+      if (parts.length > 6) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Write a colon in the text as %3A",
+        };
+      }
+      if (/[^\x20-\x7E]/.test(encodedText)) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Text has a character that must be percent-encoded",
+        };
+      }
+
+      // Decoded as the droid decodes it, byte for byte: a %FF or a %09 is a
+      // byte like any other, and a carriage return is the one it refuses.
+      const decoded = decodeTextBytes(encodedText);
+      if (decoded === null) {
         return {
           ok: false,
           field: "cmd",
@@ -886,17 +1006,18 @@
         };
       }
 
-      // Validate decoded text length (max 32 chars)
-      if (decodedText.length > 32) {
+      // The droid decodes into 32 bytes. A character outside ASCII travels as
+      // two to four escapes, so it counts for that many.
+      if (decoded.length > 32) {
         return {
           ok: false,
           field: "cmd",
-          error: "Text is too long when decoded (max 32 characters)",
+          error: "Text is too long (max 32 characters; an accented letter or a symbol counts for more than one)",
         };
       }
 
       // Reject empty text
-      if (decodedText.length === 0) {
+      if (decoded.length === 0) {
         return {
           ok: false,
           field: "cmd",
@@ -904,31 +1025,8 @@
         };
       }
 
-      // Check for control characters (except newline)
-      for (let i = 0; i < decodedText.length; i++) {
-        const ch = decodedText.charCodeAt(i);
-        if (ch < 32 && ch !== 10) {
-          // < 32 is control char; 10 is newline (allowed)
-          return {
-            ok: false,
-            field: "cmd",
-            error: "Text contains invalid control characters",
-          };
-        }
-      }
-
-      // Check for carriage return (explicitly disallowed)
-      if (decodedText.includes("\r")) {
-        return {
-          ok: false,
-          field: "cmd",
-          error: "Text contains carriage return (CR); use only newlines",
-        };
-      }
-
       // Check for max one newline
-      const newlineCount = (decodedText.match(/\n/g) || []).length;
-      if (newlineCount > 1) {
+      if (decoded.filter((byte) => byte === 0x0a).length > 1) {
         return {
           ok: false,
           field: "cmd",
@@ -1199,50 +1297,51 @@
      * The beat rules on each step (src/seq_json.cpp parseStepBeats()): a beat
      * or a span needs a tempo, a step in a loop body carries no beat, a beat
      * is a whole 0..1200 and a span a whole 1..1200 on a step that has a
-     * duration to set.
+     * duration to set. `label` is the branch's key, for the field a refusal
+     * names.
      */
-    _validateBeats(steps, tempo) {
+    _validateBeats(steps, tempo, label = "steps") {
       const inLoop = loopBodyIndices(steps);
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i] || {};
         if (step.beat !== undefined) {
           if (tempo === undefined) {
-            return { ok: false, field: `steps[${i}].beat`, error: "Set a tempo before putting a step on a beat" };
+            return { ok: false, field: `${label}[${i}].beat`, error: "Set a tempo before putting a step on a beat" };
           }
           if (inLoop.has(i)) {
             return {
               ok: false,
-              field: `steps[${i}].beat`,
+              field: `${label}[${i}].beat`,
               error: "A step inside a repeat is timed from the repeat. Put the repeat on the beat instead.",
             };
           }
           if (!isWhole(step.beat) || step.beat < 0 || step.beat > TEMPO_BEAT_MAX) {
-            return { ok: false, field: `steps[${i}].beat`, error: "Pick a beat on the grid" };
+            return { ok: false, field: `${label}[${i}].beat`, error: "Pick a beat on the grid" };
           }
         }
         for (const key of ["stepBeats", "repeatBeats", "extentBeats"]) {
           if (step[key] === undefined) continue;
           if (step.type !== "gesture") {
-            return { ok: false, field: `steps[${i}].${key}`, error: "Only a gesture keeps its pace in beats" };
+            return { ok: false, field: `${label}[${i}].${key}`, error: "Only a gesture keeps its pace in beats" };
           }
           if (tempo === undefined) {
-            return { ok: false, field: `steps[${i}].${key}`, error: "Set a tempo before timing a gesture in beats" };
+            return { ok: false, field: `${label}[${i}].${key}`, error: "Set a tempo before timing a gesture in beats" };
           }
           if (!isWhole(step[key]) || step[key] < 1 || step[key] > TEMPO_BEAT_MAX) {
-            return { ok: false, field: `steps[${i}].${key}`, error: `A gesture's beats are 1 to ${TEMPO_BEAT_MAX}` };
+            return { ok: false, field: `${label}[${i}].${key}`, error: `A gesture's beats are 1 to ${TEMPO_BEAT_MAX}` };
           }
         }
         if (step.spanBeats !== undefined) {
           if (tempo === undefined) {
-            return { ok: false, field: `steps[${i}].spanBeats`, error: "Set a tempo before timing a step in beats" };
+            return { ok: false, field: `${label}[${i}].spanBeats`, error: "Set a tempo before timing a step in beats" };
           }
           if (!isWhole(step.spanBeats) || step.spanBeats < 1 || step.spanBeats > TEMPO_BEAT_MAX) {
-            return { ok: false, field: `steps[${i}].spanBeats`, error: `A span is 1 to ${TEMPO_BEAT_MAX} beats` };
+            return { ok: false, field: `${label}[${i}].spanBeats`, error: `A span is 1 to ${TEMPO_BEAT_MAX} beats` };
           }
           const turns = step.type === "domeRotate" && Number(step.speedPct) !== 0;
           const flutters = step.type === "body" && step.shape === "flutter";
           if (!turns && !flutters) {
-            return { ok: false, field: `steps[${i}].spanBeats`, error: "Only a dome turn or a flutter lasts a number of beats" };
+            return { ok: false, field: `${label}[${i}].spanBeats`, error: "Only a dome turn or a flutter lasts a number of beats" };
           }
         }
       }
@@ -1266,19 +1365,10 @@
         if (!tempoVal.ok) return tempoVal;
       }
       if (Array.isArray(seq.steps)) {
-        const beatVal = this._validateBeats(seq.steps, seq.tempo);
-        if (!beatVal.ok) return beatVal;
-        // A sequence is spliced in where it sits, which a loop body cannot take.
-        const inLoop = loopBodyIndices(seq.steps);
-        const looped = seq.steps.findIndex((step, i) => step && step.type === "sequence" && inLoop.has(i));
-        if (looped >= 0) {
-          return { ok: false, field: `steps[${looped}].type`, error: "A sequence cannot sit inside a repeat" };
-        }
-        if (seq.steps.filter((step) => step && step.type === "sequence").length > 8) {
-          return { ok: false, field: "steps", error: "A sequence can hold at most 8 others" };
-        }
+        const written = this._validateWritten(seq.steps, seq.tempo, "steps");
+        if (!written.ok) return written;
       }
-      const { name, suppressMs, toggleGroup, steps } = this.resolveBeats(seq);
+      const { name, suppressMs, toggleGroup, steps, closeSteps } = this.resolveBeats(seq);
 
       // Name
       const nameVal = this.validateName(name);
@@ -1311,32 +1401,70 @@
       if (steps.length === 0) {
         return { ok: false, error: "Add at least one step to the sequence" };
       }
+      const main = this._validateBranch(steps, "steps");
+      if (!main.ok) return main;
+
+      // The close half (protocolCheck(), src/protocol_check.cpp): a sequence
+      // in an interrupt group is a toggle, which runs its steps to open and
+      // its close half to close, so it needs one; any other must not carry
+      // one. An empty list is no close half, as the wire reads it
+      // (seqJsonParseVariant(), src/seq_json.cpp). It is a branch like the
+      // steps, timed on the same tempo and held to the same rules.
+      const isToggle = toggleGroup !== "none";
+      const hasClose = Array.isArray(closeSteps) && closeSteps.length > 0;
+      if (isToggle && !hasClose) {
+        return { ok: false, field: "closeSteps", error: "A sequence in an interrupt group needs a close half: the steps that close what it opened" };
+      }
+      if (!isToggle && hasClose) {
+        return { ok: false, field: "closeSteps", error: "Only a sequence in an interrupt group has a close half" };
+      }
+      if (hasClose) {
+        const written = this._validateWritten(seq.closeSteps, seq.tempo, "closeSteps");
+        if (!written.ok) return written;
+        const close = this._validateBranch(closeSteps, "closeSteps");
+        if (!close.ok) return close;
+      }
+
+      return { ok: true };
+    },
+
+    // What the wire's parser holds one branch to as it reads it
+    // (parseBranch(), src/seq_json.cpp): the beat rules, no sequence inside a
+    // loop, and Protocol Check's cap on sequences in one branch. `steps` is
+    // the branch as written, before its beats are resolved, and `label` its
+    // key: "steps" or "closeSteps".
+    _validateWritten(steps, tempo, label) {
+      const beatVal = this._validateBeats(steps, tempo, label);
+      if (!beatVal.ok) return beatVal;
+      // A sequence is spliced in where it sits, which a loop body cannot take.
+      const inLoop = loopBodyIndices(steps);
+      const looped = steps.findIndex((step, i) => step && step.type === "sequence" && inLoop.has(i));
+      if (looped >= 0) {
+        return { ok: false, field: `${label}[${looped}].type`, error: "A sequence cannot sit inside a repeat" };
+      }
+      if (steps.filter((step) => step && step.type === "sequence").length > 8) {
+        return { ok: false, field: label, error: "A sequence can hold at most 8 others" };
+      }
+      return { ok: true };
+    },
+
+    // One branch at the milliseconds it runs at, by the rules the droid
+    // applies to the steps and to the close half alike
+    // (protocolCheckBranch(), src/protocol_check.cpp).
+    _validateBranch(steps, label) {
       if (steps.length > this.MAX_STEPS) {
         return { ok: false, error: `A sequence can have at most ${this.MAX_STEPS} steps` };
       }
 
       // Must end with 'end' type
       const lastStep = steps[steps.length - 1];
-      if (lastStep.type !== "end") {
+      if (!lastStep || lastStep.type !== "end") {
         return { ok: false, error: "The sequence must finish with a Sequence End step" };
       }
 
       // Identify loop body step indices so we can skip outer non-decreasing time
       // check for them — body step times are relative to the loop iteration.
-      const bodyStepIndices = new Set();
-      {
-        let j = 0;
-        while (j < steps.length) {
-          const s = steps[j];
-          if (s.type === "loop" && typeof s.body === "number" && s.body > 0) {
-            const count = Math.min(s.body, steps.length - j - 1);
-            for (let k = 1; k <= count; k++) bodyStepIndices.add(j + k);
-            j += count + 1;
-          } else {
-            j++;
-          }
-        }
-      }
+      const bodyStepIndices = loopBodyIndices(steps);
 
       // Validate each step individually
       let lastOuterT = -1;
@@ -1348,7 +1476,7 @@
         if (!stepVal.ok) {
           return {
             ok: false,
-            field: stepVal.field || `steps[${i}]`,
+            field: stepVal.field || `${label}[${i}]`,
             error: stepVal.error,
           };
         }
@@ -1356,7 +1484,7 @@
           if (lastOuterT >= 0 && steps[i].t < lastOuterT) {
             return {
               ok: false,
-              field: `steps[${i}].t`,
+              field: `${label}[${i}].t`,
               error: `This step must happen at or after the previous step (${lastOuterT}ms)`,
             };
           }
@@ -1375,7 +1503,7 @@
         while (j < steps.length) {
           const s = steps[j];
           if (s.type === "loop" && typeof s.body === "number" && s.body > 0) {
-            const count = Math.min(s.body, steps.length - j - 1);
+            const count = loopBodyCount(steps, j);
             const bodySteps = steps.slice(j + 1, j + 1 + count);
             const bodyCleanup = this._checkBranchOfCleanup(bodySteps);
             if (!bodyCleanup.ok) return bodyCleanup;
