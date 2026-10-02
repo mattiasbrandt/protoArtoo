@@ -985,7 +985,10 @@ static void consoleExecuteDomeApiGetSequenceLastRun(uint32_t requestId, const Co
 // (handleSeqListGet()/handleSeqBuiltinsGet(), src/web/api_seq.cpp),
 // colon-separated per-field rather than "=" - the same
 // consoleFormatRcSourceSummary() convention above, so a value can never be
-// mistaken for a second key=value pair on the wire. Both stores are
+// mistaken for a second key=value pair on the wire. Two things are on the
+// REST rows only: the Learned row's `id`, and what the Sequences list shows
+// in its row cells (#441) - the Learned row's stepCount, lengthMs, purpose
+// and purposeCut and the Factory row's lengthMs. Both stores are
 // small and fully in-memory (at most SEQ_INDEX_CAPACITY = 10 on every board,
 // even where the board's save cap is lower; the Factory catalog is a
 // flash-resident const table), so - like system.status.logs' bounded ring -

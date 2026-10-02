@@ -1381,11 +1381,27 @@ it holds, up to ten on any board, which can be more than the board's save cap
     could hold sequences, until it is saved again
   - `toggleGroup`: toggle group assignment
   - `suppressMs`: suppression interval in milliseconds
-  - `source`: where the sequence came from (`"web"`, `"chirp"`, etc.)
-  - `modified`: ISO 8601 timestamp of last modification
+  - `source`: where the sequence came from, the saved file's `meta.source`:
+    `"user"` (also when the file names none), `"guild"`, or `"factory"` for one
+    tuned from a factory sequence
+  - `modified`: boolean; the saved file's `meta.modified`, `false` when the
+    file names none. The controller never sets it. Not a time: the controller
+    keeps no save time
   - `valid`: boolean indicating if the sequence is valid and runnable
   - `retrained`: boolean; true if this sequence shadows a factory sequence
+  - `stepCount`: steps in the main branch, the end step included
+  - `lengthMs`: how long a run is, in milliseconds: the end step's time, with
+    beats resolved against the sequence's tempo. A Servo Loop still on its
+    last pass at that time finishes it first, and that overrun is not counted.
+    `0` for an invalid sequence with no end step
+  - `purpose`: the first 40 bytes of the sequence's `meta.purpose`, cut on a
+    whole character; `""` when it has none. The whole purpose is in
+    `GET /api/seq?name=`
+  - `purposeCut`: boolean; true when the stored purpose is longer than `purpose`
 - Errors: `500` on response overflow
+
+`stepCount`, `lengthMs`, `purpose` and `purposeCut` are worked out when a
+sequence is saved, and at boot for what is already stored.
 
 #### Example request
 
@@ -1397,8 +1413,8 @@ curl -s http://artoo.local/api/seq/list
 
 ```json
 [
-  {"name":"DM:ROCKMARCH","toggleGroup":"movement","suppressMs":1000,"source":"web","modified":"2026-01-15T10:30:00Z","valid":true,"retrained":false},
-  {"name":"DM:SPINNY","toggleGroup":"movement","suppressMs":500,"source":"web","modified":"2026-01-14T14:22:00Z","valid":true,"retrained":true}
+  {"name":"DM:ROCKMARCH","id":"7c1e09ab","toggleGroup":"none","suppressMs":49000,"source":"user","modified":false,"valid":true,"retrained":true,"stepCount":14,"lengthMs":47000,"purpose":"Imperial March, one ring panel per beat","purposeCut":false},
+  {"name":"DM:SPINNY","toggleGroup":"none","suppressMs":8000,"source":"user","modified":false,"valid":true,"retrained":false,"stepCount":6,"lengthMs":6000,"purpose":"Spins the dome left, then right, while t","purposeCut":true}
 ]
 ```
 
@@ -1408,7 +1424,8 @@ Returns factory sequence metadata and optionally a full factory sequence JSON.
 
 - Query params:
   - `name=<sequence-name>`: optional; if provided, returns the full factory sequence JSON v1 for that name
-- Success (list): `200` JSON array of factory sequence metadata (same shape as `/api/seq/list`)
+- Success (list): `200` JSON array of factory sequence metadata: `name`, `toggleGroup`,
+  `suppressMs`, `stepCount` and `lengthMs` as in `/api/seq/list`, and `purpose` in full
 - Success (single): `200` JSON v1 of a single factory sequence (full step data)
 - Errors:
   - `404` `{"ok":false,"error":"factory sequence not found"}` (when fetching a single sequence by name)

@@ -53,6 +53,28 @@ ProtocolCheckResult seqStoreCapacityCheck(bool isNew, uint8_t count,
     return uok();
 }
 
+uint32_t seqStoreRunLengthMs(const SeqStep* steps, uint8_t count) {
+    if (steps == nullptr || count == 0) return 0;
+    const SeqStep& last = steps[count - 1];
+    return (last.type == STEP_END) ? last.tMs : 0;
+}
+
+bool seqStoreCutPurpose(const char* purpose, char* out, size_t cap) {
+    if (out == nullptr || cap == 0) return false;
+    out[0] = '\0';
+    if (purpose == nullptr) return false;
+    const size_t len = strlen(purpose);
+    size_t keep = (len < cap) ? len : cap - 1;
+    if (keep < len) {
+        // A UTF-8 continuation byte is 10xxxxxx. One at the cut means the
+        // character it belongs to started before it and does not fit whole.
+        while (keep > 0 && ((uint8_t)purpose[keep] & 0xC0) == 0x80) --keep;
+    }
+    memcpy(out, purpose, keep);
+    out[keep] = '\0';
+    return keep < len;
+}
+
 // -----------------------------------------------------------------------------
 // Splicing a phrase in (ADR 0046, #438)
 // -----------------------------------------------------------------------------

@@ -200,9 +200,13 @@ static void nestLookup(const char* ref, SeqNestInfo* out, void* /*ctx*/) {
     }
 }
 
-// Index a validated draft with its meta. Returns false if the index is full.
-static bool indexDraft(const SeqDraft& d, JsonVariantConst root, const char* file) {
-    SeqIndexEntry e = {};
+// The index entry of a parsed draft. The one place an entry is filled - a save
+// and the boot scan both come through here - so no writer can leave a list
+// row a field behind. Called while the draft's step buffers are alive: the
+// step count and the length are read from them.
+static void fillIndexEntry(SeqIndexEntry& e, const SeqDraft& d, JsonVariantConst root,
+                           const char* file, bool valid) {
+    e = {};
     strncpy(e.name, d.name, sizeof(e.name) - 1);
     e.toggleGroup = d.toggleGroup;
     e.suppressMs  = d.suppressMs;
@@ -211,8 +215,11 @@ static bool indexDraft(const SeqDraft& d, JsonVariantConst root, const char* fil
     e.modified = root["meta"]["modified"] | false;
     strncpy(e.file, file, sizeof(e.file) - 1);
     copyStableId(root, e.id, sizeof(e.id));
-    e.valid = true;
-    return seqStoreIndexAdd(e);
+    e.valid = valid;
+    e.steps = d.stepCount;
+    e.lengthMs = seqStoreRunLengthMs(d.steps, d.stepCount);
+    e.purposeCut = seqStoreCutPurpose(root["meta"]["purpose"] | (const char*)nullptr,
+                                      e.purpose, sizeof(e.purpose));
 }
 
 // -----------------------------------------------------------------------------
@@ -270,47 +277,29 @@ void seqStoreInit() {
         }
         ProtocolCheckResult parseResult =
             seqJsonParseVariant(root, st.main, st.mainCap, st.close, st.closeCap, d);
-        // Protocol Check reads the staged steps, so it runs before the staging
-        // is released. Everything below this point needs only the draft's
-        // metadata, so the step pointers are cleared with the buffers they
-        // addressed rather than left dangling.
-        ProtocolCheckResult checkResult = parseResult.ok ? protocolCheck(d) : parseResult;
-        stagingFree(st);
-        d.steps = nullptr;
-        d.stepCount = 0;
-        d.closeSteps = nullptr;
-        d.closeStepCount = 0;
-
         if (!parseResult.ok) {
             // Unreadable format  --  cannot extract reliable metadata; skip entirely.
+            stagingFree(st);
             PA_LOG_WARN(TAG, "skip %s: %s (%s)", file, parseResult.message, parseResult.field);
             ++skipped;
             continue;
         }
+        // Protocol Check and the index entry both read the staged steps, so
+        // both come before the staging is released; nothing below needs the
+        // draft again. A file that parses but fails the current contract
+        // (e.g. legacy :SM usage) is indexed as invalid, so the UI can surface
+        // it for repair/export/delete.
+        ProtocolCheckResult checkResult = protocolCheck(d);
+        SeqIndexEntry entry;
+        fillIndexEntry(entry, d, root, file, checkResult.ok);
+        stagingFree(st);
+
         if (!checkResult.ok) {
-            // Parseable but fails current contract (e.g. legacy :SM usage).
-            // Index as invalid so the UI can surface it for repair/export/delete.
             PA_LOG_WARN(TAG, "index invalid %s: %s (%s)", file,
                         checkResult.message, checkResult.field);
-            SeqIndexEntry inv = {};
-            strncpy(inv.name, d.name, sizeof(inv.name) - 1);
-            inv.toggleGroup = d.toggleGroup;
-            inv.suppressMs  = d.suppressMs;
-            const char* src = root["meta"]["source"] | "user";
-            strncpy(inv.source, src, sizeof(inv.source) - 1);
-            inv.modified = root["meta"]["modified"] | false;
-            strncpy(inv.file, file, sizeof(inv.file) - 1);
-            copyStableId(root, inv.id, sizeof(inv.id));
-            inv.valid = false;
-            if (!seqStoreIndexAdd(inv)) {
-                PA_LOG_WARN(TAG, "index full at %s (invalid)", file);
-                break;
-            }
-            ++indexed;
-            continue;
         }
-        if (!indexDraft(d, root, file)) {
-            PA_LOG_WARN(TAG, "index full at %s", file);
+        if (!seqStoreIndexAdd(entry)) {
+            PA_LOG_WARN(TAG, "index full at %s%s", file, checkResult.ok ? "" : " (invalid)");
             break;
         }
         ++indexed;
@@ -550,21 +539,13 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
         return cap;
     }
 
-    // Capture meta before we drop the transient buffer; then write temp+rename.
-    SeqIndexEntry entry = {};
-    strncpy(entry.name, d.name, sizeof(entry.name) - 1);
-    entry.toggleGroup = d.toggleGroup;
-    entry.suppressMs  = d.suppressMs;
-    const char* src = doc["meta"]["source"] | "user";
-    strncpy(entry.source, src, sizeof(entry.source) - 1);
-    entry.modified = doc["meta"]["modified"] | false;
-    strncpy(entry.file, file, sizeof(entry.file) - 1);
-    copyStableId(root, entry.id, sizeof(entry.id));
-    // Nothing reaches this point without passing Protocol Check above, so the
-    // entry is valid. Leaving the zero-initialised default would index a
-    // just-validated sequence as needing repair until the next boot scan
-    // re-read it from flash and corrected the flag.
-    entry.valid = true;
+    // Capture the index entry before we drop the transient buffer; then write
+    // temp+rename. Nothing reaches this point without passing Protocol Check
+    // above, so the entry is valid: indexing a just-validated sequence as
+    // needing repair would stand until the next boot scan re-read it from
+    // flash and corrected the flag.
+    SeqIndexEntry entry;
+    fillIndexEntry(entry, d, root, file, true);
     stagingFree(st);
 
     char tmpPath[72];

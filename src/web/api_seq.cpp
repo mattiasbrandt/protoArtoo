@@ -43,8 +43,9 @@ namespace {
 // each route can legitimately produce, not to a buffer -- nothing of this size
 // is reserved unless the route actually builds that much.
 //
-// A row-per-sequence listing tops out at SEQ_INDEX_CAPACITY (10) rows of
-// roughly 130 bytes, so 4 KB is comfortable headroom. That is the index
+// A row-per-sequence listing tops out at SEQ_INDEX_CAPACITY (10) rows, each
+// bounded by the index entry's own field sizes -- worked out and asserted
+// against the ceiling below (kSeqListWorstCaseBytes). That is the index
 // capacity on every board, not the board's save cap (SEQ_STORE_CAP, five on
 // the artoo-esp32): a droid over its cap still lists everything it holds. A
 // whole sequence with its steps is bounded by the same per-file cap the store
@@ -54,11 +55,42 @@ namespace {
 // catalog rather than with the store, and each row carries a purpose sentence.
 // Measured by serializing the rows as the route writes them: 2959 B for the 16
 // entries before #354, 4359 B once the seven body routines joined -- past the
-// 4 KB above, which answered 500. 6 KB leaves room for another handful.
+// 4 KB above, which answered 500. 6 KB leaves room for another handful. Each
+// row's `lengthMs` (#441) is at most 17 B more, about 4.75 KB for those 23.
 constexpr size_t kSeqListMaxBytes = 4096;
 constexpr size_t kSeqBuiltinsListMaxBytes = 6144;
 constexpr size_t kSeqDocumentMaxBytes = SEQ_FILE_MAX_BYTES;
 constexpr size_t kSeqErrorMaxBytes = 512;
+
+// GET /api/seq/list, bounded so the index entry and the ceiling move together
+// or the build fails: a row that outgrew 4 KB would answer 500 only on a droid
+// holding ten sequences with long purposes.
+//
+// One row at its widest is the keys and punctuation handleSeqListGet() writes
+// (kSeqListRowKeys, every boolean spelled `false`, the longer word), plus each
+// value at its field's full width. Free text -- the name, the source and the
+// purpose -- is counted JSON-escaped to twice its length, the most the
+// serializer makes of a byte (a quote or a backslash); the id is letters and
+// digits and the toggle group one of seqToggleGroupToString()'s words, "user1"
+// the longest. The numbers are a uint32 (10 digits) twice and a uint8 (3).
+// With a 40-byte purpose that is 353 B a row and 3532 B for ten, inside 4 KB.
+constexpr char kSeqListRowKeys[] =
+    "{\"name\":\"\",\"id\":\"\",\"toggleGroup\":\"\",\"suppressMs\":,\"source\":\"\","
+    "\"modified\":false,\"valid\":false,\"retrained\":false,\"stepCount\":,"
+    "\"lengthMs\":,\"purpose\":\"\",\"purposeCut\":false},";
+constexpr size_t kSeqListRowWorstCaseBytes =
+    (sizeof(kSeqListRowKeys) - 1u) +
+    2u * (sizeof(((SeqIndexEntry*)nullptr)->name) - 1u) +
+    (sizeof(((SeqIndexEntry*)nullptr)->id) - 1u) +
+    (sizeof("user1") - 1u) +
+    2u * (sizeof(((SeqIndexEntry*)nullptr)->source) - 1u) +
+    2u * (sizeof(((SeqIndexEntry*)nullptr)->purpose) - 1u) +
+    10u + 10u + 3u;
+constexpr size_t kSeqListWorstCaseBytes =
+    2u + (size_t)SEQ_INDEX_CAPACITY * kSeqListRowWorstCaseBytes;
+static_assert(kSeqListWorstCaseBytes < kSeqListMaxBytes,
+              "a full index can build a /api/seq/list payload this route would"
+              " refuse: raise kSeqListMaxBytes or shrink the index entry");
 
 // GET /api/seq/last-run shares kSeqDocumentMaxBytes, and both of its inputs are
 // chip-target specific: the run-evidence ring dimensions set the payload, the
@@ -179,6 +211,14 @@ void handleSeqListGet(WebRequest& req) {
         o["valid"] = e->valid;
         // A Learned Sequence that shadows a Factory one is "Retrained".
         o["retrained"] = (sequenceCatalogFind(e->name) != nullptr);
+        // What the list row says without the file (#441): the main branch's
+        // step count, how long a run is, and the start of the purpose, with
+        // whether the file's purpose runs on past it. Each key is spelled as
+        // the Factory listing below spells it, so the page reads one row shape.
+        o["stepCount"] = e->steps;
+        o["lengthMs"] = e->lengthMs;
+        o["purpose"] = e->purpose;
+        o["purposeCut"] = e->purposeCut;
     }
     webSendJsonDocument(req, doc, kSeqListMaxBytes, TAG);
 }
@@ -220,6 +260,7 @@ void handleSeqBuiltinsGet(WebRequest& req) {
         o["toggleGroup"] = seqToggleGroupToString(e->toggleGroup);
         o["suppressMs"] = e->suppressMs;
         o["stepCount"] = e->stepCount;
+        o["lengthMs"] = seqStoreRunLengthMs(e->steps, e->stepCount);
         o["purpose"] = (e->purpose != nullptr) ? e->purpose : "";
     }
     webSendJsonDocument(req, doc, kSeqBuiltinsListMaxBytes, TAG);
