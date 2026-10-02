@@ -126,7 +126,7 @@
   // Logic Text (DT:) — multi-line text display on FLD/RLD.
   // Grammar: DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
   // Text is percent-encoded; newline=%0A, %=%25, :=%3A; spaces literal.
-  // Encoded text <= 40 chars; decoded text <= 32 chars; max one newline.
+  // Encoded text <= 40 chars; decoded text <= 32 bytes; max one newline.
   const DT_TARGETS = new Set([
     "FLD", "RLD", "LOGIC",
   ]);
@@ -867,7 +867,7 @@
     _validateDTTextCommand(cmd) {
       // DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
       // Text is percent-encoded; newline=%0A, %=%25, :=%3A; spaces literal
-      // Encoded text <= 40 chars; decoded text <= 32 chars; max one newline
+      // Encoded text <= 40 chars; decoded text <= 32 bytes; max one newline
       const parts = cmd.split(":");
       if (parts.length < 5 || parts[0] !== "DT") {
         return {
@@ -881,6 +881,8 @@
       const color = parts[2];
       const durationStr = parts[3];
       const speedStr = parts[4];
+      // The text is everything after the fifth colon, so a colon typed into
+      // it raw shows up as a field too many.
       const encodedText = parts.slice(5).join(":");
 
       // Validate command length (must be <= 63)
@@ -939,6 +941,24 @@
         };
       }
 
+      // What may stand in the text as typed (percentDecode(),
+      // src/protocol_check.cpp): printable ASCII, and never a colon, which
+      // would read as the next field. Anything else travels as an escape.
+      if (parts.length > 6) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Write a colon in the text as %3A",
+        };
+      }
+      if (/[^\x20-\x7E]/.test(encodedText)) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Text has a character that must be percent-encoded",
+        };
+      }
+
       // Decode and validate the text
       let decodedText = "";
       try {
@@ -951,12 +971,15 @@
         };
       }
 
-      // Validate decoded text length (max 32 chars)
-      if (decodedText.length > 32) {
+      // The droid decodes into 32 bytes, one for each escape and one for each
+      // character as typed (all of them ASCII by now). A character outside
+      // ASCII travels as two to four escapes, so it counts for that many.
+      const decodedBytes = encodedText.replace(/%[0-9A-Fa-f]{2}/g, "x").length;
+      if (decodedBytes > 32) {
         return {
           ok: false,
           field: "cmd",
-          error: "Text is too long when decoded (max 32 characters)",
+          error: "Text is too long (max 32 characters; an accented letter or a symbol counts for more than one)",
         };
       }
 
