@@ -29,6 +29,9 @@
   // list with nothing on it. A later re-read keeps the last answer on screen.
   let learnedAnswered = false;
   let factoryAnswered = false;
+  // Both have: only then is a sequence in neither list one that is not on
+  // this droid, and a page with nothing to choose one with nothing saved.
+  const listsAnswered = () => learnedAnswered && factoryAnswered;
   let currentEditingSeq = null; // The sequence being edited (or null)
   let timeline = null; // a Factory sequence's read-only timeline (data/seq_timeline.js), or null
   let sessionTimeline = null; // the timeline on the workspace's stage, over the sequence being edited, or null
@@ -163,6 +166,7 @@
     layout: window.DomeLayout?.getModel?.() || null,
     maxBytes: learnedSequenceMaxBytes(),
     trackHash: droppedTrack ? droppedTrack.hash : null,
+    phrase: phraseSteps,
   });
 
   // =========================================================================
@@ -463,6 +467,7 @@
     sequences = answer.data || [];
     learnedAnswered = true;
     renderListView();
+    phrasesListed();
   };
 
   const loadFactory = async ({ handle = null } = {}) => {
@@ -470,6 +475,23 @@
     builtins = answer.data || [];
     factoryAnswered = true;
     renderListView();
+    phrasesListed();
+  };
+
+  // A list answered while a sequence is open - after a save, which reads the
+  // Learned list again: the lists are what the editor names a phrase from, so
+  // the Sequences pills, the blocks' names and which phrases can be read are
+  // all read again from them - and a phrase read from where its reference no
+  // longer resolves is forgotten, so it is read again from where it does.
+  const phrasesListed = () => {
+    if (!editorState.current || !sessionTimeline) return;
+    phrases.read.forEach((entry, ref) => {
+      if (phraseSource(ref)?.url !== entry.url) phrases.read.delete(ref);
+    });
+    paintParts();
+    updateValidationSummary();
+    sessionTimeline.refresh(rehearsalContext());
+    loadPhrases();
   };
 
   // After a save, a wipe or a cancel the Learned list is read again through its
@@ -1106,8 +1128,9 @@
   // repeat and the feel only a Gesture overrides. Its words and its bounds
   // are the one vocabulary's (data/seq_gesture.js).
   //
-  // A sequence inside this one has no rows of its own yet: it shows where it
-  // starts and is edited in the step list until they land.
+  // A sequence inside this one has one row, which sequence it is, and one
+  // act: Split into steps, which writes the phrase's steps out in its place
+  // (splitPhrase()). Its length is the phrase's own, so there is no Runs for.
   // ---------------------------------------------------------------------------
   const BRICK_SENTENCE = "These settings belong to this brick. The same part dropped somewhere else keeps its own.";
 
@@ -1455,9 +1478,28 @@
           + settingRow("For", numberCell("durationMs", fieldOf(step, "durationMs"), STEP_LIMITS.loopMs, "For, in milliseconds"));
       case "gesture":
         return gestureRows(step);
+      case "sequence": {
+        const choices = phraseChoices();
+        return settingRow("Sequence", choices.length
+          ? pillsOf("ref", choices.map((choice) => [esc(choice.id), esc(choice.label)]), step.ref, "Sequence")
+          : listsAnswered() ? '<span class="seq-unit">Save a sequence first.</span>' : "");
+      }
       default:
         return "";
     }
+  };
+
+  // Why a sequence inside this one is not drawn as its block and offers no
+  // split, or "" when it is read or still being read. Nothing is said of one
+  // in neither list until both lists have answered, nor where the heading
+  // over the rows already says it (phraseName()).
+  const phraseUnread = (step) => {
+    if (!step.ref || phraseRead(step.ref)) return "";
+    if (!phraseSource(step.ref)) {
+      return listsAnswered() && !phraseName(step).endsWith("(not on this droid)") ? "Not on this droid." : "";
+    }
+    // Pressing its pill again asks again (writePicked(), phraseAgain()).
+    return phrases.read.get(step.ref)?.failed ? "The droid did not send it. Press it again to ask." : "";
   };
 
   const pickedHtml = (blocks) => {
@@ -1500,9 +1542,15 @@
     // its own as one command, which the body never breaks up (ADR 0046).
     const G = step.type === "gesture" ? window.SeqGesture : null;
     const domeSays = (G?.domeReading(step)?.notes || []).map((note) => `<p class="hint seq-brick">${esc(note)}</p>`).join("");
-    const split = G && !G.onDome(step) ? '<button type="button" class="seq-act" data-picked="split">Split into steps</button>' : "";
-    return head(block.name || block.words || stepKindName(step), `${stepKindName(step)}${lights ? ` · ${lights}` : ""} · step ${at + 1}`)
+    // A sequence inside this one is named by the phrase, on however many
+    // lanes its block lies, and splits once the droid's copy of it is read.
+    const phrase = step.type === "sequence";
+    const unread = phrase ? phraseUnread(step) : "";
+    const split = (G && !G.onDome(step)) || (phrase && phraseRead(step.ref))
+      ? '<button type="button" class="seq-act" data-picked="split">Split into steps</button>' : "";
+    return head((phrase ? phraseName(step) : block.name) || block.words || stepKindName(step), `${stepKindName(step)}${lights ? ` · ${lights}` : ""} · step ${at + 1}`)
       + `<div class="setting-rows seq-picked-rows">${startsAt}${kindRows(step, at)}</div>`
+      + (unread ? `<p class="hint seq-brick">${unread}</p>` : "")
       + domeSays
       + (G ? gestureMore(step) : "")
       + jumps
@@ -1572,6 +1620,17 @@
       else step.howFar = number;
     } else if (step.type === "gesture") {
       writeGesture(step, field, raw);
+    } else if (field === "ref") {
+      // Which sequence it is, and the label a reader of the file sees: its
+      // name now, as the step list's card writes it.
+      const choice = phraseChoices().find((each) => each.id === raw);
+      if (!choice) return;
+      // Pressed again on the one it is, it changes nothing - and asks again
+      // for a phrase whose read failed.
+      phraseAgain(raw);
+      if (raw === step.ref) return;
+      step.ref = choice.id;
+      step.name = choice.label;
     } else if (field === "motion" && step.type === "body") {
       // A body flutter has a length of its own: turned into one, the open
       // lasts the pair, within a flutter's bounds, and the close it owes
@@ -1717,6 +1776,9 @@
   //
   // Between the two, the Sets: the tokens a Gesture spreads across (the
   // catalog's `sets`). A set dropped is one Gesture over it.
+  //
+  // Last, the Sequences: every sequence this one can hold (phraseChoices()).
+  // One dropped is one step that names it, drawn as one linked block.
   const LIBRARY_KINDS = ["audio", "audioCat", "domeRotate", "DV", "DH", "random", "loop", "end"];
   const librarySets = () => window.DroidParts?.sets || [];
   const libraryKindName = (id) => DOME_SUBMODES[id]?.name || stepTypeName[id];
@@ -1762,14 +1824,25 @@
     });
     write("seq-lib-sets", librarySets().map((set) => pill(`set:${set.id}`, "", set.label, setOff(set))).join(""), true);
     write("seq-lib-kinds", LIBRARY_KINDS.map((id) => pill(`kind:${id}`, "", libraryKindName(id))).join(""), true);
+    write("seq-lib-phrases", phraseChoices().map((choice) => pill(`seq:${esc(choice.id)}`, "", choice.label)).join("")
+      || (listsAnswered() ? '<span class="hint">Save a sequence first.</span>' : ""), true);
     write("seq-drop-parts", pills(parts), true);
   };
 
-  // What a pill is called: the Part's name, the set's, or the kind of step.
+  // A pill's key is its group and, after the first colon, its id: a Factory
+  // sequence's reference is its name, which has a colon of its own.
+  const libraryKey = (lib) => {
+    const cut = lib.indexOf(":");
+    return [lib.slice(0, cut), lib.slice(cut + 1)];
+  };
+
+  // What a pill is called: the Part's name, the set's, the kind of step, or
+  // the sequence's name.
   const libraryName = (lib) => {
-    const [group, id] = lib.split(":");
+    const [group, id] = libraryKey(lib);
     if (group === "kind") return libraryKindName(id);
     if (group === "set") return librarySets().find((set) => set.id === id)?.label || id;
+    if (group === "seq") return phraseChoices().find((choice) => choice.id === id)?.label || id;
     return libraryParts().find((part) => part.id === id)?.name || id;
   };
 
@@ -1796,7 +1869,7 @@
   // one entry in the history, so one Undo takes the whole drop away; a drop
   // that lands nothing records nothing and says why.
   const dropOnTimeline = (lib, at) => {
-    const [group, id] = lib.split(":");
+    const [group, id] = libraryKey(lib);
     const steps = editorState.current.steps;
     const endAt = steps.findIndex((step) => step?.type === "end");
     const inLoop = SeqProtocolCheck.loopBodySteps(steps);
@@ -1858,6 +1931,35 @@
       return;
     }
 
+    if (group === "seq") {
+      // One step that names the sequence, and nothing more: its reference,
+      // and its name now as the label a reader of the file sees. The droid's
+      // copy of it is read after it lands (edited() asks), and that is no
+      // edit: one Undo takes the step away.
+      //
+      // Tried on a copy first, as a loop is below: a sequence holds only so
+      // many others, and only so many steps.
+      const choice = phraseChoices().find((each) => each.id === id);
+      if (!choice) return;
+      const place = (list) => {
+        const made = { t: at, type: "sequence", ref: choice.id, name: choice.label };
+        list.splice(endAt === -1 ? list.length : endAt, 0, made);
+        return made;
+      };
+      const trial = JSON.parse(JSON.stringify(editorState.current));
+      place(trial.steps);
+      trial.steps = stepOrder(trial.steps).map((from) => trial.steps[from]);
+      const refused = routineVerdict(trial);
+      if (routineVerdict(editorState.current).ok && !refused.ok) {
+        sayOnStage(refused.error, "error");
+        return;
+      }
+      phraseAgain(choice.id);
+      historyPush();
+      landed([place(steps)]);
+      return;
+    }
+
     if (id === "loop") {
       // A loop is one object over the steps it repeats: the run of steps that
       // start inside its first period after the drop, up to the first a loop
@@ -1887,8 +1989,8 @@
       // it is said in Protocol Check's own words.
       const trial = JSON.parse(JSON.stringify(editorState.current));
       wrap(trial.steps);
-      const refused = SeqProtocolCheck.validateSequence(trial);
-      if (SeqProtocolCheck.validateSequence(editorState.current).ok && !refused.ok) {
+      const refused = routineVerdict(trial);
+      if (routineVerdict(editorState.current).ok && !refused.ok) {
         sayOnStage(refused.error, "error");
         return;
       }
@@ -1919,6 +2021,50 @@
       steps.splice(endAt === -1 ? steps.length : endAt, 0, made);
     }
     landed([made]);
+  };
+
+  // What Split into steps shares, for a Gesture and for a sequence inside
+  // this one. Each replaces the one picked step with the steps it becomes.
+  //
+  // loopRepeating(): the loop that repeats the step at `at`, as its unit, or
+  // undefined. A step a loop repeats is timed from the pass.
+  const loopRepeating = (steps, at) =>
+    stepUnits(steps).find((unit) => unit.size > 1 && at > unit.at && at < unit.at + unit.size);
+
+  // splitPlace(): how the steps made go in, for the routine and for the copy
+  // it is tried on: in the place of the step at `at`, and the loop that
+  // repeated that step repeats the steps it becomes.
+  const splitPlace = (loop, at) => (list, made) => {
+    if (loop) list[loop.at].body += made.length - 1;
+    list.splice(at, 1, ...made);
+  };
+
+  // splitOverfull(): whether `made` steps in place of one is more than a
+  // sequence holds; it says so on the stage.
+  const splitOverfull = (made) => {
+    const most = SeqProtocolCheck.MAX_STEPS;
+    const count = editorState.current.steps.length - 1 + made;
+    if (count > most) sayOnStage(`That would make ${count} steps. A sequence can have at most ${most}.`, "error");
+    return count > most;
+  };
+
+  // splitRefused(): the split tried on a copy of the routine - `write()`
+  // makes the steps and `place(list, made)` puts them in - and Protocol
+  // Check's verdict on it: on each step made, whatever else the routine has
+  // wrong, and on the whole routine when it was one the droid accepts. Not
+  // ok, nothing lands, and the stage says Protocol Check's reason.
+  const splitRefused = (write, place) => {
+    const trial = JSON.parse(JSON.stringify(editorState.current));
+    const tried = write();
+    place(trial.steps, tried);
+    trial.steps = stepOrder(trial.steps).map((from) => trial.steps[from]);
+    const refusedStep = tried
+      .map((made) => SeqProtocolCheck.validateStep(made, trial.steps.indexOf(made), trial.steps, true))
+      .find((verdict) => !verdict.ok);
+    const refused = refusedStep
+      || (routineVerdict(editorState.current).ok ? routineVerdict(trial) : { ok: true });
+    if (!refused.ok) sayOnStage(refused.error, "error");
+    return !refused.ok;
   };
 
   // Split into steps: the picked body Gesture is replaced by the moves it
@@ -1953,7 +2099,7 @@
     const steps = editorState.current.steps;
     const run = SeqProtocolCheck.resolveBeats(editorState.current).steps[at];
     // A step a loop repeats is timed from the pass, where the end is not.
-    const loop = stepUnits(steps).find((unit) => unit.size > 1 && at > unit.at && at < unit.at + unit.size);
+    const loop = loopRepeating(steps, at);
     const endAt = steps.findIndex((each) => each?.type === "end");
     const last = loop || endAt === -1 ? Infinity : Number(steps[endAt].t) || 0;
     const moves = G.bodyMoves(run, Number(run.t) || 0).filter((move) => move.t < last);
@@ -1965,12 +2111,7 @@
       sayOnStage("Set how long it flutters (Lasts) before splitting.", "error");
       return;
     }
-    const most = SeqProtocolCheck.MAX_STEPS;
-    const count = steps.length - 1 + moves.length;
-    if (count > most) {
-      sayOnStage(`That would make ${count} steps. A sequence can have at most ${most}.`, "error");
-      return;
-    }
+    if (splitOverfull(moves.length)) return;
     const period = loop ? Number(steps[loop.at].periodMs) || 0 : Infinity;
     if (moves.some((move) => move.t >= period)) {
       sayOnStage(`Its moves run past the loop's ${period} ms pass, so it cannot be split inside the loop.`, "error");
@@ -1984,25 +2125,8 @@
       ...(step.howFar === undefined ? {} : { howFar: step.howFar }),
       ...(move.shape === "flutter" && step.flutterMs !== undefined ? { flutterMs: step.flutterMs } : {}),
     }));
-    // The loop that repeats the Gesture repeats the steps it becomes.
-    const place = (list, made) => {
-      if (loop) list[loop.at].body += made.length - 1;
-      list.splice(at, 1, ...made);
-    };
-
-    const trial = JSON.parse(JSON.stringify(editorState.current));
-    const tried = write();
-    place(trial.steps, tried);
-    trial.steps = stepOrder(trial.steps).map((from) => trial.steps[from]);
-    const refusedStep = tried
-      .map((made) => SeqProtocolCheck.validateStep(made, trial.steps.indexOf(made), trial.steps, true))
-      .find((verdict) => !verdict.ok);
-    const refused = refusedStep
-      || (SeqProtocolCheck.validateSequence(editorState.current).ok ? SeqProtocolCheck.validateSequence(trial) : { ok: true });
-    if (!refused.ok) {
-      sayOnStage(refused.error, "error");
-      return;
-    }
+    const place = splitPlace(loop, at);
+    if (splitRefused(write, place)) return;
 
     const made = write();
     historyPush();
@@ -2011,6 +2135,93 @@
     // A written step has no full-throw time or easing of its own, so what
     // the Gesture said of either is gone, and the stage says so.
     if (step.speedMs || step.easing) sayOnStage("The steps move at each part's own speed and easing.");
+  };
+
+  // The keys a step holds a beat or a span of beats in (ADR 0058).
+  const BEAT_KEYS = ["beat", "spanBeats", ...GESTURE_BEATS];
+
+  // Split into steps, on a sequence inside this one: the step that names the
+  // phrase is replaced by the phrase's own steps, in one entry of the
+  // history. It is what the droid does each time the routine runs (the
+  // splice, src/seq_store.cpp), done once here and then the builder's to
+  // change: the phrase is no longer linked, and a later edit of it does not
+  // reach this routine.
+  //
+  // What is written:
+  //   - the phrase's steps before its end step, each timed from where the
+  //     phrase step starts. A step a loop repeats is timed from the pass, so
+  //     it keeps its time and its loop keeps it (stepUnits());
+  //   - and of those, only the ones that start before this routine's end
+  //     step: the droid cuts what it splices in past the end
+  //     (seqStoreSplicePhrase(), include/seq_store_util.h), as a Gesture's
+  //     moves past the end are left out of its split. A loop goes or stays
+  //     with the steps it repeats;
+  //   - at the milliseconds the droid runs them at, by the phrase's own
+  //     tempo, and with no beat of their own: this routine's grid is not the
+  //     phrase's. That reading (loadPhrases()) also states the extent a
+  //     repeating Gesture took from the phrase's end, and the pace one took
+  //     from the phrase's tempo;
+  //   - a Gesture's pace where the phrase has no tempo, which that reading
+  //     leaves unsaid: there it is a Gesture's own default, and here, unsaid,
+  //     it would become one beat of this routine's tempo (parseStepBeats(),
+  //     src/seq_json.cpp);
+  //   - a sequence inside the phrase as it is: one step, still linked.
+  //
+  // The phrase is already read - an unread one offers no split - so nothing
+  // here waits on the droid, and the one entry is made in one go.
+  //
+  // More steps than a sequence holds is refused first (splitOverfull()). Then
+  // it is tried on a copy (splitRefused()): a result Protocol Check refuses -
+  // a sequence that would land inside a loop, a flutter left without its
+  // close - lands nothing, and the stage says Protocol Check's reason.
+  const splitPhrase = () => {
+    const picked = pickedStep();
+    if (!picked || picked.step.type !== "sequence" || historyBusy()) return;
+    const { at, step } = picked;
+    const phrase = phraseRead(step.ref);
+    if (!phrase) return;
+    const steps = editorState.current.steps;
+    const startsAt = Number(SeqProtocolCheck.resolveBeats(editorState.current).steps[at].t) || 0;
+    const phraseEnd = phrase.steps.findIndex((each) => each?.type === "end");
+    const whole = phraseEnd === -1 ? phrase.steps : phrase.steps.slice(0, phraseEnd);
+    if (whole.length === 0) {
+      sayOnStage(`${phraseName(step)} has no steps before its end.`, "error");
+      return;
+    }
+    // A step a loop repeats is timed from the pass, where the end is not.
+    const loop = loopRepeating(steps, at);
+    const endAt = steps.findIndex((each) => each?.type === "end");
+    const last = loop || endAt === -1 ? Infinity : Number(steps[endAt].t) || 0;
+    const kept = stepUnits(whole).filter((unit) => unit.t + startsAt < last);
+    if (kept.length === 0) {
+      sayOnStage(`${phraseName(step)} starts at the end, so it adds no steps.`, "error");
+      return;
+    }
+    const runs = kept.flatMap((unit) => whole.slice(unit.at, unit.at + unit.size));
+    const outer = new Set(stepUnits(runs).map((unit) => unit.at));
+    const timed = phrase.seq.tempo !== undefined && SeqProtocolCheck.validateTempo(phrase.seq.tempo).ok;
+    const write = () => runs.map((each, index) => {
+      const made = JSON.parse(JSON.stringify(each));
+      BEAT_KEYS.forEach((key) => delete made[key]);
+      if (made.type === "gesture" && !made.stepMs && !timed) made.stepMs = window.SeqGesture.STEP_DEFAULT_MS;
+      if (outer.has(index)) made.t = (Number(made.t) || 0) + startsAt;
+      return made;
+    });
+    // A loop cannot repeat a sequence (Protocol Check), and a routine that
+    // has one doing so is split by the same rule as any step a loop repeats.
+    const place = splitPlace(loop, at);
+    if (splitOverfull(runs.length) || splitRefused(write, place)) return;
+
+    const made = write();
+    historyPush();
+    place(steps, made);
+    landed(made);
+  };
+
+  // The one act, by what is picked: a body Gesture or a sequence.
+  const splitPicked = () => {
+    if (pickedStep()?.step.type === "sequence") splitPhrase();
+    else splitGesture();
   };
 
   // A pill held: `ghost` is the pill that follows the pointer once the press
@@ -2098,6 +2309,7 @@
     els.editorView.classList.add("hidden");
     currentEditingSeq = null;
     gestureMoreOpen = false;
+    forgetPhrases();
     Object.assign(editorState, {
       original: null, current: null, isNew: false, tuningFactory: null, expanded: new Set(),
       view: "timeline", tab: "block", saved: false,
@@ -2647,10 +2859,15 @@
   // sequence's name, which never changes - and shows it by its CURRENT name,
   // so a rename orphans nothing. A saved sequence with no id yet cannot be
   // picked until it is saved again, which mints one.
+  //
+  // The sequence being edited is never offered to itself: not by the name it
+  // has now, and not by its id, which is what the droid compares a reference
+  // with (protocolCheckNesting(), src/protocol_check.cpp) and which a rename
+  // in this edit does not change.
   // ---------------------------------------------------------------------------
   const phraseChoices = () => [
     ...sequences
-      .filter((x) => x.id && x.name !== editorState.current?.name && x.toggleGroup === "none")
+      .filter((x) => x.id && x.id !== editorState.current?.id && x.name !== editorState.current?.name && x.toggleGroup === "none")
       .map((x) => ({ id: x.id, label: x.name })),
     ...builtins
       .filter((x) => (x.toggleGroup || "none") === "none" && x.name !== editorState.current?.name)
@@ -2663,6 +2880,134 @@
     if (learned) return learned.name;
     if (typeof ref === "string" && ref.startsWith("DM:")) return ref;
     return step?.name ? `${step.name} (not on this droid)` : "Pick a sequence";
+  };
+
+  // ---------------------------------------------------------------------------
+  // The phrases this routine names, as the droid holds them (#441): what the
+  // timeline draws a linked block from, and what Split into steps writes out.
+  //
+  // `read` is reference -> { url, seq, steps } - where the reference was read
+  // from, the sequence as the droid sent it, and its steps at the
+  // milliseconds they run at, resolved with the phrase's own tempo as the
+  // droid resolves them when it splices the phrase in - or { url, failed }
+  // for a read that failed. A reference not in it has not been read. It
+  // lasts one edit: closing the editor starts a new one (forgetPhrases()), and
+  // an answer that lands after that is for a session that is gone.
+  //
+  // A reference is read from where it resolves (phraseSource()), and that can
+  // change while the editor is open: a Factory sequence read before the
+  // Learned list answered turns out to have a tuned copy, which is the one
+  // the droid runs. An entry read from somewhere else than its reference
+  // resolves to now is dropped when a list answers (phrasesListed()), and
+  // read again.
+  //
+  // ONE REQUEST AT A TIME. Each read is a JSON document the droid builds, and
+  // a routine names up to eight phrases; `reading` is the one loop under way.
+  // `leaving` cancels the read in flight when the session closes, so the
+  // droid is not left building an answer nobody will read.
+  // ---------------------------------------------------------------------------
+  const newPhrases = () => ({ read: new Map(), reading: false, leaving: new AbortController() });
+  let phrases = newPhrases();
+  const forgetPhrases = () => {
+    phrases.leaving.abort();
+    phrases = newPhrases();
+  };
+
+  // Where the droid finds a reference when it runs it (nestResolve(),
+  // src/seq_store.cpp): a saved sequence first, by its id or by its name -
+  // which is how a tuned Factory sequence stands in for the factory one - and
+  // then the Factory list by name. Null for one that is not on this droid.
+  const phraseSource = (ref) => {
+    const learned = sequences.find((x) => (x.id && x.id === ref) || x.name === ref);
+    if (learned) return { name: learned.name, toggleGroup: learned.toggleGroup || "none", url: `/api/seq?name=${encodeURIComponent(learned.name)}` };
+    const factory = builtins.find((x) => x.name === ref);
+    return factory
+      ? { name: factory.name, toggleGroup: factory.toggleGroup || "none", url: `/api/seq/builtins?name=${encodeURIComponent(factory.name)}` }
+      : null;
+  };
+
+  const phraseRead = (ref) => {
+    const entry = phrases.read.get(ref);
+    return entry && !entry.failed ? entry : null;
+  };
+  const phraseSteps = (ref) => phraseRead(ref)?.steps || null;
+
+  // Protocol Check on the routine being edited, or on a copy of it an edit is
+  // tried on: with what this page knows of the sequences it names, so the
+  // rules the droid applies to them at save are applied here too
+  // (SeqProtocolCheck._validateNesting()). Nothing is said of whether a
+  // phrase is on the droid until both lists have answered. A phrase is found
+  // under any reference that resolves to where it was read from: its id and
+  // its name are the one sequence.
+  const routineVerdict = (seq) => SeqProtocolCheck.validateSequence(seq, {
+    self: { id: editorState.current?.id, name: editorState.current?.name },
+    listed: (ref) => (listsAnswered() ? phraseSource(ref) || false : null),
+    phrase: (ref) => {
+      const url = phraseSource(ref)?.url;
+      const read = phraseRead(ref) || [...phrases.read.values()].find((entry) => !entry.failed && entry.url === url);
+      return read ? { steps: read.seq.steps, toggleGroup: read.seq.toggleGroup || "none" } : null;
+    },
+  });
+
+  // Read every phrase the routine names that has not been read, one after the
+  // other. It is not an edit and records nothing: when a phrase lands, the
+  // timeline draws the routine again and the inspector follows it; when a
+  // read fails, the inspector is written again all the same.
+  //
+  // A read that fails is said once on the stage, and the phrase stays the
+  // mark on the Sequence row it was. It is not asked for again until the
+  // builder drops or picks that phrase again (phraseAgain()).
+  const loadPhrases = async () => {
+    const mine = phrases;
+    if (mine.reading) return;
+    mine.reading = true;
+    try {
+      for (;;) {
+        if (mine !== phrases || !editorState.current) return;
+        const ref = (editorState.current.steps || [])
+          .map((step) => (step?.type === "sequence" ? step.ref : null))
+          .find((each) => each && !mine.read.has(each) && phraseSource(each));
+        if (!ref) return;
+        const source = phraseSource(ref);
+        let entry = { url: source.url, failed: true };
+        let refused = "";
+        try {
+          const seq = (await PAApi.get(source.url, { signal: mine.leaving.signal })).data;
+          if (seq && Array.isArray(seq.steps)) entry = { url: source.url, seq, steps: SeqProtocolCheck.resolveBeats(seq).steps };
+          else refused = `The droid sent ${source.name} back with no steps.`;
+        } catch (error) {
+          // Cancelled with the session it was read for: nothing failed.
+          if (mine !== phrases) return;
+          console.error(`[seq] reading ${source.name}, a sequence inside this one:`, error);
+          refused = `Could not read ${source.name}: ${PAApi.messageFor(error)}`;
+        }
+        if (mine !== phrases) return;
+        // A list answered while this was being read, and the reference
+        // resolves somewhere else now: this answer is not kept, and the loop
+        // reads it from there.
+        if (phraseSource(ref)?.url !== source.url) continue;
+        mine.read.set(ref, entry);
+        if (!entry.failed) {
+          // What was read counts toward the steps the routine holds once
+          // spliced, so the verdict is read again with it.
+          updateValidationSummary();
+          sessionTimeline?.refresh(rehearsalContext());
+        } else {
+          sayOnStage(refused, "error");
+          // The timeline has nothing new to draw, so nothing has told the
+          // inspector: a picked phrase now says its read failed.
+          showPicked(sessionTimeline ? sessionTimeline.picked() : []);
+        }
+      }
+    } finally {
+      mine.reading = false;
+    }
+  };
+
+  // The builder dropped or picked this phrase: one whose read failed is asked
+  // for again by the next loadPhrases().
+  const phraseAgain = (ref) => {
+    if (phrases.read.get(ref)?.failed) phrases.read.delete(ref);
   };
 
   // A stable id for a sequence being saved that has none: eight lowercase hex
@@ -3433,6 +3778,9 @@
     updateValidationSummary();
     paintHistory();
     if (sessionTimeline) sessionTimeline.refresh(rehearsalContext());
+    // An edit can name a phrase not read yet - a drop, a pick in either view,
+    // an undo - so every edit asks; with nothing unread it sends nothing.
+    loadPhrases();
   };
 
   const historyRestore = (snapshot) => {
@@ -3665,6 +4013,7 @@
               <div class="part-pills-group"><span class="part-pills-name">Parts</span><span class="part-pills" id="seq-lib-parts"></span></div>
               <div class="part-pills-group"><span class="part-pills-name">Sets</span><span class="part-pills" id="seq-lib-sets"></span></div>
               <div class="part-pills-group"><span class="part-pills-name">More steps</span><span class="part-pills" id="seq-lib-kinds"></span></div>
+              <div class="part-pills-group"><span class="part-pills-name">Sequences</span><span class="part-pills" id="seq-lib-phrases"></span></div>
             </div>`)}
           ${pane("sequence", `
             <div class="sect"><h3>Sequence</h3><span class="sub" id="seq-editor-saved-sub"></span></div>
@@ -3750,6 +4099,7 @@
     showPicked([]);
     mountSessionTimeline();
     paintParts();
+    loadPhrases();
 
     // Attach event listeners (the strip, the tempo and the drawer once; step rows on every rerender)
     attachMetadataListeners();
@@ -3785,7 +4135,7 @@
   };
 
   const updateValidationSummary = () => {
-    const validation = SeqProtocolCheck.validateSequence(editorState.current);
+    const validation = routineVerdict(editorState.current);
     const summaryEl = document.getElementById("seq-editor-validation-summary");
     if (!summaryEl) return;
 
@@ -3925,6 +4275,8 @@
     // A phrase step keeps a label for a reader of the file: its current name.
     if (step.type === "sequence") {
       if (step.ref === "") delete step.ref;
+      // Picked here, a phrase whose read failed is asked for again.
+      if (step.ref && step.ref !== prev.ref) phraseAgain(step.ref);
       const label = step.ref ? phraseName(step) : "";
       if (label && !label.endsWith("(not on this droid)")) step.name = label;
       else if (prev.name && prev.ref === step.ref) step.name = prev.name;
@@ -4160,7 +4512,7 @@
         if (!pressed) return;
         const act = pressed.dataset.picked;
         if (act === "remove") sessionTimeline?.removePicked();
-        else if (act === "split") splitGesture();
+        else if (act === "split") splitPicked();
         else if (act === "off-beat") {
           if (pickedBlocks.length === 1) setStepBeat(pickedBlocks[0].steps[0], { beat: null });
         } else inspect(act, pressed.dataset.value);
@@ -5069,7 +5421,7 @@
   };
 
   const handleSave = async () => {
-    const validation = SeqProtocolCheck.validateSequence(editorState.current);
+    const validation = routineVerdict(editorState.current);
     if (!validation.ok) {
       showEditorFeedback(validation.error || "Fix validation errors before saving.", "error");
       return;

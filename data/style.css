@@ -6739,6 +6739,18 @@ body[data-page="maintenance"] .status-item .hint {
   border-left: 3px solid var(--text-dim);
 }
 
+/* A sequence inside this one: one linked block on the lane of each Part it
+   names. It is filled, because nothing is drawn inside it, and its leading
+   edge is the Gesture's, doubled. */
+.tl-phrase {
+  top: 1px;
+  bottom: 1px;
+  min-width: 10px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 40%, transparent);
+  border-left: 3px double var(--text-dim);
+}
+
 .tl-tick {
   top: 2px;
   bottom: 2px;
