@@ -861,6 +861,29 @@ def check_no_bool_enum_values(doc: dict, errors: list[str]) -> None:
                         )
 
 
+def check_param_explanations(doc: dict, errors: list[str]) -> None:
+    """Every param says what it does to the droid (ADR 0059, #459).
+
+    A param used to carry a name, a type and a bound and nothing a person
+    reads, so a builder met a number that moves something with no word on what.
+    ADR 0059 makes the explanation a required field, asserted here rather than
+    populated by convention: a param with no `explanation`, or an empty one, is
+    drift.
+
+    Presence is all this can hold. What the sentence has to be is the copy rule
+    (docs/ui-copy-voice.md rule 1): end in the physical consequence, in one or
+    two sentences - "The number alone is not an explanation; say what it does
+    to the droid. Then stop." That half is read, not checked.
+    """
+    for entry in doc.get('entries', []):
+        name = entry.get('name', '<unnamed>')
+        for param in entry.get('params', []) or []:
+            pname = param.get('name', '<unnamed>')
+            explanation = param.get('explanation')
+            if not isinstance(explanation, str) or not explanation.strip():
+                errors.append(f"{name} param {pname!r}: no explanation")
+
+
 def check_inventory_registry_alignment(doc: dict, errors: list[str]) -> None:
     """Validate one-to-one mapping: registry entries <-> inventory rows.
 
@@ -1057,6 +1080,7 @@ def main() -> int:
     check_inventory_citations(errors)
     check_status_query_classification(doc, errors)
     check_no_bool_enum_values(doc, errors)
+    check_param_explanations(doc, errors)
     check_executor_symbols(doc, errors)
     check_none_executor_evidence(doc, errors)
     check_executor_marker_contradiction(doc, errors)
