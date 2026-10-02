@@ -227,7 +227,7 @@
       OUTPUTS.BOOTS.map((boot) =>
         `<button type="button" role="radio" aria-checked="false" data-boot="${esc(boot.id)}">${esc(boot.label)}</button>`
       ).join("") +
-      `</div><span class="hint outputs-boot-risk">Hold keeps the pulse on, so a blocked part grinds.</span></div>` +
+      `</div><span class="hint outputs-boot-risk is-risk">Hold keeps the pulse on, so a blocked part grinds.</span></div>` +
       `</div>` +
       // Putting a Part on it: a press is a request, not a state this control
       // keeps, and the row's Drives cell says what the droid answered.
@@ -418,7 +418,8 @@
       row.bootRisk.hidden = output.boot !== "home-hold";
       // Home and hold with a release time lets go after it gets home, like
       // any arrival (operator, 2026-09-30 on #443): the grind risk is only
-      // true of a hold with none.
+      // true of a hold with none, and only the risk takes the warning color.
+      row.bootRisk.classList.toggle("is-risk", !letsGo(output));
       row.bootRisk.textContent = letsGo(output)
         ? `Lets go ${seconds(output.release)} s after it gets home.`
         : "Hold keeps the pulse on, so a blocked part grinds.";

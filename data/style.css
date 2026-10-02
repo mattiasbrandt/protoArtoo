@@ -8284,7 +8284,10 @@ body[data-page="maintenance"] .status-item .hint {
   font-size: var(--fs-sect);
 }
 
-.outputs-boot-risk {
+/* The line beside home and hold. A hold that never lets go is a risk and is
+   amber; one that lets go after it gets home is a statement, in the hint's
+   own ink (#443, #457). */
+.outputs-boot-risk.is-risk {
   color: var(--warning);
 }
 
