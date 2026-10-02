@@ -200,6 +200,16 @@ inline bool sequencePaceOpen(uint32_t dueMs, ServoOutputAddress* awaitOutput, bo
     return sequencePaceAwaitDone(awaitOutput, outputMoving) && (int32_t)(nowMs - dueMs) >= 0;
 }
 
+// A due time that has passed is moved up to now, which changes nothing about
+// whether the pace is open. It is for a pace that outlives its runs, as the one
+// a sequence's Gestures and flutters share does: millis() wraps, and a due time
+// left standing for 2^31 ms (about 25 days) would read as still to come, holding
+// every generated motion off until it came round again. Called on every tick,
+// a passed due time is never more than a tick old.
+inline void sequencePaceKeepRecent(uint32_t* dueMs, uint32_t nowMs) {
+    if (dueMs != nullptr && (int32_t)(nowMs - *dueMs) >= 0) *dueMs = nowMs;
+}
+
 // A motion was dealt with at nowMs. A motion that STARTED holds the next one
 // off: a dome panel by the Cadence Floor (`floorMs`, the one in use), a body
 // Output by its own throw, floored, and until it stops (`output`). One that did

@@ -1289,6 +1289,10 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             }
         }
 
+        // The pace the Gestures and the flutters share lives on between runs,
+        // so its due time is kept recent (sequencePaceKeepRecent()).
+        sequencePaceKeepRecent(&gestureRun.dueMs, now);
+
         // The Gestures a sequence fired, one item per tick when it is due.
         if (sequenceGestureActive(gestureRun)) {
             gestureOneItem(now);
