@@ -2820,10 +2820,15 @@
   // sequence's name, which never changes - and shows it by its CURRENT name,
   // so a rename orphans nothing. A saved sequence with no id yet cannot be
   // picked until it is saved again, which mints one.
+  //
+  // The sequence being edited is never offered to itself: not by the name it
+  // has now, and not by its id, which is what the droid compares a reference
+  // with (protocolCheckNesting(), src/protocol_check.cpp) and which a rename
+  // in this edit does not change.
   // ---------------------------------------------------------------------------
   const phraseChoices = () => [
     ...sequences
-      .filter((x) => x.id && x.name !== editorState.current?.name && x.toggleGroup === "none")
+      .filter((x) => x.id && x.id !== editorState.current?.id && x.name !== editorState.current?.name && x.toggleGroup === "none")
       .map((x) => ({ id: x.id, label: x.name })),
     ...builtins
       .filter((x) => (x.toggleGroup || "none") === "none" && x.name !== editorState.current?.name)
