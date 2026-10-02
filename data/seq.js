@@ -1309,6 +1309,10 @@
     return list.map((choice) => (typeof choice === "string" ? { id: choice, label: capital(choice) } : choice));
   };
   const gestureWord = (step, field) => step[field] ?? gestureChoices(field)[0].id;
+  // Where the order starts is the Gesture's `start`. Its control in the
+  // inspector goes by another name, because "start" there is already the
+  // field every block has: the time it starts at.
+  const GESTURE_FROM = "from";
   // A Gesture's times: empty, or zero, is absence - its default.
   const GESTURE_TIMES = ["flutterMs", "stepMs", "repeatMs", "extentMs", "speedMs"];
   const GESTURE_BEATS = ["stepBeats", "repeatBeats", "extentBeats"];
@@ -1345,7 +1349,7 @@
         ? settingRow("Lasts", numberCell("flutterMs", step.flutterMs ?? "", SeqProtocolCheck.BODY_FLUTTER_MS, "How long each part flutters, in milliseconds", "ms", true))
         : "")
       + settingRow("Travels", pillsOf("spread", choices("spread"), gestureWord(step, "spread"), "How it travels"))
-      + settingRow("Order", `<span class="seq-row-ctl">${segOf("direction", choices("direction"), gestureWord(step, "direction"), "Which way round")}${segOf("start", choices("start"), gestureWord(step, "start"), "Where it starts")}</span>`)
+      + settingRow("Order", `<span class="seq-row-ctl">${segOf("direction", choices("direction"), gestureWord(step, "direction"), "Which way round")}${segOf(GESTURE_FROM, choices("start"), gestureWord(step, "start"), "Where it starts")}</span>`)
       + settingRow("How far", faderOf("howFar", far, STEP_LIMITS.howFar, "How far, percent of each part's throw"), `${far}%`);
   };
 
@@ -1380,7 +1384,8 @@
   // One field of a Gesture, written. A word is stored only where it differs
   // from what a Gesture means without it, and pressing the choice it already
   // is changes nothing; a time left empty is absence.
-  const writeGesture = (step, field, raw) => {
+  const writeGesture = (step, control, raw) => {
+    const field = control === GESTURE_FROM ? "start" : control;
     if (GESTURE_TIMES.includes(field)) {
       const number = parseInt(raw, 10);
       if (raw === "" || number === 0) delete step[field];
@@ -2632,8 +2637,8 @@
 
   // The Gesture's form values: numbers that are optional, and words that are
   // optional (an unset word is its default).
-  const GESTURE_NUMBER_FIELDS = ["howFar", "stepMs", "repeatMs", "extentMs", "speedMs"];
-  const GESTURE_WORD_FIELDS = ["set", "shape", "spread", "direction", "start", "easing"];
+  const GESTURE_NUMBER_FIELDS = ["howFar", ...GESTURE_TIMES];
+  const GESTURE_WORD_FIELDS = ["set", ...GESTURE_DEFAULTED, "easing"];
 
   const renderBeatPicker = (step, idx) => {
     const tempo = tempoOf();
