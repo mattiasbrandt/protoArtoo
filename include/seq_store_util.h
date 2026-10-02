@@ -123,6 +123,19 @@ bool seqStoreNameToFile(const char* name, char* out, size_t cap);
 ProtocolCheckResult seqStoreCapacityCheck(bool isNew, uint8_t count,
                                           size_t fileLen, size_t freeBytes);
 
+// How long a run of a branch is: its end step's time. Read after the parse, so
+// a beat is already the millisecond it resolves to (seq_json.cpp), and from the
+// same step protocolCheck() takes the end time from - one reading of a length,
+// not two. 0 for a branch that does not end in an end step: a stored file the
+// boot scan indexes as invalid, the only place one reaches here.
+uint32_t seqStoreRunLengthMs(const SeqStep* steps, uint8_t count);
+
+// The start of a purpose, for a list row: as much of `purpose` as fits `cap`
+// (terminator included), ending on a whole UTF-8 character, so a cut never
+// leaves half of one for the JSON writer to send. Returns true when there was
+// more than was kept. A null purpose is an empty one.
+bool seqStoreCutPurpose(const char* purpose, char* out, size_t cap);
+
 // -----------------------------------------------------------------------------
 // seqStoreSplicePhrase()
 // A sequence inside a sequence, spliced when it is loaded to run (ADR 0046):
