@@ -237,6 +237,13 @@
     },
   };
 
+  // What a holo effect's number counts, where its rule takes one
+  // (DH_EFFECT_RULES): how many times a WAG or a NOD, how many seconds a
+  // FLASH. Words for the control that asks for it; no rule reads this.
+  const DH_COUNTED = new Set(["WAG", "NOD"]);
+  const holoCounts = (effect, rule) =>
+    (rule.duration !== "range" ? null : DH_COUNTED.has(effect) ? "times" : "seconds");
+
   const frozenList = (tokens) => Object.freeze(Array.from(tokens));
 
   const SeqProtocolCheck = {
@@ -253,7 +260,8 @@
      * `presets` a visual preset's (DV:); `textTargets` and `textColors` a
      * logic text's (DT:); `holoTargets`, `holoEffects` and `holoColors` a holo
      * effect's (DH:). `holoRules` says, for each holo effect, the colors it
-     * takes and whether it takes a duration or count: "none" or "range".
+     * takes, whether it takes a duration or count ("none" or "range"), and
+     * where it does, which the number is: "seconds" or "times".
      */
     domeLights: Object.freeze({
       targets: frozenList(DL_TARGETS),
@@ -266,7 +274,7 @@
       holoEffects: frozenList(DH_EFFECTS),
       holoColors: frozenList(DH_COLORS),
       holoRules: Object.freeze(Object.fromEntries(Object.entries(DH_EFFECT_RULES).map(([effect, rule]) =>
-        [effect, Object.freeze({ colors: frozenList(rule.colors), duration: rule.duration })]))),
+        [effect, Object.freeze({ colors: frozenList(rule.colors), duration: rule.duration, counts: holoCounts(effect, rule) })]))),
       label: (group, token) => DOME_LIGHT_LABELS[group]?.[token] || token || "",
     }),
 

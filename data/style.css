@@ -7232,6 +7232,54 @@ body[data-page="maintenance"] .status-item .hint {
   width: 140px;
 }
 
+/* A color row is Lights' own swatches (.light-colors / .light-color) set in
+   a row, the picked color named beside them: no gap above them, and the
+   ring's gap in this drawer's own surface. */
+.seq-picked-rows .light-colors {
+  margin-top: 0;
+}
+
+.seq-picked-rows .light-color[aria-checked="true"] {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--accent);
+}
+
+/* RANDOM is a holo's own word for a color the dome picks itself, so it has no
+   color to show, as DEFAULT has none: a plain dot with a mark in it, where
+   DEFAULT's is dashed and empty. Lights never offers it. */
+.light-color.seq-color-random {
+  display: inline-grid;
+  place-items: center;
+  background: var(--well);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.light-color.seq-color-random::after {
+  content: "?";
+}
+
+/* A logic text is short and has at most one line break, so its box holds two
+   lines and does not stretch. */
+.seq-picked-rows .setting-row:has(> .seq-light-text) {
+  align-items: start;
+}
+
+.seq-picked-rows .setting-row:has(> .seq-light-text) .setting-name {
+  padding-top: 6px;
+}
+
+.number-cell.text-cell.seq-light-text {
+  justify-self: start;
+  width: 26ch;
+  min-height: 48px;
+  padding: var(--space-2xs) var(--space-sm);
+  font-family: var(--font-mono);
+  line-height: 1.4;
+  resize: none;
+}
+
 .seq-brick {
   margin-top: var(--space-sm);
 }
