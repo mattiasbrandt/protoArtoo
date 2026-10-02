@@ -216,8 +216,7 @@ A `gesture` step spreads one shape across a **set** of Parts (ADR 0046):
   `alternate` or `pulse`. The dome orders its own panels and keeps its own
   speed. Any other pair still saves, and the Rehearsal says the dome does
   nothing with it.
-- A flutter with `together` or `wave` owes a later close Gesture over the same
-  set.
+- A flutter Gesture owes no close after it: every member ends closed.
 - A Gesture stops at the end step, mid-pass if it has to: nothing it would
   move at or after the end is sent, and the Rehearsal says when a pass is cut
   short.

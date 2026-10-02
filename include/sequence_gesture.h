@@ -76,7 +76,8 @@
 //   pulse      every member on the step, and back on the half step
 //
 // "Goes back" is the shape's undo: an open closes, a close opens, and a
-// flutter closes, because a flutter ends open and owes a close.
+// flutter closes -- the close ends a flutter still going, and one already over
+// ended closed anyway (ADR 0049, amended 2026-10-02).
 // -----------------------------------------------------------------------------
 enum SeqGestureSpread : uint8_t {
     GESTURE_SPREAD_TOGETHER  = 0,
@@ -367,13 +368,6 @@ inline SeqGestureMove seqGesturePassMove(uint8_t spread, uint8_t n, uint16_t ste
 inline SeqBodyShape seqGestureMoveShape(SeqBodyShape shape, bool undo) {
     if (!undo) return shape;
     return (shape == BODY_SHAPE_CLOSE) ? BODY_SHAPE_OPEN : BODY_SHAPE_CLOSE;
-}
-
-// Whether a pass leaves the members as the shape left them. A flutter that
-// does is a flutter that owes a close; the spreads that undo their own move
-// end every member back where it started.
-inline bool seqGestureSpreadLeavesShape(uint8_t spread) {
-    return spread == GESTURE_SPREAD_TOGETHER || spread == GESTURE_SPREAD_WAVE;
 }
 
 // How many passes the Gesture makes: one, or one per repeat while the pass

@@ -912,8 +912,9 @@ ProtocolCheckResult protocolCheckTempo(const SeqTempo& tempo) {
 // -----------------------------------------------------------------------------
 // Gesture grammar (ADR 0046) -- form only
 //
-// Known words, known Parts on one half, numbers inside their bounds, and a
-// flutter that still owes its close. Whether the connected dome has a command
+// Known words, known Parts on one half, and numbers inside their bounds. A
+// flutter owes no close after it: it ends closed, on the dome and on the body
+// (ADR 0049, amended 2026-10-02; #453). Whether the connected dome has a command
 // for the (shape, spread) pair, whether a Part is wired, and whether the pace
 // keeps up with the Cadence Floor are the Rehearsal's and never refuse a save
 // (ADR 0044) -- a pair the dome cannot perform SAVES.
@@ -929,8 +930,7 @@ struct GestureFault {
 // protocolCheckBranch() into the formatter pcFailAt() calls, and a check that
 // formatted its own error would put its frame under that formatter too. So
 // the caller formats, from the same frame it always has.
-static __attribute__((noinline)) GestureFault checkGesture(uint8_t i, const SeqStep* steps, uint8_t count) {
-    const SeqStep& s = steps[i];
+static __attribute__((noinline)) GestureFault checkGesture(const SeqStep& s) {
     const SeqStepParams& p = s.params;
     if (droidPartSetFind(s.payload) == nullptr) {
         // An explicit list: every entry a known Part, none twice, all on one
@@ -989,22 +989,6 @@ static __attribute__((noinline)) GestureFault checkGesture(uint8_t i, const SeqS
     if (p.shape == BODY_SHAPE_FLUTTER) {
         if (p.flutterMs != 0 && (p.flutterMs < PC_BODY_FLUTTER_MS_MIN || p.flutterMs > PC_BODY_FLUTTER_MS_MAX)) {
             return {"flutterMs", "flutter duration out of range (50..60000)"};
-        }
-        // A flutter ends open and owes a close (ADR 0049), unless the spread
-        // brings every member back itself. The close it owes is a later close
-        // Gesture over the same Parts, said the same way.
-        if (seqGestureSpreadLeavesShape(seqGestureSpread(p))) {
-            bool closedLater = false;
-            for (uint8_t j = (uint8_t)(i + 1); j < count; ++j) {
-                if (steps[j].type == STEP_GESTURE && seqBodyShape(steps[j].params) == BODY_SHAPE_CLOSE &&
-                    strcmp(steps[j].payload, s.payload) == 0) {
-                    closedLater = true;
-                    break;
-                }
-            }
-            if (!closedLater) {
-                return {"shape", "flutter needs a later close of the same parts"};
-            }
         }
     } else if (p.flutterMs != 0) {
         return {"flutterMs", "only a flutter carries a duration"};
@@ -1195,7 +1179,7 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 break;
             }
             case STEP_GESTURE: {
-                const GestureFault fault = checkGesture(i, steps, count);
+                const GestureFault fault = checkGesture(s);
                 if (fault.field != nullptr) return pcFailAt(label, i, fault.field, fault.message);
                 // A dome Gesture moves dome panels, so terminal cleanup owes the
                 // ring the same staggered close any panel step earns; a body
