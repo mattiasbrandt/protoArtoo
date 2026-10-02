@@ -30,7 +30,7 @@ the patch releases, whose notes live on their own GitHub Release.
   page, press Front is here, and from then on the droid follows every turn it
   makes and says where the dome points, marked believed. An arrow on every dome
   drawing shows it. Go home turns the dome back to front, and a sequence step
-  can turn it until front, or a dome part, faces you. After a restart, an estop
+  can turn it to front, or until a dome part faces front. After a restart, an estop
   or sleep it says Unknown until you turn the dome to front and press Front is
   here again.
 - **Edit a sequence on its timeline.** Edit opens your sequence on its

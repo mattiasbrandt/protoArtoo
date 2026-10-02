@@ -48,6 +48,8 @@
   // control: this surface has no control web control gates, so the value
   // itself is the plate's to report (#348).
   let statusHeard = false;
+  // What the feedback line last said about the dome itself (updateDomeControlsEnabled()).
+  let feedbackState = null;
 
   const FEEDBACK_BASE_CLASS = "feedback";
 
@@ -140,9 +142,15 @@
       domeHardwareEnabled ? "switched on" : "switched off in Configuration",
     );
 
-    if (!domeHardwareEnabled) {
+    // Written when the state it reports changes, not on every reading: the
+    // line also carries the answer to Front is here and Go home, and a reading
+    // a second later would otherwise wipe the droid's clause before it is read.
+    const state = !domeHardwareEnabled ? "off" : !statusHeard ? "waiting" : "ready";
+    if (state === feedbackState) return;
+    feedbackState = state;
+    if (state === "off") {
       showFeedback(domeFeedback, "Dome ESC is switched off. Switch it on in Configuration.", "warning");
-    } else if (!statusHeard) {
+    } else if (state === "waiting") {
       showFeedback(domeFeedback, "Waiting for the droid.");
     } else {
       showFeedback(domeFeedback, "Dome ready.");
