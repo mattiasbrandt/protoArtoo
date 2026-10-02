@@ -1325,14 +1325,6 @@ static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
                      part.included ? "true" : "false", part.gate != nullptr ? part.gate : "-");
             sink->onRecordItem(requestId, itemBuf);
         }
-
-        const ServoExpanderFacts expander = servoTaskExpanderFacts();
-        if (expander.chosen) {
-            snprintf(itemBuf, sizeof(itemBuf), "expander:pca9685 address:0x%02X outputs:%s answering:%s",
-                     (unsigned)expander.address, PCA9685_OUTPUT_SPAN,
-                     expander.answering ? "true" : "false");
-            sink->onRecordItem(requestId, itemBuf);
-        }
     }
 
     if (sink->onRecordEnd) {
@@ -1424,6 +1416,14 @@ static void consoleExecuteServoApiGetOutputs(uint32_t requestId, const ConsoleRe
                              servoLimpReasonToString(commanded.limp));
                 }
             }
+            sink->onRecordItem(requestId, itemBuf);
+        }
+
+        const ServoExpanderFacts expander = servoTaskExpanderFacts();
+        if (expander.chosen) {
+            snprintf(itemBuf, sizeof(itemBuf), "expander:pca9685 address:0x%02X outputs:%s answering:%s",
+                     (unsigned)expander.address, PCA9685_OUTPUT_SPAN,
+                     expander.answering ? "true" : "false");
             sink->onRecordItem(requestId, itemBuf);
         }
     }
