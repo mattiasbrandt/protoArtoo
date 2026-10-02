@@ -499,11 +499,16 @@
       if (!known(step.start, ["front", "right", "rear", "left"])) return fail("start", "Pick where it starts");
       if (!known(step.easing, ["none", "soft", "overshoot"])) return fail("easing", "Pick an easing");
       const inRange = (value, lo, hi) => value === undefined || (isWhole(value) && value >= lo && value <= hi);
+      // A time the wire reads as absent - missing, null or 0 - is the
+      // Gesture's default and is held to no bound (parseGestureMs(),
+      // src/seq_json.cpp; checkGesture() bounds a time only when it is not 0).
+      // How far is not one of them: a stated 0 is refused there.
+      const timed = (value, lo, hi) => value === null || value === 0 || inRange(value, lo, hi);
       if (!inRange(step.howFar, 1, 100)) return fail("howFar", "How far is 1 to 100 percent");
-      if (!inRange(step.stepMs, 50, 60000)) return fail("stepMs", "The pace is 50 to 60000 ms");
-      if (!inRange(step.speedMs, 50, 5000)) return fail("speedMs", "A full throw takes 50 to 5000 ms");
-      if (!inRange(step.repeatMs, 100, 60000)) return fail("repeatMs", "It repeats every 100 to 60000 ms");
-      if (!inRange(step.extentMs, 0, 120000)) return fail("extentMs", "It repeats for at most 120000 ms");
+      if (!timed(step.stepMs, 50, 60000)) return fail("stepMs", "The pace is 50 to 60000 ms");
+      if (!timed(step.speedMs, 50, 5000)) return fail("speedMs", "A full throw takes 50 to 5000 ms");
+      if (!timed(step.repeatMs, 100, 60000)) return fail("repeatMs", "It repeats every 100 to 60000 ms");
+      if (!timed(step.extentMs, 0, 120000)) return fail("extentMs", "It repeats for at most 120000 ms");
       if (step.extentMs && !step.repeatMs) return fail("extentMs", "Set how often it repeats first");
       // An absent duration is stored as 0, and the firmware judges the 0, as
       // it does a Body Step's: any other shape may say 0, and a flutter that
