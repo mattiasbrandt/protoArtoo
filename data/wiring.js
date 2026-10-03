@@ -1423,7 +1423,7 @@
   // The board's picture
   //
   // Found the way the Component Picker finds it, with its own lookup and its
-  // own frame (data/component_picker.js artIdFor, data/product_art.js), and no
+  // own frame (data/component_picker.js artIdFor and PAProductArt), and no
   // board-to-picture map of this surface's. The board's GPIO outputs are a
   // product of their own, "Body controller board GPIO", and #369 settled that
   // it is pictured by whichever Body Controller this image runs on - which is
@@ -1669,7 +1669,6 @@
       "/droid_parts.js": "parts list",
       "/outputs.js": "the outputs",
       "/wiring.js": "the wiring sheet",
-      "/output_settings.js": "the outputs",
       "/dome_command_map.js": "the dome's commands",
       "/find_by_moving.js": "find by moving",
       "/parts_mapping.js": "the parts on each output",

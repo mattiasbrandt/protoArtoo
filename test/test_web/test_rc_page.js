@@ -34,7 +34,7 @@ const pickerAwaitingLineup = () => {
     console,
   };
   context.globalThis = context;
-  for (const file of ["apply_timing.js", "product_art.js", "component_picker.js"]) {
+  for (const file of ["apply_timing.js", "component_picker.js"]) {
     vm.runInNewContext(readFileSync(new URL(`../../data/${file}`, import.meta.url), "utf8"), context, { filename: file });
   }
   return context.window.ComponentPicker;
@@ -48,7 +48,7 @@ const pickerWithLineup = () => {
     console,
   };
   context.globalThis = context;
-  for (const file of ["apply_timing.js", "product_art.js", "component_picker.js"]) {
+  for (const file of ["apply_timing.js", "component_picker.js"]) {
     vm.runInNewContext(readFileSync(new URL(`../../data/${file}`, import.meta.url), "utf8"), context, { filename: file });
   }
   return context.window.ComponentPicker;

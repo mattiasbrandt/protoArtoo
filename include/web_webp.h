@@ -12,7 +12,7 @@
 //
 // A page names one path whichever asset set it was built with (ADR 0065):
 // /<id>.webp. The id is a Component Registry token for a product photograph
-// (data/product_art.js) or a Droid Build picture id (data/droid_parts.js
+// (data/component_picker.js) or a Droid Build picture id (data/droid_parts.js
 // "picture", e.g. mrbaddeley). The handler claims the shape, not a list of
 // ids, so a picture added to an asset set answers image/webp without a route
 // of its own -- a per-id list is what left /mrbaddeley.webp on text/plain.

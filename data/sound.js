@@ -2551,7 +2551,6 @@
       "/live_reading.js": "live updates",
       "/shell.js": "page layout",
       "/sound.js": "audio control",
-      "/footer.js": "page footer",
     });
     SECTIONS.forEach(([name, load, label, opts]) =>
       window.PABootstrap.registerSection(name, load, { label, ...opts })

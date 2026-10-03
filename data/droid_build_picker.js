@@ -144,8 +144,8 @@
 
     // The design's picture, when the catalog names one: MrBaddeley's designs
     // share his (docs/droid-parts.yaml `picture:`, #369). A design without one
-    // is words alone. The lookup is data/product_art.js's, the Component
-    // Picker's own.
+    // is words alone. The lookup is the Component Picker's own
+    // (data/component_picker.js, window.PAProductArt).
     if (design.picture && window.PAProductArt) face.appendChild(window.PAProductArt.frame(design.picture));
     const head = element("span", "droid-build-card-head");
     if (roadmap) head.appendChild(pill("Roadmap"));

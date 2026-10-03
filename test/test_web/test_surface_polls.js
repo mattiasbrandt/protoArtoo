@@ -383,7 +383,6 @@ const READS_NO_STATUS_OF_ITS_OWN = [
   { file: "drive.js" },
   { file: "sound.js" },
   { file: "rc.js" },
-  { file: "footer.js" },
   { file: "maintenance.js", overrides: withAvailability },
   { file: "configuration.js", overrides: withAvailability },
   { file: "servo.js", overrides: partsGlobals },

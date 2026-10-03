@@ -439,7 +439,6 @@
       "/dome_bearing.js": "where the dome points",
       "/shell.js": "page layout",
       "/dome.js": "dome control",
-      "/footer.js": "page footer",
     });
     SECTIONS.forEach(([name, load, label]) =>
       window.PABootstrap.registerSection(name, load, { label })

@@ -162,10 +162,9 @@ size_t configSettingCount();
 const ConfigSetting& configSettingAt(size_t index);
 const ConfigSetting* configSettingByForm(const char* form);
 
-// The Setting's value, read out of / written into its section of `snap`.
-// Numbers, words and members as their stored number; Bool as 0/1.
+// The Setting's value, read out of its section of `snap`. Numbers, words and
+// members as their stored number; Bool as 0/1.
 int32_t configSettingNumber(const ConfigSetting& setting, const ConfigSnapshot& snap);
-void configSettingSetNumber(const ConfigSetting& setting, ConfigSnapshot* snap, int32_t value);
 
 // The Setting as text: a number, `true`/`false`, a word, a registry id, an IP.
 // A Member whose stored number names nothing this image knows writes "" - the
@@ -206,10 +205,9 @@ void configSettingsRead(SettingSection section, const ConfigReader& reader, void
 // the key their door takes them under (`scream`, `snd_int_quiet`,
 // `snd_cat_gen_lo`, `volume`, `quiet`), which is also what a refusal names.
 // They have no GET /api/config path; each audio write path saves them through
-// its own writer, which reads the key and the default from here.
+// its own writer, which reads the key and the default from here. A test walks
+// all of them through include/config_settings_test_hooks.h.
 // -----------------------------------------------------------------------------
-size_t audioSettingCount();
-const ConfigSetting& audioSettingAt(size_t index);
 // The audio Setting a door takes under `name`, or nullptr.
 const ConfigSetting* audioSettingByName(const char* name, SettingDoor door);
 
@@ -223,8 +221,6 @@ const ConfigSetting* audioSettingByName(const char* name, SettingDoor door);
 // So these declarations carry the check and no key: `bank` (1..6), `page`
 // (A..Z) and `index` (1..65535).
 // -----------------------------------------------------------------------------
-size_t catalogBindingSettingCount();
-const ConfigSetting& catalogBindingSettingAt(size_t index);
 const ConfigSetting* catalogBindingSetting(const char* part);
 
 // Parse `raw` against a Range, Words, Bool, Mask or Letter Setting without storing it:

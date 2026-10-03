@@ -260,7 +260,8 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
 
     // DL:<target>:<mode>[:<color>[:<durationSec>]]  --  Logic/PSI Mode (issue #11).
     // Structured control for dome logic/PSI animations. Mirrors client validation
-    // in data/seq_protocol_check.js exactly. Grammar enforces uppercase tokens,
+    // in data/seq_protocol_check.js exactly, whose token lists are
+    // data/dome_lights.js's. Grammar enforces uppercase tokens,
     // full-string match, known enums, and command length <= 63.
     if (strncmp(cmd, "DL:", 3) == 0) {
         static const char* const kDlTargets[] = {
@@ -360,7 +361,7 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
     // Multi-line text display on FLD/RLD. Text is percent-encoded; only valid escapes
     // are %0A (newline), %25 (%), %3A (:). Encoded text <= 40 chars; decoded <= 32;
     // max one newline; reject if final command length > 63. Mirrors client validation
-    // in data/seq_protocol_check.js exactly.
+    // in data/seq_protocol_check.js exactly (token lists: data/dome_lights.js).
     if (strncmp(cmd, "DT:", 3) == 0) {
         static const char* const kDtTargets[] = {
             "FLD", "RLD", "LOGIC",

@@ -224,15 +224,14 @@ ADR 0048 the browser loads exactly one document -- `index.html`, the Operator
 Shell -- and its inline recovery kernel (`data/_recovery_kernel.html`) fetches
 `page_bootstrap.js` with retry and hands it the shell's own chain
 (`web_api.js`, `overlay.js`, `status_stream.js`, `live_reading.js`,
-`health_signals.js`, `shell.js`, `footer.js`). Each surface's chain is then
+`health_signals.js`, `shell.js`). Each surface's chain is then
 handed over as a wave when that surface is first opened, and the shared prefix
 in it is skipped as already loaded. `overlay.js` (the shared question, Escape
 and receipt, #456) is in the shell's chain and, after `web_api.js`, in the
 chain of every surface that calls it (Firmware, Maintenance, RC Control,
 Sequences, Servos, Wiring);
 the loader runs it once. Every surface shares that
-prefix, then its own script(s), then `footer.js`; `dashboard.html` and
-`maintenance.html` additionally load `diagnostics.js`.
+prefix, then its own script(s).
 
 | Surface | Script count | Notes |
 |---|---|---|
@@ -242,10 +241,10 @@ prefix, then its own script(s), then `footer.js`; `dashboard.html` and
 | `servo.html` | 5 | |
 | `dome.html` | 5 | |
 | `configuration.html` | 7 | Adds `feature_availability.js`, and `setup.js` for the guided run it hosts |
-| `maintenance.html` | 7 | Adds `diagnostics.js` and `feature_availability.js` |
+| `maintenance.html` | 6 | Adds `feature_availability.js` |
 | `rc.html` | 5 | Safety-adjacent (RC mapping) |
 | `drive.html` | 5 | Safety-adjacent (live vehicle control) |
-| `seq.html` | 10 | Adds `seq_protocol_check.js` plus the dome layout/panel-model chain |
+| `seq.html` | 10 | Adds `dome_lights.js` and `seq_protocol_check.js` plus the dome layout/panel-model chain |
 | `dashboard.html` | 11 | Heaviest; the landing surface, split out of `index.html` when that file became the shell |
 
 Each of these files also carries a thin delegate that hands a direct visit to

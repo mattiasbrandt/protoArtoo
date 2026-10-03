@@ -37,15 +37,15 @@ function getPageName() {
 function getAppResourceName() {
   const pageName = getPageName();
   const profile = resolveProfile(pageName);
-  // The main app script is the last resource (before footer.js) in requiredResources.
+  // The main app script is the last resource in requiredResources.
   // For index.html, it's /app.js. For wifi.html, it's /wifi.js.
   const resources = profile.requiredResources;
   // Return the resource that looks like a page-specific app script (not style.css, js libs, etc).
   // For index.html: "app.js", for wifi.html: "wifi.js"
   if (pageName === "index") return "app.js";
   if (pageName === "wifi") return "wifi.js";
-  // Fallback: use the second-to-last resource (assuming last is footer.js)
-  return resources[resources.length - 2];
+  // Fallback: the last resource.
+  return resources[resources.length - 1];
 }
 
 const json = (payload, status = 200) => ({
@@ -250,7 +250,7 @@ async function scenarioResourceRetry(browser) {
     }
 
     // The third app.js request being SEEN is not the panel being gone: the
-    // download, footer.js, and the next render tick still have to land.
+    // download and the next render tick still have to land.
     // Poll for the hide instead of sampling once, so device latency does not
     // race the tail of the chain.
     let finalBackdropActive = true;

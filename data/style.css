@@ -652,8 +652,8 @@ nav > a {
 }
 
 /* The foot of the rail carries what is running, which is chrome rather than
-   any surface's business: data/footer.js writes the firmware and web-asset
-   versions into #fw-meta wherever the shell puts it. */
+   any surface's business: data/shell.js writes the firmware and web-asset
+   versions into #fw-meta. */
 .rail-foot {
   margin-top: auto;
   padding: var(--space-md);
@@ -3347,7 +3347,7 @@ p.output-parts {
   transform: none;
 }
 
-/* The rail's foot line, written by data/footer.js. It was a plate of its own
+/* The rail's foot line, written by data/shell.js. It was a plate of its own
    under the surface; on an instrument panel what is running is chrome, and it
    belongs at the bottom of the rail with the rest of the frame. */
 .status-bar {
@@ -7310,7 +7310,7 @@ body.shell-performing .show-list {
 }
 
 /* The Output a Part is on, and what is on its wire: the one segmented control
-   (data/output_settings.js segmented()) at row scale, as wide as its choices
+   (data/parts_mapping.js segmented()) at row scale, as wide as its choices
    and no wider. A bar with more Outputs than the row has room for wraps
    rather than pushing the table sideways. */
 .parts-row .output-seg {
@@ -9024,7 +9024,7 @@ body[data-page="wiring"] .card > .outputs-find:empty {
   stroke-width: 1.5;
 }
 
-/* The board's own picture, the Component Picker's frame (data/product_art.js)
+/* The board's own picture, the Component Picker's frame (data/component_picker.js)
    filling the slot the diagram leaves for it. */
 .wd-board-slot {
   width: 100%;

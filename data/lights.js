@@ -32,7 +32,7 @@
 //   a dome light   the dome controller owns the hardware, so it has NO Light
 //                  Type and offers that controller's own modes and colors
 //                  instead, under the labels a sequence already shows
-//                  (data/seq_protocol_check.js). Offering it on/off/flash
+//                  (data/dome_lights.js). Offering it on/off/flash
 //                  would hide modes its hardware has. It is NEVER "not
 //                  driven": no Output of ours drives it, which is a different
 //                  sentence, and a builder commands it from here today.
@@ -56,7 +56,7 @@
   const kinds = window.DroidPartKind;
   const catalog = window.DroidParts;
   const OUTPUTS = window.PAOutputs;
-  const domeVocabulary = window.SeqProtocolCheck?.domeLights || null;
+  const domeVocabulary = window.DomeLights || null;
 
   const element = (tag, className, text) => {
     const node = document.createElement(tag);
@@ -248,7 +248,7 @@
     (part.aliases || []).find((alias) => domeVocabulary?.targets.includes(alias)) || "";
 
   // A picked-one-of-many, in the house treatment: the accent tint and inset
-  // ring data/output_settings.js's segmented() gives its active choice. Nine
+  // ring data/parts_mapping.js's segmented() gives its active choice. Nine
   // modes are too wide for one segmented bar, so they wrap as pills instead of
   // hiding in a drop-down (operator, 2026-09-20: the selects "look way too
   // big").
@@ -352,7 +352,7 @@
     let settle = null;
 
     // PICKING IS APPLYING, the way every other control on this droid works
-    // (data/output_settings.js, the Component Picker): a chip or a swatch goes
+    // (Wiring's parts table, the Component Picker): a chip or a swatch goes
     // to the dome on its own, so there is no button to press afterwards. The
     // short settle is what makes picking a mode and then a color one command
     // rather than two.
@@ -695,7 +695,7 @@
     window.PABootstrap.setResourceLabels?.({
       "/droid_parts.js": "the parts catalog",
       "/droid_part_kind.js": "the parts catalog",
-      "/seq_protocol_check.js": "the dome's commands",
+      "/dome_lights.js": "the dome's commands",
       "/outputs.js": "what each wire carries",
       "/lights.js": "the lights",
     });

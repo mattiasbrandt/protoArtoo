@@ -157,7 +157,7 @@ test("a command from one Part's plate names that Part's wire", async () => {
 // A dome light is commandable only where the dome answers to its name. The two
 // halves of that sentence live in two files that drift independently - the
 // catalog's aliases (docs/droid-parts.yaml) and the dome's own target list
-// (data/seq_protocol_check.js, mirroring src/protocol_check.cpp) - so a light
+// (data/dome_lights.js, mirroring src/protocol_check.cpp) - so a light
 // can gain a control the dome would refuse, or lose one it would take, without
 // either file looking wrong on its own. The Magic Panel is the case that keeps
 // it honest: it is a dome light the dome has no DL: target for.

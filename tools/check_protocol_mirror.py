@@ -2,7 +2,9 @@
 """Run the browser half of the protocol-check mirror.
 
 test/fixtures/protocol_mirror.json names a sequence and the verdict both
-implementations must give. This runs data/seq_protocol_check.js. The firmware
+implementations must give. This runs data/seq_protocol_check.js, with the
+dome's light vocabulary and a Gesture's words it reads (data/dome_lights.js,
+data/seq_gesture.js). The firmware
 half is the native test test_protocol_mirror, which reads the same file.
 Pass --native to compile and run that test too (a PlatformIO native build).
 
@@ -24,7 +26,11 @@ const fs = require("fs");
 const vm = require("vm");
 const fixture = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 const window = {};
-vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), { window, console });
+// In the page's order (data/seq.html): the dome's light vocabulary
+// (data/dome_lights.js) before the validator, and a Gesture's words
+// (data/seq_gesture.js) after it, since that file reads GESTURE_MS from it.
+const context = { window, console };
+for (const file of process.argv.slice(2)) vm.runInNewContext(fs.readFileSync(file, "utf8"), context);
 const check = window.SeqProtocolCheck;
 if (!check || typeof check.validateSequence !== "function") {
   console.error("SeqProtocolCheck.validateSequence is missing");
@@ -54,7 +60,8 @@ process.exit(failed ? 1 : 0);
 
 def browser() -> int:
     r = subprocess.run(
-        ["node", "-e", JS, str(FIXTURE), str(ROOT / "data" / "seq_protocol_check.js")],
+        ["node", "-e", JS, str(FIXTURE), str(ROOT / "data" / "dome_lights.js"),
+         str(ROOT / "data" / "seq_protocol_check.js"), str(ROOT / "data" / "seq_gesture.js")],
         cwd=ROOT,
     )
     return r.returncode

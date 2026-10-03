@@ -249,11 +249,11 @@
   const audioFallbackLabel = (value) =>
     (AUDIO_FALLBACK_SLOTS.find((s) => s.value === value) || {}).label || value || "None";
 
-  // The dome's light vocabulary and the words for it are Protocol Check's
-  // (data/seq_protocol_check.js domeLights): this page keeps no label of its
-  // own. `lightWord` is a token as a builder reads it, in one of the
+  // The dome's light vocabulary and the words for it are data/dome_lights.js's,
+  // which Protocol Check validates against too: this page keeps no label of
+  // its own. `lightWord` is a token as a builder reads it, in one of the
   // vocabulary's groups.
-  const domeLights = SeqProtocolCheck.domeLights;
+  const domeLights = window.DomeLights;
   const lightWord = (group, token) => domeLights.label(group, token) || "Unknown";
 
   const els = {
@@ -5244,6 +5244,7 @@
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
       "/dome_bearing.js": "where the dome points",
+      "/dome_lights.js": "the dome's lights",
       "/seq_protocol_check.js": "sequence protocol",
       "/servo_motion.js": "servo motion model",
       "/seq_rehearsal.js": "sequence rehearsal",
@@ -5251,7 +5252,6 @@
       "/body_view.js": "droid picture",
       "/outputs.js": "servo outputs",
       "/seq.js": "sequence editor",
-      "/footer.js": "page footer",
     });
     SECTIONS.forEach(([name, load, label]) =>
       window.PABootstrap.registerSection(name, load, { label })

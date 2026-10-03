@@ -114,12 +114,19 @@
     return { ids: seeds.filter((id) => halfOf(id) === half), known: true };
   }
 
+  // The design and variant the built-in dome drawing (data/dome_panel_model.js)
+  // is of. It is a fact about that picture, but it is declared here, beside the
+  // one question that reads it: Configuration and Wiring load this file and
+  // not the drawing, and a page that could not see the declaration read every
+  // stated MK4 complex dome as somebody else's (#466).
+  const BUILT_IN_DOME = Object.freeze({ design: 'mk4', variant: 'complex' });
+
   /**
    * May the built-in dome drawing be shown as this builder's dome?
    *
    * The one answer to that question: the Dashboard's dome card and Sequences
    * (through data/dome_layout.js's tier 3) and the Parts page's dome half all
-   * ask here. The drawing declares what it is of (data/dome_panel_model.js);
+   * ask here. What the drawing is of is BUILT_IN_DOME, above;
    * a design whose dome seeds copy another's until its own list is read says
    * so in the catalog (`domeDrawnAs`, MK4.1 as MK4 Complex, #409) and is drawn
    * as that design. Anything else - another design, another variant, a
@@ -139,8 +146,8 @@
     }
     const design = designById(designId);
     const drawnAs = (design && design.domeDrawnAs) || { design: designId, variant: variantId };
-    return drawnAs.design === window.DOME_PANEL_MAP_DESIGN &&
-      drawnAs.variant === window.DOME_PANEL_MAP_VARIANT;
+    return drawnAs.design === BUILT_IN_DOME.design &&
+      drawnAs.variant === BUILT_IN_DOME.variant;
   }
 
   // ── The applied build ──────────────────────────────────────────────────

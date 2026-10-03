@@ -36,7 +36,7 @@ const SCRIPTS = [
   "droid_parts.js",
   "droid_part_kind.js",
   "droid_build.js",
-  "seq_protocol_check.js",
+  "dome_lights.js",
   "outputs.js",
   "lights.js",
 ];

@@ -529,14 +529,6 @@
   }
 
   /**
-   * Unregister a change listener.
-   * @param {Function} cb
-   */
-  function offChange(cb) {
-    listeners.delete(cb);
-  }
-
-  /**
    * Get the current source tier.
    * @returns {string} 'live' | 'cached' | 'vendored' | 'stated-design' | 'unsupported'
    */
@@ -598,7 +590,6 @@
     refresh,
     getModel,
     onChange,
-    offChange,
     getSource,
     severityClause,
     statedDesignDifference,

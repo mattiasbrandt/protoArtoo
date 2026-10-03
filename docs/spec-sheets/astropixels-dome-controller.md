@@ -347,7 +347,7 @@ Implementation, as it actually is on disk today:
 | Transport decision as a pure function | `src/dome_link_arbiter.cpp`, `include/dome_link_arbiter.h` |
 | Marcduino parse and dispatch of dome-originated lines | `src/drivers/dome_rx_parser.cpp` |
 | `BD:<CUE>` named body cues | `src/drivers/dome_cue_handler.cpp` |
-| `DV:` / `DL:` / `DT:` / `DH:` validation before send | `src/protocol_check.cpp`, mirrored in `data/seq_protocol_check.js` |
+| `DV:` / `DL:` / `DT:` / `DH:` validation before send | `src/protocol_check.cpp`, mirrored in `data/seq_protocol_check.js` (tokens and labels: `data/dome_lights.js`) |
 | Command string constants | `include/marcduino.h` |
 | Native coverage | `test_dome_link_arbiter`, `test_dome_link_encoding`, `test_marcduino_helpers`, `test_protocol_check{,_dl,_dt,_dh}` |
 

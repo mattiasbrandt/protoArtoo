@@ -1770,7 +1770,6 @@
     }
     window.PABootstrap.setResourceLabels?.({
       "/web_api.js": "Body Controller connection",
-      "/diagnostics.js": "diagnostics constants",
       "/status_stream.js": "live updates",
       "/live_reading.js": "live updates",
       "/dome_bearing.js": "where the dome points",
@@ -1782,7 +1781,6 @@
       "/dome_layout_render.js": "dome panel rendering",
       "/dome_control.js": "dome control",
       "/app.js": "home dashboard",
-      "/footer.js": "page footer",
     });
     SECTIONS.forEach(([name, load, label]) =>
       window.PABootstrap.registerSection(name, load, { label })

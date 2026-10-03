@@ -20,7 +20,7 @@ const vm = require("node:vm");
 const load = () => {
   const sandbox = { window: {} };
   vm.createContext(sandbox);
-  ["seq_protocol_check.js", "seq_tempo.js"].forEach((name) =>
+  ["dome_lights.js", "seq_protocol_check.js", "seq_tempo.js"].forEach((name) =>
     vm.runInContext(fs.readFileSync(path.resolve(__dirname, "../../data", name), "utf8"), sandbox, { filename: name }),
   );
   return sandbox.window.SeqTempo;

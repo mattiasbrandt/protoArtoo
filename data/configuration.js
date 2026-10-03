@@ -4,7 +4,7 @@
 // Configuration: what this droid is made of (CONTEXT.md "Configuration", #288).
 // The Droid Build, the Component Picker's families and the toggles behind
 // them, and the droid's name. The Outputs moved to Wiring and Servos
-// (data/output_settings.js, #369), and the LED strip to Lights
+// (data/parts_mapping.js, #369), and the LED strip to Lights
 // (data/lights.js, #410). Auto-saves on every change.
 //
 // Guided Setup takes this surface over while the droid is not set up, and its

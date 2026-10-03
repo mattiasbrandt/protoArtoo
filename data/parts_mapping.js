@@ -401,6 +401,65 @@
     window.location.hash = PICKER_SURFACE;
   };
 
+  // ---------------------------------------------------------------------------
+  // The segmented control a small set of peers is picked with on a Part's row
+  // of the table below: which Output the Part is on, and which servo, or which
+  // Light Type, is on its wire. Both bars are this one control, so the two
+  // cannot come to draw a choice differently. (It once drew Wiring's Output
+  // plates and Servos' servo pick too, as data/output_settings.js; both went
+  // when Wiring became part-first, #411.)
+  // ---------------------------------------------------------------------------
+  /**
+   * A joined bar of radio buttons, one per option, the current one lit. A
+   * press on another option is handed to `onPick`; a press on the one already
+   * picked asks nothing, so it never sends a save that changes nothing.
+   *
+   * An option the builder cannot pick is `disabled`: it stays on the bar, so
+   * the bar still shows every peer, and a press on it asks nothing. The
+   * refusal is here as well as on the button, because the request it would
+   * send is one the droid refuses.
+   *
+   * @param {string} label - what the group picks, for a screen reader
+   * @param {object[]} options
+   * @param {string} options[].id
+   * @param {string} options[].label
+   * @param {boolean} [options[].disabled] - shown, and cannot be picked
+   * @param {string} [options[].className] - a mark the surface styles
+   * @param {string} [options[].name] - what a screen reader calls the option,
+   *   where the label alone does not say enough
+   * @param {string|null} current - the id picked now, or null for none
+   * @param {function} onPick - (id) a different option was pressed
+   * @returns {Element}
+   */
+  const segmented = (label, options, current, onPick) => {
+    const row = document.createElement("div");
+    row.className = "seg output-seg";
+    row.setAttribute("role", "radiogroup");
+    row.setAttribute("aria-label", label);
+    options.forEach((option) => {
+      const on = option.id === current;
+      const off = option.disabled === true;
+      const button = document.createElement("button");
+      const classes = [on ? "active" : "", option.className || ""].filter(Boolean).join(" ");
+      if (classes) button.className = classes;
+      button.textContent = option.label;
+      button.type = "button";
+      button.dataset.value = option.id;
+      button.setAttribute("role", "radio");
+      button.setAttribute("aria-checked", on ? "true" : "false");
+      if (option.name) button.setAttribute("aria-label", option.name);
+      if (off) {
+        button.disabled = true;
+        button.setAttribute("aria-disabled", "true");
+      }
+      button.addEventListener("click", () => {
+        if (!on && !off) onPick(option.id);
+      });
+      row.appendChild(button);
+    });
+    return row;
+  };
+
   /**
    * The parts wiring table: Wiring's one table of what is on which wire
    * (operator, 2026-10-01 on #463, the pick of three drawn options). Each row
@@ -692,7 +751,7 @@
       const here = outputOf(part.id);
       const refused = refusedFor(part, outputs, here);
       const sending = move.pending() === part.id;
-      const bar = window.PAOutputSettings.segmented(
+      const bar = segmented(
         `Output for ${part.name}`,
         outputs.map((output) => {
           const others = output.parts.filter((id) => id !== part.id);
@@ -749,7 +808,7 @@
       const light = Boolean(kinds?.isLight(part));
       const options = light ? OUTPUTS.LIGHT_TYPES : OUTPUTS.SERVO_MODELS;
       const current = light ? output.light?.id ?? null : output.servo?.id ?? null;
-      return window.PAOutputSettings.segmented(`${part.name} ${light ? "light type" : "servo"}`, options, current,
+      return segmented(`${part.name} ${light ? "light type" : "servo"}`, options, current,
         (value) => carry(output, value));
     };
 
@@ -974,6 +1033,7 @@
     FREE,
     wiredCounts,
     wiredSummary,
+    segmented,
     picker,
   });
 })();

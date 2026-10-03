@@ -8,7 +8,7 @@
 // WHAT IT PROVES.
 //   a  rc_radio's picture (a product: /rc_radio.webp) is answered with
 //      Content-Type image/webp, and the <img> on its card decodes
-//      (naturalWidth > 0; data/product_art.js removes an <img> that fails).
+//      (naturalWidth > 0; data/component_picker.js removes an <img> that fails).
 //   b  mrbaddeley's picture (a design picture, /mrbaddeley.webp, on the MK4
 //      card) the same: a design picture is owed the answer a product picture
 //      gets.

@@ -21,6 +21,7 @@
 #include <Preferences.h>
 
 #include "config_settings.h"
+#include "config_settings_test_hooks.h"  // audioSettingCount/At() - every audio Setting
 #include "config_store.h"
 #include "dome_math.h"
 #include "../../../test/stubs/config/setting_samples.h"

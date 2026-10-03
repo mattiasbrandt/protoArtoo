@@ -1,7 +1,8 @@
 // =============================================================================
 // test/test_web/test_output_settings.js
 //
-// The segmented control data/output_settings.js keeps (#411): the one control
+// The segmented control data/parts_mapping.js keeps (#411; it was
+// data/output_settings.js until #466 merged it there): the one control
 // a pick of what is on a wire - its servo, or its Light Type - is drawn with,
 // on a Part's row of Wiring's part-first table. Servos' servo pick and
 // Wiring's Output plates, the two views this file used to draw, are gone; their
@@ -28,8 +29,8 @@ const load = () => {
   const window = { document };
   const context = { window, document };
   context.globalThis = context;
-  vm.runInNewContext(readFileSync(join(dataDir, "output_settings.js"), "utf8"), context, { filename: "output_settings.js" });
-  return window.PAOutputSettings;
+  vm.runInNewContext(readFileSync(join(dataDir, "parts_mapping.js"), "utf8"), context, { filename: "parts_mapping.js" });
+  return window.PAParts;
 };
 
 test("a press on the picked option asks nothing, and a press on another hands over that option", () => {

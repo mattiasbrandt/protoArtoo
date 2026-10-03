@@ -506,7 +506,6 @@
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
       "/wifi.js": "WiFi settings",
-      "/footer.js": "page footer",
     });
     SECTIONS.forEach(([name, load, label]) =>
       window.PABootstrap.registerSection(name, load, { label })
