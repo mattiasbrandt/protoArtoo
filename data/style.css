@@ -6277,6 +6277,31 @@ body[data-page="maintenance"] .status-item .hint {
   border-left: 3px double var(--text-dim);
 }
 
+/* A take (#442): one linked block on the lane of each Part it moves, edited
+   whole. A performance is continuous motion, so its fill is a soft wave rather
+   than the phrase's flat one, under the Gesture's leading edge. */
+.tl-take {
+  top: 1px;
+  bottom: 1px;
+  min-width: 10px;
+  background:
+    repeating-linear-gradient(135deg, color-mix(in srgb, var(--text) 10%, transparent) 0 6px, color-mix(in srgb, var(--text) 18%, transparent) 6px 12px);
+  border: 1px solid color-mix(in srgb, var(--text) 40%, transparent);
+  border-left: 3px solid var(--text-dim);
+}
+
+/* Where a later take covers the same Part, over the earlier take's block: it
+   is the later one that moves the Part there. Amber, because the Rehearsal
+   warns of it. It takes no presses: the block under it does. */
+.tl-overrun {
+  top: 1px;
+  bottom: 1px;
+  background: color-mix(in srgb, var(--warning) 22%, transparent);
+  border-top: 2px solid var(--warning);
+  border-radius: 0;
+  pointer-events: none;
+}
+
 .tl-tick {
   top: 2px;
   bottom: 2px;

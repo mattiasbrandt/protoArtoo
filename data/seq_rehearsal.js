@@ -58,6 +58,14 @@
 //   tempo-hash              ADR 0058: a sound is named as a role, so the track
 //                           behind a tempo can change with the sequence
 //                           untouched.
+//   take-overlap            ADR 0061: a second take over Parts a first already
+//                           covers is kept and the later one wins; the
+//                           overlap is reported, because nothing is destroyed
+//                           and the earlier take's motion silently is not seen.
+//   take-after-end          #442 slice 3: the droid opens a take only once its
+//                           start has come, and a run is over at its end step.
+//   take-cut                #442 slice 3: the droid ends a take still playing
+//                           at its run's end step and commands nothing there.
 //
 // One computation behind three appearances (#287 specific 6): the figures in
 // the editor, the full list at save and at clone, and a badge beside a run.
@@ -963,6 +971,101 @@
   };
 
   // ---------------------------------------------------------------------------
+  // takeSpans() -- the takes a sequence holds, read the way the droid plays
+  // them (include/take_replay.h): the one reading the timeline draws and the
+  // take rules below judge (#442).
+  //
+  // Each is {index, id, t0, t1, from, to, lengthMs, parts}, where the take
+  // starts and stops on the routine's time, the part of its file that plays
+  // (`from`, `to`, ms into it) and the file's own length. `t` is where `from`
+  // plays. `parts` is, for every Part the take moves, `part` (its id),
+  // `changes` ([{t, at}] on the routine's time, `at` 0 closed .. 1 open: at
+  // `t0` where the take has it at its in-point, then each change after it)
+  // and `covers`, [from, until] on the routine's time: from its first change
+  // to where the take stops, or null where it never moves the Part. The run's
+  // end step (`endMs`) cuts a take still playing, so nothing it does there or
+  // after is in `changes` or `covers`.
+  //
+  // A take whose file `context.take(id)` has not answered for is {index, id,
+  // t0, facts: false}: only where it starts is known.
+  // ---------------------------------------------------------------------------
+  const takeSpans = (seq, context = {}, endMs = null) => {
+    const takes = Array.isArray(seq?.takes) ? seq.takes : [];
+    return takes.map((entry, index) => {
+      const t0 = Number(entry?.t) || 0;
+      const facts = typeof context.take === "function" && entry ? context.take(entry.id) : null;
+      if (!facts) return { index, id: entry?.id, t0, facts: false };
+      const from = Math.min(Number(entry.from) || 0, facts.lengthMs);
+      const to = Math.max(from, Math.min(entry.to === undefined ? facts.lengthMs : Number(entry.to) || 0, facts.lengthMs));
+      const t1 = t0 + (to - from);
+      const stops = endMs === null ? t1 : Math.min(t1, endMs);
+      const parts = facts.parts.map((part, p) => {
+        const mine = facts.samples.filter((sample) => sample.part === p && sample.t < to);
+        const before = mine.filter((sample) => sample.t <= from).pop();
+        const changes = [
+          ...(before ? [{ t: t0, at: before.at }] : []),
+          ...mine.filter((sample) => sample.t > from).map((sample) => ({ t: t0 + sample.t - from, at: sample.at })),
+        ].filter((change) => change.t < stops);
+        return { part, changes, covers: changes.length > 0 ? [changes[0].t, stops] : null };
+      });
+      return { index, id: entry.id, t0, t1, from, to, lengthMs: facts.lengthMs, facts: true, parts };
+    });
+  };
+
+  // Where two takes cover one Part at once: [{part, earlier, later, t0, t1}],
+  // by the takes' places in the list. There the later one moves the Part
+  // (LATER TAKE WINS, include/take_replay.h) - later in the list, which a drag
+  // on the timeline does not change.
+  const takeOverlaps = (spans) => {
+    const out = [];
+    spans.forEach((earlier, i) => {
+      if (!earlier.facts) return;
+      spans.slice(i + 1).forEach((later) => {
+        if (!later.facts) return;
+        earlier.parts.forEach((mine) => {
+          const theirs = later.parts.find((cover) => cover.part === mine.part);
+          if (!mine.covers || !theirs?.covers) return;
+          const t0 = Math.max(mine.covers[0], theirs.covers[0]);
+          const t1 = Math.min(mine.covers[1], theirs.covers[1]);
+          if (t1 > t0) out.push({ part: mine.part, earlier: earlier.index, later: later.index, t0, t1 });
+        });
+      });
+    });
+    return out;
+  };
+
+  // Two takes over one Part at once: both are kept, and the earlier one's
+  // motion there is never seen. One line per Part and pair, naming the span.
+  const takeOverlap = (spans) =>
+    takeOverlaps(spans).map((over) =>
+      finding(
+        "warning",
+        "take-overlap",
+        `${partName(over.part)}: takes ${over.earlier + 1} and ${over.later + 1} both move it from ${seconds(over.t0)} to ${seconds(over.t1)}. Take ${over.later + 1} wins.`,
+        `Trim or move one of them, or remove the take you do not want.`,
+        { part: over.part },
+      ));
+
+  // A take that starts at or after the end step never plays; one still
+  // playing there is cut short (a Note, as flutter-cut is: nothing is left
+  // in a state it was not put in). The first needs no file, only where the
+  // take starts.
+  const takeEnd = (spans, endMs) => {
+    if (endMs === null) return [];
+    return spans.flatMap((span) => {
+      if (span.t0 >= endMs) {
+        return [finding("warning", "take-after-end", `Take ${span.index + 1} starts after the end, so it never plays.`,
+          "Move it before the end, or move the end later.")];
+      }
+      if (span.facts && span.t1 > endMs) {
+        return [finding("note", "take-cut", `Take ${span.index + 1} is cut short by the end.`,
+          "Move the end later, or trim the take.")];
+      }
+      return [];
+    });
+  };
+
+  // ---------------------------------------------------------------------------
   // The figures (#287 second pass, specific 9): each one true, no headline.
   // ---------------------------------------------------------------------------
   // The bytes POST /api/seq sends: the JSON data/web_api.js stringifies, as
@@ -1010,6 +1113,8 @@
   //   layout     the connected dome's layout model (data/dome_layout.js)
   //   maxBytes   the droid's per-file cap (GET /api/identity)
   //   trackHash  the fingerprint of a track the builder dropped in, if any
+  //   take       id -> a take file's facts, or null where it has not been
+  //              read (data/seq.js readTakeFile())
   //
   // The steps are read as the droid runs them, every beat at the millisecond
   // it resolves to (data/seq_protocol_check.js resolveBeats()).
@@ -1018,6 +1123,9 @@
     const run = window.SeqProtocolCheck?.resolveBeats ? window.SeqProtocolCheck.resolveBeats(seq) : seq;
     const steps = Array.isArray(run?.steps) ? run.steps : [];
     const events = expand(steps);
+    const end = steps.find((step) => step && step.type === "end");
+    const endMs = end ? Number(end.t) || 0 : null;
+    const spans = takeSpans(seq, context, endMs);
     const findings = [
       ...dispatchSpacing(events),
       ...servoBurst(events),
@@ -1036,6 +1144,8 @@
       ...domeHowFar(events),
       ...tempoConfidence(seq),
       ...tempoHash(seq, context),
+      ...takeOverlap(spans),
+      ...takeEnd(spans, endMs),
     ];
 
     // What could not be judged, by step: a panel move's timing is the dome's, a
@@ -1203,6 +1313,9 @@
     expand,
     bodyMove,
     gestureFlutterMs,
+    // The takes as the droid plays them, and where two of them overlap (#442).
+    takeSpans,
+    takeOverlaps,
     unavailableMessage,
     // The Cadence Floor as the rules read it, for the editor to space the
     // closes of a close half it starts by the same figure (#441).

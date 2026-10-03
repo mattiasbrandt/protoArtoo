@@ -302,6 +302,9 @@ and a fix:
 | `dome-how-far` | warning | a part-way move of PP3 or PP5 | our dome firmware has no part-way move for them |
 | `tempo-confidence` | warning | a tempo that is only a guess (confidence under 0.5) | Cantina's ~200 BPM read as 127.8 (ADR 0058) |
 | `tempo-hash` | warning | a dropped-in track that is not the one the tempo was measured from | the track behind a sound can change (ADR 0058) |
+| `take-overlap` | warning | two takes moving one part at once, naming the part and the span | the later take in the list wins, so the earlier one's motion there is never seen (ADR 0061) |
+| `take-after-end` | warning | a take that starts at or after the end step | the droid never opens it (#442) |
+| `take-cut` | note | a take still playing at the end step | the droid stops it there (#442) |
 
 It also says how many steps it could check. A dome panel move, a body move and a
 random pick each carry a question it cannot answer from the page -- how long the
@@ -382,7 +385,10 @@ model -- no `fx` field (inferred), no manual cleanup steps (automatic).
   part, the later one in the array moves it, and a step that moves the part wins over
   both. A toggle sequence plays its takes on its open half only, and a sequence placed
   inside another (`sequence` step) brings its steps but not its takes. A take is made by
-  Perform in the editor, never written by hand.
+  Perform in the editor, never written by hand. On the timeline it is one block across
+  the lanes of the parts it moves: dragged to move it, its edges dragged to trim it, which
+  writes `from` and `to` (ms into the take; `t` is then where `from` plays), and never
+  opened step by step. Perform again, on a picked take, performs a new one in its place.
 
 ### Named tracks vs `$NNN`
 
