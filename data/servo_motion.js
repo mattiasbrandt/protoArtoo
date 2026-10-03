@@ -4,7 +4,7 @@
 // Auto-generated from docs/servo-motion.yaml by tools/generate_servo_motion.py
 // DO NOT EDIT MANUALLY
 //
-// Source digest: sha256 af61b6095c761cc5eaeec447f35e8a81887042d1a927c55f7d09934b6f0fbeb9
+// Source digest: sha256 651f52e6b9a40550eede6fb3df5339e9b66b07fbc73a6a9dc2a040e38240481a
 //
 // The Servo Output motion model, as ServoTask runs it: the functions below
 // are generated from the same declaration as include/servo_motion_model.h, so
@@ -178,9 +178,11 @@
   // servoMotionRetarget()
   // Plan a move to toUs for an Output that is at fromUs and going speedUsPerMs
   // (signed: positive towards the higher width) -- a new target replacing a
-  // move part way through, whatever sent it (#442). It keeps to the profile's
-  // two limits: it speeds up to the cruise speed and never past it, and slows
-  // down at the profile's acceleration and never harder.
+  // move part way through, whatever sent it (#442). Wherever it carries the
+  // speed it keeps to the profile's two limits: it speeds up to the cruise
+  // speed and never past it, and slows down at the profile's acceleration and
+  // never harder. Where it cannot, it steps the speed down, in the three cases
+  // listed last.
   //
   // At a speed of zero it is servoMotionPlan(), exactly. Every move from rest
   // -- and so every move a saved sequence makes from rest, and every time the
@@ -206,18 +208,30 @@
   //     from rest. The rest after a stop aims, or not, over its own distance,
   //     as every move from rest does.
   //
-  // Two limits the profile cannot keep by itself, both reachable only when the
-  // move in progress was faster than this profile -- a Gesture's own throw
-  // (servoMotionOverride()), or the row changed under the move:
-  //   - a speed over the cruise is taken as the cruise. That is the one step
-  //     in speed this planner makes;
+  // Where the speed steps down at once rather than along the profile's
+  // acceleration -- three cases, so that is braking harder than the profile
+  // in each:
+  //   - a speed over the cruise is taken as the cruise. Reachable only when
+  //     the move in progress was faster than this profile: a Gesture's own
+  //     throw (servoMotionOverride()), or the row changed under the move;
   //   - a stop never carries the Output past the recorded end it is heading
   //     for. Every point of a ramp lies between two widths already inside the
   //     component's band (ADR 0041) and a brake point past the end need not,
-  //     so the stop is planned from the speed that ends it on the end.
+  //     so the stop is planned from the speed that ends it on the end --
+  //     reachable the same two ways, and by a whole-millisecond rounding on a
+  //     stop that ends on the end;
+  //   - every `return rest` below while the Output is moving: the speed goes
+  //     to zero and the move is the one from rest, from where the Output is.
+  //     That is a profile that cannot ramp at all (it snaps), an Output
+  //     already past the end it is heading away from the target to, a speed
+  //     that a stop inside one millisecond would end, a plan from an origin
+  //     outside 0..65535, and a moving plan too short for the planner to ramp
+  //     -- a brake shorter than one 20 ms ServoTask frame among them. Most of
+  //     these are speeds no frame shows; none passes the target or an end.
   //
-  // A moving plan too short to ramp is the move from rest instead, never a
-  // snap: ServoTask writes a snap's target, not a brake point or an aim.
+  // The move from rest may itself be a snap, as from rest it would be. A
+  // moving plan is never one: ServoTask writes a snap's target, so a snap to a
+  // brake point or an aim would put the Output in the wrong place.
   // -----------------------------------------------------------------------------
   function servoMotionRetarget(fromUs, speedUsPerMs, toUs, profile, startMs) {
     const rest = servoMotionPlan(fromUs, toUs, profile, startMs);
@@ -339,7 +353,7 @@
   window.ServoMotion = Object.freeze({
     source: "docs/servo-motion.yaml",
     generator: "tools/generate_servo_motion.py",
-    sourceSha256: "af61b6095c761cc5eaeec447f35e8a81887042d1a927c55f7d09934b6f0fbeb9",
+    sourceSha256: "651f52e6b9a40550eede6fb3df5339e9b66b07fbc73a6a9dc2a040e38240481a",
     SERVO_THROW_MS_MIN,
     SEQ_CADENCE_FLOOR_MS,
     ServoEasing: Object.freeze({ SERVO_EASE_NONE, SERVO_EASE_SOFT, SERVO_EASE_OVERSHOOT, SERVO_EASE_COUNT }),
