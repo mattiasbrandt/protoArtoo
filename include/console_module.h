@@ -126,6 +126,11 @@ typedef enum {
     // (#445). A fact about the builder's calibration, the way part-not-assigned
     // is one about their wiring.
     CONSOLE_REASON_DOME_NOT_CALIBRATED = 20,
+    // The fitted sound module plays one sound at a time, so a Background Track
+    // a Sequence starts does not play; the rest of the routine runs (ADR 0054).
+    // A fact about the module the builder fitted, the way part-not-assigned is
+    // one about their wiring, read from its registry row's AUDIO_CAP_MIXES.
+    CONSOLE_REASON_MODULE_CANNOT_MIX = 21,
 } ConsoleReason;
 
 // =============================================================================

@@ -124,6 +124,64 @@
           {"t": 100, "type": "end"}
         ]
       }
+    },
+    {
+      "name": "background-track-start-and-stop",
+      "expect": true,
+      "seq": {
+        "format": 1,
+        "name": "DM:MIRRORBG",
+        "suppressMs": 8000,
+        "toggleGroup": "none",
+        "steps": [
+          {"t": 0, "type": "backgroundTrack", "cmd": "$W", "vol": 12, "boundAudio": false},
+          {"t": 0, "type": "backgroundTrack", "cmd": "$805", "vol": 0},
+          {"t": 3000, "type": "backgroundTrackStop"},
+          {"t": 3100, "type": "end"}
+        ]
+      }
+    },
+    {
+      "name": "background-track-volume-over",
+      "expect": false,
+      "seq": {
+        "format": 1,
+        "name": "DM:MIRRORBG",
+        "suppressMs": 8000,
+        "toggleGroup": "none",
+        "steps": [
+          {"t": 0, "type": "backgroundTrack", "cmd": "$212", "vol": 31},
+          {"t": 100, "type": "end"}
+        ]
+      }
+    },
+    {
+      "name": "background-track-volume-missing",
+      "expect": false,
+      "seq": {
+        "format": 1,
+        "name": "DM:MIRRORBG",
+        "suppressMs": 8000,
+        "toggleGroup": "none",
+        "steps": [
+          {"t": 0, "type": "backgroundTrack", "cmd": "$212"},
+          {"t": 100, "type": "end"}
+        ]
+      }
+    },
+    {
+      "name": "background-track-not-a-sound",
+      "expect": false,
+      "seq": {
+        "format": 1,
+        "name": "DM:MIRRORBG",
+        "suppressMs": 8000,
+        "toggleGroup": "none",
+        "steps": [
+          {"t": 0, "type": "backgroundTrack", "cmd": "$s", "vol": 10},
+          {"t": 100, "type": "end"}
+        ]
+      }
     }
   ]
 }

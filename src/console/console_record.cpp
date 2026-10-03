@@ -101,6 +101,8 @@ const char* consoleReasonString(ConsoleReason reason) {
             return "bearing-unknown";
         case CONSOLE_REASON_DOME_NOT_CALIBRATED:
             return "dome-not-calibrated";
+        case CONSOLE_REASON_MODULE_CANNOT_MIX:
+            return "module-cannot-mix";
         default:
             return "unknown";
     }

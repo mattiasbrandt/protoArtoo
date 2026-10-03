@@ -63,6 +63,7 @@ enum AudioStepIgnoreReason : uint8_t {
     AUDIO_STEP_IGNORE_UNSUPPORTED_BACKEND,  // catalog command on non-catalog driver
     AUDIO_STEP_IGNORE_BANK_NOT_FITTED,      // $8nn, and the module has no bank 8
     AUDIO_STEP_IGNORE_CANNOT_MIX,           // Background Track on a module without AUDIO_CAP_MIXES
+    AUDIO_STEP_IGNORE_NOT_A_SOUND,          // Background Track whose '$' plays nothing ($s, $R, $+)
 };
 
 // -----------------------------------------------------------------------------
@@ -117,6 +118,12 @@ struct AudioStepCommandInputs {
     const AudioNamedTracks* named = nullptr;
     const AudioBindingCache* bindings = nullptr;
     uint32_t randomValue = 0;  // category-play selection entropy
+    // The driver holds a Background Track as playing (AudioDriver::
+    // backgroundTrackHeld()), so a Track Stop leaves the droid's sound playing.
+    bool backgroundTrackHeld = false;
+    // The driver may still be playing a vocal (AudioDriver::vocalHeld()), so
+    // a Background Track stop leaves the droid's sound playing.
+    bool vocalHeld = false;
 };
 
 struct AudioStepCommandActions {

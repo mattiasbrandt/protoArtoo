@@ -167,9 +167,15 @@ bool seqStoreSplicePhrase(SeqStep** buf, uint8_t* count, uint8_t at, const SeqSt
 // than stacking one more on the Sequence Coordinator's measured chain
 // (ADR 0040), and a native test drives the real loop with a fake loader.
 // -----------------------------------------------------------------------------
-// Marks a phrase step a pass still owes; no SeqEffectClass has this value.
+// Marks a phrase step a pass still owes. Scoped to the step's type, not to the
+// SeqEffectClass values: 0x80 is also FX_BACKGROUND_TRACK_BOUNDED, and that is
+// safe because the mark is only ever written to, and only ever read from, a
+// STEP_SEQUENCE step, whose effectClass Protocol Check stamps FX_NONE and the
+// engine never reads -- such a step is spliced out, or refused, before a run.
+// What must hold is that a marked phrase step reads differently from an
+// unmarked one.
 static const uint8_t SEQ_PHRASE_OWED = 0x80;
-static_assert(FX_AUDIO_BOUNDED < SEQ_PHRASE_OWED, "a phrase mark must not read as an effect class");
+static_assert(SEQ_PHRASE_OWED != FX_NONE, "a marked phrase step must differ from an unmarked one");
 
 template <typename Load, typename Release>
 inline bool seqStoreSplicePhrases(SeqStep** buf, uint8_t* count, Load&& load, Release&& release) {

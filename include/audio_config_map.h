@@ -46,6 +46,14 @@ const char* audioChirpKeyForCategory(uint8_t categoryIndex);
 
 AudioPlaybackSlot audioSlotForDollar(const char* cmd);
 
+// Whether cmd is a '$' command that plays a sound: a Named Track's letter
+// (the table above, one letter and nothing after it), $8nn with nn not 00, or
+// any other number 1..65535 written in digits alone. Form only, so it does not
+// ask what a Named Track is set to: $D names a sound while snd_disco is 0.
+// Protocol Check asks it of a Background Track's target (ADR 0054), and
+// data/seq_protocol_check.js mirrors it.
+bool audioDollarNamesSound(const char* cmd);
+
 bool audioUnpackChirpBinding(uint32_t packed, uint8_t* bankOut, char* pageOut, uint16_t* indexOut);
 bool audioUnpackChirpCategoryBinding(uint32_t packed, uint8_t* bankOut, char* pageOut);
 

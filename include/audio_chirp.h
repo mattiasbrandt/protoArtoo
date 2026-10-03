@@ -88,6 +88,8 @@ class AudioDriverChirp : public AudioDriver {
     void stopVocals() override;
     bool playBackgroundTrack(uint16_t index, uint8_t bank, char page, uint8_t vol) override;
     void stopBackgroundTrack() override;
+    bool backgroundTrackHeld() const override;
+    bool vocalHeld() const override;
     // The Sound page's Driver row is operator-facing, and bare "CHIRP" also
     // names CHIRP Droid Control, a different product by the same author
     // (CONTEXT.md Flagged Ambiguities, 2026-09-08: always qualify in operator

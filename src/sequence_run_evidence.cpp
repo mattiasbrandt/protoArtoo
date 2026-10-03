@@ -101,6 +101,21 @@ static void actionToString(const SeqAction& act, char* out, size_t cap) {
             strncpy(out, "<stop>", cap - 1);
             out[cap - 1] = '\0';
             break;
+        case SEQ_ACT_BACKGROUND_TRACK_START: {
+            // The sound and its volume, as the engine handed them over. Whether
+            // the fitted module could mix is answered at dispatch and reported
+            // there (module-cannot-mix). A '$' is at most 7 characters
+            // (Protocol Check), sized here so the line cannot be cut.
+            char sound[8];
+            strncpy(sound, act.payload, sizeof(sound) - 1);
+            sound[sizeof(sound) - 1] = '\0';
+            snprintf(out, cap, "<backgroundTrack:%s:%u>", sound, (unsigned)act.audioCategory);
+            break;
+        }
+        case SEQ_ACT_BACKGROUND_TRACK_STOP:
+            strncpy(out, "<backgroundTrackStop>", cap - 1);
+            out[cap - 1] = '\0';
+            break;
         case SEQ_ACT_DOME_ROTATE:
             snprintf(out, cap, "<domeRotate:%d:%u>",
                      (int)act.domeSpeedPct, (unsigned)act.domeDurationMs);
@@ -198,7 +213,9 @@ void seqEvidenceRecordTx(const SeqAction& act, bool cleanup) {
     // non-dome action kind an audio effect by default.
     const bool isAudio = (act.kind == SEQ_ACT_AUDIO_DOLLAR ||
                           act.kind == SEQ_ACT_AUDIO_CATEGORY ||
-                          act.kind == SEQ_ACT_AUDIO_STOP);
+                          act.kind == SEQ_ACT_AUDIO_STOP ||
+                          act.kind == SEQ_ACT_BACKGROUND_TRACK_START ||
+                          act.kind == SEQ_ACT_BACKGROUND_TRACK_STOP);
 
     taskENTER_CRITICAL(&seqEvidenceMux);
     if (g.outcome == SEQ_RUN_RUNNING) {

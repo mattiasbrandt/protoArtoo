@@ -219,6 +219,47 @@ static bool __attribute__((noinline)) dispatchDomeBearing(const SeqAction& act) 
 }
 
 // -----------------------------------------------------------------------------
+// dispatchBackgroundTrackStart  --  a Background Track step reaching AudioTask
+// (ADR 0054).
+//
+// Sent whatever the fitted module, because AudioTask is the one audio seam that
+// refuses a Background Track a module cannot mix (AUDIO_STEP_IGNORE_CANNOT_MIX)
+// -- the gate stays in one place. What this adds is the run's own report, in
+// the shape a Body Step's part-not-assigned takes: the step was asked for, it
+// does not play, and why. The rest of the routine is untouched; only a full
+// queue is a retry.
+//
+// Both are out of line. The report: inline, its log line's frame (320 B) sat
+// above the queue helper's queue-drop log line and walked this task's chain
+// 256 B past its recorded figure. The dispatch itself: inline, its two reason
+// branches grew dispatchAction()'s frame by 16 B, on the route a Body Step's
+// log line takes.
+// -----------------------------------------------------------------------------
+static void __attribute__((noinline)) reportBackgroundTrackNotPlayed(const char* sound,
+                                                                   ConsoleReason reason) {
+    PA_LOG_INFO(TAG, "Background Track %s not played - %s", sound, consoleReasonString(reason));
+}
+
+static bool __attribute__((noinline)) dispatchBackgroundTrackStart(const SeqAction& act) {
+    // act.audioCategory carries the volume (SEQ_ACT_BACKGROUND_TRACK_START).
+    if (!audioQueueBackgroundTrackStart(act.payload, act.audioCategory, SRC_SEQ)) {
+        // A full queue: Protocol Check let only a '$' that fits the queue entry
+        // into the step, so this is never the malformed case. Retried on the
+        // next tick, and reported once it is sent.
+        return false;
+    }
+    // The true reason, Sound switched off before the module: with Sound off
+    // nothing plays at all, mixing or not, and the queue helper accepted the
+    // step without sending it (ADR 0027).
+    if (!configCacheReadActiveAudioEnabled()) {
+        reportBackgroundTrackNotPlayed(act.payload, CONSOLE_REASON_COMPONENT_DISABLED);
+    } else if ((audioGetCapabilities() & AudioDriver::AUDIO_CAP_MIXES) == 0) {
+        reportBackgroundTrackNotPlayed(act.payload, CONSOLE_REASON_MODULE_CANNOT_MIX);
+    }
+    return true;
+}
+
+// -----------------------------------------------------------------------------
 // centreOneOutput  --  one row's turn in a bulk centre sweep or a boot pass
 // (#318, #365, #414).
 //
@@ -1158,6 +1199,12 @@ static bool dispatchAction(const SeqAction& act) {
             // Forward to audio stop queue.
             return audioQueueTrackStop(SRC_SEQ);
 
+        case SEQ_DISPATCH_BACKGROUND_TRACK_START:
+            return dispatchBackgroundTrackStart(act);
+
+        case SEQ_DISPATCH_BACKGROUND_TRACK_STOP:
+            return audioQueueBackgroundTrackStop(SRC_SEQ);
+
         case SEQ_DISPATCH_BODY_MOVE:
             // A flutter is handed to the flutter run, which performs it beside
             // the engine's cursor; the step itself is dealt with either way.
@@ -1193,6 +1240,22 @@ static uint32_t bodyQueueFullCount() {
     c = robotState.queueOverflowCount;
     taskEXIT_CRITICAL(&robotStateMux);
     return c;
+}
+
+// A finish that had no room for every terminal action -- a ring close among
+// them would leave a panel open -- is said, never silent. Asked once per tick
+// from the task loop, which covers a run's own end and every abort's drain.
+// noinline, noclone and cold on purpose: as a plain noinline function the
+// compiler laid out dispatchAction()'s callees so that this task's deepest
+// route, a Body Step's log line, walked 16 B past its recorded figure; marked
+// cold (what it reports should never happen), the route is unchanged.
+static void __attribute__((noinline, noclone, cold)) reportFinalDrops(SeqEngineState& engine) {
+    uint8_t count = 0;
+    SeqActionKind first = SEQ_ACT_NONE;
+    if (seqEngineTakeFinalDrops(engine, &count, &first)) {
+        PA_LOG_WARN(TAG, "cleanup queue full: %u terminal action(s) dropped, first kind %u",
+                    (unsigned)count, (unsigned)first);
+    }
 }
 
 // Best-effort drain of remaining engine actions (abort/preempt cleanup).
@@ -1789,6 +1852,10 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         if (takeRun != nullptr) {
             takesTick(now);
         }
+
+        // A finish this tick, a run's own end or an abort's drain, that had no
+        // room for every terminal action.
+        reportFinalDrops(engine);
 
         // Safety: if no active sequence but flag is still set and timeout expired.
         if (!seqEngineActive(engine)) {

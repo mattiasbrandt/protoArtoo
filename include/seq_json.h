@@ -14,9 +14,9 @@
 //              editor's clone-to-retrain).
 //
 // Format v1:
-//   boundAudio (STEP_AUDIO only, optional, default true): Track Stop this track on
-//   normal sequence completion too (ADR 0010 Bounded Audio); set false to let it ring
-//   out past SEQ_TERM like SEQ_AUDIO_CAT does.
+//   boundAudio (STEP_AUDIO and backgroundTrack only, optional, default true): stop
+//   this track on normal sequence completion too (ADR 0010 Bounded Audio); set false
+//   to let it ring out past SEQ_TERM like SEQ_AUDIO_CAT does.
 //
 //   body (STEP_BODY): `part` is a Droid Parts Catalog id and is required;
 //   `shape` (open|close|flutter), `howFar` (1..100 percent of that Part's own
@@ -24,6 +24,13 @@
 //   differs from its default, so a clone reads as the builder authored it. An
 //   absent shape is an open and an absent howFar is the whole throw; `howFar:0`
 //   is refused here, because zero in storage is how absence is recorded.
+//
+//   backgroundTrack / backgroundTrackStop (ADR 0054): start a Background
+//   Track, music that plays under the routine at its own volume, and stop it.
+//   The start's `cmd` names the sound as an audio step's does and must play
+//   one; `vol` (0..30) is required; `boundAudio` (optional, default true)
+//   stops it when the sequence ends normally too, as on an audio step. Any
+//   abnormal end stops it either way. The stop step carries nothing else.
 //
 //   tempo (top level, optional, ADR 0058): the beat the sequence is written
 //   against. `bpm` (1..600, one decimal), `source` (typed|tapped|analysed) and
@@ -61,6 +68,8 @@
 //               {"t":0,"type":"audioCat","category":"alert","fallback":"scream"},
 //               {"t":0,"type":"body","part":"doorFL","shape":"flutter",
 //                "howFar":60,"flutterMs":1200},
+//               {"t":0,"type":"backgroundTrack","cmd":"$W","vol":12,"boundAudio":true},
+//               {"t":400,"type":"backgroundTrackStop"},
 //               {"t":500,"type":"end"} ],
 //     "closeSteps":[] }
 // =============================================================================

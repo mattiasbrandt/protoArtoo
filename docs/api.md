@@ -1700,7 +1700,15 @@ Sends a full sequence JSON v1 in the body. The endpoint runs Protocol Check vali
 - Body: JSON v1 sequence object with:
   - `name`: `DM:*` identifier
   - `version`: must be `1`
-  - `steps`: array of valid step objects
+  - `steps`: array of valid step objects, in the forms
+    [`docs/sequence-authoring.md`](sequence-authoring.md) lists. A Background
+    Track (ADR 0054) is two of them: `{"t":0,"type":"backgroundTrack","cmd":"$W","vol":12,"boundAudio":true}`
+    starts it - `cmd` a `$` sound as on an `audio` step, `vol` 0-30 and
+    required, `boundAudio` optional and true by default (the sequence's normal
+    end stops it; any other end always does) - and
+    `{"t":30000,"type":"backgroundTrackStop"}` stops it. Refused only on form
+    (`field` `cmd`, `vol`, or `boundAudio` when it is not a boolean); on a sound module that cannot mix it saves, and
+    the run reports `module-cannot-mix` and plays the rest
   - `toggleGroup`: optional toggle group assignment
   - `suppressMs`: optional suppression interval (1000–120000 ms)
   - `takes`: optional; the takes the sequence holds, each `{"id","t"}` - the
@@ -2140,7 +2148,11 @@ Updates supported config fields and persists to NVS.
   Absent when nothing was clamped, and never on `GET /api/config`.
   `components.audio` carries `member` (the saved choice) and `activeMember` (the
   module running since the last boot). The two differ exactly while a member
-  change is staged and the controller has not rebooted.
+  change is staged and the controller has not rebooted. Beside them,
+  `activeMixes` says whether that running module can play a Background Track
+  under its vocals (its `AUDIO_CAP_MIXES` bit): `true` on the CHIRP Audio
+  Trigger, `false` on a module that plays one sound at a time. Like
+  `activeMember` it is a reading, ignored when a GET answer is posted back.
 - Errors:
 - `400` on invalid value/type or unsupported request with no accepted fields,
   with `field`, `reason` and `accepts` (see "Refusals from a settings write")

@@ -66,6 +66,10 @@
 //                           start has come, and a run is over at its end step.
 //   take-cut                #442: the droid ends a take still playing
 //                           at its run's end step and commands nothing there.
+//   background-track-cannot-mix
+//                           ADR 0054: a Background Track on a sound module that
+//                           cannot mix saves and runs without it, so only the
+//                           Rehearsal can say it will be missing.
 //
 // One computation behind three appearances (#287 specific 6): the figures in
 // the editor, the full list at save and at clone, and a badge beside a run.
@@ -645,7 +649,12 @@
   // toggle that was not read.
   const SWITCHES = [
     { types: ["dome", "random"], key: "protoR2link", what: "The dome link", steps: ["dome step", "dome steps"] },
-    { types: ["audio", "audioCat"], key: "audio", what: "Sound", steps: ["sound step", "sound steps"] },
+    {
+      types: ["audio", "audioCat", "backgroundTrack", "backgroundTrackStop"],
+      key: "audio",
+      what: "Sound",
+      steps: ["sound step", "sound steps"],
+    },
     { types: ["domeRotate", "domeBearing"], key: "domeEsc", what: "The dome motor", steps: ["dome turn", "dome turns"] },
   ];
 
@@ -682,6 +691,28 @@
         { step: first.event.step, n },
       );
     });
+  };
+
+  // A Background Track on a droid whose sound module plays one sound at a time
+  // (ADR 0054). The droid says whether the module it started with mixes
+  // (GET /api/config, `components.audio.activeMixes`); silent where it has not
+  // said. A warning and never a refusal (ADR 0044): the sequence saves and runs,
+  // and only the Background Track is missing. One finding for every start step,
+  // carrying the count.
+  const backgroundTrackCannotMix = (events, context) => {
+    if (context.config?.components?.audio?.activeMixes !== false) return [];
+    // By step, not by event: a start inside a loop is one step however often it repeats.
+    const starts = [...new Map(events.filter((event) => event.def.type === "backgroundTrack").map((event) => [event.step, event])).values()];
+    if (starts.length === 0) return [];
+    return [
+      finding(
+        "warning",
+        "background-track-cannot-mix",
+        "The sound module on this droid plays one sound at a time, so the Background Track does not play. The rest of the sequence runs.",
+        "Fit a sound module that mixes, like the CHIRP Audio Trigger, or delete the Background Track.",
+        { step: starts[0].step, n: starts.length },
+      ),
+    ];
   };
 
   // ---------------------------------------------------------------------------
@@ -1152,6 +1183,7 @@
       ...quietInSequence(events),
       ...rawLightCode(events),
       ...switchedOff(events, context),
+      ...backgroundTrackCannotMix(events, context),
       ...domeUnavailable(events, context),
       ...bodyOverlap(events, context),
       ...partLeftOpen(events, run),

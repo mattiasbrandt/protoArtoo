@@ -47,16 +47,21 @@
 //                               48 clipped 16 characters off a full-length
 //                               Marcduino text command such as @1M<message>.
 //   SEQ_EVID_TX_CAP      112  = PC_MAX_STEPS (96) + the engine's terminal drain
-//                               queue (SeqEngineState::finalQ, 16 entries).
-//                               One run executes ONE branch, and one of its
-//                               steps is the STEP_END sentinel, so a non-looping
-//                               run emits at most 95 authored commands followed
-//                               by at most 16 cleanup actions: 111 <= 112.
-//   SEQ_EVID_CLEANUP_CAP  16  = finalQ depth exactly. Cleanup is only ever
+//                               queue (SeqEngineState::finalQ, SEQ_FINAL_Q_CAP =
+//                               17 entries) - 1. One run executes ONE branch,
+//                               and one of its steps is the STEP_END sentinel,
+//                               so a non-looping run emits at most 95 authored
+//                               commands followed by at most 17 cleanup
+//                               actions: 112 <= 112.
+//   SEQ_EVID_CLEANUP_CAP  16  = one short of finalQ's 17. Cleanup is only ever
 //                               recorded while the engine is finishing, and
 //                               everything it serves then comes out of finalQ
 //                               (sequence_dispatcher.cpp drainBestEffort and the
-//                               seqEngineFinishing() tick path).
+//                               seqEngineFinishing() tick path). The 17th needs
+//                               every terminal class in one run, the Background
+//                               Track's stop (ADR 0054) included; it is counted
+//                               and signalled by cleanupTruncated rather than
+//                               paid for with 128 B more of static DRAM.
 //
 // A STEP_LOOP body still repeats without a static bound (period >= 100 ms across
 // a duration <= 120 s), so truncation stays possible on BOTH chips and stays

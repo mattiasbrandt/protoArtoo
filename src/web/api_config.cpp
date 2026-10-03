@@ -588,6 +588,11 @@ void addActiveMemberFields(JsonDocument& doc) {
     const ComponentPartEntry* sound = componentPartByValue(configCacheReadActiveSoundMember());
     if (sound != nullptr) {
         components["audio"]["activeMember"] = sound->id;
+        // Whether that module mixes, from its registry row, the one
+        // declaration of its bits: what the Rehearsal reads to warn that a
+        // Background Track will not play (ADR 0054, data/seq_rehearsal.js).
+        components["audio"]["activeMixes"] =
+            (sound->capabilities & AudioDriver::AUDIO_CAP_MIXES) != 0;
     }
     const ComponentPartEntry* bodyServo =
         componentPartByValue(configCacheReadActiveBodyServoMember());

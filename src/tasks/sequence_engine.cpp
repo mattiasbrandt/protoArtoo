@@ -41,6 +41,17 @@ static void setPayload(SeqAction& a, const char* payload) {
     }
 }
 
+// A terminal action the queue had no room for. Never silent: the dispatcher
+// takes the record and logs it (seqEngineTakeFinalDrops()).
+static void noteFinalDropped(SeqEngineState& st, SeqActionKind kind) {
+    if (st.finalDropped == 0) {
+        st.finalDroppedKind = kind;
+    }
+    if (st.finalDropped < 0xFF) {
+        st.finalDropped++;
+    }
+}
+
 // dueRel is the fire offset (ms) relative to finishStartMs. Instant resets pass
 // 0; staggered individual ring closes pass increasing offsets so only one ring
 // servo actuates at a time (group closes brown out the dome  --  see addRingClose).
@@ -48,6 +59,7 @@ static void addFinal(SeqEngineState& st, SeqActionKind kind, const char* payload
                      uint16_t dueRel = 0) {
     const uint8_t cap = (uint8_t)(sizeof(st.finalQ) / sizeof(st.finalQ[0]));
     if (st.finalCount >= cap) {
+        noteFinalDropped(st, kind);
         return;
     }
     const uint8_t idx = st.finalCount++;
@@ -68,6 +80,7 @@ static void addFinal(SeqEngineState& st, SeqActionKind kind, const char* payload
 static void addFinalDomeRotateStop(SeqEngineState& st) {
     const uint8_t cap = (uint8_t)(sizeof(st.finalQ) / sizeof(st.finalQ[0]));
     if (st.finalCount >= cap) {
+        noteFinalDropped(st, SEQ_ACT_DOME_ROTATE);
         return;
     }
     const uint8_t idx = st.finalCount++;
@@ -305,6 +318,19 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
     // track) stops on BOTH normal and abnormal termination  --  it is a hard cut, not a
     // fade; sequences wanting a musical ending author the bound earlier in the timeline
     // (see DM:ROCKMARCH's pre-TERM close pass).
+    // A Background Track by the vocals' rule below, with its own stop: a Track
+    // Stop leaves it playing (ADR 0054). Bounded, the default, stops on every
+    // end; boundAudio:false plays on past a normal end; an abnormal end, estop
+    // included, always stops it. After a stop step it is sent again, which
+    // costs nothing: with no Background Track held the driver sends nothing.
+    //
+    // BEFORE the Track Stop, on purpose: a Track Stop that arrives with a
+    // Background Track still held leaves the droid's sound reported as playing
+    // (audio_playback_policy.cpp), so the vocals' stop must find it gone.
+    if (((st.activeFx & FX_BACKGROUND_TRACK) && abnormal) ||
+        (st.activeFx & FX_BACKGROUND_TRACK_BOUNDED)) {
+        addFinal(st, SEQ_ACT_BACKGROUND_TRACK_STOP, nullptr);
+    }
     if (((st.activeFx & FX_AUDIO) && abnormal) || (st.activeFx & FX_AUDIO_BOUNDED)) {
         addFinal(st, SEQ_ACT_AUDIO_STOP, nullptr);
     }
@@ -459,6 +485,14 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
         case STEP_AUDIO_STOP:
             a.kind = SEQ_ACT_AUDIO_STOP;
             break;
+        case STEP_BACKGROUND_TRACK:
+            a.kind = SEQ_ACT_BACKGROUND_TRACK_START;
+            setPayload(a, step.payload);
+            a.audioCategory = step.params.backgroundTrackVol;
+            break;
+        case STEP_BACKGROUND_TRACK_STOP:
+            a.kind = SEQ_ACT_BACKGROUND_TRACK_STOP;
+            break;
         case STEP_BODY:
             // The Part travels as the payload, by its catalog id, because a
             // sequence names the Part and never the Output Address (ADR 0041):
@@ -532,6 +566,16 @@ void seqEngineInit(SeqEngineState& st) {
 
 bool seqEngineActive(const SeqEngineState& st) {
     return st.entry != nullptr;
+}
+
+bool seqEngineTakeFinalDrops(SeqEngineState& st, uint8_t* count, SeqActionKind* firstKind) {
+    if (st.finalDropped == 0) {
+        return false;
+    }
+    if (count != nullptr) *count = st.finalDropped;
+    if (firstKind != nullptr) *firstKind = st.finalDroppedKind;
+    st.finalDropped = 0;
+    return true;
 }
 
 void seqEngineClearLatches(SeqEngineState& st) {

@@ -863,7 +863,7 @@ void AudioDriverChirp::noteStreamObserved(uint8_t stream, bool playing) {
 // Play a track by 1-based index in Bank 1, Page A. The module picks the stream.
 // -----------------------------------------------------------------------------
 void AudioDriverChirp::playTrack(uint16_t track) {
-    playTrackBanked(track, 1, 'A');
+    playTrackBanked(track, AUDIO_FLAT_BANK, AUDIO_FLAT_PAGE);
 }
 
 // Every vocal goes out here -- flat tracks, Named Tracks, categories and the
@@ -873,7 +873,7 @@ void AudioDriverChirp::playTrackBanked(uint16_t index, uint8_t bank, char page) 
         return;
     }
     if (bank == 0) {
-        bank = 1;
+        bank = AUDIO_FLAT_BANK;
     }
     page = normalizePage(page);
 
@@ -986,7 +986,7 @@ bool AudioDriverChirp::playBackgroundTrack(uint16_t index, uint8_t bank, char pa
         return false;
     }
     if (bank == 0) {
-        bank = 1;
+        bank = AUDIO_FLAT_BANK;
     }
     page = normalizePage(page);
 
@@ -1102,6 +1102,22 @@ void AudioDriverChirp::stopBackgroundTrack() {
     if (backgroundStream != CHIRP_NO_STREAM) {
         stopStream(backgroundStream);
     }
+}
+
+bool AudioDriverChirp::backgroundTrackHeld() const {
+    return backgroundTrackStream() != CHIRP_NO_STREAM;
+}
+
+// A stream that may be playing a vocal: MaybeVocal, which is also what a stream
+// is before the body has stopped or seen it idle, so the answer leans to "still
+// playing" exactly as the stream model does.
+bool AudioDriverChirp::vocalHeld() const {
+    for (uint8_t s = 0; s < CHIRP_STREAM_COUNT; ++s) {
+        if (m_streams[s].use == ChirpStreamUse::MaybeVocal) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // -----------------------------------------------------------------------------

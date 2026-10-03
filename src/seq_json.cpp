@@ -432,6 +432,36 @@ static ProtocolCheckResult parseStepFields(const char* label, JsonObjectConst ob
         }
         return pcOk();
     }
+    if (strcmp(type, "backgroundTrack") == 0) {
+        // The sound by the audio step's own address, its volume, and the
+        // audio step's boundAudio (ADR 0054). Whether the '$' plays a sound is
+        // protocolCheck()'s to say; the volume is read wide and signed here, so
+        // a negative or an oversized one is refused rather than wrapped.
+        s.type = STEP_BACKGROUND_TRACK;
+        const char* cmd = obj["cmd"] | (const char*)nullptr;
+        if (cmd == nullptr) {
+            return pcFailAt(label, idx, "cmd", "missing cmd");
+        }
+        if (strnlen(cmd, sizeof(s.payload)) >= sizeof(s.payload)) {
+            return pcFailAt(label, idx, "cmd", "command too long");
+        }
+        strncpy(s.payload, cmd, sizeof(s.payload) - 1);
+        long long vol = 0;
+        if (!wholeNumber(obj["vol"], vol) || vol < 0 || vol > (long long)PC_BACKGROUND_TRACK_VOL_MAX) {
+            return pcFailAt(label, idx, "vol", "vol must be 0..30");
+        }
+        s.params.backgroundTrackVol = (uint8_t)vol;
+        JsonVariantConst boundAudio = obj["boundAudio"];
+        if (!boundAudio.isNull() && !boundAudio.is<bool>()) {
+            return pcFailAt(label, idx, "boundAudio", "must be a boolean");
+        }
+        s.params.audioBounded = (boundAudio.is<bool>() ? boundAudio.as<bool>() : true) ? 1 : 0;
+        return pcOk();
+    }
+    if (strcmp(type, "backgroundTrackStop") == 0) {
+        s.type = STEP_BACKGROUND_TRACK_STOP;
+        return pcOk();
+    }
     if (strcmp(type, "loop") == 0) {
         s.type = STEP_LOOP;
         s.params.bodyCount  = (uint8_t)(obj["body"] | 0);
@@ -940,6 +970,15 @@ static void serializeBranch(JsonArray arr, const SeqStep* steps, uint8_t count) 
             case STEP_SEQUENCE:
                 o["type"] = "sequence";
                 o["ref"] = s.payload;
+                break;
+            case STEP_BACKGROUND_TRACK:
+                o["type"] = "backgroundTrack";
+                o["cmd"] = s.payload;
+                o["vol"] = s.params.backgroundTrackVol;
+                o["boundAudio"] = (s.effectClass & FX_BACKGROUND_TRACK_BOUNDED) != 0;
+                break;
+            case STEP_BACKGROUND_TRACK_STOP:
+                o["type"] = "backgroundTrackStop";
                 break;
             case STEP_END:
             default:
