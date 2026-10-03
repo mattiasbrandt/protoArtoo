@@ -158,12 +158,11 @@ inline bool takeReplayConsume(TakeReplay* t, uint32_t runMs) {
     return t->samplesRead < t->sampleCount;
 }
 
-// Whether take `t` covers the Part at catalog index `part` now, and where.
-inline bool takeReplayCovers(const TakeReplay& t, uint8_t part, uint8_t* at) {
+// Whether take `t` covers the Part at catalog index `part` now.
+inline bool takeReplayCovers(const TakeReplay& t, uint8_t part) {
     if (t.state != TAKE_REPLAY_PLAYING) return false;
     for (uint8_t p = 0; p < t.partCount; ++p) {
         if (t.part[p] == part && t.cur[p] != TAKE_NO_TARGET) {
-            *at = p;
             return true;
         }
     }
@@ -175,9 +174,8 @@ inline bool takeReplayCovers(const TakeReplay& t, uint8_t part, uint8_t* at) {
 // TAKE WINS, above).
 inline bool takeReplayOutranked(TakeReplayRun* run, uint8_t i, uint8_t p) {
     const uint8_t part = takeReplayAt(run, i)->part[p];
-    uint8_t at = 0;
     for (uint8_t j = (uint8_t)(i + 1); j < run->count; ++j) {
-        if (takeReplayCovers(*takeReplayAt(run, j), part, &at)) return true;
+        if (takeReplayCovers(*takeReplayAt(run, j), part)) return true;
     }
     return false;
 }
