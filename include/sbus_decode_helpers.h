@@ -30,13 +30,6 @@ struct SbusDecodeAttemptStats {
 };
 
 
-// Count set bits in a byte  --  portable, no compiler built-ins.
-inline uint8_t sbusDecodePopcount8(uint8_t v) {
-    uint8_t n = 0;
-    while (v) { n++; v = (uint8_t)(v & (v - 1U)); }
-    return n;
-}
-
 // Accept standard SBUS (0x00) and SBUS2 variants (low nibble 0x04).
 // Matches bolderflight/sbus v8.x validation.
 inline bool isValidSbusFooter(uint8_t footer) {

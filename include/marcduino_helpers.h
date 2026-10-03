@@ -195,16 +195,6 @@ inline uint16_t marcduino_mv_value_to_pulse_us(int value) {
 }
 
 // -----------------------------------------------------------------------------
-// marcduino_percent_to_pulse_us()
-// Legacy compatibility helper for the older percent-based parser path.
-// New `:MV` semantics should use marcduino_mv_value_to_pulse_us() instead.
-// -----------------------------------------------------------------------------
-inline uint16_t marcduino_percent_to_pulse_us(int pos) {
-    uint16_t range_us = SERVO_PULSE_MAX_US - SERVO_PULSE_MIN_US;
-    return (uint16_t)(SERVO_PULSE_MIN_US + ((pos * range_us) / 100));
-}
-
-// -----------------------------------------------------------------------------
 // marcduino_sequence_id_valid()
 // Return true if seqId is a valid body sequence (30-36 inclusive).
 // -----------------------------------------------------------------------------

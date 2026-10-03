@@ -20,10 +20,6 @@ inline void rcMappingCacheInvalidate(RcMappingCache* cache) {
     }
 }
 
-inline bool rcMappingCacheIsDirty(const RcMappingCache& cache) {
-    return cache.dirty;
-}
-
 inline bool rcMappingCacheGet(const RcMappingCache& cache, RcInputMode mode, RcMappingConfig* out) {
     if (!cache.valid || cache.dirty || cache.mode != mode || out == nullptr) {
         return false;

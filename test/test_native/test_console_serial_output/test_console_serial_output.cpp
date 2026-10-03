@@ -81,6 +81,7 @@ extern "C" {
 }
 
 #include "console_serial_output.h"
+#include "console_serial_output_test_hooks.h"  // consoleSerialEmitLine()
 #include "log_buffer.h"
 #include "log_buffer_test_hooks.h"
 #include "logging.h"

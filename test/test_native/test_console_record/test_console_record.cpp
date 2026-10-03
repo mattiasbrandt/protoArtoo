@@ -117,34 +117,6 @@ void test_status_string_err(void) {
     TEST_ASSERT_EQUAL_STRING("err", consoleStatusString(CONSOLE_STATUS_ERR));
 }
 
-// Test: Format key=value pair
-void test_format_pair_simple(void) {
-    char buffer[256];
-    size_t len = consoleFormatPair(buffer, sizeof(buffer), "key", "value");
-    TEST_ASSERT_EQUAL(9, len);  // strlen("key=value")
-    TEST_ASSERT_EQUAL_STRING("key=value", buffer);
-}
-
-void test_format_pair_with_number(void) {
-    char buffer[256];
-    size_t len = consoleFormatPair(buffer, sizeof(buffer), "id", "42");
-    TEST_ASSERT_EQUAL(5, len);  // strlen("id=42")
-    TEST_ASSERT_EQUAL_STRING("id=42", buffer);
-}
-
-void test_format_pair_empty_value(void) {
-    char buffer[256];
-    size_t len = consoleFormatPair(buffer, sizeof(buffer), "key", "");
-    TEST_ASSERT_EQUAL(4, len);  // strlen("key=")
-    TEST_ASSERT_EQUAL_STRING("key=", buffer);
-}
-
-void test_format_pair_buffer_too_small(void) {
-    char buffer[5];
-    size_t len = consoleFormatPair(buffer, sizeof(buffer), "key", "value");
-    TEST_ASSERT_EQUAL(0, len);  // Should return 0 if buffer too small
-}
-
 // Test: Quote value only when needed
 void test_quote_value_simple_no_quote(void) {
     char buffer[256];
@@ -331,12 +303,6 @@ int main(void) {
     // Status tests
     RUN_TEST(test_status_string_ok);
     RUN_TEST(test_status_string_err);
-
-    // Format tests
-    RUN_TEST(test_format_pair_simple);
-    RUN_TEST(test_format_pair_with_number);
-    RUN_TEST(test_format_pair_empty_value);
-    RUN_TEST(test_format_pair_buffer_too_small);
 
     // Quote tests
     RUN_TEST(test_quote_value_simple_no_quote);

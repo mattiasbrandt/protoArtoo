@@ -109,8 +109,6 @@ grounds.
 
 - **[`src/tasks/drive.cpp`](../../src/tasks/drive.cpp)** -- the 50 Hz loop and the
   zero-frame rule this part must satisfy.
-- **[`src/drive_frame_emit.cpp`](../../src/drive_frame_emit.cpp)** -- the pure
-  decision step; the seam sits just below it.
 - **[`docs/pin_map.md`](../pin_map.md)** -- `S1` drive lane, `DOME` ESC lane.
 - **[`include/config.h`](../../include/config.h)** -- `PIN_DOME_ESC`, drive UART.
 - **ADR 0029, ADR 0042** -- Board Capability Gates and Component Members; both
@@ -635,8 +633,9 @@ is already pure decision logic. But the seam does not exist yet: `drive.cpp:153-
 calls `buildHoverboardFrame()` and `hoverSerial.write()` inline. Those two lines
 are the insertion point.
 
-`drive_frame_emit.cpp` is a *decision* step (always emit), not a driver
-abstraction -- it does not know a frame format. It stays as-is.
+`drive_frame_emit.cpp` was a *decision* step (always emit), not a driver
+abstraction -- it did not know a frame format. #466 later replaced it with the
+unconditional `driveBackendSend()` call in `drive.cpp`.
 
 The safety invariants stay above the driver, exactly as #308 says: 50 Hz
 zero-frame continuity, the DriveTask speed cap, latching estop, the failsafe gate.

@@ -21,12 +21,6 @@ struct SbusWatchdog {
     bool signalLost;
 };
 
-inline void sbusWatchdogReset(SbusWatchdog* watchdog) {
-    if (watchdog != nullptr) {
-        watchdog->signalLost = false;
-    }
-}
-
 inline SbusWatchdogTransition sbusWatchdogCheck(SbusWatchdog* watchdog, uint32_t lastSbusMs,
                                                 uint32_t currentMs, uint32_t timeoutMs) {
     const bool timedOut = sbusWatchdogTimeoutCheck(lastSbusMs, currentMs, timeoutMs);

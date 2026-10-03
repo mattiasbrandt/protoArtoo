@@ -129,19 +129,6 @@ ConsoleReason consoleReasonFromApplyRefusal(ApplyRefusalReason reason) {
 // Record Formatting
 // =============================================================================
 
-size_t consoleFormatPair(char* buffer, size_t bufferSize, const char* key, const char* value) {
-    if (buffer == nullptr || bufferSize == 0 || key == nullptr || value == nullptr) {
-        return 0;
-    }
-
-    // Format as "key=value"
-    int written = snprintf(buffer, bufferSize, "%s=%s", key, value);
-    if (written < 0 || (size_t)written >= bufferSize) {
-        return 0;  // Buffer too small
-    }
-    return (size_t)written;
-}
-
 // -----------------------------------------------------------------------------
 // Record lines
 //

@@ -499,9 +499,6 @@ void seqEngineInit(SeqEngineState& st);
 // True while a sequence is running or draining terminal resets.
 bool seqEngineActive(const SeqEngineState& st);
 
-// Name of the active sequence, or nullptr when idle.
-const char* seqEngineName(const SeqEngineState& st);
-
 // Force all toggle latches to closed (estop-clear / dome-reconnect resync).
 void seqEngineClearLatches(SeqEngineState& st);
 

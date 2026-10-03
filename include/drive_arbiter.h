@@ -51,9 +51,6 @@ struct DriveArbiterConfig {
 // Passes the robotState mutex for spinlock-based critical sections.
 void driveArbiterInit(void* mux_ptr);
 
-// Reset arbiter state (for testing). Clears all cached commands.
-void driveArbiterReset();
-
 // Submit intent from any source (RC or WEB_API).
 // Called from RcInputTask (Core 1) and HTTP handler tasks (Core 0).
 // Thread-safe: acquires the robotState spinlock internally.

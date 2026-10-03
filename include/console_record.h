@@ -36,10 +36,6 @@
 // so raising this alone cannot silently start clipping records.
 #define CONSOLE_RECORD_LINE_MAX 384
 
-// Format a single key=value pair for a record
-// Returns number of bytes written (not including NUL terminator)
-size_t consoleFormatPair(char* buffer, size_t bufferSize, const char* key, const char* value);
-
 // -----------------------------------------------------------------------------
 // Record line formatting (the serial wire grammar, docs/console-protocol.md 3.1)
 //
@@ -51,9 +47,9 @@ size_t consoleFormatPair(char* buffer, size_t bufferSize, const char* key, const
 // past ~213 bytes while the browser adapter returned it (#282).
 //
 // Every one of these returns the byte count written (terminator excluded) or
-// 0 when the record does not fit, exactly like consoleFormatPair above. A
-// caller must treat 0 as a DROPPED RECORD - counted on the request's closing
-// line as `dropped=<n>` - and never as an empty line.
+// 0 when the record does not fit. A caller must treat 0 as a DROPPED RECORD -
+// counted on the request's closing line as `dropped=<n>` - and never as an
+// empty line.
 //
 // They live here rather than in the serial adapter so the wire rule is
 // provable on the host: src/tasks/console_task.cpp is not native-compiled.

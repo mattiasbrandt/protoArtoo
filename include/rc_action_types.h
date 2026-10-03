@@ -279,7 +279,6 @@ bool robotActionIsOneShotButton(RobotActionId target);
 
 // Payload validation
 bool rcPayloadValidForBodySequence(const char* payload);
-bool rcPayloadValidForDomeSequence(const char* payload);
 
 // Binding validation and serialization
 bool rcTriggerBindingIsValid(const RcTriggerBinding& binding);

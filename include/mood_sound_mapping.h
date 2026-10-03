@@ -15,9 +15,6 @@
 
 static constexpr uint8_t SOUND_CATEGORY_COUNT = 12;
 static constexpr uint16_t MOOD_CATEGORY_MASK_MAX = 0x0FFF;
-inline bool isValidMoodCategoryMaskValue(uint32_t value) {
-    return value <= MOOD_CATEGORY_MASK_MAX;
-}
 
 struct SoundCategoryRange {
     uint16_t lo;

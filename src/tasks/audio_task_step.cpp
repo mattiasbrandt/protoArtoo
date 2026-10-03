@@ -265,13 +265,6 @@ AudioStepCommandActions audioStepCommand(AudioStepState& state,
             break;
         }
 
-        case AUDIO_CMD_STOP: {
-            AudioPlaybackRequest request{};
-            request.kind = AUDIO_PLAYBACK_REQ_STOP;
-            resolvePlayback(state, in, request, false, &actions);
-            break;
-        }
-
         case AUDIO_CMD_TRACK_STOP: {
             AudioPlaybackRequest request{};
             request.kind = AUDIO_PLAYBACK_REQ_TRACK_STOP;

@@ -6,6 +6,7 @@
 // =============================================================================
 
 #include "drive_arbiter.h"
+#include "drive_arbiter_test_hooks.h"  // driveArbiterReset(), defined below for tests only
 
 #include <Arduino.h>
 

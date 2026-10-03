@@ -303,8 +303,8 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/audio", WebMethod::kPost, handleAudioPost)`
   - include/api_audio.h - `void handleAudioPost(WebRequest& req)`
-  - src/web/api_audio.cpp - `if (strcmp(action, "stop") == 0)`
-  - include/audio_task.h - `bool audioQueueStop(CommandSource src)`
+  - 'src/tasks/audio_dollar_parser.cpp - `case ''s'': action.type = AUDIO_ACTION_STOP;`'
+  - src/tasks/audio_task_step.cpp - `} else if (action.type == AUDIO_ACTION_STOP) {`
   executor_or_core: audioQueuePlayTrack
   missing_metadata:
   - executor reference not in registry
