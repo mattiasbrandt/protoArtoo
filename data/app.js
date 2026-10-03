@@ -518,7 +518,9 @@
     renderOpMode(payload);
     renderActiveMood(payload);
     setSleepUi(!!payload.sleepMode);
-    adoptSeqRun(payload);
+    // The run record's name and ending, which the run watch below does not
+    // announce when no run of it was ever under way on this page.
+    paintShowRun();
   };
 
   // Asks the droid once, after an act that changed something. The answer is
@@ -1462,13 +1464,10 @@
   // from GET /api/rc/map: the RC Map is the running order, so the RC Radio and
   // this list are one list read from two ends, never stored twice.
   //
-  // What is running comes from the status stream's `seqRun` (the run record's
-  // name, whether it is under way and when it began, src/web/status_json.cpp):
-  // the droid sends a status when a run begins and when it ends, so a run
-  // started from an RC Channel shows here with nothing polled. A Play that the
-  // droid accepted and never began ends in a sentence, judged by the start
-  // time rather than the name, so the record of an earlier run of the same
-  // Sequence cannot read as this one.
+  // What is running is the Live Reading's run watch (data/live_reading.js,
+  // "The run watch"), the one the Sequences page reads too. It starts and
+  // stops runs, judges a press by the run's start time, and says when a run -
+  // from here, an RC Channel or anywhere - begins and ends.
   //
   // A name the RC Map fires that has no Sequence behind it - a Learned one
   // deleted since - is listed and says it will do nothing. POST /api/seq/test
@@ -1486,24 +1485,17 @@
   const standDownWhy = document.getElementById("standdown-why");
   const postureBtn = document.getElementById("show-posture");
 
-  // What a never-chosen Stand Down runs (CONTEXT.md "Stand Down Sequence").
-  // The Setting stores an empty name for it (src/config_settings.cpp).
-  const STAND_DOWN_DEFAULT = "DM:RESET";
-  // How long the droid gets to take up a run it accepted: data/seq.js's run
-  // watch allows the same, within a dispatcher pass, generously.
-  const RUN_START_WAIT_MS = 5000;
-  // An RC Channel in the RC page's words (data/rc.js sourceLabel(),
-  // channelTitleFromKey()). A droid condition (speed, rest, ...) is a
-  // Reaction, not an RC Channel, so it is not one of these and not listed.
-  const RC_SOURCE_WORDS = { pwm: "PWM", sbus1: "SBUS#1", sbus2: "SBUS#2" };
+  // What a never-chosen Stand Down runs: the words table's, one home for the
+  // Dashboard and the Sequences page (data/web_api.js, standDownSequence).
+  const STAND_DOWN_UNSET = window.PAApi.unsetOf("standDownSequence");
+  const NOT_ON_DROID = "Not on the droid. Does nothing.";
+  const NEEDS_REPAIR = "Needs repair on Sequences.";
 
   // Each null until the droid has answered it once.
   let showLearned = null;
   let showFactory = null;
   let showMapped = null; // [{ name, channel }] - the RC Map's Sequence bindings
-  let standDownChoice = null; // "" when never chosen
-  let seqRun = null; // the status frame's seqRun
-  let pendingStart = null; // { name, before, timer }
+  let standDownChoice = null; // "" when never chosen; null while not known
 
   const esc = (text) => window.PAUtils.escapeHtml(text);
   const escAttr = (text) => window.PAUtils.escapeAttr(text);
@@ -1512,33 +1504,37 @@
   const libraryEntry = (name) =>
     showLearned?.find((seq) => seq.name === name) || showFactory?.find((seq) => seq.name === name) || null;
   const libraryAnswered = () => showLearned !== null && showFactory !== null;
-  const standDownEffective = () => (standDownChoice === null ? null : standDownChoice || STAND_DOWN_DEFAULT);
-  const runningName = () => (seqRun?.running === true ? seqRun.name : null);
+  const standDownEffective = () => (standDownChoice === null ? null : standDownChoice || STAND_DOWN_UNSET);
 
-  // Why a row cannot run, as the notice and the row say it, or "".
-  const inertSays = (name) => {
+  // Why a name cannot run, as the row says it and as the notice says it, and
+  // where it is changed; null when it can run. A name only the RC Map holds is
+  // changed on RC; one that needs repair, on Sequences.
+  const refusalOf = (name) => {
     const entry = libraryEntry(name);
-    if (!entry) return `${name} is not on the droid`;
-    if (entry.valid === false) return `${name} fails Protocol Check until it is repaired`;
-    return "";
+    if (!entry) return { says: NOT_ON_DROID, notice: `${name} is not on the droid`, page: "rc" };
+    if (entry.valid === false) {
+      return { says: NEEDS_REPAIR, notice: `${name} fails Protocol Check until it is repaired`, page: "seq" };
+    }
+    return null;
   };
-  const inertAttrs = (says) =>
-    says ? ` disabled aria-disabled="true" data-ignored-says="${escAttr(says)}" data-ignored-page="seq"` : "";
+  const refusedAttrs = (refusal) =>
+    (refusal
+      ? ` disabled aria-disabled="true" data-ignored-says="${escAttr(refusal.notice)}" data-ignored-page="${refusal.page}"`
+      : "");
 
   const rowHtml = (name) => {
-    const says = inertSays(name);
+    const refusal = refusalOf(name);
     const channels = (showMapped || []).filter((mapped) => mapped.name === name).map((mapped) => mapped.channel);
-    const why = !libraryEntry(name) ? "Not on the droid. Does nothing." : says ? "Needs repair on Sequences." : "";
     return `
-      <li class="show-item${says ? " is-inert" : ""}" data-name="${escAttr(name)}">
+      <li class="show-item${refusal ? " is-inert" : ""}" data-name="${escAttr(name)}">
         <span class="show-item-says">
           <span class="show-name">${esc(name)}</span>
           ${channels.map((channel) => `<span class="show-rc" aria-label="RC Channel ${escAttr(channel)}">${esc(channel)}</span>`).join("")}
           <span class="seq-row-run hidden"><span class="indicator ok seq-live" aria-hidden="true"></span>Running</span>
-          ${why ? `<span class="why">${why}</span>` : ""}
+          ${refusal ? `<span class="why">${refusal.says}</span>` : ""}
         </span>
         <span class="show-item-acts">
-          <button type="button" class="btn btn-sm show-play" data-act="play"${inertAttrs(says)}>${icon("play")}Play</button>
+          <button type="button" class="btn btn-sm show-play" data-act="play"${refusedAttrs(refusal)}>${icon("play")}Play</button>
           <button type="button" class="btn btn-sm seq-stop hidden" data-act="stop">${icon("stop")}Stop</button>
         </span>
       </li>`;
@@ -1558,8 +1554,11 @@
 
   // What is running, painted in place: the row of the running Sequence trades
   // its Play for Stop, and a run of a name with no row here still gets a Stop.
+  // The line for that run is written only when the run it names changes, so a
+  // status frame landing mid-press does not replace the Stop being pressed.
+  let otherShown = null;
   const paintShowRun = () => {
-    const name = runningName();
+    const name = runWatch.running();
     let shown = false;
     showList?.querySelectorAll(".show-item").forEach((item) => {
       const running = name !== null && item.dataset.name === name;
@@ -1569,19 +1568,22 @@
       item.querySelector('[data-act="play"]')?.classList.toggle("hidden", running);
       item.querySelector('[data-act="stop"]')?.classList.toggle("hidden", !running);
     });
-    if (showOther) {
-      const other = name !== null && !shown;
-      showOther.classList.toggle("hidden", !other);
-      showOther.innerHTML = other
-        ? `<span class="seq-row-run"><span class="indicator ok seq-live" aria-hidden="true"></span>Running ${esc(name)}</span>
-           <button type="button" class="btn btn-sm seq-stop" data-act="stop">${icon("stop")}Stop</button>`
-        : "";
+    const other = name !== null && !shown ? name : null;
+    if (showOther && other !== otherShown) {
+      otherShown = other;
+      showOther.classList.toggle("hidden", other === null);
+      showOther.innerHTML = other === null ? ""
+        : `<span class="seq-row-run"><span class="indicator ok seq-live" aria-hidden="true"></span>Running ${esc(other)}</span>
+           <button type="button" class="btn btn-sm seq-stop" data-act="stop">${icon("stop")}Stop</button>`;
     }
     if (showNow) {
+      const record = runWatch.record();
       const answered = libraryAnswered();
-      showNow.classList.toggle("waiting", !answered && !seqRun);
+      showNow.classList.toggle("waiting", !answered && name === null && !record);
+      // "ended" only when the record says so: out of touch, the last record
+      // can still say running, and the run watch then says neither.
       showNow.textContent = name !== null ? `${name} running`
-        : seqRun ? `${seqRun.name} ended`
+        : record && record.running !== true ? `${record.name} ended`
         : answered ? String(showList?.querySelectorAll(".show-item").length || 0) : "";
     }
   };
@@ -1592,81 +1594,59 @@
       standDownName.textContent = name || "";
       standDownName.classList.toggle("waiting", name === null);
     }
-    const says = name !== null && libraryAnswered() ? inertSays(name) : "";
+    const answered = name !== null && libraryAnswered();
+    const refusal = answered ? refusalOf(name) : null;
     if (standDownWhy) {
-      standDownWhy.textContent = says ? "not on the droid, does nothing"
-        : name === STAND_DOWN_DEFAULT ? "leaves the pies open" : "";
+      // The default's one decided sentence, and only for the Factory DM:RESET:
+      // a Learned Sequence of the same name shadows it and is the builder's.
+      const factoryDefault = name === STAND_DOWN_UNSET && answered
+        && !showLearned.some((seq) => seq.name === name);
+      standDownWhy.textContent = refusal ? refusal.says : factoryDefault ? "leaves the pies open" : "";
     }
     if (!standDownBtn) return;
     // Until the droid has said which it is, Stand Down waits rather than run
     // the default over a choice it has not heard yet.
-    const waiting = name === null || !libraryAnswered();
-    standDownBtn.disabled = waiting || Boolean(says);
-    standDownBtn.classList.toggle("is-pending", waiting);
-    standDownBtn.setAttribute("aria-disabled", String(waiting || Boolean(says)));
-    if (says) {
-      standDownBtn.dataset.ignoredSays = says;
+    standDownBtn.disabled = !answered || Boolean(refusal);
+    standDownBtn.classList.toggle("is-pending", !answered);
+    standDownBtn.setAttribute("aria-disabled", String(!answered || Boolean(refusal)));
+    if (refusal) {
+      standDownBtn.dataset.ignoredSays = refusal.notice;
+      // The Stand Down Sequence is chosen on Sequences, whatever is wrong with it.
       standDownBtn.dataset.ignoredPage = "seq";
     } else {
       delete standDownBtn.dataset.ignoredSays;
+      delete standDownBtn.dataset.ignoredPage;
     }
   };
 
-  const clearPendingStart = () => {
-    if (pendingStart) window.clearTimeout(pendingStart.timer);
-    pendingStart = null;
-  };
-
-  // A run is this press's when the record names it under another start time.
-  const judgePendingStart = () => {
-    if (pendingStart && seqRun?.name === pendingStart.name && seqRun.startMs !== pendingStart.before) {
-      clearPendingStart();
-    }
-  };
-
-  const adoptSeqRun = (payload) => {
-    const run = payload?.seqRun;
-    seqRun = run && typeof run.name === "string" ? run : null;
-    judgePendingStart();
+  const runWatch = window.PALiveReading.watchRuns(({ name, running, outcome }) => {
     paintShowRun();
-  };
+    if (running) return;
+    const ending = window.PALiveReading.runEnding(outcome, name);
+    if (ending) showFeedback(showFeedbackEl, ending, "error");
+  });
 
   const playSequence = async (name, button) => {
     button.disabled = true;
     button.classList.add("is-pending");
     showFeedback(showFeedbackEl, "");
-    clearPendingStart();
-    // Set before the press: the status that says it began can land before the
-    // answer does.
-    const watched = { name, before: seqRun?.name === name ? seqRun.startMs : null };
-    watched.timer = window.setTimeout(async () => {
-      if (pendingStart !== watched) return;
-      // One read before saying so: with no stream the frames come only as
-      // often as the fallback poll asks.
-      await window.PALiveReading.read().catch(() => {});
-      if (pendingStart !== watched) return;
-      pendingStart = null;
-      showFeedback(showFeedbackEl, `The droid did not start ${name}.`, "error");
-    }, RUN_START_WAIT_MS);
-    pendingStart = watched;
     try {
-      await window.PAApi.postJson("/api/seq/test", { name });
+      await runWatch.start(name);
     } catch (error) {
-      clearPendingStart();
       showFeedback(showFeedbackEl, `${name} did not play: ${window.PAApi.messageFor(error)}`, "error");
     } finally {
       button.disabled = false;
       button.classList.remove("is-pending");
+      // Stand Down's own state is paintStandDown()'s, not this press's.
+      paintStandDown();
     }
   };
 
-  // The droid's non-latching stop (POST /api/seq/stop). The run is over when
-  // the record says so, not when this is answered.
   const stopSequence = async (button) => {
     button.disabled = true;
     showFeedback(showFeedbackEl, "");
     try {
-      await window.PAApi.postJson("/api/seq/stop", {});
+      await runWatch.stop();
     } catch (error) {
       showFeedback(showFeedbackEl, `Stop failed: ${window.PAApi.messageFor(error)}`, "error");
     } finally {
@@ -1715,15 +1695,19 @@
     const answer = await (handle ?? window.PAApi).get("/api/rc/map");
     const map = Array.isArray(answer?.data?.map) ? answer.data.map : [];
     showMapped = map
-      .filter((entry) => entry.action === "dome_seq" && RC_SOURCE_WORDS[entry.source] && entry.payload)
-      .map((entry) => ({ name: entry.payload, channel: `${RC_SOURCE_WORDS[entry.source]} CH ${entry.channel}` }));
+      .filter((entry) => entry.action === "dome_seq" && entry.payload)
+      .map((entry) => ({ name: entry.payload, channel: window.PAApi.rcChannelTitle(entry.source, entry.channel) }))
+      .filter((entry) => entry.channel !== null);
     renderShowList();
   };
 
   // The Stand Down choice rides the /api/config payload the log level reads.
+  // Only an answer that carries the key is one: a droid whose firmware does
+  // not know the Setting has not said "never chosen", so Stand Down waits.
   const adoptStandDown = (config) => {
     const chosen = config?.seq?.standDown;
-    standDownChoice = typeof chosen === "string" ? chosen : "";
+    if (typeof chosen !== "string") return;
+    standDownChoice = chosen;
     paintStandDown();
   };
 

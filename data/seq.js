@@ -205,147 +205,18 @@
   const stageContext = () => halfContext(editorState.current, editorState.half);
 
   // =========================================================================
-  // The run watch (#441, #451)
+  // The run (#441, #451)
   //
-  // One run started from the browser: it starts it, knows while it is under
-  // way, stops it, and says when it has ended. It holds no markup, so another
-  // surface that starts runs takes this unit rather than a second poll.
-  //
-  // The droid answers POST /api/seq/test before anything has started: the run
-  // is queued, the dispatcher takes it up later and only then writes the run's
-  // record, and it can still refuse it there
-  // (src/tasks/sequence_dispatcher.cpp). Nothing on the status stream says a
-  // sequence is running, so the record (GET /api/seq/last-run) is read once a
-  // second, and ONLY while a run started here is under way: each answer is a
-  // multi-KB document the droid has to build.
-  //
-  // Which record is this run's. The record is read once BEFORE the press, and
-  // a later answer is this run's only when it is another record - another
-  // start time - under this run's name. Never by name alone: the first answers
-  // after a press can still be the previous run of the same sequence, long
-  // ended, and that must not end this one.
+  // What is running is the Live Reading's run watch (data/live_reading.js,
+  // "The run watch"), the one judge the Dashboard reads too: it starts a run,
+  // stops it, and tells this page when a run - started here or anywhere else,
+  // an RC Channel included - is under way and when it ends. The strip and the
+  // list row both show it, and both are painted from it (paintRun() below).
   // =========================================================================
-  const RUN_POLL_MS = 1000;
-  // How long the droid gets to take up a run it accepted. It does so within a
-  // dispatcher pass, so this is generous. Judged when an answer lands: only an
-  // answer can say the record is still the one from before the press.
-  const RUN_START_WAIT_MS = 5000;
-  // How long the record may go unanswered before the page stops saying the run
-  // is under way. A droid that drops off the network mid-run answers nothing,
-  // so no answer can end the run: this is judged at each read, before it is
-  // sent, from the first read since the last answer - the time the page has
-  // been asking, never the time a hidden tab or another surface kept it from
-  // asking. The run itself is not stopped, and may still be playing.
-  const RUN_QUIET_MS = 5000;
-
-  // `onChange({ name, running, outcome })` is called when a run starts being
-  // watched and when it stops being one. `outcome` is the record's own word
-  // (completed, aborted, preempted, estop, reconnect), "replaced" when the
-  // record became something else's, "not-started" when the droid accepted
-  // the run and never began it, or "lost" when the droid stopped answering.
-  const createRunWatch = (onChange) => {
-    // { name, before, sentAt, seen, unheardSince } while a run started here is
-    // under way. `unheardSince` is when the first read since the last answer
-    // was sent, or null when the last read was answered.
-    let run = null;
-
-    const sameRecord = (a, b) =>
-      Boolean(a?.valid) === Boolean(b?.valid) && (!a?.valid || (a.startMs === b.startMs && a.name === b.name));
-
-    // Owned by the surface this is created on: the shell stops it when that
-    // surface is left and starts it again on the way back (ADR 0048), so
-    // create the watch in the surface's script body. The rejection of a read
-    // that got no answer is left to PASurface.poll(), which reports it.
-    const poll = window.PASurface.poll(() => {
-      const now = Date.now();
-      if (run.unheardSince !== null && now - run.unheardSince >= RUN_QUIET_MS) {
-        // Nothing was asked this time, so nothing is handed back to be read
-        // as an answer.
-        end("lost");
-        return undefined;
-      }
-      if (run.unheardSince === null) run.unheardSince = now;
-      const asked = run;
-      return window.PAApi.get("/api/seq/last-run").then((answer) => {
-        // An answer to a question asked about an earlier run says nothing
-        // about this one.
-        if (run === null || run !== asked) return;
-        run.unheardSince = null;
-        judge(answer.data || {});
-      });
-    }, { cadenceMs: RUN_POLL_MS, runOnStart: true, refreshOnReturn: true });
-
-    const end = (outcome) => {
-      const { name } = run;
-      run = null;
-      poll.stop();
-      onChange({ name, running: false, outcome });
-    };
-
-    const judge = (record) => {
-      const fresh = !sameRecord(record, run.before);
-      const ours = fresh && record.valid === true && record.name === run.name;
-      if (ours && record.running === true) {
-        run.seen = true;
-        return;
-      }
-      if (ours) {
-        end(record.outcome || "completed");
-        return;
-      }
-      // Not this run's record. Once this run was seen, that is something
-      // else having the droid: a later run, or a restart that wiped the
-      // record.
-      if (run.seen) {
-        end("replaced");
-        return;
-      }
-      // Not seen yet. Inside the start wait even a new record decides
-      // nothing: a run sent just before this one writes its record first, and
-      // this run's follows it. Past the wait, a new record is something else's
-      // run, and the record from before the press is a run that never began.
-      if (Date.now() - run.sentAt >= RUN_START_WAIT_MS) end(fresh ? "replaced" : "not-started");
-    };
-
-    // Resolves once the droid has accepted the run, and rejects when it could
-    // not be asked or refused. A droid that cannot answer the read before the
-    // press is not sent the run: with no record from before, an earlier run of
-    // the same sequence could not be told from this one, and the run would
-    // read as ended while it plays, or as running after it never started.
-    const start = async (name) => {
-      const before = (await window.PAApi.get("/api/seq/last-run")).data || {};
-      await window.PAApi.postJson("/api/seq/test", { name });
-      // A run already watched is over the moment the droid accepts this one:
-      // the later run preempts it.
-      run = { name, before, sentAt: Date.now(), seen: false, unheardSince: null };
-      poll.start();
-      onChange({ name, running: true });
-    };
-
-    // The droid's non-latching stop. The run is over when its record says so,
-    // not when this is answered.
-    const stop = () => window.PAApi.postJson("/api/seq/stop", {});
-
-    return { start, stop, running: () => (run ? run.name : null) };
-  };
-
-  // The one run this surface has started: the strip and the list row both
-  // show it, and both are painted from it (paintRun() below).
-  // The endings the surface has a sentence for. A run that ends by itself, is
-  // stopped, or gives way to a later run ends without one: the lamp going out
-  // is the word.
-  const RUN_ENDINGS = {
-    "not-started": (name) => `The droid did not start ${name}.`,
-    lost: (name) => `Lost touch with the droid; ${name} may still be running.`,
-    // The droid takes a run even under a latched estop and ends it in the same
-    // pass (src/tasks/sequence_dispatcher.cpp), so the lamp is on for a moment
-    // and then off.
-    estop: (name) => `The estop stopped ${name}.`,
-  };
-
-  const runWatch = createRunWatch(({ name, running, outcome }) => {
+  const runWatch = window.PALiveReading.watchRuns(({ name, running, outcome }) => {
     paintRun();
-    if (!running && RUN_ENDINGS[outcome]) sayOfRun(name, RUN_ENDINGS[outcome](name));
+    const ending = running ? null : window.PALiveReading.runEnding(outcome, name);
+    if (ending) sayOfRun(name, ending);
   });
 
   let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)
@@ -522,8 +393,11 @@
 
   const loadStandDown = async ({ handle = null } = {}) => {
     const answer = await (handle || window.PAApi).get("/api/config");
+    // Only an answer that carries the key is one: a droid whose firmware does
+    // not know the Setting has not said "never chosen".
     const chosen = answer.data?.seq?.standDown;
-    standDownChoice = typeof chosen === "string" ? chosen : "";
+    if (typeof chosen !== "string") return;
+    standDownChoice = chosen;
     renderListView();
   };
 
@@ -576,11 +450,13 @@
 
   // The droid's Stand Down Sequence (CONTEXT.md, #451): one name, chosen here
   // with the mark beside each row and run by the Dashboard's Stand Down. The
-  // Setting stores an empty name until one is chosen, and DM:RESET stands in
-  // for it (data/app.js STAND_DOWN_DEFAULT). Null until GET /api/config has
-  // answered, and no row is marked or offers the mark until then.
+  // Setting stores an empty name until one is chosen, and the words table says
+  // what stands in for it (data/web_api.js, standDownSequence `unset`). Null
+  // until GET /api/config has answered with it, and no row is marked or offers
+  // the mark until then.
   let standDownChoice = null;
-  const standDownName = () => (standDownChoice === null ? null : standDownChoice || "DM:RESET");
+  const standDownName = () =>
+    (standDownChoice === null ? null : standDownChoice || PAApi.unsetOf("standDownSequence"));
 
   // The mark, on a Learned and a Factory row alike: DM:RESET, the default, is
   // a Factory one, and a Factory row has no More to hold it. The chosen row
