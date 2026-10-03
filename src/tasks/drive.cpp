@@ -24,7 +24,6 @@
 #include "drive_arbiter.h"
 #include "drive.h"
 #include "drive_backend.h"
-#include "drive_frame_emit.h"
 #include "failsafe_gate.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -148,16 +147,12 @@ void driveTask(void* pvParameters) {
         // Send frame  --  always (zero-frame rule: never go silent). The
         // backend declares how long its far end tolerates a gap; whether a
         // frame goes out at all is decided here and never down there.
-        // Pure step decision: encode frame emission and payload.
-        DriveTickInputs tickIn{
-            .failsafeActive = failsafeActive,
-            .arbiterSpeed = speed,
-            .arbiterSteer = steer,
-        };
-        DriveTickActions tickActions = driveTickDecide(tickIn);
-        if (tickActions.shouldEmitFrame) {
-            driveBackendSend(driveSerial, tickActions.speed, tickActions.steer);
-        }
+        // Unconditional on purpose, every tick, failsafe or not: the backend
+        // must be fed inside the deadline it declares, or its far end acts on
+        // its own -- the hoverboard fitted today holds its last command and
+        // the wheels DRIFT. Even a zero-speed frame goes out every cycle
+        // (DriveArbiter has already zeroed speed/steer when failsafe is active).
+        driveBackendSend(driveSerial, speed, steer);
 
         // Read drive backend feedback  --  non-blocking, drains available bytes.
         // Feedback is not universal, so this asks the profile rather than the
