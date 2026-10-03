@@ -6,6 +6,7 @@
 // =============================================================================
 
 #include "config_settings.h"
+#include "config_settings_test_hooks.h"  // audioSettingCount/At(), defined below for tests only
 
 #include <ctype.h>
 #include <stddef.h>
@@ -745,10 +746,6 @@ int32_t configSettingNumber(const ConfigSetting& setting, const ConfigSnapshot& 
     return loadNumber(setting.storage, sectionOf(snap, setting.section) + setting.offset);
 }
 
-void configSettingSetNumber(const ConfigSetting& setting, ConfigSnapshot* snap, int32_t value) {
-    storeNumber(setting.storage, sectionOf(snap, setting.section) + setting.offset, value);
-}
-
 void configSettingFormat(const ConfigSetting& setting, const ConfigSnapshot& snap, char* out,
                          size_t outSize) {
     if (out == nullptr || outSize == 0) {
@@ -983,12 +980,6 @@ void configSettingsRead(SettingSection section, const ConfigReader& reader, void
 // =============================================================================
 // The audio Settings
 // =============================================================================
-size_t catalogBindingSettingCount() {
-    return sizeof(kCatalogBindingSettings) / sizeof(kCatalogBindingSettings[0]);
-}
-
-const ConfigSetting& catalogBindingSettingAt(size_t index) { return kCatalogBindingSettings[index]; }
-
 const ConfigSetting* catalogBindingSetting(const char* part) {
     if (part == nullptr) {
         return nullptr;
