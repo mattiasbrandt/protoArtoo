@@ -62,7 +62,7 @@ enum AudioStepIgnoreReason : uint8_t {
     AUDIO_STEP_IGNORE_SLEEP,                // play-type command while sleeping
     AUDIO_STEP_IGNORE_UNSUPPORTED_BACKEND,  // catalog command on non-catalog driver
     AUDIO_STEP_IGNORE_BANK_NOT_FITTED,      // $8nn, and the module has no bank 8
-    AUDIO_STEP_IGNORE_CANNOT_MIX,           // Sound Bed on a module without AUDIO_CAP_MIXES
+    AUDIO_STEP_IGNORE_CANNOT_MIX,           // Background Track on a module without AUDIO_CAP_MIXES
 };
 
 // -----------------------------------------------------------------------------

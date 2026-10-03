@@ -48,7 +48,7 @@ enum class ChirpStreamUse : uint8_t {
     // not stopped or seen idle may be playing.
     MaybeVocal = 0,  // a vocal PLAY may have landed here, and may have ended unannounced
     IdleByProof,     // stopped by the body, or seen idle by an attributed STAT, since its last PLAY
-    Bed,             // the Sound Bed's stream
+    BackgroundTrack,  // the Background Track's stream
 };
 
 // What one read window produced. A parser must only ever see Complete: half a
@@ -74,20 +74,20 @@ class AudioDriverChirp : public AudioDriver {
     void playTrack(uint16_t track) override;
     void playTrackBanked(uint16_t index, uint8_t bank, char page) override;
 
-    // Stop all active streams, the Sound Bed's included.
+    // Stop all active streams, the Background Track's included.
     void stop() override;
 
-    // Set volume 0-30 (clamped by AudioTask) on every stream, the Sound Bed's
-    // included. Scaled to CHIRP 0-99 range.
+    // Set volume 0-30 (clamped by AudioTask) on every stream, the Background
+    // Track's included. Scaled to CHIRP 0-99 range.
     void setVolume(uint8_t vol) override;
 
-    // Streams and the Sound Bed (ADR 0054); the rules are the stream model in
-    // src/drivers/audio_chirp.cpp.
+    // Streams and the Background Track (ADR 0054); the rules are the stream
+    // model in src/drivers/audio_chirp.cpp.
     void stopStream(uint8_t stream) override;
     void setStreamVolume(uint8_t stream, uint8_t vol) override;
     void stopVocals() override;
-    bool playBed(uint16_t index, uint8_t bank, char page, uint8_t vol) override;
-    void stopBed() override;
+    bool playBackgroundTrack(uint16_t index, uint8_t bank, char page, uint8_t vol) override;
+    void stopBackgroundTrack() override;
     // The Sound page's Driver row is operator-facing, and bare "CHIRP" also
     // names CHIRP Droid Control, a different product by the same author
     // (CONTEXT.md Flagged Ambiguities, 2026-09-08: always qualify in operator
@@ -141,17 +141,23 @@ class AudioDriverChirp : public AudioDriver {
     static constexpr uint8_t CHIRP_VOL_UNSET = 0xFFu;
     uint8_t m_vocalVolume = CHIRP_VOL_UNSET;
     // When the last vocal PLAY went out (m_io.millisNow()), and whether one
-    // has: an ERR: line read just after a bed's PLAY may be that vocal's.
+    // has: an ERR: line read just after a Background Track's PLAY may be that
+    // vocal's.
     uint32_t m_lastVocalSentMs = 0;
     bool m_vocalSent = false;
     // A STAT query in an earlier snapshot went unanswered, so its reply may
     // still arrive and would be read as the next snapshot's first.
     bool m_statReplyOwed = false;
+    // The first ERR: line read after a Background Track's PLAY, whole: the
+    // longest handlePlay() prints ("ERR:PARAM - Invalid sound index") is 31
+    // characters. A member, not a local, so AudioTask's recorded stack chain
+    // does not carry it.
+    char m_backgroundTrackErr[32] = {0};
 
-    uint8_t bedStream() const;
-    void makeRoomBesideBed();
+    uint8_t backgroundTrackStream() const;
+    void makeRoomBesideBackgroundTrack();
     void noteVocalSent();
-    void readBedAnswer(bool vocalJustSent);
+    void readBackgroundTrackAnswer(bool vocalJustSent);
     void noteStreamObserved(uint8_t stream, bool playing);
 
     uint16_t m_totalTracks = 0;

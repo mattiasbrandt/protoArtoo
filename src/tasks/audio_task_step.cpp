@@ -22,7 +22,7 @@ static bool intentExecutable(const AudioPlaybackIntent& intent) {
         return false;
     }
     if ((intent.kind == AUDIO_PLAYBACK_INTENT_PLAY_BANKED ||
-         intent.kind == AUDIO_PLAYBACK_INTENT_BED_START) &&
+         intent.kind == AUDIO_PLAYBACK_INTENT_BACKGROUND_TRACK_START) &&
         (intent.index == 0 || intent.bank == 0 || intent.page < 'A' || intent.page > 'Z')) {
         return false;
     }
@@ -273,32 +273,34 @@ AudioStepCommandActions audioStepCommand(AudioStepState& state,
             break;
         }
 
-        case AUDIO_CMD_BED_START: {
+        case AUDIO_CMD_BACKGROUND_TRACK_START: {
             if (in.sleepMode) {
                 actions.ignored = AUDIO_STEP_IGNORE_SLEEP;
                 break;
             }
-            // The one audio seam a bed passes (ADR 0054): a module that cannot
-            // mix is never asked, and the reason is reported rather than lost.
+            // The one audio seam a Background Track passes (ADR 0054): a module
+            // that cannot mix is never asked, and the reason is reported rather
+            // than lost.
             if (!in.mixCapable) {
                 actions.ignored = AUDIO_STEP_IGNORE_CANNOT_MIX;
                 break;
             }
             AudioPlaybackRequest request{};
-            request.kind = AUDIO_PLAYBACK_REQ_BED_START;
-            request.bed.index = cmd.bed.index;
-            request.bed.bank = cmd.bed.bank;
-            request.bed.page = cmd.bed.page;
-            request.bed.volume = cmd.bed.volume;
+            request.kind = AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_START;
+            request.backgroundTrack.index = cmd.backgroundTrack.index;
+            request.backgroundTrack.bank = cmd.backgroundTrack.bank;
+            request.backgroundTrack.page = cmd.backgroundTrack.page;
+            request.backgroundTrack.volume = cmd.backgroundTrack.volume;
             resolvePlayback(state, in, request, false, &actions);
             break;
         }
 
-        case AUDIO_CMD_BED_STOP: {
-            // Not gated on mixCapable: on a module that cannot mix no bed is
-            // playing, and the driver's stopBed() sends nothing.
+        case AUDIO_CMD_BACKGROUND_TRACK_STOP: {
+            // Not gated on mixCapable: on a module that cannot mix no
+            // Background Track is playing, and the driver's
+            // stopBackgroundTrack() sends nothing.
             AudioPlaybackRequest request{};
-            request.kind = AUDIO_PLAYBACK_REQ_BED_STOP;
+            request.kind = AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_STOP;
             resolvePlayback(state, in, request, false, &actions);
             break;
         }

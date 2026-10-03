@@ -220,9 +220,9 @@ PA_COMPONENT_PART(17, "flipsky_mini_v6_vesc", "Flipsky Mini V6 VESC",        COM
 // restating them (include/audio_chirp.h, include/audio_dy_sv5w.h,
 // include/audio_mp3trigger.h), so a row and its driver cannot drift apart.
 //
-// AUDIO_CAP_MIXES (a Sound Bed under vocals, ADR 0054) is CHIRP's alone: it is
-// the only member with more than one stream. DY-SV5W and MP3 Trigger play one
-// sound at a time.
+// AUDIO_CAP_MIXES (a Background Track under vocals, ADR 0054) is CHIRP's alone:
+// it is the only member with more than one stream. DY-SV5W and MP3 Trigger play
+// one sound at a time.
 //
 // DFPlayer Mini declares 0 because nobody has read its protocol against this
 // bitmask yet, not because it can be asked nothing. #305 declares its bits when

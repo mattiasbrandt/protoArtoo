@@ -85,8 +85,9 @@ enum AudioPlaybackRequestKind : uint8_t {
     AUDIO_PLAYBACK_REQ_RANDOM_ON,
     AUDIO_PLAYBACK_REQ_RANDOM_OFF,
     AUDIO_PLAYBACK_REQ_RANDOM_TICK,
-    AUDIO_PLAYBACK_REQ_BED_START,  // Sound Bed (ADR 0054): bank/page/index at its own volume
-    AUDIO_PLAYBACK_REQ_BED_STOP,
+    // Background Track (ADR 0054): bank/page/index at its own volume.
+    AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_START,
+    AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_STOP,
 };
 
 enum AudioPlaybackIntentKind : uint8_t {
@@ -95,12 +96,14 @@ enum AudioPlaybackIntentKind : uint8_t {
     AUDIO_PLAYBACK_INTENT_PLAY_BANKED,
     AUDIO_PLAYBACK_INTENT_STOP,
     AUDIO_PLAYBACK_INTENT_TRACK_STOP,  // Track Stop (ADR 0010): driver->stopVocals(),
-                                       // randomMode left untouched; a Sound Bed plays on.
+                                       // randomMode left untouched; a
+                                       // Background Track plays on.
     AUDIO_PLAYBACK_INTENT_SET_VOLUME,
     AUDIO_PLAYBACK_INTENT_RANDOM_ON,
     AUDIO_PLAYBACK_INTENT_RANDOM_OFF,
-    AUDIO_PLAYBACK_INTENT_BED_START,  // driver->playBed(index, bank, page, volume)
-    AUDIO_PLAYBACK_INTENT_BED_STOP,   // driver->stopBed()
+    // driver->playBackgroundTrack(index, bank, page, volume)
+    AUDIO_PLAYBACK_INTENT_BACKGROUND_TRACK_START,
+    AUDIO_PLAYBACK_INTENT_BACKGROUND_TRACK_STOP,  // driver->stopBackgroundTrack()
 };
 
 enum AudioPlaybackNoneReason : uint8_t {
@@ -177,7 +180,7 @@ struct AudioPlaybackRequest {
             uint8_t bank;
             char page;
             uint8_t volume;  // 0-30, clamped before enqueue
-        } bed;
+        } backgroundTrack;
     };
 };
 

@@ -153,7 +153,8 @@ class AudioDriver {
     static constexpr uint8_t AUDIO_CAP_CURRENT_TRACK = 0x08;
     static constexpr uint8_t AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
     static constexpr uint8_t AUDIO_CAP_CATALOG = 0x20;
-    // Plays a Sound Bed under vocals (ADR 0054): see the Streams block below.
+    // Plays a Background Track under vocals (ADR 0054): see the Streams block
+    // below.
     static constexpr uint8_t AUDIO_CAP_MIXES = 0x40;
 
     // Initialise hardware (GPIO, serial pin) and set initial volume  --  called once
@@ -175,12 +176,14 @@ class AudioDriver {
     }
 
     // Stop current playback immediately, on every stream: the droid-wide stop
-    // (Quiet, Sleep Mode entry, Sound switched off). A Sound Bed stops with it.
+    // (Quiet, Sleep Mode entry, Sound switched off). A Background Track stops
+    // with it.
     virtual void stop() = 0;
 
     // Set output volume in the range 0-30 (0 = silent, 30 = maximum), on every
-    // stream: the operator's volume. A Sound Bed's own level is overwritten by it.
-    // AudioTask clamps the value before calling; driver may assume it is in range.
+    // stream: the operator's volume. A Background Track's own level is
+    // overwritten by it. AudioTask clamps the value before calling; driver may
+    // assume it is in range.
     virtual void setVolume(uint8_t vol) = 0;
 
     // -------------------------------------------------------------------------
@@ -211,20 +214,21 @@ class AudioDriver {
         }
     }
 
-    // Track Stop (ADR 0010): stop what the droid is saying, never a Sound Bed
-    // playing under it. On one stream nothing plays under a vocal, so a Track
-    // Stop is stop().
+    // Track Stop (ADR 0010): stop what the droid is saying, never a Background
+    // Track playing under it. On one stream nothing plays under a vocal, so a
+    // Track Stop is stop().
     virtual void stopVocals() {
         stop();
     }
 
-    // Start a Sound Bed: the bank/page/index track at its own volume (0-30), on
-    // a stream vocals fired afterwards will not land on. Returns false when the
-    // bed is not playing as far as the driver knows -- always, on a module that
-    // cannot mix, which is this default. AudioTask refuses a bed on a module
-    // without AUDIO_CAP_MIXES before it gets here; the default is the honest
-    // answer for a driver reached some other way.
-    virtual bool playBed(uint16_t index, uint8_t bank, char page, uint8_t vol) {
+    // Start a Background Track: the bank/page/index track at its own volume
+    // (0-30), on a stream vocals fired afterwards will not land on. Returns
+    // false when the Background Track is not playing as far as the driver knows
+    // -- always, on a module that cannot mix, which is this default. AudioTask
+    // refuses a Background Track on a module without AUDIO_CAP_MIXES before it
+    // gets here; the default is the honest answer for a driver reached some
+    // other way.
+    virtual bool playBackgroundTrack(uint16_t index, uint8_t bank, char page, uint8_t vol) {
         (void)index;
         (void)bank;
         (void)page;
@@ -232,8 +236,9 @@ class AudioDriver {
         return false;
     }
 
-    // Stop the Sound Bed, and nothing else. No bed, nothing sent.
-    virtual void stopBed() {}
+    // Stop the Background Track, and nothing else. No Background Track, nothing
+    // sent.
+    virtual void stopBackgroundTrack() {}
 
     virtual ~AudioDriver() = default;
 

@@ -11,8 +11,8 @@
 //     board without PA_CAP_DEDICATED_AUDIO_UART) around status queries and
 //     catalog refreshes, NVS binding-cache refresh, RobotState audio-zone
 //     writes. The CHIRP driver also claims inside two calls this task makes:
-//     begin() for its bank summary, and playBed() to hear the module's answer
-//     (src/drivers/audio_chirp.cpp).
+//     begin() for its bank summary, and playBackgroundTrack() to hear the
+//     module's answer (src/drivers/audio_chirp.cpp).
 // Decision logic (lifecycle transitions, '$'/command translation, playback
 // policy invocation, volume and random-mode state, status/catalog gating)
 // lives in the step core.
@@ -28,7 +28,7 @@
 // bytes (src/drivers/audio_soft_uart_tx.h). A command is that many times over,
 // and how many bytes it is depends on the module: 2 for an MP3 Trigger track,
 // 4 to 6 for a DY-SV5W frame, 15 for a CHIRP "PLAY:12,2,C,66" -- 22 when a
-// Sound Bed is held and a "STOP:1" goes first. Keeping AudioTask
+// Background Track is held and a "STOP:1" goes first. Keeping AudioTask
 // on Core 0 prevents any interaction with DriveTask / ServoTask timing on
 // Core 1 either way.
 //
@@ -323,7 +323,8 @@ bool audioQueueTrackStop(CommandSource src) {
     return true;
 }
 
-bool audioQueueBedStart(uint16_t index, uint8_t bank, char page, uint8_t vol, CommandSource src) {
+bool audioQueueBackgroundTrackStart(uint16_t index, uint8_t bank, char page, uint8_t vol,
+                                    CommandSource src) {
     if (audioOutputInactive()) {
         return true;
     }
@@ -331,31 +332,31 @@ bool audioQueueBedStart(uint16_t index, uint8_t bank, char page, uint8_t vol, Co
         return false;
     }
     AudioCommand msg{};
-    msg.type = AUDIO_CMD_BED_START;
+    msg.type = AUDIO_CMD_BACKGROUND_TRACK_START;
     msg.source = src;
-    msg.bed.index = index;
-    msg.bed.bank = bank;
-    msg.bed.page = page;
-    msg.bed.volume = audioClampVolume(vol);
+    msg.backgroundTrack.index = index;
+    msg.backgroundTrack.bank = bank;
+    msg.backgroundTrack.page = page;
+    msg.backgroundTrack.volume = audioClampVolume(vol);
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
-        logQueueDrop(QUEUE_AUDIO_CMD, "bed start");
+        logQueueDrop(QUEUE_AUDIO_CMD, "Background Track start");
         return false;
     }
     return true;
 }
 
-bool audioQueueBedStop(CommandSource src) {
+bool audioQueueBackgroundTrackStop(CommandSource src) {
     if (audioOutputInactive()) {
         return true;
     }
     AudioCommand msg{};
-    msg.type = AUDIO_CMD_BED_STOP;
+    msg.type = AUDIO_CMD_BACKGROUND_TRACK_STOP;
     msg.source = src;
     // A stop, so a catalog walk in progress yields to it like it does to a
     // Track Stop rather than holding it for minutes.
     audioCatalogInterruptNoteStop();
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
-        logQueueDrop(QUEUE_AUDIO_CMD, "bed stop");
+        logQueueDrop(QUEUE_AUDIO_CMD, "Background Track stop");
         return false;
     }
     return true;
@@ -581,22 +582,26 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
             break;
 
         case AUDIO_PLAYBACK_INTENT_TRACK_STOP:
-            // The vocals only: a Sound Bed under them plays on (ADR 0054).
+            // The vocals only: a Background Track under them plays on (ADR
+            // 0054).
             driver()->stopVocals();
             PA_LOG_INFO(TAG, "[%s] track stop", commandSourceToString(source));
             break;
 
-        case AUDIO_PLAYBACK_INTENT_BED_START:
-            // The driver logs the outcome once, with what only it knows: the
-            // stream, whether the module could be heard, and any refusal.
-            if (!driver()->playBed(intent.index, intent.bank, intent.page, intent.volume)) {
+        case AUDIO_PLAYBACK_INTENT_BACKGROUND_TRACK_START:
+            // A refusal is the driver's to log: it alone read the module's answer.
+            if (!driver()->playBackgroundTrack(intent.index, intent.bank, intent.page,
+                                               intent.volume)) {
                 return;
             }
+            PA_LOG_INFO(TAG, "[%s] Background Track bank=%u page=%c index=%u vol=%u",
+                        commandSourceToString(source), (unsigned)intent.bank, intent.page,
+                        (unsigned)intent.index, (unsigned)intent.volume);
             break;
 
-        case AUDIO_PLAYBACK_INTENT_BED_STOP:
-            driver()->stopBed();
-            PA_LOG_INFO(TAG, "[%s] bed stop", commandSourceToString(source));
+        case AUDIO_PLAYBACK_INTENT_BACKGROUND_TRACK_STOP:
+            driver()->stopBackgroundTrack();
+            PA_LOG_INFO(TAG, "[%s] Background Track stop", commandSourceToString(source));
             break;
 
         case AUDIO_PLAYBACK_INTENT_SET_VOLUME:
@@ -807,7 +812,7 @@ static const char* playCommandName(AudioCommandType type) {
         case AUDIO_CMD_PLAY_CATEGORY:     return "category play";
         case AUDIO_CMD_REFRESH_CATALOG:   return "catalog refresh";
         case AUDIO_CMD_REFRESH_BINDINGS:  return "binding cache refresh";
-        case AUDIO_CMD_BED_START:         return "bed start";
+        case AUDIO_CMD_BACKGROUND_TRACK_START: return "Background Track start";
         default:                          return "command";
     }
 }
@@ -965,10 +970,12 @@ void audioTask(void* pvParameters) {
                             (unsigned)AUDIO_DOLLAR_BANK, cmd.dollar + 2,
                             (unsigned)AUDIO_DOLLAR_BANK);
             } else if (ca.ignored == AUDIO_STEP_IGNORE_CANNOT_MIX) {
-                PA_LOG_WARN(TAG, "[%s] bed bank=%u page=%c index=%u not played: %s plays one "
-                                 "sound at a time",
-                            commandSourceToString(cmd.source), (unsigned)cmd.bed.bank,
-                            cmd.bed.page, (unsigned)cmd.bed.index, driver()->driverName());
+                PA_LOG_WARN(TAG,
+                            "[%s] Background Track bank=%u page=%c index=%u not played: "
+                            "%s plays one sound at a time",
+                            commandSourceToString(cmd.source), (unsigned)cmd.backgroundTrack.bank,
+                            cmd.backgroundTrack.page, (unsigned)cmd.backgroundTrack.index,
+                            driver()->driverName());
             }
             if (ca.hasIntent) {
                 executePlaybackIntent(ca.intent, cmd.source);
