@@ -3,7 +3,8 @@
 //
 // Shared HTTP helper for protoArtoo web pages.
 // - Normalizes timeout/network/http/json errors
-// - Provides GET / form POST / JSON POST helpers
+// - Provides GET / form POST / JSON POST helpers, and a file read and upload
+//   for the one binary document the droid stores beside JSON (a take, #442)
 // - Keeps API error handling consistent across pages
 // =============================================================================
 (() => {
@@ -61,9 +62,12 @@
     return new ApiError("Network request failed", { kind: "network", cause: error });
   };
 
-  const parseResponse = async (response) => {
+  // `bytes`: an answer that succeeded is read as an ArrayBuffer whatever its
+  // type - a take file (GET /api/take/file). A refusal is still JSON.
+  const parseResponse = async (response, bytes = false) => {
     const contentType = response.headers.get("content-type") || "";
     const isJson = contentType.includes("application/json");
+    if (bytes && response.ok) return response.arrayBuffer();
 
     if (isJson) {
       return response.json().catch(() => {
@@ -158,6 +162,8 @@
     headers = {},
     form = null,
     json = null,
+    formData = null,
+    bytes = false,
     noRetry = false,
     signal = null,
   } = {}) => {
@@ -182,6 +188,9 @@
         } else if (json !== null) {
           body = JSON.stringify(json);
           requestHeaders["Content-Type"] = "application/json";
+        } else if (formData !== null) {
+          // multipart: fetch writes the Content-Type with its boundary.
+          body = formData;
         }
 
         const response = await fetch(path, {
@@ -192,7 +201,7 @@
           signal: controller.signal,
         });
 
-        const payload = await parseResponse(response);
+        const payload = await parseResponse(response, bytes);
 
         if (!response.ok) {
           const body = payload && typeof payload === "object" ? payload : {};
@@ -250,6 +259,14 @@
   const postForm = (path, form, opts = {}) => request(path, { ...opts, method: "POST", form });
   const postJson = (path, json, opts = {}) => request(path, { ...opts, method: "POST", json });
   const estopPostForm = (path, form, opts = {}) => estopRequest(path, { ...opts, method: "POST", form });
+  // A file's bytes, and a file sent as a multipart upload, through the same
+  // single request slot as every other call (ADR 0019).
+  const getBytes = (path, opts = {}) => request(path, { ...opts, method: "GET", bytes: true });
+  const postFile = (path, field, blob, fileName, opts = {}) => {
+    const formData = new FormData();
+    formData.append(field, blob, fileName);
+    return request(path, { ...opts, method: "POST", formData });
+  };
 
   const HTTP_STATUS_MESSAGES = {
     400: "Device rejected the request",
@@ -777,6 +794,8 @@
     get,
     postForm,
     postJson,
+    getBytes,
+    postFile,
     estopPostForm,
     messageFor,
     refusalFor,
