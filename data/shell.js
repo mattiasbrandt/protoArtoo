@@ -226,6 +226,12 @@
   // THE SWITCH is the class `act-words` on <html>, which ACT_WORDS sets. With
   // it every act shows its words beside its icon again, at its labelled width,
   // and the tooltip stands down; no markup changes (data/style.css, "The act").
+  //
+  // An act that carries class act-keeps-words shows its words whatever the
+  // switch says, and has no tooltip: the ones that move the droid with nothing
+  // on the page explaining them, whose words carry a count, a name or a
+  // warning, that answer a question, or whose words are a state in progress
+  // (docs/icon-set-provenance.md, "One act, one icon").
   // ---------------------------------------------------------------------------
   const ACT_WORDS = false;
   document.documentElement.classList.toggle("act-words", ACT_WORDS);
@@ -938,10 +944,11 @@
   // fixed to the viewport so no card's overflow clips it, and it is hidden from
   // assistive technology, which already has the words as the button's name.
   //
-  // It names the act and nothing more. Why an act is switched off, and what a
-  // control that moves something does, are visible text on the page where a
-  // surface says them (ADR 0059); nothing that was said there moved into the
-  // tooltip.
+  // It names the act and nothing more, and only an act whose words are hidden.
+  // An act the page would otherwise explain only on hover keeps its words in
+  // view (act-keeps-words, above), and why an act is switched off is visible
+  // text where a surface says it (ADR 0059): the tooltip is a name, never the
+  // one place an explanation lives.
   // ---------------------------------------------------------------------------
   const actTip = document.createElement("div");
   actTip.className = "act-tip";
@@ -957,6 +964,7 @@
 
   const showActTip = (button) => {
     if (document.documentElement.classList.contains("act-words")) return;
+    if (button.classList.contains("act-keeps-words")) return;
     const words = button.querySelector(".act-label")?.textContent.trim();
     if (!words) return;
     tipFor = button;
@@ -979,8 +987,12 @@
   const actOf = (node) => (node instanceof Element ? node.closest(".icon-act") : null);
 
   document.addEventListener("pointerover", (event) => {
+    // An act repainted under the pointer is a new node: the old one's tooltip
+    // goes with it rather than naming a button that is no longer there.
+    if (tipFor && !tipFor.isConnected) hideActTip();
     const button = actOf(event.target);
     if (button && button !== tipFor) showActTip(button);
+    else if (!button && tipFor && !tipFor.contains(event.target)) hideActTip();
   });
   document.addEventListener("pointerout", (event) => {
     const button = actOf(event.target);
@@ -1564,10 +1576,13 @@
   };
 
   // Which refused control a press landed on -- and it takes two tries, because
-  // a refused button is not merely inert to clicks, it is invisible to hit
-  // testing: data/style.css puts `pointer-events: none` on `.btn:disabled` and
-  // `.btn[aria-disabled="true"]`, so the press lands on whatever is behind the
-  // control and event.target names the container instead of the button.
+  // a refused button is usually not merely inert to clicks, it is invisible to
+  // hit testing: data/style.css puts `pointer-events: none` on `.btn:disabled`
+  // and `.btn[aria-disabled="true"]`, so the press lands on whatever is behind
+  // the control and event.target names the container instead of the button.
+  // A disabled act (#460, "The act" in data/style.css) is the exception: it
+  // takes the pointer for its tooltip and its children do not, so the press
+  // names the act itself and the first branch below finds it.
   //
   // Measured in a browser on the shipped stylesheet, which is the only place
   // it is visible: a bare disabled button in a page with no CSS does receive

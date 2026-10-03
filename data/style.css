@@ -10872,16 +10872,24 @@ label.seq-act {
    beside the icon and the button takes its labelled width again, with no
    markup change.
 
+   An act that must say itself without hover keeps its words beside its icon
+   whatever the switch says: class act-keeps-words, which every icon-only rule
+   below skips. It is an act that moves something on the droid with no line on
+   the page explaining it, an act whose words carry a count, a name or a
+   warning, an answer in a question (#456), or an act whose words are the only
+   place a state in progress is said (coordinator, 2026-10-04;
+   docs/icon-set-provenance.md, "One act, one icon").
+
    Last in the file on purpose: a family's own padding (.button-row-compact's,
    say) is as specific as these rules, and a later rule wins the tie. */
-:root:not(.act-words) .icon-act {
+:root:not(.act-words) .icon-act:not(.act-keeps-words) {
   justify-content: center;
   min-width: 0;
   padding: 0;
   aspect-ratio: 1;
 }
 
-:root:not(.act-words) .icon-act > .act-label {
+:root:not(.act-words) .icon-act:not(.act-keeps-words) > .act-label {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -10894,14 +10902,66 @@ label.seq-act {
 }
 
 /* A switched-off act still says what it is: it takes the pointer for its
-   tooltip, and a disabled <button> fires no click, so nothing else changes.
-   The one act that is a link, Wiring's sheet, takes it too: its own press
-   handler answers "no answer from the droid yet" while it is switched off
-   (data/wiring.js saveSheet). Any other aria-disabled act keeps the shared
-   none. */
+   tooltip, and a disabled <button> fires no click. The one act that is a link,
+   Wiring's sheet, takes it too: its own press handler answers "no answer from
+   the droid yet" while it is switched off (data/wiring.js saveSheet). Any
+   other aria-disabled act keeps the shared none.
+
+   Taking the pointer has two costs, both paid here. The press lands on the act
+   itself, never on the icon inside it, so data/shell.js refusedAt() finds it
+   by its own aria-disabled. And every family's hover and active look would
+   now light on a control that cannot be pressed, so each one is put back to
+   that family's resting look below. */
 :root:not(.act-words) .btn.icon-act:disabled,
 :root:not(.act-words) a#wiring-save.icon-act[aria-disabled="true"] {
   pointer-events: auto;
+}
+
+:root:not(.act-words) .btn.icon-act:disabled > *,
+:root:not(.act-words) a#wiring-save.icon-act[aria-disabled="true"] > * {
+  pointer-events: none;
+}
+
+:root:not(.act-words) .btn.icon-act:disabled:is(:hover, :active),
+:root:not(.act-words) a#wiring-save.icon-act[aria-disabled="true"]:is(:hover, :active) {
+  background: var(--surface-alt);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+:root:not(.act-words) .btn.btn-quiet.icon-act:disabled:is(:hover, :active),
+:root:not(.act-words) .outputs-go-group > .btn.icon-act:disabled:is(:hover, :active) {
+  background: transparent;
+}
+
+:root:not(.act-words) .btn.accent.icon-act:disabled:is(:hover, :active) {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+:root:not(.act-words) .btn.danger.icon-act:disabled:is(:hover, :active) {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+:root:not(.act-words) :is(.outputs-acts, .outputs-apply-picks, .parts-unused-act, .parts-carries) .btn.icon-act:disabled:is(:hover, :active),
+:root:not(.act-words) .btn.parts-act.icon-act:disabled:is(:hover, :active) {
+  background: transparent;
+  border-color: transparent;
+}
+
+:root:not(.act-words) :is(.outputs-acts, .outputs-apply-picks) .btn.icon-act:disabled:is(:hover, :active) {
+  color: var(--text-dim);
+}
+
+:root:not(.act-words) .parts-unused-act .btn.icon-act:disabled:is(:hover, :active) {
+  color: var(--accent-bright);
+}
+
+:root:not(.act-words) .btn.parts-act.icon-act:disabled:is(:hover, :active),
+:root:not(.act-words) .parts-carries .parts-find-act.icon-act:disabled:is(:hover, :active) {
+  color: var(--text-faint);
 }
 
 /* A .button-row is a grid of 160 px-and-up cells, which would stretch a
@@ -10909,7 +10969,7 @@ label.seq-act {
    keeps the row's own justify-content (a question's answers sit at its end).
    Not a hidden row: .button-row[hidden] is less specific than this, and a
    restore act on screen before a file was chosen is a shipped defect. */
-:root:not(.act-words) .button-row:not([hidden]):has(> .icon-act) {
+:root:not(.act-words) .button-row:not([hidden]):has(> .icon-act:not(.act-keeps-words)) {
   display: flex;
   flex-wrap: wrap;
 }
@@ -10917,6 +10977,7 @@ label.seq-act {
 .act-tip {
   position: fixed;
   z-index: 10100;
+  width: max-content;
   max-width: 240px;
   padding: var(--space-2xs) var(--space-sm);
   background: var(--surface-alt);
@@ -10925,7 +10986,6 @@ label.seq-act {
   border-radius: var(--radius-xs);
   font-size: var(--fs-sect);
   line-height: 1.3;
-  white-space: nowrap;
   pointer-events: none;
 }
 
@@ -10935,6 +10995,6 @@ label.seq-act {
 
 /* Wake is an act (#460): a square on the panel's centre line, not a cell the
    panel's grid stretches across its width. */
-:root:not(.act-words) .sleep-overlay-panel .icon-act {
+:root:not(.act-words) .sleep-overlay-panel .icon-act:not(.act-keeps-words) {
   justify-self: center;
 }
