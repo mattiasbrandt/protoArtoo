@@ -6552,7 +6552,7 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 /* The takes a sequence holds, in its Sequence tab (#442): each a name and
-   its quiet Take out, wrapping as the row fills. */
+   its quiet Remove, wrapping as the row fills. */
 .seq-takes {
   display: inline-flex;
   flex-wrap: wrap;

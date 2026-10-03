@@ -415,6 +415,10 @@ struct RestoreState {
     uint8_t wordGot;
     uint32_t samplesSeen;
     uint16_t prevTick;
+    // The store is full and a take not yet saved into its sequence will make
+    // way - at the finish, once this file has passed every check, never
+    // before: a refused upload must not have cost the builder that take.
+    bool makeRoom;
 };
 
 RestoreState* s_restore = nullptr;
@@ -470,8 +474,8 @@ const char* takeStoreRestoreBegin(const char* fileName, char* refusal, size_t re
             if (!findTake(unsavedTake, nullptr, &unsaved)) {
                 char full[128];
                 restoreFail(fullRefusal(full, sizeof(full)));
-            } else if (!removeTake(unsaved)) {
-                restoreFail("The droid could not make room for the take.");
+            } else {
+                s_restore->makeRoom = true;
             }
         }
         if (!s_restore->bad) {
@@ -506,7 +510,10 @@ void takeStoreRestoreAppend(const uint8_t* data, size_t len) {
             }
             const size_t total = takeFileHeaderBytes(r.info.partCount) +
                                  (size_t)r.info.sampleCount * TAKE_SAMPLE_BYTES;
-            if (freeBytes() < TAKE_FS_FREE_FLOOR + total) {
+            // With a take still to make way, its blocks are not free yet: the
+            // file itself must fit now, and the floor holds once it has gone.
+            const size_t need = r.makeRoom ? total : TAKE_FS_FREE_FLOOR + total;
+            if (freeBytes() < need) {
                 restoreFail("Not enough free space on the droid to keep a take.");
                 return;
             }
@@ -562,14 +569,20 @@ const char* takeStoreRestoreFinish(char* refusal, size_t refusalCap) {
         if (lock()) {
             char kept[64];
             char fresh[64];
-            if (takePath(r.target, true, kept, sizeof(kept)) &&
+            TakeFileNameParts unsaved;
+            if (r.makeRoom && countTakes() >= TAKE_STORE_CAP) {
+                if (!findTake(unsavedTake, nullptr, &unsaved) || !removeTake(unsaved)) {
+                    restoreFail("The droid could not make room for the take.");
+                }
+            }
+            if (!r.bad && takePath(r.target, true, kept, sizeof(kept)) &&
                 takePath(r.target, false, fresh, sizeof(fresh))) {
                 LittleFS.remove(kept);
                 LittleFS.remove(fresh);
                 if (!LittleFS.rename(TMP_PATH, kept)) {
                     restoreFail("The droid could not write the take.");
                 }
-            } else {
+            } else if (!r.bad) {
                 restoreFail("The file's name is not a take's.");
             }
             unlock();

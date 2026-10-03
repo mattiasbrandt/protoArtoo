@@ -3,10 +3,13 @@
 This document describes the currently exposed HTTP and SSE API in protoArtoo,
 including request shape, accepted parameters, and observed response contracts.
 
-**Route Coverage (for drift detection):** 64 routes total, derived from
-`src/web/web_seam_routes.cpp`, `src/web/web_request_psychic.cpp` (SSE), and
-upload handlers. Breakdown: 61 core API routes + 2 multipart upload routes +
-1 SSE stream. All are documented here or listed under "Internal Routes".
+**Route Coverage (for drift detection):** 72 routes registered in every build,
+counted from `src/web/web_seam_routes.cpp` (2026-10-03): 68 core API routes + 3
+multipart upload routes (`/upload/firmware`, `/upload/filesystem`,
+`/api/take/file`) + 1 SSE stream (`/api/events`). Four more exist only on
+builds that carry them: `/api/admission/trace` (`PA_ADMISSION_TRACE`),
+`/api/profiler` (`PA_HEAP_PROFILE`) and the two `/api/profiler/trace` routes
+(`PA_HEAP_TRACING`). All are documented here or listed under "Internal Routes".
 
 ## Table of Contents
 

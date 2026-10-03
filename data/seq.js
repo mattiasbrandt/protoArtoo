@@ -4918,6 +4918,10 @@
       return;
     }
 
+    // A take's file is not in a sequence's export, only its name: imported,
+    // the reference would name a file this droid does not hold (#442).
+    delete parsed.takes;
+
     hideModal(els.modalImport);
     // Through leaveSession(), like every way a sequence takes the editor.
     // Restore is pressed from the list, which gives way to an open edit

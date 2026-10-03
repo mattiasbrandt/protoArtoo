@@ -146,6 +146,14 @@ const char* takeArm(const char* seqName, char* refusal, size_t refusalCap) {
         return refuse(refusal, refusalCap, "The estop is latched. Clear it to perform.");
     }
 
+    // A droid with no radio is told that first: setting a channel on the RC
+    // page would not help it.
+    RcInputActiveConfig active = {};
+    configCacheReadActiveRcInput(&active);
+    if (active.mode == RC_INPUT_NOT_FITTED) {
+        return refuse(refusal, refusalCap, "No radio is fitted, so there is nothing to perform with.");
+    }
+
     // The strings, as the RC Map holds them now: an SBUS channel that can
     // move, set to Perform a Part, naming one (include/rc_puppet.h).
     RcTriggerBinding slots[RC_TRIGGER_SLOT_COUNT];
@@ -169,13 +177,8 @@ const char* takeArm(const char* seqName, char* refusal, size_t refusalCap) {
     }
 
     // Frames arriving on a receiver a string reads, within the watchdog's
-    // timeout as the builder set it. A droid with no radio fitted, or one
-    // whose receiver the controller does not read, has none.
-    RcInputActiveConfig active = {};
-    configCacheReadActiveRcInput(&active);
-    if (active.mode == RC_INPUT_NOT_FITTED) {
-        return refuse(refusal, refusalCap, "No radio is fitted, so there is nothing to perform with.");
-    }
+    // timeout as the builder set it. A receiver the controller does not read
+    // has none.
     const uint32_t nowMs = millis();
     const uint32_t timeoutMs = configCacheSbusTimeoutMs();
     const bool sbus1Live = onSbus1 && !sbus1Failed && lastSbus1Ms != 0 &&
