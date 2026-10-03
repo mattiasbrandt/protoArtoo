@@ -20,6 +20,7 @@ static constexpr uint8_t AUDIO_CAP_TRACK_COUNT = 0x04;
 static constexpr uint8_t AUDIO_CAP_CURRENT_TRACK = 0x08;
 static constexpr uint8_t AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
 static constexpr uint8_t AUDIO_CAP_CATALOG = 0x20;
+static constexpr uint8_t AUDIO_CAP_MIXES = 0x40;
 static constexpr uint8_t CAPS_DY_SV5W = 0x0F;
 // Read from the product's Component Registry row rather than restated, the same
 // way the driver reads it: a hand-copied 0x1F here is what let the test agree
@@ -124,15 +125,16 @@ void test_capabilities_field_present() {
 
 void test_chirp_capabilities_field() {
     char buf[AUDIO_STATUS_JSON_BUF_SIZE];
-    // 0x3F = all six bits. CATALOG is the sixth, and the word the page reads to
-    // decide which status rows exist at all.
+    // 0x7F = all seven bits. CATALOG is the sixth, and the word the page reads
+    // to decide which status rows exist at all; MIXES is the seventh (#447).
     TEST_ASSERT_EQUAL_UINT8(
         (uint8_t)(AUDIO_CAP_STATUS_QUERY | AUDIO_CAP_DEVICE_TYPE | AUDIO_CAP_TRACK_COUNT |
-                  AUDIO_CAP_CURRENT_TRACK | AUDIO_CAP_QUERY_SAFE_PLAYING | AUDIO_CAP_CATALOG),
+                  AUDIO_CAP_CURRENT_TRACK | AUDIO_CAP_QUERY_SAFE_PLAYING | AUDIO_CAP_CATALOG |
+                  AUDIO_CAP_MIXES),
         CAPS_CHIRP);
     formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, CAPS_CHIRP, true, false, 0x00, 0x03,
                           61, 5);
-    TEST_ASSERT_NOT_NULL(strstr(buf, "\"capabilities\":63"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"capabilities\":127"));
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"driver\":\"CHIRP Audio Trigger\""));
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"device\":\"Flash+SD\""));
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"total_tracks\":61"));

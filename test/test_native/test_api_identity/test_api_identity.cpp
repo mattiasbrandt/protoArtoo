@@ -317,7 +317,7 @@ void test_components_payload_separates_status_from_what_the_image_carries() {
                                 "\"id\":\"chirp\",\"value\":20,\"name\":\"CHIRP Audio Trigger\","
                                 "\"category\":\"sound\",\"protocol\":\"chirp_ascii_uart\","
                                 "\"status\":\"supported\",\"confirmed_on_droid\":true,"
-                                "\"capabilities\":63,\"included\":true,"
+                                "\"capabilities\":127,\"included\":true,"
                                 "\"board_capability\":null}"));
     // The one row that names a Board Capability Gate reports it, so a builder
     // is told which board fact a missing part turns on rather than only that it

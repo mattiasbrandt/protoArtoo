@@ -55,7 +55,7 @@ void test_each_selectable_member_binds_to_its_own_driver() {
     // The operator-facing product name, from the driver's own registry row.
     TEST_ASSERT_EQUAL_STRING("CHIRP Audio Trigger",
                              audioActiveSoundMember().driver->driverName());
-    TEST_ASSERT_EQUAL_UINT8(63, audioActiveSoundMember().driver->capabilities());
+    TEST_ASSERT_EQUAL_UINT8(127, audioActiveSoundMember().driver->capabilities());
 }
 
 // Every selectable Sound row has an instance, and the instance is the one the

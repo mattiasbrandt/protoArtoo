@@ -84,11 +84,12 @@ void test_dfplayer_mini_is_a_row_with_no_driver() {
 
 // Each sound driver returns its own row's capability word, so this is the one
 // place the three numbers are pinned. 0x0F / 0x0D / 0x3F are the values the
-// drivers shipped before the registry owned them (#340).
+// drivers shipped before the registry owned them (#340); CHIRP's became 0x7F
+// when it gained AUDIO_CAP_MIXES (#447).
 void test_sound_rows_declare_the_capability_words_their_drivers_return() {
     TEST_ASSERT_EQUAL_UINT8(0x0F, componentPartCapabilities("dy_sv5w"));
     TEST_ASSERT_EQUAL_UINT8(0x0D, componentPartCapabilities("mp3_trigger"));
-    TEST_ASSERT_EQUAL_UINT8(0x3F, componentPartCapabilities("chirp"));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, componentPartCapabilities("chirp"));
     TEST_ASSERT_EQUAL_UINT8(0x00, componentPartCapabilities("dfplayer_mini"));
     // An id no row declares answers the same as a row declaring nothing.
     TEST_ASSERT_EQUAL_UINT8(0x00, componentPartCapabilities("no_such_product"));

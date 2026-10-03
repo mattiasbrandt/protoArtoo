@@ -34,6 +34,23 @@
 // CHIRP native volume range (0 = silent, 99 = maximum)
 static constexpr uint8_t CHIRP_VOL_MAX = 99;
 
+// The module's default stream count (CHIRP config.h DEFAULT_MAX_STREAMS 3), and
+// this droid's. #MAX_STREAMS can be set 1-10 in CHIRP.INI and no command
+// reports the value, so the stream model and the status query both rest on the
+// default rather than on a discovered configuration.
+static constexpr uint8_t CHIRP_STREAM_COUNT = 3u;
+static constexpr uint8_t CHIRP_NO_STREAM = 0xFFu;
+
+// What the body knows about one of the module's streams (ADR 0054). The rules
+// that write it are the stream model in src/drivers/audio_chirp.cpp.
+enum class ChirpStreamUse : uint8_t {
+    // First, so a zeroed stream is the cautious answer: a stream the body has
+    // not stopped or seen idle may be playing.
+    MaybeVocal = 0,  // a vocal PLAY may have landed here, and may have ended unannounced
+    IdleByProof,     // stopped by the body, or seen idle by an attributed STAT, since its last PLAY
+    Bed,             // the Sound Bed's stream
+};
+
 // What one read window produced. A parser must only ever see Complete: half a
 // NAME line read as a whole one is a track called "genera", and half a
 // "Sounds: 24" is a count of 2 (#397 work item 12).
@@ -57,11 +74,20 @@ class AudioDriverChirp : public AudioDriver {
     void playTrack(uint16_t track) override;
     void playTrackBanked(uint16_t index, uint8_t bank, char page) override;
 
-    // Stop all active streams.
+    // Stop all active streams, the Sound Bed's included.
     void stop() override;
 
-    // Set volume 0-30 (clamped by AudioTask). Scaled to CHIRP 0-99 range.
+    // Set volume 0-30 (clamped by AudioTask) on every stream, the Sound Bed's
+    // included. Scaled to CHIRP 0-99 range.
     void setVolume(uint8_t vol) override;
+
+    // Streams and the Sound Bed (ADR 0054); the rules are the stream model in
+    // src/drivers/audio_chirp.cpp.
+    void stopStream(uint8_t stream) override;
+    void setStreamVolume(uint8_t stream, uint8_t vol) override;
+    void stopVocals() override;
+    bool playBed(uint16_t index, uint8_t bank, char page, uint8_t vol) override;
+    void stopBed() override;
     // The Sound page's Driver row is operator-facing, and bare "CHIRP" also
     // names CHIRP Droid Control, a different product by the same author
     // (CONTEXT.md Flagged Ambiguities, 2026-09-08: always qualify in operator
@@ -100,6 +126,26 @@ class AudioDriverChirp : public AudioDriver {
 
    private:
     AudioSerialIO m_io{};
+
+    // Stream model (ADR 0054). One entry per default stream; sentSeq orders the
+    // PLAYs the body sent, so the smallest among the vocals is the one started
+    // longest ago.
+    struct ChirpStream {
+        ChirpStreamUse use;
+        uint32_t sentSeq;
+    };
+    ChirpStream m_streams[CHIRP_STREAM_COUNT] = {};
+    uint32_t m_sendSeq = 0;
+    // The operator's volume in native units, carried on every vocal PLAY, or
+    // CHIRP_VOL_UNSET before setVolume() has run (the module's own level stands).
+    static constexpr uint8_t CHIRP_VOL_UNSET = 0xFFu;
+    uint8_t m_vocalVolume = CHIRP_VOL_UNSET;
+
+    uint8_t bedStream() const;
+    void makeRoomBesideBed();
+    void noteVocalSent();
+    void readBedClaim();
+    void noteStreamObserved(uint8_t stream, bool playing);
 
     uint16_t m_totalTracks = 0;
     uint8_t m_playState = 0xFF;
