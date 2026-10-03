@@ -476,7 +476,7 @@ static __attribute__((noinline)) const char* takeOpen(TakeReplay* t) {
     uint8_t* b = (uint8_t*)t->buf;
     TakeFileInfo info = {};
     if (!takeStoreReadBegin(takeRun->owner, t->id, 0)) {
-        return "its file is not on the droid";
+        return "its file could not be read";  // gone, or the store's lock timed out
     }
     const char* stop = nullptr;
     if (takeStoreReadOn(b, TAKE_FILE_FIXED_BYTES) != TAKE_FILE_FIXED_BYTES ||
@@ -513,8 +513,10 @@ static __attribute__((noinline)) const char* takeOpen(TakeReplay* t) {
 // Returns why the take cannot play on, or nullptr.
 static __attribute__((noinline)) const char* takeRefill(TakeReplay* t, uint32_t runMs) {
     const size_t at = takeFileHeaderBytes(t->partCount) + (size_t)t->samplesRead * TAKE_SAMPLE_BYTES;
+    // A begin fails on a file that is gone and on the store's lock timing
+    // out alike, so it says only that the file could not be read.
     if (!takeStoreReadBegin(takeRun->owner, t->id, at)) {
-        return "its file is not on the droid";
+        return "its file could not be read";
     }
     const TakeFileInfo info = takeReplayInfo(*t);
     const char* stop = nullptr;
