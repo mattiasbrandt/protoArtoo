@@ -101,6 +101,12 @@ static uint32_t s_unreachable_mask = 0;
 // `limp` is why there is no pulse, read only while `known` is false, so a
 // surface can say "pulses off" and "the estop let go" differently.
 //
+// `moveThrowMs` and `moveEasingPlusOne` are the Gesture's own pace the move in
+// progress was planned with (servoMotionOverride(), both 0 for the Output's
+// own), kept so the second half of a move that had to stop first goes at the
+// pace the first half did (ADR 0049, #442). They sit in the padding after
+// `limp`, so they cost no RAM: the struct is 60 B either way.
+//
 // `release` is the Output Release the last move to ARRIVE owes (ADR 0043,
 // #443): armed by armReleaseOnArrival() at every place a move arrives, and
 // cancelled by endMove(), which everything that starts a move or takes the
@@ -145,6 +151,8 @@ static struct {
     bool moving;
     ServoHoldState hold;
     ServoLimpReason limp;
+    uint8_t moveEasingPlusOne;  // the Gesture's ease for the move in progress, or 0
+    uint16_t moveThrowMs;       // the Gesture's throw for the move in progress, or 0
     ServoReleaseTimer release;  // the Output Release owed since the last arrival
     ServoMotionRamp ramp;
     uint8_t legNo;             // 1..kLegCount while an out-and-back is in progress, else 0
@@ -582,6 +590,8 @@ static void driveOutputTo(uint8_t slot, uint16_t pulseUs, uint16_t throwMs = 0,
         return;
     }
     s_out[slot].moving = true;
+    s_out[slot].moveThrowMs = throwMs;
+    s_out[slot].moveEasingPlusOne = easingPlusOne;
     // Nothing is written until the next frame, but the move already has a
     // target, and that is what a surface shows beside where the output stands.
     publishCommanded(slot);
@@ -660,6 +670,9 @@ static void beginLeg(uint8_t slot, uint8_t leg, uint32_t nowMs, bool wasMoving) 
     const ServoOutputAddress output = servoOutputSlotAddress(slot);
     ServoMotionProfile profile = {};
     configCacheReadServoOutputMotionProfile(output.driver, output.channel, &profile);
+    // A leg goes at the Output's own pace; no Gesture paces an out-and-back.
+    s_out[slot].moveThrowMs = 0;
+    s_out[slot].moveEasingPlusOne = 0;
     if (!planMove(slot, wasMoving, targetUs, profile, nowMs)) {
         // A snap: the leg is over the moment it is written.
         writeOutputPulse(slot, targetUs);
@@ -893,6 +906,11 @@ static bool stepMove(uint8_t slot, uint32_t nowMs) {
     const ServoOutputAddress output = servoOutputSlotAddress(slot);
     ServoMotionProfile profile = {};
     configCacheReadServoOutputMotionProfile(output.driver, output.channel, &profile);
+    // The rest of a move that had to stop goes at the pace its first half did,
+    // a Gesture's own included (ADR 0049); an overshoot's settle is the row's.
+    if (s_out[slot].ramp.restarts) {
+        servoMotionOverride(&profile, s_out[slot].moveThrowMs, s_out[slot].moveEasingPlusOne);
+    }
     s_out[slot].ramp = servoMotionSettleBack(s_out[slot].ramp, profile, nowMs);
     if (s_out[slot].ramp.durationMs == 0) {
         writeOutputPulse(slot, s_out[slot].ramp.toUs);

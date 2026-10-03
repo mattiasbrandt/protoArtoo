@@ -4,7 +4,7 @@
 // Auto-generated from docs/servo-motion.yaml by tools/generate_servo_motion.py
 // DO NOT EDIT MANUALLY
 //
-// Source digest: sha256 6ec80e8471082212aa2f848d72b46505da398dab60fd9f0ab1c969ac7cce5de9
+// Source digest: sha256 af61b6095c761cc5eaeec447f35e8a81887042d1a927c55f7d09934b6f0fbeb9
 //
 // The Servo Output motion model, as ServoTask runs it: the functions below
 // are generated from the same declaration as include/servo_motion_model.h, so
@@ -303,8 +303,10 @@
   // the rest of the move, and a start from rest like any other, so it has the
   // profile's own ease -- an overshoot of its own included.
   //
-  // The profile is the row's, as ServoTask reads it on arrival: a Gesture's
-  // throw or ease shaped the plan that arrived and not this one.
+  // The profile is the caller's. ServoTask passes the row's as it reads it on
+  // arrival, and for the rest after a stop puts back the Gesture's own throw
+  // and ease that the stop was planned with (servoMotionOverride(), ADR 0049),
+  // so the whole move keeps one pace. An overshoot's settle is the row's.
   // -----------------------------------------------------------------------------
   function servoMotionSettleBack(arrived, profile, nowMs) {
     const settle = { ...profile };
@@ -337,7 +339,7 @@
   window.ServoMotion = Object.freeze({
     source: "docs/servo-motion.yaml",
     generator: "tools/generate_servo_motion.py",
-    sourceSha256: "6ec80e8471082212aa2f848d72b46505da398dab60fd9f0ab1c969ac7cce5de9",
+    sourceSha256: "af61b6095c761cc5eaeec447f35e8a81887042d1a927c55f7d09934b6f0fbeb9",
     SERVO_THROW_MS_MIN,
     SEQ_CADENCE_FLOOR_MS,
     ServoEasing: Object.freeze({ SERVO_EASE_NONE, SERVO_EASE_SOFT, SERVO_EASE_OVERSHOOT, SERVO_EASE_COUNT }),
