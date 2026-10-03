@@ -579,7 +579,7 @@ entries:
   executor: robotState.seqStopRequested
 - name: dome.config.stand-down
   display_name: Stand Down Sequence
-  description: The Sequence the Dashboard's Stand Down runs, like DM:RESET. Empty runs DM:RESET, which leaves the pies open.
+  description: The Sequence the Dashboard's Stand Down runs, like DM:CURTAIN. Empty runs DM:RESET, which leaves the pies open.
   domain: dome
   type: config
   marcduino_cmd: null

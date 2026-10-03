@@ -46,7 +46,8 @@ void configCacheReadWifi(WifiConfig* out);
 
 // The narrow reads an RC dispatch makes on Core 1 (src/tasks/rc_input.cpp),
 // each by field so a dispatch copies what it uses rather than a whole
-// ConfigSnapshot (its size is config_store.h's static_assert) onto the real-time task's stack or into a static (#428).
+// ConfigSnapshot (its size is config_store.h's static_assert) onto the
+// real-time task's stack or into a static (#428).
 //
 // configCacheReadRcActionContext: the twelve sound-category ranges an RC
 // action picks a random track from, and the active speed preset, in one

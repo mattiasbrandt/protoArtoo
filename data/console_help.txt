@@ -26,7 +26,7 @@ dome.action.droid-sequence-screams|Screams|SE15. Screams from the body, and the 
 dome.action.droid-sequence-wiggle|Panel Wiggle|SE16. A body wave, and the dome joins in.|sequenceStart|
 dome.api.get-layout|Get Dome Layout|The dome's panel layout, as the body last heard it. Needs the dome on WiFi.|domeLayoutCacheReadChunk|
 dome.action.sequence-stop|Stop Sequence|Stop the dome show that is running. The estop is untouched.|robotState.seqStopRequested|
-dome.config.stand-down|Stand Down Sequence|The Sequence the Dashboard's Stand Down runs, like DM:RESET. Empty runs DM:RESET, which leaves the pies open.|configApply|
+dome.config.stand-down|Stand Down Sequence|The Sequence the Dashboard's Stand Down runs, like DM:CURTAIN. Empty runs DM:RESET, which leaves the pies open.|configApply|
 dome.event.cue-scream|BD:SCREAM|The dome asks for a scream. Plays from the Scream category.|audioQueuePlayCategory|
 dome.event.cue-happy|BD:HAPPY|The dome asks for a happy sound, on every panel open or close.|audioQueuePlayCategory|
 dome.event.cue-overload|BD:OVERLOAD|The dome asks for a sad sound. Plays from the Sad category.|audioQueuePlayCategory|
