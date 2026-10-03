@@ -1089,13 +1089,67 @@ def env_fingerprint() -> str:
     )
 
 
+def c_code_part(line: str) -> str:
+    """The code on one C/C++ line, with its comment dropped.
+
+    The per-line form of tools/operator_copy.py blank_js_comments(): the gate
+    sees one added line at a time, so a line whose first non-space character
+    is `*` is treated as a block-comment body and yields nothing (a `*/` there
+    closes it, and what follows is code again). Outside a string literal a
+    `//` ends the code, and a `/*` is dropped through its `*/` on the same
+    line, or to the end of the line when it does not close there.
+    String-aware, because `"http://x"` is not a comment.
+
+    Not handled: a block comment's middle line that does not begin with `*`.
+    Without the lines above it there is no way to know it is inside a
+    comment, so it still reaches the pattern as code.
+    """
+    stripped = line.lstrip()
+    if stripped.startswith("*"):
+        close = stripped.find("*/")
+        if close < 0:
+            return ""
+        line = stripped[close + 2:]
+    code = []
+    index, end = 0, len(line)
+    while index < end:
+        char = line[index]
+        if char in "'\"":
+            start = index
+            index += 1
+            while index < end and line[index] != char:
+                index += 2 if line[index] == "\\" else 1
+            index += 1
+            code.append(line[start:index])
+            continue
+        if char == "/" and index + 1 < end and line[index + 1] == "/":
+            break
+        if char == "/" and index + 1 < end and line[index + 1] == "*":
+            close = line.find("*/", index + 2)
+            if close < 0:
+                break
+            code.append(" ")
+            index = close + 2
+            continue
+        code.append(char)
+        index += 1
+    return "".join(code)
+
+
+def code_matches(pattern: re.Pattern, line: str) -> bool:
+    # Both callers ask about code, not prose: an `extern` or an `#ifndef
+    # ARDUINO` named in a comment declares nothing and guards nothing, so the
+    # comment is dropped before matching.
+    return bool(pattern.search(c_code_part(line)))
+
+
 def check_added_pattern(
     label: str, base_sha: str, pathspec: list[str], pattern: re.Pattern
 ) -> CheckResult:
     hits = [
         (path, line)
         for path, line in added_lines(base_sha, pathspec)
-        if pattern.search(line)
+        if code_matches(pattern, line)
     ]
     notes = [f"{path}: {line.strip()}" for path, line in hits]
     return CheckResult(label, str(len(hits)), not hits, notes)

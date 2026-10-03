@@ -580,5 +580,24 @@ class WaiverIsVisibleInTheBlock(unittest.TestCase):
         self.assertEqual(notes, [])
 
 
+class ExternCheckReadsCode(unittest.TestCase):
+    """The "new extern in .cpp" check asks about code, not a comment (#459)."""
+
+    def fails(self, line):
+        return slice_verify.code_matches(slice_verify.EXTERN_RE, line)
+
+    def test_extern_in_a_line_comment_passes(self):
+        self.assertFalse(self.fails("int x = 0;  // the seam is an extern in a header"))
+
+    def test_extern_in_a_block_comment_line_passes(self):
+        self.assertFalse(self.fails(" * the seam is an extern in a header"))
+
+    def test_extern_declaration_fails(self):
+        self.assertTrue(self.fails("extern int g_x;"))
+
+    def test_extern_c_passes(self):
+        self.assertFalse(self.fails('extern "C" void f();'))
+
+
 if __name__ == "__main__":
     unittest.main()
