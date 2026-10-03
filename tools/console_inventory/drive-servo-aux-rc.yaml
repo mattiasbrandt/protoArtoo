@@ -879,6 +879,27 @@ rows:
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: SBUS button. Toggles the fifth Output (ARM5 on the Artoo PCB). Queue guarded at rc_dispatcher_helpers.cpp:101.
+- name: servo.action.puppet-part
+  type: action
+  registry_api_path: null
+  registry_cpp_enum: SERVO_ACTION_PUPPET_PART
+  registry_cpp_file: include/rc_mapping.h
+  registry_rc_token: puppet_part
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - sbus
+  registry_marcduino_cmd: null
+  anchor_kind: rc_internal
+  evidence:
+  - include/rc_action_types.h - `SERVO_ACTION_PUPPET_PART`
+  - include/rc_puppet.h - `rcPuppetStep` (pickup, step and rate rule)
+  - src/rc_input_processor.cpp - the puppet stage in `rcInputProcessorTick`
+  - src/tasks/rc_input.cpp - `dispatchPuppetStrings` sends `SERVO_CMD_PUPPET`
+  executor_or_core: servoCmdQueue
+  missing_metadata: []
+  notes: SBUS stick. A puppet string moves the Part its payload names in proportion to the stick (#442). Analog, so neither the REST action test nor the Console runs it.
 - name: servo.status.current
   type: status
   registry_api_path: /api/status

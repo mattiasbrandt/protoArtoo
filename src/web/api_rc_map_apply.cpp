@@ -9,6 +9,7 @@
 #include <ArduinoJson.h>
 #include <string.h>
 
+#include "droid_parts.h"      // droidPartIdIsKnown() - a puppet string's Part
 #include "seq_store_index.h"  // Learned Sequence names accepted for RC binding
 
 namespace {
@@ -165,6 +166,24 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
             return;
         }
 
+        // A puppet string names a Part by catalog id (#442, ADR 0061). One
+        // Part has one string: two sticks on one Part would fight over it.
+        if (entry.action == SERVO_ACTION_PUPPET_PART) {
+            if (!droidPartIdIsKnown(entry.payload)) {
+                setError(result, "a puppet string needs a Part", &entry);
+                return;
+            }
+            for (size_t i = 0; i < count; ++i) {
+                if (entries[i].action == SERVO_ACTION_PUPPET_PART &&
+                    strcmp(entries[i].payload, entry.payload) == 0) {
+                    setError(result, "conflict: a Part on two puppet strings", &entry);
+                    return;
+                }
+            }
+        }
+
+        // One control, one job: a channel is a drive axis, a cue or a puppet
+        // string, never two of them (#442).
         for (size_t i = 0; i < count; ++i) {
             if (entries[i].source == entry.source && entries[i].channel == entry.channel) {
                 setError(result, "conflict: source+channel mapped more than once", &entry);

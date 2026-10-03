@@ -342,7 +342,9 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     // - op_mode     -> rcOpmode
     //
     // All remaining trigger actions fill first-free in this order:
-    // rcSound, rcFree0, rcFree1, rcFree2, rcFree3.
+    // rcSound, rcFree0, rcFree1, rcFree2, rcFree3. A puppet string (#442) is
+    // one of them, so the droid holds at most five strings, shared with every
+    // other cue that has no slot of its own.
     //
     // A Reaction (a droid-condition source, #450) always fills first-free in
     // that same order, whatever its action: a named slot is one action's radio

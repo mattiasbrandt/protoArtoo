@@ -1297,6 +1297,21 @@ static inline __attribute__((always_inline)) void processCommand(const ServoComm
                         targetName(cmd.output, slot), cmd.positionUs);
             break;
 
+        case SERVO_CMD_PUPPET:
+            // A hold outranks a puppet string, and this is the one place that
+            // says so: the dial's hold and a run's are the same ServoHoldState
+            // (include/servo_run.h), so one test covers both. A run only ever
+            // holds a free Output, which no Part - so no string - is on; the
+            // dial is the case this is for. Dropped quietly, like every target
+            // here: a string sends at stick rate, and a line per target would
+            // bury the log.
+            if (slot >= kSlotCount || s_out[slot].hold.held ||
+                cmd.positionUs < SERVO_PULSE_MIN_US || cmd.positionUs > SERVO_PULSE_MAX_US) {
+                return;
+            }
+            driveOutputTo(slot, cmd.positionUs);
+            break;
+
         case SERVO_CMD_NUDGE:
             // No width to validate: the command carries none, and the pair is
             // computed from the pin (include/servo_nudge.h).

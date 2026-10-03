@@ -2427,6 +2427,22 @@ entries:
   safety_critical: false
   requires_web_control: false
   executor: servoCmdQueue
+- name: servo.action.puppet-part
+  display_name: Perform a Part
+  description: 'Move one Part with a stick: push to open it that far. Let go and it closes.'
+  domain: servo
+  type: action
+  marcduino_cmd: null
+  api_path: null
+  sse_event: null
+  cpp_enum: SERVO_ACTION_PUPPET_PART
+  cpp_file: include/rc_mapping.h
+  rc_token: puppet_part
+  sources:
+  - sbus
+  safety_critical: false
+  requires_web_control: false
+  executor: servoCmdQueue
 - name: servo.status.current
   display_name: Servo Status
   description: Where each servo was last told to be.

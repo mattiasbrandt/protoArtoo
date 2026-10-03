@@ -107,6 +107,16 @@ bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t chann
 bool configCacheReadServoOutputCentre(ServoOutputDriver driver, uint8_t channel,
                                       uint16_t* centreUs);
 
+// The Output that drives a Part, and its Endpoint Pair, directional: what a
+// puppet string needs to turn a stick into a width (include/rc_puppet.h). By
+// Part id, because a string names the Part and never an address (ADR 0061),
+// and answered as values for the reason the three above are - RCInputTask's
+// chain is measured too, and a 72 B row on its frame would be paid on every
+// frame a string sends. False when no live row drives the Part - the
+// part-not-assigned case - with the out-params untouched.
+bool configCacheReadPartOutputEnds(const char* part, ServoOutputAddress* output,
+                                   uint16_t* openUs, uint16_t* closeUs);
+
 // The Motion Profile a move is planned from (ADR 0052): the recorded ends in
 // order -- whichever way round the pair was recorded -- how long a full throw
 // takes, how long the move spends getting up to speed, the ease that actually

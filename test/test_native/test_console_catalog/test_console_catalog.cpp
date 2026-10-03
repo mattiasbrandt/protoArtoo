@@ -44,7 +44,7 @@ void test_catalog_lookup_by_name() {
 void test_catalog_count_and_iteration() {
     size_t count = consoleCatalogGetCount();
     TEST_ASSERT_GREATER_THAN(0, count);
-    TEST_ASSERT_EQUAL_INT(204, count);  // Registry has 204 entries (#347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home; #413 retired aux.config.led-pin)
+    TEST_ASSERT_EQUAL_INT(205, count);  // Registry has 205 entries (#347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home, #442 servo.action.puppet-part; #413 retired aux.config.led-pin)
 
     // Verify we can iterate all entries
     size_t count_via_api = 0;
@@ -191,7 +191,7 @@ void test_aliases_null_terminated() {
             TEST_ASSERT_GREATER_THAN(0, alias_idx);  // At least one alias before NULL
         }
     }
-    TEST_ASSERT_EQUAL_INT(38, aliases_count);  // Exactly 38 rc_token entries
+    TEST_ASSERT_EQUAL_INT(39, aliases_count);  // Exactly 39 rc_token entries
 }
 
 // =============================================================================

@@ -207,6 +207,86 @@ static void buildRcProcessorConfig(const RcInputActiveConfig& active, RcProcesso
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
+// A string lets go after the SBUS watchdog's own timeout, restated in
+// include/rc_puppet.h so that header stays free of the board config.
+static_assert(RC_PUPPET_GAP_MS == SBUS_TIMEOUT_MS,
+              "a puppet string's gap is the SBUS watchdog's timeout");
+
+// servoCmdQueue places a puppet string never takes: a cue pressed in the same
+// frame as several strings move, and a sequence's moves, always find room. The
+// queue holds 8 (src/main.cpp) and ServoTask empties it every 20 ms frame; the
+// RC Map holds at most five strings (they share the five spill slots,
+// assignRcMapEntryToSnapshot()), each sending at most once a frame
+// (RC_PUPPET_MIN_INTERVAL_MS), so strings alone could fill five of the eight.
+// A target turned away here is not recorded as sent, so it goes on the next
+// frame. The estop's release never rides this queue: ServoTask lets every
+// Output go on the halt edge itself.
+static constexpr UBaseType_t kPuppetQueueReserve = 4;
+
+// -----------------------------------------------------------------------------
+// dispatchPuppetStrings()
+// Each puppet string that asked for a target this frame (#442): its Part is
+// resolved to the Output that drives it NOW, from the live rows - a string
+// names the Part, so wiring the Part, or moving it to another Output, takes
+// the string with it - and the stick's share of the throw becomes a width
+// between that Output's own close and open ends. ServoTask clamps it to the
+// component's band and moves there at the Output's Motion Profile; nothing here
+// ramps (SERVO_CMD_PUPPET).
+//
+// A Part nothing drives, or one on an Output this image cannot drive, is said
+// once, on the string's first target after it takes the Part, and the target
+// is counted as handled so the string asks again only when the stick moves on.
+//
+// Out of line, so its frame is not folded into dispatchProcessorOutput()'s on
+// RCInputTask's measured chain.
+// -----------------------------------------------------------------------------
+static void __attribute__((noinline)) dispatchPuppetStrings(const RcProcessorOutput& output,
+                                                           const RcTriggerBinding* triggers) {
+    const uint32_t nowMs = millis();
+    for (size_t i = 0; i < RC_TRIGGER_MAX; ++i) {
+        const RcPuppetAsk ask = output.puppet[i];
+        if (!ask.send) {
+            continue;
+        }
+        RcPuppetState& state = s_rcProcessor.puppetStates[i];
+        const char* part = triggers[i].marcduinoPayload;
+
+        ServoOutputAddress address = SERVO_OUTPUT_NONE;
+        uint16_t openUs = 0;
+        uint16_t closeUs = 0;
+        if (!configCacheReadPartOutputEnds(part, &address, &openUs, &closeUs) ||
+            servoOutputSlotOf(address) == SERVO_OUTPUT_SLOT_NONE) {
+            if (!state.sent) {
+                PA_LOG_INFO(TAG, "string on %s CH%u: %s not moved - nothing here drives it",
+                            rcBindingSourceToLabel(triggers[i].source),
+                            (unsigned)triggers[i].channel, part);
+            }
+            rcPuppetSent(&state, ask.permille, nowMs);
+            continue;
+        }
+
+        const uint16_t targetUs = rcPuppetTargetUs(openUs, closeUs, ask.permille);
+        const ServoCommandedPosition at = servoCommandedOf(address);
+        if (!rcPuppetMayRetarget(at.nowUs, at.targetUs, at.moving, targetUs)) {
+            continue;
+        }
+        if (uxQueueSpacesAvailable(servoCmdQueue) <= kPuppetQueueReserve) {
+            continue;
+        }
+
+        ServoCommand cmd = {};
+        cmd.output = address;
+        cmd.type = SERVO_CMD_PUPPET;
+        cmd.positionUs = targetUs;
+        cmd.source = SRC_SBUS;
+        if (xQueueSend(servoCmdQueue, &cmd, 0) == pdTRUE) {
+            rcPuppetSent(&state, ask.permille, nowMs);
+        } else {
+            logQueueDrop(QUEUE_SERVO_CMD, "puppet string");
+        }
+    }
+}
+
 static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMappingConfig& mapping,
                                      const RcTriggerBinding* triggers) {
     // Backbone: drive
@@ -244,6 +324,9 @@ static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMap
 
     // Tier 2 trigger results
     rcDispatchTriggerResults(output, triggers);
+
+    // Puppet strings last, so a cue pressed this frame has the queue first
+    dispatchPuppetStrings(output, triggers);
 }
 
 static constexpr uint32_t kOneShotEdgeDebounceMs = 120;

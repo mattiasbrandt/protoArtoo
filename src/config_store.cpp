@@ -456,6 +456,32 @@ bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t chann
     return found;
 }
 
+// The Output that drives a Part and its Endpoint Pair, for a puppet string
+// (#442). The rows are walked in place under the lock, so the caller's frame
+// carries four values rather than a row; a Part is driven by at most one Output
+// (servoOutputTableEnforcePartOwnership()), so the first row that claims it is
+// the only one. False, with the out-params untouched, when none does.
+bool configCacheReadPartOutputEnds(const char* part, ServoOutputAddress* output,
+                                   uint16_t* openUs, uint16_t* closeUs) {
+    if (part == nullptr || output == nullptr || openUs == nullptr || closeUs == nullptr) {
+        return false;
+    }
+    bool found = false;
+    taskENTER_CRITICAL(&configCacheMux);
+    for (uint8_t i = 0; i < servoOutputCache.count && i < SERVO_OUTPUT_ROW_MAX; ++i) {
+        const ServoOutputRow& row = servoOutputCache.rows[i];
+        if (servoOutputDrivesPart(row, part)) {
+            *output = {row.driver, row.channel};
+            *openUs = row.open_us;
+            *closeUs = row.close_us;
+            found = true;
+            break;
+        }
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return found;
+}
+
 // The centre recorded for the Output addressed there: where a Find by Moving
 // run puts a free Output before it nudges it (#411). One number, for the same
 // reason as the pair above. False, with *centreUs untouched, when no live row
