@@ -1115,6 +1115,13 @@
   // What the selected source may be bound to. A radio channel: everything. A
   // droid condition: no axis, and not the three a Reaction may not do.
   const actionAllowedOnSelected = (item) => {
+    // A puppet string moves only from an SBUS stick channel: PWM input runs no
+    // string, and CH17/CH18 are on/off (rcPuppetChannelCanMove()).
+    if (item.token === 'puppet_part') {
+      const { source, channel } = parseChannelKey(selectedChannel);
+      return getEditorMode() !== 'standard_pwm' && (source === 'sbus1' || source === 'sbus2')
+        && channel >= 1 && channel <= 16;
+    }
     if (!droidConditionFor(selectedChannel)) return true;
     return !ANALOG_ACTION_TOKENS.has(item.token) && !REACTION_BLOCKED_TOKENS.has(item.token);
   };

@@ -50,6 +50,18 @@
 #include "droid_parts.h"       // DROID_PART_ID_MAX_LEN
 #include "rc_action_types.h"   // RcTriggerBinding, applyRcTriggerCalibration()
 
+// Whether a string on this (source, channel) can ever move its Part: an SBUS
+// channel with an analog reading. PWM input runs no trigger slot at all (its
+// dispatch clears the trigger count), and SBUS CH17/CH18 are on/off flags that
+// applyRcAnalogCalibration() reads as 0 (rcBindingSupportsAnalog()). POST
+// /api/rc/map refuses a string anywhere else rather than store one that sits
+// still.
+inline bool rcPuppetChannelCanMove(RcBindingSource source, uint8_t channel) {
+    const RcBindingConfig binding = makeRcBindingConfig(source, channel, 0, 0, 0, 0, false);
+    return (source == RC_BINDING_SBUS1 || source == RC_BINDING_SBUS2) &&
+           rcBindingSupportsAnalog(binding);
+}
+
 // One full throw, in the unit a string reasons in: 0 is the close end, 1000 the
 // open end. Integral, so two frames that read the same stick compare equal.
 constexpr uint16_t RC_PUPPET_FULL_PERMILLE = 1000;

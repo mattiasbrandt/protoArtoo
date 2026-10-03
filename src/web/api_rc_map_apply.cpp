@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "droid_parts.h"      // droidPartIdIsKnown() - a puppet string's Part
+#include "rc_puppet.h"        // rcPuppetChannelCanMove()
 #include "seq_store_index.h"  // Learned Sequence names accepted for RC binding
 
 namespace {
@@ -171,6 +172,10 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
         if (entry.action == SERVO_ACTION_PUPPET_PART) {
             if (!droidPartIdIsKnown(entry.payload)) {
                 setError(result, "a puppet string needs a Part", &entry);
+                return;
+            }
+            if (!rcPuppetChannelCanMove(entry.source, entry.channel)) {
+                setError(result, "a puppet string needs an SBUS stick channel (CH1-CH16)", &entry);
                 return;
             }
             for (size_t i = 0; i < count; ++i) {
