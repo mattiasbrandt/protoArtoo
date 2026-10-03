@@ -407,9 +407,10 @@ static_assert(SEQ_FLUTTER_PARTS_MAX >= SEQ_GESTURE_MEMBERS_MAX,
 // -----------------------------------------------------------------------------
 static TakeReplayRun* takeRun = nullptr;
 
-// servoCmdQueue places a take leaves for everyone else: a step's move, a cue
-// and a puppet string always find room (rc_input.cpp keeps the same four for a
-// string). A target turned away is still owed, so it goes on the next tick.
+// servoCmdQueue places a take leaves free: a step's move and a cue always find
+// one of the last four. A puppet string stops at the same four
+// (rc_input.cpp's kPuppetQueueReserve), so strings and takes share what is
+// above them. A target turned away is still owed, so it goes on the next tick.
 static constexpr UBaseType_t kTakeQueueReserve = 4;
 
 static __attribute__((noinline)) void takesStepMoved(const char* partId) {
