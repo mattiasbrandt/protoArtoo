@@ -699,12 +699,9 @@
     return `${label} · ${entry.payload}`;
   };
 
-  const sourceLabel = (source) => {
-    if (source === "pwm") return "PWM";
-    if (source === "sbus1") return "SBUS#1";
-    if (source === "sbus2") return "SBUS#2";
-    return "Unknown";
-  };
+  // An RC Channel's words are the one table's (data/web_api.js), so this page
+  // and the Dashboard's Sequences say a channel the same way (#451).
+  const sourceLabel = (source) => window.PAApi.rcSourceLabel(source);
 
   const MODE_LABEL = {
     standard_pwm: "Standard PWM",
@@ -720,7 +717,9 @@
     const condition = droidConditionFor(channelKey);
     if (condition) return condition.label;
     const { source, channel } = parseChannelKey(channelKey);
-    return `${sourceLabel(source)} CH ${channel || '—'}`;
+    // Null only for a source that is no RC Channel, which a key here never
+    // names once the droid conditions above have answered.
+    return window.PAApi.rcChannelTitle(source, channel) || sourceLabel(source);
   };
 
   // What the droid last said about the Reaction on a condition (the
