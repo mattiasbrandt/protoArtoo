@@ -3,6 +3,10 @@
 Status: accepted (2026-09-08, issue #326). Describes the **target** model.
 Nothing in it ships today.
 
+**Renamed 2026-10-03 (operator, #447):** the **Sound Bed** of this record is now
+the **Background Track** (`CONTEXT.md`). The text below keeps the word it was
+decided in.
+
 ## Context
 
 Sound is the most-fired thing on a droid and the one an operator reaches for in
