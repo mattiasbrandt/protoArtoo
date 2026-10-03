@@ -4738,6 +4738,7 @@
       "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
+      "/dome_bearing.js": "where the dome points",
       "/seq_protocol_check.js": "sequence protocol",
       "/servo_motion.js": "servo motion model",
       "/seq_rehearsal.js": "sequence rehearsal",
