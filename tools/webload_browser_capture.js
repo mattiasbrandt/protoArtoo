@@ -3,7 +3,7 @@
 
 // Browser-side evidence collector for GitHub issue #66.
 //
-// Adapted from tools/issue65_browser_capture.js for a single baseline run against
+// Adapted from #65's browser capture (removed in #466) for a single baseline run against
 // data/index.html (the untouched operator portal) instead of the #65 wifi.html A/B
 // matrix. Same discipline: one visible Chromium navigation, records what the browser
 // actually observes, never retries/reloads/opens another tab/polls a controller API
@@ -26,7 +26,6 @@
 const fs = require("fs");
 const path = require("path");
 const { performance } = require("perf_hooks");
-const { chromium } = require("playwright");
 const { DEFAULT_PAGE, PAGE_PROFILES, pageNames, resolveProfile, describeProfile } =
   require("./webload_page_profiles.js");
 
@@ -405,6 +404,11 @@ function classifySse(attempts, domState) {
 }
 
 async function runCapture(config) {
+  // Required here, not at the top: the verdict exports below are pure, and
+  // test/test_tools/test_webload_capture_verdict.js loads this module on hosts
+  // that have no Playwright install. A capture still needs it before anything
+  // is written, and main() reports the missing module like any other error.
+  const { chromium } = require("playwright");
   const origin = performance.now();
   const startedAt = wallNow();
   const artifacts = {

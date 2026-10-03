@@ -4,11 +4,11 @@
 Unlike issue #65's 5-run A/B matrix (separate /tmp worktrees per historical
 commit, role-locked build identity, B2 gating), issue #66 runs ONE baseline
 capture against the current branch tip in-place. This script is deliberately
-smaller than tools/issue65_live_ab_runtime.py for that reason, but reuses that
-module's already-hardened, issue-agnostic primitives (durable NDJSON/atomic
-JSON writers, StopArbiter, serial line classification, cooldown/outcome
-classification, bounded subprocess logging, artifact identity capture) rather
-than re-deriving them.
+smaller than #65's A/B runtime (removed in #466) for that reason, but reuses
+the already-hardened, issue-agnostic primitives that came out of it, now in
+tools/live_run_runtime.py (durable NDJSON/atomic JSON writers, StopArbiter,
+serial line classification, cooldown/outcome classification, bounded
+subprocess logging, artifact identity capture) rather than re-deriving them.
 
 Stages (see --stage): preflight -> identity -> build (conditional) -> full
 (power-cycle/sampling/browser-capture/cooldown/outcome/retry — added once the
@@ -52,9 +52,11 @@ import sys
 import threading
 import time
 from typing import Any
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import issue65_live_ab_runtime as r65  # noqa: E402  (reused, hardened primitives)
+import live_run_runtime as live  # noqa: E402  (reused, hardened primitives)
 
 # Where this harness came from, which is not the same question as which ticket a
 # given run belongs to. Conflating them wrote "issue": 66 into the ADR 0017
@@ -374,9 +376,9 @@ def run_identity_check(args: argparse.Namespace) -> dict[str, Any]:
     head_sha = resolve_expected_short_sha(getattr(args, "expect_firmware", None))
     origin = f"http://{args.controller}"
     try:
-        status = r65._http_json(f"{origin}/api/status", timeout_seconds=3.0)
-        identity = r65._http_json(f"{origin}/api/identity", timeout_seconds=3.0)
-    except r65.Issue65RuntimeError as error:
+        status = live._http_json(f"{origin}/api/status", timeout_seconds=3.0)
+        identity = live._http_json(f"{origin}/api/identity", timeout_seconds=3.0)
+    except live.LiveRunError as error:
         return {
             "schemaVersion": 1,
             "issue": RUN_ISSUE, "harnessOriginIssue": HARNESS_ORIGIN_ISSUE,
@@ -418,8 +420,8 @@ def _restore_generated_versions() -> None:
     first write leaves the tree "dirty" for its second pio invocation
     (uploadfs), poisoning that run's identity string with a spurious
     "-dirty" suffix — reproduced live on 2026-08-04 (issue #66 run-1) before
-    this restore was added. Mirrors tools/issue65_live_ab.py's
-    generatedVersionRestoreBeforeEveryPio discipline.
+    this restore was added. Mirrors the generatedVersionRestoreBeforeEveryPio
+    discipline of #65's A/B planner (removed in #466).
     """
     subprocess.run(
         ["git", "-C", str(REPO_ROOT), "restore", "--", *VERSION_FILES],
@@ -436,20 +438,20 @@ def run_build(args: argparse.Namespace, evidence_dir: Path) -> dict[str, Any]:
     from it only in its factory-default sound module); pass --build-env to
     target a different env,
     e.g. artoo_esp32_psychic_closeconn for an ADR 0023 control-arm run."""
-    timeline = r65.Timeline.start()
+    timeline = live.Timeline.start()
     events: list[dict[str, object]] = []
     ota_env = f"{args.build_env}_ota"
 
     _restore_generated_versions()
     build_log = evidence_dir / "build.log"
-    r65.run_logged(
+    live.run_logged(
         ["pio", "run", "--project-dir", str(REPO_ROOT), "-e", ota_env],
         cwd=REPO_ROOT, timeout_seconds=600, artifact=build_log,
         timeline=timeline, events=events, event="build",
     )
 
     upload_log = evidence_dir / "firmware-upload.log"
-    r65.run_logged(
+    live.run_logged(
         [
             "python3", str(REPO_ROOT / "tools" / "ota_upload.py"),
             "--env", ota_env, "--host", args.controller,
@@ -462,7 +464,7 @@ def run_build(args: argparse.Namespace, evidence_dir: Path) -> dict[str, Any]:
 
     _restore_generated_versions()
     uploadfs_log = evidence_dir / "uploadfs.log"
-    r65.run_logged(
+    live.run_logged(
         [
             "pio", "run", "--project-dir", str(REPO_ROOT), "-e", ota_env,
             "-t", "uploadfs", "--upload-port", args.controller,
@@ -473,13 +475,13 @@ def run_build(args: argparse.Namespace, evidence_dir: Path) -> dict[str, Any]:
 
     identity_dir = evidence_dir / "identity"
     identity_dir.mkdir(parents=True, exist_ok=True)
-    firmware_identity = r65.capture_artifact_identity(
+    firmware_identity = live.capture_artifact_identity(
         REPO_ROOT / "data" / "fw-version.json",
         REPO_ROOT / ".pio" / "build" / ota_env / "firmware.bin",
         identity_dir / "fw-version.json",
         identity_dir / "firmware.sha256",
     )
-    filesystem_identity = r65.capture_artifact_identity(
+    filesystem_identity = live.capture_artifact_identity(
         REPO_ROOT / "data" / "fs-version.json",
         REPO_ROOT / ".pio" / "build" / ota_env / "littlefs.bin",
         identity_dir / "fs-version.json",
@@ -519,13 +521,13 @@ SERIAL_KEEP_RE = re.compile(
 @dataclass
 class Bundle:
     """Minimal duck-typed evidence bundle: just .root/.timeline/.events, which
-    is all r65.MonitorLoop and ScopedSerialWatcher touch. Deliberately not
-    r65.EvidenceBundle -- that class's manifest/outcome schema is built around
-    #65's A/B failedAllocationEvidence authorization contract, which #66 has
-    no equivalent of."""
+    is all live.MonitorLoop and ScopedSerialWatcher touch. Deliberately not
+    #65's EvidenceBundle (removed in #466) -- that class's manifest/outcome
+    schema is built around #65's A/B failedAllocationEvidence authorization
+    contract, which #66 has no equivalent of."""
 
     root: Path
-    timeline: "r65.Timeline"
+    timeline: "live.Timeline"
     events: list = field(default_factory=list)
     _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     _manifest: dict = field(default_factory=dict, repr=False)
@@ -548,20 +550,20 @@ class Bundle:
                 "harnessOriginIssue": HARNESS_ORIGIN_ISSUE,
                 **self._manifest,
             }
-            r65.atomic_write_json(self.root / "manifest.json", payload)
+            live.atomic_write_json(self.root / "manifest.json", payload)
 
     def record_failed_allocation(
         self, *, phase: str, raw_line: str, record: dict[str, object],
     ) -> None:
         with self._lock:
-            r65.append_ndjson(
+            live.append_ndjson(
                 self.root / "allocation-failures.ndjson", self.timeline,
                 "allocation-failure", phase=phase, rawLine=raw_line,
                 sourceWallTime=record.get("wallTime"),
             )
 
 
-class ScopedSerialWatcher(r65.SerialWatcher):
+class ScopedSerialWatcher(live.SerialWatcher):
     """Reconnect-safe capture identical to #65's SerialWatcher, but serial.log
     is de-scoped to boot banner / reset-reason / panic / coredump lines only.
     Stop-reason classification still runs on every observed line -- only the
@@ -573,8 +575,8 @@ class ScopedSerialWatcher(r65.SerialWatcher):
         )
         if SERIAL_KEEP_RE.search(line):
             text = f"{record['wallTime']} {record['elapsedMonotonicSeconds']:.6f} {line}\n"
-            r65._append_bytes_durable(self.bundle.root / "serial.log", text.encode("utf-8"))
-        stop_reason = r65.classify_serial_line(line)
+            live._append_bytes_durable(self.bundle.root / "serial.log", text.encode("utf-8"))
+        stop_reason = live.classify_serial_line(line)
         if stop_reason == "positive allocation-failure evidence":
             observation_phase = {"browser": "load", "cooldown": "cooldown"}.get(
                 self.phase(), "pre-load",
@@ -654,7 +656,7 @@ class LogsMonitor:
             )
             success = True
             error = None
-        except r65.Issue65RuntimeError as request_error:
+        except live.LiveRunError as request_error:
             body = None
             success = False
             error = str(request_error)
@@ -665,7 +667,7 @@ class LogsMonitor:
             new_lines = self._diff(current_lines)
             self._previous_lines = current_lines
 
-        r65.append_ndjson(
+        live.append_ndjson(
             self.bundle.root / "logs.ndjson", self.bundle.timeline, "logs-sample",
             phase=self.phase(), success=success, error=error,
             newLineCount=len(new_lines), newLines=new_lines,
@@ -675,7 +677,7 @@ class LogsMonitor:
             self._first_sample_done = True
             if not success and error is not None and "HTTP Error 404" in error:
                 self._supported = False
-                r65.append_ndjson(
+                live.append_ndjson(
                     self.bundle.root / "logs.ndjson", self.bundle.timeline,
                     "logs-endpoint-not-supported",
                     detail=(
@@ -704,28 +706,28 @@ class LogsMonitor:
 
 def _http_text(url: str, timeout_seconds: float) -> str:
     """GET a plain-text endpoint. /api/logs returns text/plain, not JSON
-    (src/web/api_status.cpp:119-127), so r65._http_json doesn't fit."""
-    request = r65.urllib_request.Request(
+    (src/web/api_status.cpp:119-127), so live._http_json doesn't fit."""
+    request = urllib_request.Request(
         url, headers={"Cache-Control": "no-cache"}, method="GET",
     )
     try:
-        with r65.urllib_request.urlopen(request, timeout=timeout_seconds) as response:
+        with urllib_request.urlopen(request, timeout=timeout_seconds) as response:
             if response.status != 200:
-                raise r65.Issue65RuntimeError(f"{url} returned HTTP {response.status}")
+                raise live.LiveRunError(f"{url} returned HTTP {response.status}")
             return response.read().decode("utf-8", errors="replace")
-    except (r65.urllib_error.URLError, TimeoutError, OSError) as error:
-        raise r65.Issue65RuntimeError(f"{url} is unreachable: {error}") from error
+    except (urllib_error.URLError, TimeoutError, OSError) as error:
+        raise live.LiveRunError(f"{url} is unreachable: {error}") from error
 
 
 def _try_api_reboot(controller: str) -> bool:
     """--dev-reboot only. POST /api/reboot; True if the request was accepted."""
     try:
-        request = r65.urllib_request.Request(
+        request = urllib_request.Request(
             f"http://{controller}/api/reboot", method="POST",
         )
-        with r65.urllib_request.urlopen(request, timeout=3.0) as response:
+        with urllib_request.urlopen(request, timeout=3.0) as response:
             return response.status == 200
-    except (r65.urllib_error.URLError, TimeoutError, OSError):
+    except (urllib_error.URLError, TimeoutError, OSError):
         return False
 
 
@@ -925,7 +927,7 @@ def _multitab_plan(
 def _wait_for_event(
     event: threading.Event,
     timeout_seconds: float,
-    arbiter: "r65.StopArbiter",
+    arbiter: "live.StopArbiter",
     waiting_for: str,
 ) -> bool:
     """Wait on a serial event, printing progress so an unattended run is legible."""
@@ -949,7 +951,7 @@ def _wait_for_event(
 
 def _await_physical_power_cycle(
     serial: "ScopedSerialWatcher",
-    arbiter: "r65.StopArbiter",
+    arbiter: "live.StopArbiter",
     run_id: str,
     wait_seconds: float,
     banner: str,
@@ -1012,13 +1014,13 @@ def _attempt_power_cycle_recovery(
     next_notice = time.monotonic() + CYCLE_PROGRESS_INTERVAL_SECONDS
     while time.monotonic() < deadline:
         try:
-            status = r65._http_json(
-                f"http://{controller}/api/status", r65.STATUS_DEADLINE_SECONDS,
+            status = live._http_json(
+                f"http://{controller}/api/status", live.STATUS_DEADLINE_SECONDS,
             )
             success, error = True, None
-        except r65.Issue65RuntimeError as request_error:
+        except live.LiveRunError as request_error:
             status, success, error = None, False, str(request_error)
-        r65.append_ndjson(
+        live.append_ndjson(
             bundle.root / "recovery-status.ndjson", bundle.timeline,
             "recovery-status-sample", success=success, error=error, status=status,
         )
@@ -1045,7 +1047,7 @@ def _capture_named(captures: list[dict[str, Any]], name: str) -> dict[str, Any] 
 
 def _finalize(
     bundle: Bundle,
-    arbiter: "r65.StopArbiter",
+    arbiter: "live.StopArbiter",
     run_id: str,
     primary: str,
     status_reachable: bool,
@@ -1088,7 +1090,7 @@ def _finalize(
         "captures": captures,
         "statusReachableAtEnd": status_reachable,
     }
-    r65.atomic_write_json(bundle.root / "outcome.json", outcome)
+    live.atomic_write_json(bundle.root / "outcome.json", outcome)
     bundle.write_manifest(
         runId=run_id, status="COMPLETE", stage="complete", primaryOutcome=primary,
     )
@@ -1121,8 +1123,8 @@ def _run_capture_phase(
     ownership_deadline_seconds: float,
     run_id: str,
     bundle: Bundle,
-    monitor: "r65.MonitorLoop",
-    arbiter: "r65.StopArbiter",
+    monitor: "live.MonitorLoop",
+    arbiter: "live.StopArbiter",
 ) -> dict[str, Any]:
     """One browser capture phase: pre-load heap baseline -> the load itself ->
     post-load blackout settle -> that capture's own cooldown.
@@ -1134,7 +1136,7 @@ def _run_capture_phase(
     Two details are load-bearing:
 
     - The load runs under the phase string "browser" whichever collector it is.
-      r65.MonitorLoop._sample_status() keys both HTTP Blackout detection and
+      live.MonitorLoop._sample_status() keys both HTTP Blackout detection and
       statusReachable marking off exactly that value, so a distinct phase name
       would silently disable blackout detection for the multi-tab load. Captures
       are told apart by their wall/monotonic brackets and their own evidence
@@ -1166,9 +1168,9 @@ def _run_capture_phase(
     if isinstance(loss_started, float) and not arbiter.stopped:
         remaining = max(
             0.0,
-            r65.HTTP_BLACKOUT_SECONDS - (time.monotonic() - loss_started) + 0.5,
+            live.HTTP_BLACKOUT_SECONDS - (time.monotonic() - loss_started) + 0.5,
         )
-        r65._wait_for(
+        live._wait_for(
             lambda: (
                 arbiter.stopped
                 or monitor.snapshot()["statusLossStartedMonotonic"] is None
@@ -1182,12 +1184,12 @@ def _run_capture_phase(
         # appends while phase == "cooldown", so nothing can land in between.
         cooldown_offset = len(monitor.snapshot()["cooldownSamples"])
         monitor.set_phase("cooldown")
-        cooldown_deadline = time.monotonic() + r65.COOLDOWN_SECONDS
+        cooldown_deadline = time.monotonic() + live.COOLDOWN_SECONDS
         while time.monotonic() < cooldown_deadline and not arbiter.stopped:
             time.sleep(min(0.25, cooldown_deadline - time.monotonic()))
         cooldown_samples = monitor.snapshot()["cooldownSamples"]
         if isinstance(cooldown_samples, list):
-            cooldown = r65.evaluate_cooldown(
+            cooldown = live.evaluate_cooldown(
                 cooldown_samples[cooldown_offset:], baseline_heap,
             )
 
@@ -1200,8 +1202,8 @@ def _run_capture_phase(
 def run_full(args: argparse.Namespace) -> dict[str, Any]:
     """Power-cycle -> serial/ping/status/logs sampling -> 90s settle -> single
     browser capture -> cooldown -> multi-tab browser capture ->
-    cooldown -> outcome classification. Mirrors
-    tools/issue65_live_ab_runtime.py's execute_run() control flow (that
+    cooldown -> outcome classification. Mirrors the execute_run() control
+    flow of #65's A/B runtime, removed in #466 (that
     sequencing was hardened across #65's own iteration) adapted for one
     in-place run instead of a role-locked worktree deployment.
 
@@ -1210,16 +1212,16 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
     stays identical to bundles captured before multi-tab was part of the
     sequence and the two remain comparable."""
     evidence_dir = EVIDENCE_ROOT / args.run_id
-    r65.create_evidence_root(evidence_dir)
+    live.create_evidence_root(evidence_dir)
     (evidence_dir / "identity").mkdir(exist_ok=True)
-    timeline = r65.Timeline.start()
+    timeline = live.Timeline.start()
     bundle = Bundle(root=evidence_dir, timeline=timeline)
     tip_commit = git_head()
     expected_short_sha = resolve_expected_short_sha(args.expect_firmware)
     page = resolve_page_profile(args.page)
 
-    arbiter = r65.StopArbiter(evidence_dir / "control.json", timeline, bundle.events)
-    monitor = r65.MonitorLoop(args.controller, bundle, arbiter)
+    arbiter = live.StopArbiter(evidence_dir / "control.json", timeline, bundle.events)
+    monitor = live.MonitorLoop(args.controller, bundle, arbiter)
     serial = ScopedSerialWatcher(
         Path(args.serial_port), bundle, arbiter, lambda: monitor.phase,
     )
@@ -1255,7 +1257,7 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
         serial.start(); serial_started = True
         monitor.start(); monitor_started = True
         logs_monitor.start(); logs_started = True
-        if not r65._wait_for(lambda: serial.connected.is_set(), 5.0):
+        if not live._wait_for(lambda: serial.connected.is_set(), 5.0):
             raise BaselineRunError(f"serial watcher could not attach to {args.serial_port}")
 
         if args.dev_reboot:
@@ -1317,7 +1319,7 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
                 ),
                 POST_CYCLE_STATUS_SECONDS,
             )
-        except r65.Issue65RuntimeError:
+        except live.LiveRunError:
             if arbiter.stopped:
                 return _finalize(
                     bundle, arbiter, args.run_id, "UNKNOWN", False, [],
@@ -1377,7 +1379,7 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
         last_success = snapshot["latestStatusSuccessMonotonic"]
         status_reachable = (
             isinstance(last_success, float)
-            and time.monotonic() - last_success <= r65.STATUS_INTERVAL_SECONDS + 2.0
+            and time.monotonic() - last_success <= live.STATUS_INTERVAL_SECONDS + 2.0
         )
         # Each capture is classified with the same classifier, so a multi-tab
         # verdict reads in the same vocabulary as the single-tab one. The run's
@@ -1385,13 +1387,13 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
         # bundles in this epic are compared on, and widening it here would make
         # this run incomparable to them.
         for capture in captures:
-            capture["outcome"] = r65.classify_primary_outcome(
+            capture["outcome"] = live.classify_primary_outcome(
                 arbiter.reason, capture.get("state"), status_reachable,
             )
         single_tab = _capture_named(captures, "single-tab")
         primary = (
             single_tab["outcome"] if single_tab
-            else r65.classify_primary_outcome(arbiter.reason, None, status_reachable)
+            else live.classify_primary_outcome(arbiter.reason, None, status_reachable)
         )
         recovery_facts: list[str] = []
         if arbiter.reason == "HTTP Blackout":
@@ -1473,7 +1475,7 @@ def main(argv: list[str]) -> int:
             report = run_full(args)
         else:
             raise BaselineRunError(f"unknown stage: {args.stage}")
-    except (BaselineRunError, r65.Issue65RuntimeError) as error:
+    except (BaselineRunError, live.LiveRunError) as error:
         sys.stderr.write(f"ERROR: {error}\n")
         return 1
     sys.stdout.write(f"{json.dumps(report, indent=2)}\n")

@@ -14,7 +14,7 @@ that socket blocks (ESPAsyncWebServer) or retries in a blocking loop
 
 Meanwhile a second, independent connection polls /api/status on a fixed
 cadence so heap/sseClients/uptimeMs are observable throughout the stall
-without touching the stalled socket. Reuses tools/issue65_live_ab_runtime.py's
+without touching the stalled socket. Reuses tools/live_run_runtime.py's
 already-hardened Timeline/NDJSON/atomic-JSON primitives rather than
 re-deriving them, per this repo's established webload_* convention.
 
@@ -34,7 +34,7 @@ import time
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import issue65_live_ab_runtime as r65  # noqa: E402  (reused, hardened primitives)
+import live_run_runtime as live  # noqa: E402  (reused, hardened primitives)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_ROOT = REPO_ROOT / "tasks" / "evidence" / "webload"
@@ -131,7 +131,7 @@ class HealthyClient:
             target=self._run, name=f"sse-healthy-{index}", daemon=True,
         )
 
-    def connect(self, timeline: r65.Timeline) -> dict[str, Any]:
+    def connect(self, timeline: live.Timeline) -> dict[str, Any]:
         self.socket, record = _open_sse_connection(
             self.controller, self.port, self.path, timeline,
         )
@@ -189,7 +189,7 @@ class HealthyClient:
 
 
 def _open_sse_connection(
-    controller: str, port: int, path: str, timeline: r65.Timeline,
+    controller: str, port: int, path: str, timeline: live.Timeline,
     recv_buffer_bytes: int | None = None,
 ) -> tuple[socket.socket, dict[str, Any]]:
     """Complete the HTTP handshake over a raw socket and confirm the
@@ -273,7 +273,7 @@ class StatusSampler:
     the socket under test. Mirrors webload_baseline_run.py's LogsMonitor
     shape (background thread, durable NDJSON append per sample)."""
 
-    def __init__(self, controller: str, samples_path: Path, timeline: r65.Timeline) -> None:
+    def __init__(self, controller: str, samples_path: Path, timeline: live.Timeline) -> None:
         self.controller = controller
         self.samples_path = samples_path
         self.timeline = timeline
@@ -295,13 +295,13 @@ class StatusSampler:
 
     def _sample(self) -> None:
         try:
-            status = r65._http_json(
+            status = live._http_json(
                 f"http://{self.controller}/api/status", STATUS_REQUEST_DEADLINE_SECONDS,
             )
             success, error = True, None
-        except r65.Issue65RuntimeError as request_error:
+        except live.LiveRunError as request_error:
             status, success, error = None, False, str(request_error)
-        record = r65.append_ndjson(
+        record = live.append_ndjson(
             self.samples_path, self.timeline, "status-sample",
             success=success, error=error,
             heapFree=(status or {}).get("heapFree"),
@@ -424,7 +424,7 @@ def _drain(sock: socket.socket, deadline_seconds: float) -> tuple[int, int, str 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     run_dir = EVIDENCE_ROOT / args.run_id / "sse-stall"
     run_dir.mkdir(parents=True, exist_ok=False)
-    timeline = r65.Timeline.start()
+    timeline = live.Timeline.start()
     events: list[dict[str, Any]] = []
 
     # Healthy clients first, so they are already subscribed and reading before
@@ -517,9 +517,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "reconnect": reconnect_result,
         **summary,
     }
-    r65.atomic_write_json(run_dir / "outcome.json", outcome)
+    live.atomic_write_json(run_dir / "outcome.json", outcome)
     for event in events:
-        r65._append_ndjson_record(run_dir / "events.ndjson", event)
+        live._append_ndjson_record(run_dir / "events.ndjson", event)
     return outcome
 
 
@@ -528,7 +528,7 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     try:
         outcome = run(args)
-    except (SseStallError, r65.Issue65RuntimeError, OSError) as error:
+    except (SseStallError, live.LiveRunError, OSError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
     print(
