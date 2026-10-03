@@ -28,7 +28,6 @@ const SCRIPTS = [
   "status_stream.js",
   "live_reading.js",
   "feature_availability.js",
-  "product_art.js",
   "apply_timing.js",
   "component_picker.js",
   "configuration.js",

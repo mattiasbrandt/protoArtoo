@@ -9024,7 +9024,7 @@ body[data-page="wiring"] .card > .outputs-find:empty {
   stroke-width: 1.5;
 }
 
-/* The board's own picture, the Component Picker's frame (data/product_art.js)
+/* The board's own picture, the Component Picker's frame (data/component_picker.js)
    filling the slot the diagram leaves for it. */
 .wd-board-slot {
   width: 100%;

@@ -286,7 +286,6 @@ const boot = async ({
     "/wiring.js": readData("wiring.js"),
     // The picker's lookup and frame, which name and picture the board.
     "/apply_timing.js": readData("apply_timing.js"),
-    "/product_art.js": readData("product_art.js"),
     "/component_picker.js": readData("component_picker.js"),
     // The list of what does not line up reads the Health Signal readers and
     // the Droid Build (#454).

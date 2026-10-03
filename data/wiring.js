@@ -1423,7 +1423,7 @@
   // The board's picture
   //
   // Found the way the Component Picker finds it, with its own lookup and its
-  // own frame (data/component_picker.js artIdFor, data/product_art.js), and no
+  // own frame (data/component_picker.js artIdFor and PAProductArt), and no
   // board-to-picture map of this surface's. The board's GPIO outputs are a
   // product of their own, "Body controller board GPIO", and #369 settled that
   // it is pictured by whichever Body Controller this image runs on - which is
