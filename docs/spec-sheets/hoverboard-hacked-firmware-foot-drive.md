@@ -456,10 +456,10 @@ inline constexpr DriveBackendProfile kDriveBackend = {
 ```
 
 Four safety invariants are settled **above** this backend and no backend can
-reach them (`include/drive_backend.h:8-15`): the `SPEED_LIMIT_MAX` cap and
+reach them (`include/drive_backend.h:8-17`): the `SPEED_LIMIT_MAX` cap and
 failsafe zeroing in `driveArbiterResolve()`, the latching estop in
 `include/failsafe_gate.h`, and the 50 Hz zero-frame continuity guarantee in
-`driveTickDecide()`. This document does not restate them; it states what the far
+the unconditional `driveBackendSend()` call in `src/tasks/drive.cpp`. This document does not restate them; it states what the far
 end does with what they let through.
 
 ## 4. Sources Checked
@@ -1200,10 +1200,7 @@ unconditionally. Per tick it resolves the arbiter, mirrors the result into
 `RobotState`, feeds the TWDT, and calls:
 
 ```c
-DriveTickActions tickActions = driveTickDecide(tickIn);
-if (tickActions.shouldEmitFrame) {
-    driveBackendSend(driveSerial, tickActions.speed, tickActions.steer);
-}
+driveBackendSend(driveSerial, speed, steer);
 ```
 
 `driveBackendSend()` (`drive_backend_hoverboard.cpp:64-77`) encodes into a
@@ -1409,7 +1406,7 @@ repository has eight remotes and only one of them is this protocol.
 by default but it is exactly what a builder enables when they want wheel
 distance, and every ROS integration guide turns it on.
 
-`parseHoverboardFeedbackFrame()` accepts only 18 and 26. A 22-byte frame fails
+`feedHoverboardFeedbackByte()` accepts only 18 and 26. A 22-byte frame fails
 the 18-byte check, keeps accumulating into the next frame's bytes, fails the
 26-byte check, resets, and repeats forever. The result is not an error: it is
 `driveFeedbackValid` never becoming true and the Drive page showing "Waiting for

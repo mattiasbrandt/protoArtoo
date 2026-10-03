@@ -141,9 +141,6 @@ on 2026-09-10. Prices are USD, all seven were `available: true`:
 - **[`src/tasks/drive.cpp`](../../src/tasks/drive.cpp)** -- the 50 Hz loop, the
   TWDT feed, the speed cap and the zero-frame rule this part must satisfy.
   Lines 153-156 are where a driver seam would be inserted.
-- **[`src/drive_frame_emit.cpp`](../../src/drive_frame_emit.cpp)** -- the pure
-  decision step (`shouldEmitFrame` is unconditionally true); the seam sits just
-  below it.
 - **[`src/drive_arbiter.cpp`](../../src/drive_arbiter.cpp)** and
   **[`include/drive_arbiter.h`](../../include/drive_arbiter.h)** -- `DriveOutput`
   is the contract a driver would receive.

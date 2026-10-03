@@ -763,14 +763,12 @@ DS-650 owns.
   measured here (Open Item 2), so treat 200 ms as a wall-clock safety number
   rather than as a frame count.
 - The timeout check treats **"never received" as timed out**
-  (`include/sbus_math.h:56-62`), so a droid that has never seen a frame is in
+  (`include/sbus_math.h:22-28`), so a droid that has never seen a frame is in
   failsafe, not in limbo.
-- **Boot latches drive off.** `main.cpp:504-509` triggers `SBUS_WATCHDOG` at
+- **Boot latches drive off.** `main.cpp:503-508` triggers `SBUS_WATCHDOG` at
   startup whenever a drive watchdog source exists, so drive is dead until the
-  first valid frame clears it. `bootSbusSafeGuardDecision()` is the pure
-  statement of that rule and `test_failsafe_boot_sbus.cpp` is its whole contract:
-  *"From zeroed state, boot arming path leaves failsafe active before any RC
-  frame is processed."*
+  first valid frame clears it. That inline check is the whole rule; the pure
+  helper that once mirrored it was never called and went in #466.
 - **`ESTOP` is latching** and only an explicit operator action clears it. A
   reconnecting radio never clears an estop.
 
@@ -1008,7 +1006,7 @@ control; `:583` does the same for RC mapping persistence across reboot.
   future if dual-receiver mapping becomes needed."* The live task path routes
   per source and does not go through that constant, but the pure mapper's own
   dual-receiver story is unfinished.
-- **Parity is not validated.** `parityFailCount`, `sbusDecodePopcount8()` and the
+- **Parity is not validated.** `parityFailCount` and the
   whole diagnostic plumbing through to the log line exist; nothing increments
   the counter. Parity gating was tried during T19 and **rejected** -- at 115
   kbaud the bit-run expansion shifts parity positions and every frame fails. It
@@ -1143,8 +1141,8 @@ droid does not drive.
 - `include/rc_binding_types.h`, `src/rc_channel_mapper.cpp`,
   `src/rc_action_types.cpp` -- calibration, mapping and action classification
 - `include/config.h`, `src/config_store.cpp` -- constants and shipped defaults
-- `test/test_native/test_sbus_decode/`, `test_rc_mapping/`,
-  `test_failsafe_boot_sbus/` -- what the behaviour is pinned to
+- `test/test_native/test_sbus_decode/`, `test_rc_mapping/` -- what the
+  behaviour is pinned to
 
 **Normative (primary): vendor documentation**
 
