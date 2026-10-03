@@ -1652,7 +1652,9 @@
     const least = window.SeqTimeline?.MIN_LENGTH_MS ?? 50;
     const startsAt = settingRow("Starts at", numberCell("start", Math.round(block.t0), STEP_LIMITS.t, "Starts at, in milliseconds"));
     if (!facts) {
-      return head(`Take ${block.take + 1}`, "not read")
+      // A file whose read failed - or the droid deleted when it replaced
+      // the take - is one this page cannot read; any other is still coming.
+      return head(`Take ${block.take + 1}`, takeFiles.read.get(entry.id)?.failed ? "cannot be read" : "reading")
         + `<div class="setting-rows seq-picked-rows">${startsAt}</div>`
         + acts();
     }
