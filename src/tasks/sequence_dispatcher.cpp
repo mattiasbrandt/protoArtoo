@@ -514,7 +514,11 @@ static __attribute__((noinline)) void takeSendPart(uint8_t i, uint8_t p, uint32_
     TakeReplay* t = takeReplayAt(takeRun, i);
     const uint8_t part = t->part[p];
     const uint16_t bit = (uint16_t)(1u << p);
-    if (part >= DROID_PART_COUNT || t->cur[p] == TAKE_NO_TARGET) {
+    // A take that is over says nothing more: it still holds its last
+    // targets, and a later take ending would otherwise have it send one
+    // back and jump the Part to where the take left off.
+    if (t->state != TAKE_REPLAY_PLAYING || part >= DROID_PART_COUNT ||
+        t->cur[p] == TAKE_NO_TARGET) {
         return;
     }
     // Asked before the cur == sent test below, on purpose: the earlier take
