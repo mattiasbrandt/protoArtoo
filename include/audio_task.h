@@ -118,10 +118,6 @@ bool audioQueuePlaySlot(AudioPlaybackSlot slot, CommandSource src);
 bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fallbackSlot,
                             CommandSource src);
 
-// Enqueue a stop command. Full stop: also disables random/idle mood. Reserved for
-// the mood system's Quiet path ($s / SE10)  --  do not call from any other surface.
-bool audioQueueStop(CommandSource src);
-
 // Enqueue a Track Stop (ADR 0010): stops current playback only, preserves
 // random/idle mood, and bumps the anti-spam cadence so idle chatter resumes after
 // a natural beat. Use this everywhere except the mood system's Quiet path.

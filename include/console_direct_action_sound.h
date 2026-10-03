@@ -323,13 +323,9 @@ static void consoleExecuteSoundPlayTrackDisco(uint32_t requestId, const char* op
 
 // sound.action.quiet ($s): stop playback and disable random/idle mood until
 // reboot or Random On (ADR 0010). Reached through the SAME dollar-command
-// path handleAudioPost()'s action=dollar branch would use for cmd=$s -
-// audio_task.h's warning that the direct audioQueueStop() queue helper is
-// "Reserved for the mood system's Quiet path ($s / SE10) - do not call from
-// any other surface" is about that typed queue helper specifically, not
-// about reaching the same $s semantics through the dollar-command path,
-// which is the documented, supported way every other caller (web, dome_rx)
-// already reaches it.
+// path handleAudioPost()'s action=dollar branch would use for cmd=$s, which
+// is the documented, supported way every other caller (web, dome_rx) reaches
+// it.
 static void consoleExecuteSoundQuiet(uint32_t requestId, const char* operationName,
                                      const ConsoleArgs& args, ConsoleCommandSource source,
                                      const ConsoleRecordSink* sink) {

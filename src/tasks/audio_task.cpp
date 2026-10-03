@@ -296,32 +296,6 @@ bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fa
     return true;
 }
 
-bool audioQueueStop(CommandSource src) {
-    if (audioOutputInactive()) {
-        return true;
-    }
-    AudioCommand msg{};
-    msg.type = AUDIO_CMD_STOP;
-    msg.source = src;
-    // Noted before the send so a catalog walk cannot miss a stop that lands
-    // between the two. Over-noting costs an interrupted refresh; under-noting
-    // costs the operator a stop that waits out the whole walk.
-    audioCatalogInterruptNoteStop();
-    if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
-        static uint32_t lastWarnMs = 0;
-        uint32_t nowMs = millis();
-        if ((uint32_t)(nowMs - lastWarnMs) > 5000) {  // Rate-limit to once per 5s
-            PA_LOG_WARN(TAG, "audioCmdQueue full, dropped stop command");
-            lastWarnMs = nowMs;
-        }
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.queueOverflowCount++;
-        taskEXIT_CRITICAL(&robotStateMux);
-        return false;
-    }
-    return true;
-}
-
 bool audioQueueTrackStop(CommandSource src) {
     if (audioOutputInactive()) {
         return true;
