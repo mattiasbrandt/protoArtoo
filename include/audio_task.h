@@ -95,8 +95,9 @@ const char* audioRxStatusDetail(AudioRxStatus status);
 // Pinned to Core 0 (non-RT side). Driver init and queries block for hundreds of
 // ms, and without PA_CAP_DEDICATED_AUDIO_UART the software bit-bang TX
 // additionally holds a critical section for ~1.04 ms per byte, once per byte of
-// a command that is 2 bytes on an MP3 Trigger, 4 to 6 on a DY-SV5W and 12 on a
-// CHIRP "PLAY:12,2,C"; Core 0 keeps all of it away from DriveTask / ServoTask.
+// a command that is 2 bytes on an MP3 Trigger, 4 to 6 on a DY-SV5W and 15 on a
+// CHIRP "PLAY:12,2,C,66" (22 when a Sound Bed is held and a "STOP:1" goes
+// first); Core 0 keeps all of it away from DriveTask / ServoTask.
 // Priority: 3 (below web server; above idle).
 // Stack: 3072 bytes.
 // -----------------------------------------------------------------------------
@@ -156,8 +157,9 @@ bool audioQueueTrackStop(CommandSource src);
 //
 // Stops: Quiet, Sleep Mode entry and Sound switched off stop the bed with
 // everything else. A Track Stop does NOT -- so a Sequence that started a bed
-// owns stopping it, including on an abnormal end (estop): Bounded Audio
-// teardown must call audioQueueBedStop() as well as audioQueueTrackStop().
+// owns stopping it: its teardown calls audioQueueBedStop() as well as
+// audioQueueTrackStop() when the bed is bounded (the default) or the end is
+// abnormal (estop included).
 // -----------------------------------------------------------------------------
 bool audioQueueBedStart(uint16_t index, uint8_t bank, char page, uint8_t vol, CommandSource src);
 bool audioQueueBedStop(CommandSource src);

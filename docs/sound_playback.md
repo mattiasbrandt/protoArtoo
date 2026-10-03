@@ -181,7 +181,7 @@ three rates in a different one.
 | `stopVocals()` | `STOP:s\n` for each stream but the bed's | Track Stop; a bare `STOP\n` when no bed is held |
 | `setVolume(v)` | `VOL:N\n` | Every stream, a Sound Bed's included. N = v*99/30 |
 | `setStreamVolume(s,v)` | `VOL:s,V\n` | One stream |
-| `playBed(i,b,p,v)` | `STOP:0\n` (unless stream 0 is known idle), then `PLAY:i,b,p,V\n` | Starts a Sound Bed on stream 0 |
+| `playBed(i,b,p,v)` | `STOP:0\n`, then `PLAY:i,b,p,V\n` | Starts a Sound Bed on stream 0 |
 | `stopBed()` | `STOP:s\n` | The bed's stream only |
 
 `N` is the operator's volume and `V` a bed's own, both scaled 0-30 -> 0-99. A
@@ -205,12 +205,16 @@ can stand behind - *idle by proof* (it sent the `STOP`, or a status reply said
 idle), *maybe a vocal*, or *the bed* - and works by these rules
 (`src/drivers/audio_chirp.cpp`, "Stream model"):
 
-- **The bed goes on stream 0.** `STOP:0` takes effect before the module reads
-  the next command, so the bed's `PLAY` lands on stream 0 whether or not a reply
-  can be read. A vocal still playing on stream 0 is cut by it. One bed at a
-  time: a new bed replaces the old one. Where replies can be heard, the module's
-  `S:<n>,ply` is read as a claim of the stream and an `ERR:NOFILE` cancels it;
-  only a `STAT` reply is proof that anything plays.
+- **The bed goes on stream 0.** `STOP:0` is sent every time and takes effect
+  before the module reads the next command, so the bed's `PLAY` lands on stream
+  0 whether or not a reply can be read. A vocal still playing on stream 0 is cut
+  by it. One bed at a time: a new bed replaces the old one. No reply moves the
+  bed. Where replies can be heard, any `ERR:` line (`ERR:PARAM` for a bad
+  target, `ERR:NOFILE` for a missing file) means the bed did not start - unless
+  a vocal went out just before the bed, in which case the error may be the
+  vocal's and the bed stays held. An `S:<n>,ply` naming another stream is
+  logged and that stream is treated as busy. Only a `STAT` reply is proof that
+  anything plays.
 - **A vocal never lands on the bed's stream.** Before each vocal `PLAY` while a
   bed is held, some other stream must be idle by proof; if none is, the vocal
   started longest ago is stopped first and the new one plays. The bed is never
@@ -225,7 +229,13 @@ idle), *maybe a vocal*, or *the bed* - and works by these rules
   and a stream that does not answer is not idle. Because the module answers each
   query at once, a reply inside a query's own window is that stream's; the
   driver uses that to confirm or drop the bed, and stops attributing for the
-  rest of a snapshot once any query went unanswered.
+  rest of a snapshot once any query went unanswered - and for the whole next
+  snapshot, since the missing reply may arrive there.
+
+**Limit:** the module frees a stream when its file ends and says nothing, so a
+bed that ended on its own is still held until a STAT says idle or the bed is
+stopped. Meanwhile the next vocal can land on stream 0, and a Track Stop leaves
+that vocal playing.
 
 `audioQueueBedStart()` / `audioQueueBedStop()` (`include/audio_task.h`) are the
 entry points. Nothing calls them yet: the Sequence step that starts and stops a
