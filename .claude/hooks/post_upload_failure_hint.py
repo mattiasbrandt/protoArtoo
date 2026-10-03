@@ -4,6 +4,8 @@
 import json
 import sys
 
+from upload_command import is_upload_command
+
 
 def main() -> int:
     try:
@@ -15,12 +17,7 @@ def main() -> int:
         return 0
 
     cmd = str(data.get("tool_input", {}).get("command", ""))
-    if "pio" not in cmd:
-        return 0
-
-    is_upload = ("-t upload" in cmd) or ("--target upload" in cmd)
-    is_uploadfs = ("-t uploadfs" in cmd) or ("--target uploadfs" in cmd)
-    if not is_upload and not is_uploadfs:
+    if not is_upload_command(cmd):
         return 0
 
     hint = (
