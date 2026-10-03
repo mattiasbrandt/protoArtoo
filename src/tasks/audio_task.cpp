@@ -323,20 +323,20 @@ bool audioQueueTrackStop(CommandSource src) {
     return true;
 }
 
-bool audioQueueBackgroundTrackStart(uint16_t index, uint8_t bank, char page, uint8_t vol,
-                                    CommandSource src) {
+bool audioQueueBackgroundTrackStart(const char* dollar, uint8_t vol, CommandSource src) {
     if (audioOutputInactive()) {
         return true;
     }
-    if (index == 0 || bank == 0) {
+    AudioCommand msg{};
+    // Refused rather than cut short: a '$' with its tail cut off names some
+    // other sound.
+    if (dollar == nullptr || dollar[0] != '$' ||
+        strnlen(dollar, sizeof(msg.backgroundTrack.dollar)) >= sizeof(msg.backgroundTrack.dollar)) {
         return false;
     }
-    AudioCommand msg{};
     msg.type = AUDIO_CMD_BACKGROUND_TRACK_START;
     msg.source = src;
-    msg.backgroundTrack.index = index;
-    msg.backgroundTrack.bank = bank;
-    msg.backgroundTrack.page = page;
+    strncpy(msg.backgroundTrack.dollar, dollar, sizeof(msg.backgroundTrack.dollar) - 1);
     msg.backgroundTrack.volume = audioClampVolume(vol);
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
         logQueueDrop(QUEUE_AUDIO_CMD, "Background Track start");
@@ -949,6 +949,7 @@ void audioTask(void* pvParameters) {
             cmdIn.sleepMode = sleepMode;
             cmdIn.catalogCapable = catalogCapable;
             cmdIn.mixCapable = (caps & AudioDriver::AUDIO_CAP_MIXES) != 0;
+            cmdIn.backgroundTrackHeld = driver()->backgroundTrackHeld();
             cmdIn.playback = &playback;
             cmdIn.named = &named;
             cmdIn.bindings = &s_audioBindings;
@@ -964,18 +965,21 @@ void audioTask(void* pvParameters) {
                 PA_LOG_DEBUG(TAG, "[%s] %s ignored (unsupported backend)",
                              commandSourceToString(cmd.source), playCommandName(cmd.type));
             } else if (ca.ignored == AUDIO_STEP_IGNORE_BANK_NOT_FITTED) {
+                // A vocal's $8nn or a Background Track's: the same refusal.
+                const char* said = (cmd.type == AUDIO_CMD_BACKGROUND_TRACK_START)
+                                       ? cmd.backgroundTrack.dollar
+                                       : cmd.dollar;
                 PA_LOG_WARN(TAG, "[%s] %s is bank %u, sound %s (ShadowMD numbering) - the fitted "
                                  "sound module has no bank %u, not played",
-                            commandSourceToString(cmd.source), cmd.dollar,
-                            (unsigned)AUDIO_DOLLAR_BANK, cmd.dollar + 2,
-                            (unsigned)AUDIO_DOLLAR_BANK);
+                            commandSourceToString(cmd.source), said, (unsigned)AUDIO_DOLLAR_BANK,
+                            said + 2, (unsigned)AUDIO_DOLLAR_BANK);
             } else if (ca.ignored == AUDIO_STEP_IGNORE_CANNOT_MIX) {
-                PA_LOG_WARN(TAG,
-                            "[%s] Background Track bank=%u page=%c index=%u not played: "
-                            "%s plays one sound at a time",
-                            commandSourceToString(cmd.source), (unsigned)cmd.backgroundTrack.bank,
-                            cmd.backgroundTrack.page, (unsigned)cmd.backgroundTrack.index,
+                PA_LOG_WARN(TAG, "[%s] Background Track %s not played: %s plays one sound at a time",
+                            commandSourceToString(cmd.source), cmd.backgroundTrack.dollar,
                             driver()->driverName());
+            } else if (ca.ignored == AUDIO_STEP_IGNORE_NOT_A_SOUND) {
+                PA_LOG_WARN(TAG, "[%s] Background Track %s not played: it names no sound",
+                            commandSourceToString(cmd.source), cmd.backgroundTrack.dollar);
             }
             if (ca.hasIntent) {
                 executePlaybackIntent(ca.intent, cmd.source);

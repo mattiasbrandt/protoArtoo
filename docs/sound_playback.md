@@ -244,9 +244,16 @@ have been a vocal's, is still held until a STAT says idle or the Background
 Track is stopped. Meanwhile the next vocal can land on stream 0, and a Track
 Stop leaves that vocal playing.
 
-`audioQueueBackgroundTrackStart()` / `audioQueueBackgroundTrackStop()`
-(`include/audio_task.h`) are the entry points. Nothing calls them yet: the
-Sequence step that starts and stops a Background Track is #447's next slice.
+`audioQueueBackgroundTrackStart(dollar, vol)` / `audioQueueBackgroundTrackStop()`
+(`include/audio_task.h`) are the entry points. A Background Track is named by a
+`$` command, as a vocal is, and AudioTask reads it the same way: a Named Track
+is its CHIRP binding, or its numbered track where it has none; `$8nn` is bank 8
+on the page the module reported, and is not played where there is no bank 8;
+any other number is that track. A numbered track plays at Bank 1, Page A, where
+CHIRP plays it as a vocal (`AUDIO_FLAT_BANK` / `AUDIO_FLAT_PAGE`,
+`include/audio_driver.h`). A `$` that plays nothing (`$s`, `$R`, `$+`) is
+logged and not played. The volume is 0-30. While a Background Track is held, a
+Track Stop leaves the droid's sound reported as playing.
 
 > ⚠ **Track numbers are module-specific.** CHIRP's `PLAY:n,1,A` command plays the
 > *nth entry in the Bank 1 sound manifest* (sorted by basename after variant

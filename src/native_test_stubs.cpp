@@ -535,6 +535,17 @@ bool audioQueuePlayTrackBanked(uint16_t index, uint8_t bank, char page, CommandS
     return true;
 }
 
+// The Background Track seam, called by dispatchAction() in
+// sequence_dispatcher.cpp. Answers the queue like every other stub here.
+bool audioQueueBackgroundTrackStart(const char* /*dollar*/, uint8_t /*vol*/,
+                                    CommandSource /*src*/) {
+    return g_test_audio_queue_ok;
+}
+
+bool audioQueueBackgroundTrackStop(CommandSource /*src*/) {
+    return g_test_audio_queue_ok;
+}
+
 // The RX diagnostic strings GET /api/audio embeds. Reproduced from
 // src/tasks/audio_task.cpp rather than stubbed to a constant: the payload
 // assertion would be vacuous otherwise.

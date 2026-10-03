@@ -148,6 +148,66 @@ static void resolvePlayback(AudioStepState& state, const AudioStepCommandInputs&
     applyIntentToState(state, actions->intent, in.nowMs);
 }
 
+// The bank/page/index a Background Track's '$' names, read the way the same '$'
+// is read for a vocal (AUDIO_CMD_DOLLAR above): $8nn is bank 8 where the module
+// has one, a Named Track is its binding or else its numbered track, and any
+// other number is that track. A numbered track goes to AUDIO_FLAT_BANK /
+// AUDIO_FLAT_PAGE (include/audio_driver.h), the address the CHIRP driver plays
+// it at as a vocal. No anti-spam gate on any of it: a Background Track is
+// authored, not chatter.
+//
+// True with the address in request->backgroundTrack. False when there is
+// nothing to play, with the reason in actions: an ignore reason, or a NONE
+// intent carrying the policy's reason for a Named Track set to nothing.
+//
+// Out of line on purpose: audioStepCommand() is on AudioTask's recorded stack
+// chain (its log line, tools/task_stack_recipes.json), and nothing under this
+// logs, so its locals stay off that route.
+static bool __attribute__((noinline)) backgroundTrackAddress(const AudioStepCommandInputs& in, const char* dollar,
+                                   AudioPlaybackRequest* request,
+                                   AudioStepCommandActions* actions) {
+    const AudioAction action = parseAudioDollar(dollar, *in.named);
+    if (action.type == AUDIO_ACTION_PLAY_BANKED) {
+        if (!in.catalogCapable || action.bank != AUDIO_DOLLAR_BANK || in.dollarBankPage == '\0') {
+            actions->ignored = AUDIO_STEP_IGNORE_BANK_NOT_FITTED;
+            return false;
+        }
+        request->backgroundTrack.index = action.track;
+        request->backgroundTrack.bank = action.bank;
+        request->backgroundTrack.page = in.dollarBankPage;
+        return true;
+    }
+    if (action.type != AUDIO_ACTION_PLAY_TRACK) {
+        actions->ignored = AUDIO_STEP_IGNORE_NOT_A_SOUND;
+        return false;
+    }
+    const AudioPlaybackSlot slot = audioSlotForDollar(dollar);
+    if (slot == AUDIO_SLOT_NONE) {
+        request->backgroundTrack.index = action.track;
+        request->backgroundTrack.bank = AUDIO_FLAT_BANK;
+        request->backgroundTrack.page = AUDIO_FLAT_PAGE;
+        return true;
+    }
+    AudioPlaybackContext context{in.playback, in.bindings, in.catalogCapable, in.nowMs, 0};
+    const AudioPlaybackIntent named = audioPlaybackResolveSlot(context, slot);
+    if (named.kind == AUDIO_PLAYBACK_INTENT_PLAY_BANKED) {
+        request->backgroundTrack.index = named.index;
+        request->backgroundTrack.bank = named.bank;
+        request->backgroundTrack.page = named.page;
+        return true;
+    }
+    if (named.kind == AUDIO_PLAYBACK_INTENT_PLAY_FLAT) {
+        request->backgroundTrack.index = named.track;
+        request->backgroundTrack.bank = AUDIO_FLAT_BANK;
+        request->backgroundTrack.page = AUDIO_FLAT_PAGE;
+        return true;
+    }
+    actions->intent = named;
+    actions->intent.requestKind = AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_START;
+    actions->hasIntent = true;
+    return false;
+}
+
 AudioStepCommandActions audioStepCommand(AudioStepState& state,
                                          const AudioStepCommandInputs& in,
                                          const AudioCommand& cmd) {
@@ -269,6 +329,7 @@ AudioStepCommandActions audioStepCommand(AudioStepState& state,
         case AUDIO_CMD_TRACK_STOP: {
             AudioPlaybackRequest request{};
             request.kind = AUDIO_PLAYBACK_REQ_TRACK_STOP;
+            request.backgroundTrackHeld = in.backgroundTrackHeld;
             resolvePlayback(state, in, request, false, &actions);
             break;
         }
@@ -287,9 +348,9 @@ AudioStepCommandActions audioStepCommand(AudioStepState& state,
             }
             AudioPlaybackRequest request{};
             request.kind = AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_START;
-            request.backgroundTrack.index = cmd.backgroundTrack.index;
-            request.backgroundTrack.bank = cmd.backgroundTrack.bank;
-            request.backgroundTrack.page = cmd.backgroundTrack.page;
+            if (!backgroundTrackAddress(in, cmd.backgroundTrack.dollar, &request, &actions)) {
+                break;
+            }
             request.backgroundTrack.volume = cmd.backgroundTrack.volume;
             resolvePlayback(state, in, request, false, &actions);
             break;

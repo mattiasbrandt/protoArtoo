@@ -181,6 +181,9 @@ struct AudioPlaybackRequest {
             char page;
             uint8_t volume;  // 0-30, clamped before enqueue
         } backgroundTrack;
+        // TRACK_STOP: a Background Track plays on under the stopped vocals, so
+        // the droid's sound is still playing afterwards.
+        bool backgroundTrackHeld;
     };
 };
 
@@ -224,4 +227,10 @@ bool audioPlaybackIsValidCategory(AudioPlaybackCategory category);
 uint16_t audioPlaybackIntervalForMood(const AudioPlaybackConfig& config, uint8_t mood);
 AudioPlaybackIntent audioPlaybackResolveRequest(const AudioPlaybackContext& context,
                                                 const AudioPlaybackRequest& request);
+// A Named Track resolved as a play would resolve it -- its CHIRP binding where
+// one is valid, else its numbered track -- with no anti-spam gate: what a
+// Background Track names is authored, not chatter. PLAY_BANKED, PLAY_FLAT, or
+// NONE with the reason.
+AudioPlaybackIntent audioPlaybackResolveSlot(const AudioPlaybackContext& context,
+                                             AudioPlaybackSlot slot);
 AudioPlaybackIntent audioPlaybackResolveRandomTick(const AudioPlaybackRandomContext& context);

@@ -219,7 +219,8 @@ AudioPlaybackIntent audioPlaybackResolveRequest(const AudioPlaybackContext& cont
             AudioPlaybackIntent intent{};
             intent.kind = AUDIO_PLAYBACK_INTENT_TRACK_STOP;
             intent.requestKind = request.kind;
-            intent.clearAudioActive = true;
+            // A Background Track is not a vocal and plays on (ADR 0054).
+            intent.clearAudioActive = !request.backgroundTrackHeld;
             intent.updateLastPlayMs = true;  // anti-spam cadence bump (ADR 0010 Track Stop)
             return intent;
         }
@@ -274,6 +275,11 @@ AudioPlaybackIntent audioPlaybackResolveRequest(const AudioPlaybackContext& cont
         default:
             return makeNone(request.kind, AUDIO_PLAYBACK_NONE_OK);
     }
+}
+
+AudioPlaybackIntent audioPlaybackResolveSlot(const AudioPlaybackContext& context,
+                                             AudioPlaybackSlot slot) {
+    return resolveSlotNoGate(context, slot);
 }
 
 AudioPlaybackIntent audioPlaybackResolveRandomTick(const AudioPlaybackRandomContext& context) {

@@ -50,8 +50,8 @@ enum AudioCommandType : uint8_t {
     AUDIO_CMD_QUERY_STATUS,  // on-demand status query (manual/fallback poll path)
     AUDIO_CMD_REFRESH_CATALOG,  // refresh CHIRP catalog cache
     AUDIO_CMD_REFRESH_BINDINGS,  // refresh cached CHIRP slot/category bindings from NVS
-    AUDIO_CMD_BACKGROUND_TRACK_START,  // start a Background Track (ADR 0054): banked
-                                       // tuple at its own volume
+    AUDIO_CMD_BACKGROUND_TRACK_START,  // start a Background Track (ADR 0054): a '$'
+                                       // sound at its own volume, resolved in AudioTask
     AUDIO_CMD_BACKGROUND_TRACK_STOP,   // stop the Background Track and nothing else
 };
 
@@ -77,9 +77,9 @@ struct AudioCommand {
             char page;
         } banked;
         struct {          // AUDIO_CMD_BACKGROUND_TRACK_START
-            uint16_t index;
-            uint8_t bank;
-            char page;
+            char dollar[9];  // '$' + up to 7 chars, null-terminated: the same
+                             // 10 bytes as dollar[] above with the volume, so
+                             // the union does not grow
             uint8_t volume;  // 0-30, clamped before enqueue
         } backgroundTrack;
     };
@@ -143,21 +143,25 @@ bool audioQueueTrackStop(CommandSource src);
 // audioQueueBackgroundTrackStart() starts a Background Track: music playing
 // UNDER the routine at its own volume, which vocals fire over without stopping.
 // audioQueueBackgroundTrackStop() stops it and nothing else. Non-blocking like
-// every helper here; false only when the queue is full or the tuple is
-// malformed (index 0 or bank 0).
+// every helper here; false only when the queue is full or `dollar` is not a
+// '$' command that fits the queue entry.
 //
-// Target form: bank/page/index, the CHIRP address. CHIRP is the only module
-// that mixes (AUDIO_CAP_MIXES, include/component_registry.inc), its music lives
-// on banks 2-6 by the module's own convention, and a Named Track on CHIRP is
-// already that tuple (AudioChirpSlotBinding), so a step naming a Named Track
-// resolves to the same three values. There is no flat-track form: a module
-// with one stream cannot play a Background Track at all.
+// Target form: a '$' command, the address a Learned audio step already uses
+// ("$W", "$212", "$805"), so a sequence names a Background Track the way it
+// names a vocal. AudioTask resolves it where it resolves a vocal's, because
+// the Named Track bindings live there: a Named Track to its CHIRP binding, or
+// to its numbered track where it has none; $8nn to bank 8 on the page the
+// module reported; any other number to that track. A numbered track plays at
+// AUDIO_FLAT_BANK / AUDIO_FLAT_PAGE (include/audio_driver.h), where CHIRP
+// plays it as a vocal. The volume is the interface's 0-30.
 //
 // What the caller gets on a module without AUDIO_CAP_MIXES: the command is
 // accepted, AudioTask does not play it and logs why (the one audio seam,
 // AUDIO_STEP_IGNORE_CANNOT_MIX). The run-time report and the Rehearsal Warning
 // are the caller's to compose from audioGetCapabilities(); this seam does not
-// answer back. Ignored in Sleep Mode like any play.
+// answer back. Ignored in Sleep Mode like any play, and a '$' that names no
+// sound (AUDIO_STEP_IGNORE_NOT_A_SOUND) or a Named Track set to nothing is
+// logged and not played.
 //
 // Stops: Quiet, Sleep Mode entry and Sound switched off stop the Background
 // Track with everything else. A Track Stop does NOT -- so a Sequence that
@@ -166,8 +170,7 @@ bool audioQueueTrackStop(CommandSource src);
 // Background Track is bounded (the default) or the end is abnormal (estop
 // included).
 // -----------------------------------------------------------------------------
-bool audioQueueBackgroundTrackStart(uint16_t index, uint8_t bank, char page, uint8_t vol,
-                                    CommandSource src);
+bool audioQueueBackgroundTrackStart(const char* dollar, uint8_t vol, CommandSource src);
 bool audioQueueBackgroundTrackStop(CommandSource src);
 
 // Enqueue an absolute volume set (clamped to 0-30 before enqueue).

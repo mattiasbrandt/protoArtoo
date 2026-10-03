@@ -63,6 +63,14 @@ struct AudioCatalogEntry {
     char name[48] = {0};
 };
 
+// Where a flat track number plays on a module that numbers its sounds by bank,
+// page and index: Bank 1, Page A, the CHIRP Audio Trigger's own vocal bank.
+// AudioDriverChirp::playTrack() sends a flat track there, and a Background
+// Track named by a flat number or an unbound Named Track goes to the same
+// address (src/tasks/audio_task_step.cpp), so the two cannot disagree.
+constexpr uint8_t AUDIO_FLAT_BANK = 1;
+constexpr char AUDIO_FLAT_PAGE = 'A';
+
 // Catalog bank descriptor  --  one bank/page combination in an audio catalog.
 //
 // dirName is empty when the module reported no directory for the bank. That is
@@ -239,6 +247,10 @@ class AudioDriver {
     // Stop the Background Track, and nothing else. No Background Track, nothing
     // sent.
     virtual void stopBackgroundTrack() {}
+
+    // Whether a Background Track is held as playing: started, and neither
+    // stopped nor reported idle since. Never, on a module that cannot mix.
+    virtual bool backgroundTrackHeld() const { return false; }
 
     virtual ~AudioDriver() = default;
 
