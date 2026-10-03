@@ -1661,7 +1661,8 @@
     const from = Math.round(Number(entry.from) || 0);
     const to = Math.round(entry.to === undefined ? facts.lengthMs : Number(entry.to));
     const names = facts.parts.map((id) => catalogPart(id)?.name || id).join(", ");
-    return head(`Take ${block.take + 1}`, `${countOf(facts.parts.length, "part", "parts")} · ${(facts.lengthMs / 1000).toFixed(2)} s kept`)
+    // What plays of it: the trimmed length of the whole.
+    return head(`Take ${block.take + 1}`, `${countOf(facts.parts.length, "part", "parts")} · ${((to - from) / 1000).toFixed(2)} of ${(facts.lengthMs / 1000).toFixed(2)} s`)
       + `<div class="setting-rows seq-picked-rows">${startsAt}`
       + settingRow("Trim start", numberCell("from", from, [0, Math.max(0, to - least)], "Trim start, in milliseconds into the take"))
       + settingRow("Trim end", numberCell("to", to, [Math.min(facts.lengthMs, from + least), Math.round(facts.lengthMs)], "Trim end, in milliseconds into the take"))
