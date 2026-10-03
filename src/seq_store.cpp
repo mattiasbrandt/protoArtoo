@@ -170,6 +170,29 @@ static ProtocolCheckResult readTakeRefs(JsonVariantConst root, TakeRefs* out) {
     return pcOk();
 }
 
+// `src` added to `into`, each id once. One that does not fit sets *overflow.
+static void takeRefsMerge(TakeRefs* into, const TakeRefs& src, bool* overflow) {
+    for (uint8_t i = 0; i < src.count; ++i) {
+        bool have = false;
+        for (uint8_t k = 0; k < into->count && !have; ++k) have = strcmp(into->ids[k], src.ids[i]) == 0;
+        if (have) continue;
+        if (into->count >= TAKE_STORE_CAP) {
+            *overflow = true;
+            continue;
+        }
+        memcpy(into->ids[into->count++], src.ids[i], TAKE_ID_LEN + 1);
+    }
+}
+
+// Whether an indexed sequence other than `name` carries the stable id `id`.
+static bool idSharedWith(const char* id, const char* name) {
+    for (uint8_t i = 0; i < seqStoreIndexCount(); ++i) {
+        const SeqIndexEntry* e = seqStoreIndexAt(i);
+        if (e != nullptr && strcmp(e->id, id) == 0 && strcmp(e->name, name) != 0) return true;
+    }
+    return false;
+}
+
 // -----------------------------------------------------------------------------
 // A sequence inside a sequence (ADR 0046)
 //
@@ -313,6 +336,7 @@ void seqStoreInit() {
     struct BootTakes {
         char owner[PC_SEQ_ID_MAX + 1];
         TakeRefs refs;
+        bool overflow;  // the union outgrew TakeRefs: delete nothing of this id
     };
     BootTakes* bootTakes = (BootTakes*)calloc(SEQ_INDEX_CAPACITY, sizeof(BootTakes));
     uint8_t bootTakeCount = 0;
@@ -373,11 +397,19 @@ void seqStoreInit() {
         SeqIndexEntry entry;
         fillIndexEntry(entry, d, root, file, checkResult.ok);
         stagingFree(st);
-        if (bootTakes != nullptr && entry.id[0] != '\0' && bootTakeCount < SEQ_INDEX_CAPACITY) {
-            BootTakes& bt = bootTakes[bootTakeCount];
-            if (readTakeRefs(root, &bt.refs).ok) {
-                memcpy(bt.owner, entry.id, sizeof(bt.owner));
+        // One record per id, its refs the union of every file carrying that
+        // id: a rename leaves two files sharing one, and reconciling each on
+        // its own would delete the takes the other names.
+        TakeRefs refs;
+        if (bootTakes != nullptr && entry.id[0] != '\0' && readTakeRefs(root, &refs).ok) {
+            uint8_t at = 0;
+            while (at < bootTakeCount && strcmp(bootTakes[at].owner, entry.id) != 0) ++at;
+            if (at == bootTakeCount && bootTakeCount < SEQ_INDEX_CAPACITY) {
+                memcpy(bootTakes[at].owner, entry.id, sizeof(bootTakes[at].owner));
                 ++bootTakeCount;
+            }
+            if (at < bootTakeCount) {
+                takeRefsMerge(&bootTakes[at].refs, refs, &bootTakes[at].overflow);
             }
         }
 
@@ -401,7 +433,7 @@ void seqStoreInit() {
         PA_LOG_WARN(TAG, "no memory to read the sequences' takes; takes not saved into a sequence are removed");
     }
     for (uint8_t i = 0; i < bootTakeCount; ++i) {
-        takeStoreSequenceSaved(bootTakes[i].owner, bootTakes[i].refs);
+        takeStoreSequenceSaved(bootTakes[i].owner, bootTakes[i].refs, !bootTakes[i].overflow);
     }
     free(bootTakes);
     takeStoreInit();
@@ -683,10 +715,13 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
     seqStoreIndexAdd(entry);  // insert or update in place
     unlock();
 
-    // Its takes as it names them now: those kept, any other of its own gone.
-    // After the lock, never inside it (include/take_store.h).
+    // Its takes as it names them now: those kept, any other of its own gone -
+    // unless another sequence carries the same id (a rename is a save under a
+    // new name and leaves the old file), when the others may be that one's
+    // and only this file's are promoted. After the lock, never inside it
+    // (include/take_store.h).
     if (selfId[0] != '\0') {
-        takeStoreSequenceSaved(selfId, takeRefs);
+        takeStoreSequenceSaved(selfId, takeRefs, !idSharedWith(selfId, d.name));
     }
     return pcOk();
 }

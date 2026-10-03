@@ -58,10 +58,14 @@ const char* takeStoreWriteNew(const char* owner, const TakeCapture& capture, cha
                               char* replacedOut, char* refusal, size_t refusalCap);
 
 // After the sequence whose stable id is `owner` has been saved naming `refs`:
-// each named take that exists becomes kept, every other take of `owner` is
-// deleted. A named take that is not on the droid is left to arrive (a
-// restore posts the sequence before its takes).
-void takeStoreSequenceSaved(const char* owner, const TakeRefs& refs);
+// each named take that exists becomes kept, and - when `dropOthers` - every
+// other take of `owner` is deleted. A named take that is not on the droid is
+// left to arrive (a restore posts the sequence before its takes).
+//
+// `dropOthers` is false when another sequence carries the same id: a rename
+// is a save under a new name that leaves the old file, so two sequences can
+// share one id, and a take the other one names is not this save's to delete.
+void takeStoreSequenceSaved(const char* owner, const TakeRefs& refs, bool dropOthers);
 
 // After the sequence whose stable id is `owner` has been deleted, and no other
 // sequence carries that id: every take it owned is deleted.

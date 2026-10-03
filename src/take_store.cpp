@@ -295,20 +295,24 @@ const char* takeStoreWriteNew(const char* owner, const TakeCapture& capture, cha
 // -----------------------------------------------------------------------------
 // The sequence store's hooks
 // -----------------------------------------------------------------------------
-void takeStoreSequenceSaved(const char* owner, const TakeRefs& refs) {
+void takeStoreSequenceSaved(const char* owner, const TakeRefs& refs, bool dropOthers) {
     if (owner == nullptr || owner[0] == '\0' || !lock()) return;
     TakeFileNameParts t;
     // Each pass acts on one take of `owner` that is not yet as the save says:
-    // named and still ".new" -> kept; not named -> deleted. A named, kept take
-    // matches nothing, so the loop ends when every take of `owner` is settled.
+    // named and still ".new" -> kept; not named -> deleted (when it may). A
+    // named, kept take matches nothing, nor - without `dropOthers` - an
+    // unnamed one, so the loop ends when every take of `owner` is settled.
     struct Saved {
         const char* owner;
         const TakeRefs* refs;
-    } saved = {owner, &refs};
+        bool dropOthers;
+    } saved = {owner, &refs, dropOthers};
     while (findTake(
         [](const TakeFileNameParts& each, const void* ctx) {
             const Saved& sv = *(const Saved*)ctx;
-            return strcmp(each.owner, sv.owner) == 0 && refsName(*sv.refs, each.take) != each.kept;
+            if (strcmp(each.owner, sv.owner) != 0) return false;
+            const bool named = refsName(*sv.refs, each.take);
+            return named ? !each.kept : sv.dropOthers;
         },
         &saved, &t)) {
         if (refsName(refs, t.take)) {
