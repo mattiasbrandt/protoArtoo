@@ -993,10 +993,14 @@ bool AudioDriverChirp::playBed(uint16_t index, uint8_t bank, char page, uint8_t 
         readBedClaim();
         audioUartRelease();
     }
+    const uint8_t bed = bedStream();
+    if (bed == CHIRP_NO_STREAM) {
+        return false;  // cancelled by ERR:NOFILE; readBedClaim() logged why
+    }
     PA_LOG_INFO(TAG, "bed bank=%u page=%c index=%u vol=%u -> stream %u%s", (unsigned)bank, page,
-                (unsigned)index, (unsigned)vol, (unsigned)bedStream(),
+                (unsigned)index, (unsigned)vol, (unsigned)bed,
                 listening ? "" : " (module replies not heard)");
-    return bedStream() != CHIRP_NO_STREAM;
+    return true;
 }
 
 // The module's answer to the bed's PLAY, where it can be heard. handlePlay()
