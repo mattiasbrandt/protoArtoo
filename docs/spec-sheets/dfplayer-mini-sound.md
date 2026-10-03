@@ -1222,8 +1222,8 @@ all four.**
 **CHIRP is a different tier of thing, not a better DFPlayer.** Its own README
 describes it as *"an advanced MP3 and WAV file decoder/mixer/player, heavily
 inspired by the Sparkfun/Robertsonics MP3 Trigger"*, running three or more
-simultaneous streams on an RP2350 with an I2S DAC. A droid that wants an ambient
-bed under speech needs mixing and therefore needs CHIRP. A DFPlayer plays one file
+simultaneous streams on an RP2350 with an I2S DAC. A droid that wants a
+**Background Track** under speech needs mixing and therefore needs CHIRP. A DFPlayer plays one file
 at a time and always will.
 
 **What the DFPlayer uniquely brings to this family** is the bottom of the price

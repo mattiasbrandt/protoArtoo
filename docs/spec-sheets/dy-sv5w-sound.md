@@ -296,7 +296,7 @@ is the same thing that makes it undocumented.
 - **[`docs/api.md`](../api.md)** -- `GET /api/audio`, whose worked example is a
   DY-SV5W response.
 - **`CONTEXT.md`** -- **Component Protocol**, **Component Member**, **Component
-  Registry**, **Audio Step Core**, **Sound Bed**.
+  Registry**, **Audio Step Core**, **Background Track**.
 - **[ADR 0042](../adr/0042-component-families-are-selected-at-runtime-where-the-board-offers-a-choice.md)**
   -- the Component Member rule that made this module a runtime choice rather than
   a build flag.
@@ -1174,11 +1174,11 @@ correct: firmware has to know the resulting number to store it in NVS and show i
 on a slider, and the module's own step commands report nothing back.
 
 The one genuinely interesting omission is **`0x16` interlude**: play a sound *over*
-the current one, then return to it. That is the shape of the **Sound Bed**
+the current one, then return to it. That is the shape of the **Background Track**
 (`CONTEXT.md`), and `CONTEXT.md` currently records the DY-SV5W as one of *"the
-single-track modules"* a bed contrasts itself with. The vendor's own note, quoted
+single-track modules"* a Background Track contrasts itself with. The vendor's own note, quoted
 through `dyplayer`, says *"'Music interlude' only has level 1"* -- one interlude,
-covering the previous one -- so it is not mixing and it would not give a bed its
+covering the previous one -- so it is not mixing and it would not give a Background Track its
 own volume. **It does not make this a mixing module**, and it is worth knowing
 before someone re-litigates that. Open Item 12.
 
@@ -1589,7 +1589,7 @@ correct, storage that can be on the board itself, and -- uniquely in this family
 
 **What it uniquely costs** is the enumeration-order index (Section 10.2), status
 that cannot be polled during playback (Section 13.2), and no mixing. A droid that
-wants an ambient bed under speech needs CHIRP and always will.
+wants a Background Track under speech needs CHIRP and always will.
 
 > [!NOTE]
 > **The DFPlayer sheet argued its module is the cheapest with an amplifier
@@ -1761,7 +1761,7 @@ discharged. Corrected to point at this sheet.
 | 9 | **exFAT** | Format a 32 GB card exFAT and see whether `0x09` reports a device. Expected: no. Worth one test because "no card" and "module missing" look the same to an operator |
 | 10 | **Compare `0x0C` against the configuration at boot** (Section 10.4 rule 5) | Firmware change, not a measurement: log or surface a mismatch between the module's track count and the highest configured track. Cheapest possible detection of a card rebuilt wrong |
 | 11 | **Play-by-path (`0x08`) as an escape from enumeration order** (Section 10.5) | Prototype against a card with 8.3 names; measure whether name-stable addressing is worth the frame and naming cost |
-| 12 | **Interlude (`0x16`) versus the Sound Bed** (Section 11.5) | Read the vendor's "level 1 only" note against `CONTEXT.md`'s Sound Bed before anyone proposes this module can mix. Expected answer: it cannot |
+| 12 | **Interlude (`0x16`) versus the Background Track** (Section 11.5) | Read the vendor's "level 1 only" note against `CONTEXT.md`'s Background Track before anyone proposes this module can mix. Expected answer: it cannot |
 | 13 | **FireBeetle 2 / ESP32-P4 hardware run** (Section 14.4) | Everything in Section 12.1 about that board is read from code. The module has never been run on it |
 | 14 | **Phase 5 audio edge cases HW1.5-HW1.14** | Already scoped in `tasks/phase5_hardware_validation_deferral.md`; the module was not installed during that bench session |
 
