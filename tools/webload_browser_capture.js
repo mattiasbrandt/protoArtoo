@@ -3,7 +3,7 @@
 
 // Browser-side evidence collector for GitHub issue #66.
 //
-// Adapted from tools/issue65_browser_capture.js for a single baseline run against
+// Adapted from #65's browser capture (removed in #466) for a single baseline run against
 // data/index.html (the untouched operator portal) instead of the #65 wifi.html A/B
 // matrix. Same discipline: one visible Chromium navigation, records what the browser
 // actually observes, never retries/reloads/opens another tab/polls a controller API
