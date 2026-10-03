@@ -60,17 +60,6 @@ struct HoverboardFeedback {
 inline constexpr int kHoverFocFrameLen  = 18;
 inline constexpr int kHoverGen2xFrameLen = 26;
 
-// parseHoverboardFeedbackFrame()
-// Pure logic  --  no hardware, no FreeRTOS. Testable on native.
-// Validates and parses a single complete feedback frame.
-// buf: exactly kHoverFocFrameLen (18) or kHoverGen2xFrameLen (26) bytes,
-//      starting with start marker 0xABCD (little-endian: 0xCD 0xAB).
-// len: must be exactly kHoverFocFrameLen or kHoverGen2xFrameLen.
-// Returns true if the XOR checksum is valid and out is populated.
-// Returns false if checksum invalid or len is unrecognised.
-// thread-safe: yes (no globals  --  state is in caller's variables)
-bool parseHoverboardFeedbackFrame(const uint8_t* buf, int len, HoverboardFeedback* out);
-
 // -----------------------------------------------------------------------------
 // HoverboardFeedbackParser
 // Caller-owned streaming parser state. Declare as a task-local variable in
