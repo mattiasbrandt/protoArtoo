@@ -224,14 +224,14 @@ ADR 0048 the browser loads exactly one document -- `index.html`, the Operator
 Shell -- and its inline recovery kernel (`data/_recovery_kernel.html`) fetches
 `page_bootstrap.js` with retry and hands it the shell's own chain
 (`web_api.js`, `overlay.js`, `status_stream.js`, `live_reading.js`,
-`health_signals.js`, `shell.js`, `footer.js`). Each surface's chain is then
+`health_signals.js`, `shell.js`). Each surface's chain is then
 handed over as a wave when that surface is first opened, and the shared prefix
 in it is skipped as already loaded. `overlay.js` (the shared question, Escape
 and receipt, #456) is in the shell's chain and, after `web_api.js`, in the
 chain of every surface that calls it (Firmware, Maintenance, RC Control,
 Sequences, Servos, Wiring);
 the loader runs it once. Every surface shares that
-prefix, then its own script(s), then `footer.js`.
+prefix, then its own script(s).
 
 | Surface | Script count | Notes |
 |---|---|---|

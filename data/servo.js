@@ -1553,7 +1553,6 @@
       "/parts_mapping.js": "the parts on each output",
       "/outputs.js": "the outputs",
       "/servo.js": "servo control",
-      "/footer.js": "page footer",
     });
     window.PABootstrap.registerSection("servo-outputs", (opts) => loadOutputs({ ...opts, withConfig: true }), {
       label: "the outputs and their parts",

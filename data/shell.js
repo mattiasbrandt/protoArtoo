@@ -844,8 +844,8 @@
   // a navigation flips an attribute on a link that is already there.
   if (shellNav) {
     shellNav.setAttribute("aria-label", "Operator navigation");
-    // The foot of the rail is where the shell says what is running.
-    // data/footer.js writes into #fw-meta wherever the shell puts it.
+    // The foot of the rail is where the shell says what is running: the
+    // firmware and web bundle versions, written into #fw-meta below.
     shellNav.innerHTML = `
       ${navHtml}
       <div class="rail-foot status-bar" id="conn-status">
@@ -1017,6 +1017,59 @@
   // Started here, before anything reads it: the stream or the one fallback
   // poll, for every surface this shell will mount (data/live_reading.js).
   LIVE.start();
+
+  // ---------------------------------------------------------------------------
+  // The rail's foot line: the firmware and web bundle versions, from the Live
+  // Reading like everything else here. It asks the droid for nothing of its
+  // own (#419).
+  // ---------------------------------------------------------------------------
+  const fwMeta = document.getElementById("fw-meta");
+  if (fwMeta) {
+    // The web bundle's own version, read from the file that ships with it, for
+    // a firmware that does not report one in its status. null until it is read.
+    let bundleVersion = null;
+    let footReading = LIVE.current();
+
+    // A version the frame carries, or the Live Reading's word for one it does
+    // not: Waiting before the droid has sent a frame, Unknown after. Each
+    // version is a slot, so Waiting shows there as the moving dots.
+    const versionOf = (field) => {
+      const value = footReading.status?.[field];
+      if (value) return String(value);
+      return LIVE.slotText(footReading.word(field) || LIVE.UNKNOWN);
+    };
+
+    const renderFootLine = () => {
+      const fw = versionOf("firmwareVersion");
+      const web = footReading.status?.fsVersion ? String(footReading.status.fsVersion) : bundleVersion || versionOf("fsVersion");
+      fwMeta.innerHTML =
+        `FW: <span class="mono waiting">${window.PAUtils.escapeHtml(fw)}</span><br>` +
+        `FS: <span class="mono waiting">${window.PAUtils.escapeHtml(web)}</span>`;
+    };
+
+    const loadBundleVersion = async () => {
+      if (!window.PAApi) return;
+      try {
+        const result = await window.PAApi.get("/fs-version.json", { timeoutMs: 2500, cache: "no-store" });
+        if (result.data && typeof result.data === "object" && result.data.fsVersion) {
+          bundleVersion = String(result.data.fsVersion);
+          renderFootLine();
+        }
+      } catch (error) {
+        // The status frame's own fsVersion still answers; this file is only the
+        // fallback for a firmware that sends none.
+        console.warn("[shell] /fs-version.json unavailable:", error?.message || error);
+      }
+    };
+
+    // The subscription tells the reading it already holds at once, so this is
+    // also the first paint.
+    LIVE.subscribe((next) => {
+      footReading = next;
+      renderFootLine();
+    });
+    loadBundleVersion();
+  }
 
   // The device pushes a status event when something calls
   // requestStatusBroadcastNow() and at no other time -- a state change, or a

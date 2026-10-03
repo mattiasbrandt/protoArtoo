@@ -1781,7 +1781,6 @@
       "/dome_layout_render.js": "dome panel rendering",
       "/dome_control.js": "dome control",
       "/app.js": "home dashboard",
-      "/footer.js": "page footer",
     });
     SECTIONS.forEach(([name, load, label]) =>
       window.PABootstrap.registerSection(name, load, { label })

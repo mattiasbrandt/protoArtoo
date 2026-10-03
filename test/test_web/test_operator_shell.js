@@ -365,8 +365,8 @@ test("a surface mounted after the session settled is still told the identity it 
 
 test("the live status stream is opened once for the session, however many screens are visited", async () => {
   const env = await boot();
-  // What footer.js does on every page today: hold a subscription for as long
-  // as the document lives. Under the shell the document is the session.
+  // What the shell's foot line does: hold a subscription for as long as the
+  // document lives. Under the shell the document is the session.
   env.window.PAStatusStream.subscribe(() => {});
   await sleep(20);
   assert.deepEqual(env.streamsOpened, ["/api/events"], "one stream at boot");

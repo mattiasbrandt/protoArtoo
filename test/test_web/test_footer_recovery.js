@@ -9,9 +9,10 @@
 // for nothing itself - which is the recovery #149 wanted, with nothing of the
 // footer's own left to recover.
 //
-// Every test drives the shipped data/footer.js in a vm, with the shipped
-// status stream and Live Reading, and asserts on what it rendered and what it
-// asked for (test/test_web/README.md).
+// The footer is the rail's foot line, written by the Operator Shell since #466
+// merged data/footer.js into it. Every test drives the shipped data/shell.js in
+// a vm, with the shipped status stream and Live Reading, and asserts on what
+// it rendered into #fw-meta and what it asked for (test/test_web/README.md).
 // =============================================================================
 
 import { test } from "node:test";
@@ -21,7 +22,7 @@ import { loadPageModule } from "./helpers/page_module_env.js";
 import { statusFrame } from "./helpers/fake_droid.js";
 
 const loadFooter = async () => {
-  const env = loadPageModule("footer.js", {
+  const env = loadPageModule("shell.js", {
     respond: (path) => (path === "/fs-version.json" ? { data: { fsVersion: "bundle-9" } } : { data: {} }),
   });
   await env.settle();
@@ -63,6 +64,8 @@ test("the footer asks the droid for no status of its own", async () => {
   const ownReads = env.requests.filter((request) => request.path === "/api/status");
 
   assert.deepEqual(ownReads, [], "the status is the Live Reading's to read, once, for every reader");
-  // Every interval here is the Live Reading's single fallback poll.
-  assert.equal(env.intervals.length, 1, "and the footer adds no poll beside the shell's one");
+  // Beside the Status Plate's 1 s display tick, which asks the droid for
+  // nothing, every interval here is the Live Reading's single fallback poll.
+  const polls = env.intervals.filter((interval) => interval.ms !== 1000);
+  assert.equal(polls.length, 1, "and the footer adds no poll beside the shell's one");
 });

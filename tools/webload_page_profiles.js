@@ -58,7 +58,6 @@ const INDEX_REQUIRED_RESOURCES = Object.freeze([
   "/dome_layout.js",
   "/dome_layout_render.js",
   "/bundle_dashboard.js",
-  "/footer.js",
 ]);
 
 // Every served page now has this shape: no loader script of its own, an inline
@@ -74,7 +73,6 @@ const WIFI_REQUIRED_RESOURCES = Object.freeze([
   "/web_api.js",
   "/bundle_shell.js",
   "/wifi.js",
-  "/footer.js",
 ]);
 
 // The three sections wifi.js registers with the bootstrap (data/wifi.js:391,

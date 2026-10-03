@@ -5251,7 +5251,6 @@
       "/body_view.js": "droid picture",
       "/outputs.js": "servo outputs",
       "/seq.js": "sequence editor",
-      "/footer.js": "page footer",
     });
     SECTIONS.forEach(([name, load, label]) =>
       window.PABootstrap.registerSection(name, load, { label })
