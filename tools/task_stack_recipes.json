@@ -70,8 +70,7 @@
           "frames": [],
           "chain_bytes": 4112,
           "stack_bytes": 5632,
-          "reason": "#250 raised the 50 Hz drive loop on both chips rather than only where an overrun is provable, because the Xtensa figure is the floor of an unknown. Lowering this arm onto the rule would undo that decision.",
-          "note": "The root frame is 1360 B. The deepest route is failsafeUpdateWebTimeout -> failsafeTrigger's log line -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf) formats with newlib nano's vsniprintf. driveTask's frame grew 1344 -> 1360 B when the ConfigSnapshot, which it holds, reached 944 B with #451's Stand Down Sequence (20 B); 1328 -> 1344 B before that, when #444 and #445 each added 4 B."
+          "note": "The root frame is 1360 B. The deepest route is failsafeUpdateWebTimeout -> failsafeTrigger's log line -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf) formats with newlib nano's vsniprintf. driveTask's frame grew 1344 -> 1360 B when the ConfigSnapshot, which it holds, reached 944 B with #451's Stand Down Sequence (20 B); 1328 -> 1344 B before that, when #444 and #445 each added 4 B. At 4112 B the rule gives 5632 B, the stack #250 raised it to, so the arm now sits on the rule."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -242,8 +241,7 @@
           "frames": [],
           "chain_bytes": 4544,
           "stack_bytes": 6144,
-          "reason": "#248's tight-heap reason, named on #250: the rule's margin costs heap on the scarce chip for cover the Xtensa walk cannot confirm, and the stack still covers the walk (operator decision 2026-09-25). This is the thinnest floor in the table; raising it is where that decision would be recorded.",
-          "note": "The dome layout fetch: fetchDomeLayoutOverWifi (896 B) -> HTTPClient::GET -> handleHeaderResponse -> setCookie -> strptime -> localtime_r -> the time-zone parse, whose siscanf float scan (__ssvfiscanf_r, 704 B) is the deepest part. The root frame is 608 B: it held a ConfigSnapshot for one start-up read until #451 moved that read into a leaf of its own (domeLinkEnabledAtStart(), src/tasks/dome_link.cpp), which took 6128 -> 4544 B. The ConfigSnapshot's growth to 944 B would otherwise have put this chain 32 B past its stack."
+          "note": "The dome layout fetch: fetchDomeLayoutOverWifi (896 B) -> HTTPClient::GET -> handleHeaderResponse -> setCookie -> strptime -> localtime_r -> the time-zone parse, whose siscanf float scan (__ssvfiscanf_r, 704 B) is the deepest part. The root frame is 608 B: it held a ConfigSnapshot for one start-up read until #451 moved that read into a leaf of its own (domeLinkEnabledAtStart(), src/tasks/dome_link.cpp), which took 6128 -> 4544 B. The ConfigSnapshot's growth to 944 B would otherwise have put this chain 32 B past its stack; at 4544 B the rule gives the 6144 B it already had, so #248's decline here no longer applies."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -252,9 +250,8 @@
           ],
           "frames": [],
           "chain_bytes": 8144,
-          "stack_bytes": 12288,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: domeLinkTask -> fetchDomeLayoutOverWifi() [clone .isra.0] -> HTTPClient::GET() -> HTTPClient::sendRequest() -> HTTPClient::handleHeaderResponse() -> HTTPClient::setCookie() -> ...; widest frames _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, _Unwind_Resume_or_Rethrow 912 B, fetchDomeLayoutOverWifi() [clone .isra.0] 880 B. The task's own frame no longer holds a ConfigSnapshot: #451 moved its one start-up read into a leaf of its own (domeLinkEnabledAtStart()), which took 9728 -> 8144 B.",
-          "reason": "Held at 12288 B while the walk reads 8144 B (rule 10240 B): #451 took the task's ConfigSnapshot off its frame, and lowering a stack is the operator's decision, not a side effect of a re-walk. Lowering it frees 2048 B."
+          "stack_bytes": 10240,
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: domeLinkTask -> fetchDomeLayoutOverWifi() [clone .isra.0] -> HTTPClient::GET() -> HTTPClient::sendRequest() -> HTTPClient::handleHeaderResponse() -> HTTPClient::setCookie() -> ...; widest frames _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, _Unwind_Resume_or_Rethrow 912 B, fetchDomeLayoutOverWifi() [clone .isra.0] 880 B. The task's own frame no longer holds a ConfigSnapshot: #451 moved its one start-up read into a leaf of its own (domeLinkEnabledAtStart()), which took 9728 -> 8144 B. Its stack followed the rule down, 12288 -> 10240 B (#451): the ESP32-P4 pays the rule on every task (ADR 0040)."
         }
       }
     },
