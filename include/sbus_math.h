@@ -58,21 +58,3 @@ inline bool sbusWatchdogTimeoutCheck(uint32_t lastSbusMs, uint32_t currentMs, ui
     // Unsigned subtraction handles millis() overflow correctly
     return (currentMs - lastSbusMs) > timeoutMs;
 }
-
-// -----------------------------------------------------------------------------
-// webDriveTimeoutCheck()
-// Pure function to check if web drive command has timed out.
-// Used by DriveTask to implement Layer 3 safety (web drive timeout).
-//
-// params: lastDriveCommandMs  - timestamp of last web drive command
-//         currentMs           - current timestamp (millis())
-//         timeoutMs           - timeout threshold for web drive commands
-// returns: true if web drive command has timed out
-// -----------------------------------------------------------------------------
-inline bool webDriveTimeoutCheck(uint32_t lastDriveCommandMs, uint32_t currentMs,
-                                 uint32_t timeoutMs) {
-    if (lastDriveCommandMs == 0) {
-        return false;  // No command ever sent, not a timeout
-    }
-    return (currentMs - lastDriveCommandMs) > timeoutMs;
-}
