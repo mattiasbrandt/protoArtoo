@@ -1,15 +1,13 @@
 // =============================================================================
 // test/test_native/test_log_buffer/test_log_buffer.cpp
 //
-// Native unit tests for log ring-buffer helpers and config JSON formatter.
-// Tests: logBufferAppend ordering, wrap-around, truncation, logBufferCopy,
-//        formatConfigJson output shape.
+// Native unit tests for log ring-buffer helpers.
+// Tests: logBufferAppend ordering, wrap-around, truncation, logBufferCopy.
 // =============================================================================
 #include <stdio.h>
 #include <string.h>
 #include <unity.h>
 
-#include "api_config.h"
 #include "log_buffer.h"
 
 // Fixed test capacity: the ring is runtime-sized in production (boot-sized
@@ -249,39 +247,6 @@ void test_ring_at_the_production_depth_retains_that_many_lines() {
     TEST_ASSERT_NOT_NULL(strstr(out, newest));
 }
 
-// --- formatConfigJson (drive-settings slice only; full config coverage is in test_json_formatters) ---
-
-void test_formatConfigJson_contains_speedLimitMax() {
-    char out[512];
-    formatConfigJson(out, sizeof(out), 400, 500);
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"speedLimitMax\":400"));
-}
-
-void test_formatConfigJson_contains_webDriveTimeoutMs() {
-    char out[512];
-    formatConfigJson(out, sizeof(out), 400, 500);
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"webDriveTimeoutMs\":500"));
-}
-
-void test_formatConfigJson_omits_legacy_ch8ModeLock() {
-    char out[512];
-    formatConfigJson(out, sizeof(out), 400, 500);
-    TEST_ASSERT_NULL(strstr(out, "\"ch8ModeLock\":"));
-}
-
-void test_formatConfigJson_zero_speed_limit() {
-    char out[512];
-    formatConfigJson(out, sizeof(out), 0, 100);
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"speedLimitMax\":0"));
-}
-
-void test_formatConfigJson_is_valid_json_object() {
-    char out[512];
-    formatConfigJson(out, sizeof(out), 600, 1000);
-    TEST_ASSERT_EQUAL_CHAR('{', out[0]);
-    TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
-}
-
 int main() {
     UNITY_BEGIN();
 
@@ -307,12 +272,6 @@ int main() {
     RUN_TEST(test_ring_ladder_never_loses_depth_as_verbosity_rises);
     RUN_TEST(test_every_declared_rung_is_selectable_by_a_level);
     RUN_TEST(test_ring_at_the_production_depth_retains_that_many_lines);
-
-    RUN_TEST(test_formatConfigJson_contains_speedLimitMax);
-    RUN_TEST(test_formatConfigJson_contains_webDriveTimeoutMs);
-    RUN_TEST(test_formatConfigJson_omits_legacy_ch8ModeLock);
-    RUN_TEST(test_formatConfigJson_zero_speed_limit);
-    RUN_TEST(test_formatConfigJson_is_valid_json_object);
 
     return UNITY_END();
 }
