@@ -153,6 +153,8 @@ class AudioDriver {
     static constexpr uint8_t AUDIO_CAP_CURRENT_TRACK = 0x08;
     static constexpr uint8_t AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
     static constexpr uint8_t AUDIO_CAP_CATALOG = 0x20;
+    // Plays a Sound Bed under vocals (ADR 0054): see the Streams block below.
+    static constexpr uint8_t AUDIO_CAP_MIXES = 0x40;
 
     // Initialise hardware (GPIO, serial pin) and set initial volume  --  called once
     // during AudioTask init. vol is the NVS-configured volume (0-30).
@@ -172,12 +174,66 @@ class AudioDriver {
         playTrack(index);
     }
 
-    // Stop current playback immediately.
+    // Stop current playback immediately, on every stream: the droid-wide stop
+    // (Quiet, Sleep Mode entry, Sound switched off). A Sound Bed stops with it.
     virtual void stop() = 0;
 
-    // Set output volume in the range 0-30 (0 = silent, 30 = maximum).
+    // Set output volume in the range 0-30 (0 = silent, 30 = maximum), on every
+    // stream: the operator's volume. A Sound Bed's own level is overwritten by it.
     // AudioTask clamps the value before calling; driver may assume it is in range.
     virtual void setVolume(uint8_t vol) = 0;
+
+    // -------------------------------------------------------------------------
+    // Streams (ADR 0054).
+    //
+    // A module that mixes plays several sounds at once, each on a numbered
+    // stream; a module that cannot has one stream, stream 0, and the defaults
+    // below are that one-stream case. Whether a module mixes is its registry
+    // row's AUDIO_CAP_MIXES bit (include/component_registry.inc), never inferred
+    // from which of these a driver overrides.
+    //
+    // stop() and setVolume() above are the droid-wide forms; stopStream() and
+    // setStreamVolume() are the single-stream forms.
+    // -------------------------------------------------------------------------
+
+    // Stop one stream. On one stream, stream 0 is everything that plays.
+    virtual void stopStream(uint8_t stream) {
+        if (stream == 0) {
+            stop();
+        }
+    }
+
+    // Set one stream's volume, 0-30 like setVolume(). On one stream, stream 0's
+    // volume is the module's volume.
+    virtual void setStreamVolume(uint8_t stream, uint8_t vol) {
+        if (stream == 0) {
+            setVolume(vol);
+        }
+    }
+
+    // Track Stop (ADR 0010): stop what the droid is saying, never a Sound Bed
+    // playing under it. On one stream nothing plays under a vocal, so a Track
+    // Stop is stop().
+    virtual void stopVocals() {
+        stop();
+    }
+
+    // Start a Sound Bed: the bank/page/index track at its own volume (0-30), on
+    // a stream vocals fired afterwards will not land on. Returns false when the
+    // bed is not playing as far as the driver knows -- always, on a module that
+    // cannot mix, which is this default. AudioTask refuses a bed on a module
+    // without AUDIO_CAP_MIXES before it gets here; the default is the honest
+    // answer for a driver reached some other way.
+    virtual bool playBed(uint16_t index, uint8_t bank, char page, uint8_t vol) {
+        (void)index;
+        (void)bank;
+        (void)page;
+        (void)vol;
+        return false;
+    }
+
+    // Stop the Sound Bed, and nothing else. No bed, nothing sent.
+    virtual void stopBed() {}
 
     virtual ~AudioDriver() = default;
 
