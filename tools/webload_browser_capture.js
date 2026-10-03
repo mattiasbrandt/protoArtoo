@@ -26,7 +26,6 @@
 const fs = require("fs");
 const path = require("path");
 const { performance } = require("perf_hooks");
-const { chromium } = require("playwright");
 const { DEFAULT_PAGE, PAGE_PROFILES, pageNames, resolveProfile, describeProfile } =
   require("./webload_page_profiles.js");
 
@@ -405,6 +404,11 @@ function classifySse(attempts, domState) {
 }
 
 async function runCapture(config) {
+  // Required here, not at the top: the verdict exports below are pure, and
+  // test/test_tools/test_webload_capture_verdict.js loads this module on hosts
+  // that have no Playwright install. A capture still needs it before anything
+  // is written, and main() reports the missing module like any other error.
+  const { chromium } = require("playwright");
   const origin = performance.now();
   const startedAt = wallNow();
   const artifacts = {
