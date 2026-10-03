@@ -1500,6 +1500,7 @@
   const esc = (text) => window.PAUtils.escapeHtml(text);
   const escAttr = (text) => window.PAUtils.escapeAttr(text);
   const icon = (name) => `<svg class="i" aria-hidden="true" focusable="false"><use href="#i-${name}"/></svg>`;
+  const actFace = (name, words) => window.PAUi.actFace(name, words);
 
   const libraryEntry = (name) =>
     showLearned?.find((seq) => seq.name === name) || showFactory?.find((seq) => seq.name === name) || null;
@@ -1534,8 +1535,8 @@
           ${refusal ? `<span class="why">${refusal.says}</span>` : ""}
         </span>
         <span class="show-item-acts">
-          <button type="button" class="btn btn-sm show-play" data-act="play"${refusedAttrs(refusal)}>${icon("play")}Play</button>
-          <button type="button" class="btn btn-sm seq-stop hidden" data-act="stop">${icon("stop")}Stop</button>
+          <button type="button" class="btn btn-sm show-play icon-act" data-act="play"${refusedAttrs(refusal)}>${actFace("play", "Play")}</button>
+          <button type="button" class="btn btn-sm seq-stop icon-act hidden" data-act="stop">${actFace("stop", "Stop")}</button>
         </span>
       </li>`;
   };
@@ -1574,7 +1575,7 @@
       showOther.classList.toggle("hidden", other === null);
       showOther.innerHTML = other === null ? ""
         : `<span class="seq-row-run"><span class="indicator ok seq-live" aria-hidden="true"></span>Running ${esc(other)}</span>
-           <button type="button" class="btn btn-sm seq-stop" data-act="stop">${icon("stop")}Stop</button>`;
+           <button type="button" class="btn btn-sm seq-stop icon-act" data-act="stop">${actFace("stop", "Stop")}</button>`;
     }
     if (showNow) {
       const record = runWatch.record();

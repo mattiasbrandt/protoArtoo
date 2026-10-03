@@ -3199,6 +3199,12 @@ body.sleep-mode-active {
   color: var(--silver-bright);
 }
 
+/* Wake is an act (#460): a square on the panel's centre line, not a cell the
+   panel's grid stretches across its width. */
+:root:not(.act-words) .sleep-overlay-panel .icon-act {
+  justify-self: center;
+}
+
 .endpoint-list,
 .feature-list {
   list-style: none;
