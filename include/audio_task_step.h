@@ -62,6 +62,7 @@ enum AudioStepIgnoreReason : uint8_t {
     AUDIO_STEP_IGNORE_SLEEP,                // play-type command while sleeping
     AUDIO_STEP_IGNORE_UNSUPPORTED_BACKEND,  // catalog command on non-catalog driver
     AUDIO_STEP_IGNORE_BANK_NOT_FITTED,      // $8nn, and the module has no bank 8
+    AUDIO_STEP_IGNORE_CANNOT_MIX,           // Background Track on a module without AUDIO_CAP_MIXES
 };
 
 // -----------------------------------------------------------------------------
@@ -110,6 +111,8 @@ struct AudioStepCommandInputs {
     // because AudioTask's stack chain is recorded to the byte
     // (tools/task_stack_recipes.json) and a pointer and a count cost 16 B.
     char dollarBankPage = '\0';
+    // AUDIO_CAP_MIXES. Also in the padding before the pointers, for the same reason.
+    bool mixCapable = false;
     const AudioPlaybackConfig* playback = nullptr;
     const AudioNamedTracks* named = nullptr;
     const AudioBindingCache* bindings = nullptr;

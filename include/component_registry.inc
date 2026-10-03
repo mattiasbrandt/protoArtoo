@@ -220,6 +220,10 @@ PA_COMPONENT_PART(17, "flipsky_mini_v6_vesc", "Flipsky Mini V6 VESC",        COM
 // restating them (include/audio_chirp.h, include/audio_dy_sv5w.h,
 // include/audio_mp3trigger.h), so a row and its driver cannot drift apart.
 //
+// AUDIO_CAP_MIXES (a Background Track under vocals, ADR 0054) is CHIRP's alone:
+// it is the only member with more than one stream. DY-SV5W and MP3 Trigger play
+// one sound at a time.
+//
 // DFPlayer Mini declares 0 because nobody has read its protocol against this
 // bitmask yet, not because it can be asked nothing. #305 declares its bits when
 // it builds the driver; until then 0 is the honest word for "none declared".
@@ -237,6 +241,7 @@ PA_COMPONENT_PART(19, "mp3_trigger",   "MP3 Trigger",         COMPONENT_CATEGORY
 PA_COMPONENT_PART(20, "chirp",         "CHIRP Audio Trigger", COMPONENT_CATEGORY_SOUND, "chirp_ascii_uart",  COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,
                   AudioDriver::AUDIO_CAP_STATUS_QUERY | AudioDriver::AUDIO_CAP_DEVICE_TYPE |
                   AudioDriver::AUDIO_CAP_TRACK_COUNT | AudioDriver::AUDIO_CAP_CURRENT_TRACK |
-                  AudioDriver::AUDIO_CAP_QUERY_SAFE_PLAYING | AudioDriver::AUDIO_CAP_CATALOG,
+                  AudioDriver::AUDIO_CAP_QUERY_SAFE_PLAYING | AudioDriver::AUDIO_CAP_CATALOG |
+                  AudioDriver::AUDIO_CAP_MIXES,
                   nullptr, 1)
 PA_COMPONENT_PART(21, "dfplayer_mini", "DFPlayer Mini",       COMPONENT_CATEGORY_SOUND, "dfplayer_serial",   COMPONENT_STATUS_ROADMAP, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)

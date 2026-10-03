@@ -76,6 +76,10 @@ class AudioDriverMp3Trigger : public AudioDriver {
     // nativeVol = (30 - vol) * MP3TRIGGER_VOL_AUDIBLE / 30.
     void setVolume(uint8_t vol) override;
 
+    // One stream: the AudioDriver defaults for the single-stream forms, Track
+    // Stop and the Background Track are this module's, and its registry row
+    // declares no AUDIO_CAP_MIXES (ADR 0054).
+
     // The operator-visible name, read from this product's Component Registry
     // row. It was the bare "MP3Trigger", which put a spelling no builder uses
     // on every surface that names the fitted module (#422).

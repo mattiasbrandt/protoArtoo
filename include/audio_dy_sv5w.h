@@ -42,8 +42,11 @@ class AudioDriverDySv5w : public AudioDriver {
     void playTrack(uint16_t track) override;
     void stop() override;
     void setVolume(uint8_t vol) override;
-    // The operator-visible name, read from this product's Component Registry
-    // row so every surface shows the name the registry declares (#422).
+    // One stream: the AudioDriver defaults for the single-stream forms, Track
+    // Stop and the Background Track are this module's, and its registry row
+    // declares no AUDIO_CAP_MIXES (ADR 0054). The operator-visible name, read
+    // from this product's Component Registry row so every surface shows the
+    // name the registry declares (#422).
     const char* driverName() const override {
         return componentPartDisplayName("dy_sv5w");
     }

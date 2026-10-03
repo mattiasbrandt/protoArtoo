@@ -13,6 +13,10 @@
 //   - AUDIO_CMD_QUERY_STATUS: on-demand module status query (web UI poll button).
 //                             Used for manual DY-SV5W poll and modules without
 //                             AUDIO_CAP_QUERY_SAFE_PLAYING only.
+//   - AUDIO_CMD_TRACK_STOP  : Track Stop -- the vocals, never a Background
+//     Track.
+//   - AUDIO_CMD_BACKGROUND_TRACK_START / AUDIO_CMD_BACKGROUND_TRACK_STOP: the
+//     Background Track (ADR 0054).
 //
 // Queue sends from real-time tasks MUST use the audioQueue* helpers which
 // use timeout 0 (non-blocking). Never call xQueueSend directly on audioCmdQueue
@@ -46,6 +50,9 @@ enum AudioCommandType : uint8_t {
     AUDIO_CMD_QUERY_STATUS,  // on-demand status query (manual/fallback poll path)
     AUDIO_CMD_REFRESH_CATALOG,  // refresh CHIRP catalog cache
     AUDIO_CMD_REFRESH_BINDINGS,  // refresh cached CHIRP slot/category bindings from NVS
+    AUDIO_CMD_BACKGROUND_TRACK_START,  // start a Background Track (ADR 0054): banked
+                                       // tuple at its own volume
+    AUDIO_CMD_BACKGROUND_TRACK_STOP,   // stop the Background Track and nothing else
 };
 
 // -----------------------------------------------------------------------------
@@ -69,6 +76,12 @@ struct AudioCommand {
             uint8_t bank;
             char page;
         } banked;
+        struct {          // AUDIO_CMD_BACKGROUND_TRACK_START
+            uint16_t index;
+            uint8_t bank;
+            char page;
+            uint8_t volume;  // 0-30, clamped before enqueue
+        } backgroundTrack;
     };
 };
 
@@ -85,8 +98,9 @@ const char* audioRxStatusDetail(AudioRxStatus status);
 // Pinned to Core 0 (non-RT side). Driver init and queries block for hundreds of
 // ms, and without PA_CAP_DEDICATED_AUDIO_UART the software bit-bang TX
 // additionally holds a critical section for ~1.04 ms per byte, once per byte of
-// a command that is 2 bytes on an MP3 Trigger, 4 to 6 on a DY-SV5W and 12 on a
-// CHIRP "PLAY:12,2,C"; Core 0 keeps all of it away from DriveTask / ServoTask.
+// a command that is 2 bytes on an MP3 Trigger, 4 to 6 on a DY-SV5W and 15 on a
+// CHIRP "PLAY:12,2,C,66" (22 when a Background Track is held and a "STOP:1"
+// goes first); Core 0 keeps all of it away from DriveTask / ServoTask.
 // Priority: 3 (below web server; above idle).
 // Stack: 3072 bytes.
 // -----------------------------------------------------------------------------
@@ -117,9 +131,44 @@ bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fa
                             CommandSource src);
 
 // Enqueue a Track Stop (ADR 0010): stops current playback only, preserves
-// random/idle mood, and bumps the anti-spam cadence so idle chatter resumes after
-// a natural beat. Use this everywhere except the mood system's Quiet path.
+// random/idle mood, and bumps the anti-spam cadence so idle chatter resumes
+// after a natural beat. Use this everywhere except the mood system's Quiet
+// path. A Background Track playing under the vocals keeps playing (ADR 0054):
+// stop it with audioQueueBackgroundTrackStop().
 bool audioQueueTrackStop(CommandSource src);
+
+// -----------------------------------------------------------------------------
+// Background Track (ADR 0054) -- the seam the Background Track step plugs into.
+//
+// audioQueueBackgroundTrackStart() starts a Background Track: music playing
+// UNDER the routine at its own volume, which vocals fire over without stopping.
+// audioQueueBackgroundTrackStop() stops it and nothing else. Non-blocking like
+// every helper here; false only when the queue is full or the tuple is
+// malformed (index 0 or bank 0).
+//
+// Target form: bank/page/index, the CHIRP address. CHIRP is the only module
+// that mixes (AUDIO_CAP_MIXES, include/component_registry.inc), its music lives
+// on banks 2-6 by the module's own convention, and a Named Track on CHIRP is
+// already that tuple (AudioChirpSlotBinding), so a step naming a Named Track
+// resolves to the same three values. There is no flat-track form: a module
+// with one stream cannot play a Background Track at all.
+//
+// What the caller gets on a module without AUDIO_CAP_MIXES: the command is
+// accepted, AudioTask does not play it and logs why (the one audio seam,
+// AUDIO_STEP_IGNORE_CANNOT_MIX). The run-time report and the Rehearsal Warning
+// are the caller's to compose from audioGetCapabilities(); this seam does not
+// answer back. Ignored in Sleep Mode like any play.
+//
+// Stops: Quiet, Sleep Mode entry and Sound switched off stop the Background
+// Track with everything else. A Track Stop does NOT -- so a Sequence that
+// started a Background Track owns stopping it: its teardown calls
+// audioQueueBackgroundTrackStop() as well as audioQueueTrackStop() when the
+// Background Track is bounded (the default) or the end is abnormal (estop
+// included).
+// -----------------------------------------------------------------------------
+bool audioQueueBackgroundTrackStart(uint16_t index, uint8_t bank, char page, uint8_t vol,
+                                    CommandSource src);
+bool audioQueueBackgroundTrackStop(CommandSource src);
 
 // Enqueue an absolute volume set (clamped to 0-30 before enqueue).
 bool audioQueueSetVolume(uint8_t vol, CommandSource src);

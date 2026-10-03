@@ -8,8 +8,8 @@
 // baud. RX status/manifest responses are read via UART_PORT_AUDIO on
 // PIN_AUDIO_RX.
 //
-// Written for the artoo-esp32 posture, where UART_PORT_AUDIO is shared with the
-// dome link; see the file header of src/drivers/audio_chirp.cpp.
+// On artoo-esp32 UART_PORT_AUDIO is shared with the dome link; on firebeetle2
+// audio has it to itself. See the file header of src/drivers/audio_chirp.cpp.
 //
 // NOTE: CHIRP defaults to 115200 baud. Before using this driver, set the board's
 // baud rate to 9600 by placing the following in CHIRP.INI on the SD card root:
@@ -34,6 +34,23 @@
 // CHIRP native volume range (0 = silent, 99 = maximum)
 static constexpr uint8_t CHIRP_VOL_MAX = 99;
 
+// The module's default stream count (CHIRP config.h DEFAULT_MAX_STREAMS 3), and
+// this droid's. #MAX_STREAMS can be set 1-10 in CHIRP.INI and no command
+// reports the value, so the stream model and the status query both rest on the
+// default rather than on a discovered configuration.
+static constexpr uint8_t CHIRP_STREAM_COUNT = 3u;
+static constexpr uint8_t CHIRP_NO_STREAM = 0xFFu;
+
+// What the body knows about one of the module's streams (ADR 0054). The rules
+// that write it are the stream model in src/drivers/audio_chirp.cpp.
+enum class ChirpStreamUse : uint8_t {
+    // First, so a zeroed stream is the cautious answer: a stream the body has
+    // not stopped or seen idle may be playing.
+    MaybeVocal = 0,  // a vocal PLAY may have landed here, and may have ended unannounced
+    IdleByProof,     // stopped by the body, or seen idle by an attributed STAT, since its last PLAY
+    BackgroundTrack,  // the Background Track's stream
+};
+
 // What one read window produced. A parser must only ever see Complete: half a
 // NAME line read as a whole one is a track called "genera", and half a
 // "Sounds: 24" is a count of 2 (#397 work item 12).
@@ -57,11 +74,20 @@ class AudioDriverChirp : public AudioDriver {
     void playTrack(uint16_t track) override;
     void playTrackBanked(uint16_t index, uint8_t bank, char page) override;
 
-    // Stop all active streams.
+    // Stop all active streams, the Background Track's included.
     void stop() override;
 
-    // Set volume 0-30 (clamped by AudioTask). Scaled to CHIRP 0-99 range.
+    // Set volume 0-30 (clamped by AudioTask) on every stream, the Background
+    // Track's included. Scaled to CHIRP 0-99 range.
     void setVolume(uint8_t vol) override;
+
+    // Streams and the Background Track (ADR 0054); the rules are the stream
+    // model in src/drivers/audio_chirp.cpp.
+    void stopStream(uint8_t stream) override;
+    void setStreamVolume(uint8_t stream, uint8_t vol) override;
+    void stopVocals() override;
+    bool playBackgroundTrack(uint16_t index, uint8_t bank, char page, uint8_t vol) override;
+    void stopBackgroundTrack() override;
     // The Sound page's Driver row is operator-facing, and bare "CHIRP" also
     // names CHIRP Droid Control, a different product by the same author
     // (CONTEXT.md Flagged Ambiguities, 2026-09-08: always qualify in operator
@@ -100,6 +126,39 @@ class AudioDriverChirp : public AudioDriver {
 
    private:
     AudioSerialIO m_io{};
+
+    // Stream model (ADR 0054). One entry per default stream; sentSeq orders the
+    // PLAYs the body sent, so the smallest among the vocals is the one started
+    // longest ago.
+    struct ChirpStream {
+        ChirpStreamUse use;
+        uint32_t sentSeq;
+    };
+    ChirpStream m_streams[CHIRP_STREAM_COUNT] = {};
+    uint32_t m_sendSeq = 0;
+    // The operator's volume in native units, carried on every vocal PLAY, or
+    // CHIRP_VOL_UNSET before setVolume() has run (the module's own level stands).
+    static constexpr uint8_t CHIRP_VOL_UNSET = 0xFFu;
+    uint8_t m_vocalVolume = CHIRP_VOL_UNSET;
+    // When the last vocal PLAY went out (m_io.millisNow()), and whether one
+    // has: an ERR: line read just after a Background Track's PLAY may be that
+    // vocal's.
+    uint32_t m_lastVocalSentMs = 0;
+    bool m_vocalSent = false;
+    // A STAT query in an earlier snapshot went unanswered, so its reply may
+    // still arrive and would be read as the next snapshot's first.
+    bool m_statReplyOwed = false;
+    // The first ERR: line read after a Background Track's PLAY, whole: the
+    // longest handlePlay() prints ("ERR:PARAM - Invalid sound index") is 31
+    // characters. A member, not a local, so AudioTask's recorded stack chain
+    // does not carry it.
+    char m_backgroundTrackErr[32] = {0};
+
+    uint8_t backgroundTrackStream() const;
+    void makeRoomBesideBackgroundTrack();
+    void noteVocalSent();
+    void readBackgroundTrackAnswer(bool vocalJustSent);
+    void noteStreamObserved(uint8_t stream, bool playing);
 
     uint16_t m_totalTracks = 0;
     uint8_t m_playState = 0xFF;

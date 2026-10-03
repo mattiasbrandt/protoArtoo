@@ -174,10 +174,79 @@ three rates in a different one.
 
 | `AudioDriver` call | CHIRP command | Notes |
 |---|---|---|
-| `playTrack(n)` | `PLAY:n,1,A\n` | Flat compatibility path (Bank 1, Page A, index n) |
-| `playTrackBanked(i,b,p)` | `PLAY:i,b,p\n` | Bank/page/index path used by CHIRP slot bindings and `/api/audio/play-banked` |
-| `stop()` | `STOP\n` | Stops all active streams |
-| `setVolume(v)` | `VOL:${v*99/30}\n` | Scales 0-30 -> 0-99 |
+| `playTrack(n)` | `PLAY:n,1,A,N\n` | Flat compatibility path (Bank 1, Page A, index n) |
+| `playTrackBanked(i,b,p)` | `PLAY:i,b,p,N\n` | Bank/page/index path used by CHIRP slot bindings, `$8nn` and `/api/audio/play-banked` |
+| `stop()` | `STOP\n` | Stops every stream, a Background Track's included |
+| `stopStream(s)` | `STOP:s\n` | Stops one stream |
+| `stopVocals()` | `STOP:s\n` for each stream but the Background Track's | Track Stop; a bare `STOP\n` when no Background Track is held |
+| `setVolume(v)` | `VOL:N\n` | Every stream, a Background Track's included. N = v*99/30 |
+| `setStreamVolume(s,v)` | `VOL:s,V\n` | One stream |
+| `playBackgroundTrack(i,b,p,v)` | `STOP:0\n`, then `PLAY:i,b,p,V\n` | Starts a Background Track on stream 0 |
+| `stopBackgroundTrack()` | `STOP:s\n` | The Background Track's stream only |
+
+`N` is the operator's volume and `V` a Background Track's own, both scaled from
+0-30 to 0-99. A vocal's `PLAY` carries `N` because the module keeps a volume per
+stream: without it, a vocal landing on a stream a Background Track used would
+play at the Background Track's level. Before the boot volume has been sent the
+field is left off.
+
+#### Streams and the Background Track
+
+A **Background Track** (ADR 0054) is a track that plays *under* what else the
+droid is saying, at its own volume; vocals fire over it without stopping it.
+Only CHIRP can do it: its registry row is the only one declaring
+`AUDIO_CAP_MIXES` (0x40), and on a module without that bit AudioTask does not
+play a Background Track and logs why. The DY-SV5W and MP3 Trigger have one
+stream, and their Track Stop is a full stop.
+
+The module, not the body, chooses the stream a `PLAY` lands on: its lowest
+inactive stream, or stream 0 when all of them are busy. A stream that finishes
+sends nothing, and on artoo-esp32 nothing the module says is heard while the
+dome link holds the shared UART. So the driver keeps, per stream, only what it
+can stand behind - *idle by proof* (it sent the `STOP`, or a status reply said
+idle), *maybe a vocal*, or *the Background Track* - and works by these rules
+(`src/drivers/audio_chirp.cpp`, "Stream model"):
+
+- **The Background Track goes on stream 0.** `STOP:0` is sent every time and
+  takes effect before the module reads the next command, so the Background
+  Track's `PLAY` lands on stream 0 whether or not a reply can be read. A vocal
+  still playing on stream 0 is cut by it. One Background Track at a time: a new
+  Background Track replaces the old one. No reply moves the Background Track.
+  Where replies can be heard, any `ERR:` line (`ERR:PARAM` for a bad target,
+  `ERR:NOFILE` for a missing file) means the Background Track did not start -
+  unless a vocal went out just before the Background Track, in which case the
+  error may be the vocal's and the Background Track stays held. An `S:<n>,ply`
+  naming another stream is logged and that stream is treated as busy. Only a
+  `STAT` reply is proof that anything plays.
+- **A vocal never lands on the Background Track's stream.** Before each vocal
+  `PLAY` while a Background Track is held, some other stream must be idle by
+  proof; if none is, the vocal started longest ago is stopped first and the new
+  one plays. The Background Track is never the one stopped. "Longest ago" is the
+  order protoArtoo sent them in, so the stream stopped may already have gone
+  quiet on its own.
+- **Track Stop** (Bounded Audio teardown, `sound.action.track-stop`) stops every
+  stream but the Background Track's. **Quiet**, Sleep Mode entry and Sound
+  switched off send the bare `STOP` and end the Background Track with everything
+  else. The operator's volume is the bare `VOL:N`, which moves the Background
+  Track to that level too.
+- **Status** asks `STAT:0`, `STAT:1`, `STAT:2` and counts the replies for the
+  play state, as before: a playing Background Track keeps the module reported as
+  playing, and a stream that does not answer is not idle. Because the module
+  answers each query at once, a reply inside a query's own window is that
+  stream's; the driver uses that to confirm or drop the Background Track, and
+  stops attributing for the rest of a snapshot once any query went unanswered.
+  Because that missing reply may still arrive, the next snapshot first reads and
+  discards one reply window (200 ms) before it asks.
+
+**Limit:** the module frees a stream when its file ends and says nothing, so a
+Background Track that ended on its own, or one held through an error that may
+have been a vocal's, is still held until a STAT says idle or the Background
+Track is stopped. Meanwhile the next vocal can land on stream 0, and a Track
+Stop leaves that vocal playing.
+
+`audioQueueBackgroundTrackStart()` / `audioQueueBackgroundTrackStop()`
+(`include/audio_task.h`) are the entry points. Nothing calls them yet: the
+Sequence step that starts and stops a Background Track is #447's next slice.
 
 > ⚠ **Track numbers are module-specific.** CHIRP's `PLAY:n,1,A` command plays the
 > *nth entry in the Bank 1 sound manifest* (sorted by basename after variant
@@ -219,7 +288,11 @@ See the upstream CHIRP examples and folder conventions in the CHIRP project docs
 
 CHIRP supports live status queries at any time, including active playback. The
 protoArtoo CHIRP driver queries automatically every 10 seconds, so no operator
-poll action is required.
+poll action is required. On artoo-esp32 the replies arrive on the dome link's
+UART controller, so the query and the catalog refresh are skipped while the
+dome link holds it and the Sound page says "Held by protoR2link"; on
+firebeetle2 audio has its own controller (`PA_CAP_DEDICATED_AUDIO_UART`) and
+both run whatever the dome link is doing.
 
 Reported fields include module link state (ACK-based), play state (playing when
 any of the module's default three streams reports playing), Bank 1 sound count
