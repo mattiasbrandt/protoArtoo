@@ -73,7 +73,16 @@ PICTOGRAPH = re.compile(
 )
 
 ICON_SYMBOL = re.compile(r'\n    "([a-z0-9-]+)": "M')
-ICON_USE = re.compile(r'href="#i-([a-z0-9-]+)"')
+# A reference is a literal <use>, or a name handed to one of the helpers that
+# write one: data/shell.js icon() and actFace(), an act's icon changed in place
+# by setAct(button, words, name), and an act table's `icon: "name"` field
+# (#460). Each alternative captures the name in its own group.
+ICON_USE = re.compile(
+    r'href="#i-([a-z0-9-]+)"'
+    r'|\b(?:icon|actFace)\("([a-z0-9-]+)"'
+    r'|\bsetAct\([^()]*,\s*"([a-z0-9-]+)"\)'
+    r'|\bicon: "([a-z0-9-]+)"'
+)
 # The chrome names its icons by field rather than by markup - the rail builds
 # `href="#i-${surface.icon}"` - so the literal <use> regex above cannot see
 # them. This is the other half of the same question.
@@ -122,11 +131,12 @@ def check_pictographs(files: list[Path], data: Path, errors: list[str]) -> tuple
 
 
 def check_icon_references(files: list[Path], data: Path, symbols: set[str], errors: list[str]) -> int:
-    """Every <use href="#i-name"> names a symbol the sprite defines."""
+    """Every icon reference (ICON_USE) names a symbol the sprite defines."""
     uses = 0
     for path in files:
         name = path.relative_to(data).as_posix()
-        used = set(ICON_USE.findall(path.read_text(encoding="utf-8", errors="replace")))
+        text = path.read_text(encoding="utf-8", errors="replace")
+        used = {name for groups in ICON_USE.findall(text) for name in groups if name}
         uses += len(used)
         missing = sorted(used - symbols)
         if missing:
