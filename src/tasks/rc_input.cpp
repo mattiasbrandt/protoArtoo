@@ -237,12 +237,22 @@ static constexpr UBaseType_t kPuppetQueueReserve = 4;
 // once, on the string's first target after it takes the Part, and the target
 // is counted as handled so the string asks again only when the stick moves on.
 //
+// One target per Output per frame. A Part has one string, but an Output may
+// carry several Parts (SERVO_OUTPUT_PART_SLOTS), and two strings on two Parts
+// of one Output would each restart the other's move from rest. So the first
+// string to reach an Output in a frame has it, and a second is skipped and
+// asks again next frame. Across frames the two can still take turns: that is
+// what wiring two Parts to one Output means - they cannot move apart, which the
+// Rehearsal already warns about (CONTEXT.md "Output").
+//
 // Out of line, so its frame is not folded into dispatchProcessorOutput()'s on
 // RCInputTask's measured chain.
 // -----------------------------------------------------------------------------
 static void __attribute__((noinline)) dispatchPuppetStrings(const RcProcessorOutput& output,
                                                            const RcTriggerBinding* triggers) {
     const uint32_t nowMs = millis();
+    ServoOutputAddress sentTo[RC_TRIGGER_MAX];
+    size_t sentCount = 0;
     for (size_t i = 0; i < RC_TRIGGER_MAX; ++i) {
         const RcPuppetAsk ask = output.puppet[i];
         if (!ask.send) {
@@ -265,6 +275,14 @@ static void __attribute__((noinline)) dispatchPuppetStrings(const RcProcessorOut
             continue;
         }
 
+        bool taken = false;
+        for (size_t j = 0; j < sentCount; ++j) {
+            taken = taken || sentTo[j] == address;
+        }
+        if (taken) {
+            continue;
+        }
+
         const uint16_t targetUs = rcPuppetTargetUs(openUs, closeUs, ask.permille);
         const ServoCommandedPosition at = servoCommandedOf(address);
         if (!rcPuppetMayRetarget(at.nowUs, at.targetUs, at.moving, targetUs)) {
@@ -281,6 +299,7 @@ static void __attribute__((noinline)) dispatchPuppetStrings(const RcProcessorOut
         cmd.source = SRC_SBUS;
         if (xQueueSend(servoCmdQueue, &cmd, 0) == pdTRUE) {
             rcPuppetSent(&state, ask.permille, nowMs);
+            sentTo[sentCount++] = address;
         } else {
             logQueueDrop(QUEUE_SERVO_CMD, "puppet string");
         }

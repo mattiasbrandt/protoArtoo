@@ -351,6 +351,9 @@
   // What a Part is CALLED comes from the catalog (data/droid_parts.js). Null
   // until the droid has answered, so no stored string is called unwired early.
   let puppetPartIds = null;
+  // Which servo Output each of those Parts is on, by its address: two Parts
+  // on one Output cannot move apart, so two strings on them take turns.
+  let puppetPartOutput = new Map();
   const catalogPartById = new Map((window.DroidParts?.parts || []).map((part) => [part.id, part]));
   const partLabel = (id) => {
     const part = catalogPartById.get(id);
@@ -362,7 +365,9 @@
     if (!window.PAOutputs) return;
     try {
       const outputs = await window.PAOutputs.refresh();
-      puppetPartIds = outputs.filter((output) => !output.light).flatMap((output) => output.parts);
+      const servos = outputs.filter((output) => !output.light);
+      puppetPartIds = servos.flatMap((output) => output.parts);
+      puppetPartOutput = new Map(servos.flatMap((output) => output.parts.map((id) => [id, output.address])));
     } catch (error) {
       console.warn('[RC] Outputs not loaded:', window.PAApi.messageFor(error));
     }
@@ -1895,6 +1900,23 @@
         if (!go) return;
         delete nextMap[from];
         moved = ` ${channelTitleFromKey(from)} is unmapped.`;
+      }
+      // Another string on a Part that shares this Part's servo: the droid
+      // sends one stick's target to a servo per frame, so the two sticks take
+      // turns. Asked, not refused - wiring two Parts to one servo is legal.
+      const servo = puppetPartOutput.get(payload);
+      const shared = servo === undefined ? null : Object.keys(nextMap).find((key) => key !== selectedChannel
+        && mapEntryAction(nextMap[key]) === 'puppet_part' && nextMap[key].payload !== payload
+        && puppetPartOutput.get(nextMap[key].payload) === servo);
+      if (shared) {
+        const keep = await window.PAOverlay.ask({
+          title: `${partLabel(payload)} shares a servo with ${partLabel(nextMap[shared].payload)}`,
+          body: `${channelTitleFromKey(shared)} moves that servo already. Two sticks on one servo take turns.`,
+          yes: 'Map it anyway',
+          no: 'Leave it',
+          near: rcEditorApply,
+        });
+        if (!keep) return;
       }
     }
 
