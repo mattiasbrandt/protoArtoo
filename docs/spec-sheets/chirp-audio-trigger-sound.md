@@ -204,7 +204,7 @@ Agent requirements when using this document:
 - MUST NOT treat `device = 3` as a device type. It is not in the enumeration
   (Finding 13.1).
 - MUST NOT assume `STOP` stops one sound. It stops **every stream**, including a
-  music bed (Section 9.3).
+  **Background Track** (Section 9.3).
 - MUST state that the module is proven on this droid but that **no line of the
   protocol in Section 7 has been captured off the wire**.
 
@@ -1410,7 +1410,7 @@ and dependent work stops.
 | --- | --- | --- |
 | 1 | **What should the Component Picker card say about a part nobody can buy?** Every other card names a purchasable product; this one is a PCB a builder has to have made. A greyed `roadmap` treatment would be wrong -- it ships and works. | An operator decision, plus #316's photograph. The card needs one honest line about provenance; this also decides what #387's image-provenance record says. |
 | 2 | **Does `GMAN` actually lose its first lines on this card?** Finding 13.2, reasoned from source at both ends and never observed. It decides whether "Total tracks" can read 0 on a healthy link. | Bench, ~10 min: board on a USB-serial adapter at 9600, send `GMAN`, count `BANK:` lines against the 14 directories on the card. |
-| 3 | **Should `stop()` stop one stream instead of all?** Section 8.3. The module supports `STOP:<n>`; the `AudioDriver` interface has no way to express it, so a beep kills the music bed. | A design decision tied to ADR 0054. It needs a stream concept in the interface, which only this member could use -- the reason it has not been done. |
+| 3 | **Should `stop()` stop one stream instead of all?** Section 8.3. The module supports `STOP:<n>`; the `AudioDriver` interface has no way to express it, so a beep kills the Background Track. | A design decision tied to ADR 0054. It needs a stream concept in the interface, which only this member could use -- the reason it has not been done. |
 | 4 | **Is `CHRP:` worth exposing?** A synthesised sweep needs no card, no catalog and no binding, so it is the one sound that always works -- a natural boot or error signal even on an empty card. | A product decision. Cheap to try: `CHRP:500,100,500,50` from the Controller Console. |
 | 5 | **Is the soft UART's cost note stale for this backend?** Finding 13.8. Commands are 3-4x the budgeted length. | Measure with a scope or a GPIO toggle around `sendCommand()` during a catalog walk, which is the worst case. Then correct the comment, or the design. |
 | 6 | **Should `MSUM` be stored and compared?** Finding 13.5. It is the module's own answer to "the card changed and your bindings now point at the wrong sounds". | A decision, then a small change: persist it beside the bindings and warn on mismatch. |

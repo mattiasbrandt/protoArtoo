@@ -243,10 +243,10 @@ newer boards:
 | WAV Trigger | up to **14** stereo | uncompressed WAV | ~8 ms trigger latency |
 | Tsunami | **32** mono / 18 stereo | uncompressed WAV | 8 output channels |
 
-**This is the same axis CHIRP sits on.** `CONTEXT.md:401` defines a music bed as
+**This is the same axis CHIRP sits on.** `CONTEXT.md` defines a **Background Track** as
 something that exists *"where the fitted module mixes"*, and names the MP3 Trigger
 and the DY-SV5W as *"the single-track modules it contrasts itself with"*. A droid
-that wants a bed under a performance needs CHIRP, a WAV Trigger, or a Tsunami --
+that wants a Background Track under a performance needs CHIRP, a WAV Trigger, or a Tsunami --
 not this board. Neither Robertsonics successor is in protoArtoo's lineup and
 neither is proposed here; they are recorded because a builder asking *"can I have
 music under the screams"* has to be told no, and told what would.
