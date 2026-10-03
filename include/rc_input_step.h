@@ -171,4 +171,3 @@ RcInputStepSbus2FrameActions rcInputStepSbus2Frame(const RcInputStepSbus2FrameIn
 
 // Drive decoder frames routed as SBUS2 (single_sbus + useCh2).
 RcInputStepSbus2FrameActions rcInputStepSbus2RoutedFrame(const RcInputStepSbus2FrameInputs& in);
-

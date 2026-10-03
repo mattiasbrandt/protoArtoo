@@ -238,4 +238,3 @@ RcInputStepSbus2FrameActions rcInputStepSbus2RoutedFrame(const RcInputStepSbus2F
 
     return out;
 }
-
