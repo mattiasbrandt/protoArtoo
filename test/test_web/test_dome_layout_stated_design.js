@@ -41,9 +41,6 @@ function newPage(droidBuild) {
       },
       // The dome is not answering: that is what puts the hierarchy past tier 2.
       PAApi: { get: () => Promise.resolve({ ok: false, status: 503, data: null }) },
-      // Read out of the vendored drawing itself rather than assumed here.
-      DOME_PANEL_MAP_DESIGN: "mk4",
-      DOME_PANEL_MAP_VARIANT: "complex",
       DomeCommandMap: { resolvePanelCommand: () => null },
       DroidBuild: droidBuild,
     },
@@ -172,8 +169,6 @@ test("an unsupported schema is tier 3 plus its own warning", async () => {
       PAApi: {
         get: () => Promise.resolve({ ok: true, status: 200, data: { schema_revision: 99 } }),
       },
-      DOME_PANEL_MAP_DESIGN: "mk4",
-      DOME_PANEL_MAP_VARIANT: "complex",
       DomeCommandMap: { resolvePanelCommand: () => null },
       DroidBuild: seam("own", "", true),
     },
@@ -211,8 +206,6 @@ test("a dome link coming up re-reads the layout once, and a link that stays up d
         return Promise.resolve({ ok: false, status: 503, data: null });
       },
     },
-    DOME_PANEL_MAP_DESIGN: "mk4",
-    DOME_PANEL_MAP_VARIANT: "complex",
     DomeCommandMap: { resolvePanelCommand: () => null },
     DroidBuild: seam("mk4", "complex", true),
     document: { visibilityState: "visible", addEventListener() {} },
