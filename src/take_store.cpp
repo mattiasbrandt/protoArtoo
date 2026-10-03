@@ -183,7 +183,10 @@ const char* takeStoreRoomRefusal(char* out, size_t cap) {
         // A take not yet saved into its sequence will make way at the keep,
         // and frees its own blocks when it does.
         if (!findTake(unsavedTake, nullptr, &unsaved)) {
+            // Asked when a take is armed, so it names the way to free one.
             refusal = fullRefusal(out, cap);
+            strncat(out, " Remove a take on its sequence's Sequence tab and save it.",
+                    cap - strlen(out) - 1);
         }
     } else if (freeBytes() < TAKE_FS_FREE_FLOOR + TAKE_FILE_MAX_BYTES) {
         refusal = noSpaceRefusal(out, cap);

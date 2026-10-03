@@ -4424,7 +4424,7 @@
       if (payload.startsWith("$")) return { type: "audio", cmd: payload };
       return /^[:#]/.test(payload) ? { type: "dome", cmd: payload } : null;
     }
-    if (action === "seq") return /^\d+$/.test(payload) ? { type: "dome", cmd: `:SE${payload}` } : null;
+    if (action === "seq") return /^\d{2}$/.test(payload) ? { type: "dome", cmd: `:SE${payload}` } : null;
     if (action === "dome_seq") return payload ? { type: "sequence", ref: payload } : null;
     return null;
   };
@@ -4495,7 +4495,7 @@
     const names = await cueNames(unplaced);
     if (names.length > 0) lines.push(`No step for: ${names.join(", ")}.`);
     if (receipt?.cuesPast > 0) lines.push(`${receipt.cuesPast} more ${receipt.cuesPast === 1 ? "press was" : "presses were"} not kept.`);
-    if (take || placed > 0) lines.push("Save to keep it.");
+    if (take || placed > 0) lines.push("Save the sequence to hold them on the droid.");
     window.PAOverlay.receipt(lines.join(" "));
   };
 
@@ -4512,9 +4512,9 @@
     }
   };
 
-  // The takes the sequence holds, in the Sequence tab: how many, and each one
-  // to take out - which is how a board that keeps one take frees it for the
-  // next. Taking one out is an edit like any other; saving deletes its file.
+  // The takes the sequence holds, in the Sequence tab: each one, with its
+  // Remove - which is how a board that keeps one take frees it for the next.
+  // Removing one is an edit like any other; saving deletes its file.
   const paintTakes = () => {
     const el = document.getElementById("seq-editor-takes");
     if (!el || !editorState.current) return;
@@ -4522,7 +4522,7 @@
     el.innerHTML = takes.length === 0
       ? `<span class="hint">None</span>`
       : takes.map((take, index) =>
-        `<span class="seq-take">Take ${index + 1}<button type="button" class="seq-act" data-take-out="${window.PAUtils.escapeHtml(take.id)}">Take out</button></span>`).join("");
+        `<span class="seq-take">Take ${index + 1}<button type="button" class="seq-act" data-take-out="${window.PAUtils.escapeHtml(take.id)}">Remove</button></span>`).join("");
   };
 
   const takeOut = (id) => {
