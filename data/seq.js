@@ -1665,7 +1665,8 @@
       + settingRow("Trim end", numberCell("to", to, [Math.min(facts.lengthMs, from + least), Math.round(facts.lengthMs)], "Trim end, in milliseconds into the take"))
       + settingRow("Parts", `<span class="setting-value">${esc(names)}</span>`)
       + `</div>`
-      + acts('<button type="button" class="seq-act" data-picked="perform-again">Perform again</button>');
+      // Not offered while a take runs: Keep is the press then.
+      + acts(takePoll === null ? '<button type="button" class="seq-act" data-picked="perform-again">Perform again</button>' : "");
   };
 
   const pickedHtml = (blocks) => {
@@ -4523,11 +4524,14 @@
     if (lamp) lamp.className = `indicator ${status.nearlyFull ? "warn" : "ok"} seq-live`;
   };
 
+  // Starting and stopping the watch writes the inspector again: a picked
+  // take offers Perform again only while no take runs (takeHtml()).
   const stopTakePoll = () => {
     if (takePoll !== null) clearInterval(takePoll);
     takePoll = null;
     takeMisses = 0;
     paintPerform(null);
+    if (editorState.current) repaintPicked();
   };
 
   // One read of the take while it runs: still performing, it is painted;
@@ -4562,6 +4566,7 @@
   const watchTake = () => {
     if (takePoll !== null) return;
     takePoll = setInterval(readTake, TAKE_POLL_MS);
+    repaintPicked();
     readTake();
   };
 
@@ -4594,14 +4599,15 @@
   // builder removes the take and saves first.
   const performAgain = () => {
     const entry = pickedTake();
-    if (entry) handlePerform(entry.id);
+    if (entry && takePoll === null) handlePerform(entry.id);
   };
 
+  // `over` is set as performOver only once the droid has armed: a press it
+  // refuses - one made while a take runs - must not take the running take's
+  // target away from it.
   const handlePerform = async (over = null) => {
-    performOver = typeof over === "string" ? over : null;
     const name = takeSeqName();
     if (!name) {
-      performOver = null;
       showEditorFeedback("Save the sequence first.", "error");
       return;
     }
@@ -4609,10 +4615,10 @@
     if (btn) btn.disabled = true;
     try {
       await PAApi.request(`/api/take/arm?seq=${encodeURIComponent(name)}`, { method: "POST" });
+      performOver = typeof over === "string" ? over : null;
       showEditorFeedback("");
       watchTake();
     } catch (error) {
-      performOver = null;
       showEditorFeedback(PAApi.messageFor(error), "error");
     } finally {
       if (btn) btn.disabled = false;
