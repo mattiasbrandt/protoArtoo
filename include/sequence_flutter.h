@@ -176,6 +176,15 @@ inline bool sequenceFlutterEndPart(SeqFlutterRun* run, uint8_t part) {
     return false;
 }
 
+// Whether a Part is fluttering. A take holds off it until the swing is over
+// (include/take_replay.h, "a step wins").
+inline bool sequenceFlutterHasPart(const SeqFlutterRun& run, uint8_t part) {
+    for (const SeqFlutterEntry& e : run.f) {
+        if (e.active && e.part == part) return true;
+    }
+    return false;
+}
+
 // A generated motion that is not a flutter's leg has started -- a Gesture's
 // move. The next leg of any flutter then follows another Output's motion, and
 // keeps the pace.
