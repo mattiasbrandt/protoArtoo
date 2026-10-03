@@ -954,10 +954,13 @@
   // The one request the pose press sends: the sequence's name and the instant.
   // What the droid does at that instant, and how far apart, is the firmware's
   // to work out from what it stores (include/sequence_pose.h); a latched estop
-  // or Sleep Mode refuses it there, in words this shows.
-  const poseOnDroid = (name, atMs, which = "") =>
+  // or Sleep Mode refuses it there, in words this shows. The droid poses
+  // from the stored steps only (sequencePosePlan()), never a take (#442), so
+  // where the routine holds takes - which the picture here does show - the
+  // answer says they are not in it (`aside`).
+  const poseOnDroid = (name, atMs, which = "", aside = "") =>
     PAApi.postJson("/api/seq/pose", { name, t: atMs })
-      .then(() => ({ text: `Moving the droid to ${(atMs / 1000).toFixed(2)} s${which}, one part at a time.`, level: "ok" }))
+      .then(() => ({ text: `Moving the droid to ${(atMs / 1000).toFixed(2)} s${which}, one part at a time.${aside}`, level: "ok" }))
       .catch((error) => ({ text: PAApi.messageFor(error), level: "error" }));
 
   // A Factory sequence's stage: the strip carries the way back and Tune, and
@@ -1150,7 +1153,8 @@
         // nothing to pose, and unsaved edits are not in the pose.
         const name = editorState.tuningFactory || (editorState.isNew ? null : editorState.original?.name);
         if (!name) return Promise.resolve({ text: "Save it first, so the droid has the routine to move to.", level: "error" });
-        return poseOnDroid(name, atMs, sessionDirty() ? " of the routine as last saved" : "");
+        const takes = (editorState.current?.takes || []).length > 0 ? " Takes are not in it." : "";
+        return poseOnDroid(name, atMs, sessionDirty() ? " of the routine as last saved" : "", takes);
       },
       edit: {
         begin: historyBegin,
