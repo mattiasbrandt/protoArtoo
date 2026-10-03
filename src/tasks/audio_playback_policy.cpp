@@ -224,6 +224,28 @@ AudioPlaybackIntent audioPlaybackResolveRequest(const AudioPlaybackContext& cont
             return intent;
         }
 
+        case AUDIO_PLAYBACK_REQ_BED_START: {
+            // No anti-spam gate and no cadence bump: a bed is authored, not
+            // chatter, and it plays under the vocals the cadence paces.
+            AudioPlaybackIntent intent{};
+            if (!audioPlaybackNormalizeBanked(request.bed.index, request.bed.bank,
+                                              request.bed.page, &intent)) {
+                return makeNone(request.kind, AUDIO_PLAYBACK_NONE_INVALID_BANKED);
+            }
+            intent.kind = AUDIO_PLAYBACK_INTENT_BED_START;
+            intent.requestKind = request.kind;
+            intent.volume = request.bed.volume;
+            intent.markAudioActive = true;
+            return intent;
+        }
+
+        case AUDIO_PLAYBACK_REQ_BED_STOP: {
+            AudioPlaybackIntent intent{};
+            intent.kind = AUDIO_PLAYBACK_INTENT_BED_STOP;
+            intent.requestKind = request.kind;
+            return intent;
+        }
+
         case AUDIO_PLAYBACK_REQ_SET_VOLUME: {
             AudioPlaybackIntent intent{};
             intent.kind = AUDIO_PLAYBACK_INTENT_SET_VOLUME;

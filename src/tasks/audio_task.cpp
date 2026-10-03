@@ -319,6 +319,44 @@ bool audioQueueTrackStop(CommandSource src) {
     return true;
 }
 
+bool audioQueueBedStart(uint16_t index, uint8_t bank, char page, uint8_t vol, CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
+    if (index == 0 || bank == 0) {
+        return false;
+    }
+    AudioCommand msg{};
+    msg.type = AUDIO_CMD_BED_START;
+    msg.source = src;
+    msg.bed.index = index;
+    msg.bed.bank = bank;
+    msg.bed.page = page;
+    msg.bed.volume = audioClampVolume(vol);
+    if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        logQueueDrop(QUEUE_AUDIO_CMD, "bed start");
+        return false;
+    }
+    return true;
+}
+
+bool audioQueueBedStop(CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
+    AudioCommand msg{};
+    msg.type = AUDIO_CMD_BED_STOP;
+    msg.source = src;
+    // A stop, so a catalog walk in progress yields to it like it does to a
+    // Track Stop rather than holding it for minutes.
+    audioCatalogInterruptNoteStop();
+    if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        logQueueDrop(QUEUE_AUDIO_CMD, "bed stop");
+        return false;
+    }
+    return true;
+}
+
 bool audioQueueSetVolume(uint8_t vol, CommandSource src) {
     if (audioOutputInactive()) {
         return true;
@@ -539,8 +577,26 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
             break;
 
         case AUDIO_PLAYBACK_INTENT_TRACK_STOP:
-            driver()->stop();
+            // The vocals only: a Sound Bed under them plays on (ADR 0054).
+            driver()->stopVocals();
             PA_LOG_INFO(TAG, "[%s] track stop", commandSourceToString(source));
+            break;
+
+        case AUDIO_PLAYBACK_INTENT_BED_START:
+            if (!driver()->playBed(intent.index, intent.bank, intent.page, intent.volume)) {
+                PA_LOG_WARN(TAG, "[%s] bed bank=%u page=%c index=%u not playing on %s",
+                            commandSourceToString(source), (unsigned)intent.bank, intent.page,
+                            (unsigned)intent.index, driver()->driverName());
+                return;
+            }
+            PA_LOG_INFO(TAG, "[%s] bed bank=%u page=%c index=%u vol=%u",
+                        commandSourceToString(source), (unsigned)intent.bank, intent.page,
+                        (unsigned)intent.index, (unsigned)intent.volume);
+            break;
+
+        case AUDIO_PLAYBACK_INTENT_BED_STOP:
+            driver()->stopBed();
+            PA_LOG_INFO(TAG, "[%s] bed stop", commandSourceToString(source));
             break;
 
         case AUDIO_PLAYBACK_INTENT_SET_VOLUME:
@@ -751,6 +807,7 @@ static const char* playCommandName(AudioCommandType type) {
         case AUDIO_CMD_PLAY_CATEGORY:     return "category play";
         case AUDIO_CMD_REFRESH_CATALOG:   return "catalog refresh";
         case AUDIO_CMD_REFRESH_BINDINGS:  return "binding cache refresh";
+        case AUDIO_CMD_BED_START:         return "bed start";
         default:                          return "command";
     }
 }
@@ -886,6 +943,7 @@ void audioTask(void* pvParameters) {
             cmdIn.nowMs = millis();
             cmdIn.sleepMode = sleepMode;
             cmdIn.catalogCapable = catalogCapable;
+            cmdIn.mixCapable = (caps & AudioDriver::AUDIO_CAP_MIXES) != 0;
             cmdIn.playback = &playback;
             cmdIn.named = &named;
             cmdIn.bindings = &s_audioBindings;
@@ -906,6 +964,11 @@ void audioTask(void* pvParameters) {
                             commandSourceToString(cmd.source), cmd.dollar,
                             (unsigned)AUDIO_DOLLAR_BANK, cmd.dollar + 2,
                             (unsigned)AUDIO_DOLLAR_BANK);
+            } else if (ca.ignored == AUDIO_STEP_IGNORE_CANNOT_MIX) {
+                PA_LOG_WARN(TAG, "[%s] bed bank=%u page=%c index=%u not played: %s plays one "
+                                 "sound at a time",
+                            commandSourceToString(cmd.source), (unsigned)cmd.bed.bank,
+                            cmd.bed.page, (unsigned)cmd.bed.index, driver()->driverName());
             }
             if (ca.hasIntent) {
                 executePlaybackIntent(ca.intent, cmd.source);

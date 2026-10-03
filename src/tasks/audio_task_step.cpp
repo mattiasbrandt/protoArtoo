@@ -21,7 +21,8 @@ static bool intentExecutable(const AudioPlaybackIntent& intent) {
     if (intent.kind == AUDIO_PLAYBACK_INTENT_PLAY_FLAT && intent.track == 0) {
         return false;
     }
-    if (intent.kind == AUDIO_PLAYBACK_INTENT_PLAY_BANKED &&
+    if ((intent.kind == AUDIO_PLAYBACK_INTENT_PLAY_BANKED ||
+         intent.kind == AUDIO_PLAYBACK_INTENT_BED_START) &&
         (intent.index == 0 || intent.bank == 0 || intent.page < 'A' || intent.page > 'Z')) {
         return false;
     }
@@ -268,6 +269,36 @@ AudioStepCommandActions audioStepCommand(AudioStepState& state,
         case AUDIO_CMD_TRACK_STOP: {
             AudioPlaybackRequest request{};
             request.kind = AUDIO_PLAYBACK_REQ_TRACK_STOP;
+            resolvePlayback(state, in, request, false, &actions);
+            break;
+        }
+
+        case AUDIO_CMD_BED_START: {
+            if (in.sleepMode) {
+                actions.ignored = AUDIO_STEP_IGNORE_SLEEP;
+                break;
+            }
+            // The one audio seam a bed passes (ADR 0054): a module that cannot
+            // mix is never asked, and the reason is reported rather than lost.
+            if (!in.mixCapable) {
+                actions.ignored = AUDIO_STEP_IGNORE_CANNOT_MIX;
+                break;
+            }
+            AudioPlaybackRequest request{};
+            request.kind = AUDIO_PLAYBACK_REQ_BED_START;
+            request.bed.index = cmd.bed.index;
+            request.bed.bank = cmd.bed.bank;
+            request.bed.page = cmd.bed.page;
+            request.bed.volume = cmd.bed.volume;
+            resolvePlayback(state, in, request, false, &actions);
+            break;
+        }
+
+        case AUDIO_CMD_BED_STOP: {
+            // Not gated on mixCapable: on a module that cannot mix no bed is
+            // playing, and the driver's stopBed() sends nothing.
+            AudioPlaybackRequest request{};
+            request.kind = AUDIO_PLAYBACK_REQ_BED_STOP;
             resolvePlayback(state, in, request, false, &actions);
             break;
         }
