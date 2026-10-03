@@ -202,6 +202,15 @@ const ConfigSetting kConfigSettings[] = {
     PA_RANGE("cadenceFloorMs", "servo.cadenceFloorMs", "cad_floor_ms", Immediate, System, SystemConfig,
              cadence_floor_ms, SEQ_CADENCE_FLOOR_MIN_MS, SEQ_CADENCE_FLOOR_MAX_MS, SEQ_CADENCE_FLOOR_MS),
 
+    // The Stand Down Sequence (CONTEXT.md, #451): one name, droid-wide. Empty
+    // until a builder chooses one, and the Dashboard's Stand Down runs
+    // DM:RESET until then. Only its form is checked: a Sequence deleted since
+    // it was chosen stays chosen, and the page says it will do nothing. Nothing
+    // on the controller reads it, so it is Immediate.
+    {"standDownSequence", "seq.standDown", "seq_standdown", ApplyTiming::Immediate,
+     PA_SETTING_FIELD(System, SystemConfig, stand_down_sequence), SettingRule::SequenceName, 0, 0, 0, nullptr, 0,
+     "must be empty or a sequence name like DM:RESET"},
+
     // The log level takes its words as well as its number, at every door, and
     // GET reads the number (#423's round trip).
     {"logLevel", "system.logLevel", "log_level", ApplyTiming::Immediate,
@@ -211,6 +220,11 @@ const ConfigSetting kConfigSettings[] = {
 
 // The floor's bounds are the shortest and the longest servo move a sequence may
 // ask for; held equal here so neither moves without the other.
+// The Stand Down Sequence's field holds the longest name Protocol Check
+// accepts, "DM:" and PC_NAME_BODY_MAX characters, and its terminator.
+static_assert(STAND_DOWN_SEQUENCE_SIZE == 3 + PC_NAME_BODY_MAX + 1,
+              "the Stand Down Sequence holds exactly one sequence name");
+
 static_assert(SEQ_CADENCE_FLOOR_MIN_MS == PC_SM_MOVE_MIN && SEQ_CADENCE_FLOOR_MAX_MS == PC_SM_MOVE_MAX,
               "the Cadence Floor is bounded by the servo moves Protocol Check accepts");
 
@@ -757,6 +771,7 @@ void configSettingFormat(const ConfigSetting& setting, const ConfigSnapshot& sna
             return;
         }
         case SettingRule::Ipv4:
+        case SettingRule::SequenceName:
             snprintf(out, outSize, "%.*s", (int)setting.size, reinterpret_cast<const char*>(at));
             return;
         case SettingRule::Range:
@@ -796,6 +811,16 @@ bool configSettingApply(const ConfigSetting& setting, const char* raw, ConfigSna
             snprintf(reinterpret_cast<char*>(at), setting.size, "%s", raw);
             return true;
         }
+        case SettingRule::SequenceName: {
+            const bool empty = raw != nullptr && raw[0] == '\0';
+            if (raw == nullptr || strlen(raw) >= setting.size || (!empty && !protocolCheckSeqNameValid(raw))) {
+                snprintf(sentence, sentenceSize, "%s %s", setting.form, setting.says);
+                applyRefusalSet(refusal, ApplyRefusalReason::OutOfRange, setting.form);
+                return false;
+            }
+            snprintf(reinterpret_cast<char*>(at), setting.size, "%s", raw);
+            return true;
+        }
         case SettingRule::Range:
         case SettingRule::Words:
         case SettingRule::Bool:
@@ -823,6 +848,7 @@ void configSettingsDefaults(ConfigSnapshot* snap) {
                             componentCategoryDefaultMember((ComponentCategoryId)setting.family));
                 break;
             case SettingRule::Ipv4:
+            case SettingRule::SequenceName:
                 at[0] = '\0';
                 break;
             default:
@@ -918,6 +944,12 @@ void configSettingsRead(SettingSection section, const ConfigReader& reader, void
                 } else {
                     snprintf(reinterpret_cast<char*>(at), setting.size, "%s", stored.c_str());
                 }
+                // A name no door would take is not a name: emptied, so the
+                // Stand Down runs its default rather than sending it.
+                if (setting.rule == SettingRule::SequenceName && at[0] != '\0' &&
+                    !protocolCheckSeqNameValid(reinterpret_cast<const char*>(at))) {
+                    at[0] = '\0';
+                }
                 return;
             }
         }
@@ -939,6 +971,7 @@ void configSettingsRead(SettingSection section, const ConfigReader& reader, void
                 case SettingRule::Bool:
                 case SettingRule::Member:
                 case SettingRule::Ipv4:
+                case SettingRule::SequenceName:
                 default:
                     break;
             }

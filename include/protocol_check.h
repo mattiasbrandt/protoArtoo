@@ -165,6 +165,11 @@ ProtocolCheckResult protocolCheckTempo(const SeqTempo& tempo);
 // Whether `ref` is a well-formed stable reference: a sequence name
 // (DM:[A-Z0-9_]{1,18}) or a Learned Sequence id ([0-9a-z]{1,16}).
 bool protocolCheckSeqRefValid(const char* ref);
+// Whether `name` is a well-formed sequence name, DM:[A-Z0-9_]{1,18}, and
+// nothing else: the form a stored Sequence name is checked by (the Stand Down
+// Sequence Setting, src/config_settings.cpp) without asking whether the
+// Sequence exists today.
+bool protocolCheckSeqNameValid(const char* name);
 bool protocolCheckSeqIdValid(const char* id);
 
 // What the store knows about one referenced sequence, for the nesting walk:

@@ -205,6 +205,11 @@ struct DomeConfig {
     uint8_t dome_positive_turn;  // DomeTurnDirection
 };
 
+// A sequence name, "DM:" and at most 18 characters (PC_NAME_BODY_MAX,
+// include/protocol_check.h, which src/config_settings.cpp holds this to), and
+// its terminator.
+static constexpr size_t STAND_DOWN_SEQUENCE_SIZE = 3 + 18 + 1;
+
 struct SystemConfig {
     char droid_name[DROID_NAME_MAX_LEN + 1];
     bool mdns_use_name;
@@ -259,6 +264,13 @@ struct SystemConfig {
     // Read from the cache each time something is paced, so a saved value is
     // the pace from the next move on.
     uint16_t cadence_floor_ms;
+    // The Stand Down Sequence (CONTEXT.md, #330, #451): the one Sequence the
+    // builder nominates as putting the droid back the way it stands, as its
+    // name ("DM:RESET"). Empty is never chosen, and the Stand Down then runs
+    // DM:RESET (data/app.js). Nothing on the controller runs it: the page's
+    // Stand Down does, so a stored name whose Sequence was deleted since stays
+    // stored and the page says so, rather than being refused or emptied.
+    char stand_down_sequence[STAND_DOWN_SEQUENCE_SIZE];
     RcBindingConfig rc_pwm_drive_speed;
     RcBindingConfig rc_pwm_drive_steer;
     RcBindingConfig rc_pwm_dome_speed;
@@ -369,7 +381,13 @@ struct ConfigSnapshot {
 // turns. Four bytes, and DomeConfig had three spare, so it grew 40 -> 44 B.
 // Measured off a host build of this header after the merge, and every chain
 // re-walked on both chips before this number moved.
-static_assert(sizeof(ConfigSnapshot) == 924,
+//
+// #451 grew it to 944 B: SystemConfig.stand_down_sequence, the Stand Down
+// Sequence's name, 22 bytes - two of them in padding SystemConfig already
+// carried, so the struct grew by 20. Measured off a host build of this header,
+// and every chain re-walked with tools/check_task_stack_chains.py on both chips
+// before this number moved.
+static_assert(sizeof(ConfigSnapshot) == 944,
               "ConfigSnapshot changed size - re-derive the Console task stack from a fresh "
               "chain measurement before moving this number");
 

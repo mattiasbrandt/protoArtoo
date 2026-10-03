@@ -454,6 +454,10 @@
       refused: "must be empty or an address like 192.168.4.2",
     },
     cadenceFloorMs: { applies: "immediate", word: "gap between servo starts", unit: MS, path: "servo.cadenceFloorMs" },
+    standDownSequence: {
+      applies: "immediate", word: "Stand Down Sequence", path: "seq.standDown",
+      refused: "must be a sequence name like DM:RESET",
+    },
     logLevel: { applies: "immediate", word: "log level", path: "system.logLevel" },
 
     // Device WiFi Settings (POST /api/wifi, src/web/api_wifi_apply.cpp), named

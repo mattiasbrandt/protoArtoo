@@ -61,12 +61,15 @@ enum class SettingStorage : uint8_t { Bool, U8, U16, I16, U32, Text };
 //   Member - a Component Registry id of one family that this image can drive;
 //            stored as the part's number, read as its id.
 //   Ipv4   - empty, or a dotted-quad IPv4 address.
+//   SequenceName - empty, or a sequence name, DM:[A-Z0-9_]{1,18}. Its form
+//            only: whether that Sequence exists today is not asked, so a
+//            deleted one stays named and the page says so.
 //   Mask   - a bit mask 0..hi. Stored and loaded with the bits above `hi`
 //            stripped rather than clamped: a mood mask's upper nibble once
 //            carried category flags, and the track IDs below it are the value.
 //   Letter - one letter lo..hi (a CHIRP catalog page, A..Z), either case,
 //            held as its upper-case character.
-enum class SettingRule : uint8_t { Range, Words, Bool, Member, Ipv4, Mask, Letter };
+enum class SettingRule : uint8_t { Range, Words, Bool, Member, Ipv4, Mask, Letter, SequenceName };
 
 // A word list: the words for values first .. first + count - 1, each named by
 // `nameOf`. The name function is the vocabulary's one home (the RC receiver
@@ -113,10 +116,10 @@ struct ConfigSetting {
     SettingRule rule;
     int32_t lo;           // Range
     int32_t hi;           // Range
-    int32_t def;          // the default, for every rule but Member (the family's default member) and Ipv4 (empty)
+    int32_t def;          // the default, for every rule but Member (the family's default member), Ipv4 and SequenceName (empty)
     const SettingWords* words;  // Words, and Range where a word stands for a number
     uint8_t family;       // Member: the ComponentCategoryId
-    const char* says;     // Member and Ipv4: what the refusal's sentence says after the form name
+    const char* says;     // Member, Ipv4 and SequenceName: what the refusal's sentence says after the form name
     SettingDoor door = SettingDoor::Config;
     // Whether a load repairs a stored value this Setting would refuse. False for
     // every audio track, random-chatter interval and category bound: a track's
@@ -276,6 +279,8 @@ template <>
 constexpr SettingStorage settingStorageOf<uint32_t>() { return SettingStorage::U32; }
 template <>
 constexpr SettingStorage settingStorageOf<char[16]>() { return SettingStorage::Text; }
+template <>
+constexpr SettingStorage settingStorageOf<char[STAND_DOWN_SEQUENCE_SIZE]>() { return SettingStorage::Text; }
 // An enum stored in a byte is stored as that byte.
 template <>
 constexpr SettingStorage settingStorageOf<RcInputMode>() { return SettingStorage::U8; }
