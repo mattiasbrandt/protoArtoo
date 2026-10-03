@@ -1108,6 +1108,18 @@ bool AudioDriverChirp::backgroundTrackHeld() const {
     return backgroundTrackStream() != CHIRP_NO_STREAM;
 }
 
+// A stream that may be playing a vocal: MaybeVocal, which is also what a stream
+// is before the body has stopped or seen it idle, so the answer leans to "still
+// playing" exactly as the stream model does.
+bool AudioDriverChirp::vocalHeld() const {
+    for (uint8_t s = 0; s < CHIRP_STREAM_COUNT; ++s) {
+        if (m_streams[s].use == ChirpStreamUse::MaybeVocal) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // -----------------------------------------------------------------------------
 // refreshCatalog()
 // GMAN for the bank summary, then one GNME per sound.

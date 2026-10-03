@@ -246,6 +246,8 @@ AudioPlaybackIntent audioPlaybackResolveRequest(const AudioPlaybackContext& cont
             AudioPlaybackIntent intent{};
             intent.kind = AUDIO_PLAYBACK_INTENT_BACKGROUND_TRACK_STOP;
             intent.requestKind = request.kind;
+            // The droid's sound is over unless a vocal may still be playing.
+            intent.clearAudioActive = !request.vocalHeld;
             return intent;
         }
 

@@ -121,6 +121,9 @@ struct AudioStepCommandInputs {
     // The driver holds a Background Track as playing (AudioDriver::
     // backgroundTrackHeld()), so a Track Stop leaves the droid's sound playing.
     bool backgroundTrackHeld = false;
+    // The driver may still be playing a vocal (AudioDriver::vocalHeld()), so
+    // a Background Track stop leaves the droid's sound playing.
+    bool vocalHeld = false;
 };
 
 struct AudioStepCommandActions {

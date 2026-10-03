@@ -371,6 +371,7 @@ AudioStepCommandActions audioStepCommand(AudioStepState& state,
             // stopBackgroundTrack() sends nothing.
             AudioPlaybackRequest request{};
             request.kind = AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_STOP;
+            request.vocalHeld = in.vocalHeld;
             resolvePlayback(state, in, request, false, &actions);
             break;
         }

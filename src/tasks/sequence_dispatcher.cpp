@@ -229,16 +229,18 @@ static bool __attribute__((noinline)) dispatchDomeBearing(const SeqAction& act) 
 // does not play, and why. The rest of the routine is untouched; only a full
 // queue is a retry.
 //
-// The report is a function of its own, out of line: inline, its log
-// line's frame (320 B) sat above the queue helper's queue-drop log line
-// and walked this task's chain 256 B past its recorded figure.
+// Both are out of line. The report: inline, its log line's frame (320 B) sat
+// above the queue helper's queue-drop log line and walked this task's chain
+// 256 B past its recorded figure. The dispatch itself: inline, its two reason
+// branches grew dispatchAction()'s frame by 16 B, on the route a Body Step's
+// log line takes.
 // -----------------------------------------------------------------------------
-static void __attribute__((noinline)) reportBackgroundTrackCannotMix(const char* sound) {
-    PA_LOG_INFO(TAG, "Background Track %s not played - %s", sound,
-                consoleReasonString(CONSOLE_REASON_MODULE_CANNOT_MIX));
+static void __attribute__((noinline)) reportBackgroundTrackNotPlayed(const char* sound,
+                                                                   ConsoleReason reason) {
+    PA_LOG_INFO(TAG, "Background Track %s not played - %s", sound, consoleReasonString(reason));
 }
 
-static bool dispatchBackgroundTrackStart(const SeqAction& act) {
+static bool __attribute__((noinline)) dispatchBackgroundTrackStart(const SeqAction& act) {
     // act.audioCategory carries the volume (SEQ_ACT_BACKGROUND_TRACK_START).
     if (!audioQueueBackgroundTrackStart(act.payload, act.audioCategory, SRC_SEQ)) {
         // A full queue: Protocol Check let only a '$' that fits the queue entry
@@ -246,8 +248,13 @@ static bool dispatchBackgroundTrackStart(const SeqAction& act) {
         // next tick, and reported once it is sent.
         return false;
     }
-    if ((audioGetCapabilities() & AudioDriver::AUDIO_CAP_MIXES) == 0) {
-        reportBackgroundTrackCannotMix(act.payload);
+    // The true reason, Sound switched off before the module: with Sound off
+    // nothing plays at all, mixing or not, and the queue helper accepted the
+    // step without sending it (ADR 0027).
+    if (!configCacheReadActiveAudioEnabled()) {
+        reportBackgroundTrackNotPlayed(act.payload, CONSOLE_REASON_COMPONENT_DISABLED);
+    } else if ((audioGetCapabilities() & AudioDriver::AUDIO_CAP_MIXES) == 0) {
+        reportBackgroundTrackNotPlayed(act.payload, CONSOLE_REASON_MODULE_CANNOT_MIX);
     }
     return true;
 }
@@ -1235,6 +1242,22 @@ static uint32_t bodyQueueFullCount() {
     return c;
 }
 
+// A finish that had no room for every terminal action -- a ring close among
+// them would leave a panel open -- is said, never silent. Asked once per tick
+// from the task loop, which covers a run's own end and every abort's drain.
+// noinline, noclone and cold on purpose: as a plain noinline function the
+// compiler laid out dispatchAction()'s callees so that this task's deepest
+// route, a Body Step's log line, walked 16 B past its recorded figure; marked
+// cold (what it reports should never happen), the route is unchanged.
+static void __attribute__((noinline, noclone, cold)) reportFinalDrops(SeqEngineState& engine) {
+    uint8_t count = 0;
+    SeqActionKind first = SEQ_ACT_NONE;
+    if (seqEngineTakeFinalDrops(engine, &count, &first)) {
+        PA_LOG_WARN(TAG, "cleanup queue full: %u terminal action(s) dropped, first kind %u",
+                    (unsigned)count, (unsigned)first);
+    }
+}
+
 // Best-effort drain of remaining engine actions (abort/preempt cleanup).
 // SAFETY INVARIANT: drains regardless of dispatch result so a full queue
 // cannot stall an abort or preempt. These are all terminal/abort cleanup,
@@ -1829,6 +1852,10 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         if (takeRun != nullptr) {
             takesTick(now);
         }
+
+        // A finish this tick, a run's own end or an abort's drain, that had no
+        // room for every terminal action.
+        reportFinalDrops(engine);
 
         // Safety: if no active sequence but flag is still set and timeout expired.
         if (!seqEngineActive(engine)) {

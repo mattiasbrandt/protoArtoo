@@ -253,13 +253,17 @@ any other number is that track. A numbered track plays at Bank 1, Page A, where
 CHIRP plays it as a vocal (`AUDIO_FLAT_BANK` / `AUDIO_FLAT_PAGE`,
 `include/audio_driver.h`). A `$` that plays nothing (`$s`, `$R`, `$+`) is
 logged and not played. The volume is 0-30. While a Background Track is held, a
-Track Stop leaves the droid's sound reported as playing.
+Track Stop leaves the droid's sound reported as playing (`audioActive` in
+`/api/status`); stopping the Background Track clears it unless a vocal may
+still be playing over it. A Sequence's end sends the Background Track's stop
+before the vocals' Track Stop, so after a show the sound reads as stopped.
 
 A Sequence starts and stops a Background Track with its `backgroundTrack` and
 `backgroundTrackStop` steps (`docs/sequence-authoring.md`, "A Background
 Track"); the run's end stops it by the Bounded Audio rule, and any abnormal end
 always does. On a module that cannot mix the run logs `Background Track <$>
-not played - module-cannot-mix` beside AudioTask's own refusal.
+not played - module-cannot-mix` beside AudioTask's own refusal; with Sound
+switched off it logs `component-disabled` instead.
 
 > ⚠ **Track numbers are module-specific.** CHIRP's `PLAY:n,1,A` command plays the
 > *nth entry in the Bank 1 sound manifest* (sorted by basename after variant

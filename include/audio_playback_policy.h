@@ -184,6 +184,9 @@ struct AudioPlaybackRequest {
         // TRACK_STOP: a Background Track plays on under the stopped vocals, so
         // the droid's sound is still playing afterwards.
         bool backgroundTrackHeld;
+        // BACKGROUND_TRACK_STOP: a vocal may still be playing over it, so the
+        // droid's sound is still playing afterwards.
+        bool vocalHeld;
     };
 };
 

@@ -620,8 +620,16 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
 
         case AUDIO_PLAYBACK_INTENT_NONE:
         default:
-            PA_LOG_DEBUG(TAG, "[%s] playback skipped (%s)", commandSourceToString(source),
-                         noneReasonToString(intent.reason));
+            // An authored Background Track that resolves to nothing - its Named
+            // Track set to nothing - is a WARN, as include/audio_task.h promises;
+            // skipped chatter stays at DEBUG.
+            if (intent.requestKind == AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_START) {
+                PA_LOG_WARN(TAG, "[%s] Background Track not played (%s)",
+                            commandSourceToString(source), noneReasonToString(intent.reason));
+            } else {
+                PA_LOG_DEBUG(TAG, "[%s] playback skipped (%s)", commandSourceToString(source),
+                             noneReasonToString(intent.reason));
+            }
             break;
     }
 
@@ -950,6 +958,7 @@ void audioTask(void* pvParameters) {
             cmdIn.catalogCapable = catalogCapable;
             cmdIn.mixCapable = (caps & AudioDriver::AUDIO_CAP_MIXES) != 0;
             cmdIn.backgroundTrackHeld = driver()->backgroundTrackHeld();
+            cmdIn.vocalHeld = driver()->vocalHeld();
             cmdIn.playback = &playback;
             cmdIn.named = &named;
             cmdIn.bindings = &s_audioBindings;

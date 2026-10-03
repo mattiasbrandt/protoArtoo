@@ -296,9 +296,10 @@ inline uint8_t seqBodyHowFar(const SeqStepParams& p) {
 //
 // tMs:  Milliseconds from sequence start (or from iteration start for steps
 //       inside a STEP_LOOP body) when this step fires.
-// payload: Dome command (STEP_DOME_CMD), audio $-command (STEP_AUDIO), the
-//          Droid Parts Catalog id of the Part a STEP_BODY moves, or the target a
-//          STEP_DOME_BEARING turns to front.
+// payload: Dome command (STEP_DOME_CMD), audio $-command (STEP_AUDIO, and the
+//          sound a STEP_BACKGROUND_TRACK starts), the Droid Parts Catalog id of
+//          the Part a STEP_BODY moves, or the target a STEP_DOME_BEARING turns
+//          to front.
 //          64 bytes  --  matches DomeTxCmd.buf.
 // -----------------------------------------------------------------------------
 struct SeqStep {
@@ -452,6 +453,21 @@ struct SeqAction {
     const SeqStep* gesture;
 };
 
+// The most terminal actions one finish queues (beginFinish(),
+// src/tasks/sequence_engine.cpp), every class at once:
+//   logic and PSI reset (@0T1, @0P1) and holo reset (*ST00)   3
+//   DV:RESET_VISUALS after a dome visual preset                1
+//   a :SE## sequence's three visual resets                     3
+//   the vocal Track Stop                                       1
+//   the Background Track's stop (ADR 0054)                     1
+//   the dome turn's neutral                                    1
+//   one close per ring panel the run left open                 7
+//                                                             --
+//                                                             17
+// A class added to beginFinish() raises this, or addFinal() drops an action,
+// which the dispatcher reports (seqEngineTakeFinalDrops()).
+constexpr uint8_t SEQ_FINAL_Q_CAP = 17;
+
 // Latched per-group panel state. Owned by the engine; the dispatcher task
 // resets it on estop-clear and dome-reconnect resync via seqEngineClearLatches().
 struct SeqToggleState {
@@ -501,17 +517,21 @@ struct SeqEngineState {
     // Terminal auto-reset drain. finalDueRel[i] is finalQ[i]'s fire offset (ms)
     // relative to finishStartMs, so staggered individual ring closes drain at a
     // safe cadence while instant resets use 0. finishStartMs is set lazily on the
-    // first finishing peek (seqEngineAbort carries no nowMs). The queue is sized
-    // for the worst case: a few effect resets plus one individual close per ring
-    // panel (7) with margin.
+    // first finishing peek (seqEngineAbort carries no nowMs). The queue holds
+    // SEQ_FINAL_Q_CAP, the worst case beginFinish() can queue.
     bool      finishing;
     bool      finishAbnormal;
     bool      finishStartSet;
     uint32_t  finishStartMs;
-    SeqAction finalQ[16];
-    uint16_t  finalDueRel[16];
+    SeqAction finalQ[SEQ_FINAL_Q_CAP];
+    uint16_t  finalDueRel[SEQ_FINAL_Q_CAP];
     uint8_t   finalCount;
     uint8_t   finalCursor;
+    // What beginFinish() could not queue, which would mean SEQ_FINAL_Q_CAP is
+    // wrong: how many, and the first one's kind. This module does not log, so
+    // the dispatcher takes it with seqEngineTakeFinalDrops() and says so.
+    uint8_t       finalDropped;
+    SeqActionKind finalDroppedKind;
 
     SeqToggleState latches;
 
@@ -534,6 +554,10 @@ void seqEngineInit(SeqEngineState& st);
 
 // True while a sequence is running or draining terminal resets.
 bool seqEngineActive(const SeqEngineState& st);
+
+// True once after a finish that could not queue every terminal action, with
+// how many it dropped and the first one's kind; clears the record.
+bool seqEngineTakeFinalDrops(SeqEngineState& st, uint8_t* count, SeqActionKind* firstKind);
 
 // Force all toggle latches to closed (estop-clear / dome-reconnect resync).
 void seqEngineClearLatches(SeqEngineState& st);

@@ -252,6 +252,13 @@ class AudioDriver {
     // stopped nor reported idle since. Never, on a module that cannot mix.
     virtual bool backgroundTrackHeld() const { return false; }
 
+    // Whether any stream may still be playing a vocal as far as the driver
+    // knows: one it sent a PLAY to and has neither stopped nor seen idle since.
+    // Asked when a Background Track stops, to say whether the droid's sound is
+    // still playing. The one-stream default answers false: a module that cannot
+    // mix never holds a Background Track to stop.
+    virtual bool vocalHeld() const { return false; }
+
     virtual ~AudioDriver() = default;
 
     // Returns the operator-visible name of this driver's module (e.g. "DY-SV5W",
