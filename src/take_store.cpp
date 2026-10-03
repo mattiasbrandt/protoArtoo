@@ -393,6 +393,40 @@ size_t takeStoreReadSlice(const char* owner, const char* take, size_t offset, ui
     return read;
 }
 
+// The one file read on (take_store.h), and whether a begin succeeded: the
+// lock is held while it is set, and only the end that clears it gives the
+// lock back.
+static File s_reader;
+static bool s_reading = false;
+
+bool takeStoreReadBegin(const char* owner, const char* take, size_t offset) {
+    if (s_reading || !lock()) return false;
+    char path[64];
+    if (existingPath(owner, take, path, sizeof(path))) {
+        s_reader = LittleFS.open(path, "r");
+        if (s_reader && s_reader.seek(offset)) {
+            s_reading = true;
+            return true;
+        }
+        s_reader.close();
+    }
+    unlock();
+    return false;
+}
+
+size_t takeStoreReadOn(uint8_t* out, size_t capacity) {
+    if (!s_reading) return 0;
+    const int n = s_reader.read(out, capacity);
+    return (n > 0) ? (size_t)n : 0;
+}
+
+void takeStoreReadEnd() {
+    if (!s_reading) return;
+    s_reader.close();
+    s_reading = false;
+    unlock();
+}
+
 // -----------------------------------------------------------------------------
 // A take file arriving in pieces
 //

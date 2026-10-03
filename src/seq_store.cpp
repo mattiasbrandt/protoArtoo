@@ -50,7 +50,7 @@ static SeqStep* s_runClose = nullptr;
 static SeqDraft s_stagedDraft;  // step pointers into s_staging
 static char     s_runName[24];
 
-// A run's takes (#442 slice 3): read off the sequence's `takes` array when it
+// A run's takes (#442): read off the sequence's `takes` array when it
 // is loaded to run, into the one heap block the Coordinator plays them from
 // (include/take_replay.h). Staged with the steps and handed on with them:
 // seqStoreCommit() moves the staged block to s_runTakes, and
@@ -155,15 +155,27 @@ static void copyStableId(JsonVariantConst root, char* out, size_t cap) {
 }
 
 // The takes a sequence holds (#442, ADR 0061): an optional top-level array,
-//   "takes": [ {"id": "k3f9q2ab", "t": 0}, ... ]
+//   "takes": [ {"id": "k3f9q2ab", "t": 0}, {"id": "p0x7m2cd", "t": 900, "from": 400, "to": 5200}, ... ]
 // each naming one take file of this sequence by its id, and placing it `t` ms
-// from the start. The Rehearsal and the timeline read the rest; the store reads
+// from the start. A take trimmed on the timeline also says the part of it that
+// plays, `from` and `to` in ms into the take, each optional (absent: its start,
+// its end; include/take_replay.h, A TRIMMED TAKE). The store does not know a
+// take's length, so a `to` past it is the take's end, as the replay reads it.
+// The Rehearsal and the timeline read the rest; the store reads
 // the ids, so a save keeps the takes named and drops the others
 // (takeStoreSequenceSaved()), and a run's load reads the array again for the
 // takes to play (stageTakes()). Refused here rather than stored half-read: no
 // other check sees this array (the engine and the parser ignore it, and the
 // browser's Protocol Check does not read it). A sequence saved before takes
 // existed has no array and saves exactly as it did.
+// A `takes` entry's millisecond field: whole ms from 0 to INT32_MAX, -1 when
+// it is absent and -2 when it is something else.
+static long long takeMsField(JsonVariantConst v) {
+    if (v.isNull()) return -1;
+    const long long ms = v.is<long long>() ? v.as<long long>() : -2;
+    return (ms < 0 || ms > 0x7FFFFFFFLL) ? -2 : ms;
+}
+
 static ProtocolCheckResult readTakeRefs(JsonVariantConst root, TakeRefs* out) {
     out->count = 0;
     JsonVariantConst takes = root["takes"];
@@ -178,10 +190,13 @@ static ProtocolCheckResult readTakeRefs(JsonVariantConst root, TakeRefs* out) {
         if (!each.is<JsonObjectConst>() || !takeIdValid(id)) {
             return pcFail("takes", "a take's id must be 8 lowercase letters or digits");
         }
-        JsonVariantConst t = each["t"];
-        const long long at = t.is<long long>() ? t.as<long long>() : -1LL;
-        if (at < 0 || at > 0x7FFFFFFFLL) {
+        if (takeMsField(each["t"]) < 0) {
             return pcFail("takes", "a take's t must be whole milliseconds from the start");
+        }
+        const long long from = takeMsField(each["from"]);
+        const long long to = takeMsField(each["to"]);
+        if (from == -2 || to == -2 || to == 0 || (to > 0 && from >= to)) {
+            return pcFail("takes", "a take's from and to must be whole milliseconds into it, from before to");
         }
         for (uint8_t k = 0; k < out->count; ++k) {
             if (strcmp(out->ids[k], id) == 0) return pcFail("takes", "a take is named twice");
@@ -490,12 +505,15 @@ static __attribute__((noinline)) TakeReplayRun* stageTakes(JsonVariantConst root
     memcpy(run->owner, owner, sizeof(owner));
     for (JsonVariantConst each : arr) {
         const char* id = each["id"] | (const char*)nullptr;
-        JsonVariantConst t = each["t"];
-        const long long at = t.is<long long>() ? t.as<long long>() : -1LL;
-        if (run->count >= cap || !takeIdValid(id) || at < 0 || at > 0x7FFFFFFFLL) continue;
+        const long long at = takeMsField(each["t"]);
+        const long long from = takeMsField(each["from"]);
+        const long long to = takeMsField(each["to"]);
+        if (run->count >= cap || !takeIdValid(id) || at < 0 || from == -2 || to == -2) continue;
         TakeReplay* take = takeReplayAt(run, run->count++);
         memcpy(take->id, id, TAKE_ID_LEN + 1);
         take->atMs = (uint32_t)at;
+        take->fromMs = (from < 0) ? 0u : (uint32_t)from;
+        take->toMs = (to < 0) ? TAKE_REPLAY_WHOLE : (uint32_t)to;
     }
     if (run->count == 0) takesFree(&run);
     return run;

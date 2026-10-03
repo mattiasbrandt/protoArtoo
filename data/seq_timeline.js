@@ -229,6 +229,12 @@
   //   phrase   a sequence inside this one, on the lane of every Part it
   //            names, for as long as it runs: one linked block, as a Gesture
   //            is one, and what it does is not drawn inside it
+  //   take     a take (#442, ADR 0061), on the lane of every Part it moves,
+  //            for as long as its trim plays: one linked block, edited whole
+  //            and never opened step by step. One whose file has not been
+  //            read is a mark on the Takes row where it starts.
+  //   overrun  where a later take covers the same Part, drawn over the
+  //            earlier take's block: there the later one moves it
   //   tick     one command at its instant: every step draws at least this
   // `ghost` marks an item from a loop's second pass or later, which the
   // as-written reading draws faintly.
@@ -242,6 +248,10 @@
   //            body flutter's length, which is all its right edge changes
   // A Part standing open (`open`) also carries `sent`: when the command that
   // opened it was sent, which for a body Part is before it stands open.
+  // A take is not a step: its block says which take it is (`take`, its place
+  // in the sequence's `takes`), and its edges are its trim - the left edge
+  // writes where it starts and its `from` together, so what plays stays where
+  // it was in time, and the right edge writes its `to`.
   // An item with no `steps` is derived and is not draggable: a later pass of a
   // loop, a move a Gesture becomes, what the droid does after the end. One a
   // Gesture becomes says which step that Gesture is (`of`), because it moves
@@ -584,8 +594,40 @@
       }
     });
 
-    // The end: what the engine does after the end step, in its order.
+    // The takes, as the droid plays them (SeqRehearsal.takeSpans()): a take is
+    // played on the opening half only, and a close half is handed over
+    // without them (data/seq.js halfRoutine()). The pose takes each change a
+    // take makes, except where a later take covers the Part; where that one
+    // stops, the earlier one has the Part again, where it would by then have
+    // put it (include/take_replay.h). That a step's move holds a take off its
+    // Part is the droid's to time, and is not read into the pose.
     source = null;
+    const spans = rehearsal?.takeSpans ? rehearsal.takeSpans(seq, context, endIndex !== -1 ? endMs : null) : [];
+    const overruns = rehearsal ? rehearsal.takeOverlaps(spans) : [];
+    spans.forEach((span) => {
+      const label = `Take ${span.index + 1}`;
+      if (!span.facts) {
+        add(rowLane("take", "Takes"), { kind: "tick", t0: span.t0, t1: span.t0, label, take: span.index });
+        return;
+      }
+      const trim = { take: span.index, l: { take: span.index, field: "from" }, r: { take: span.index, field: "to" }, lengthMs: span.lengthMs, from: span.from, to: span.to };
+      span.parts.forEach((cover) => {
+        const lane = partLane(cover.part);
+        add(lane, { kind: "take", t0: span.t0, t1: span.t1, label, ...trim });
+        // The stretches where another take, later in the list, moves this
+        // Part over this one's block.
+        const under = overruns.filter((over) => over.part === cover.part && over.takes.includes(span.index) && over.winner !== span.index);
+        under.forEach((over) => add(lane, { kind: "overrun", t0: over.t0, t1: over.t1, label: `Take ${over.winner + 1} moves it here` }));
+        const outranked = (t) => under.some((over) => over.t0 <= t && t < over.t1);
+        cover.changes.filter((change) => !outranked(change.t)).forEach((change) => lane.changes.push(change));
+        under.forEach((over) => {
+          const held = cover.changes.filter((change) => change.t <= over.t1).pop();
+          if (held && over.t1 < cover.covers[1] && !outranked(over.t1)) lane.changes.push({ t: over.t1, at: held.at });
+        });
+      });
+    });
+
+    // The end: what the engine does after the end step, in its order.
     let ringCloses = 0;
     let cleanupEnd = endMs;
     const partLanes = [...lanes.values()].sort((a, b) =>
@@ -616,6 +658,10 @@
         if (item.kind === "phrase" && item.t1 > endMs) item.t1 = endMs;
       }));
     }
+
+    // A take's changes and the droid's closes after the end were added out of
+    // time order; poseAt() reads the last change at or before an instant.
+    lanes.forEach((lane) => lane.changes.sort((a, b) => a.t - b.t));
 
     const lastItem = [...lanes.values(), ...rows.values()]
       .reduce((max, lane) => lane.items.reduce((m, item) => Math.max(m, item.t1 ?? item.t0), max), 0);
@@ -650,7 +696,7 @@
       windowMs,
       loops,
       parts: partLanes,
-      rows: ["sound", "dome", "spin", "phrase", "other"].map((key) => rows.get(key)).filter(Boolean),
+      rows: ["take", "sound", "dome", "spin", "phrase", "other"].map((key) => rows.get(key)).filter(Boolean),
     };
   };
 
@@ -733,7 +779,8 @@
     const width = item.kind === "tick" ? "" : `;width:${pct(Math.max(0, t1 - item.t0), windowMs)}`;
     // A Gesture's block holds the moves it becomes, each with its own words,
     // so its own are in its title and not written over theirs.
-    const text = item.kind !== "tick" && item.kind !== "gesture" && item.label ? `<span class="tl-label">${esc(item.label)}</span>` : "";
+    // An overrun lies over a take's block, whose words are not written over.
+    const text = item.kind !== "tick" && item.kind !== "gesture" && item.kind !== "overrun" && item.label ? `<span class="tl-label">${esc(item.label)}</span>` : "";
     return `<span class="tl-item tl-${item.kind}${ghost}"${handle} style="left:${pct(item.t0, windowMs)}${width}" title="${esc(title)}">${text}</span>`;
   };
 
@@ -838,7 +885,10 @@
   //               begin()         the copy of the routine a gesture starts from
   //               commit(before)  a gesture changed the routine: put the steps
   //                               in order, record it, and read it all again
-  //               remove(indices) take these steps out of the routine
+  //               remove(indices, takes)
+  //                               take these steps, and these entries of
+  //                               the sequence's `takes`, out of the
+  //                               routine, as one edit
   //   onPicked  the blocks the builder has picked, said again whenever the
   //             routine is drawn: called with picked() and, on the press that
   //             picked one, `true`. The caller shows them; this view only
@@ -934,15 +984,21 @@
     // Only the routine as written is edited: the Expanded reading is the
     // read-only check of what the droid receives (ADR 0057).
     const editing = () => Boolean(edit) && authored;
+    // What an item is drawn from, as the objects the selection holds: the
+    // steps it was written as, or the take it is (an entry of the sequence's
+    // `takes`). None for a derived item.
+    const ownOf = (item) => (item.take !== undefined
+      ? [(seqNow().takes || [])[item.take]]
+      : (item.steps || []).map((index) => seqNow().steps[index])).filter(Boolean);
     const selected = (item) => {
-      const steps = seqNow().steps;
-      return item.steps.every((index) => selection.has(steps[index]));
+      const own = ownOf(item);
+      return own.length > 0 && own.every((each) => selection.has(each));
     };
     const handleOf = (item, lane) => {
       if (!editing()) return "";
       // A move a Gesture becomes, as written, says which Gesture: a press on
       // it takes hold of that Gesture's block (grab()).
-      if (!item.steps) return item.of !== undefined && !item.ghost ? ` data-of="${item.of}"` : "";
+      if (!item.steps && item.take === undefined) return item.of !== undefined && !item.ghost ? ` data-of="${item.of}"` : "";
       drawn.push({ item, lane });
       const sized = item.kind === "tick" ? "" : `${item.l ? " can-size-l" : ""}${item.r ? " can-size-r" : ""}`;
       return ` data-item="${drawn.length - 1}" data-edit="can-move${sized}${selected(item) ? " is-selected" : ""}"`;
@@ -954,13 +1010,14 @@
     // another picked item's is that block's own detail, not a second block.
     // Each is {steps, t0, name, words}: the indices of its steps, where it
     // starts, the lane it is on when it is on one Part's lane and nowhere
-    // else, and the step's own words.
+    // else, and the step's own words. A take is a block of its own, with no
+    // steps: `take` is its place in the sequence's `takes`.
     const picked = () => {
       const blocks = new Map();
       drawn.forEach(({ item, lane }) => {
         if (!selected(item)) return;
-        const key = item.steps.join(",");
-        const block = blocks.get(key) || { steps: item.steps, t0: item.t0, lanes: new Set(), part: true, words: "" };
+        const key = item.take !== undefined ? `take:${item.take}` : item.steps.join(",");
+        const block = blocks.get(key) || { steps: item.steps || [], take: item.take, t0: item.t0, lanes: new Set(), part: true, words: "" };
         block.t0 = Math.min(block.t0, item.t0);
         block.lanes.add(lane.name);
         block.part = block.part && Boolean(lane.part);
@@ -973,7 +1030,7 @@
       if (model.end !== -1 && selection.has(seqNow().steps[model.end])) {
         all.push({ steps: [model.end], t0: model.endMs, lanes: new Set(), part: false, words: "" });
       }
-      const within = (block, other) =>
+      const within = (block, other) => block.take === undefined && other.take === undefined &&
         other !== block && other.steps.length > block.steps.length && block.steps.every((index) => other.steps.includes(index));
       // A block starts where the earliest of its details does: a body Part
       // standing open is drawn from the end of its travel, and the block
@@ -982,6 +1039,7 @@
         .filter((block) => !all.some((other) => within(block, other)))
         .map((block) => ({
           steps: block.steps,
+          ...(block.take !== undefined ? { take: block.take } : {}),
           t0: Math.min(block.t0, ...all.filter((detail) => within(detail, block)).map((detail) => detail.t0)),
           name: block.part && block.lanes.size === 1 ? [...block.lanes][0] : "",
           // A Part standing open has no words of its own: it takes those of
@@ -1078,9 +1136,9 @@
       model = build(seqNow(), context);
       windowMs = drag ? drag.windowMs : model.windowMs;
       beats = beatsOf(seqNow().tempo, windowMs);
-      const steps = new Set(seqNow().steps);
-      [...selection].forEach((step) => {
-        if (!steps.has(step)) selection.delete(step);
+      const held = new Set([...seqNow().steps, ...(seqNow().takes || [])]);
+      [...selection].forEach((each) => {
+        if (!held.has(each)) selection.delete(each);
       });
       paintUnwired();
       paintLanes();
@@ -1164,13 +1222,33 @@
       return { step, field, sign, from: Number(step[field]) || 0, min, max, beat: step.beat, spanBeats: step.spanBeats };
     };
 
+    // One write to a take's entry. `whole` is the value its field has when
+    // the entry does not say it - `from` 0, `to` the take's length - which is
+    // stored as absence, so a take never trimmed saves as it was kept.
+    const takeWrite = (entry, field, sign, [min, max], whole) => ({
+      step: entry, field, sign, min, max, whole,
+      from: entry[field] === undefined ? whole ?? 0 : Number(entry[field]) || 0,
+    });
+
     // The writes for a press on `item`: its body (edge null) moves every
-    // selected step, an edge moves what that edge is made of, and neither edge
-    // may cross the other.
+    // selected step and take, an edge moves what that edge is made of, and
+    // neither edge may cross the other. A take's edges are its trim: the left
+    // one moves where it starts and its `from` together, so what plays stays
+    // where it was in time, and the right one moves its `to`. Neither goes
+    // past the take's own ends, nor leaves less than a block to take hold of.
     const planFor = (item, edge) => {
       const steps = seqNow().steps;
       if (edge === null) {
-        return { writes: steps.map((step, index) => (selection.has(step) ? write(steps, index, "t", 1) : null)).filter(Boolean), lo: -Infinity, hi: Infinity };
+        const takes = (seqNow().takes || []).map((entry) =>
+          (selection.has(entry) ? takeWrite(entry, "t", 1, [0, STEP_T_MAX_MS]) : null));
+        return { writes: [...steps.map((step, index) => (selection.has(step) ? write(steps, index, "t", 1) : null)), ...takes].filter(Boolean), lo: -Infinity, hi: Infinity };
+      }
+      if (item.take !== undefined) {
+        const entry = seqNow().takes[item.take];
+        const writes = edge === "l"
+          ? [takeWrite(entry, "t", 1, [0, STEP_T_MAX_MS]), takeWrite(entry, "from", 1, [0, item.to - MIN_LENGTH_MS], 0)]
+          : [takeWrite(entry, "to", 1, [item.from + MIN_LENGTH_MS, item.lengthMs], item.lengthMs)];
+        return { writes, lo: -Infinity, hi: Infinity };
       }
       const length = (item.t1 ?? item.t0) - item.t0;
       const side = item[edge];
@@ -1202,6 +1280,7 @@
     const apply = (plan, by) => {
       plan.writes.forEach((w) => {
         w.step[w.field] = w.from + w.sign * by;
+        if (w.whole !== undefined && w.step[w.field] === w.whole) delete w.step[w.field];
         const kept = w.field === "t" ? "beat" : "spanBeats";
         if (by !== 0) delete w.step[kept];
         else if (w[kept] !== undefined) w.step[kept] = w[kept];
@@ -1248,12 +1327,14 @@
       if (!tempoNow() || !check?.spansBeats) return;
       const steps = seqNow().steps;
       const repeated = check.loopBodySteps(steps);
-      plan.writes.forEach((w) => {
+      // A take is placed in milliseconds only: the droid reads no beat on one.
+      const writes = plan.writes.filter((w) => steps.includes(w.step));
+      writes.forEach((w) => {
         if (w.field !== "t" || repeated.has(steps.indexOf(w.step))) return;
         const beat = beatAt(w.step.t);
         if (beat !== null) w.step.beat = beat;
       });
-      plan.writes.forEach((w) => {
+      writes.forEach((w) => {
         if (w.field === "t" || !check.spansBeats(w.step) || !Number.isInteger(w.step.beat)) return;
         const end = beatAt(w.step.t + w.step[w.field]);
         if (end === null || end <= w.step.beat) return;
@@ -1284,7 +1365,8 @@
       ];
       [{ name: "Loop", items: loopItems(model, true) }, ...model.parts, ...model.rows].forEach((lane) =>
         lane.items.forEach((item) => {
-          if (item.ghost || (item.steps && item.steps.some((index) => moving.has(steps[index])))) return;
+          // An overrun lies inside a take's block, and goes where it goes.
+          if (item.ghost || item.kind === "overrun" || ownOf(item).some((each) => moving.has(each))) return;
           if (item.of !== undefined && moving.has(steps[item.of])) return;
           const label = item.label || lane.name;
           targets.push({ t: item.t0, label });
@@ -1368,7 +1450,6 @@
       if (!target || target.closest(".tl-ruler")) return;
       let node = target.closest(".tl-item, .tl-end");
       const isEnd = Boolean(node) && node.classList.contains("tl-end");
-      const steps = seqNow().steps;
       // A press on one of the moves a Gesture becomes is a press on the
       // Gesture: they are drawn over its block and are not taken hold of
       // themselves, so the block they belong to answers for them.
@@ -1387,7 +1468,7 @@
       // other end.
       const opened = (pressed) => {
         const { item: mark, lane } = drawn[pressed];
-        if (mark.kind !== "tick" || mark.steps.length !== 1) return pressed;
+        if (mark.kind !== "tick" || !mark.steps || mark.steps.length !== 1) return pressed;
         const ends = (side) => side !== undefined && side.field === "t" && side.step === mark.steps[0];
         const over = drawn.findIndex((each) =>
           each.lane === lane && isStanding(each.item) && (ends(each.item.l) || ends(each.item.r)));
@@ -1415,8 +1496,8 @@
       // starts no drag. A plain press on a block outside the selection selects
       // it alone; on one inside it, the whole selection is taken hold of, and
       // if it is then let go without moving, that block is selected alone.
-      const own = item.steps.map((index) => steps[index]);
-      const held = own.every((step) => selection.has(step));
+      const own = ownOf(item);
+      const held = own.every((each) => selection.has(each));
       if (event.shiftKey || event.ctrlKey || event.metaKey) {
         own.forEach((step) => (held ? selection.delete(step) : selection.add(step)));
         paintLanes(true);
@@ -1567,9 +1648,10 @@
     const removeSelected = () => {
       const steps = seqNow().steps;
       const indices = steps.map((step, index) => (selection.has(step) ? index : -1)).filter((index) => index >= 0);
-      if (indices.length === 0) return;
+      const takes = (seqNow().takes || []).filter((entry) => selection.has(entry));
+      if (indices.length === 0 && takes.length === 0) return;
       selection.clear();
-      edit.remove(indices);
+      edit.remove(indices, takes);
     };
 
     // The keys, with the blocks in focus: the arrows move what is selected,
@@ -1694,5 +1776,5 @@
     };
   };
 
-  window.SeqTimeline = Object.freeze({ build, poseAt, leftOpen, unwired, notWired, mount, NUDGE_MS, NUDGE_BIG_MS });
+  window.SeqTimeline = Object.freeze({ build, poseAt, leftOpen, unwired, notWired, mount, NUDGE_MS, NUDGE_BIG_MS, MIN_LENGTH_MS });
 })();

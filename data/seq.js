@@ -136,9 +136,11 @@
   // Closes is there to show when the sequence is in a group and has a list to
   // hold it. An empty list is still one to drop into.
   const hasCloseHalf = (seq) => Boolean(seq) && (seq.toggleGroup || "none") !== "none" && Array.isArray(seq.closeSteps);
+  // The close half plays its steps only (operator, 2026-10-03,
+  // include/take_replay.h), so it is handed over without the takes.
   const halfRoutine = (seq, half) => {
     if (half !== "closes") return seq;
-    const { closeSteps, ...rest } = seq;
+    const { closeSteps, takes, ...rest } = seq;
     return { ...rest, steps: closeSteps };
   };
   const stageRun = () => SeqProtocolCheck.resolveBeats(halfRoutine(editorState.current, editorState.half)).steps;
@@ -191,6 +193,7 @@
     maxBytes: learnedSequenceMaxBytes(),
     trackHash: droppedTrack ? droppedTrack.hash : null,
     phrase: phraseSteps,
+    take: takeFacts,
   });
 
   // What the opening half leaves standing open is read off the timeline's own
@@ -951,10 +954,13 @@
   // The one request the pose press sends: the sequence's name and the instant.
   // What the droid does at that instant, and how far apart, is the firmware's
   // to work out from what it stores (include/sequence_pose.h); a latched estop
-  // or Sleep Mode refuses it there, in words this shows.
-  const poseOnDroid = (name, atMs, which = "") =>
+  // or Sleep Mode refuses it there, in words this shows. The droid poses
+  // from the stored steps only (sequencePosePlan()), never a take (#442), so
+  // where the routine holds takes - which the picture here does show - the
+  // answer says they are not in it (`aside`).
+  const poseOnDroid = (name, atMs, which = "", aside = "") =>
     PAApi.postJson("/api/seq/pose", { name, t: atMs })
-      .then(() => ({ text: `Moving the droid to ${(atMs / 1000).toFixed(2)} s${which}, one part at a time.`, level: "ok" }))
+      .then(() => ({ text: `Moving the droid to ${(atMs / 1000).toFixed(2)} s${which}, one part at a time.${aside}`, level: "ok" }))
       .catch((error) => ({ text: PAApi.messageFor(error), level: "error" }));
 
   // A Factory sequence's stage: the strip carries the way back and Tune, and
@@ -1101,6 +1107,23 @@
     edited();
   };
 
+  // The picked blocks taken out (the timeline's Delete and Remove): steps by
+  // their place in the half on the stage, and takes - entries of the
+  // sequence's `takes`, whose files a save then deletes - as one entry on the
+  // history.
+  const removeBlocks = (indices, takes = []) => {
+    if (takes.length === 0) {
+      removeSteps(indices);
+      return;
+    }
+    historyPush();
+    if (indices.length > 0) removeSteps(indices, true);
+    const held = (editorState.current.takes || []).filter((each) => !takes.includes(each));
+    if (held.length > 0) editorState.current.takes = held;
+    else delete editorState.current.takes;
+    edited();
+  };
+
   const closeSessionTimeline = () => {
     if (sessionTimeline) {
       sessionTimeline.destroy();
@@ -1130,7 +1153,8 @@
         // nothing to pose, and unsaved edits are not in the pose.
         const name = editorState.tuningFactory || (editorState.isNew ? null : editorState.original?.name);
         if (!name) return Promise.resolve({ text: "Save it first, so the droid has the routine to move to.", level: "error" });
-        return poseOnDroid(name, atMs, sessionDirty() ? " of the routine as last saved" : "");
+        const takes = (editorState.current?.takes || []).length > 0 ? " Takes are not in it." : "";
+        return poseOnDroid(name, atMs, sessionDirty() ? " of the routine as last saved" : "", takes);
       },
       edit: {
         begin: historyBegin,
@@ -1139,7 +1163,7 @@
           historyCommit(before);
           edited();
         },
-        remove: removeSteps,
+        remove: removeBlocks,
       },
       onPicked: showPicked,
     });
@@ -1616,6 +1640,38 @@
     return phrases.read.get(step.ref)?.failed ? "The droid did not send it. Press it again to ask." : "";
   };
 
+  // A picked take (#442, ADR 0061): one object, edited whole and never opened
+  // step by step - where it starts, and the part of it that plays, which the
+  // timeline's edges trim too. Trim start moves where the take starts with
+  // it, as the left edge does, so what plays stays where it was in time.
+  // Perform again performs a new take in its place (performAgain()).
+  const takeHtml = (block, head, acts) => {
+    const esc = window.PAUtils.escapeHtml;
+    const entry = (editorState.current.takes || [])[block.take] || {};
+    const facts = takeFacts(entry.id);
+    const least = window.SeqTimeline?.MIN_LENGTH_MS ?? 50;
+    const startsAt = settingRow("Starts at", numberCell("start", Math.round(block.t0), STEP_LIMITS.t, "Starts at, in milliseconds"));
+    if (!facts) {
+      // A file whose read failed - or the droid deleted when it replaced
+      // the take - is one this page cannot read; any other is still coming.
+      return head(`Take ${block.take + 1}`, takeFiles.read.get(entry.id)?.failed ? "cannot be read" : "reading")
+        + `<div class="setting-rows seq-picked-rows">${startsAt}</div>`
+        + acts();
+    }
+    const from = Math.round(Number(entry.from) || 0);
+    const to = Math.round(entry.to === undefined ? facts.lengthMs : Number(entry.to));
+    const names = facts.parts.map((id) => catalogPart(id)?.name || id).join(", ");
+    // What plays of it: the trimmed length of the whole.
+    return head(`Take ${block.take + 1}`, `${countOf(facts.parts.length, "part", "parts")} · ${((to - from) / 1000).toFixed(2)} of ${(facts.lengthMs / 1000).toFixed(2)} s`)
+      + `<div class="setting-rows seq-picked-rows">${startsAt}`
+      + settingRow("Trim start", numberCell("from", from, [0, Math.max(0, to - least)], "Trim start, in milliseconds into the take"))
+      + settingRow("Trim end", numberCell("to", to, [Math.min(facts.lengthMs, from + least), Math.round(facts.lengthMs)], "Trim end, in milliseconds into the take"))
+      + settingRow("Parts", `<span class="setting-value">${esc(names)}</span>`)
+      + `</div>`
+      // Not offered while a take runs: Keep is the press then.
+      + acts(takePoll === null ? '<button type="button" class="seq-act" data-picked="perform-again">Perform again</button>' : "");
+  };
+
   const pickedHtml = (blocks) => {
     const esc = window.PAUtils.escapeHtml;
     const head = (name, sub) =>
@@ -1625,16 +1681,21 @@
         + '<p class="hint">Press a block to change it. Shift-press adds another.</p>';
     }
     const stepCount = new Set(blocks.flatMap((block) => block.steps)).size;
+    const takeCount = blocks.filter((block) => block.take !== undefined).length;
+    const removeWords = takeCount === 0 ? (stepCount > 1 ? `Remove ${stepCount} steps` : "Remove")
+      : blocks.length > 1 ? `Remove ${blocks.length} blocks` : "Remove";
     const acts = (others = "") =>
-      `<div class="seq-picked-acts">${others}<button type="button" class="seq-act" data-picked="remove">${stepCount > 1 ? `Remove ${stepCount} steps` : "Remove"}</button></div>`;
+      `<div class="seq-picked-acts">${others}<button type="button" class="seq-act" data-picked="remove">${removeWords}</button></div>`;
     const remove = acts();
     if (blocks.length > 1) {
       const nudge = window.SeqTimeline;
-      return head(`${blocks.length} blocks`, countOf(stepCount, "step", "steps"))
+      const counted = [stepCount > 0 ? countOf(stepCount, "step", "steps") : "", takeCount > 0 ? countOf(takeCount, "take", "takes") : ""];
+      return head(`${blocks.length} blocks`, counted.filter(Boolean).join(" · "))
         + `<p class="hint">Drag one and they all move. Arrow keys nudge ${nudge.NUDGE_MS} ms, Shift ${nudge.NUDGE_BIG_MS} ms.</p>`
         + remove;
     }
     const block = blocks[0];
+    if (block.take !== undefined) return takeHtml(block, head, acts);
     const at = block.steps[0];
     const step = stageSteps()[at] || {};
     const beat = beatWords(step);
@@ -1923,7 +1984,47 @@
 
   // An edit made in the inspector in one act - a number typed, a choice
   // pressed - on the one history. One that changed nothing records nothing.
+  // The take picked alone on the timeline, as its entry in `takes`, or null.
+  const pickedTake = () => (pickedBlocks.length === 1 && pickedBlocks[0].take !== undefined
+    ? (editorState.current?.takes || [])[pickedBlocks[0].take] || null : null);
+
+  // A trim typed into the inspector, held where the timeline's edges hold
+  // it: inside the take, never shorter than a block, and a start that cannot
+  // move the take before 0. A trim at the take's own end is stored as none.
+  const trimTake = (entry, field, raw) => {
+    const facts = takeFacts(entry.id);
+    const ms = Math.round(Number(raw));
+    if (!facts || !Number.isFinite(ms)) {
+      repaintPicked();
+      return;
+    }
+    const least = window.SeqTimeline?.MIN_LENGTH_MS ?? 50;
+    const from = Number(entry.from) || 0;
+    const to = entry.to === undefined ? facts.lengthMs : Number(entry.to);
+    const at = Number(entry.t) || 0;
+    const before = historyBegin();
+    if (field === "from") {
+      const next = Math.max(0, from - at, Math.min(ms, to - least));
+      entry.t = at + next - from;
+      if (next === 0) delete entry.from;
+      else entry.from = next;
+    } else {
+      const next = Math.max(from + least, Math.min(ms, facts.lengthMs));
+      if (next >= facts.lengthMs) delete entry.to;
+      else entry.to = next;
+    }
+    historyCommit(before);
+    edited();
+    repaintPicked();
+  };
+
   const inspect = (field, raw) => keepingFocus(() => {
+    const take = pickedTake();
+    if (take && !historyBusy()) {
+      if (field === "start") sessionTimeline.movePickedTo(Number(raw));
+      else if (field === "from" || field === "to") trimTake(take, field, raw);
+      return;
+    }
     const picked = pickedStep();
     if (!picked || historyBusy()) return;
     const { at, step } = picked;
@@ -2620,6 +2721,7 @@
     currentEditingSeq = null;
     gestureMoreOpen = false;
     forgetPhrases();
+    forgetTakeFiles();
     Object.assign(editorState, {
       original: null, current: null, isNew: false, tuningFactory: null,
       half: "opens", tab: "block", saved: false,
@@ -3208,6 +3310,97 @@
     if (phrases.read.get(ref)?.failed) phrases.read.delete(ref);
   };
 
+  // ---------------------------------------------------------------------------
+  // The takes this routine holds, as the droid holds their files (#442): what
+  // the timeline draws a take's block from and the Rehearsal reads a take's
+  // overlaps by. A take file never changes once kept - a new performance is a
+  // new id - so each is read once a session, by its id, from
+  // GET /api/take/file, kept or not yet saved alike.
+  //
+  // `read` is take id -> its facts (readTakeFile()), or { failed } for a read
+  // that failed, which is said once on the stage and not asked for again this
+  // session. ONE REQUEST AT A TIME, and the read in flight is cancelled with
+  // the session, as the phrases' are.
+  // ---------------------------------------------------------------------------
+  const newTakeFiles = () => ({ read: new Map(), reading: false, leaving: new AbortController() });
+  let takeFiles = newTakeFiles();
+  const forgetTakeFiles = () => {
+    takeFiles.leaving.abort();
+    takeFiles = newTakeFiles();
+  };
+
+  // A take file's facts, read as the droid writes it (include/take_capture.h,
+  // little-endian): its Parts by id, its length in ms, and each sample as
+  // {t, part, at} - ms into the take, the index of its Part, and the share of
+  // that Part's throw it commanded (0 closed, 1 open). Null for bytes that are
+  // not a take this page can read.
+  const TAKE_FIXED_BYTES = 16;
+  const TAKE_PART_ID_BYTES = 11;
+  const readTakeFile = (buffer) => {
+    if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < TAKE_FIXED_BYTES) return null;
+    const view = new DataView(buffer);
+    const magic = String.fromCharCode(...new Uint8Array(buffer, 0, 4));
+    const rateHz = view.getUint8(5);
+    const partCount = view.getUint8(6);
+    const lengthTicks = view.getUint32(8, true);
+    const sampleCount = view.getUint32(12, true);
+    const head = TAKE_FIXED_BYTES + partCount * TAKE_PART_ID_BYTES;
+    if (magic !== "PATK" || view.getUint8(4) !== 1 || rateHz === 0 || buffer.byteLength < head + sampleCount * 4) return null;
+    const decoder = new TextDecoder();
+    const parts = Array.from({ length: partCount }, (_, p) =>
+      decoder.decode(new Uint8Array(buffer, TAKE_FIXED_BYTES + p * TAKE_PART_ID_BYTES, TAKE_PART_ID_BYTES)).replace(/\0[\s\S]*$/, ""));
+    const samples = Array.from({ length: sampleCount }, (_, k) => {
+      const sample = view.getUint32(head + k * 4, true);
+      return { t: ((sample >>> 16) * 1000) / rateHz, part: (sample >>> 10) & 0x3f, at: (sample & 0x3ff) / 1000 };
+    });
+    return { parts, lengthMs: (lengthTicks * 1000) / rateHz, samples };
+  };
+
+  const takeFacts = (id) => {
+    const entry = takeFiles.read.get(id);
+    return entry && !entry.failed ? entry : null;
+  };
+
+  // Read every take the routine names that has not been read, one after the
+  // other. It is not an edit and records nothing: when one lands, the
+  // timeline draws its block and the Rehearsal reads it.
+  const loadTakeFiles = async () => {
+    const mine = takeFiles;
+    if (mine.reading) return;
+    mine.reading = true;
+    try {
+      for (;;) {
+        const seq = editorState.current;
+        if (mine !== takeFiles || !seq?.id) return;
+        const index = (seq.takes || []).findIndex((each) => typeof each?.id === "string" && !mine.read.has(each.id));
+        if (index === -1) return;
+        const { id } = seq.takes[index];
+        let entry = { failed: true };
+        let refused = "";
+        try {
+          const answer = await PAApi.getBytes(
+            `/api/take/file?owner=${encodeURIComponent(seq.id)}&take=${encodeURIComponent(id)}`,
+            { signal: mine.leaving.signal, timeoutMs: 10000 },
+          );
+          entry = readTakeFile(answer.data) || entry;
+          if (entry.failed) refused = `Take ${index + 1} is not a take this page can read.`;
+        } catch (error) {
+          // Cancelled with the session it was read for: nothing failed.
+          if (mine !== takeFiles) return;
+          console.error(`[seq] reading take ${id}:`, error);
+          refused = `Could not read take ${index + 1}: ${PAApi.messageFor(error)}`;
+        }
+        if (mine !== takeFiles) return;
+        mine.read.set(id, entry);
+        if (entry.failed) sayOnStage(refused, "error");
+        updateValidationSummary();
+        sessionTimeline?.refresh(stageContext());
+      }
+    } finally {
+      mine.reading = false;
+    }
+  };
+
   // A stable id for a sequence being saved that has none: eight lowercase hex
   // digits, never changed after (protocolCheckSeqIdValid()).
   const mintSequenceId = () => {
@@ -3512,6 +3705,7 @@
     // An edit can name a phrase not read yet - a drop, a pick, an undo - so
     // every edit asks; with nothing unread it sends nothing.
     loadPhrases();
+    loadTakeFiles();
   };
 
   // UNDO ACROSS THE SWITCH: an undo or a redo that changes one half's list
@@ -3764,6 +3958,7 @@
     mountSessionTimeline();
     paintParts();
     loadPhrases();
+    loadTakeFiles();
 
     attachMetadataListeners();
     updateValidationSummary();
@@ -4101,6 +4296,7 @@
         if (!pressed) return;
         const act = pressed.dataset.picked;
         if (act === "remove") sessionTimeline?.removePicked();
+        else if (act === "perform-again") performAgain();
         else if (act === "split") splitPicked();
         else if (act === "off-beat") {
           if (pickedBlocks.length === 1) setStepBeat(pickedBlocks[0].steps[0], { beat: null });
@@ -4290,7 +4486,7 @@
   // and it is kept the same way. Keeping places the receipt into the routine
   // as ONE edit, so one Undo takes all of it back:
   //   - the take, as an entry in the sequence's `takes` - the droid holds its
-  //     motion in a file of its own, and slice 4 draws it on the timeline;
+  //     motion in a file of its own, drawn on the timeline as one block;
   //   - each cue pressed during it, as the step that does what the cue did,
   //     at the moment it was pressed (cueStep()). A cue with no such step, or
   //     one Protocol Check would refuse where it lands, is named in the
@@ -4331,11 +4527,14 @@
     if (lamp) lamp.className = `indicator ${status.nearlyFull ? "warn" : "ok"} seq-live`;
   };
 
+  // Starting and stopping the watch writes the inspector again: a picked
+  // take offers Perform again only while no take runs (takeHtml()).
   const stopTakePoll = () => {
     if (takePoll !== null) clearInterval(takePoll);
     takePoll = null;
     takeMisses = 0;
     paintPerform(null);
+    if (editorState.current) repaintPicked();
   };
 
   // One read of the take while it runs: still performing, it is painted;
@@ -4370,6 +4569,7 @@
   const watchTake = () => {
     if (takePoll !== null) return;
     takePoll = setInterval(readTake, TAKE_POLL_MS);
+    repaintPicked();
     readTake();
   };
 
@@ -4389,7 +4589,26 @@
     else if (status.state === "stopped") keepTake();
   };
 
-  const handlePerform = async () => {
+  // The take Perform again replaces, by its id, from the press until the
+  // receipt is placed (placeTake()); null for a plain Perform.
+  let performOver = null;
+
+  // Perform again, on a picked take: the new take is kept in its place - where
+  // it starts and its place in the list, which decides who wins an overlap -
+  // and the old one goes in the same edit, so one Undo puts it back. Two
+  // presses after the pick: Perform again, then Keep. The old take's file goes
+  // when the sequence is saved without it. A board whose takes are all saved
+  // into sequences (the artoo-esp32 keeps one) refuses to arm, saying so; the
+  // builder removes the take and saves first.
+  const performAgain = () => {
+    const entry = pickedTake();
+    if (entry && takePoll === null) handlePerform(entry.id);
+  };
+
+  // `over` is set as performOver only once the droid has armed: a press it
+  // refuses - one made while a take runs - must not take the running take's
+  // target away from it.
+  const handlePerform = async (over = null) => {
     const name = takeSeqName();
     if (!name) {
       showEditorFeedback("Save the sequence first.", "error");
@@ -4399,6 +4618,7 @@
     if (btn) btn.disabled = true;
     try {
       await PAApi.request(`/api/take/arm?seq=${encodeURIComponent(name)}`, { method: "POST" });
+      performOver = typeof over === "string" ? over : null;
       showEditorFeedback("");
       watchTake();
     } catch (error) {
@@ -4463,30 +4683,45 @@
     const take = receipt?.take || null;
     const unplaced = [];
     let placed = 0;
+    // Perform again: the take it replaces, if the sequence still holds it.
+    // The new one goes where that one started, and so do the cues pressed
+    // during it.
+    const takes = editorState.current.takes || [];
+    const over = takes.find((each) => each.id === performOver) || null;
+    const overNumber = takes.indexOf(over) + 1;
+    performOver = null;
+    const at = over ? Number(over.t) || 0 : 0;
+    // The droid deleted the unsaved take it replaced, so its file is gone: an
+    // Undo that brings its entry back draws it as a take that cannot be read,
+    // not from a copy this page still holds (loadTakeFiles()).
+    if (receipt?.replaced) takeFiles.read.set(receipt.replaced, { failed: true });
     if (take || cues.length > 0 || receipt?.replaced) {
       historyPush();
       editorState.half = "opens";
-      const held = (editorState.current.takes || []).filter((each) => each.id !== receipt.replaced);
-      if (take) held.push({ id: take.id, t: 0 });
+      const fresh = take ? { id: take.id, t: at } : null;
+      const held = takes
+        .map((each) => (each === over && fresh ? fresh : each))
+        .filter((each) => each.id !== receipt.replaced || each === fresh);
+      if (fresh && !over) held.push(fresh);
       if (held.length > 0) editorState.current.takes = held;
       else delete editorState.current.takes;
 
       const steps = stageSteps();
       const endAt = steps.findIndex((each) => each?.type === "end");
       const reach = Math.min(STEP_LIMITS.t[1],
-        Math.max(take ? Number(take.lengthMs) || 0 : 0, ...cues.map((cue) => (Number(cue.t) || 0) + 1)));
+        Math.max(take ? at + (Number(take.lengthMs) || 0) : 0, ...cues.map((cue) => at + (Number(cue.t) || 0) + 1)));
       if (endAt !== -1 && (Number(steps[endAt].t) || 0) < reach) {
         steps[endAt].t = reach;
         delete steps[endAt].beat;
       }
       for (const cue of cues) {
         const step = cueStep(cue);
-        const at = step ? { t: Math.min(Number(cue.t) || 0, reach - 1), ...step } : null;
+        const landed = step ? { t: Math.min(at + (Number(cue.t) || 0), reach - 1), ...step } : null;
         const place = (list) => {
           const end = list.findIndex((each) => each?.type === "end");
-          list.splice(end === -1 ? list.length : end, 0, { ...at });
+          list.splice(end === -1 ? list.length : end, 0, { ...landed });
         };
-        if (at && !triedOnCopy(place).refused) {
+        if (landed && !triedOnCopy(place).refused) {
           place(stageSteps());
           orderSteps();
           placed += 1;
@@ -4499,7 +4734,8 @@
 
     const stop = { full: " - the take filled up", estop: " - the estop stopped it" }[receipt?.stopped] || "";
     const lines = [`Kept: ${take ? "1 take" : "no take (nothing moved)"}, ${placed} cue ${placed === 1 ? "step" : "steps"}${stop}.`];
-    if (receipt?.replaced) lines.push("It replaces the take you had not saved.");
+    if (take && over) lines.push(`It replaces take ${overNumber}.`);
+    else if (receipt?.replaced) lines.push("It replaces the take you had not saved.");
     const names = await cueNames(unplaced);
     if (names.length > 0) lines.push(`No step for: ${names.join(", ")}.`);
     if (receipt?.cuesPast > 0) lines.push(`${receipt.cuesPast} more ${receipt.cuesPast === 1 ? "press was" : "presses were"} not kept.`);
