@@ -87,7 +87,7 @@ bool sequenceActionToDomeCommand(const SeqAction& act, uint32_t nowMs,
 // every time. Nothing about the answer is cached: wire the arm, let an Output
 // record the Part, and the same saved step starts moving it with nothing
 // re-authored (include/droid_part_availability.h). The rows are read one at a
-// time because that is how the cache hands them out -- one 70-byte row on this
+// time because that is how the cache hands them out -- one 72-byte row on this
 // frame rather than the whole 1682-byte table.
 //
 // A Part no Output claims is REPORTED and the sequence carries on: an unwired

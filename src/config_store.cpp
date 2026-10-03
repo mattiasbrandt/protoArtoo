@@ -397,7 +397,7 @@ uint8_t configCacheServoOutputPartCountAt(ServoOutputDriver driver, uint8_t chan
 // All live here rather than as one find-me-the-row accessor because their
 // caller is ServoTask, whose worst-case static chain is a measured constant
 // (SERVO_TASK_MEASURED_CHAIN_BYTES, include/config.h) that ADR 0040's checker
-// re-derives from the linked image on every slice. A ServoOutputRow is 70 B,
+// re-derives from the linked image on every slice. A ServoOutputRow is 72 B,
 // so handing one out puts 70 B on a Core 1 real-time frame to answer a question
 // whose answer is two numbers or one. A caller that only wants an endpoint pair
 // should not pay for a Part list, a Motion Profile and a boot behaviour it will

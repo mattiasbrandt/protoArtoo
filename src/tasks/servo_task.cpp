@@ -330,7 +330,7 @@ static bool mayTakeForRun(uint8_t slot) {
 //
 // The cache answers with the clamped number and the component that bounded it,
 // never with the row: this frame is on ServoTask's measured chain (ADR 0040) and
-// a ServoOutputRow is 70 B to answer a question whose answer is one number.
+// a ServoOutputRow is 72 B to answer a question whose answer is one number.
 // -----------------------------------------------------------------------------
 static bool resolveOutputPulse(uint8_t slot, uint16_t pulseUs, uint16_t* commandedOut) {
     if (!isOutputLive(slot)) {
@@ -503,7 +503,7 @@ static void writeOutputPulse(uint8_t slot, uint16_t pulseUs) {
 //
 // The profile arrives as a ServoMotionProfile, not as the row it sits in: like
 // the clamp and the Endpoint Pair, it is answered by address out of the live
-// table, so no 70 B ServoOutputRow is put on ServoTask's measured chain
+// table, so no 72 B ServoOutputRow is put on ServoTask's measured chain
 // (ADR 0040). Its ease is already the one that runs (servoMotionProfileOf()),
 // so an overshoot on an unmeasured Output never reaches the planner as one.
 // -----------------------------------------------------------------------------

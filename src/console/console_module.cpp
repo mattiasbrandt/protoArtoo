@@ -1355,7 +1355,7 @@ static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
 // Release (`release`, #443) exactly as a page does. Both widths are commanded;
 // nothing on the droid reads a servo back.
 //
-// A row (70 B) and one line on the Console task's measured chain. The longest
+// A row (72 B) and one line on the Console task's measured chain. The longest
 // line is 165 B - an expander's address, four Parts at the longest id, the two
 // four-digit band widths, no pulse, a three-digit nudge count and
 // `limp:unreachable`; a pulsing line carries two more widths and `limp:-`,

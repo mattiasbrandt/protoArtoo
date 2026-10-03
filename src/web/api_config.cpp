@@ -1112,7 +1112,7 @@ void handleConfigPost(WebRequest& req) {
 // no BSS, which is the scarcest budget on this target
 // (include/api_json_response.h).
 //
-// A row is copied out one at a time. That is 70 B on the web server task's frame
+// A row is copied out one at a time. That is 72 B on the web server task's frame
 // per iteration, on Core 0, which is exactly the caller configCacheReadServoOutput()
 // is shaped for; the real-time path asks for values instead.
 void handleServoOutputsGet(WebRequest& req) {
