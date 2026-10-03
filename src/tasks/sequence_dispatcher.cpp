@@ -517,6 +517,9 @@ static __attribute__((noinline)) void takeSendPart(uint8_t i, uint8_t p, uint32_
     if (part >= DROID_PART_COUNT || t->cur[p] == TAKE_NO_TARGET) {
         return;
     }
+    // Asked before the cur == sent test below, on purpose: the earlier take
+    // must be marked owed while it is outranked even when its own target has
+    // not changed, or it would not send it again once the later take stops.
     if (takeReplayOutranked(takeRun, i, p)) {
         t->sent[p] = TAKE_NO_TARGET;  // owed again once the later take stops covering it
         return;

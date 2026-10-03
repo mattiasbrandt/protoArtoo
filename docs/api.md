@@ -1778,8 +1778,9 @@ target did. A Part with no Output is logged as `part-not-assigned` and the rest
 of the take plays. Where two takes cover one Part at once, the later one in
 `takes` moves it. A step's move of a Part holds the takes off it until the move
 is over. A take still playing at the end step stops there; one that ends sooner
-leaves its Parts where it put them. The estop and a stop end it, and Sleep Mode
-refuses its moves. Replay asks for no Non-RC Control consent either.
+leaves its Parts where it put them. The estop and a stop end it. Sleep Mode ends
+it the way it ends a Gesture: after a wake the steps go on and the takes do not.
+Replay asks for no Non-RC Control consent either.
 
 ### GET /api/take
 
