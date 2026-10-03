@@ -589,7 +589,7 @@
     if (rcLearnBtn) {
       rcLearnBtn.disabled = !enabled;
       rcLearnBtn.setAttribute("aria-disabled", enabled ? "false" : "true");
-      if (!enabled) rcLearnBtn.textContent = "Detect channel";
+      if (!enabled) window.PAUi.setAct(rcLearnBtn, "Detect channel");
     }
     if (rcLearnStop) {
       rcLearnStop.disabled = !enabled;
@@ -1195,7 +1195,7 @@
       </button>
       <span class="rc-action-side">
         ${showSafetyPill ? '<span class="rc-action-safety-pill">Safety critical</span>' : ''}
-        ${showTestButton ? `<button type="button" class="rc-action-test-btn" data-action-test="${window.PAUtils.escapeHtml(item.token)}"${inFlight ? ' disabled' : ''}>Try it</button>` : ''}
+        ${showTestButton ? `<button type="button" class="rc-action-test-btn icon-act" data-action-test="${window.PAUtils.escapeHtml(item.token)}"${inFlight ? ' disabled' : ''}>${window.PAUi.actFace('play', 'Try it')}</button>` : ''}
         <span class="rc-action-test-feedback${feedbackClass}" data-action-feedback="${window.PAUtils.escapeHtml(item.token)}">${window.PAUtils.escapeHtml(feedbackText || '')}</span>
       </span>
     </div>`;
@@ -1225,7 +1225,7 @@
     return `<div class="rc-action-picker" role="listbox" aria-label="Select action" tabindex="0">
       <div class="rc-action-search-row">
         <input class="rc-action-search-input" data-action-search type="search" placeholder="Search actions..." value="${window.PAUtils.escapeHtml(query)}" autocomplete="off">
-        <button type="button" class="rc-action-search-clear" data-action-search-clear${query ? '' : ' disabled'} aria-label="Clear the search">Clear</button>
+        <button type="button" class="rc-action-search-clear icon-act" data-action-search-clear${query ? '' : ' disabled'}>${window.PAUi.actFace('eraser', 'Clear')}</button>
       </div>
       ${recentBlock}
       ${groups.map(({ name, items }) => {
@@ -1343,7 +1343,7 @@
       <div data-cond="estop" class="rc-editor-cond ${displayToken === 'estop' ? 'block' : 'hidden'}">
         <label><input data-field="estop-confirm" type="checkbox"> I understand this latches estop.</label>
       </div>
-      <div class="rc-editor-unmap"><button type="button" class="btn btn-sm btn-quiet" data-action-unmap>Unmap</button></div>`;
+      <div class="rc-editor-unmap"><button type="button" class="btn btn-sm btn-quiet icon-act" data-action-unmap>${window.PAUi.actFace('link-variant-off', 'Unmap')}</button></div>`;
 
     const updateConditionalFields = () => {
       const targetEl = rcEditorContent.querySelector('[data-field="target"]');
@@ -1764,7 +1764,7 @@
     learnBaseline = rcSnapshot;
     learnHit = null;
     learnStartMs = Date.now();
-    if (rcLearnBtn) rcLearnBtn.textContent = 'Detecting…';
+    if (rcLearnBtn) window.PAUi.setAct(rcLearnBtn, 'Detecting…');
     if (rcLearnBanner) rcLearnBanner.hidden = false;
     updateLearnBanner();
     applyLearnHighlight();
@@ -1774,7 +1774,7 @@
     learnActive = false;
     learnBaseline = null;
     learnHit = null;
-    if (rcLearnBtn) rcLearnBtn.textContent = 'Detect channel';
+    if (rcLearnBtn) window.PAUi.setAct(rcLearnBtn, 'Detect channel');
     if (rcLearnBanner) rcLearnBanner.hidden = true;
     applyLearnHighlight();
   };
