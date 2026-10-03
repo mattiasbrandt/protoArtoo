@@ -501,12 +501,12 @@ static void writeOutputPulse(uint8_t slot, uint16_t pulseUs) {
 // planMove()
 // Plan a move to targetUs from where the Output is, into the Output's `ramp`,
 // and answer whether it ramps: false is a snap, which the caller writes. One
-// that replaces a move in
-// progress starts where that move has got to and as fast as it is going, both
-// read off its ramp at nowMs (#442): commandedUs is the last frame's write, up
-// to a frame old, and paired with the speed now it would be a step. One from
-// rest starts from commandedUs, and servoMotionRetarget() at a speed of zero is
-// servoMotionPlan() exactly, so it is the move it always was.
+// that replaces a move in progress starts where that move has got to and as
+// fast as it is going, both read off its ramp at nowMs (#442): commandedUs is
+// the last frame's write, up to a frame old, and paired with the speed now it
+// would be a step. One from rest starts from commandedUs, and
+// servoMotionRetarget() at a speed of zero is servoMotionPlan() exactly, so it
+// is the move it always was.
 //
 // `wasMoving` is the Output's `moving` as it stood before endMove(), which every
 // caller has run by now: endMove() clears the flag and leaves the ramp, and the
@@ -891,7 +891,6 @@ static void beginTravel(uint8_t slot, CommandSource source) {
 // A move that had to stop first -- a retarget behind the Output, or one too
 // close to slow down for (servoMotionRetarget()) -- is the same two halves: the
 // stop arrives, and servoMotionSettleBack() plans the rest from rest.
-
 // -----------------------------------------------------------------------------
 static bool stepMove(uint8_t slot, uint32_t nowMs) {
     writeOutputPulse(slot, servoMotionPositionAt(s_out[slot].ramp, nowMs));
@@ -1131,8 +1130,8 @@ static void noticeAnUnreachableExpander() {
 // ceiling, and can never take back an output a bound, the estop or pulses off
 // let go (#417). A dropped refresh drives nothing. A hold at the width the
 // output is already going to -- the page's keepalive -- is a refresh and no
-// move at all: replanning a ramp part way through, once a second, would
-// restart the move the builder is watching.
+// move at all: the ramp in progress already ends there, and replanning it once
+// a second would plan the same move again every second for nothing.
 //
 // The drive itself is driveOutputTo()'s, like every other command: through the
 // component clamp (ADR 0041), at the Output's own pace (ADR 0052), and a snap
