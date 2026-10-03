@@ -96,7 +96,7 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
         if (binding.target == SERVO_ACTION_PUPPET_PART) {
             output.puppet[i] = rcPuppetStep(&proc->puppetStates[i], binding,
                                             rcPuppetPermille(raw, binding), input.nowMs,
-                                            !input.config.estopActive);
+                                            input.puppetGapMs, !input.config.estopActive);
             continue;
         }
 

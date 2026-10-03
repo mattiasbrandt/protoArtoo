@@ -207,11 +207,6 @@ static void buildRcProcessorConfig(const RcInputActiveConfig& active, RcProcesso
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
-// A string lets go after the SBUS watchdog's own timeout, restated in
-// include/rc_puppet.h so that header stays free of the board config.
-static_assert(RC_PUPPET_GAP_MS == SBUS_TIMEOUT_MS,
-              "a puppet string's gap is the SBUS watchdog's timeout");
-
 // servoCmdQueue places a puppet string never takes: a cue pressed in the same
 // frame as several strings move, and a sequence's moves, always find room. The
 // queue holds 8 (src/main.cpp) and ServoTask empties it every 20 ms frame; the
@@ -501,6 +496,8 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
     input.nowMs        = millis();
     input.randomSeed   = (uint32_t)esp_random();
     input.sourceFilter = source;
+    // A puppet string lets go when the watchdog does (include/rc_puppet.h).
+    input.puppetGapMs  = configCacheSbusTimeoutMs();
 
     rcInputProcessorTick(&s_rcProcessor, input, &s_dispatchOutput);
     dispatchProcessorOutput(s_dispatchOutput, input.config.mapping, input.config.triggers);

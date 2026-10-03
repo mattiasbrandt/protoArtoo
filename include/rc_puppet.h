@@ -77,14 +77,6 @@ constexpr uint16_t RC_PUPPET_PICKUP_PERMILLE = 50;
 // The least time between two targets from one string: one ServoTask frame.
 constexpr uint32_t RC_PUPPET_MIN_INTERVAL_MS = 20;
 
-// A string that has seen no frame for this long lets go of its Part and picks
-// it up again from a fresh baseline: the SBUS watchdog's timeout
-// (SBUS_TIMEOUT_MS, include/config.h), restated here so this header stays free
-// of the board config. Frames stop for a lost signal, a failsafe frame (never
-// dispatched) or a receiver unplugged; whichever it was, the stick may be
-// anywhere when they come back.
-constexpr uint32_t RC_PUPPET_GAP_MS = 200;
-
 // What one trigger slot's string is doing. Kept per slot by RCInputTask, beside
 // the debounce state the same slot keeps for a cue.
 struct RcPuppetState {
@@ -153,6 +145,14 @@ inline uint16_t rcPuppetTargetUs(uint16_t openUs, uint16_t closeUs, uint16_t per
 // estop is latched, when a string must let go exactly as it does over a gap,
 // so the Part does not jump when the estop clears.
 //
+// `gapMs` is how long a string may see no frame before it lets go and picks
+// its Part up again from a fresh baseline: the SBUS watchdog's timeout as the
+// builder set it (drive.sbusTimeoutMs, 50-5000 ms), passed in by the caller,
+// so the string lets go when the watchdog trips and never stays engaged
+// through a failsafe the drive has already declared. Frames stop for a lost
+// signal, a failsafe frame (never dispatched) or a receiver unplugged; the
+// stick may be anywhere when they come back.
+//
 // Order matters and is the rule:
 //   a different string in the slot, a gap, or no leave to move -> start over
 //   first frame                       -> baseline, nothing sent
@@ -164,7 +164,7 @@ inline uint16_t rcPuppetTargetUs(uint16_t openUs, uint16_t closeUs, uint16_t per
 // send is asked for again on the next frame.
 // -----------------------------------------------------------------------------
 inline RcPuppetAsk rcPuppetStep(RcPuppetState* state, const RcTriggerBinding& binding,
-                                uint16_t permille, uint32_t nowMs, bool mayMove) {
+                                uint16_t permille, uint32_t nowMs, uint32_t gapMs, bool mayMove) {
     RcPuppetAsk ask = {false, 0};
     if (state == nullptr) {
         return ask;
@@ -172,7 +172,7 @@ inline RcPuppetAsk rcPuppetStep(RcPuppetState* state, const RcTriggerBinding& bi
 
     const bool sameString = state->source == binding.source && state->channel == binding.channel &&
                             strncmp(state->part, binding.marcduinoPayload, sizeof(state->part)) == 0;
-    const bool gap = state->seen && (uint32_t)(nowMs - state->seenMs) > RC_PUPPET_GAP_MS;
+    const bool gap = state->seen && (uint32_t)(nowMs - state->seenMs) > gapMs;
     if (!sameString || gap || !mayMove) {
         *state = {};
         state->source = binding.source;

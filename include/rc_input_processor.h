@@ -36,6 +36,9 @@ struct RcProcessorInput {
     uint32_t nowMs;
     uint32_t randomSeed;
     RcBindingSource sourceFilter;  // RC_BINDING_NONE = process all triggers
+    // The SBUS watchdog's timeout as configured: how long a puppet string may
+    // see no frame before it lets go of its Part (include/rc_puppet.h).
+    uint32_t puppetGapMs;
 };
 
 struct RcProcessorOutput {
