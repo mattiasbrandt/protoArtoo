@@ -577,6 +577,24 @@ entries:
   safety_critical: false
   requires_web_control: false
   executor: robotState.seqStopRequested
+- name: dome.config.stand-down
+  display_name: Stand Down Sequence
+  description: The Sequence the Dashboard's Stand Down runs, like DM:RESET. Empty runs DM:RESET, which leaves the pies open.
+  domain: dome
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: null
+  sources:
+  - internal
+  safety_critical: false
+  requires_web_control: false
+  # The Setting standDownSequence (#451), through the same declaration as
+  # POST /api/config: only its form is checked, so a Sequence deleted since
+  # stays chosen and the Dashboard says it does nothing.
+  executor: configApply
 - name: dome.event.cue-scream
   display_name: BD:SCREAM
   description: The dome asks for a scream. Plays from the Scream category.
