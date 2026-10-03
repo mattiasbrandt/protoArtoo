@@ -30,7 +30,6 @@ namespace {
 constexpr size_t kTakeStatusMaxBytes = 1536;
 constexpr size_t kTakeKeepMaxBytes = 4096;
 constexpr size_t kTakeErrorMaxBytes = 384;
-constexpr size_t kTakeArmBodyMax = 256;
 
 void sendError(WebRequest& req, int code, const char* message) {
     JsonDocument doc;
@@ -133,27 +132,13 @@ void handleTakeGet(WebRequest& req) {
     webSendJsonDocument(req, doc, kTakeStatusMaxBytes, TAG);
 }
 
-// POST /api/take/arm {seq} - arm a take for a saved sequence. 409 with the
+// POST /api/take/arm?seq= - arm a take for a saved sequence. 409 with the
 // reason when it cannot be: no string, no frames, the estop, a take running,
-// a sequence not saved, no room.
+// a sequence not saved, no room, no memory. The name rides in the query, so
+// the route parses no JSON body.
 void handleTakeArmPost(WebRequest& req) {
-    const size_t declared = req.contentLength();
-    const char* body = req.body();
-    if (declared == 0 || body == nullptr) {
-        sendError(req, 400, "missing JSON body");
-        return;
-    }
-    if (declared > kTakeArmBodyMax) {
-        sendError(req, 413, "payload too large");
-        return;
-    }
-    JsonDocument in;
-    if (deserializeJson(in, body, declared)) {
-        sendError(req, 400, "invalid json body");
-        return;
-    }
-    const char* seq = in["seq"] | "";
-    if (strncmp(seq, "DM:", 3) != 0) {
+    char seq[64] = {};
+    if (!req.param("seq", seq, sizeof(seq)) || strncmp(seq, "DM:", 3) != 0) {
         sendError(req, 400, "missing or invalid DM:* seq");
         return;
     }
@@ -227,7 +212,7 @@ void handleTakeFileGet(WebRequest& req) {
         sendError(req, 400, "missing or invalid owner or take");
         return;
     }
-    if (takeStoreFileSize(owner, take) == 0) {
+    if (!takeStoreHas(owner, take)) {
         sendError(req, 404, "not found");
         return;
     }

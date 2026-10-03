@@ -4398,7 +4398,7 @@
     const btn = document.getElementById("seq-editor-perform");
     if (btn) btn.disabled = true;
     try {
-      await PAApi.postJson("/api/take/arm", { seq: name });
+      await PAApi.request(`/api/take/arm?seq=${encodeURIComponent(name)}`, { method: "POST" });
       showEditorFeedback("");
       watchTake();
     } catch (error) {

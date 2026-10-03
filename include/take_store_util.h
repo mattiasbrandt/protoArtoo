@@ -20,7 +20,7 @@
 
 #include "config.h"          // PA_BOARD
 #include "protocol_check.h"  // protocolCheckSeqIdValid() - a take's owner is a sequence id
-#include "seq_store_util.h"  // SEQ_FILE_MAX_BYTES, PA_SEQ_STR
+#include "seq_store_util.h"  // SEQ_FILE_MAX_BYTES, PA_SEQ_FILE_MAX_KB
 
 // TAKE FILE CAP: one take's file at most, header and samples. The sequence
 // file's cap on each chip (12 KB on the artoo-esp32, 24 KB on the P4), so the
@@ -63,9 +63,6 @@ static const uint8_t TAKE_STORE_CAP = PA_TAKE_STORE_CAP;
 // take is written only when the filesystem would still have this much free
 // beside it.
 static constexpr size_t TAKE_FS_FREE_FLOOR = 2 * TAKE_FILE_MAX_BYTES;
-
-#define TAKE_STORE_FULL_MESSAGE \
-    "no room for another take (" PA_SEQ_STR(PA_TAKE_STORE_CAP) " kept on this droid)"
 
 // A take's id: what a sequence names it by in its `takes` array, minted by
 // the droid when the take is kept. Lowercase letters and digits, the shape of

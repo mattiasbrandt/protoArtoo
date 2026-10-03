@@ -1791,7 +1791,7 @@ The take in hand and the store's figures.
 Arms a take for a saved sequence. The take covers the Parts with an RC
 Channel set to Perform a Part at this moment.
 
-- Body: `{"seq":"DM:WAVE"}`
+- Query params: `seq` - the saved sequence, `POST /api/take/arm?seq=DM:WAVE`; no body
 - Success: `200` `{"ok":true}`
 - Errors:
   - `400` missing or invalid `seq`

@@ -364,19 +364,12 @@ static bool existingPath(const char* owner, const char* take, char* out, size_t 
     return takePath(t, false, out, cap) && LittleFS.exists(out);
 }
 
-size_t takeStoreFileSize(const char* owner, const char* take) {
-    if (!lock()) return 0;
+bool takeStoreHas(const char* owner, const char* take) {
+    if (!lock()) return false;
     char path[64];
-    size_t size = 0;
-    if (existingPath(owner, take, path, sizeof(path))) {
-        File f = LittleFS.open(path, "r");
-        if (f) {
-            size = f.size();
-            f.close();
-        }
-    }
+    const bool has = existingPath(owner, take, path, sizeof(path));
     unlock();
-    return size;
+    return has;
 }
 
 size_t takeStoreReadSlice(const char* owner, const char* take, size_t offset, uint8_t* out,

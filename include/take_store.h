@@ -71,8 +71,8 @@ void takeStoreSequenceSaved(const char* owner, const TakeRefs& refs, bool dropOt
 // sequence carries that id: every take it owned is deleted.
 void takeStoreSequenceDeleted(const char* owner);
 
-// The size of take `take` of `owner`, kept or not, or 0 when there is none.
-size_t takeStoreFileSize(const char* owner, const char* take);
+// Whether take `take` of `owner` is on the droid, kept or not.
+bool takeStoreHas(const char* owner, const char* take);
 
 // Up to `capacity` bytes of that take's file from `offset` (GET
 // /api/take/file, WebRequest::sendChunked()). 0 at the end, or when it is gone.
