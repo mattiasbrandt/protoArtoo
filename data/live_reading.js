@@ -361,11 +361,23 @@
         return;
       }
       drop();
-      report(outcome);
+      // A newer record under another name is a run that replaced this one -
+      // an RC Channel's, say - before this page heard this run's own record.
+      // That is not "did not start": the lamp on the run that replaced it is
+      // the word. "Did not start" is only a record that is still the one from
+      // before the press.
+      const run = runOf(reading.status);
+      const replaced = outcome !== "lost" && run !== null && run.startMs !== mine.before && run.name !== mine.name;
+      report(replaced ? undefined : outcome);
     };
 
     // Resolves once the droid has accepted the run; rejects when it could not
     // be asked or refused, and then nothing is watched.
+    // `before` is the newest frame this page holds, not a fresh read. So a
+    // begin frame for an earlier run of the same name that is still in flight
+    // when this press is sent can be taken for this press's own. The window is
+    // one frame wide, and a fresh read per press would cost the droid a status
+    // document every time; the race is accepted (coordinator, #451).
     const start = async (name) => {
       if (reading.status === null) await read();
       const before = runOf(reading.status)?.startMs ?? null;
@@ -394,7 +406,11 @@
       judge();
       report();
     });
-    // Called on every attempt to leave; never holds the surface.
+    // Called on every attempt to leave; never holds the surface. It runs
+    // before a hold the surface registers later - Sequences' unsaved-edit
+    // question - so a press being judged is forgotten on ANY attempt to leave,
+    // even one the operator then cancels by staying. Nothing is lost that
+    // matters: the run's lamp comes back with the next frame that carries it.
     window.PASurface?.holdUnmount(() => {
       drop();
       report();
