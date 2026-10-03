@@ -512,6 +512,11 @@
             : { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
           return;
         }
+        case "domeBearing":
+          // A turn until a target faces front lasts what the dome takes, which
+          // is known only when it runs: a mark on the dome's row where it starts.
+          add(rowLane("spin", "Dome turn"), { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
+          return;
         case "gesture": {
           // One block across the lanes of its Parts, from where it fires
           // (#441). A body Gesture runs to the end of the last move it

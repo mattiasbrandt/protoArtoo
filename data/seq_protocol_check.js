@@ -16,7 +16,13 @@
   const SUPPRESS_MS_MIN = 1000;
   const SUPPRESS_MS_MAX = 120000;
   const TOGGLE_GROUPS = ["none", "pies", "low", "all"];
-  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "body", "gesture", "sequence", "end"];
+  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "domeBearing", "body", "gesture", "sequence", "end"];
+  // A bearing step's target (domeBearingTargetValid(), include/dome_bearing_act.h):
+  // `front`, or a dome Part the catalog gives a bearing. A Part is named by its
+  // id, never by its bearing, so a step survives a corrected `bearing_deg`.
+  const DOME_BEARING_FRONT = "front";
+  const isDomeBearingPart = (part) =>
+    Boolean(part) && part.half === "dome" && typeof part.bearingDeg === "number" && Number.isFinite(part.bearingDeg);
   // A Body Step's Move Shapes, and how long a body flutter may last
   // (PC_BODY_FLUTTER_MS_MIN / _MAX, include/protocol_check.h).
   const BODY_SHAPES = ["open", "close", "flutter"];
@@ -307,6 +313,11 @@
     // [least, most] (_validateBeats()): what a control that sets one offers.
     SPAN_BEATS: Object.freeze([1, TEMPO_BEAT_MAX]),
 
+    // What a bearing step may turn to: DOME_BEARING_FRONT, or a catalog Part
+    // isDomeBearingPart() accepts. The editor's picker offers exactly these.
+    DOME_BEARING_FRONT,
+    isDomeBearingPart,
+
     /**
      * The dome's light vocabulary: which targets it answers to, the modes and
      * colors each takes, and the label to show for every token. Frozen, so a
@@ -425,6 +436,7 @@
         case "random":   return this._validateRandomStep(step);
         case "audioCat": return this._validateAudioCatStep(step);
         case "domeRotate": return this._validateDomeRotateStep(step);
+        case "domeBearing": return this._validateDomeBearingStep(step);
         case "body":     return this._validateBodyStep(step);
         case "gesture":  return this._validateGestureStep(step);
         case "sequence":
@@ -805,6 +817,25 @@
         };
       }
 
+      return { ok: true };
+    },
+
+    // A bearing step's form (STEP_DOME_BEARING in protocolCheckBranch(),
+    // src/protocol_check.cpp): front, or a dome Part the catalog gives a
+    // bearing, refused like an unknown Body Step Part. Whether the dome is
+    // calibrated and where it points is known are asked when the step runs,
+    // and never refuse a save (ADR 0051). It says no time: how long the turn
+    // takes is the dome's at run, so it spans no beats.
+    //
+    // The catalog is checked where the page has loaded it, as a Body Step's is.
+    _validateDomeBearingStep(step) {
+      const fail = () => ({ ok: false, field: "target", error: "Pick front or a part on the dome" });
+      if (typeof step.target !== "string" || step.target === "") return fail();
+      if (step.target === DOME_BEARING_FRONT) return { ok: true };
+      const catalog = window.DroidParts?.parts;
+      if (Array.isArray(catalog) && !catalog.some((part) => part.id === step.target && isDomeBearingPart(part))) {
+        return fail();
+      }
       return { ok: true };
     },
 

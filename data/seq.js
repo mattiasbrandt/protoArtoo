@@ -1375,6 +1375,15 @@
   const PANEL_SHAPES = { OP: "open", CL: "close", OF: "flutter" };
   const catalogPart = (id) => (window.DroidParts?.parts || []).find((part) => part.id === id) || null;
 
+  // What a Turn Dome To step can turn to, in the picker's order: the dome's
+  // own front, then every dome Part Protocol Check accepts, in catalog order,
+  // by its short name where it has one.
+  const domeBearingTargets = () => [
+    { id: SeqProtocolCheck.DOME_BEARING_FRONT, words: "Dome front" },
+    ...(window.DroidParts?.parts || []).filter(SeqProtocolCheck.isDomeBearingPart)
+      .map((part) => ({ id: part.id, words: part.shorthand || part.name })),
+  ];
+
   // A step that opens, closes or flutters a Part, as its Move Shape and the
   // words for it: a dome panel command or a Body Step. Null for any other.
   // `settles` is whether the step itself says how far and for how long: a
@@ -1553,6 +1562,11 @@
           + settingRow("Way", segOf("way", [["left", "Left", stopped], ["right", "Right", stopped]], stopped ? "" : step.speedPct < 0 ? "left" : "right", "Way"))
           + settingRow("Speed", faderOf("speed", speed, STEP_LIMITS.speed, "Dome speed, percent"), `${speed}%`);
       }
+      case "domeBearing":
+        // What faces front when the turn ends: the dome's own front, or a dome
+        // Part. How long it takes is the dome's at run, so it has no Runs for.
+        return settingRow("Faces front", pillsOf("target",
+          domeBearingTargets().map((target) => [esc(target.id), esc(target.words)]), fieldOf(step, "target"), "What faces front"));
       case "audio":
         return settingRow("Plays",
           `<input class="number-cell text-cell" type="text" value="${esc(step.cmd ?? "")}" placeholder="$H, $N, $D, $A..." data-picked="cmd" aria-label="Sound command">`);
@@ -1866,6 +1880,10 @@
           opened.cmd = opened.cmd.replace(/^:OF/, ":OP");
         });
       }
+    } else if (field === "target" && step.type === "domeBearing") {
+      // Only what the picker offers: front, or a dome Part Protocol Check
+      // accepts.
+      if (domeBearingTargets().some((target) => target.id === raw)) step.target = raw;
     } else if (field === "way") {
       Object.assign(step, turnOf(raw, step.speedPct, step.durationMs));
     } else if (field === "speed") {
@@ -2016,8 +2034,11 @@
   //
   // The Dome command's pill goes by an id of its own, which is neither a step
   // type nor a light command's prefix.
+  //
+  // Turn Dome To sits beside Spin Dome: one turns for a time, the other until
+  // front, or a dome Part, faces front (ADR 0051).
   const DOME_COMMAND_KIND = "domeCommand";
-  const LIBRARY_KINDS = ["audio", "audioCat", "domeRotate", "DV", "DH", DOME_COMMAND_KIND, "random", "loop", "end"];
+  const LIBRARY_KINDS = ["audio", "audioCat", "domeRotate", "domeBearing", "DV", "DH", DOME_COMMAND_KIND, "random", "loop", "end"];
   const librarySets = () => window.DroidParts?.sets || [];
   // A kind that is a dome step, as its name and the command a dropped one
   // holds; null for a kind that is a step type of its own.
@@ -2722,6 +2743,11 @@
         const speed = Math.abs(speedPct);
         return `Rotate ${direction} at ${speed}% for ${durationMs}ms`;
       }
+      case "domeBearing": {
+        const target = fieldOf(step, "target");
+        const known = domeBearingTargets().find((each) => each.id === target);
+        return target === SeqProtocolCheck.DOME_BEARING_FRONT ? "Dome to front" : `${known ? known.words : target || "a part"} to front`;
+      }
       case "loop": {
         const body = fieldOf(step, "body");
         const periodMs = fieldOf(step, "periodMs");
@@ -2774,6 +2800,7 @@
     audio: { cmd: "$H" },
     dome: { cmd: ":OP00" },
     domeRotate: { speedPct: 0, durationMs: 0 },
+    domeBearing: { target: SeqProtocolCheck.DOME_BEARING_FRONT },
     loop: { body: 2, periodMs: 1846, durationMs: 14000 },
     random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
     audioCat: { category: "alert", fallback: "scream" },
@@ -2976,6 +3003,7 @@
     audio: "Sound",
     dome: "Panel Action",
     domeRotate: "Spin Dome",
+    domeBearing: "Turn Dome To",
     loop: "Servo Loop",
     random: "Random Flutter",
     audioCat: "Sound Category",
@@ -4738,6 +4766,7 @@
       "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
+      "/dome_bearing.js": "where the dome points",
       "/seq_protocol_check.js": "sequence protocol",
       "/servo_motion.js": "servo motion model",
       "/seq_rehearsal.js": "sequence rehearsal",
