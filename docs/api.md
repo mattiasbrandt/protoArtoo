@@ -2562,6 +2562,12 @@ Returns controller status snapshot.
   rejection, and the smallest sample it has taken since boot (`-1` if none)
 - `wifiRssi`, `wifiConnected`, `wifiClientConnected`, `littleFsReady`
 - `sleepMode`, `sleepSinceMs`, `activeMood`
+- `seqRun` — the Sequence run the droid last recorded, whoever started it
+  (a page, the Console or an RC Channel): `{"name":"DM:LEIA","running":true,"startMs":81234}`,
+  or `null` until one has run since boot. `startMs` tells two runs of one
+  Sequence apart. A run's start and its end each send a status event, so the
+  stream carries it without a poll. `GET /api/seq/last-run` has the rest of the
+  record (#451)
 - `lights` object: one entry per lit wire, keyed by the Output id
   `GET /api/config` names it under `components` (`aux1`), each carrying `r`,
   `g`, `b`, `effect` and `available`. A droid with no light answers `{}`. There
