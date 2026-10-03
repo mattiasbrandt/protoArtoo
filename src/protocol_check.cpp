@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "audio_config_map.h"        // audioDollarNamesSound() - a Background Track's target
 #include "audio_playback_policy.h"   // AUDIO_CATEGORY_COUNT, AUDIO_SLOT_COUNT
 #include "dome_bearing_act.h"        // domeBearingTargetValid() - a bearing step's target
 #include "droid_parts.h"             // droidPartIdIsKnown()  --  the Part vocabulary
@@ -1112,6 +1113,28 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 s.effectClass = s.params.audioBounded ? FX_AUDIO_BOUNDED : FX_AUDIO;
                 break;
             }
+            case STEP_BACKGROUND_TRACK: {
+                // Form, and only form (ADR 0054, ADR 0044): the sound is a '$'
+                // an audio step could carry and one that plays something, and
+                // the volume is in range. Whether the fitted module can mix is
+                // the Rehearsal's and the run's to say, never a refused save.
+                ProtocolCheckResult r = classifyAudio(label, i, s.payload);
+                if (!r.ok) return r;
+                if (!audioDollarNamesSound(s.payload)) {
+                    return pcFailAt(label, i, "cmd", "background track names no sound");
+                }
+                if (s.params.backgroundTrackVol > PC_BACKGROUND_TRACK_VOL_MAX) {
+                    return pcFailAt(label, i, "vol", "vol must be 0..30");
+                }
+                // Bounded Audio (ADR 0010 decision 4), defaulting to bounded
+                // like STEP_AUDIO: seqJsonParse() filled audioBounded.
+                s.effectClass = s.params.audioBounded ? FX_BACKGROUND_TRACK_BOUNDED
+                                                      : FX_BACKGROUND_TRACK;
+                break;
+            }
+            case STEP_BACKGROUND_TRACK_STOP:
+                s.effectClass = FX_NONE;
+                break;
             case STEP_AUDIO_CATEGORY: {
                 if (s.params.audioCategory >= AUDIO_CATEGORY_COUNT) {
                     return pcFailAt(label, i, "category", "unknown audio category");

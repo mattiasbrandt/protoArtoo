@@ -255,6 +255,12 @@ CHIRP plays it as a vocal (`AUDIO_FLAT_BANK` / `AUDIO_FLAT_PAGE`,
 logged and not played. The volume is 0-30. While a Background Track is held, a
 Track Stop leaves the droid's sound reported as playing.
 
+A Sequence starts and stops a Background Track with its `backgroundTrack` and
+`backgroundTrackStop` steps (`docs/sequence-authoring.md`, "A Background
+Track"); the run's end stops it by the Bounded Audio rule, and any abnormal end
+always does. On a module that cannot mix the run logs `Background Track <$>
+not played - module-cannot-mix` beside AudioTask's own refusal.
+
 > ⚠ **Track numbers are module-specific.** CHIRP's `PLAY:n,1,A` command plays the
 > *nth entry in the Bank 1 sound manifest* (sorted by basename after variant
 > grouping), not a file sequence number. The default named track values

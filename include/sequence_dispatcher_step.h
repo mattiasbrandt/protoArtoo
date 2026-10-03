@@ -31,6 +31,10 @@ enum SequenceDispatchTarget : uint8_t {
     SEQ_DISPATCH_GESTURE,          // hand to the Coordinator's Gesture run, which
                                    // copies the step and expands it on its own
                                    // cursor (include/sequence_gesture.h)
+    SEQ_DISPATCH_BACKGROUND_TRACK_START, // audioQueueBackgroundTrackStart(payload,
+                                   // volume), and the run's report where the
+                                   // fitted module cannot mix (ADR 0054)
+    SEQ_DISPATCH_BACKGROUND_TRACK_STOP,  // audioQueueBackgroundTrackStop()
     SEQ_DISPATCH_NONE,             // Silent success (unknown action)
 };
 

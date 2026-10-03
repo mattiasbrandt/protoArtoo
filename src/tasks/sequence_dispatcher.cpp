@@ -219,6 +219,40 @@ static bool __attribute__((noinline)) dispatchDomeBearing(const SeqAction& act) 
 }
 
 // -----------------------------------------------------------------------------
+// dispatchBackgroundTrackStart  --  a Background Track step reaching AudioTask
+// (ADR 0054).
+//
+// Sent whatever the fitted module, because AudioTask is the one audio seam that
+// refuses a Background Track a module cannot mix (AUDIO_STEP_IGNORE_CANNOT_MIX)
+// -- the gate stays in one place. What this adds is the run's own report, in
+// the shape a Body Step's part-not-assigned takes: the step was asked for, it
+// does not play, and why. The rest of the routine is untouched; only a full
+// queue is a retry.
+//
+// The report is a function of its own, out of line: inline, its log
+// line's frame (320 B) sat above the queue helper's queue-drop log line
+// and walked this task's chain 256 B past its recorded figure.
+// -----------------------------------------------------------------------------
+static void __attribute__((noinline)) reportBackgroundTrackCannotMix(const char* sound) {
+    PA_LOG_INFO(TAG, "Background Track %s not played - %s", sound,
+                consoleReasonString(CONSOLE_REASON_MODULE_CANNOT_MIX));
+}
+
+static bool dispatchBackgroundTrackStart(const SeqAction& act) {
+    // act.audioCategory carries the volume (SEQ_ACT_BACKGROUND_TRACK_START).
+    if (!audioQueueBackgroundTrackStart(act.payload, act.audioCategory, SRC_SEQ)) {
+        // A full queue: Protocol Check let only a '$' that fits the queue entry
+        // into the step, so this is never the malformed case. Retried on the
+        // next tick, and reported once it is sent.
+        return false;
+    }
+    if ((audioGetCapabilities() & AudioDriver::AUDIO_CAP_MIXES) == 0) {
+        reportBackgroundTrackCannotMix(act.payload);
+    }
+    return true;
+}
+
+// -----------------------------------------------------------------------------
 // centreOneOutput  --  one row's turn in a bulk centre sweep or a boot pass
 // (#318, #365, #414).
 //
@@ -1157,6 +1191,12 @@ static bool dispatchAction(const SeqAction& act) {
         case SEQ_DISPATCH_AUDIO_STOP:
             // Forward to audio stop queue.
             return audioQueueTrackStop(SRC_SEQ);
+
+        case SEQ_DISPATCH_BACKGROUND_TRACK_START:
+            return dispatchBackgroundTrackStart(act);
+
+        case SEQ_DISPATCH_BACKGROUND_TRACK_STOP:
+            return audioQueueBackgroundTrackStop(SRC_SEQ);
 
         case SEQ_DISPATCH_BODY_MOVE:
             // A flutter is handed to the flutter run, which performs it beside

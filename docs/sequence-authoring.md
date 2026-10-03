@@ -29,6 +29,8 @@ Every choreography is built from core step kinds:
 | `audioCat` | random track from a sound category with fallback |
 | `gesture` | one move spread across a set of Parts, in order round the droid (see below) |
 | `sequence` | another sequence, as one step, kept linked (see below) |
+| `backgroundTrack` | start a **Background Track**: music that plays under the routine at its own volume (see below) |
+| `backgroundTrackStop` | stop the Background Track, and nothing else |
 
 Timing is **absolute** from sequence start (`tMs`). Steps inside a `loop` body use times
 relative to the iteration start.
@@ -198,6 +200,34 @@ If estop or Sleep Mode arrives while a sequence is running, the outputs that
 sequence moved snap to their close position -- the promise the body routines kept
 when ServoTask ran them itself -- and any move in progress stops where it is.
 
+## A Background Track
+
+A **Background Track** (ADR 0054) is music that plays *under* the routine, at its
+own volume; the routine's vocals fire over it without stopping it. One step starts
+it and another stops it:
+
+```json
+{ "t": 0,     "type": "backgroundTrack", "cmd": "$W", "vol": 12 },
+{ "t": 200,   "type": "audio", "cmd": "$S" },
+{ "t": 30000, "type": "backgroundTrackStop" }
+```
+
+`cmd` names the sound the way an `audio` step does -- a Named Track letter, `$8nn`
+for bank 8, or a track number -- and must name one that plays (`$s`, `$R` and the
+volume commands are refused). `vol` is its volume, 0..30, and is required. A second
+start replaces the first: there is one Background Track at a time.
+
+It follows the Bounded Audio rule an `audio` step does: a sequence that ends
+normally stops it, unless the start step says `"boundAudio": false`, and then it
+plays on after the end. Any other end -- an estop, a stop, a later sequence -- stops
+it either way. A Track Stop, which ends the vocals, leaves it playing.
+
+Only a sound module that mixes can play one: today that is the CHIRP Audio Trigger.
+On any other module the sequence still saves and runs, without the Background
+Track; the run reports `module-cannot-mix` and carries on, and the Rehearsal warns
+about it beforehand. A pose press (the timeline's send to this moment) does not
+start or stop a Background Track.
+
 ## Tempo and beats
 
 A sequence may carry a **tempo** (`tempo` at the top level, ADR 0058): `bpm`
@@ -305,6 +335,7 @@ and a fix:
 | `take-overlap` | warning | two or more takes moving one part at once, naming the part, the span and the take that wins it | the later take in the list wins, so the earlier one's motion there is never seen (ADR 0061) |
 | `take-after-end` | warning | a take that starts at or after the end step | the droid never opens it (#442) |
 | `take-cut` | note | a take still playing at the end step | the droid stops it there (#442) |
+| `background-track-cannot-mix` | warning | a Background Track on a droid whose sound module plays one sound at a time | it saves and runs without the Background Track (ADR 0054) |
 
 It also says how many steps it could check. A dome panel move, a body move and a
 random pick each carry a question it cannot answer from the page -- how long the
@@ -315,7 +346,7 @@ steps are named as not checked, with what would close the gap.
 
 You do **not** author teardown. The engine tracks which persistent effects fired (panel
 open, logic/PSI, holo, long audio) and emits the matching resets (`@0T1`/`@0P1`, `*ST00`,
-audio stop, and an individual close for each ring panel the run left open) on the terminal `end` step and on abort/preempt/estop. In Learned
+audio stop, the Background Track's own stop, and an individual close for each ring panel the run left open) on the terminal `end` step and on abort/preempt/estop. In Learned
 Sequences the effect class is *inferred* by Protocol Check from each command, so cleanup is
 correct-by-construction; in Factory tables you tag the first activating step explicitly
 (`FX_PANEL`, `FX_LOGIC_PSI`, `FX_HOLO`, `FX_AUDIO`).

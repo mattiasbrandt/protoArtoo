@@ -308,6 +308,15 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
     if (((st.activeFx & FX_AUDIO) && abnormal) || (st.activeFx & FX_AUDIO_BOUNDED)) {
         addFinal(st, SEQ_ACT_AUDIO_STOP, nullptr);
     }
+    // A Background Track by the same rule, with its own stop: a Track Stop
+    // leaves it playing (ADR 0054). Bounded, the default, stops on every end;
+    // boundAudio:false plays on past a normal end; an abnormal end, estop
+    // included, always stops it. After a stop step it is sent again, which
+    // costs nothing: with no Background Track held the driver sends nothing.
+    if (((st.activeFx & FX_BACKGROUND_TRACK) && abnormal) ||
+        (st.activeFx & FX_BACKGROUND_TRACK_BOUNDED)) {
+        addFinal(st, SEQ_ACT_BACKGROUND_TRACK_STOP, nullptr);
+    }
     if (st.domeRotateActive) {
         addFinalDomeRotateStop(st);
     }
@@ -458,6 +467,14 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             break;
         case STEP_AUDIO_STOP:
             a.kind = SEQ_ACT_AUDIO_STOP;
+            break;
+        case STEP_BACKGROUND_TRACK:
+            a.kind = SEQ_ACT_BACKGROUND_TRACK_START;
+            setPayload(a, step.payload);
+            a.audioCategory = step.params.backgroundTrackVol;
+            break;
+        case STEP_BACKGROUND_TRACK_STOP:
+            a.kind = SEQ_ACT_BACKGROUND_TRACK_STOP;
             break;
         case STEP_BODY:
             // The Part travels as the payload, by its catalog id, because a

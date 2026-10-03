@@ -137,6 +137,30 @@ AudioPlaybackSlot audioSlotForDollar(const char* cmd) {
     }
 }
 
+bool audioDollarNamesSound(const char* cmd) {
+    if (cmd == nullptr || cmd[0] != '$' || cmd[1] == '\0') {
+        return false;
+    }
+    uint16_t sound = 0;
+    if (audioDollarBankForm(cmd, nullptr, &sound)) {
+        return sound > 0;
+    }
+    if (cmd[1] >= '0' && cmd[1] <= '9') {
+        uint32_t track = 0;
+        for (const char* c = cmd + 1; *c != '\0'; ++c) {
+            if (*c < '0' || *c > '9') {
+                return false;
+            }
+            track = track * 10u + (uint32_t)(*c - '0');
+            if (track > 65535u) {
+                return false;
+            }
+        }
+        return track > 0;
+    }
+    return cmd[2] == '\0' && audioSlotForDollar(cmd) != AUDIO_SLOT_NONE;
+}
+
 bool audioUnpackChirpBinding(uint32_t packed, uint8_t* bankOut, char* pageOut, uint16_t* indexOut) {
     if (bankOut == nullptr || pageOut == nullptr || indexOut == nullptr) {
         return false;

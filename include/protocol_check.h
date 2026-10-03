@@ -95,6 +95,11 @@ static const uint8_t  PC_CMD_MAX          = 63;  // payload[64] minus NUL
 static const uint16_t PC_BODY_FLUTTER_MS_MIN = PC_SM_MOVE_MIN;
 static const uint16_t PC_BODY_FLUTTER_MS_MAX = PC_LOOP_PERIOD_MAX;
 
+// A Background Track's loudest volume (ADR 0054): the audio interface's 0-30
+// (AUDIO_VOLUME_MAX, include/audio_dollar_parser.h), which every driver scales
+// to its module's own range. data/seq_protocol_check.js mirrors it.
+static const uint8_t PC_BACKGROUND_TRACK_VOL_MAX = 30;
+
 // A Gesture's times (ADR 0046), bounded by the model's own ends the same way:
 //   step    its pace: a move this model accepts, up to the longest repeat.
 //   speed   how long a full throw takes when the Gesture overrides the

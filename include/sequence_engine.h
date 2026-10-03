@@ -89,6 +89,17 @@ enum SeqStepType : uint8_t {
                               // STEP_DOME_ROTATE, which is untouched: a duration
                               // always completes and a bearing may not, so they
                               // are different contracts. No params.
+    STEP_BACKGROUND_TRACK = 13, // Start a Background Track (ADR 0054): music
+                              // playing under the routine at its own volume,
+                              // which vocals fire over without stopping it.
+                              // payload carries the sound as a '$' command, the
+                              // address STEP_AUDIO uses; params.backgroundTrackVol
+                              // its volume (0-30) and params.audioBounded whether
+                              // the run's normal end stops it (Bounded Audio,
+                              // ADR 0010: default yes). A module that cannot mix
+                              // does not play it, and the run says why.
+    STEP_BACKGROUND_TRACK_STOP = 14, // Stop the Background Track and nothing
+                              // else. No payload, no params.
 };
 
 // -----------------------------------------------------------------------------
@@ -110,6 +121,13 @@ enum SeqEffectClass : uint8_t {
                                // Track Stop on normal termination as well as abnormal.
                                // Sibling to FX_AUDIO; SEQ_AUDIO_CAT keeps plain FX_AUDIO
                                // so short category vocalizations always ring out.
+    // A Background Track (STEP_BACKGROUND_TRACK, ADR 0054), the same pair as
+    // FX_AUDIO / FX_AUDIO_BOUNDED for the Background Track's own stop, because
+    // a Track Stop never reaches it. FX_BACKGROUND_TRACK (boundAudio:false)
+    // stops it on an abnormal end only; FX_BACKGROUND_TRACK_BOUNDED (the
+    // default) on every end. These are the last two bits activeFx has.
+    FX_BACKGROUND_TRACK         = 1 << 6,
+    FX_BACKGROUND_TRACK_BOUNDED = 1 << 7,
 };
 
 // The dome's whole visual reset: logics, PSIs and holos, one command each
@@ -213,10 +231,12 @@ struct SeqStepParams {
     uint8_t  audioCategory;     // AUDIO_CATEGORY: AudioPlaybackCategory value
     uint8_t  audioFallbackSlot; // AUDIO_CATEGORY: AudioPlaybackSlot fallback
     int8_t   speedPct;          // DOME_ROTATE: signed -100..100 speed percentage
-    uint8_t  audioBounded;      // AUDIO (STEP_AUDIO), Learned Sequences only: parsed
-                                 // JSON boundAudio carrier, consumed by
-                                 // protocolCheckBranch() to stamp FX_AUDIO_BOUNDED vs
-                                 // FX_AUDIO (ADR 0010). Factory catalog entries set
+    uint8_t  audioBounded;      // AUDIO (STEP_AUDIO) and STEP_BACKGROUND_TRACK, Learned
+                                 // Sequences only: parsed JSON boundAudio carrier,
+                                 // consumed by protocolCheckBranch() to stamp
+                                 // FX_AUDIO_BOUNDED vs FX_AUDIO, or
+                                 // FX_BACKGROUND_TRACK_BOUNDED vs FX_BACKGROUND_TRACK
+                                 // (ADR 0010). Factory catalog entries set
                                  // effectClass directly via SEQ_AUDIO_FX and ignore
                                  // this field. Appended last so existing positional
                                  // catalog-macro initializers keep meaning what they
@@ -240,6 +260,10 @@ struct SeqStepParams {
     uint16_t flutterMs;         // BODY: how long a flutter goes on. Zero on every
                                  // other shape -- Protocol Check refuses a duration
                                  // on a shape that has nowhere to spend it
+    // BACKGROUND_TRACK (STEP_BACKGROUND_TRACK), appended last by the rule above:
+    // the Background Track's volume, 0-30, the audio interface's range. It sits
+    // in what was tail padding, so a step is no larger for it.
+    uint8_t  backgroundTrackVol;
 };
 
 // -----------------------------------------------------------------------------
@@ -302,17 +326,17 @@ struct SeqStep {
 #define SEQ_AUDIO_FX(t, fx, cmd) { (t), STEP_AUDIO, (uint8_t)(fx), cmd, {} }
 #define SEQ_AUDIO_CAT(t, cat, fb) \
     { (t), STEP_AUDIO_CATEGORY, FX_AUDIO, "", \
-      { 0, 0, 0, 0, 0, 0, 0, 0, 0, (uint8_t)(cat), (uint8_t)(fb), 0, 0, 0, 0, 0 } }
+      { 0, 0, 0, 0, 0, 0, 0, 0, 0, (uint8_t)(cat), (uint8_t)(fb), 0, 0, 0, 0, 0, 0 } }
 #define SEQ_DOME_ROTATE(t, speed, dur) \
     { (t), STEP_DOME_ROTATE, FX_NONE, "", \
-      { (dur), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (int8_t)(speed), 0, 0, 0, 0 } }
+      { (dur), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (int8_t)(speed), 0, 0, 0, 0, 0 } }
 #define SEQ_LOOP(t, body, period, dur) \
     { (t), STEP_LOOP, FX_NONE, "", \
-      { (dur), (period), (body), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } }
+      { (dur), (period), (body), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } }
 #define SEQ_RAND(t, set, mode, _unused, mv, jit, distinct) \
     { (t), STEP_RANDOM, FX_PANEL, "", \
       { 0, 0, 0, (uint8_t)(set), (uint16_t)(mode), 0, (mv), (jit), (distinct), 0, 0, 0, 0, \
-        0, 0, 0 } }
+        0, 0, 0, 0 } }
 // A Body Step. `part` is a Droid Parts Catalog id ("doorFL"), `shape` a
 // SeqBodyShape, `howFar` a percentage of that Part's own throw (0 for the whole
 // throw), `flutter` how long a flutter goes on (0 on every other shape).
@@ -323,7 +347,7 @@ struct SeqStep {
 #define SEQ_BODY(t, part, shape, howFar, flutter) \
     { (t), STEP_BODY, FX_NONE, part, \
       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
-        (uint8_t)(shape), (uint8_t)(howFar), (uint16_t)(flutter) } }
+        (uint8_t)(shape), (uint8_t)(howFar), (uint16_t)(flutter), 0 } }
 #define SEQ_TERM(t)           { (t), STEP_END, FX_NONE, "", {} }
 #define SEQ_CLEAR_LATCHES(t)  { (t), STEP_CLEAR_LATCHES, FX_NONE, "", {} }
 #define SEQ_AUDIO_STOP(t)     { (t), STEP_AUDIO_STOP, FX_NONE, "", {} }
@@ -388,12 +412,24 @@ enum SeqActionKind : uint8_t {
                                  // the dome's belief at dispatch and sends a
                                  // turn to that Dome Bearing, or reports why
                                  // not and carries on (#445).
+    SEQ_ACT_BACKGROUND_TRACK_START = 9, // payload (a '$' sound) and its volume
+                                 // (audioCategory, reused) ->
+                                 // audioQueueBackgroundTrackStart(). The
+                                 // Coordinator reports why where the fitted
+                                 // module cannot mix (ADR 0054).
+    SEQ_ACT_BACKGROUND_TRACK_STOP  = 10, // audioQueueBackgroundTrackStop(): the
+                                 // stop step, and the run's end per the
+                                 // Background Track's FX bit.
 };
 
 struct SeqAction {
     SeqActionKind kind;
     char          payload[64];
-    uint8_t       audioCategory;
+    uint8_t       audioCategory;   // AUDIO_CATEGORY: the category.
+                                   // BACKGROUND_TRACK_START: the volume, 0-30,
+                                   // in a member the other kinds leave idle
+                                   // rather than a new one: a SeqAction sits on
+                                   // the dispatcher's measured root frame.
     uint8_t       audioFallbackSlot;
     int8_t        domeSpeedPct;
     uint32_t      domeDurationMs;  // DOME_ROTATE: how long the turn runs.

@@ -266,6 +266,7 @@ never type an ID.
   | `part-not-assigned` | the droid knows this Part, but no Output on it drives the Part, so nothing moves (#301) |
   | `bearing-unknown` | the dome does not know where it points - a boot, an estop or Sleep Mode forgot it - so go home and a bearing step do not move it until the builder says front is here (#445) |
   | `dome-not-calibrated` | the dome's full turn is not timed, or which way positive turns it is not set, so no turn can be planned and no bearing believed (#445) |
+  | `module-cannot-mix` | the fitted sound module plays one sound at a time, so a sequence's Background Track does not play; the rest of the sequence runs (ADR 0054, #447) |
 
   `part-not-assigned` is the one that is a fact about the builder's wiring
   rather than about the image, the board or a toggle (`dome-not-calibrated` is

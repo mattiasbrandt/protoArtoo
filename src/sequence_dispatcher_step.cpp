@@ -55,6 +55,16 @@ SequenceDispatcherStepActions sequenceDispatcherStep(const SeqAction& act,
             actions.target = SEQ_DISPATCH_DOME_BEARING;
             break;
 
+        case SEQ_ACT_BACKGROUND_TRACK_START:
+            // Route only. Whether the fitted module can mix is the droid's as it
+            // is now, which this pure core cannot read.
+            actions.target = SEQ_DISPATCH_BACKGROUND_TRACK_START;
+            break;
+
+        case SEQ_ACT_BACKGROUND_TRACK_STOP:
+            actions.target = SEQ_DISPATCH_BACKGROUND_TRACK_STOP;
+            break;
+
         case SEQ_ACT_GESTURE:
             // Route only. Resolving the set against the droid, and pacing a body
             // Gesture, need the live Output rows and ServoTask's reports, which
