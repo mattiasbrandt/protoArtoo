@@ -238,6 +238,9 @@ inline void rcPuppetSent(RcPuppetState* state, uint16_t permille, uint32_t nowMs
 // for the move to arrive, and then goes as one move at the Output's own pace.
 // A target that turns the Part back, or stops it short of where it is going,
 // goes at once: waiting there would carry the Part past where the stick is.
+// `movingToUs` is where the move settles; on an overshoot's way out the Output
+// passes it, so for those frames a further target reads as a turn back and
+// goes early. That costs one restart of a move already ending, nothing more.
 // -----------------------------------------------------------------------------
 inline bool rcPuppetMayRetarget(uint16_t nowUs, uint16_t movingToUs, bool moving, uint16_t newTargetUs) {
     if (!moving) {
