@@ -5163,8 +5163,11 @@ body[data-page="maintenance"] .status-item .hint {
    (data/shell.js, "The full-screen posture"). The nav rail, the Status Plate
    and the topbar's name, place and acts clear away; the topbar keeps the
    Latching Estop on screen and pressable, and the Ignored Input Notice keeps
-   its place above where the plate was. On the Dashboard everything but the
-   Sequences bay clears, and the bay takes the whole work area. */
+   its place above where the plate was. The plate's freshness line comes back
+   whenever the droid is not being heard live, so a row still reading Running
+   from the last frame is never the only thing on screen. On the Dashboard
+   everything but the Sequences bay clears, and the bay takes the whole work
+   area. */
 body.shell-performing {
   grid-template-columns: minmax(0, 1fr);
   padding-bottom: var(--space-xl);
@@ -5175,7 +5178,8 @@ body.shell-performing .topbar-brand,
 body.shell-performing .topbar-where,
 body.shell-performing .topbar-actions,
 body.shell-performing .status-plate,
-body.shell-performing .status-plate-fresh {
+body.shell-performing .status-plate-affordance,
+body.shell-performing .status-plate-region[data-freshness="live"] .status-plate-fresh {
   display: none;
 }
 
@@ -5188,9 +5192,17 @@ body.shell-performing .topbar-right {
 }
 
 body.shell-performing .status-plate-region {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body.shell-performing .status-plate-region[data-freshness="live"] {
   background: none;
   border-top: 0;
   box-shadow: none;
+}
+
+body.shell-performing .status-plate-fresh {
+  border-left: 0;
 }
 
 body.shell-performing #shell-content {
