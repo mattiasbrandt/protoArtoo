@@ -506,12 +506,17 @@
           if (step.parts.join(",").length > 63) return fail("parts", "Too many parts to list. Pick a set instead.");
         }
       }
+      // The Gesture's words are data/seq_gesture.js's, the mirror of
+      // include/sequence_gesture.h, read here at validation rather than at
+      // load: that file loads after this one (it reads GESTURE_MS from here),
+      // and every page that validates a sequence loads both (seq.html).
       const known = (value, list) => value === undefined || list.includes(value);
-      if (!known(step.shape, ["open", "close", "flutter"])) return fail("shape", "Pick open, close or flutter");
-      if (!known(step.spread, ["together", "wave", "chase", "alternate", "pulse"])) return fail("spread", "Pick how it travels");
-      if (!known(step.direction, ["cw", "ccw"])) return fail("direction", "Pick a direction");
-      if (!known(step.start, ["front", "right", "rear", "left"])) return fail("start", "Pick where it starts");
-      if (!known(step.easing, ["none", "soft", "overshoot"])) return fail("easing", "Pick an easing");
+      const ids = (choices) => choices.map((choice) => choice.id);
+      if (!known(step.shape, G.SHAPES)) return fail("shape", "Pick open, close or flutter");
+      if (!known(step.spread, ids(G.SPREADS))) return fail("spread", "Pick how it travels");
+      if (!known(step.direction, ids(G.DIRECTIONS))) return fail("direction", "Pick a direction");
+      if (!known(step.start, ids(G.STARTS))) return fail("start", "Pick where it starts");
+      if (!known(step.easing, G.EASINGS)) return fail("easing", "Pick an easing");
       const inRange = (value, lo, hi) => value === undefined || (isWhole(value) && value >= lo && value <= hi);
       // A time the wire reads as absent - missing, null or 0 - is the
       // Gesture's default and is held to no bound (parseGestureMs(),
