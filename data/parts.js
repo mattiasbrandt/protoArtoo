@@ -120,8 +120,8 @@
           `<th scope="row">${partNameHtml(part)}</th>` +
           `<td>${designNameHtml(part)}</td>` +
           `<td>${whereHtml(part)}</td>` +
-          `<td class="parts-unused-act"><button class="btn btn-sm btn-quiet" type="button" data-wire="${escAttr(part.id)}" ` +
-          `aria-label="${escAttr(`${GIVE_IT_AN_OUTPUT}: ${part.name}`)}">${GIVE_IT_AN_OUTPUT}</button></td></tr>`
+          `<td class="parts-unused-act"><button class="btn btn-sm btn-quiet icon-act" type="button" data-wire="${escAttr(part.id)}">` +
+          `${window.PAUi.actFace("link-variant", GIVE_IT_AN_OUTPUT)}</button></td></tr>`
       )
       .join("") +
     "</tbody></table>";
@@ -265,9 +265,11 @@
   const railHost = document.getElementById("bodyview-panel");
 
   const ACTS = [
-    { id: "toggle", label: "Open it" },
-    { id: "fit", label: "Drop from build" },
-    { id: "wire", label: GIVE_IT_AN_OUTPUT },
+    // Open it moves the Part, and the panel says what it is but not what the
+    // press does, so its words stay in view (#460).
+    { id: "toggle", label: "Open it", icon: "arrow-expand-horizontal", keepsWords: true },
+    { id: "fit", label: "Drop from build", icon: "delete-outline" },
+    { id: "wire", label: GIVE_IT_AN_OUTPUT, icon: "link-variant" },
   ];
 
   let drawing = null;
@@ -315,6 +317,7 @@
         fit: {
           shown: fitted !== null,
           label: isFitted ? "Drop from build" : "Add to build",
+          icon: isFitted ? "delete-outline" : "plus",
           enabled: fitted !== null,
         },
         wire: {

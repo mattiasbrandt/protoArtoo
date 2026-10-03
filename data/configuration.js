@@ -298,8 +298,8 @@ const BOARD_LABELS = {
     if (window.PABootstrap && identityActions && !identityActions.querySelector("button")) {
       const retryButton = document.createElement("button");
       retryButton.type = "button";
-      retryButton.className = "btn accent";
-      retryButton.textContent = "Retry now";
+      retryButton.className = "btn btn-sm accent icon-act";
+      retryButton.innerHTML = window.PAUi.actFace("refresh", "Retry now");
       retryButton.addEventListener("click", () => {
         window.PABootstrap.retryNow("shell-identity");
         if (identityActions) identityActions.innerHTML = "";

@@ -1166,9 +1166,9 @@
     const suggestionCount = catalogSuggestedCategoryMappings.length;
 
     if (catalogSuggestBtn) {
-      catalogSuggestBtn.textContent = suggestionCount > 0
+      window.PAUi.setAct(catalogSuggestBtn, suggestionCount > 0
         ? `Apply suggestions (${suggestionCount})`
-        : "Apply suggestions";
+        : "Apply suggestions");
       const enabled = catalogSupported && catalogReady && soundHardwareEnabled &&
         !catalogRefreshInFlight && suggestionCount > 0 && !catalogListingIsPartial();
       catalogSuggestBtn.disabled = !enabled;
@@ -1471,8 +1471,7 @@
 
       const mapButton = createActionButton({
         label: "Map",
-        title: "Save mapping to selected target",
-        ariaLabel: `Map ${entry.name || entry.index} to selected target`,
+        icon: "link-variant",
         className: "btn sound-btn-compact",
         onClick: async () => {
           if (catalogRefreshInFlight) return;
@@ -1485,8 +1484,7 @@
 
       const clearButton = createActionButton({
         label: "Clear",
-        title: "Clear all mappings shown on this sound",
-        ariaLabel: `Clear mapped targets for ${entry.name || entry.index}`,
+        icon: "link-variant-off",
         className: "btn sound-btn-compact",
         onClick: async () => {
           if (catalogRefreshInFlight) return;
@@ -1499,8 +1497,7 @@
 
       const playButton = createActionButton({
         label: "Play",
-        title: "Play this catalog entry",
-        ariaLabel: `Play catalog entry ${entry.name || entry.index}`,
+        icon: "play",
         className: "btn sound-btn-play",
         onClick: () => {
           if (catalogRefreshInFlight) return;
@@ -1772,12 +1769,13 @@
     return { tdActions, actionsWrap };
   };
 
-  const createActionButton = ({ label, title, ariaLabel, className, onClick }) => {
+  // A row's act (#460): its icon alone, its words the accessible name and the
+  // shared tooltip's text (data/shell.js "The act").
+  const createActionButton = ({ label, icon, className, onClick }) => {
     const button = document.createElement("button");
-    button.className = className;
-    button.textContent = label;
-    button.title = title;
-    button.setAttribute("aria-label", ariaLabel);
+    button.type = "button";
+    button.className = `${className} icon-act`;
+    button.innerHTML = window.PAUi.actFace(icon, label);
     button.addEventListener("click", onClick);
     return button;
   };
@@ -1889,8 +1887,7 @@
 
         const saveButton = createActionButton({
           label: "Save",
-          title: "Save track number",
-          ariaLabel: `Save ${sound.label} track number`,
+          icon: "content-save-outline",
           className: "btn sound-btn-compact",
           onClick: async () => {
             const ok = await postTrack(sound.key, rowInput.value.trim(), rowFeedback);
@@ -1904,10 +1901,7 @@
 
       const playButton = createActionButton({
         label: "Play",
-        title: sound.playMode === "track"
-          ? `Play configured track for ${sound.label}`
-          : `Play ${sound.cmd}`,
-        ariaLabel: `Play ${sound.label}`,
+        icon: "play",
         className: "btn sound-btn-play",
         onClick: () => {
           if (sound.editable && sound.key) {
@@ -2004,8 +1998,7 @@
 
       const saveButton = createActionButton({
         label: "Save",
-        title: "Save category range",
-        ariaLabel: `Save ${category.label} range`,
+        icon: "content-save-outline",
         className: "btn sound-btn-compact",
         onClick: async () => {
           // As typed: the droid judges each bound and the pair.
@@ -2022,8 +2015,7 @@
 
       const playButton = createActionButton({
         label: "Play",
-        title: `Play random ${category.label} track`,
-        ariaLabel: `Play ${category.label}`,
+        icon: "play",
         className: "btn sound-btn-play",
         onClick: () => {
           const minVal = Number.parseInt(minInput.value, 10);
@@ -2132,8 +2124,7 @@
 
       const saveButton = createActionButton({
         label: "Save",
-        title: "Save track number",
-        ariaLabel: `Save ${sound.label} track number`,
+        icon: "content-save-outline",
         className: "btn sound-btn-compact",
         onClick: async () => {
           const ok = await postTrack(sound.key, input.value.trim(), rowFeedback);
@@ -2143,8 +2134,7 @@
 
       const playButton = createActionButton({
         label: "Play",
-        title: `Play configured track for ${sound.label}`,
-        ariaLabel: `Play ${sound.label}`,
+        icon: "play",
         className: "btn sound-btn-play",
         onClick: () => {
           const value = Number.parseInt(input.value, 10);
@@ -2565,7 +2555,7 @@
   if (btnPoll) {
     btnPoll.addEventListener("click", async () => {
       btnPoll.disabled = true;
-      btnPoll.textContent = "Polling…";
+      window.PAUi.setAct(btnPoll, "Polling…");
       try {
         await window.PAApi.postForm("/api/audio/query", {});
         window.setTimeout(() => {
@@ -2578,12 +2568,12 @@
             })
             .finally(() => {
               btnPoll.disabled = false;
-              btnPoll.textContent = "Poll status";
+              window.PAUi.setAct(btnPoll, "Poll status");
             });
         }, 1600);
       } catch (err) {
         btnPoll.disabled = false;
-        btnPoll.textContent = "Poll status";
+        window.PAUi.setAct(btnPoll, "Poll status");
         showFeedback(modStatusFb, `Poll failed: ${window.PAApi.messageFor(err)}`, false);
       }
     });

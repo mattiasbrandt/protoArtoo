@@ -142,8 +142,8 @@
         </div>
 
         <div class="button-row button-row-compact">
-          <button id="wifi-save-settings-button" class="btn accent" type="submit">Save settings</button>
-          <button id="reload-wifi-button" class="btn" type="button">Refresh</button>
+          <button id="wifi-save-settings-button" class="btn btn-sm accent icon-act" type="submit"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-content-save-outline"/></svg><span class="act-label">Save settings</span></button>
+          <button id="reload-wifi-button" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg><span class="act-label">Refresh</span></button>
         </div>
         <div id="wifi-settings-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading WiFi settings...</div>
       </form>
@@ -156,7 +156,7 @@
       <div class="sect"><h2>Staged network switch</h2><span class="sub waiting" id="wifi-apply-state"></span></div>
       <p class="prose waiting" id="wifi-apply-guidance"></p>
       <div class="button-row button-row-compact">
-        <button id="wifi-apply-reboot-button" class="btn danger" type="button" disabled>Reboot to Apply</button>
+        <button id="wifi-apply-reboot-button" class="btn btn-sm danger icon-act" type="button" disabled><svg class="i" aria-hidden="true" focusable="false"><use href="#i-restart"/></svg><span class="act-label">Reboot to Apply</span></button>
       </div>
       <p class="hint">Refused while nothing is staged. The reboot drops this page.</p>
       <div id="wifi-apply-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
