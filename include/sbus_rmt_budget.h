@@ -90,19 +90,6 @@ constexpr size_t sbusRmtMemBlockSymbols(const SbusRmtGeometry& geometry,
            geometry.wordsPerChannel;
 }
 
-// Ping-pong half size, in symbols: the driver sets its RX threshold here, so
-// this many symbols is the deadline the threshold ISR has to copy one half out
-// before the writer wraps into it. Zero on a chip without ping-pong, where the
-// mechanism does not exist.
-constexpr size_t sbusRmtPingPongSymbols(const SbusRmtGeometry& geometry,
-                                        size_t decoders,
-                                        size_t worstCaseFrameSymbols) {
-    if (!geometry.pingPong) {
-        return 0;
-    }
-    return sbusRmtMemBlockSymbols(geometry, decoders, worstCaseFrameSymbols) / 2;
-}
-
 // Can `decoders` channels of `blocksPerDecoder` blocks each be placed in this
 // chip's RX window? Kept separate from the choice of block count so a proposed
 // count can be judged on its own -- which is how both #255 traps are stated:

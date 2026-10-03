@@ -58,11 +58,6 @@ void test_artoo_holds_a_whole_frame_because_it_has_no_ping_pong() {
     TEST_ASSERT_GREATER_OR_EQUAL_size_t(kWorstCaseFrameSymbols, symbols);
 }
 
-void test_artoo_has_no_ping_pong_half() {
-    TEST_ASSERT_EQUAL_size_t(
-        0, sbusRmtPingPongSymbols(kArtooEsp32, kDecoders, kWorstCaseFrameSymbols));
-}
-
 // ---------------------------------------------------------------------------
 // ESP32-P4: the chip the defect was found on.
 // ---------------------------------------------------------------------------
@@ -76,13 +71,6 @@ void test_p4_takes_two_blocks_and_96_symbols() {
 
 void test_p4_budget_fits() {
     TEST_ASSERT_TRUE(sbusRmtBudgetFits(kEsp32P4, kDecoders, kWorstCaseFrameSymbols));
-}
-
-void test_p4_ping_pong_half_is_48_symbols() {
-    // Halved from the 96 the old 4-block sizing would have produced. This is
-    // the number an ISR-cadence measurement is about.
-    TEST_ASSERT_EQUAL_size_t(
-        48, sbusRmtPingPongSymbols(kEsp32P4, kDecoders, kWorstCaseFrameSymbols));
 }
 
 void test_p4_block_count_need_not_hold_a_whole_frame() {
@@ -182,11 +170,9 @@ int main() {
     RUN_TEST(test_artoo_keeps_three_blocks_and_192_symbols);
     RUN_TEST(test_artoo_budget_fits);
     RUN_TEST(test_artoo_holds_a_whole_frame_because_it_has_no_ping_pong);
-    RUN_TEST(test_artoo_has_no_ping_pong_half);
 
     RUN_TEST(test_p4_takes_two_blocks_and_96_symbols);
     RUN_TEST(test_p4_budget_fits);
-    RUN_TEST(test_p4_ping_pong_half_is_48_symbols);
     RUN_TEST(test_p4_block_count_need_not_hold_a_whole_frame);
 
     RUN_TEST(test_p4_rejects_four_blocks_per_decoder_the_original_defect);
