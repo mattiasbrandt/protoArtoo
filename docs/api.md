@@ -1776,11 +1776,13 @@ from its `t`, beside the steps (`include/take_replay.h`). Each sample goes to
 its Part's Output at that Output's own Motion Profile, the way the stick's
 target did. A Part with no Output is logged as `part-not-assigned` and the rest
 of the take plays. Where two takes cover one Part at once, the later one in
-`takes` moves it. A step's move of a Part holds the takes off it until the move
-is over. A take still playing at the end step stops there; one that ends sooner
-leaves its Parts where it put them. The estop and a stop end it. Sleep Mode ends
-it the way it ends a Gesture: after a wake the steps go on and the takes do not.
-Replay asks for no Non-RC Control consent either.
+`takes` moves it. A step's move of a Part, and every leg of a flutter, holds the
+takes off it until that move is over. A toggle sequence plays its takes on its
+open half only; the close half plays its steps. A take still playing at the end
+step stops there; one that ends sooner leaves its Parts where it put them. The
+estop, a stop, a later run, a pose, back to centre and the dome resync end it.
+Sleep Mode ends it the way it ends a Gesture: after a wake the steps go on and
+the takes do not. Replay asks for no Non-RC Control consent either.
 
 ### GET /api/take
 

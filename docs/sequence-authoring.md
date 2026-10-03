@@ -380,7 +380,9 @@ model -- no `fx` field (inferred), no manual cleanup steps (automatic).
   it, and a save keeps the takes it names and deletes the sequence's others. When the
   sequence runs, each take plays from its `t` beside the steps: where two takes cover one
   part, the later one in the array moves it, and a step that moves the part wins over
-  both. A take is made by Perform in the editor, never written by hand.
+  both. A toggle sequence plays its takes on its open half only, and a sequence placed
+  inside another (`sequence` step) brings its steps but not its takes. A take is made by
+  Perform in the editor, never written by hand.
 
 ### Named tracks vs `$NNN`
 
