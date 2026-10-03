@@ -34,6 +34,3 @@ void configWriteWindowArm(bool armed);
 // holding the config write lock, while the check is armed. `writer` names the
 // function, for the log line.
 void configWriteWindowExpectHeld(const char* writer);
-
-// Writes made outside a Write Window since the check was last armed.
-uint32_t configWriteWindowMisses();
