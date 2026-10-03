@@ -384,8 +384,9 @@ class LikelySet(unittest.TestCase):
         self.assertEqual(selected, ["test/test_web/test_a.js", "test/test_web/test_b.js"])
 
     def test_a_file_no_test_opens_widens_to_the_whole_suite(self):
-        # diagnostics.js at HEAD: no web test opens it. The empty likely-set
-        # is an unknown, and unknowns widen.
+        # A data file no web test opens (diagnostics.js was one until #466
+        # merged it away). The empty likely-set is an unknown, and unknowns
+        # widen.
         selected, widened = mutation_verify.likely_set(["data/diagnostics.js"], self.MAP, self.ALL)
         self.assertEqual(selected, self.ALL)
         self.assertIsNotNone(widened)
