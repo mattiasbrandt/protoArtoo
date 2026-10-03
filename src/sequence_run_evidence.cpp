@@ -14,6 +14,7 @@
 #include "droid_parts.h"  // DROID_PART_ID_MAX_LEN -- the longest id the catalog has
 #include "robot_state.h"  // portMUX_TYPE
 #include "sequence_gesture.h"  // seqGestureIsDome()
+#include "web_server.h"        // requestStatusBroadcastNow()
 
 static portMUX_TYPE seqEvidenceMux = portMUX_INITIALIZER_UNLOCKED;
 static SeqRunEvidence g;                         // the live record (zero-initialized)
@@ -182,6 +183,11 @@ void seqEvidenceBegin(const char* name, uint8_t source, uint32_t startMs,
     g.startMs = startMs;
     gBodyQueueFullBaseline = bodyQueueFullBaseline;
     taskEXIT_CRITICAL(&seqEvidenceMux);
+    // The status document carries the run (`seqRun`), and the stream sends a
+    // status only when asked: a run that begins or ends asks once, so a page
+    // hears a run started from an RC Channel without polling for it (#451).
+    // An edge, never per step. Outside the lock: the ask takes its own.
+    requestStatusBroadcastNow();
 }
 
 void seqEvidenceRecordTx(const SeqAction& act, bool cleanup) {
@@ -245,7 +251,8 @@ void seqEvidenceNoteRetry(void) {
 void seqEvidenceEnd(SeqRunOutcome outcome, const char* reason, uint32_t endMs,
                     uint32_t bodyQueueFullNow) {
     taskENTER_CRITICAL(&seqEvidenceMux);
-    if (g.outcome == SEQ_RUN_RUNNING) {
+    const bool ended = (g.outcome == SEQ_RUN_RUNNING);
+    if (ended) {
         g.outcome = outcome;
         strncpy(g.reason, reason != nullptr ? reason : "", SEQ_EVID_REASON_LEN - 1);
         g.reason[SEQ_EVID_REASON_LEN - 1] = '\0';
@@ -256,6 +263,9 @@ void seqEvidenceEnd(SeqRunOutcome outcome, const char* reason, uint32_t endMs,
                 : 0;
     }
     taskEXIT_CRITICAL(&seqEvidenceMux);
+    // The run's end, said on the status stream as its start was (#451). Only
+    // the call that ended it asks: the later COMPLETED fallback changes nothing.
+    if (ended) requestStatusBroadcastNow();
 }
 
 bool seqEvidenceSnapshot(SeqRunEvidence& out) {
@@ -274,6 +284,16 @@ bool seqEvidenceSummary(SeqRunSummary& out) {
     memcpy(out.reason, g.reason, sizeof(out.reason));
     out.startMs = g.startMs;
     out.endMs = g.endMs;
+    taskEXIT_CRITICAL(&seqEvidenceMux);
+    return out.valid;
+}
+
+bool seqEvidenceRunState(SeqRunState& out) {
+    taskENTER_CRITICAL(&seqEvidenceMux);
+    out.valid = g.valid;
+    out.running = (g.outcome == SEQ_RUN_RUNNING);
+    out.startMs = g.startMs;
+    memcpy(out.name, g.name, sizeof(out.name));
     taskEXIT_CRITICAL(&seqEvidenceMux);
     return out.valid;
 }

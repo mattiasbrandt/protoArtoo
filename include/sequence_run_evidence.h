@@ -189,3 +189,19 @@ struct SeqRunSummary {
 // they come from one consistent record. Returns false (and an out.valid==false
 // summary) when no run has been recorded yet.
 bool seqEvidenceSummary(SeqRunSummary& out);
+
+// What the status document says of the run (`seqRun`, include/status_json.h,
+// #451): which Sequence it is, whether it is still under way, and when it
+// began - the start time is what tells one run of a Sequence from the next.
+// Narrower than SeqRunSummary on purpose: it is captured on the status
+// builder's frame, which is on a measured stack chain.
+struct SeqRunState {
+    bool     valid;                      // a run has been recorded
+    bool     running;
+    uint32_t startMs;
+    char     name[SEQ_EVID_NAME_LEN];
+};
+
+// Copy the run's state under the record's lock. Returns false (and an
+// out.valid==false state) when no run has been recorded yet.
+bool seqEvidenceRunState(SeqRunState& out);
