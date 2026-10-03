@@ -4440,15 +4440,13 @@ body[data-page="maintenance"] .status-item .hint {
   border-left: 3px solid var(--accent-bright);
 }
 
+/* A quiet line, not a framed box: the save's provenance (ADR 0066 "fewer
+   frames"). */
 .rc-editor-status-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--lift) 2%, transparent);
   font-size: 0.85rem;
 }
 

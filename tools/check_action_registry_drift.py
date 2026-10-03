@@ -54,7 +54,9 @@ ACTION_GROUP_OVERRIDE = {
     "dome.action.set-speed": "Movement",
 }
 
-NON_TESTABLE_TOKENS = {"drive_speed", "drive_steer", "dome_speed", "estop"}
+# robotActionIsWebTestable(): the analog actions - the three axes and a puppet
+# string - and the estop never run from a single press.
+NON_TESTABLE_TOKENS = {"drive_speed", "drive_steer", "dome_speed", "puppet_part", "estop"}
 PAYLOAD_REQUIRED_TOKENS = {"seq", "cmd", "dome_seq"}
 
 

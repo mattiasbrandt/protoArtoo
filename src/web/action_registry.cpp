@@ -56,6 +56,7 @@ const ActionEntry ACTION_REGISTRY[] = {
     { DROID_SEQ_SCREAMS,              "dome.action.droid-sequence-screams", "Screams",           "dome",   "SE15. Screams from the body, and the dome does its part.", false },
     { DROID_SEQ_WIGGLE,               "dome.action.droid-sequence-wiggle", "Panel Wiggle",        "dome",   "SE16. A body wave, and the dome joins in.", false },
     { DRIVE_ACTION_SPEED_PRESET_CYCLE,   "drive.action.speed-preset-cycle", "Speed Preset Cycle",  "drive",  "Step the speed preset: Slow, Normal, Turbo, and round again.",      false },
+    { SERVO_ACTION_PUPPET_PART,       "servo.action.puppet-part",         "Perform a Part",      "servo",  "Move one Part with a stick: push to open it that far. Let go and it closes.", false },
 };
 // clang-format on
 

@@ -2137,7 +2137,15 @@ Replaces entire RC map.
 - `dome.action.sequence` payload must be valid `DM:NAME` format
 - a droid-condition `source` (a Reaction) takes any trigger action except
   `estop`, `op_mode` and `speed_preset_cycle`, and never an axis action
-  (`drive_speed`, `drive_steer`, `dome_speed`)
+  (`drive_speed`, `drive_steer`, `dome_speed`, `puppet_part`)
+- `puppet_part` (a puppet string, #442) takes a `payload` that is a Droid
+  Parts Catalog Part id (`bodyPanel1`), never an Output Address, and only an
+  SBUS stick channel (`sbus1`/`sbus2`, channel 1-16): PWM input runs no
+  string, and CH17/CH18 are on/off
+- one Part has one string: a map naming one Part on two `puppet_part` entries
+  is refused
+- strings share the five general trigger slots with every action that has no
+  slot of its own, so a map holds at most five strings
 - a Reaction's `threshold` and `quietS` are optional: one left out keeps what
   the stored Reaction on that condition holds, or takes its default
 - Success: `200` `{"ok":true}`

@@ -397,7 +397,7 @@ uint8_t configCacheServoOutputPartCountAt(ServoOutputDriver driver, uint8_t chan
 // All live here rather than as one find-me-the-row accessor because their
 // caller is ServoTask, whose worst-case static chain is a measured constant
 // (SERVO_TASK_MEASURED_CHAIN_BYTES, include/config.h) that ADR 0040's checker
-// re-derives from the linked image on every slice. A ServoOutputRow is 70 B,
+// re-derives from the linked image on every slice. A ServoOutputRow is 72 B,
 // so handing one out puts 70 B on a Core 1 real-time frame to answer a question
 // whose answer is two numbers or one. A caller that only wants an endpoint pair
 // should not pay for a Part list, a Motion Profile and a boot behaviour it will
@@ -451,6 +451,32 @@ bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t chann
     if (found) {
         *openUs = servoOutputCache.rows[index].open_us;
         *closeUs = servoOutputCache.rows[index].close_us;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return found;
+}
+
+// The Output that drives a Part and its Endpoint Pair, for a puppet string
+// (#442). The rows are walked in place under the lock, so the caller's frame
+// carries four values rather than a row; a Part is driven by at most one Output
+// (servoOutputTableEnforcePartOwnership()), so the first row that claims it is
+// the only one. False, with the out-params untouched, when none does.
+bool configCacheReadPartOutputEnds(const char* part, ServoOutputAddress* output,
+                                   uint16_t* openUs, uint16_t* closeUs) {
+    if (part == nullptr || output == nullptr || openUs == nullptr || closeUs == nullptr) {
+        return false;
+    }
+    bool found = false;
+    taskENTER_CRITICAL(&configCacheMux);
+    for (uint8_t i = 0; i < servoOutputCache.count && i < SERVO_OUTPUT_ROW_MAX; ++i) {
+        const ServoOutputRow& row = servoOutputCache.rows[i];
+        if (servoOutputDrivesPart(row, part)) {
+            *output = {row.driver, row.channel};
+            *openUs = row.open_us;
+            *closeUs = row.close_us;
+            found = true;
+            break;
+        }
     }
     taskEXIT_CRITICAL(&configCacheMux);
     return found;

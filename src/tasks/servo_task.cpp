@@ -330,7 +330,7 @@ static bool mayTakeForRun(uint8_t slot) {
 //
 // The cache answers with the clamped number and the component that bounded it,
 // never with the row: this frame is on ServoTask's measured chain (ADR 0040) and
-// a ServoOutputRow is 70 B to answer a question whose answer is one number.
+// a ServoOutputRow is 72 B to answer a question whose answer is one number.
 // -----------------------------------------------------------------------------
 static bool resolveOutputPulse(uint8_t slot, uint16_t pulseUs, uint16_t* commandedOut) {
     if (!isOutputLive(slot)) {
@@ -503,7 +503,7 @@ static void writeOutputPulse(uint8_t slot, uint16_t pulseUs) {
 //
 // The profile arrives as a ServoMotionProfile, not as the row it sits in: like
 // the clamp and the Endpoint Pair, it is answered by address out of the live
-// table, so no 70 B ServoOutputRow is put on ServoTask's measured chain
+// table, so no 72 B ServoOutputRow is put on ServoTask's measured chain
 // (ADR 0040). Its ease is already the one that runs (servoMotionProfileOf()),
 // so an overshoot on an unmeasured Output never reaches the planner as one.
 // -----------------------------------------------------------------------------
@@ -1295,6 +1295,21 @@ static inline __attribute__((always_inline)) void processCommand(const ServoComm
             }
             PA_LOG_INFO(TAG, "[%s] %s set to %d us", commandSourceToString(cmd.source),
                         targetName(cmd.output, slot), cmd.positionUs);
+            break;
+
+        case SERVO_CMD_PUPPET:
+            // A hold outranks a puppet string, and this is the one place that
+            // says so: the dial's hold and a run's are the same ServoHoldState
+            // (include/servo_run.h), so one test covers both. A run only ever
+            // holds a free Output, which no Part - so no string - is on; the
+            // dial is the case this is for. Dropped quietly, like every target
+            // here: a string sends at stick rate, and a line per target would
+            // bury the log.
+            if (slot >= kSlotCount || s_out[slot].hold.held ||
+                cmd.positionUs < SERVO_PULSE_MIN_US || cmd.positionUs > SERVO_PULSE_MAX_US) {
+                return;
+            }
+            driveOutputTo(slot, cmd.positionUs);
             break;
 
         case SERVO_CMD_NUDGE:

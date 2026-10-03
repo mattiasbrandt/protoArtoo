@@ -80,7 +80,7 @@ uint8_t configCacheServoOutputCount();
 // as a row. There is deliberately no find-me-the-row-by-address accessor: the
 // caller is ServoTask, whose worst-case static chain is a measured constant
 // ADR 0040's checker re-derives from the linked image on every slice, and a
-// ServoOutputRow is 70 B. A caller that wants an endpoint pair should not put a
+// ServoOutputRow is 72 B. A caller that wants an endpoint pair should not put a
 // Part list, a Motion Profile and a boot behaviour on a Core 1 frame to get it.
 //
 // An Output Address, not an index: an index is a storage slot, while the address
@@ -106,6 +106,16 @@ bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t chann
 // rule as the pair above.
 bool configCacheReadServoOutputCentre(ServoOutputDriver driver, uint8_t channel,
                                       uint16_t* centreUs);
+
+// The Output that drives a Part, and its Endpoint Pair, directional: what a
+// puppet string needs to turn a stick into a width (include/rc_puppet.h). By
+// Part id, because a string names the Part and never an address (ADR 0061),
+// and answered as values for the reason the three above are - RCInputTask's
+// chain is measured too, and a 72 B row on its frame would be paid on every
+// frame a string sends. False when no live row drives the Part - the
+// part-not-assigned case - with the out-params untouched.
+bool configCacheReadPartOutputEnds(const char* part, ServoOutputAddress* output,
+                                   uint16_t* openUs, uint16_t* closeUs);
 
 // The Motion Profile a move is planned from (ADR 0052): the recorded ends in
 // order -- whichever way round the pair was recorded -- how long a full throw
@@ -167,7 +177,7 @@ ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& m
 
 // configCacheServoOutputPartCountAt: how many Parts the live row addressed
 // there holds, or 0 where no live row is addressed. A count and not a row, so
-// the Commit Step can ask it after a move without a 70 B row on the Console
+// the Commit Step can ask it after a move without a 72 B row on the Console
 // config-write chain the stack recipe measures.
 uint8_t configCacheServoOutputPartCountAt(ServoOutputDriver driver, uint8_t channel);
 

@@ -59,6 +59,12 @@ enum RobotActionId : uint8_t {
     DROID_SEQ_SCREAMS,          // Button: SE15 screams (audio-only body side)
     DROID_SEQ_WIGGLE,           // Button: SE16 panel wiggle sequence
     DRIVE_ACTION_SPEED_PRESET_CYCLE,  // Button: cycle Slow/Normal/Turbo speed presets
+    // Stick: a puppet string (#442, include/rc_puppet.h). Moves the Part its
+    // payload names in proportion to the stick, so it is neither a button nor
+    // a backbone axis: it lives in a trigger slot, is never debounced or
+    // dispatched as a press, and reads no drive or dome-speed binding.
+    // Appended, so every value above keeps its number.
+    SERVO_ACTION_PUPPET_PART,
 };
 
 // -----------------------------------------------------------------------------
@@ -146,9 +152,14 @@ inline bool robotActionNeedsPayload(RobotActionId target) {
            target == DOME_ACTION_SEQ;
 }
 
+// A stick, not a press: the three backbone axes, and a puppet string. Nothing
+// fires one once, so neither the REST action test nor the Console runs one, and
+// a droid condition - which has no stick - may not be bound to one. Which slot
+// an analog action is stored in is not this predicate's: the backbone axes have
+// their own fields and a puppet string a trigger slot (assignRcMapEntryToSnapshot()).
 inline bool robotActionIsAnalog(RobotActionId target) {
     return target == DRIVE_ACTION_SPEED || target == DRIVE_ACTION_STEER ||
-           target == DOME_ACTION_SPEED;
+           target == DOME_ACTION_SPEED || target == SERVO_ACTION_PUPPET_PART;
 }
 
 // Validate Marcduino command payload - must start with safe prefix

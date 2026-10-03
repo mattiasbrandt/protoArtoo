@@ -212,6 +212,13 @@ enum ServoCommandType : uint8_t {
     // on an Output nobody has measured, which has no recorded travel to run.
     // One output per command; 255 is refused.
     SERVO_CMD_TRAVEL,
+    // A puppet string's target (#442, include/rc_puppet.h): the same drive as
+    // a POSITION, at the Output's own Motion Profile, from the RC stick. Its
+    // own type for one reason: a hold outranks it. An Output the calibration
+    // dial or a Find by Moving run holds drops a string's target, because the
+    // builder is looking at that Part and a stick bumped on the bench must not
+    // move it (processCommand()). One output per command; 255 is refused.
+    SERVO_CMD_PUPPET,
 };
 
 // Why an output has no pulse on it (#364). Read only while

@@ -15,6 +15,7 @@ void rcInputProcessorInit(RcInputProcessor* proc) {
     }
     for (size_t i = 0; i < RC_TRIGGER_MAX; ++i) {
         proc->triggerStates[i] = {};
+        proc->puppetStates[i] = {};
     }
     proc->domeInputFilter = {};
     proc->lastSoundPressed = false;
@@ -86,6 +87,18 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
 
         // Get raw channel value (0-indexed)
         int raw = input.channels.channels[binding.channel - 1];
+
+        // A puppet string is a stick, not a press: it is never debounced and
+        // never dispatched as an action, so it cannot fire a cue, and it reads
+        // only its own slot - no drive or dome-speed binding (#442). A latched
+        // estop takes its leave to move, so it lets go of its Part and picks
+        // it up afresh once the estop clears and the stick moves.
+        if (binding.target == SERVO_ACTION_PUPPET_PART) {
+            output.puppet[i] = rcPuppetStep(&proc->puppetStates[i], binding,
+                                            rcPuppetPermille(raw, binding), input.nowMs,
+                                            input.puppetGapMs, !input.config.estopActive);
+            continue;
+        }
 
         // Build backbone binding config from trigger binding
         RcBindingConfig backbone = makeRcBindingConfig(

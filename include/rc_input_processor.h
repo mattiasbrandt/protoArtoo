@@ -15,6 +15,7 @@
 #include "rc_action_dispatcher.h"
 #include "rc_channel_mapper.h"
 #include "rc_mapping.h"
+#include "rc_puppet.h"
 #include "trigger_debounce.h"
 
 static constexpr size_t RC_TRIGGER_MAX = 11;
@@ -35,6 +36,9 @@ struct RcProcessorInput {
     uint32_t nowMs;
     uint32_t randomSeed;
     RcBindingSource sourceFilter;  // RC_BINDING_NONE = process all triggers
+    // The SBUS watchdog's timeout as configured: how long a puppet string may
+    // see no frame before it lets go of its Part (include/rc_puppet.h).
+    uint32_t puppetGapMs;
 };
 
 struct RcProcessorOutput {
@@ -42,11 +46,17 @@ struct RcProcessorOutput {
     bool domeFiltered;
     int domeRawFiltered;  // raw SBUS value after filter (calibrate before dispatch)
     RcActionResult triggerResults[RC_TRIGGER_MAX];
+    // Per trigger slot, what its puppet string asks for this frame (#442,
+    // include/rc_puppet.h); `send` false for a slot that holds a cue, holds
+    // nothing, or whose string has nothing new. The caller resolves the Part
+    // to its Output and records an accepted target with rcPuppetSent().
+    RcPuppetAsk puppet[RC_TRIGGER_MAX];
     bool stationaryLockedByTrigger;
 };
 
 struct RcInputProcessor {
     TriggerDebounceState triggerStates[RC_TRIGGER_MAX];
+    RcPuppetState puppetStates[RC_TRIGGER_MAX];
     DomeInputFilter domeInputFilter;
     bool lastSoundPressed;
     bool stationaryLocked;
