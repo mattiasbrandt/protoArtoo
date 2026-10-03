@@ -270,11 +270,13 @@ jobs:
       # the budgets registry, the slice gate's self-tests, and the guard
       # that every env in platformio.ini resolves a PA_BOARD flag. The
       # v1.1.0 release run found three envs without one; nothing here built
-      # them, and this suite is where that is caught in seconds.
+      # them, and this suite is where that is caught in seconds. The make
+      # target also runs the test/test_tools/*.js files, which unittest
+      # discovery never sees.
       - name: 🧰 Tooling tests
         id: tooling-tests
         continue-on-error: true
-        run: python3 -m unittest discover -s test/test_tools -q
+        run: make test-tools
 
       # ── Summary ──────────────────────────────────────────────────────────────
 
@@ -333,7 +335,7 @@ jobs:
             row "$COLOR_OUTCOME"      "Color drift"        "make check-color-drift"
             row "$SERVO_MOTION_OUTCOME" "Servo motion drift" "make check-servo-motion-drift"
             row "$WEB_OUTCOME"      "Web logic tests"       "node --test test/test_web/*.js"
-            row "$TOOLING_OUTCOME"  "Tooling tests"         "python3 -m unittest discover -s test/test_tools -q"
+            row "$TOOLING_OUTCOME"  "Tooling tests"         "make test-tools"
             echo ""
             echo "Run: [$(date -u '+%Y-%m-%d %H:%M UTC')]($RUN_URL)"
           } | tee .ci-summary.md >> "$GITHUB_STEP_SUMMARY"
