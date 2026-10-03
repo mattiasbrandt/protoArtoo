@@ -550,8 +550,13 @@ static __attribute__((noinline)) void takeSendPart(uint8_t i, uint8_t p, uint32_
         return;
     }
     if (sequenceFlutterHasPart(flutterRun, part) ||
-        ((t->held & bit) != 0 && ((now - takeRun->stepAtMs) < TAKE_REPLAY_STEP_SETTLE_MS ||
-                                  servoCommandedOf(address).moving))) {
+        // Signed: the step stamps millis() when it is sent, which can be
+        // later than this tick's `now` - on a run's first tick always, since
+        // `now` is taken before the load - and an unsigned difference would
+        // wrap and let the take's target in behind the step's move.
+        ((t->held & bit) != 0 &&
+         ((int32_t)(now - takeRun->stepAtMs) < (int32_t)TAKE_REPLAY_STEP_SETTLE_MS ||
+          servoCommandedOf(address).moving))) {
         t->sent[p] = t->cur[p];  // the step wins; the take moves the Part on its next change
         return;
     }
