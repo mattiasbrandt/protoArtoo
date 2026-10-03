@@ -32,6 +32,7 @@
 #include "dome_turn_calibration.h"  // domeTurnCalibrationOf() - is the full turn recorded
 #include "dome_link.h"
 #include "logging.h"
+#include "rc_puppet.h"   // rcPuppetTargetUs() - a take's sample lands where the string's target did
 #include "robot_state.h"
 #include "seq_store.h"
 #include "sequence_body_step.h"
@@ -45,6 +46,8 @@
 #include "sequence_run_evidence.h"
 #include "servo_motion_ramp.h"  // servoMotionArrivalMs() - how long a flutter's leg takes
 #include "servo_task.h"  // servoTaskDrivesOutput() - an undriven Output is passed over (#364)
+#include "take_replay.h"  // a run's takes, played beside its steps (#442)
+#include "take_store.h"   // takeStoreReadSlice() - a take's file, a piece at a time
 
 // Platform definition seam  --  hardware vs native test builds.
 // This is the irreducible guard needed because queue definition must differ:
@@ -142,6 +145,8 @@ static bool sendBodyPosition(const SeqBodyStepPlan& plan, uint16_t throwMs, uint
     return xQueueSend(servoCmdQueue, &cmd, 0) == pdTRUE;
 }
 
+static void takesStepMoved(const char* partId);  // with the takes, below
+
 // `throwMs` and `easing` are a Gesture's own words for this move (0 for each:
 // the Output's own Motion Profile); only a Gesture's move passes them (ADR 0049).
 static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nullptr,
@@ -159,6 +164,7 @@ static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nu
     if (!sendBodyPosition(plan, throwMs, easing)) {
         return false;
     }
+    takesStepMoved(act.payload);  // a step's move wins over a take's (include/take_replay.h)
     if (outcome != nullptr) {
         outcome->sent = true;
         outcome->output = plan.output;
@@ -383,10 +389,242 @@ static SeqAction flutterMove;
 static_assert(SEQ_FLUTTER_PARTS_MAX >= SEQ_GESTURE_MEMBERS_MAX,
               "every member of one Gesture can flutter at once");
 
+// -----------------------------------------------------------------------------
+// The takes the running sequence plays (#442 slice 3, include/take_replay.h,
+// which carries the rules). One heap block, claimed from the store when the
+// run starts and freed when it ends; nullptr between runs, which is all a take
+// costs while none plays.
+//
+// Each take's file is read a few samples at a time through the slice-2 reader
+// (takeStoreReadSlice()), which waits on the take store's lock the way a run's
+// load waits on the sequence store's. Each sample goes to ServoTask the way a
+// puppet string's target does - SERVO_CMD_PUPPET, at the Output's own Motion
+// Profile, its Part resolved to an Output as it goes - but as SRC_SEQ, so
+// ServoTask refuses it in Sleep Mode as it refuses every sequence move, and
+// under the estop as it refuses everything. Like every function on this
+// task's measured chain (ADR 0040), each is out of line with its state in the
+// heap block, and the log lines sit in functions that only log.
+// -----------------------------------------------------------------------------
+static TakeReplayRun* takeRun = nullptr;
+
+// servoCmdQueue places a take leaves free: a step's move and a cue always find
+// one of the last four. A puppet string stops at the same four
+// (rc_input.cpp's kPuppetQueueReserve), so strings and takes share what is
+// above them. A target turned away is still owed, so it goes on the next tick.
+static constexpr UBaseType_t kTakeQueueReserve = 4;
+
+static __attribute__((noinline)) void takesStepMoved(const char* partId) {
+    if (takeRun != nullptr) {
+        takeReplayStepMoved(takeRun, droidPartIndexOf(partId), millis());
+    }
+}
+
+static __attribute__((noinline)) void takeLogPart(const TakeReplay& t, const char* part,
+                                                  const char* why) {
+    PA_LOG_INFO(TAG, "take %s: body %s not moved - %s", t.id, part, why);
+}
+
+static __attribute__((noinline)) void takeLogStopped(const TakeReplay& t, const char* why) {
+    PA_LOG_WARN(TAG, "take %s not played on - %s", t.id, why);
+}
+
+// The run has just started: the takes it names, if any, are this task's now.
+// Those that will not play - past what this board keeps, or with no memory
+// for them - are said here, and the steps run anyway. A toggle sequence plays
+// its takes on its open half only (operator, 2026-10-03): the half the engine
+// has just chosen is the close half when it runs the entry's closeSteps, and
+// that half plays its steps alone.
+static __attribute__((noinline)) void takesBegin(uint32_t now, const SeqEngineState& engine) {
+    SeqStoreTakesUnplayed unplayed = {};
+    takeRun = seqStoreClaimRunTakes(&unplayed);
+    if (engine.entry->closeSteps != nullptr && engine.steps == engine.entry->closeSteps) {
+        if (takeRun != nullptr || unplayed.overCap != 0 || unplayed.noMemory != 0) {
+            PA_LOG_INFO(TAG, "takes not played - the close half plays its steps only");
+        }
+        free(takeRun);
+        takeRun = nullptr;
+        return;
+    }
+    if (unplayed.overCap != 0) {
+        PA_LOG_WARN(TAG, "%u take(s) not played - this droid plays %u a sequence",
+                    (unsigned)unplayed.overCap, (unsigned)TAKE_STORE_CAP);
+    }
+    if (unplayed.noMemory != 0) {
+        PA_LOG_WARN(TAG, "%u take(s) not played - no memory for them; the steps run",
+                    (unsigned)unplayed.noMemory);
+    }
+    if (takeRun != nullptr) {
+        takeRun->startMs = now;
+        PA_LOG_INFO(TAG, "%u take(s) play with this run", (unsigned)takeRun->count);
+    }
+}
+
+static __attribute__((noinline)) void takesEnd(const char* why) {
+    if (takeRun != nullptr) {
+        PA_LOG_INFO(TAG, "takes ended (%s)", why);
+        free(takeRun);
+        takeRun = nullptr;
+    }
+}
+
+// A take's start has come: its header, read into its own sample buffer so
+// nothing sits on this task's stack - the fixed 16 bytes, then each Part id.
+// A Part the catalog does not hold is said now, once for this take, and
+// passed over for the run.
+// Returns why the take cannot play, or nullptr.
+static __attribute__((noinline)) const char* takeOpen(TakeReplay* t) {
+    uint8_t* b = (uint8_t*)t->buf;
+    TakeFileInfo info = {};
+    if (takeStoreReadSlice(takeRun->owner, t->id, 0, b, TAKE_FILE_FIXED_BYTES) !=
+        TAKE_FILE_FIXED_BYTES) {
+        return "its file is not on the droid";
+    }
+    if (!takeFileReadFixed(b, &info)) {
+        return "its file is not a take this droid can read";
+    }
+    takeReplayBegin(t, info);
+    static_assert(sizeof(t->buf) >= TAKE_PART_ID_BYTES, "a Part id is read into the buffer");
+    for (uint8_t p = 0; p < t->partCount; ++p) {
+        const size_t at = TAKE_FILE_FIXED_BYTES + (size_t)p * TAKE_PART_ID_BYTES;
+        if (takeStoreReadSlice(takeRun->owner, t->id, at, b, TAKE_PART_ID_BYTES) !=
+                TAKE_PART_ID_BYTES ||
+            !takeFilePartIdValid(b)) {
+            return "it names a Part this droid cannot read";
+        }
+        const size_t part = droidPartIndexOf((const char*)b);
+        t->part[p] = (uint8_t)((part < DROID_PART_COUNT) ? part : DROID_PART_COUNT);
+        if (part >= DROID_PART_COUNT) {
+            // Not part-not-assigned: that says no Output claims a Part the
+            // droid knows, and this id is not in its catalog at all.
+            takeLogPart(*t, (const char*)b, "not a Part this droid knows");
+        }
+    }
+    return nullptr;
+}
+
+// The take's next samples from its file, each checked as it arrives as a
+// restore checks them (takeFileSampleValid()). The file's byte order is both
+// chips' own (take_capture.h), so they land in the buffer as they are.
+// Returns why the take cannot play on, or nullptr.
+static __attribute__((noinline)) const char* takeRefill(TakeReplay* t) {
+    const uint16_t left = (uint16_t)(t->sampleCount - t->samplesRead);
+    const uint8_t n = (left < TAKE_REPLAY_BUF_SAMPLES) ? (uint8_t)left : TAKE_REPLAY_BUF_SAMPLES;
+    const size_t at = takeFileHeaderBytes(t->partCount) + (size_t)t->samplesRead * TAKE_SAMPLE_BYTES;
+    const size_t bytes = (size_t)n * TAKE_SAMPLE_BYTES;
+    if (takeStoreReadSlice(takeRun->owner, t->id, at, (uint8_t*)t->buf, bytes) != bytes) {
+        return "its file is cut short";
+    }
+    const TakeFileInfo info = takeReplayInfo(*t);
+    for (uint8_t k = 0; k < n; ++k) {
+        if (!takeFileSampleValid(t->buf[k], t->prevTick, info)) {
+            return "its samples are out of order or out of range";
+        }
+        t->prevTick = takeSampleTick(t->buf[k]);
+    }
+    t->samplesRead = (uint16_t)(t->samplesRead + n);
+    t->bufAt = 0;
+    t->bufCount = n;
+    return nullptr;
+}
+
+// Part `p` of take `i`, if it owes a target: sent unless a later take covers
+// the Part, or a step's move is still holding it. The rules are
+// include/take_replay.h's.
+static __attribute__((noinline)) void takeSendPart(uint8_t i, uint8_t p, uint32_t now) {
+    TakeReplay* t = takeReplayAt(takeRun, i);
+    const uint8_t part = t->part[p];
+    const uint16_t bit = (uint16_t)(1u << p);
+    // A take that is over says nothing more: it still holds its last
+    // targets, and a later take ending would otherwise have it send one
+    // back and jump the Part to where the take left off.
+    if (t->state != TAKE_REPLAY_PLAYING || part >= DROID_PART_COUNT ||
+        t->cur[p] == TAKE_NO_TARGET) {
+        return;
+    }
+    // Asked before the cur == sent test below, on purpose: the earlier take
+    // must be marked owed while it is outranked even when its own target has
+    // not changed, or it would not send it again once the later take stops.
+    if (takeReplayOutranked(takeRun, i, p)) {
+        t->sent[p] = TAKE_NO_TARGET;  // owed again once the later take stops covering it
+        return;
+    }
+    if (t->cur[p] == t->sent[p]) {
+        return;
+    }
+    const char* partId = droidPartIdAt(part);
+    ServoOutputAddress address = SERVO_OUTPUT_NONE;
+    uint16_t openUs = 0;
+    uint16_t closeUs = 0;
+    const bool wired = configCacheReadPartOutputEnds(partId, &address, &openUs, &closeUs) &&
+                       servoOutputSlotOf(address) != SERVO_OUTPUT_SLOT_NONE;
+    if (!wired || !servoTaskDrivesOutput(address)) {
+        // Said once a run, whichever take covers the Part; the take asks
+        // again only when it moves the Part on, so wiring the Part mid-run
+        // picks it up at its next change.
+        if (takeReplayTellOnce(takeRun, part)) {
+            takeLogPart(*t, partId,
+                        wired ? "restart the droid to use its Output"
+                              : consoleReasonString(CONSOLE_REASON_PART_NOT_ASSIGNED));
+        }
+        t->sent[p] = t->cur[p];
+        return;
+    }
+    if (sequenceFlutterHasPart(flutterRun, part) ||
+        // Signed: the step stamps millis() when it is sent, which can be
+        // later than this tick's `now` - on a run's first tick always, since
+        // `now` is taken before the load - and an unsigned difference would
+        // wrap and let the take's target in behind the step's move.
+        ((t->held & bit) != 0 &&
+         ((int32_t)(now - takeRun->stepAtMs) < (int32_t)TAKE_REPLAY_STEP_SETTLE_MS ||
+          servoCommandedOf(address).moving))) {
+        t->sent[p] = t->cur[p];  // the step wins; the take moves the Part on its next change
+        return;
+    }
+    t->held &= (uint16_t)~bit;
+    if (uxQueueSpacesAvailable(servoCmdQueue) <= kTakeQueueReserve) {
+        return;
+    }
+    ServoCommand cmd = {};
+    cmd.output = address;
+    cmd.type = SERVO_CMD_PUPPET;
+    cmd.positionUs = rcPuppetTargetUs(openUs, closeUs, t->cur[p]);
+    cmd.source = SRC_SEQ;
+    if (xQueueSend(servoCmdQueue, &cmd, 0) == pdTRUE) {
+        t->sent[p] = t->cur[p];
+    }
+}
+
+// Once a tick while a run plays takes, after its steps: each take whose start
+// has come opens, takes the samples due by now - refilling as it goes - and
+// ends when its length runs out; then every Part that owes a target sends it.
+static __attribute__((noinline)) void takesTick(uint32_t now) {
+    const uint32_t runMs = now - takeRun->startMs;
+    for (uint8_t i = 0; i < takeRun->count; ++i) {
+        TakeReplay* t = takeReplayAt(takeRun, i);
+        const char* stop = nullptr;
+        if (t->state == TAKE_REPLAY_WAITING && runMs >= t->atMs) {
+            stop = takeOpen(t);
+        }
+        while (stop == nullptr && t->state == TAKE_REPLAY_PLAYING && takeReplayConsume(t, runMs)) {
+            stop = takeRefill(t);
+        }
+        if (stop != nullptr) {
+            takeLogStopped(*t, stop);
+            t->state = TAKE_REPLAY_OVER;
+        }
+    }
+    for (uint8_t i = 0; i < takeRun->count; ++i) {
+        for (uint8_t p = 0; p < takeReplayAt(takeRun, i)->partCount; ++p) {
+            takeSendPart(i, p, now);
+        }
+    }
+}
+
 // Every path that ends what the Coordinator is doing ends the Gestures and the
 // flutters too, where they have got to: a halt, a stop, a later run, a pose,
 // back to centre and the run's own end step alike. Nothing is commanded on the
-// way out (ADR 0043) -- a Part a flutter left out stays out.
+// way out (ADR 0043) -- a Part a flutter left out stays out. The takes end on
+// the same paths, and a Part a take moved stays where it was put.
 static void generatedEnd(const char* why) {
     if (sequenceGestureActive(gestureRun)) {
         PA_LOG_INFO(TAG, "gesture ended (%s) after %u sent, %u skipped", why,
@@ -397,6 +635,7 @@ static void generatedEnd(const char* why) {
         PA_LOG_INFO(TAG, "flutter ended (%s) after %u legs", why, (unsigned)flutterRun.legs);
     }
     sequenceFlutterEnd(&flutterRun);
+    takesEnd(why);
 }
 
 // The move a flutter's Part is planned with: the Part, by its catalog id, and
@@ -525,6 +764,10 @@ static __attribute__((noinline)) void flutterOneLeg(uint32_t now) {
     if (!sendBodyPosition(plan, e.speedMs, e.easing)) {
         return;
     }
+    // Every leg holds the takes off the Part, as a step's move does: the run
+    // lets go of the entry as the last back leg is sent, and a flutter ends
+    // closed, so a take must not retarget the Part while that leg closes it.
+    takesStepMoved(flutterMove.payload);
     sequenceFlutterSent(&flutterRun, idx, now, leg, outMs, backMs, plan.output, &gestureRun.dueMs,
                         &gestureRun.awaitOutput, floorMs);
 }
@@ -1199,6 +1442,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 }
                 if (entry != nullptr) {
                     seqEngineStart(engine, entry, now);
+                    takesBegin(now, engine);
                     seqEvidenceBegin(req.name, (uint8_t)req.src, now, bodyQueueFullCount());
                     resyncCloseIdx = SEQ_RESYNC_CLOSE_NONE;  // a new run supersedes any staged resync close
                     // ...and so does a bulk centre still sweeping. A sequence
@@ -1484,11 +1728,13 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             SeqAction act;
             while (seqEnginePeek(engine, now, esp_random, act)) {
                 // The run has reached its end step: the Gestures and the
-                // flutters it fired end here, before terminal cleanup, so
-                // cleanup is the last thing the run moves (#438, #453;
-                // sequenceGestureNext() holds the same line by time).
+                // flutters it fired, and its takes, end here, before terminal
+                // cleanup, so cleanup is the last thing the run moves (#438,
+                // #453, #442; sequenceGestureNext() holds the same line by
+                // time).
                 if (seqEngineFinishing(engine) &&
-                    (sequenceGestureActive(gestureRun) || sequenceFlutterActive(flutterRun))) {
+                    (sequenceGestureActive(gestureRun) || sequenceFlutterActive(flutterRun) ||
+                     takeRun != nullptr)) {
                     generatedEnd("end step");
                 }
                 if (!dispatchAction(act)) {
@@ -1517,6 +1763,12 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 clearSuppression();
                 activeName[0] = '\0';
             }
+        }
+
+        // The run's takes, after its steps, so a take's targets never fill
+        // servoCmdQueue ahead of a step's move on the same tick.
+        if (takeRun != nullptr) {
+            takesTick(now);
         }
 
         // Safety: if no active sequence but flag is still set and timeout expired.

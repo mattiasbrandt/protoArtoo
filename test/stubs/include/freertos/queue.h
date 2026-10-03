@@ -29,3 +29,5 @@ inline BaseType_t xQueueReceive(QueueHandle_t /*q*/, void* /*buf*/,
     return pdFALSE;
 }
 inline UBaseType_t uxQueueMessagesWaiting(QueueHandle_t /*q*/) { return 0; }
+// An empty queue: every place free, as uxQueueMessagesWaiting() reports none taken.
+inline UBaseType_t uxQueueSpacesAvailable(QueueHandle_t /*q*/) { return 8; }

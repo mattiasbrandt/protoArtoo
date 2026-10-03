@@ -1521,7 +1521,9 @@ curl -s 'http://artoo.local/api/seq/builtins?name=DM:ROCKMARCH'
 
 ### POST /api/seq/test
 
-Queues a sequence for playback by `DM:*` name (Learned or factory).
+Queues a sequence for playback by `DM:*` name (Learned or factory). A Learned
+Sequence's takes play with its steps ([Takes](#takes)); no Non-RC Control
+consent is asked (ADR 0064).
 
 Accepts the sequence name via query parameter or JSON body. The body form is preferred for editor automation.
 
@@ -1768,6 +1770,19 @@ The file sits in `/seq` as `<owner>.<take>.new` when it is kept off a
 performance and `<owner>.<take>.take` once its sequence is saved naming it;
 `<owner>` is the sequence's stable `id`. A boot deletes the `.new` takes and
 the takes of a sequence that is gone (`include/take_store_util.h`).
+
+When the sequence runs, by any route that starts it, each take it names plays
+from its `t`, beside the steps (`include/take_replay.h`). Each sample goes to
+its Part's Output at that Output's own Motion Profile, the way the stick's
+target did. A Part with no Output is logged as `part-not-assigned` and the rest
+of the take plays. Where two takes cover one Part at once, the later one in
+`takes` moves it. A step's move of a Part, and every leg of a flutter, holds the
+takes off it until that move is over. A toggle sequence plays its takes on its
+open half only; the close half plays its steps. A take still playing at the end
+step stops there; one that ends sooner leaves its Parts where it put them. The
+estop, a stop, a later run, a pose, back to centre and the dome resync end it.
+Sleep Mode ends it the way it ends a Gesture: after a wake the steps go on and
+the takes do not. Replay asks for no Non-RC Control consent either.
 
 ### GET /api/take
 

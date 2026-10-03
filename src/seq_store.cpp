@@ -22,6 +22,7 @@
 #include "seq_store_index.h"
 #include "sequence_dispatcher.h"  // sequenceCatalogFind() - a Factory phrase
 #include "sequence_gesture.h"     // seqStepsMayOpenBodyPart() - the index row's flag
+#include "take_replay.h"          // a run's takes, staged with its steps (#442)
 #include "take_store.h"           // a sequence's takes live and die with it (#442)
 
 static const char* TAG = "SEQST";
@@ -48,6 +49,26 @@ static SeqStep* s_runClose = nullptr;
 // rejects an empty steps branch.
 static SeqDraft s_stagedDraft;  // step pointers into s_staging
 static char     s_runName[24];
+
+// A run's takes (#442 slice 3): read off the sequence's `takes` array when it
+// is loaded to run, into the one heap block the Coordinator plays them from
+// (include/take_replay.h). Staged with the steps and handed on with them:
+// seqStoreCommit() moves the staged block to s_runTakes, and
+// seqStoreClaimRunTakes() gives it to the Coordinator, which frees it when the
+// run ends. A block nobody claims - a pose loads a sequence only for its
+// steps - is freed with the run buffers. The takes a load could not get the
+// memory for travel the same way, as a count, and the Coordinator says so: a
+// log line here would sit under seqStorePrepare()'s frame, on the deepest
+// route the Coordinator has (ADR 0040).
+static TakeReplayRun* s_stagedTakes = nullptr;
+static TakeReplayRun* s_runTakes    = nullptr;
+static SeqStoreTakesUnplayed s_stagedTakesUnplayed = {};
+static SeqStoreTakesUnplayed s_runTakesUnplayed    = {};
+
+static void takesFree(TakeReplayRun** takes) {
+    free(*takes);
+    *takes = nullptr;
+}
 
 static SemaphoreHandle_t s_mutex = nullptr;
 
@@ -138,7 +159,8 @@ static void copyStableId(JsonVariantConst root, char* out, size_t cap) {
 // each naming one take file of this sequence by its id, and placing it `t` ms
 // from the start. The Rehearsal and the timeline read the rest; the store reads
 // the ids, so a save keeps the takes named and drops the others
-// (takeStoreSequenceSaved()). Refused here rather than stored half-read: no
+// (takeStoreSequenceSaved()), and a run's load reads the array again for the
+// takes to play (stageTakes()). Refused here rather than stored half-read: no
 // other check sees this array (the engine and the parser ignore it, and the
 // browser's Protocol Check does not read it). A sequence saved before takes
 // existed has no array and saves exactly as it did.
@@ -442,10 +464,49 @@ void seqStoreInit() {
 // -----------------------------------------------------------------------------
 // Load (dispatcher run path)  --  two-phase: prepare into heap, commit to buffers
 // -----------------------------------------------------------------------------
+
+// The takes `root` names, staged for its run, or nullptr when it names none or
+// has no stable id to find their files by. The array was checked when the
+// sequence was saved (readTakeRefs()); an entry this read cannot use is passed
+// over rather than costing the run. Takes past what this board keeps, and a
+// run that cannot have the memory, are counted for the Coordinator to report,
+// and the run plays its steps. Out of line, and it logs nothing: seqStorePrepare()'s frame heads
+// the Coordinator's deepest route (ADR 0040), and this one sits beside the
+// parse under it, never on top of it.
+static __attribute__((noinline)) TakeReplayRun* stageTakes(JsonVariantConst root) {
+    char owner[sizeof(TakeReplayRun::owner)];
+    copyStableId(root, owner, sizeof(owner));
+    JsonArrayConst arr = root["takes"].as<JsonArrayConst>();
+    const size_t named = arr.size();
+    if (named == 0 || owner[0] == '\0') return nullptr;
+    const uint8_t cap = (named < TAKE_STORE_CAP) ? (uint8_t)named : TAKE_STORE_CAP;
+    const size_t over = named - cap;
+    s_stagedTakesUnplayed.overCap = (over > 0xFF) ? (uint8_t)0xFF : (uint8_t)over;
+    TakeReplayRun* run = (TakeReplayRun*)calloc(1, takeReplayRunBytes(cap));
+    if (run == nullptr) {
+        s_stagedTakesUnplayed.noMemory = cap;
+        return nullptr;
+    }
+    memcpy(run->owner, owner, sizeof(owner));
+    for (JsonVariantConst each : arr) {
+        const char* id = each["id"] | (const char*)nullptr;
+        JsonVariantConst t = each["t"];
+        const long long at = t.is<long long>() ? t.as<long long>() : -1LL;
+        if (run->count >= cap || !takeIdValid(id) || at < 0 || at > 0x7FFFFFFFLL) continue;
+        TakeReplay* take = takeReplayAt(run, run->count++);
+        memcpy(take->id, id, TAKE_ID_LEN + 1);
+        take->atMs = (uint32_t)at;
+    }
+    if (run->count == 0) takesFree(&run);
+    return run;
+}
+
 ProtocolCheckResult seqStorePrepare(const char* name) {
     if (s_staging.main != nullptr) {  // a previous prepare was never committed
         stagingFree(s_staging);
     }
+    takesFree(&s_stagedTakes);
+    s_stagedTakesUnplayed = {};
     if (!lock()) return pcFail("name", "store busy");
 
     const SeqIndexEntry* idx = seqStoreIndexFind(name);
@@ -490,6 +551,9 @@ ProtocolCheckResult seqStorePrepare(const char* name) {
     // Coordinator's measured chain (ADR 0040).
     s_staging = st;
     s_stagedDraft = d;
+    // Read before the phrases are spliced in: the splice reuses `doc` for each
+    // phrase, and a phrase's takes are not the run's - only its steps are.
+    s_stagedTakes = stageTakes(root);
 
     // Splice the phrases in, one level per pass (see "A sequence inside a
     // sequence" above). A phrase that is gone, or no longer passes Protocol
@@ -536,6 +600,7 @@ ProtocolCheckResult seqStorePrepare(const char* name) {
     unlock();
     if (!r.ok) {
         stagingFree(s_staging);
+        takesFree(&s_stagedTakes);
         return r;
     }
     return pcOk();
@@ -559,6 +624,7 @@ bool seqStoreCommit(SequenceEntry& out) {
         PA_LOG_WARN(TAG, "run buffer alloc failed (%u steps, ~%u bytes); run refused",
                     (unsigned)d.stepCount, (unsigned)(sizeof(SeqStep) * d.stepCount));
         stagingFree(s_staging);
+        takesFree(&s_stagedTakes);
         return false;
     }
     if (hasClose) {
@@ -567,6 +633,7 @@ bool seqStoreCommit(SequenceEntry& out) {
             PA_LOG_WARN(TAG, "close-branch alloc failed; run refused");
             seqStoreReleaseRun();  // frees s_runMain
             stagingFree(s_staging);
+            takesFree(&s_stagedTakes);
             return false;
         }
     }
@@ -586,8 +653,19 @@ bool seqStoreCommit(SequenceEntry& out) {
     out.closeSteps     = hasClose ? s_runClose : nullptr;
     out.closeStepCount = hasClose ? d.closeStepCount : 0;
 
+    s_runTakes = s_stagedTakes;  // released above, so nothing is lost here
+    s_stagedTakes = nullptr;
+    s_runTakesUnplayed = s_stagedTakesUnplayed;
     stagingFree(s_staging);
     return true;
+}
+
+TakeReplayRun* seqStoreClaimRunTakes(SeqStoreTakesUnplayed* unplayed) {
+    TakeReplayRun* takes = s_runTakes;
+    s_runTakes = nullptr;
+    *unplayed = s_runTakesUnplayed;
+    s_runTakesUnplayed = {};
+    return takes;
 }
 
 // Free the run buffers once a Learned Sequence run has fully drained (the
@@ -599,6 +677,8 @@ void seqStoreReleaseRun() {
     s_runMain = nullptr;
     free(s_runClose);
     s_runClose = nullptr;
+    takesFree(&s_runTakes);
+    s_runTakesUnplayed = {};
 }
 
 // -----------------------------------------------------------------------------

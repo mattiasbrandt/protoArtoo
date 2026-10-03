@@ -34,8 +34,11 @@
 //   with no tempo parses exactly as one saved before tempos existed.
 //
 //   takes (top level, optional, #442): the takes the sequence holds, each
-//   {"id","t"}. Not parsed here and never in SeqDraft: the store reads and
-//   checks it (seq_store.cpp readTakeRefs()), the engine never sees it.
+//   {"id","t"}. Not parsed here and never in SeqDraft: the store checks it
+//   at save (seq_store.cpp readTakeRefs()) and reads it again when the
+//   sequence is loaded to run (stageTakes()), and the Sequence Coordinator
+//   plays the takes beside the steps (include/take_replay.h). The engine
+//   never sees it.
 //
 //   beat / spanBeats (any step, optional, need a tempo): `beat` is the whole
 //   beat the step starts on and `spanBeats` how many beats its duration lasts

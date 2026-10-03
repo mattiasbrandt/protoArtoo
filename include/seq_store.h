@@ -62,6 +62,21 @@ ProtocolCheckResult seqStorePrepare(const char* name);
 // is refused gracefully rather than crashing on a tight heap).
 bool seqStoreCommit(SequenceEntry& out);
 
+// The takes of the sequence just committed (#442, include/take_replay.h), or
+// nullptr when it names none: read off its `takes` array by seqStorePrepare()
+// and handed on with the steps by seqStoreCommit(). The caller owns the block
+// from here and free()s it when the run ends; a block not claimed is freed by
+// seqStoreReleaseRun(). `*unplayed` counts the takes the sequence names that
+// will not play, by reason, for the caller to report; the run plays its steps
+// either way. Dispatcher task only.
+struct TakeReplayRun;
+struct SeqStoreTakesUnplayed {
+    uint8_t noMemory;  // the load could not get the memory for them
+    uint8_t overCap;   // past what this board keeps (TAKE_STORE_CAP): a sequence
+                       // restored from a board that keeps more
+};
+TakeReplayRun* seqStoreClaimRunTakes(SeqStoreTakesUnplayed* unplayed);
+
 // Free the heap run buffers after a Learned Sequence run has fully drained.
 // The dispatcher calls this at sequence end/abort so an idle body (or a
 // Factory-only run  --  Factory steps live in flash) holds zero run-buffer RAM.
