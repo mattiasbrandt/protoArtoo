@@ -231,8 +231,7 @@ and receipt, #456) is in the shell's chain and, after `web_api.js`, in the
 chain of every surface that calls it (Firmware, Maintenance, RC Control,
 Sequences, Servos, Wiring);
 the loader runs it once. Every surface shares that
-prefix, then its own script(s), then `footer.js`; `dashboard.html` and
-`maintenance.html` additionally load `diagnostics.js`.
+prefix, then its own script(s), then `footer.js`.
 
 | Surface | Script count | Notes |
 |---|---|---|
@@ -242,7 +241,7 @@ prefix, then its own script(s), then `footer.js`; `dashboard.html` and
 | `servo.html` | 5 | |
 | `dome.html` | 5 | |
 | `configuration.html` | 7 | Adds `feature_availability.js`, and `setup.js` for the guided run it hosts |
-| `maintenance.html` | 7 | Adds `diagnostics.js` and `feature_availability.js` |
+| `maintenance.html` | 6 | Adds `feature_availability.js` |
 | `rc.html` | 5 | Safety-adjacent (RC mapping) |
 | `drive.html` | 5 | Safety-adjacent (live vehicle control) |
 | `seq.html` | 10 | Adds `seq_protocol_check.js` plus the dome layout/panel-model chain |

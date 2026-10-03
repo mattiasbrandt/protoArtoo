@@ -17,6 +17,8 @@
 //   field name is not something a builder reads (#298, #422)
 // - protoR2link and the sound link are answered from one word table, which
 //   every page that shows either link reads (readProtoR2link, readSoundLink)
+// - Memory is judged against one table of heap floors (HEAP_FLOORS), which
+//   Maintenance's memory rows read too
 // =============================================================================
 (() => {
   const INDICATOR_STATE_LABELS = Object.freeze({
@@ -34,6 +36,23 @@
     "rcCh5",
     "rcCh6",
   ]);
+
+  // The heap floors, in bytes: the one table the health grid here and
+  // Maintenance's memory rows both judge by. A reading at or below a warn
+  // floor is Low, at or below a fail floor Critical.
+  //
+  // largest* judges the Internal Data Heap's largest free block. Its floors are
+  // the admission ones until the bench day (#355) measures this reading's own.
+  // free* and min* are the earlier runtime floors (heapMin held >= 40 KB with
+  // the stream open), kept as they were.
+  const HEAP_FLOORS = Object.freeze({
+    freeCritical: 40000,
+    freeWarn: 65000,
+    minCritical: 36864,
+    minWarn: 53248,
+    largestCritical: 12000,
+    largestWarn: 16000,
+  });
 
   const hasOwnKey = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
   const healthSignal = (state, reason = "") => ({ state, reason });
@@ -73,21 +92,17 @@
 
   const evaluateHeap = (payload, unknown) => {
     const heapBytes = Number(payload.heapFree);
-    const t = (typeof window !== "undefined" && window.PA_HEAP) || {};
 
     // Judge memory health by the Internal Data Heap's largest free block
     // (heapLargestBlock, include/heap_reading.h): the droid's own RAM, which
     // counts no IRAM on the artoo-esp32 and no PSRAM on the ESP32-P4. NOT
     // heapLargest8bit: that is the Buffer Reading admission sheds requests by,
     // and on the P4 it counts megabytes of PSRAM, so it stays high while the
-    // internal heap runs out. The floors are the admission ones until the
-    // bench day (#355) measures this reading's own.
+    // internal heap runs out.
     const largest = Number(payload.heapLargestBlock);
     if (Number.isFinite(largest) && largest >= 0) {
-      const warnAt = t.largestWarn ?? 16000;
-      const failAt = t.largestCritical ?? 12000;
-      if (largest > warnAt) return healthSignal("ok", "Normal");
-      if (largest > failAt) return healthSignal("warn", "Low");
+      if (largest > HEAP_FLOORS.largestWarn) return healthSignal("ok", "Normal");
+      if (largest > HEAP_FLOORS.largestCritical) return healthSignal("warn", "Low");
       return healthSignal("fail", "Critical");
     }
 
@@ -95,10 +110,8 @@
     // Neither number present is a reading we do not have, not a low one.
     if (!Number.isFinite(heapBytes) || heapBytes < 0) return healthSignal("off", unknown);
 
-    const warnAt = t.freeWarn ?? 65000;
-    const failAt = t.freeCritical ?? 40000;
-    if (heapBytes > warnAt) return healthSignal("ok", "Normal");
-    if (heapBytes > failAt) return healthSignal("warn", "Low");
+    if (heapBytes > HEAP_FLOORS.freeWarn) return healthSignal("ok", "Normal");
+    if (heapBytes > HEAP_FLOORS.freeCritical) return healthSignal("warn", "Low");
     return healthSignal("fail", "Critical");
   };
 
@@ -267,6 +280,7 @@
 
   const api = Object.freeze({
     INDICATOR_STATE_LABELS,
+    HEAP_FLOORS,
     deriveHealthSignals,
     readProtoR2link,
     readSoundLink,

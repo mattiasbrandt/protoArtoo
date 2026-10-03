@@ -1770,7 +1770,6 @@
     }
     window.PABootstrap.setResourceLabels?.({
       "/web_api.js": "Body Controller connection",
-      "/diagnostics.js": "diagnostics constants",
       "/status_stream.js": "live updates",
       "/live_reading.js": "live updates",
       "/dome_bearing.js": "where the dome points",

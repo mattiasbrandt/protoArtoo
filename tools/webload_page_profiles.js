@@ -50,7 +50,6 @@ const INDEX_REQUIRED_RESOURCES = Object.freeze([
   "/style.css",
   "/page_bootstrap.js",
   "/web_api.js",
-  "/diagnostics.js",
   "/bundle_shell.js",
   "/droid_parts.js",
   "/droid_build.js",

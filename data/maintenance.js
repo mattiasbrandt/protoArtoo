@@ -148,13 +148,14 @@
     const hasLargest = d.heapLargestBlock !== undefined && d.heapLargestBlock !== null;
     const heapLargestKb = hasLargest ? Math.round(d.heapLargestBlock / 1024) : null;
 
-    const t = window.PA_HEAP || {};
-    const heapFreeState = heapFreeKb < Math.round((t.freeCritical || 40000) / 1024) ? "critical" : heapFreeKb < Math.round((t.freeWarn || 65000) / 1024) ? "watch" : "good";
-    const heapMinState = heapMinKb < Math.round((t.minCritical || 36864) / 1024) ? "critical" : heapMinKb < Math.round((t.minWarn || 53248) / 1024) ? "watch" : "good";
-    const heapLargestState = !hasLargest ? "na" : heapLargestKb < Math.round((t.largestCritical || 20480) / 1024) ? "critical" : heapLargestKb < Math.round((t.largestWarn || 36864) / 1024) ? "watch" : "good";
+    // The floors are the health grid's (data/health_signals.js HEAP_FLOORS).
+    const t = window.PAHealthSignals.HEAP_FLOORS;
+    const heapFreeState = heapFreeKb < Math.round(t.freeCritical / 1024) ? "critical" : heapFreeKb < Math.round(t.freeWarn / 1024) ? "watch" : "good";
+    const heapMinState = heapMinKb < Math.round(t.minCritical / 1024) ? "critical" : heapMinKb < Math.round(t.minWarn / 1024) ? "watch" : "good";
+    const heapLargestState = !hasLargest ? "na" : heapLargestKb < Math.round(t.largestCritical / 1024) ? "critical" : heapLargestKb < Math.round(t.largestWarn / 1024) ? "watch" : "good";
 
-    // The same four states as before, on the same thresholds. "na" is the
-    // firmware that reports no largest block at all - never asked, so grey.
+    // Four states, each to a lamp. "na" is the firmware that reports no
+    // largest block at all - never asked, so grey.
     const lampForState = (state) =>
       state === "critical" ? "fail" : state === "watch" ? "warn" : state === "na" ? "off" : "ok";
 
