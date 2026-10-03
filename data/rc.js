@@ -302,11 +302,13 @@
 
   // A payload picker: one choice among many, as pills that wrap, with the
   // picked value in a hidden field the save reads. `options` are
-  // { value, label, title }.
-  const payloadPillsHtml = (name, options, selectedValue) => {
+  // { value, label, title }. With `allowNone`, a value none of them carries
+  // picks nothing, and the save asks for a pick.
+  const payloadPillsHtml = (name, options, selectedValue, { allowNone = false } = {}) => {
+    const fallback = allowNone ? '' : (options[0]?.value ?? '');
     const picked = options.some((option) => option.value === selectedValue)
       ? selectedValue
-      : (options[0]?.value ?? '');
+      : fallback;
     const pills = options.map((option) => {
       const on = option.value === picked;
       return `<button type="button" class="part-pill${on ? ' active' : ''}" role="radio" aria-checked="${on ? 'true' : 'false'}" data-payload-pick="${window.PAUtils.escapeHtml(option.value)}" title="${window.PAUtils.escapeHtml(option.title || '')}">${window.PAUtils.escapeHtml(option.label)}</button>`;
@@ -393,7 +395,13 @@
           ? 'Reading the Parts on this droid...'
           : 'No Part is on a servo yet. Put one on in <a class="setup-link" href="#wiring">Wiring</a>.'}</p>`;
     }
-    return payloadPillsHtml('Part', options, sel || options[0].value);
+    // A new string starts on the first Part no other channel moves, or on
+    // none, so the move question is never raised about a Part nobody picked.
+    const strung = new Set(Object.entries(channelMap)
+      .filter(([key, entry]) => key !== selectedChannel && mapEntryAction(entry) === 'puppet_part')
+      .map(([, entry]) => entry.payload));
+    const free = options.find((option) => !strung.has(option.value));
+    return payloadPillsHtml('Part', options, sel || (free ? free.value : ''), { allowNone: true });
   };
 
   // The Parts arrived while the editor is open: only the Part pills are drawn
@@ -812,6 +820,13 @@
     return `<div class="rc-mini-bar"><div class="rc-mini-fill" style="--mini-pct:${pct}%"></div></div>`;
   };
 
+  // A puppet string's share of the throw: only the positive half moves its
+  // Part (include/rc_puppet.h), so the bar fills from closed at the left.
+  const puppetBarHtml = (mapped) => {
+    const pct = Math.round(Math.max(0, Math.min(1, Number(mapped))) * 100);
+    return `<div class="rc-mini-bar"><div class="rc-mini-fill" style="--mini-pct:${pct}%"></div></div>`;
+  };
+
   const isOneShotActionToken = (token) => {
     if (!token || isAnalogAction(token)) return false;
     const found = actionTargetFromToken(token);
@@ -902,6 +917,7 @@
   // a Reaction is doing.
   const liveCellHtml = (token, channelKey, telemetry) => {
     if (droidConditionFor(channelKey)) return reactionStateHtml(channelKey);
+    if (token === 'puppet_part') return puppetBarHtml(telemetry?.mapped || 0);
     return isAnalogAction(token)
       ? miniBarHtml(telemetry?.mapped || 0)
       : triggerStateHtml(token, channelKey, telemetry);
@@ -1095,7 +1111,10 @@
     const actionToken = mapEntryAction(entry);
 
     let barHtml = '';
-    if (isAnalogAction(actionToken)) {
+    if (actionToken === 'puppet_part') {
+      const width = Math.round(Math.max(0, Math.min(1, mapped)) * 100);
+      barHtml = `<div class="rc-preview-bar"><div class="rc-preview-fill" style="--bar-width:${width}%"></div></div>`;
+    } else if (isAnalogAction(actionToken)) {
       const width = Math.min(50, Math.round(Math.abs(mapped) * 50));
       const left = mapped >= 0 ? 50 : 50 - width;
       barHtml = `<div class="rc-preview-bar rc-preview-bar-center">
@@ -1108,7 +1127,8 @@
       <div class="rc-preview-stack">
         <div>Action: <strong>${actionToken ? window.PAUtils.escapeHtml(actionLabelFromToken(actionToken)) : 'Not mapped'}</strong></div>
         <div>Raw: <strong>${window.PAUtils.escapeHtml(String(raw))}</strong></div>
-        ${isAnalogAction(actionToken) ? `<div>Mapped: <strong>${mapped.toFixed(3)}</strong></div>${barHtml}` : `<div>State: ${triggerStateHtml(actionToken, selectedChannel, telemetry)}</div>`}
+        ${actionToken === 'puppet_part' ? `<div>Throw: <strong>${Math.round(Math.max(0, Math.min(1, mapped)) * 100)}%</strong></div>${barHtml}`
+          : isAnalogAction(actionToken) ? `<div>Mapped: <strong>${mapped.toFixed(3)}</strong></div>${barHtml}` : `<div>State: ${triggerStateHtml(actionToken, selectedChannel, telemetry)}</div>`}
       </div>`;
   };
 
