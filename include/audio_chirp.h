@@ -140,11 +140,18 @@ class AudioDriverChirp : public AudioDriver {
     // CHIRP_VOL_UNSET before setVolume() has run (the module's own level stands).
     static constexpr uint8_t CHIRP_VOL_UNSET = 0xFFu;
     uint8_t m_vocalVolume = CHIRP_VOL_UNSET;
+    // When the last vocal PLAY went out (m_io.millisNow()), and whether one
+    // has: an ERR: line read just after a bed's PLAY may be that vocal's.
+    uint32_t m_lastVocalSentMs = 0;
+    bool m_vocalSent = false;
+    // A STAT query in an earlier snapshot went unanswered, so its reply may
+    // still arrive and would be read as the next snapshot's first.
+    bool m_statReplyOwed = false;
 
     uint8_t bedStream() const;
     void makeRoomBesideBed();
     void noteVocalSent();
-    void readBedClaim();
+    void readBedAnswer(bool vocalJustSent);
     void noteStreamObserved(uint8_t stream, bool playing);
 
     uint16_t m_totalTracks = 0;

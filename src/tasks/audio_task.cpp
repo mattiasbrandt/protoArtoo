@@ -8,8 +8,11 @@
 //   - Calls the step phases in loop order and executes their plain-data actions.
 //   - Owns every side effect: driver init and playback calls, the audio UART
 //     claim (audioUartClaim/audioUartRelease, which is only an arbitration on a
-//     board without PA_CAP_DEDICATED_AUDIO_UART), NVS binding-cache refresh,
-//     RobotState audio-zone writes.
+//     board without PA_CAP_DEDICATED_AUDIO_UART) around status queries and
+//     catalog refreshes, NVS binding-cache refresh, RobotState audio-zone
+//     writes. The CHIRP driver also claims inside two calls this task makes:
+//     begin() for its bank summary, and playBed() to hear the module's answer
+//     (src/drivers/audio_chirp.cpp).
 // Decision logic (lifecycle transitions, '$'/command translation, playback
 // policy invocation, volume and random-mode state, status/catalog gating)
 // lives in the step core.
@@ -24,7 +27,8 @@
 // holds a portMUX critical section for ~1.04 ms PER BYTE, released between
 // bytes (src/drivers/audio_soft_uart_tx.h). A command is that many times over,
 // and how many bytes it is depends on the module: 2 for an MP3 Trigger track,
-// 4 to 6 for a DY-SV5W frame, 12 for a CHIRP "PLAY:12,2,C". Keeping AudioTask
+// 4 to 6 for a DY-SV5W frame, 15 for a CHIRP "PLAY:12,2,C,66" -- 22 when a
+// Sound Bed is held and a "STOP:1" goes first. Keeping AudioTask
 // on Core 0 prevents any interaction with DriveTask / ServoTask timing on
 // Core 1 either way.
 //
@@ -583,15 +587,11 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
             break;
 
         case AUDIO_PLAYBACK_INTENT_BED_START:
+            // The driver logs the outcome once, with what only it knows: the
+            // stream, whether the module could be heard, and any refusal.
             if (!driver()->playBed(intent.index, intent.bank, intent.page, intent.volume)) {
-                PA_LOG_WARN(TAG, "[%s] bed bank=%u page=%c index=%u not playing on %s",
-                            commandSourceToString(source), (unsigned)intent.bank, intent.page,
-                            (unsigned)intent.index, driver()->driverName());
                 return;
             }
-            PA_LOG_INFO(TAG, "[%s] bed bank=%u page=%c index=%u vol=%u",
-                        commandSourceToString(source), (unsigned)intent.bank, intent.page,
-                        (unsigned)intent.index, (unsigned)intent.volume);
             break;
 
         case AUDIO_PLAYBACK_INTENT_BED_STOP:

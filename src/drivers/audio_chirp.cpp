@@ -28,7 +28,7 @@
 //   stopVocals()        -> "STOP:s\n" per stream but the bed's; "STOP\n" with no bed
 //   setVolume(v)        -> "VOL:N\n"          (every stream)
 //   setStreamVolume()   -> "VOL:s,V\n"
-//   playBed()           -> ["STOP:0\n"] "PLAY:n,bank,page,V\n"
+//   playBed()           -> "STOP:0\n" "PLAY:n,bank,page,V\n"
 //   stopBed()           -> "STOP:s\n"         (the bed's stream)
 //   begin() bootstrap   -> optional "GMAN\n" for bank summary when UART2 RX is available
 //   refreshCatalog()    -> "GMAN\n" + per-entry "GNME:bank,page,index\n"
@@ -65,7 +65,7 @@ static constexpr uint8_t CHIRP_LIST_QUIET_WINDOWS = 2u;
 // is bounded by three of these. handleStat() answers synchronously and prints
 // straight to the UART, so the wait is one module loop pass plus the line
 // itself: "STAT:playing," + a 63-character path + ",99" is 79 bytes, ~82 ms at
-// 9600 baud. The bed's claim read (readBedClaim()) uses the same window.
+// 9600 baud. The bed's answer read (readBedAnswer()) uses the same window.
 static constexpr uint32_t CHIRP_STAT_REPLY_MS = 200u;
 // streams[n].filename is char[64] in the module, so 79 characters is the
 // longest reply it can print; a frame that does not fit this is not a STAT
@@ -683,6 +683,8 @@ bool AudioDriverChirp::begin(uint8_t vol) {
     }
     m_sendSeq = 0;
     m_vocalVolume = CHIRP_VOL_UNSET;
+    m_vocalSent = false;
+    m_statReplyOwed = false;
 
     // CHIRP boots, mounts SD, and optionally syncs Bank 1 to flash; 2 s covers
     // most cases. First boot after SD card change may need more time.
@@ -744,12 +746,13 @@ static uint8_t chirpNativeVolume(uint8_t vol) {
 //   Bed          the Sound Bed's stream.
 //
 // The rules, each at one site below:
-//   1. The bed goes on stream 0 by construction (playBed()): STOP:0 takes
-//      effect before the module reads the next command, so the PLAY that
-//      follows lands on stream 0 whether or not any reply can be read. Where a
-//      reply can be read, its "S:<n>,ply" is a claim that a following
-//      "ERR:NOFILE" cancels (readBedClaim()); only a STAT reply is proof that
-//      anything plays (queryModuleState()).
+//   1. The bed goes on stream 0 by construction (playBed()): STOP:0 is sent
+//      every time and takes effect before the module reads the next command,
+//      so the PLAY that follows lands on stream 0 whether or not any reply can
+//      be read. This is the only rule that places the bed. Where a reply can be
+//      read it may report the PLAY failed (readBedAnswer()), but it never moves
+//      the bed; only a STAT reply is proof that anything plays
+//      (queryModuleState()).
 //   2. Before every vocal PLAY while a bed is held, some other stream must be
 //      idle by proof, or the module could take stream 0 -- the bed -- for it.
 //      If none is, the vocal started longest ago is stopped first (operator
@@ -789,7 +792,10 @@ void AudioDriverChirp::makeRoomBesideBed() {
             continue;
         }
         if (m_streams[s].use == ChirpStreamUse::IdleByProof) {
-            return;  // the module takes this one or a lower inactive one; a playing bed is never inactive
+            // The module takes this one or a lower inactive one. A playing
+            // bed is not inactive; a bed that ended on its own is, and the
+            // vocal may land on stream 0 -- see noteVocalSent().
+            return;
         }
         if (oldest == CHIRP_NO_STREAM || m_streams[s].sentSeq < m_streams[oldest].sentSeq) {
             oldest = s;
@@ -804,6 +810,12 @@ void AudioDriverChirp::makeRoomBesideBed() {
 // busy is the safe direction. With no stream idle by proof (which rule 2 rules
 // out while a bed is held) the module took some stream that had ended, or
 // stream 0 if none had; stream 0 is recorded.
+//
+// The limit: upstream frees a stream at the end of its file and says nothing,
+// so a bed that ended by itself leaves stream 0 inactive, and the next vocal
+// can land there while the body still holds the bed on it. The bed stays held
+// until a STAT says stream 0 is idle or the bed is stopped; until then a Track
+// Stop leaves that vocal playing and stopBed() is what stops it.
 void AudioDriverChirp::noteVocalSent() {
     uint8_t landed = 0;
     for (uint8_t s = 0; s < CHIRP_STREAM_COUNT; ++s) {
@@ -820,7 +832,9 @@ void AudioDriverChirp::noteVocalSent() {
 // What one STAT reply attributed to `stream` proves. Idle is proof whatever the
 // stream held: a bed that ended by itself, or never started, is no longer held.
 // Playing confirms a bed or a vocal already held; on a stream held idle it is a
-// sound the body did not place there, held as a vocal from now on.
+// sound the body did not place there, held as a vocal from now on. Also asked
+// with playing=true for a module "S:<n>,ply" line, which only ever makes a
+// stream look busier (readBedAnswer()).
 void AudioDriverChirp::noteStreamObserved(uint8_t stream, bool playing) {
     if (stream >= CHIRP_STREAM_COUNT) {
         return;
@@ -863,6 +877,8 @@ void AudioDriverChirp::playTrackBanked(uint16_t index, uint8_t bank, char page) 
         snprintf(cmd, sizeof(cmd), "PLAY:%u,%u,%c,%u", (unsigned)index, (unsigned)bank, page,
                  (unsigned)m_vocalVolume);
     }
+    m_lastVocalSentMs = m_io.millisNow();
+    m_vocalSent = true;
     sendCommand(cmd);
     noteVocalSent();
 }
@@ -948,11 +964,13 @@ void AudioDriverChirp::setStreamVolume(uint8_t stream, uint8_t vol) {
 
 // -----------------------------------------------------------------------------
 // playBed()
-// Rule 1. One bed at a time: a new one replaces the one already held.
+// Rule 1. One bed at a time: STOP:0 ends the one already held, since a bed is
+// only ever on stream 0.
 //
-// Stopping stream 0 first cuts a vocal still playing there, which is the price
-// of knowing the bed's stream without a reply; a stream 0 already idle by
-// proof is not stopped again.
+// STOP:0 is sent every time, even when stream 0 is held idle by proof: that
+// proof may rest on a reply, and no reply decides where the bed goes. It cuts
+// a vocal still playing on stream 0, which is the price of knowing the bed's
+// stream without one.
 // -----------------------------------------------------------------------------
 bool AudioDriverChirp::playBed(uint16_t index, uint8_t bank, char page, uint8_t vol) {
     if (index == 0) {
@@ -965,8 +983,9 @@ bool AudioDriverChirp::playBed(uint16_t index, uint8_t bank, char page, uint8_t 
 
     // Listen for the module's answer where it can be heard: always on a board
     // with its own audio UART, and on artoo-esp32 only while the dome link does
-    // not hold the shared one. Drained first, so every line read afterwards is
-    // an answer to the commands below.
+    // not hold the shared one. Drained first, so a line read afterwards came
+    // after the commands below -- though not necessarily in answer to them
+    // (readBedAnswer()).
     const bool listening = audioUartClaim();
     if (listening) {
         configureChirpRx();
@@ -974,46 +993,49 @@ bool AudioDriverChirp::playBed(uint16_t index, uint8_t bank, char page, uint8_t 
         resetFrameAssembly();
     }
 
-    const uint8_t previous = bedStream();
-    if (previous != CHIRP_NO_STREAM && previous != 0) {
-        stopStream(previous);
-    }
-    if (m_streams[0].use != ChirpStreamUse::IdleByProof) {
-        stopStream(0);
-    }
+    stopStream(0);
 
     // Buffer sized for "PLAY:65535,255,Z,99" (19 chars) + null
     char cmd[24];
     snprintf(cmd, sizeof(cmd), "PLAY:%u,%u,%c,%u", (unsigned)index, (unsigned)bank, page,
              (unsigned)chirpNativeVolume(vol));
+    const uint32_t sentMs = m_io.millisNow();
     sendCommand(cmd);
     m_streams[0] = ChirpStream{ChirpStreamUse::Bed, ++m_sendSeq};
 
     if (listening) {
-        readBedClaim();
+        // A vocal PLAY this recent can still be answering inside the bed's
+        // window, so an ERR: line there cannot be pinned on the bed.
+        const bool vocalJustSent =
+            m_vocalSent && (uint32_t)(sentMs - m_lastVocalSentMs) < CHIRP_STAT_REPLY_MS;
+        readBedAnswer(vocalJustSent);
         audioUartRelease();
     }
-    const uint8_t bed = bedStream();
-    if (bed == CHIRP_NO_STREAM) {
-        return false;  // cancelled by ERR:NOFILE; readBedClaim() logged why
+    if (bedStream() == CHIRP_NO_STREAM) {
+        return false;  // readBedAnswer() logged the module's refusal
     }
-    PA_LOG_INFO(TAG, "bed bank=%u page=%c index=%u vol=%u -> stream %u%s", (unsigned)bank, page,
-                (unsigned)index, (unsigned)vol, (unsigned)bed,
-                listening ? "" : " (module replies not heard)");
+    PA_LOG_INFO(TAG, "bed bank=%u page=%c index=%u vol=%u on stream 0%s", (unsigned)bank, page,
+                (unsigned)index, (unsigned)vol, listening ? "" : " (module replies not heard)");
     return true;
 }
 
-// The module's answer to the bed's PLAY, where it can be heard. handlePlay()
-// queues "S:<n>,ply,<vol>" BEFORE it opens the file and prints "ERR:NOFILE"
-// straight to the UART if the open fails, so the two arrive in either order:
-// the whole window is read, the claim moves the bed to the stream it names, and
-// ERR:NOFILE cancels it whichever came first. Neither proves the bed plays.
+// The module's answer to the bed's PLAY, where it can be heard. It can report
+// a failure; it never moves the bed, which rule 1 put on stream 0.
 //
-// An ERR:NOFILE answering a vocal PLAY sent a moment before this one would be
-// read as the bed's; the next STAT of stream 0 settles it either way.
-void AudioDriverChirp::readBedClaim() {
-    uint8_t claimed = CHIRP_NO_STREAM;
-    bool noFile = false;
+// handlePlay() answers a bad target with "ERR:PARAM" and a file it cannot open
+// with "ERR:NOFILE", printed straight to the UART, while "S:<n>,ply" waits in
+// the module's 15-slot reply queue -- which it holds back while it is busy
+// streaming. So the bed's own S: line can arrive after the window, and an
+// earlier vocal's S: line inside it:
+//   - any ERR: line is the bed's failure and drops it, unless a vocal PLAY went
+//     out within one reply window before the bed's (vocalJustSent): then it may
+//     be the vocal's, and the bed stays held until a STAT of stream 0 says idle.
+//     Holding too long is the safe direction; dropping a playing bed is what
+//     would let the next vocal steal its stream.
+//   - "S:<n>,ply" with n != 0 contradicts rule 1. It is logged, and stream n is
+//     held as maybe busy -- something plays there, whatever the line answered.
+void AudioDriverChirp::readBedAnswer(bool vocalJustSent) {
+    char err[24] = {0};
     const uint32_t startMs = m_io.millisNow();
     char line[CHIRP_STAT_LINE_MAX];
     while (true) {
@@ -1025,34 +1047,34 @@ void AudioDriverChirp::readBedClaim() {
             ChirpFrame::Complete) {
             continue;
         }
-        if (strncmp(line, "ERR:NOFILE", 10) == 0) {
-            noFile = true;
+        if (strncmp(line, "ERR:", 4) == 0) {
+            if (err[0] == '\0') {
+                strncpy(err, line, sizeof(err) - 1);
+            }
         } else if (strncmp(line, "S:", 2) == 0) {
             char* end = nullptr;
             const unsigned long n = strtoul(line + 2, &end, 10);
-            if (end != line + 2 && strncmp(end, ",ply", 4) == 0 && n < CHIRP_STREAM_COUNT) {
-                claimed = (uint8_t)n;
+            if (end != line + 2 && strncmp(end, ",ply", 4) == 0 && n != 0 &&
+                n < CHIRP_STREAM_COUNT) {
+                PA_LOG_WARN(TAG, "bed: module reported a PLAY on stream %lu; bed held on stream 0",
+                            n);
+                noteStreamObserved((uint8_t)n, true);
             }
-            // "S:<n>,idle,,0" answers a STOP; it says nothing about the bed.
+            // "S:0,ply" agrees with rule 1, and "S:<n>,idle,,0" answers a STOP.
         }
     }
 
-    if (noFile) {
-        // The PLAY failed, so whichever stream it was given stays inactive,
-        // and no bed is held.
-        m_streams[0].use = ChirpStreamUse::IdleByProof;
-        if (claimed != CHIRP_NO_STREAM) {
-            m_streams[claimed].use = ChirpStreamUse::IdleByProof;
-        }
-        PA_LOG_WARN(TAG, "bed not played: the module has no such file on its card");
+    if (err[0] == '\0') {
         return;
     }
-    if (claimed != CHIRP_NO_STREAM && claimed != 0) {
-        // Stream 0 did not take it, so stream 0 was not inactive after all:
-        // the module said where the bed went, and stream 0 holds something.
-        m_streams[0] = ChirpStream{ChirpStreamUse::MaybeVocal, m_streams[0].sentSeq};
-        m_streams[claimed] = ChirpStream{ChirpStreamUse::Bed, m_sendSeq};
+    if (vocalJustSent) {
+        PA_LOG_WARN(TAG, "bed: %s came back, possibly for the vocal sent just before; bed held",
+                    err);
+        return;
     }
+    // The PLAY failed, so stream 0 -- stopped just before it -- stays inactive.
+    m_streams[0].use = ChirpStreamUse::IdleByProof;
+    PA_LOG_WARN(TAG, "bed not played: the module answered %s", err);
 }
 
 // Stop the bed and nothing else.
@@ -1482,8 +1504,13 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     // window is n's -- while every earlier query in this snapshot was answered
     // in its own window. Once one was not, its reply may still arrive in a
     // later window, so attribution stops for the rest of the snapshot and only
-    // the counts are kept.
-    bool attributable = true;
+    // the counts are kept. It may also arrive after this snapshot and be read
+    // as the next one's first, shifting every reply after it by one stream, so
+    // a snapshot that leaves a reply owed (m_statReplyOwed) makes the next one
+    // unattributable too, and only a snapshot in which every query was
+    // answered clears it. (A queryStatus can follow an auto-query at once.)
+    bool attributable = !m_statReplyOwed;
+    bool everyQueryAnswered = true;
     uint8_t playingReplies = 0;
     uint8_t idleReplies = 0;
     uint32_t rxBytes = 0;
@@ -1544,10 +1571,13 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
         }
         if (!answered) {
             attributable = false;
+            everyQueryAnswered = false;
         } else if (attributable) {
             noteStreamObserved(stream, answeredPlaying);
         }
     }
+
+    m_statReplyOwed = !everyQueryAnswered;
 
     if (playingReplies > 0) {
         out.playState = 0x01;
