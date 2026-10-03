@@ -638,7 +638,7 @@
   const SWITCHES = [
     { types: ["dome", "random"], key: "protoR2link", what: "The dome link", steps: ["dome step", "dome steps"] },
     { types: ["audio", "audioCat"], key: "audio", what: "Sound", steps: ["sound step", "sound steps"] },
-    { types: ["domeRotate"], key: "domeEsc", what: "The dome motor", steps: ["dome turn", "dome turns"] },
+    { types: ["domeRotate", "domeBearing"], key: "domeEsc", what: "The dome motor", steps: ["dome turn", "dome turns"] },
   ];
 
   const switchedOff = (events, context) => {
