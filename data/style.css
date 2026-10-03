@@ -6551,6 +6551,27 @@ body[data-page="maintenance"] .status-item .hint {
   box-shadow: inset 2px 0 0 var(--success);
 }
 
+/* The takes a sequence holds, in its Sequence tab (#442): each a name and
+   its quiet Take out, wrapping as the row fills. */
+.seq-takes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm) var(--space-md);
+}
+
+.seq-take {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  font-size: var(--fs-cell);
+  white-space: nowrap;
+}
+
+.seq-takes .hint {
+  margin: 0;
+}
+
 .seq-strip-seam {
   width: 1px;
   height: 20px;

@@ -57,8 +57,9 @@
   // one stack.
   //
   // An entry is a copy of everything a builder authors - the steps, the close
-  // half, the interrupt group and the tempo, which re-times every step on a
-  // beat - so no edit needs an undo of its own kind. It is bracketed two ways
+  // half, the interrupt group, the tempo, which re-times every step on a
+  // beat, and the takes it holds (#442) - so no edit needs an undo of its own
+  // kind. It is bracketed two ways
   // (the pattern is r2d2-astromech-simulator's blockHistPush / blockHistCommit):
   //   historyPush()          BEFORE an edit made in one act that always
   //                          changes something: a drop, a removal, a split
@@ -72,7 +73,7 @@
   // Revert is not on the stack: it discards the whole session, history and all.
   // ---------------------------------------------------------------------------
   const HISTORY_DEPTH = 100;
-  const HISTORY_FIELDS = ["steps", "closeSteps", "toggleGroup", "tempo"];
+  const HISTORY_FIELDS = ["steps", "closeSteps", "toggleGroup", "tempo", "takes"];
   const history = { undo: [], redo: [] };
 
   const historyCapture = () =>
@@ -2612,6 +2613,7 @@
     editorState.current !== null && canonical(editorState.current) !== canonical(editorState.original);
 
   const closeSession = () => {
+    stopTakePoll();
     libraryStop();
     closeSessionTimeline();
     els.editorView.classList.add("hidden");
@@ -3505,6 +3507,7 @@
     showRetime(receipt);
     updateValidationSummary();
     paintHistory();
+    paintTakes();
     if (sessionTimeline) sessionTimeline.refresh(stageContext());
     // An edit can name a phrase not read yet - a drop, a pick, an undo - so
     // every edit asks; with nothing unread it sends nothing.
@@ -3597,6 +3600,11 @@
             <span class="hint hidden" id="seq-editor-test-hint">Runs the last saved copy.</span>
             <span class="seq-running hidden" id="seq-editor-running" role="status"><span class="indicator ok seq-live" aria-hidden="true"></span><span id="seq-editor-running-name"></span></span>
             <button id="seq-editor-stop" class="btn btn-sm seq-stop hidden" type="button"></button>
+          </span>
+          <span class="seq-run">
+            <button id="seq-editor-perform" class="btn btn-sm" type="button">Perform</button>
+            <span class="seq-running hidden" id="seq-editor-performing" role="status"><span class="indicator ok seq-live" id="seq-editor-performing-lamp" aria-hidden="true"></span><span id="seq-editor-performing-words"></span></span>
+            <button id="seq-editor-keep" class="btn btn-sm seq-stop hidden" type="button">Keep</button>
           </span>
           <span class="seq-strip-seam" aria-hidden="true"></span>
           <span class="seq-verdict" id="seq-editor-validation-summary" aria-live="polite" aria-label="Validation status">
@@ -3696,6 +3704,11 @@
                 </span>
                 <span class="setting-value"></span>
               </div>
+              <div class="setting-row" id="seq-editor-takes-row">
+                <span class="setting-name">Takes</span>
+                <span class="seq-takes" id="seq-editor-takes"></span>
+                <span class="setting-value"></span>
+              </div>
             </div>
             <details class="seq-more seq-settings-more">
               <summary>${chevron}More settings</summary>
@@ -3756,6 +3769,8 @@
     updateValidationSummary();
     paintHistory();
     paintHalf();
+    paintTakes();
+    resumeTake();
     // The timeline is the one editor: without it there is nothing to edit
     // with, and the strip says so.
     if (!sessionTimeline) showEditorFeedback("The timeline did not load. Reload the page to try again.", "error");
@@ -4155,6 +4170,12 @@
     const cancelBtn = document.getElementById("seq-editor-cancel");
 
     if (testBtn) testBtn.addEventListener("click", handleTestOnDroid);
+    document.getElementById("seq-editor-perform")?.addEventListener("click", handlePerform);
+    document.getElementById("seq-editor-keep")?.addEventListener("click", keepTake);
+    document.getElementById("seq-editor-takes")?.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-take-out]");
+      if (btn) takeOut(btn.dataset.takeOut);
+    });
     const stopBtn = document.getElementById("seq-editor-stop");
     if (stopBtn) stopBtn.addEventListener("click", () => handleStopRun(stopBtn));
     if (saveBtn) saveBtn.addEventListener("click", handleSave);
@@ -4257,6 +4278,260 @@
     } finally {
       if (testBtn) testBtn.disabled = false;
     }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Perform: a take off the sticks, kept into the sequence that is open
+  // (#442, ADR 0061).
+  //
+  // Perform arms a take on the droid for this sequence as it is saved; the
+  // builder performs on the sticks set to Perform a Part (the RC page) and
+  // presses Keep - or the droid stops the take itself, full or on the estop,
+  // and it is kept the same way. Keeping places the receipt into the routine
+  // as ONE edit, so one Undo takes all of it back:
+  //   - the take, as an entry in the sequence's `takes` - the droid holds its
+  //     motion in a file of its own, and slice 4 draws it on the timeline;
+  //   - each cue pressed during it, as the step that does what the cue did,
+  //     at the moment it was pressed (cueStep()). A cue with no such step, or
+  //     one Protocol Check would refuse where it lands, is named in the
+  //     receipt and not placed;
+  //   - the end step moved out to cover the take and the last cue.
+  // The take's file stays the droid's "not yet saved" take until the sequence
+  // is saved naming it; the receipt says so.
+  //
+  // Asks for no Non-RC Control consent: a take is RC motion (ADR 0064).
+  // ---------------------------------------------------------------------------
+  const TAKE_POLL_MS = 500;
+  // How many reads in a row may go unanswered while a take runs before the
+  // strip stops watching and says so.
+  const TAKE_POLL_MISSES = 4;
+  let takePoll = null;
+  let takeMisses = 0;
+  let takeKeeping = false;
+
+  // The name the droid holds this sequence under: a take belongs to the
+  // saved sequence, so an unsaved one, or an unsaved rename, has none yet.
+  const takeSeqName = () => (editorState.isNew ? null : editorState.original?.name || null);
+
+  const clockWords = (ms) => {
+    const sec = Math.floor((Number(ms) || 0) / 1000);
+    return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+  };
+
+  const paintPerform = (status = null) => {
+    const performing = status?.state === "performing";
+    const show = (id, on) => document.getElementById(id)?.classList.toggle("hidden", !on);
+    show("seq-editor-perform", !performing);
+    show("seq-editor-performing", performing);
+    show("seq-editor-keep", performing);
+    if (!performing) return;
+    const words = document.getElementById("seq-editor-performing-words");
+    if (words) words.textContent = `Performing ${clockWords(status.elapsedMs)}${status.nearlyFull ? ", nearly full" : ""}`;
+    const lamp = document.getElementById("seq-editor-performing-lamp");
+    if (lamp) lamp.className = `indicator ${status.nearlyFull ? "warn" : "ok"} seq-live`;
+  };
+
+  const stopTakePoll = () => {
+    if (takePoll !== null) clearInterval(takePoll);
+    takePoll = null;
+    takeMisses = 0;
+    paintPerform(null);
+  };
+
+  // One read of the take while it runs: still performing, it is painted;
+  // stopped by the droid, it is kept. A take of another sequence - the
+  // builder left this one - is no longer this strip's to watch.
+  const readTake = async () => {
+    let status = null;
+    try {
+      status = (await PAApi.get("/api/take")).data;
+      takeMisses = 0;
+    } catch (error) {
+      takeMisses += 1;
+      if (takeMisses >= TAKE_POLL_MISSES) {
+        stopTakePoll();
+        showEditorFeedback(`The droid stopped answering about the take: ${PAApi.messageFor(error)}`, "error");
+      }
+      return;
+    }
+    if (takePoll === null) return;
+    if (!editorState.current || status?.seq !== takeSeqName()) {
+      stopTakePoll();
+      return;
+    }
+    if (status.state === "performing") {
+      paintPerform(status);
+      return;
+    }
+    stopTakePoll();
+    if (status.state === "stopped") keepTake();
+  };
+
+  const watchTake = () => {
+    if (takePoll !== null) return;
+    takePoll = setInterval(readTake, TAKE_POLL_MS);
+    readTake();
+  };
+
+  // A sequence opened while a take of it is on the droid - the page was
+  // reloaded mid-take, or the builder came back to it - picks the take up.
+  const resumeTake = async () => {
+    const name = takeSeqName();
+    if (!name) return;
+    let status = null;
+    try {
+      status = (await PAApi.get("/api/take")).data;
+    } catch {
+      return;  // nothing to pick up that this page can see; Perform still asks the droid
+    }
+    if (status?.seq !== name || takeSeqName() !== name) return;
+    if (status.state === "performing") watchTake();
+    else if (status.state === "stopped") keepTake();
+  };
+
+  const handlePerform = async () => {
+    const name = takeSeqName();
+    if (!name) {
+      showEditorFeedback("Save the sequence first.", "error");
+      return;
+    }
+    const btn = document.getElementById("seq-editor-perform");
+    if (btn) btn.disabled = true;
+    try {
+      await PAApi.postJson("/api/take/arm", { seq: name });
+      showEditorFeedback("");
+      watchTake();
+    } catch (error) {
+      showEditorFeedback(PAApi.messageFor(error), "error");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
+
+  // The step that does what a cue did, or null where none does:
+  //   a random sound            -> Sound Category, that category
+  //   a command: $ line         -> Sound command; a : or # line -> Dome command
+  //   a body routine SEnn       -> Dome command :SEnn, as the cue sends it
+  //   a sequence (dome_seq)     -> Sequence, by that name
+  // A toggle, a mode, the estop, Sleep and the speed preset have no step.
+  const CUE_SOUND_PREFIX = "sound_rand_";
+  const cueStep = ({ action = "", payload = "" }) => {
+    if (action.startsWith(CUE_SOUND_PREFIX)) {
+      const category = action.slice(CUE_SOUND_PREFIX.length);
+      return AUDIO_CATEGORIES.includes(category) ? { type: "audioCat", ...stepTypeDefaults.audioCat, category } : null;
+    }
+    if (action === "cmd") {
+      if (payload.startsWith("$")) return { type: "audio", cmd: payload };
+      return /^[:#]/.test(payload) ? { type: "dome", cmd: payload } : null;
+    }
+    if (action === "seq") return /^\d+$/.test(payload) ? { type: "dome", cmd: `:SE${payload}` } : null;
+    if (action === "dome_seq") return payload ? { type: "sequence", ref: payload } : null;
+    return null;
+  };
+
+  // The RC actions' names, for a receipt that names cues it could not place.
+  // Read once, when first needed; a token stands in where the droid did not
+  // answer.
+  let actionNames = null;
+  const cueNames = async (tokens) => {
+    if (tokens.length === 0) return [];
+    if (actionNames === null) {
+      try {
+        const listed = (await PAApi.get("/api/actions")).data;
+        actionNames = new Map((Array.isArray(listed) ? listed : [])
+          .filter((entry) => typeof entry?.token === "string")
+          .map((entry) => [entry.token, entry.display_name || entry.name || entry.token]));
+      } catch {
+        actionNames = new Map();
+      }
+    }
+    return [...new Set(tokens)].map((token) => actionNames.get(token) || token);
+  };
+
+  // The receipt, placed into the routine (see the block comment above).
+  const placeTake = async (receipt) => {
+    if (!editorState.current) return;
+    const cues = Array.isArray(receipt?.cues) ? receipt.cues : [];
+    const take = receipt?.take || null;
+    const unplaced = [];
+    let placed = 0;
+    if (take || cues.length > 0 || receipt?.replaced) {
+      historyPush();
+      editorState.half = "opens";
+      const held = (editorState.current.takes || []).filter((each) => each.id !== receipt.replaced);
+      if (take) held.push({ id: take.id, t: 0 });
+      if (held.length > 0) editorState.current.takes = held;
+      else delete editorState.current.takes;
+
+      const steps = stageSteps();
+      const endAt = steps.findIndex((each) => each?.type === "end");
+      const reach = Math.min(STEP_LIMITS.t[1],
+        Math.max(take ? Number(take.lengthMs) || 0 : 0, ...cues.map((cue) => (Number(cue.t) || 0) + 1)));
+      if (endAt !== -1 && (Number(steps[endAt].t) || 0) < reach) {
+        steps[endAt].t = reach;
+        delete steps[endAt].beat;
+      }
+      for (const cue of cues) {
+        const step = cueStep(cue);
+        const at = step ? { t: Math.min(Number(cue.t) || 0, reach - 1), ...step } : null;
+        const place = (list) => {
+          const end = list.findIndex((each) => each?.type === "end");
+          list.splice(end === -1 ? list.length : end, 0, { ...at });
+        };
+        if (at && !triedOnCopy(place).refused) {
+          place(stageSteps());
+          orderSteps();
+          placed += 1;
+        } else {
+          unplaced.push(cue.action);
+        }
+      }
+      edited();
+    }
+
+    const stop = { full: " - the take filled up", estop: " - the estop stopped it" }[receipt?.stopped] || "";
+    const lines = [`Kept: ${take ? "1 take" : "no take (nothing moved)"}, ${placed} cue ${placed === 1 ? "step" : "steps"}${stop}.`];
+    if (receipt?.replaced) lines.push("It replaces the take you had not saved.");
+    const names = await cueNames(unplaced);
+    if (names.length > 0) lines.push(`No step for: ${names.join(", ")}.`);
+    if (receipt?.cuesPast > 0) lines.push(`${receipt.cuesPast} more ${receipt.cuesPast === 1 ? "press was" : "presses were"} not kept.`);
+    if (take || placed > 0) lines.push("Save to keep it.");
+    window.PAOverlay.receipt(lines.join(" "));
+  };
+
+  const keepTake = async () => {
+    if (takeKeeping) return;
+    takeKeeping = true;
+    stopTakePoll();
+    try {
+      placeTake((await PAApi.postJson("/api/take/keep", {})).data);
+    } catch (error) {
+      showEditorFeedback(`The take was not kept: ${PAApi.messageFor(error)}`, "error");
+    } finally {
+      takeKeeping = false;
+    }
+  };
+
+  // The takes the sequence holds, in the Sequence tab: how many, and each one
+  // to take out - which is how a board that keeps one take frees it for the
+  // next. Taking one out is an edit like any other; saving deletes its file.
+  const paintTakes = () => {
+    const el = document.getElementById("seq-editor-takes");
+    if (!el || !editorState.current) return;
+    const takes = editorState.current.takes || [];
+    el.innerHTML = takes.length === 0
+      ? `<span class="hint">None</span>`
+      : takes.map((take, index) =>
+        `<span class="seq-take">Take ${index + 1}<button type="button" class="seq-act" data-take-out="${window.PAUtils.escapeHtml(take.id)}">Take out</button></span>`).join("");
+  };
+
+  const takeOut = (id) => {
+    if (historyBusy() || !editorState.current?.takes) return;
+    historyPush();
+    const held = editorState.current.takes.filter((each) => each.id !== id);
+    if (held.length > 0) editorState.current.takes = held;
+    else delete editorState.current.takes;
+    edited();
   };
 
   // =========================================================================
@@ -4402,6 +4677,10 @@
     // match (src/seq_store.cpp): two sequences sharing one would let a
     // routine that holds the original play the copy.
     delete original.id;
+    // A take's file belongs to one sequence, named by its id (#442): the copy
+    // starts with none, rather than naming files its original owns and takes
+    // with it when it is deleted.
+    delete original.takes;
 
     // Open editor with copy
     currentEditingSeq = original;
