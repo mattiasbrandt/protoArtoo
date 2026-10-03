@@ -4688,6 +4688,10 @@
     const overNumber = takes.indexOf(over) + 1;
     performOver = null;
     const at = over ? Number(over.t) || 0 : 0;
+    // The droid deleted the unsaved take it replaced, so its file is gone: an
+    // Undo that brings its entry back draws it as a take that cannot be read,
+    // not from a copy this page still holds (loadTakeFiles()).
+    if (receipt?.replaced) takeFiles.read.set(receipt.replaced, { failed: true });
     if (take || cues.length > 0 || receipt?.replaced) {
       historyPush();
       editorState.half = "opens";
