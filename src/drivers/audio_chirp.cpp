@@ -7,12 +7,14 @@
 // RX responses are read from UART_PORT_AUDIO on PIN_AUDIO_RX for manifest,
 // catalog, and status queries.
 //
-// Written for the artoo-esp32 posture, where UART_PORT_AUDIO IS the dome link's
-// controller and there is no spare TX, so this driver carries its own
-// domeUartOwnedBy(DOME_UART_DOME) guards. No P4 environment selects this
-// backend, so those guards have never run on a board with
-// PA_CAP_DEDICATED_AUDIO_UART and are left as they are deliberately: adding a
-// capability branch that no build compiles would ship untested code (#254).
+// On artoo-esp32 UART_PORT_AUDIO IS the dome link's controller and there is no
+// spare TX, so while the dome link holds that controller nothing the module
+// says can be heard; chirpRxHeldByDomeLink() below is that one fact, and the
+// status query, the catalog refresh and the RX classification all ask it. On a
+// board with PA_CAP_DEDICATED_AUDIO_UART (firebeetle2) audio owns its UART
+// outright and the dome link never holds it. Every image carries this driver
+// since sound became a runtime Component Member (ADR 0042), so both boards run
+// both branches (#447).
 //
 // CHIRP must be pre-configured to 9600 baud via CHIRP.INI on the SD card root:
 //   #BAUD_RATE 9600
@@ -83,6 +85,19 @@ static void configureChirpRx() {
 static const AudioSerialIO kChirpProductionIO {
     chirpWriteByte, chirpRxAvailable, chirpRxRead, chirpDelayMs, chirpMillisNow,
 };
+
+// True while the dome link holds the UART controller this driver reads from.
+// Only a board that shares one controller between the two can say yes: with
+// PA_CAP_DEDICATED_AUDIO_UART the dome link owns UART_PORT_DOME for the whole
+// boot, and asking domeUartOwnedBy() there would report audio's own UART as
+// taken and silence every query (include/dome_link.h, audioUartClaim()).
+static bool chirpRxHeldByDomeLink() {
+#if PA_CAP_DEDICATED_AUDIO_UART
+    return false;
+#else
+    return domeUartOwnedBy(DOME_UART_DOME);
+#endif
+}
 
 // -----------------------------------------------------------------------------
 // readFrame()
@@ -667,10 +682,10 @@ bool AudioDriverChirp::begin(uint8_t vol) {
     // Apply NVS-configured boot volume before any playback.
     setVolume(vol);
 
-    if (domeUartAcquire(DOME_UART_AUDIO)) {
+    if (audioUartClaim()) {
         configureChirpRx();
         m_linkOk = loadManifestBanks(1500u, false);
-        domeUartRelease(DOME_UART_AUDIO);
+        audioUartRelease();
     } else {
         PA_LOG_INFO(TAG,
                     "CHIRP RX catalog discovery skipped: protoR2link holds the serial line; playback commands remain available");
@@ -764,7 +779,7 @@ void AudioDriverChirp::setVolume(uint8_t vol) {
 // -----------------------------------------------------------------------------
 bool AudioDriverChirp::refreshCatalog() {
     m_lastRefreshOutcome = AudioCatalogRefreshOutcome::Failed;
-    if (domeUartOwnedBy(DOME_UART_DOME)) {
+    if (chirpRxHeldByDomeLink()) {
         return false;
     }
     configureChirpRx();
@@ -1139,8 +1154,8 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     out.currentTrack = 0;
     out.missingTrack = 0;
 
-    // Guard: DomeLink has priority on UART2; return cached state unchanged.
-    if (domeUartOwnedBy(DOME_UART_DOME)) {
+    // Guard: DomeLink has priority on a shared controller; return cached state unchanged.
+    if (chirpRxHeldByDomeLink()) {
         out.linkOk = m_linkOk;
         out.playState = m_playState;
         out.currentTrack = m_currentTrack;
@@ -1274,14 +1289,14 @@ void AudioDriverChirp::getCachedState(AudioModuleState& out) const {
 
 // -----------------------------------------------------------------------------
 // classifyRxStatus()
-// CHIRP RX shares UART2 with DomeLink. When DomeLink owns the bus, a false
-// linkOk is BLOCKED rather than NO_RESPONSE.
+// Where CHIRP RX shares a controller with DomeLink and DomeLink holds it, a
+// false linkOk is BLOCKED rather than NO_RESPONSE.
 // -----------------------------------------------------------------------------
 AudioRxStatus AudioDriverChirp::classifyRxStatus(bool linkOk) const {
     if (linkOk) {
         return AUDIO_RX_AVAILABLE;
     }
-    if (domeUartOwnedBy(DOME_UART_DOME)) {
+    if (chirpRxHeldByDomeLink()) {
         return AUDIO_RX_BLOCKED_BY_DOME_UART;
     }
     return AUDIO_RX_NO_RESPONSE;

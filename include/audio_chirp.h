@@ -8,8 +8,8 @@
 // baud. RX status/manifest responses are read via UART_PORT_AUDIO on
 // PIN_AUDIO_RX.
 //
-// Written for the artoo-esp32 posture, where UART_PORT_AUDIO is shared with the
-// dome link; see the file header of src/drivers/audio_chirp.cpp.
+// On artoo-esp32 UART_PORT_AUDIO is shared with the dome link; on firebeetle2
+// audio has it to itself. See the file header of src/drivers/audio_chirp.cpp.
 //
 // NOTE: CHIRP defaults to 115200 baud. Before using this driver, set the board's
 // baud rate to 9600 by placing the following in CHIRP.INI on the SD card root:
