@@ -156,22 +156,88 @@ def _env_is_ota(words: list[str]) -> bool:
     return False
 
 
+# Options of flock(1) that take the next word as their value (`flock --help`).
+_FLOCK_OPTS_WITH_VALUE = {"-w", "--timeout", "--wait", "-E", "--conflict-exit-code",
+                          "--start", "--length"}
+_SHELLS = {"sh", "bash", "zsh"}
+_PYTHONS = {"python", "python3"}
+
+
+def _wrapped(words: list[str]) -> list[str] | str | None:
+    """The command a known wrapper runs: a word list, a string to re-split, or None.
+
+    This is a list of programs whose argument IS a command, kept explicit and
+    short on purpose. Everything else that takes text - a commit message, a
+    `python3 -c` string, a `grep` pattern, and `herdr agent prompt`, whose
+    argument is text sent to an agent - stays data. The Herdr form matters
+    most: `.claude/CLAUDE.md` runs device work as
+    `herdr pane run <pane> "tools/gate_in_pane.sh <log> -- <cmd>"` (#459).
+    """
+    program = _program(words[0])
+    # `python3 tools/pio_lock.py ...` and `sh tools/gate_in_pane.sh ...`: the
+    # interpreter in front of a known script changes nothing.
+    if (program in _PYTHONS | _SHELLS and len(words) > 1
+            and _program(words[1]) in ("pio_lock.py", "gate_in_pane.sh")):
+        words = words[1:]
+        program = _program(words[0])
+    if program == "herdr" and words[1:3] == ["pane", "run"] and len(words) > 4:
+        return " ".join(words[4:])  # herdr pane run <pane> <cmd>
+    if program == "gate_in_pane.sh" and "--" in words:
+        return words[words.index("--") + 1:]  # gate_in_pane.sh <log> -- <cmd...>
+    if program == "pio_lock.py":
+        # main(sys.argv[1:]) execs argv as given: no options, no `--`.
+        return words[1:]
+    if program in _SHELLS:
+        # sh -c "<cmd>", including a cluster ending in c (`bash -lc`).
+        for index, word in enumerate(words[1:], start=1):
+            if not word.startswith("-"):
+                return None
+            if not word.startswith("--") and word.endswith("c"):
+                return words[index + 1] if index + 1 < len(words) else None
+        return None
+    if program == "flock":
+        index = 1
+        while index < len(words) and words[index].startswith("-"):
+            if words[index] in ("-c", "--command"):
+                return words[index + 1] if index + 1 < len(words) else None
+            index += 2 if words[index] in _FLOCK_OPTS_WITH_VALUE else 1
+        rest = words[index + 1:]  # past the lock file
+        if rest[:1] in (["-c"], ["--command"]):
+            return rest[1] if len(rest) > 1 else None
+        return rest
+    return None
+
+
+def _upload_in(command: list[str]) -> Upload | None:
+    words = _skip_prefixes(command)
+    if not words:
+        return None
+    program = _program(words[0])
+    if program == "make":
+        target = _make_target(words)
+        if target:
+            kind = "uploadfs" if target == "uploadfs" else "upload"
+            return Upload(kind, command, target == "ota")
+        return None
+    if program in ("pio", "platformio"):
+        target = _pio_target(words)
+        if target:
+            return Upload(target, command, _env_is_ota(words))
+        return None
+    inner = _wrapped(words)
+    if isinstance(inner, str):
+        return find_upload(inner)
+    if inner:
+        return _upload_in(inner)
+    return None
+
+
 def find_upload(cmd: str) -> Upload | None:
     """The first simple command in `cmd` that uploads, or None."""
     for command in simple_commands(cmd):
-        words = _skip_prefixes(command)
-        if not words:
-            continue
-        program = _program(words[0])
-        if program == "make":
-            target = _make_target(words)
-            if target:
-                kind = "uploadfs" if target == "uploadfs" else "upload"
-                return Upload(kind, command, target == "ota")
-        elif program in ("pio", "platformio"):
-            target = _pio_target(words)
-            if target:
-                return Upload(target, command, _env_is_ota(words))
+        upload = _upload_in(command)
+        if upload:
+            return upload
     return None
 
 

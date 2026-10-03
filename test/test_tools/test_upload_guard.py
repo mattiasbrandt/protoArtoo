@@ -20,6 +20,9 @@ ASKS = [
     "cd x && make ota HOST=a",
     "echo hi; make uploadfs",
     "pio run -e artoo_esp32 -t upload",
+    'herdr pane run w8:p1 "tools/gate_in_pane.sh /tmp/x.log -- make flash"',
+    'herdr pane run w8:p1 "tools/gate_in_pane.sh /tmp/x.log -- pio run -e artoo_esp32 -t upload"',
+    'bash -c "make ota"',
 ]
 
 DOES_NOT_ASK = [
@@ -27,6 +30,7 @@ DOES_NOT_ASK = [
     "cat >> Makefile <<'EOF'\n# run make flash first\nEOF",
     'grep -- "-t upload" tools/pio_lock.py',
     "python3 -c \"print('make flash; pio run -t upload')\"",
+    'herdr agent prompt w8:p1 "run make flash later"',
 ]
 
 
