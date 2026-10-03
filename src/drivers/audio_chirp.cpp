@@ -7,21 +7,30 @@
 // RX responses are read from UART_PORT_AUDIO on PIN_AUDIO_RX for manifest,
 // catalog, and status queries.
 //
-// Written for the artoo-esp32 posture, where UART_PORT_AUDIO IS the dome link's
-// controller and there is no spare TX, so this driver carries its own
-// domeUartOwnedBy(DOME_UART_DOME) guards. No P4 environment selects this
-// backend, so those guards have never run on a board with
-// PA_CAP_DEDICATED_AUDIO_UART and are left as they are deliberately: adding a
-// capability branch that no build compiles would ship untested code (#254).
+// On artoo-esp32 UART_PORT_AUDIO IS the dome link's controller and there is no
+// spare TX, so while the dome link holds that controller nothing the module
+// says can be heard; chirpRxHeldByDomeLink() below is that one fact, and the
+// status query, the catalog refresh and the RX classification all ask it. On a
+// board with PA_CAP_DEDICATED_AUDIO_UART (firebeetle2) audio owns its UART
+// outright and the dome link never holds it. Every image carries this driver
+// since sound became a runtime Component Member (ADR 0042), so both boards run
+// both branches (#447).
 //
 // CHIRP must be pre-configured to 9600 baud via CHIRP.INI on the SD card root:
 //   #BAUD_RATE 9600
 //
-// Commands used:
-//   playTrack(n)        -> "PLAY:n,1,A\n"  (Bank 1, Page A)
-//   playTrackBanked()   -> "PLAY:n,bank,page\n"
-//   stop()              -> "STOP\n"
-//   setVolume(v)        -> "VOL:N\n" where N = v * 99 / 30
+// Commands used (N, V = a 0-30 volume scaled to 0-99 as v * 99 / 30):
+//   playTrack(n)        -> "PLAY:n,1,A,N\n"  (Bank 1, Page A, operator's level)
+//   playTrackBanked()   -> "PLAY:n,bank,page,N\n"
+//                          ",N" is left off until setVolume() has run once
+//   stop()              -> "STOP\n"           (every stream)
+//   stopStream(s)       -> "STOP:s\n"
+//   stopVocals()        -> "STOP:s\n" per stream but the Background Track's;
+//                          "STOP\n" with no Background Track held
+//   setVolume(v)        -> "VOL:N\n"          (every stream)
+//   setStreamVolume()   -> "VOL:s,V\n"
+//   playBackgroundTrack() -> "STOP:0\n" "PLAY:n,bank,page,V\n"
+//   stopBackgroundTrack() -> "STOP:s\n"       (the Background Track's stream)
 //   begin() bootstrap   -> optional "GMAN\n" for bank summary when UART2 RX is available
 //   refreshCatalog()    -> "GMAN\n" + per-entry "GNME:bank,page,index\n"
 //   queryModuleState()  -> "STAT:0\n", "STAT:1\n", "STAT:2\n" for stream activity
@@ -53,15 +62,12 @@ static constexpr uint8_t CHIRP_RX_DRAIN_YIELD_BYTES = 32u;
 static constexpr uint32_t CHIRP_LIST_REPLY_MS = 1500u;
 static constexpr uint32_t CHIRP_LIST_FRAME_MS = 100u;
 static constexpr uint8_t CHIRP_LIST_QUIET_WINDOWS = 2u;
-// The module's default stream count (CHIRP config.h DEFAULT_MAX_STREAMS 3), and
-// this droid's. #MAX_STREAMS can be set 1-10 in CHIRP.INI and no command
-// reports the value, so asking about three is asking about the default rather
-// than discovering a configuration.
-static constexpr uint8_t CHIRP_STAT_STREAM_COUNT = 3u;
-// Per stream, so a full snapshot is bounded by three of these. handleStat()
-// answers synchronously and prints straight to the UART, so the wait is one
-// module loop pass plus the line itself: "STAT:playing," + a 63-character path
-// + ",99" is 79 bytes, ~82 ms at 9600 baud.
+// Per stream (CHIRP_STREAM_COUNT, include/audio_chirp.h), so a full snapshot is
+// bounded by three of these. handleStat() answers synchronously and prints
+// straight to the UART, so the wait is one module loop pass plus the line
+// itself: "STAT:playing," + a 63-character path + ",99" is 79 bytes, ~82 ms at
+// 9600 baud. The Background Track's answer read (readBackgroundTrackAnswer())
+// uses the same window.
 static constexpr uint32_t CHIRP_STAT_REPLY_MS = 200u;
 // streams[n].filename is char[64] in the module, so 79 characters is the
 // longest reply it can print; a frame that does not fit this is not a STAT
@@ -83,6 +89,19 @@ static void configureChirpRx() {
 static const AudioSerialIO kChirpProductionIO {
     chirpWriteByte, chirpRxAvailable, chirpRxRead, chirpDelayMs, chirpMillisNow,
 };
+
+// True while the dome link holds the UART controller this driver reads from.
+// Only a board that shares one controller between the two can say yes: with
+// PA_CAP_DEDICATED_AUDIO_UART the dome link owns UART_PORT_DOME for the whole
+// boot, and asking domeUartOwnedBy() there would report audio's own UART as
+// taken and silence every query (include/dome_link.h, audioUartClaim()).
+static bool chirpRxHeldByDomeLink() {
+#if PA_CAP_DEDICATED_AUDIO_UART
+    return false;
+#else
+    return domeUartOwnedBy(DOME_UART_DOME);
+#endif
+}
 
 // -----------------------------------------------------------------------------
 // readFrame()
@@ -659,6 +678,16 @@ bool AudioDriverChirp::begin(uint8_t vol) {
     m_soundListChecksum = 0;
     m_soundListChecksumValid = false;
     resetFrameAssembly();
+    // The module may still be playing what it played before this controller
+    // restarted, so every stream starts as maybe busy, none as the Background
+    // Track's.
+    for (ChirpStream& stream : m_streams) {
+        stream = ChirpStream{ChirpStreamUse::MaybeVocal, 0};
+    }
+    m_sendSeq = 0;
+    m_vocalVolume = CHIRP_VOL_UNSET;
+    m_vocalSent = false;
+    m_statReplyOwed = false;
 
     // CHIRP boots, mounts SD, and optionally syncs Bank 1 to flash; 2 s covers
     // most cases. First boot after SD card change may need more time.
@@ -667,10 +696,10 @@ bool AudioDriverChirp::begin(uint8_t vol) {
     // Apply NVS-configured boot volume before any playback.
     setVolume(vol);
 
-    if (domeUartAcquire(DOME_UART_AUDIO)) {
+    if (audioUartClaim()) {
         configureChirpRx();
         m_linkOk = loadManifestBanks(1500u, false);
-        domeUartRelease(DOME_UART_AUDIO);
+        audioUartRelease();
     } else {
         PA_LOG_INFO(TAG,
                     "CHIRP RX catalog discovery skipped: protoR2link holds the serial line; playback commands remain available");
@@ -697,14 +726,148 @@ void AudioDriverChirp::cooperativeCatalogYield() {
     }
 }
 
+static uint8_t chirpNativeVolume(uint8_t vol) {
+    return (uint8_t)((uint16_t)vol * CHIRP_VOL_MAX / 30u);
+}
+
+// =============================================================================
+// Stream model (ADR 0054, #447)
+//
+// The module, not the body, picks the stream a PLAY lands on: its lowest
+// inactive stream, and when every stream is busy, stream 0 (upstream
+// serial_commands.cpp getNextAvailableStream()). A stream that ends by itself
+// sends nothing, and on artoo-esp32 the module's replies cannot be heard at all
+// while the dome link holds the shared UART. So the body keeps only what it can
+// stand behind, per stream (ChirpStreamUse, include/audio_chirp.h):
+//
+//   IdleByProof      the body sent STOP:<n> or a bare STOP, or a STAT reply
+//                    attributed to n said idle, and nothing was sent there
+//                    since. Never inferred from time or from silence.
+//   MaybeVocal       a vocal may be playing there. Over-counting these costs
+//                    at most a STOP of a stream that had already gone quiet;
+//                    under-counting is what would let a vocal land on the
+//                    Background Track.
+//   BackgroundTrack  the Background Track's stream.
+//
+// The rules, each at one site below:
+//   1. The Background Track goes on stream 0 by construction
+//      (playBackgroundTrack()): STOP:0 is sent every time and takes effect
+//      before the module reads the next command, so the PLAY that follows lands
+//      on stream 0 whether or not any reply can be read. This is the only rule
+//      that places the Background Track. Where a reply can be read it may
+//      report the PLAY failed (readBackgroundTrackAnswer()), but it never moves
+//      the Background Track; only a STAT reply is proof that anything plays
+//      (queryModuleState()).
+//   2. Before every vocal PLAY while a Background Track is held, some other
+//      stream must be idle by proof, or the module could take stream 0 -- the
+//      Background Track -- for it. If none is, the vocal started longest ago is
+//      stopped first (operator decision, 2026-09-30, #447). The Background
+//      Track is never the one stopped (makeRoomBesideBackgroundTrack()).
+//   3. Every vocal PLAY carries the operator's level: the module keeps a volume
+//      per stream, so a vocal landing where the Background Track played would
+//      otherwise play at the Background Track's level (playTrackBanked()).
+//   4. A Track Stop stops every stream but the Background Track's; with no
+//      Background Track it is the bare STOP it always was (stopVocals()).
+//      Quiet, Sleep Mode entry and Sound switched off reach stop(), which stops
+//      everything, the Background Track included.
+// =============================================================================
+
+// The stream holding the Background Track, or CHIRP_NO_STREAM.
+uint8_t AudioDriverChirp::backgroundTrackStream() const {
+    for (uint8_t s = 0; s < CHIRP_STREAM_COUNT; ++s) {
+        if (m_streams[s].use == ChirpStreamUse::BackgroundTrack) {
+            return s;
+        }
+    }
+    return CHIRP_NO_STREAM;
+}
+
+// Rule 2. "Longest ago" is the body's order of the PLAYs it sent, which is the
+// best it has: a vocal that ended early unannounced still counts until a STAT
+// shows it idle, so the stream stopped here may already have been quiet.
+static_assert(CHIRP_STREAM_COUNT >= 2,
+              "a Background Track needs a stream of its own and at least one for vocals");
+void AudioDriverChirp::makeRoomBesideBackgroundTrack() {
+    const uint8_t backgroundStream = backgroundTrackStream();
+    if (backgroundStream == CHIRP_NO_STREAM) {
+        return;  // no Background Track: the module's own newest-wins is today's behaviour
+    }
+    uint8_t oldest = CHIRP_NO_STREAM;
+    for (uint8_t s = 0; s < CHIRP_STREAM_COUNT; ++s) {
+        if (s == backgroundStream) {
+            continue;
+        }
+        if (m_streams[s].use == ChirpStreamUse::IdleByProof) {
+            // The module takes this one or a lower inactive one. A playing
+            // Background Track is not inactive; a Background Track that ended
+            // on its own is, and the vocal may land on stream 0 -- see
+            // noteVocalSent().
+            return;
+        }
+        if (oldest == CHIRP_NO_STREAM || m_streams[s].sentSeq < m_streams[oldest].sentSeq) {
+            oldest = s;
+        }
+    }
+    stopStream(oldest);
+}
+
+// Where a vocal PLAY just went, as well as the body can say. The lowest stream
+// idle by proof is inactive, so the module took it or a lower stream that had
+// gone quiet unannounced -- one already held as maybe busy. Marking that stream
+// busy is the safe direction. With no stream idle by proof (which rule 2 rules
+// out while a Background Track is held) the module took some stream that had
+// ended, or stream 0 if none had; stream 0 is recorded.
+//
+// The limit: a Background Track that ended on its own, or one held through an
+// error that may have been a vocal's (readBackgroundTrackAnswer()), is still
+// held on stream 0 while stream 0 is in fact inactive -- upstream frees a
+// stream at the end of its file and says nothing -- so the next vocal can land
+// there. It stays held until a STAT says stream 0 is idle or the Background
+// Track is stopped; until then a Track Stop leaves that vocal playing and
+// stopBackgroundTrack() is what stops it.
+void AudioDriverChirp::noteVocalSent() {
+    uint8_t landed = 0;
+    for (uint8_t s = 0; s < CHIRP_STREAM_COUNT; ++s) {
+        if (m_streams[s].use == ChirpStreamUse::IdleByProof) {
+            landed = s;
+            break;
+        }
+    }
+    if (m_streams[landed].use != ChirpStreamUse::BackgroundTrack) {
+        m_streams[landed] = ChirpStream{ChirpStreamUse::MaybeVocal, ++m_sendSeq};
+    }
+}
+
+// What one STAT reply attributed to `stream` proves. Idle is proof whatever the
+// stream held: a Background Track that ended by itself, or never started, is no
+// longer held. Playing confirms a Background Track or a vocal already held; on
+// a stream held idle it is a sound the body did not place there, held as a
+// vocal from now on. Also asked with playing=true for a module "S:<n>,ply"
+// line, which only ever makes a stream look busier
+// (readBackgroundTrackAnswer()).
+void AudioDriverChirp::noteStreamObserved(uint8_t stream, bool playing) {
+    if (stream >= CHIRP_STREAM_COUNT) {
+        return;
+    }
+    if (!playing) {
+        m_streams[stream].use = ChirpStreamUse::IdleByProof;
+        return;
+    }
+    if (m_streams[stream].use == ChirpStreamUse::IdleByProof) {
+        m_streams[stream] = ChirpStream{ChirpStreamUse::MaybeVocal, ++m_sendSeq};
+    }
+}
+
 // -----------------------------------------------------------------------------
 // playTrack()
-// Play a track by 1-based index in Bank 1, Page A on stream 0.
+// Play a track by 1-based index in Bank 1, Page A. The module picks the stream.
 // -----------------------------------------------------------------------------
 void AudioDriverChirp::playTrack(uint16_t track) {
     playTrackBanked(track, 1, 'A');
 }
 
+// Every vocal goes out here -- flat tracks, Named Tracks, categories and the
+// $8nn bank path alike -- so rules 2 and 3 cannot be missed by a caller.
 void AudioDriverChirp::playTrackBanked(uint16_t index, uint8_t bank, char page) {
     if (index == 0) {
         return;
@@ -714,15 +877,25 @@ void AudioDriverChirp::playTrackBanked(uint16_t index, uint8_t bank, char page) 
     }
     page = normalizePage(page);
 
-    // Buffer sized for "PLAY:65535,255,Z" (16 chars) + null
+    makeRoomBesideBackgroundTrack();
+
+    // Buffer sized for "PLAY:65535,255,Z,99" (19 chars) + null
     char cmd[24];
-    snprintf(cmd, sizeof(cmd), "PLAY:%u,%u,%c", (unsigned)index, (unsigned)bank, page);
+    if (m_vocalVolume == CHIRP_VOL_UNSET) {
+        snprintf(cmd, sizeof(cmd), "PLAY:%u,%u,%c", (unsigned)index, (unsigned)bank, page);
+    } else {
+        snprintf(cmd, sizeof(cmd), "PLAY:%u,%u,%c,%u", (unsigned)index, (unsigned)bank, page,
+                 (unsigned)m_vocalVolume);
+    }
+    m_lastVocalSentMs = m_io.millisNow();
+    m_vocalSent = true;
     sendCommand(cmd);
+    noteVocalSent();
 }
 
 // -----------------------------------------------------------------------------
 // stop()
-// Stop all active streams.
+// Stop all active streams, the Background Track's included.
 // Format: "STOP\n"
 // -----------------------------------------------------------------------------
 void AudioDriverChirp::stop() {
@@ -731,8 +904,43 @@ void AudioDriverChirp::stop() {
     // idle and "no current track" are observations of what we just did, not
     // optimism. Leaving the old index behind is what kept the Sound page naming
     // a sound that had already stopped.
+    for (ChirpStream& stream : m_streams) {
+        stream.use = ChirpStreamUse::IdleByProof;
+    }
     m_currentTrack = 0;
     m_playState = 0x00;
+}
+
+// One stream. STOP:<n> takes effect before the module reads the next command,
+// which is what lets the stream model call n idle by proof.
+void AudioDriverChirp::stopStream(uint8_t stream) {
+    if (stream >= CHIRP_STREAM_COUNT) {
+        return;
+    }
+    char cmd[12];
+    snprintf(cmd, sizeof(cmd), "STOP:%u", (unsigned)stream);
+    sendCommand(cmd);
+    m_streams[stream].use = ChirpStreamUse::IdleByProof;
+}
+
+// Rule 4.
+void AudioDriverChirp::stopVocals() {
+    const uint8_t backgroundStream = backgroundTrackStream();
+    if (backgroundStream == CHIRP_NO_STREAM) {
+        stop();
+        return;
+    }
+    // Every other stream, not only those held busy: a stream held idle is
+    // idle by proof, but stopping it costs seven bytes and no doubt.
+    for (uint8_t s = 0; s < CHIRP_STREAM_COUNT; ++s) {
+        if (s != backgroundStream) {
+            stopStream(s);
+        }
+    }
+    // The sound last seen playing may have been a vocal just stopped or the
+    // Background Track; nothing is named until the next status snapshot says
+    // which. The play state stands: the Background Track may still be playing.
+    m_currentTrack = 0;
 }
 
 // -----------------------------------------------------------------------------
@@ -740,12 +948,160 @@ void AudioDriverChirp::stop() {
 // Set global volume. vol is 0-30 (clamped by AudioTask before this call).
 // Scales to CHIRP native range 0-99: N = (vol * CHIRP_VOL_MAX) / 30.
 // Format: "VOL:N\n"
+//
+// The operator's volume reaches every stream, the Background Track's included
+// (#447), so a Background Track playing at its own level moves to this one. It
+// is also the level every later vocal PLAY carries (rule 3).
 // -----------------------------------------------------------------------------
 void AudioDriverChirp::setVolume(uint8_t vol) {
-    uint8_t chirpVol = (uint8_t)((uint16_t)vol * CHIRP_VOL_MAX / 30u);
+    const uint8_t chirpVol = chirpNativeVolume(vol);
     char cmd[10];
     snprintf(cmd, sizeof(cmd), "VOL:%u", (unsigned)chirpVol);
     sendCommand(cmd);
+    m_vocalVolume = chirpVol;
+}
+
+// One stream's volume, "VOL:<n>,<v>": stays on that stream until it is set
+// again or a PLAY carrying a volume lands there.
+void AudioDriverChirp::setStreamVolume(uint8_t stream, uint8_t vol) {
+    if (stream >= CHIRP_STREAM_COUNT) {
+        return;
+    }
+    char cmd[16];
+    snprintf(cmd, sizeof(cmd), "VOL:%u,%u", (unsigned)stream, (unsigned)chirpNativeVolume(vol));
+    sendCommand(cmd);
+}
+
+// -----------------------------------------------------------------------------
+// playBackgroundTrack() Rule 1. One Background Track at a time: STOP:0 ends the
+// one already held, since a Background Track is only ever on stream 0.
+//
+// STOP:0 is sent every time, even when stream 0 is held idle by proof: that
+// proof may rest on a reply, and no reply decides where the Background Track
+// goes. It cuts a vocal still playing on stream 0, which is the price of
+// knowing the Background Track's stream without one.
+// -----------------------------------------------------------------------------
+bool AudioDriverChirp::playBackgroundTrack(uint16_t index, uint8_t bank, char page, uint8_t vol) {
+    if (index == 0) {
+        return false;
+    }
+    if (bank == 0) {
+        bank = 1;
+    }
+    page = normalizePage(page);
+
+    // Listen for the module's answer where it can be heard: always on a board
+    // with its own audio UART, and on artoo-esp32 only while the dome link does
+    // not hold the shared one. Drained first, so a line read afterwards came
+    // after the commands below -- though not necessarily in answer to them
+    // (readBackgroundTrackAnswer()).
+    const bool listening = audioUartClaim();
+    if (listening) {
+        configureChirpRx();
+        while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
+        resetFrameAssembly();
+    }
+
+    stopStream(0);
+
+    // Buffer sized for "PLAY:65535,255,Z,99" (19 chars) + null
+    char cmd[24];
+    snprintf(cmd, sizeof(cmd), "PLAY:%u,%u,%c,%u", (unsigned)index, (unsigned)bank, page,
+             (unsigned)chirpNativeVolume(vol));
+    const uint32_t sentMs = m_io.millisNow();
+    sendCommand(cmd);
+    m_streams[0] = ChirpStream{ChirpStreamUse::BackgroundTrack, ++m_sendSeq};
+
+    if (listening) {
+        // A vocal PLAY this recent can still be answering inside the Background
+        // Track's window, so an ERR: line there cannot be pinned on the
+        // Background Track.
+        const bool vocalJustSent =
+            m_vocalSent && (uint32_t)(sentMs - m_lastVocalSentMs) < CHIRP_STAT_REPLY_MS;
+        readBackgroundTrackAnswer(vocalJustSent);
+        audioUartRelease();
+    }
+    if (backgroundTrackStream() == CHIRP_NO_STREAM) {
+        return false;  // readBackgroundTrackAnswer() logged the module's refusal
+    }
+    // DEBUG: AudioTask logs the start at INFO, with its source.
+    PA_LOG_DEBUG(TAG, "Background Track on stream 0%s",
+                 listening ? "" : " (module replies not heard)");
+    return true;
+}
+
+// The module's answer to the Background Track's PLAY, where it can be heard. It
+// can report a failure; it never moves the Background Track, which rule 1 put
+// on stream 0.
+//
+// handlePlay() answers a bad target with "ERR:PARAM" and a file it cannot open
+// with "ERR:NOFILE", printed straight to the UART, while "S:<n>,ply" waits in
+// the module's 15-slot reply queue -- which it holds back while it is busy
+// streaming. So the Background Track's own S: line can arrive after the window,
+// and an earlier vocal's S: line inside it:
+//   - any ERR: line is the Background Track's failure and drops it, unless a
+//     vocal PLAY went out within one reply window before the Background Track's
+//     (vocalJustSent): then it may be the vocal's, and the Background Track
+//     stays held until a STAT of stream 0 says idle. Holding too long is the
+//     safe direction; dropping a playing Background Track is what would let the
+//     next vocal steal its stream.
+//   - "S:<n>,ply" with n != 0 contradicts rule 1. It is logged, and stream n is
+//     held as maybe busy -- something plays there, whatever the line answered.
+void AudioDriverChirp::readBackgroundTrackAnswer(bool vocalJustSent) {
+    m_backgroundTrackErr[0] = '\0';
+    char* const err = m_backgroundTrackErr;
+    const uint32_t startMs = m_io.millisNow();
+    char line[CHIRP_STAT_LINE_MAX];
+    while (true) {
+        const uint32_t elapsed = (uint32_t)(m_io.millisNow() - startMs);
+        if (elapsed >= CHIRP_STAT_REPLY_MS) {
+            break;
+        }
+        if (readFrame(line, (uint8_t)sizeof(line), CHIRP_STAT_REPLY_MS - elapsed) !=
+            ChirpFrame::Complete) {
+            continue;
+        }
+        if (strncmp(line, "ERR:", 4) == 0) {
+            if (err[0] == '\0') {
+                strncpy(err, line, sizeof(m_backgroundTrackErr) - 1);
+                err[sizeof(m_backgroundTrackErr) - 1] = '\0';
+            }
+        } else if (strncmp(line, "S:", 2) == 0) {
+            char* end = nullptr;
+            const unsigned long n = strtoul(line + 2, &end, 10);
+            if (end != line + 2 && strncmp(end, ",ply", 4) == 0 && n != 0 &&
+                n < CHIRP_STREAM_COUNT) {
+                PA_LOG_WARN(TAG,
+                            "Background Track: module reported a PLAY on stream %lu; "
+                            "Background Track held on stream 0",
+                            n);
+                noteStreamObserved((uint8_t)n, true);
+            }
+            // "S:0,ply" agrees with rule 1, and "S:<n>,idle,,0" answers a STOP.
+        }
+    }
+
+    if (err[0] == '\0') {
+        return;
+    }
+    if (vocalJustSent) {
+        PA_LOG_WARN(TAG,
+                    "Background Track: %s came back, possibly for the vocal sent just "
+                    "before; Background Track held",
+                    err);
+        return;
+    }
+    // The PLAY failed, so stream 0 -- stopped just before it -- stays inactive.
+    m_streams[0].use = ChirpStreamUse::IdleByProof;
+    PA_LOG_WARN(TAG, "Background Track not played: the module answered %s", err);
+}
+
+// Stop the Background Track and nothing else.
+void AudioDriverChirp::stopBackgroundTrack() {
+    const uint8_t backgroundStream = backgroundTrackStream();
+    if (backgroundStream != CHIRP_NO_STREAM) {
+        stopStream(backgroundStream);
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -764,7 +1120,7 @@ void AudioDriverChirp::setVolume(uint8_t vol) {
 // -----------------------------------------------------------------------------
 bool AudioDriverChirp::refreshCatalog() {
     m_lastRefreshOutcome = AudioCatalogRefreshOutcome::Failed;
-    if (domeUartOwnedBy(DOME_UART_DOME)) {
+    if (chirpRxHeldByDomeLink()) {
         return false;
     }
     configureChirpRx();
@@ -1139,8 +1495,8 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     out.currentTrack = 0;
     out.missingTrack = 0;
 
-    // Guard: DomeLink has priority on UART2; return cached state unchanged.
-    if (domeUartOwnedBy(DOME_UART_DOME)) {
+    // Guard: DomeLink has priority on a shared controller; return cached state unchanged.
+    if (chirpRxHeldByDomeLink()) {
         out.linkOk = m_linkOk;
         out.playState = m_playState;
         out.currentTrack = m_currentTrack;
@@ -1152,27 +1508,63 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
     resetFrameAssembly();
 
+    // A reply the last snapshot did not wait for (m_statReplyOwed) can still be
+    // on the wire, and read in window 0 it would shift every reply after it by
+    // one stream. A snapshot that starts owed was not enough to settle it: it
+    // reads the late reply in window 0, then each window reads the previous
+    // query's reply, every window counts as answered, and the reply to the last
+    // query is still in flight when the flag clears. So one whole reply window
+    // is read and thrown away before STAT:0 instead -- 200 ms on Core 0, once
+    // per lapse -- and the snapshot that follows is attributable on its own
+    // terms, clearing or setting the flag by its own result.
+    if (m_statReplyOwed) {
+        const uint32_t settleStartMs = m_io.millisNow();
+        char stale[CHIRP_STAT_LINE_MAX];
+        while (true) {
+            const uint32_t elapsed = (uint32_t)(m_io.millisNow() - settleStartMs);
+            if (elapsed >= CHIRP_STAT_REPLY_MS) {
+                break;
+            }
+            (void)readFrame(stale, (uint8_t)sizeof(stale), CHIRP_STAT_REPLY_MS - elapsed);
+        }
+        resetFrameAssembly();
+    }
+
     // Every default stream, asked one at a time. Stream 0 going idle while 1 or
     // 2 keep playing is the live lie: a beep that ended under a running piece
     // of music used to report the whole module idle.
     //
-    // STAT replies carry no stream number, so this counts them rather than
-    // attributing them: the module answers each query exactly once, so three
-    // valid idle replies mean three streams answered idle, whichever query each
-    // one belongs to. A stream that does not answer is NOT an idle stream.
+    // STAT replies carry no stream number, so the play state counts them
+    // rather than attributing them: the module answers each query exactly
+    // once, so three valid idle replies mean three streams answered idle,
+    // whichever query each one belongs to. A stream that does not answer is
+    // NOT an idle stream.
+    //
+    // The stream model (ADR 0054) does need to know which stream said what,
+    // and handleStat() answers synchronously, so the reply inside query n's own
+    // window is n's -- while every earlier query in this snapshot was answered
+    // in its own window. Once one was not, its reply may still arrive in a
+    // later window, so attribution stops for the rest of the snapshot and only
+    // the counts are kept. It may also arrive after this snapshot, which is
+    // what m_statReplyOwed and the settle window above are for. (A queryStatus
+    // can follow an auto-query at once.)
+    bool attributable = true;
+    bool everyQueryAnswered = true;
     uint8_t playingReplies = 0;
     uint8_t idleReplies = 0;
     uint32_t rxBytes = 0;
     uint16_t unparsableLines = 0;
     char playingPath[CHIRP_STAT_PATH_MAX] = {0};
 
-    for (uint8_t stream = 0; stream < CHIRP_STAT_STREAM_COUNT; ++stream) {
+    for (uint8_t stream = 0; stream < CHIRP_STREAM_COUNT; ++stream) {
         char cmd[12];
         snprintf(cmd, sizeof(cmd), "STAT:%u", (unsigned)stream);
         sendCommand(cmd);
 
         const uint32_t startMs = m_io.millisNow();
         char line[CHIRP_STAT_LINE_MAX];
+        bool answered = false;
+        bool answeredPlaying = false;
         while (true) {
             const uint32_t elapsed = (uint32_t)(m_io.millisNow() - startMs);
             if (elapsed >= CHIRP_STAT_REPLY_MS) {
@@ -1212,16 +1604,26 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
             } else {
                 ++idleReplies;
             }
+            answered = true;
+            answeredPlaying = playing;
             break;
         }
+        if (!answered) {
+            attributable = false;
+            everyQueryAnswered = false;
+        } else if (attributable) {
+            noteStreamObserved(stream, answeredPlaying);
+        }
     }
+
+    m_statReplyOwed = !everyQueryAnswered;
 
     if (playingReplies > 0) {
         out.playState = 0x01;
         out.linkOk = true;
         // Unidentified while playing is honest; a stale echo is not.
         out.currentTrack = catalogIndexForPath(playingPath);
-    } else if (idleReplies >= CHIRP_STAT_STREAM_COUNT) {
+    } else if (idleReplies >= CHIRP_STREAM_COUNT) {
         out.playState = 0x00;
         out.linkOk = true;
         out.currentTrack = 0;
@@ -1274,14 +1676,14 @@ void AudioDriverChirp::getCachedState(AudioModuleState& out) const {
 
 // -----------------------------------------------------------------------------
 // classifyRxStatus()
-// CHIRP RX shares UART2 with DomeLink. When DomeLink owns the bus, a false
-// linkOk is BLOCKED rather than NO_RESPONSE.
+// Where CHIRP RX shares a controller with DomeLink and DomeLink holds it, a
+// false linkOk is BLOCKED rather than NO_RESPONSE.
 // -----------------------------------------------------------------------------
 AudioRxStatus AudioDriverChirp::classifyRxStatus(bool linkOk) const {
     if (linkOk) {
         return AUDIO_RX_AVAILABLE;
     }
-    if (domeUartOwnedBy(DOME_UART_DOME)) {
+    if (chirpRxHeldByDomeLink()) {
         return AUDIO_RX_BLOCKED_BY_DOME_UART;
     }
     return AUDIO_RX_NO_RESPONSE;
