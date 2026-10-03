@@ -144,6 +144,12 @@ static const char* noSpaceRefusal(char* out, size_t cap) {
 // -----------------------------------------------------------------------------
 void takeStoreInit() {
     if (!lock()) return;
+    // A take written half way - power lost mid-write, or an upload that never
+    // finished - holds a take's blocks under a name nothing else removes, and
+    // on the artoo-esp32 that is the room its one take needs.
+    if (LittleFS.exists(TMP_PATH) && !LittleFS.remove(TMP_PATH)) {
+        PA_LOG_ERROR(TAG, "cannot remove %s", TMP_PATH);
+    }
     uint8_t removed = 0;
     TakeFileNameParts t;
     // A ".new" take is a performance its builder never saved into a sequence,
