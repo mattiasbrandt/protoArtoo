@@ -491,7 +491,9 @@ static void writeOutputPulse(uint8_t slot, uint16_t pulseUs) {
 
 // -----------------------------------------------------------------------------
 // planMove()
-// Plan a move to targetUs from where the Output is. One that replaces a move in
+// Plan a move to targetUs from where the Output is, into the Output's `ramp`,
+// and answer whether it ramps: false is a snap, which the caller writes. One
+// that replaces a move in
 // progress starts where that move has got to and as fast as it is going, both
 // read off its ramp at nowMs (#442): commandedUs is the last frame's write, up
 // to a frame old, and paired with the speed now it would be a step. One from
@@ -504,15 +506,22 @@ static void writeOutputPulse(uint8_t slot, uint16_t pulseUs) {
 // by a hold or a stop leaves a ramp behind it that the Output no longer follows.
 // A leg's dwell is `moving` over a ramp that has arrived, which reads as no
 // speed at all (servoMotionSpeedAt()).
+//
+// noinline, and storing rather than returning the plan, deliberately: the
+// retarget's float locals and the 16 B plan stay in this frame, off
+// servoTask()'s, which processCommand() and so driveOutputTo() are inlined into
+// and which every route on ServoTask's measured chain starts from (ADR 0040).
+// A plan returned by value is a temporary in the caller's frame.
 // -----------------------------------------------------------------------------
-static ServoMotionRamp planMove(uint8_t slot, bool wasMoving, uint16_t targetUs,
-                               const ServoMotionProfile& profile, uint32_t nowMs) {
-    if (!wasMoving) {
-        return servoMotionRetarget(s_out[slot].commandedUs, 0.0f, targetUs, profile, nowMs);
-    }
+static bool __attribute__((noinline)) planMove(uint8_t slot, bool wasMoving, uint16_t targetUs,
+                                               const ServoMotionProfile& profile, uint32_t nowMs) {
     const ServoMotionRamp& was = s_out[slot].ramp;
-    return servoMotionRetarget(servoMotionPositionAt(was, nowMs), servoMotionSpeedAt(was, nowMs),
-                               targetUs, profile, nowMs);
+    const ServoMotionRamp plan =
+        wasMoving ? servoMotionRetarget(servoMotionPositionAt(was, nowMs),
+                                        servoMotionSpeedAt(was, nowMs), targetUs, profile, nowMs)
+                  : servoMotionRetarget(s_out[slot].commandedUs, 0.0f, targetUs, profile, nowMs);
+    s_out[slot].ramp = plan;
+    return plan.durationMs != 0;
 }
 
 // -----------------------------------------------------------------------------
@@ -567,13 +576,11 @@ static void driveOutputTo(uint8_t slot, uint16_t pulseUs, uint16_t throwMs = 0,
     }
 
     servoMotionOverride(&profile, throwMs, easingPlusOne);
-    const ServoMotionRamp ramp = planMove(slot, wasMoving, targetUs, profile, millis());
-    if (ramp.durationMs == 0) {
+    if (!planMove(slot, wasMoving, targetUs, profile, millis())) {
         writeOutputPulse(slot, targetUs);
         armReleaseOnArrival(slot, millis());
         return;
     }
-    s_out[slot].ramp = ramp;
     s_out[slot].moving = true;
     // Nothing is written until the next frame, but the move already has a
     // target, and that is what a surface shows beside where the output stands.
@@ -653,9 +660,7 @@ static void beginLeg(uint8_t slot, uint8_t leg, uint32_t nowMs, bool wasMoving) 
     const ServoOutputAddress output = servoOutputSlotAddress(slot);
     ServoMotionProfile profile = {};
     configCacheReadServoOutputMotionProfile(output.driver, output.channel, &profile);
-    const ServoMotionRamp ramp = planMove(slot, wasMoving, targetUs, profile, nowMs);
-    s_out[slot].ramp = ramp;
-    if (ramp.durationMs == 0) {
+    if (!planMove(slot, wasMoving, targetUs, profile, nowMs)) {
         // A snap: the leg is over the moment it is written.
         writeOutputPulse(slot, targetUs);
         legArrived(slot, nowMs);
@@ -873,6 +878,7 @@ static void beginTravel(uint8_t slot, CommandSource source) {
 // A move that had to stop first -- a retarget behind the Output, or one too
 // close to slow down for (servoMotionRetarget()) -- is the same two halves: the
 // stop arrives, and servoMotionSettleBack() plans the rest from rest.
+
 // -----------------------------------------------------------------------------
 static bool stepMove(uint8_t slot, uint32_t nowMs) {
     writeOutputPulse(slot, servoMotionPositionAt(s_out[slot].ramp, nowMs));

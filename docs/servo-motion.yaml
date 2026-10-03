@@ -379,10 +379,9 @@ functions:
       - {name: nowMs, type: u32}
     returns: ServoMotionRamp
     body: |
-      if arrived.restarts:
-          return servoMotionPlan(arrived.toUs, arrived.settleUs, profile, nowMs)
       settle: ServoMotionProfile = profile
-      settle.easing = SERVO_EASE_NONE
+      if not arrived.restarts:
+          settle.easing = SERVO_EASE_NONE
       return servoMotionPlan(arrived.toUs, arrived.settleUs, settle, nowMs)
 
   servoMotionArrivalMs:

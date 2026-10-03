@@ -4,7 +4,7 @@
 // Auto-generated from docs/servo-motion.yaml by tools/generate_servo_motion.py
 // DO NOT EDIT MANUALLY
 //
-// Source digest: sha256 71cac40fbf42e47cef33e605edaa05646c0cab38522cc8c963f45b9245a1eea0
+// Source digest: sha256 6ec80e8471082212aa2f848d72b46505da398dab60fd9f0ab1c969ac7cce5de9
 //
 // The Servo Output motion model, as ServoTask runs it: the functions below
 // are generated from the same declaration as include/servo_motion_model.h, so
@@ -307,11 +307,10 @@
   // throw or ease shaped the plan that arrived and not this one.
   // -----------------------------------------------------------------------------
   function servoMotionSettleBack(arrived, profile, nowMs) {
-    if (arrived.restarts) {
-      return servoMotionPlan(arrived.toUs, arrived.settleUs, profile, nowMs);
-    }
     const settle = { ...profile };
-    settle.easing = SERVO_EASE_NONE;
+    if (!arrived.restarts) {
+      settle.easing = SERVO_EASE_NONE;
+    }
     return servoMotionPlan(arrived.toUs, arrived.settleUs, settle, nowMs);
   }
 
@@ -338,7 +337,7 @@
   window.ServoMotion = Object.freeze({
     source: "docs/servo-motion.yaml",
     generator: "tools/generate_servo_motion.py",
-    sourceSha256: "71cac40fbf42e47cef33e605edaa05646c0cab38522cc8c963f45b9245a1eea0",
+    sourceSha256: "6ec80e8471082212aa2f848d72b46505da398dab60fd9f0ab1c969ac7cce5de9",
     SERVO_THROW_MS_MIN,
     SEQ_CADENCE_FLOOR_MS,
     ServoEasing: Object.freeze({ SERVO_EASE_NONE, SERVO_EASE_SOFT, SERVO_EASE_OVERSHOOT, SERVO_EASE_COUNT }),

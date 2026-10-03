@@ -4,7 +4,7 @@
 // Auto-generated from docs/servo-motion.yaml by tools/generate_servo_motion.py
 // DO NOT EDIT MANUALLY
 //
-// Source digest: sha256 71cac40fbf42e47cef33e605edaa05646c0cab38522cc8c963f45b9245a1eea0
+// Source digest: sha256 6ec80e8471082212aa2f848d72b46505da398dab60fd9f0ab1c969ac7cce5de9
 //
 // How a Servo Output's move is laid out in time from its Motion Profile
 // (ADR 0052). ServoTask plans every move with the functions below, and the
@@ -343,11 +343,10 @@ inline bool servoMotionSettles(const ServoMotionRamp& ramp) {
 // throw or ease shaped the plan that arrived and not this one.
 // -----------------------------------------------------------------------------
 inline ServoMotionRamp servoMotionSettleBack(const ServoMotionRamp& arrived, const ServoMotionProfile& profile, uint32_t nowMs) {
-    if (arrived.restarts) {
-        return servoMotionPlan(arrived.toUs, arrived.settleUs, profile, nowMs);
-    }
     ServoMotionProfile settle = profile;
-    settle.easing = SERVO_EASE_NONE;
+    if (!arrived.restarts) {
+        settle.easing = SERVO_EASE_NONE;
+    }
     return servoMotionPlan(arrived.toUs, arrived.settleUs, settle, nowMs);
 }
 
