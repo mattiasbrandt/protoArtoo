@@ -475,7 +475,7 @@
     (name === standDownName() ? '<span class="seq-badge">Stand Down</span>' : "");
   const standDownAct = (name) =>
     (standDownName() === null || name === standDownName() ? ""
-      : `<button type="button" class="seq-act" data-action="stand-down" data-seq-name="${window.PAUtils.escapeAttr(name)}">Use as Stand Down</button>`);
+      : `<button type="button" class="seq-act icon-act" data-action="stand-down" data-seq-name="${window.PAUtils.escapeAttr(name)}">${window.PAUi.actFace("pin-outline", "Use as Stand Down")}</button>`);
 
   // Name, What it does, Steps, Runs, and the row's acts.
   const LIST_COLUMNS = 5;
@@ -602,7 +602,7 @@
     const saysEl = document.getElementById("seq-editor-running-name");
     if (saysEl) saysEl.textContent = `Running ${name}`;
     const stopBtn = document.getElementById("seq-editor-stop");
-    if (stopBtn) stopBtn.textContent = `Stop ${name}`;
+    if (stopBtn) window.PAUi.setAct(stopBtn, `Stop ${name}`);
   };
 
   const paintRun = () => {
@@ -715,10 +715,10 @@
     // Share to project: only the operator's own custom sequences (not factory-derived).
     const isCustom = !seq.source || seq.source === "user";
     const shareBtn = isCustom
-      ? `<button type="button" class="seq-act" data-action="share" data-seq-name="${name}" title="Open a pre-filled GitHub issue to share this sequence with the project">Share to project</button>`
+      ? `<button type="button" class="seq-act icon-act" data-action="share" data-seq-name="${name}">${window.PAUi.actFace("share-variant-outline", "Share to project")}</button>`
       : "";
 
-    const testBtnDisabled = seq.valid === false ? 'disabled title="Invalid sequence cannot be run — edit to repair"' : `data-seq-name="${name}"`;
+    const testBtnDisabled = seq.valid === false ? "disabled" : `data-seq-name="${name}"`;
     const more = moreOpen.has(seq.name);
 
     return `
@@ -731,16 +731,16 @@
           <td class="seq-count-cell">${reportedLength(seq)}</td>
           <td class="seq-item-acts">
             <span class="seq-acts">
-              <button type="button" class="seq-act is-strong" data-action="edit" data-seq-name="${name}">Edit</button>
-              <button type="button" class="seq-act" data-action="test" ${testBtnDisabled}>Test</button>
-              <button type="button" class="btn btn-sm seq-stop hidden" data-action="stop" data-seq-name="${name}">Stop ${window.PAUtils.escapeHtml(seq.name)}</button>
+              <button type="button" class="seq-act is-strong icon-act" data-action="edit" data-seq-name="${name}">${window.PAUi.actFace("pencil-outline", "Edit")}</button>
+              <button type="button" class="seq-act icon-act" data-action="test" ${testBtnDisabled}>${window.PAUi.actFace("play", "Test")}</button>
+              <button type="button" class="btn btn-sm seq-stop icon-act hidden" data-action="stop" data-seq-name="${name}">${window.PAUi.actFace("stop", `Stop ${seq.name}`)}</button>
               ${standDownAct(seq.name)}
               <button type="button" class="seq-act seq-disclose" data-action="more" data-seq-name="${name}" aria-expanded="${more}">${chevron}More</button>
               <span class="seq-item-more${more ? "" : " hidden"}">
-                <button type="button" class="seq-act" data-action="duplicate" data-seq-name="${name}">Duplicate</button>
-                <button type="button" class="seq-act" data-action="export" data-seq-name="${name}">Export</button>
+                <button type="button" class="seq-act icon-act" data-action="duplicate" data-seq-name="${name}">${window.PAUi.actFace("content-copy", "Duplicate")}</button>
+                <button type="button" class="seq-act icon-act" data-action="export" data-seq-name="${name}">${window.PAUi.actFace("download-outline", "Export")}</button>
                 ${shareBtn}
-                <button type="button" class="seq-act seq-act-danger" data-action="memory-wipe" data-seq-name="${name}">Memory Wipe</button>
+                <button type="button" class="seq-act seq-act-danger icon-act" data-action="memory-wipe" data-seq-name="${name}">${window.PAUi.actFace("delete-outline", "Memory Wipe")}</button>
               </span>
             </span>
           </td>
@@ -765,8 +765,8 @@
           <td class="seq-count-cell">${reportedLength(builtin)}</td>
           <td class="seq-item-acts">
             <span class="seq-acts">
-              <button type="button" class="seq-act is-strong" data-action="tune" data-builtin-name="${name}" title="Open to edit. Save under the same name to retrain it.">Tune</button>
-              <button type="button" class="seq-act" data-action="timeline" data-builtin-name="${name}">Timeline</button>
+              <button type="button" class="seq-act is-strong icon-act" data-action="tune" data-builtin-name="${name}">${window.PAUi.actFace("pencil-outline", "Tune")}</button>
+              <button type="button" class="seq-act icon-act" data-action="timeline" data-builtin-name="${name}">${window.PAUi.actFace("timeline-outline", "Timeline")}</button>
               ${standDownAct(builtin.name)}
             </span>
           </td>
@@ -865,7 +865,7 @@
 
   // The way back to the list, as the strip's first act.
   const backHtml = (attrs) =>
-    `<button type="button" class="seq-act seq-back" ${attrs}><svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-left"/></svg>All sequences</button>`;
+    `<button type="button" class="seq-act seq-back icon-act" ${attrs}>${window.PAUi.actFace("arrow-u-left-top", "All sequences")}</button>`;
 
   const closeTimeline = () => {
     if (timeline) {
@@ -918,7 +918,7 @@
           <span class="seq-name">${window.PAUtils.escapeHtml(seq.name || builtinName)}</span>
           <span class="seq-badge" title="Built-in Factory sequence">Factory</span>
           <span class="seq-gap"></span>
-          <button type="button" class="seq-act is-strong" data-stage-act="tune" title="Open to edit. Save under the same name to retrain it.">Tune</button>
+          <button type="button" class="seq-act is-strong icon-act" data-stage-act="tune">${window.PAUi.actFace("pencil-outline", "Tune")}</button>
         </div>
         ${stageHtml({ views: halfSwitchHtml() })}
       </div>`;
@@ -1595,7 +1595,7 @@
       + settingRow("Parts", `<span class="setting-value">${esc(names)}</span>`)
       + `</div>`
       // Not offered while a take runs: Keep is the press then.
-      + acts(takePoll === null ? '<button type="button" class="seq-act" data-picked="perform-again">Perform again</button>' : "");
+      + acts(takePoll === null ? `<button type="button" class="seq-act icon-act" data-picked="perform-again">${window.PAUi.actFace("record-circle-outline", "Perform again")}</button>` : "");
   };
 
   const pickedHtml = (blocks) => {
@@ -1611,7 +1611,7 @@
     const removeWords = takeCount === 0 ? (stepCount > 1 ? `Remove ${stepCount} steps` : "Remove")
       : blocks.length > 1 ? `Remove ${blocks.length} blocks` : "Remove";
     const acts = (others = "") =>
-      `<div class="seq-picked-acts">${others}<button type="button" class="seq-act" data-picked="remove">${removeWords}</button></div>`;
+      `<div class="seq-picked-acts">${others}<button type="button" class="seq-act icon-act" data-picked="remove">${window.PAUi.actFace("delete-outline", removeWords)}</button></div>`;
     const remove = acts();
     if (blocks.length > 1) {
       const nudge = window.SeqTimeline;
@@ -1627,7 +1627,7 @@
     const beat = beatWords(step);
     const startsAt = settingRow("Starts at",
       `<span class="seq-row-ctl">${numberCell("start", Math.round(block.t0), STEP_LIMITS.t, "Starts at, in milliseconds")}`
-      + `${beat ? `<span class="seq-unit">${esc(beat)}</span><button type="button" class="seq-act" data-picked="off-beat">Off the beat</button>` : ""}</span>`);
+      + `${beat ? `<span class="seq-unit">${esc(beat)}</span><button type="button" class="seq-act icon-act" data-picked="off-beat">${window.PAUi.actFace("music-note-off-outline", "Off the beat")}</button>` : ""}</span>`);
     // Picking a beat (ADR 0060): the bars and their beats, under where the
     // block starts, for a routine with a tempo. A step a loop repeats is
     // timed from its pass and gets none.
@@ -1659,7 +1659,7 @@
     const phrase = step.type === "sequence";
     const unread = phrase ? phraseUnread(step) : "";
     const split = (G && !G.onDome(step)) || (phrase && phraseRead(step.ref))
-      ? '<button type="button" class="seq-act" data-picked="split">Split into steps</button>' : "";
+      ? `<button type="button" class="seq-act icon-act" data-picked="split">${window.PAUi.actFace("arrow-split-vertical", "Split into steps")}</button>` : "";
     return head((phrase ? phraseName(step) : block.name) || block.words || stepKindName(step), `${stepKindName(step)}${lights ? ` · ${lights}` : ""} · step ${at + 1}`)
       + `<div class="setting-rows seq-picked-rows">${startsAt}${beatRow}${kindRows(step, at)}</div>`
       + (unread ? `<p class="hint seq-brick">${unread}</p>` : "")
@@ -3716,25 +3716,25 @@
           <span class="seq-state" id="seq-editor-state" role="status"></span>
           <span class="seq-gap"></span>
           <span class="seq-run">
-            <button id="seq-editor-test" class="btn btn-sm" type="button">Test on the droid</button>
+            <button id="seq-editor-test" class="btn btn-sm icon-act" type="button">${window.PAUi.actFace("play", "Test on the droid")}</button>
             <span class="hint hidden" id="seq-editor-test-hint">Runs the last saved copy.</span>
             <span class="seq-running hidden" id="seq-editor-running" role="status"><span class="indicator ok seq-live" aria-hidden="true"></span><span id="seq-editor-running-name"></span></span>
-            <button id="seq-editor-stop" class="btn btn-sm seq-stop hidden" type="button"></button>
+            <button id="seq-editor-stop" class="btn btn-sm seq-stop icon-act hidden" type="button">${window.PAUi.actFace("stop", "Stop")}</button>
           </span>
           <span class="seq-run">
-            <button id="seq-editor-perform" class="btn btn-sm" type="button">Perform</button>
+            <button id="seq-editor-perform" class="btn btn-sm icon-act" type="button">${window.PAUi.actFace("record-circle-outline", "Perform")}</button>
             <span class="seq-running hidden" id="seq-editor-performing" role="status"><span class="indicator ok seq-live" id="seq-editor-performing-lamp" aria-hidden="true"></span><span id="seq-editor-performing-words"></span></span>
-            <button id="seq-editor-keep" class="btn btn-sm seq-stop hidden" type="button">Keep</button>
+            <button id="seq-editor-keep" class="btn btn-sm seq-stop icon-act hidden" type="button">${window.PAUi.actFace("check", "Keep")}</button>
           </span>
           <span class="seq-strip-seam" aria-hidden="true"></span>
           <span class="seq-verdict" id="seq-editor-validation-summary" aria-live="polite" aria-label="Validation status">
             <!-- Populated by updateValidationSummary() -->
           </span>
           <span class="seq-keep">
-            <button id="seq-editor-save" class="btn btn-sm accent" type="button">Save</button>
-            <button id="seq-editor-undo" class="seq-act" type="button" disabled>Undo</button>
-            <button id="seq-editor-redo" class="seq-act" type="button" disabled>Redo</button>
-            <button id="seq-editor-revert" class="seq-act" type="button" aria-label="Discard unsaved changes">Revert</button>
+            <button id="seq-editor-save" class="btn btn-sm accent icon-act" type="button">${window.PAUi.actFace("content-save-outline", "Save")}</button>
+            <button id="seq-editor-undo" class="seq-act icon-act" type="button" disabled>${window.PAUi.actFace("undo", "Undo")}</button>
+            <button id="seq-editor-redo" class="seq-act icon-act" type="button" disabled>${window.PAUi.actFace("redo", "Redo")}</button>
+            <button id="seq-editor-revert" class="seq-act icon-act" type="button">${window.PAUi.actFace("restore", "Revert")}</button>
           </span>
           <p class="hint seq-editor-prerun hidden" id="seq-editor-prerun" aria-live="polite"></p>
           <div class="seq-editor-feedback" id="seq-editor-feedback" aria-live="polite" aria-label="Editor feedback"></div>
@@ -3751,10 +3751,10 @@
                   <input id="seq-editor-bpm" class="number-cell" type="number" min="1" max="600" step="0.1" value="${seq.tempo ? esc(seq.tempo.bpm) : ""}" placeholder="none" aria-label="Tempo in beats per minute">
                   <span class="setting-unit">BPM</span>
                 </span>
-                <button id="seq-editor-tap-open" class="seq-act" type="button" aria-expanded="false" aria-controls="seq-editor-tap">Tap along</button>
-                <label class="seq-act" for="seq-editor-track">Analyze a track</label>
+                <button id="seq-editor-tap-open" class="seq-act icon-act" type="button" aria-expanded="false" aria-controls="seq-editor-tap">${window.PAUi.actFace("metronome", "Tap along")}</button>
+                <label class="seq-act icon-act" for="seq-editor-track">${window.PAUi.actFace("waveform", "Analyze a track")}</label>
                 <input id="seq-editor-track" class="hidden" type="file" accept="audio/*" aria-label="Your copy of the track">
-                <button id="seq-editor-retime" class="seq-act${seq.tempo ? "" : " hidden"}" type="button">Retime to the grid</button>
+                <button id="seq-editor-retime" class="seq-act icon-act${seq.tempo ? "" : " hidden"}" type="button">${window.PAUi.actFace("grid", "Retime to the grid")}</button>
               </span>
               <span class="setting-value seq-tempo-source" id="seq-editor-tempo-source">${tempoSourceLabel(seq.tempo)}</span>
             </div>
@@ -3762,10 +3762,10 @@
             <div id="seq-editor-tap" class="setting-row hidden">
               <span class="setting-name">Tap on the beat</span>
               <span class="seq-row-ctl">
-                <button id="seq-editor-tap-play" class="seq-act" type="button">Play on the droid</button>
-                <button id="seq-editor-tap-beat" class="btn btn-sm" type="button">Tap</button>
+                <button id="seq-editor-tap-play" class="seq-act icon-act" type="button">${window.PAUi.actFace("play", "Play on the droid")}</button>
+                <button id="seq-editor-tap-beat" class="btn btn-sm icon-act" type="button">${window.PAUi.actFace("gesture-tap", "Tap")}</button>
                 <span class="setting-unit" id="seq-editor-tap-count" role="status">0 taps</span>
-                <button id="seq-editor-tap-use" class="seq-act" type="button" disabled>Use</button>
+                <button id="seq-editor-tap-use" class="seq-act icon-act" type="button" disabled>${window.PAUi.actFace("check", "Use")}</button>
               </span>
               <span class="setting-value"></span>
             </div>
@@ -4692,7 +4692,7 @@
     el.innerHTML = takes.length === 0
       ? `<span class="hint">None</span>`
       : takes.map((take, index) =>
-        `<span class="seq-take">Take ${index + 1}<button type="button" class="seq-act" data-take-out="${window.PAUtils.escapeHtml(take.id)}">Remove</button></span>`).join("");
+        `<span class="seq-take">Take ${index + 1}<button type="button" class="seq-act icon-act" data-take-out="${window.PAUtils.escapeHtml(take.id)}">${window.PAUi.actFace("delete-outline", "Remove")}</button></span>`).join("");
   };
 
   const takeOut = (id) => {
@@ -4897,7 +4897,7 @@
     els.wipeFeedback.classList.add("hidden");
     els.modalWipeConfirm.classList.remove("hidden");
     els.modalWipeConfirm.disabled = true;
-    els.modalWipeCancel.textContent = "Keep it";
+    window.PAUi.setAct(els.modalWipeCancel, "Keep it");
 
     const updateWipeButton = () => {
       els.modalWipeConfirm.disabled = els.wipeConfirmInput.value !== _pendingWipeSeqName;
@@ -4939,7 +4939,7 @@
         els.wipeDanglingInfo.classList.remove("hidden");
         els.wipeConfirmInput.disabled = true;
         els.modalWipeConfirm.classList.add("hidden");
-        els.modalWipeCancel.textContent = "Close";
+        window.PAUi.setAct(els.modalWipeCancel, "Close");
         els.modalWipeCancel.focus();
       } else {
         hideModal(els.modalWipe);

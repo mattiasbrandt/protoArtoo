@@ -932,7 +932,7 @@
     hosts.bar.innerHTML =
       `<span class="tl-now" role="status" aria-live="polite"></span>` +
       (typeof options.onPose === "function"
-        ? `<button type="button" class="seq-act" data-tl-act="pose">Move the droid to this moment</button>`
+        ? `<button type="button" class="seq-act icon-act" data-tl-act="pose">${window.PAUi.actFace("ray-start-arrow", "Move the droid to this moment")}</button>`
         : "") +
       `<span class="hint tl-said" role="status" aria-live="polite" hidden></span>` +
       `<div class="seg seg-sm tl-loop-mode" role="group" aria-label="How a loop is drawn" hidden>` +

@@ -24,7 +24,7 @@
         <h1>Sequences</h1>
       </div>
       <div class="acts">
-        <button id="seq-btn-import" class="btn" type="button">Restore backup</button>
+        <button id="seq-btn-import" class="btn icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Restore backup</span></button>
       </div>
     </div>
 
@@ -39,7 +39,7 @@
         <h4>Nothing learned yet</h4>
         <p>Tune a factory sequence below to make it yours, or restore one you exported earlier.</p>
         <div class="seq-entry-points">
-          <button class="btn btn-sm" id="seq-empty-import" type="button">Restore backup</button>
+          <button class="btn btn-sm icon-act" id="seq-empty-import" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Restore backup</span></button>
         </div>
       </div>
 
@@ -67,7 +67,7 @@
           <p class="prose">Choose the JSON file you exported, or paste it straight in. Nothing reaches the droid until you save it.</p>
           <div class="seq-import-file-picker">
             <input id="seq-import-file-input" type="file" accept=".json" aria-label="Choose JSON file">
-            <label for="seq-import-file-input" class="btn btn-sm">Choose file</label>
+            <label for="seq-import-file-input" class="btn btn-sm icon-act"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Choose file</span></label>
           </div>
           <p class="seq-import-divider">or paste the JSON here:</p>
           <textarea
@@ -79,8 +79,8 @@
           <div id="seq-import-feedback" class="feedback hidden" role="status" aria-live="polite"></div>
         </div>
         <div class="seq-modal-footer">
-          <button id="seq-modal-import-cancel" class="btn btn-sm" type="button">Keep what I have</button>
-          <button id="seq-modal-import-confirm" class="btn btn-sm accent" type="button" disabled>Restore and edit</button>
+          <button id="seq-modal-import-cancel" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-close"/></svg><span class="act-label">Keep what I have</span></button>
+          <button id="seq-modal-import-confirm" class="btn btn-sm accent icon-act" type="button" disabled><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Restore and edit</span></button>
         </div>
       </div>
     </div>
@@ -107,8 +107,8 @@
           <p class="prose" id="seq-discard-what"></p>
         </div>
         <div class="seq-modal-footer">
-          <button id="seq-modal-discard-keep" class="btn btn-sm" type="button">Keep editing</button>
-          <button id="seq-modal-discard-confirm" class="btn btn-sm danger" type="button">Discard edits</button>
+          <button id="seq-modal-discard-keep" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-close"/></svg><span class="act-label">Keep editing</span></button>
+          <button id="seq-modal-discard-confirm" class="btn btn-sm danger icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-restore"/></svg><span class="act-label">Discard edits</span></button>
         </div>
       </div>
     </div>
@@ -137,8 +137,8 @@
           <div id="seq-wipe-feedback" class="feedback hidden" role="status" aria-live="polite"></div>
         </div>
         <div class="seq-modal-footer">
-          <button id="seq-modal-wipe-cancel" class="btn btn-sm" type="button">Keep it</button>
-          <button id="seq-modal-wipe-confirm" class="btn btn-sm danger" type="button" disabled>Wipe it</button>
+          <button id="seq-modal-wipe-cancel" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-close"/></svg><span class="act-label">Keep it</span></button>
+          <button id="seq-modal-wipe-confirm" class="btn btn-sm danger icon-act" type="button" disabled><svg class="i" aria-hidden="true" focusable="false"><use href="#i-delete-outline"/></svg><span class="act-label">Wipe it</span></button>
         </div>
       </div>
     </div>
