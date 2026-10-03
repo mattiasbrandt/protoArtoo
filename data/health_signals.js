@@ -38,8 +38,8 @@
   ]);
 
   // The heap floors, in bytes: the one table the health grid here and
-  // Maintenance's memory rows both judge by. A reading at or below a warn
-  // floor is Low, at or below a fail floor Critical.
+  // Maintenance's memory rows both judge by. On the grid a reading at or below
+  // a warn floor is Low, at or below a fail floor Critical.
   //
   // largest* judges the Internal Data Heap's largest free block. Its floors are
   // the admission ones until the bench day (#355) measures this reading's own.
