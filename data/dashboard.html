@@ -112,7 +112,7 @@
             <h3>Sequences <span class="now waiting" id="show-now" role="status"></span></h3>
             <div class="show-acts">
               <span class="show-standdown">
-                <button class="btn btn-sm" id="standdown-btn" type="button">Stand Down</button>
+                <button class="btn btn-sm icon-act act-keeps-words" id="standdown-btn" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-human-handsdown"/></svg><span class="act-label">Stand Down</span></button>
                 <span class="show-standdown-name waiting" id="standdown-name"></span>
                 <span class="why" id="standdown-why"></span>
                 <a class="btn btn-sm btn-quiet link-btn" href="#seq">Change</a>
@@ -263,8 +263,8 @@
           <div id="sleep-feedback" class="feedback compact-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
         </div>
         <div class="top-action">
-          <button class="btn top-action-button" id="topbar-reboot" title="Restart the Body Controller" aria-label="Restart the Body Controller" type="button">
-            <svg class="i" aria-hidden="true" focusable="false"><use href="#i-restart"/></svg>Restart
+          <button class="btn top-action-button icon-act" id="topbar-reboot" type="button">
+            <svg class="i" aria-hidden="true" focusable="false"><use href="#i-restart"/></svg><span class="act-label">Restart</span>
           </button>
           <div id="reboot-feedback" class="feedback compact-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
         </div>
@@ -275,7 +275,7 @@
       <div class="sleep-overlay-panel">
         <h2>Sleep Mode Active</h2>
         <p>Lights, panels and chatter rest. Drive and the estop stay awake.</p>
-        <button class="btn accent" id="sleep-overlay-wake" aria-label="Wake droid">Wake Droid</button>
+        <button class="btn accent icon-act" id="sleep-overlay-wake" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sleep-off"/></svg><span class="act-label">Wake Droid</span></button>
       </div>
     </div>
 

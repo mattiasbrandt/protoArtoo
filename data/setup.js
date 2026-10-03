@@ -465,7 +465,7 @@
 
     const last = current >= STEPS.length - 1;
     if (backButton) backButton.disabled = current === 0;
-    if (nextButton) nextButton.textContent = last ? "Finish" : "Next";
+    if (nextButton) window.PAUi.setAct(nextButton, last ? "Finish" : "Next", last ? "check" : "arrow-u-right-top");
     renderRail();
   };
 

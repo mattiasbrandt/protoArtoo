@@ -176,8 +176,8 @@
       `<span class="outputs-address">${esc(label)}</span>` +
       `<div class="hint outputs-narrowed" hidden></div></th>` +
       `<td class="outputs-drives">` +
-      `<button class="btn btn-sm btn-quiet outputs-add-open" type="button" aria-expanded="false" ` +
-      `aria-label="${esc(`Put a part on ${label}`)}">+ part</button></td>` +
+      `<button class="btn btn-sm btn-quiet outputs-add-open icon-act" type="button" aria-expanded="false">` +
+      `${window.PAUi.actFace("plus", "+ part")}</button></td>` +
       `<td class="outputs-position"><div class="outputs-bar" aria-hidden="true"><div class="outputs-now"></div><div class="outputs-tick"></div></div>` +
       `<span class="outputs-us"></span></td>` +
       // Driving it: the typed width goes out once and is saved nowhere; open
@@ -188,16 +188,20 @@
       `<input class="number-cell outputs-width" type="number" step="10" value="1500" ` +
       `aria-label="${esc(`Width to move ${label} to, in microseconds`)}">` +
       `<span class="outputs-go-group">` +
-      `<button class="btn btn-sm outputs-go" type="button" data-action="position" disabled aria-disabled="true">move</button>` +
-      `<button class="btn btn-sm outputs-go" type="button" data-action="open" disabled aria-disabled="true">open</button>` +
-      `<button class="btn btn-sm outputs-go" type="button" data-action="close" disabled aria-disabled="true">close</button>` +
-      `<button class="btn btn-sm outputs-go" type="button" data-action="stop" disabled aria-disabled="true">stop</button>` +
+      `<button class="btn btn-sm outputs-go icon-act act-keeps-words" type="button" data-action="position" disabled aria-disabled="true">` +
+      `${window.PAUi.actFace("ray-start-arrow", "move")}</button>` +
+      `<button class="btn btn-sm outputs-go icon-act act-keeps-words" type="button" data-action="open" disabled aria-disabled="true">` +
+      `${window.PAUi.actFace("arrow-expand-horizontal", "open")}</button>` +
+      `<button class="btn btn-sm outputs-go icon-act act-keeps-words" type="button" data-action="close" disabled aria-disabled="true">` +
+      `${window.PAUi.actFace("arrow-collapse-horizontal", "close")}</button>` +
+      `<button class="btn btn-sm outputs-go icon-act act-keeps-words" type="button" data-action="stop" disabled aria-disabled="true">` +
+      `${window.PAUi.actFace("stop", "stop")}</button>` +
       `</span></span></td>` +
       `<td class="outputs-acts">` +
-      `<button class="btn btn-sm btn-quiet outputs-calibrate" type="button" ` +
-      `aria-label="${esc(`Calibrate ${label} by moving it`)}" disabled aria-disabled="true">calibrate</button>` +
-      `<button class="btn btn-sm btn-quiet outputs-off" type="button" ` +
-      `aria-label="${esc(`Take the pulse off ${label}`)}" disabled aria-disabled="true">pulses off</button>` +
+      `<button class="btn btn-sm btn-quiet outputs-calibrate icon-act" type="button" disabled aria-disabled="true">` +
+      `${window.PAUi.actFace("ruler", "calibrate")}</button>` +
+      `<button class="btn btn-sm btn-quiet outputs-off icon-act" type="button" disabled aria-disabled="true">` +
+      `${window.PAUi.actFace("power-plug-off-outline", "pulses off")}</button>` +
       `<button class="btn btn-sm btn-quiet outputs-more" type="button" aria-expanded="false" ` +
       `aria-label="${esc(`Settings for ${label}`)}">settings` +
       `<svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></button>` +
@@ -593,9 +597,10 @@
     applyBar.hidden = outputs.length === 0;
     const count = ticked.size;
     // The count is the warning (r2d2-astromech-simulator v1.79.0,
-    // src/js/maestro/setup-hw-channels.js:637), so it rides in the label.
-    applyButton.textContent =
-      count === 0 ? "Set on ticked outputs" : count === 1 ? "Set on 1 ticked output" : `Set on all ${count} ticked outputs`;
+    // src/js/maestro/setup-hw-channels.js:637), so it rides in the label, and
+    // the label stays in view beside the icon (act-keeps-words, #460).
+    window.PAUi.setAct(applyButton,
+      count === 0 ? "Set on ticked outputs" : count === 1 ? "Set on 1 ticked output" : `Set on all ${count} ticked outputs`);
     window.PAApi.gateControls([applyButton], count > 0 && !bulk.busy);
     window.PAApi.gateControls([pickAll], count < outputs.length);
     window.PAApi.gateControls([pickNone], count > 0);
@@ -975,9 +980,9 @@
     `<p class="hint cal-desc">Move the part until it looks right, then press the end you are setting. The ` +
     `servo holds while you watch, and goes limp a few seconds after you leave or after ten minutes.</p>` +
     `<div class="cal-drive">` +
-    `<button class="btn btn-sm btn-quiet cal-fine" type="button" data-step="-1" aria-label="Down 5 microseconds">−5 µs</button>` +
+    `<button class="btn btn-sm btn-quiet cal-fine icon-act" type="button" data-step="-1">${window.PAUi.actFace("minus-circle-outline", "−5 µs")}</button>` +
     `<input class="cal-slider fader" type="range" step="1" aria-label="Move this output">` +
-    `<button class="btn btn-sm btn-quiet cal-fine" type="button" data-step="1" aria-label="Up 5 microseconds">+5 µs</button>` +
+    `<button class="btn btn-sm btn-quiet cal-fine icon-act" type="button" data-step="1">${window.PAUi.actFace("plus-circle-outline", "+5 µs")}</button>` +
     `<span class="cal-readout"></span>` +
     `</div>` +
     `<div class="cal-record">` +
@@ -990,16 +995,16 @@
     `</div>` +
     `<div class="cal-tools">` +
     `<div class="cal-acts">` +
-    `<button class="btn btn-sm btn-quiet cal-reverse" type="button">reverse</button>` +
+    `<button class="btn btn-sm btn-quiet cal-reverse icon-act" type="button">${window.PAUi.actFace("swap-horizontal", "reverse")}</button>` +
     `<span class="cal-hint">it swaps the two ends</span>` +
     `<button class="btn btn-sm btn-quiet cal-safe" type="button">safe range</button>` +
     `<button class="btn btn-sm btn-quiet cal-useends" type="button">use these ends</button>` +
-    `<button class="btn btn-sm btn-quiet cal-sweep" type="button">test sweep</button>` +
+    `<button class="btn btn-sm btn-quiet cal-sweep icon-act" type="button">${window.PAUi.actFace("arrow-left-right", "test sweep")}</button>` +
     `</div>` +
     `<div class="cal-acts">` +
-    `<button class="btn btn-sm btn-quiet cal-off" type="button">pulses off</button>` +
-    `<button class="btn btn-sm accent cal-resume" type="button">take it again</button>` +
-    `<button class="btn btn-sm cal-done" type="button">done</button>` +
+    `<button class="btn btn-sm btn-quiet cal-off icon-act" type="button">${window.PAUi.actFace("power-plug-off-outline", "pulses off")}</button>` +
+    `<button class="btn btn-sm accent cal-resume icon-act" type="button">${window.PAUi.actFace("hand-back-right-outline", "take it again")}</button>` +
+    `<button class="btn btn-sm cal-done icon-act" type="button">${window.PAUi.actFace("check", "done")}</button>` +
     `</div>` +
     `</div>` +
     `<p class="cal-note" role="status" aria-live="polite"></p>`;
