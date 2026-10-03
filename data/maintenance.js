@@ -41,6 +41,7 @@
       title: "Restart the Body Controller?",
       body: "Every output cuts out, and this page drops for about 10 seconds.",
       yes: "Restart it",
+      yesIcon: "restart",
       no: "Not now",
       danger: true,
       near: rebootButton,

@@ -194,7 +194,7 @@
       const verb = move.joins.length === 1 ? "is" : "are";
       lines.push(`${listParts(move.joins)} ${verb} on ${to} too, and will move with it.`);
     }
-    return { title: `Move ${part} to ${to}?`, body: lines.join(" "), yes: "Move it", no: "Leave it where it is" };
+    return { title: `Move ${part} to ${to}?`, body: lines.join(" "), yes: "Move it", yesIcon: "transfer", no: "Leave it where it is" };
   };
 
   /**
@@ -292,8 +292,8 @@
       const words = announcement(move);
       title.textContent = words.title;
       body.textContent = words.body;
-      if (confirmButton) confirmButton.textContent = words.yes;
-      if (cancelButton) cancelButton.textContent = words.no;
+      if (confirmButton) window.PAUi.setAct(confirmButton, words.yes, words.yesIcon);
+      if (cancelButton) window.PAUi.setAct(cancelButton, words.no);
       asking = { move, control };
       pendingPart = move.part;
       dialog.show();

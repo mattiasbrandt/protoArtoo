@@ -7,14 +7,17 @@
 // in the data-scripts of every surface that calls it, as a surface names each
 // module it uses; the loader runs it once. window.PAOverlay.
 //
-//   ask({ title, body, yes, no, danger, near })  -> Promise<boolean>
+//   ask({ title, body, yes, yesIcon, no, danger, near })  -> Promise<boolean>
 //     A styled question in place of the browser's confirm(): a call site goes
 //     from `if (!confirm(x)) return;` to
 //     `if (!(await window.PAOverlay.ask({...}))) return;` and keeps its exact
 //     behavior on the answer that keeps things. The title is the question and
 //     both buttons are verbs naming their outcome. There are NO default
 //     labels: a call that forgets one throws rather than shipping "Cancel" or
-//     "OK". `no: null` is a message with nothing to decide, and has one
+//     "OK". Both buttons are acts that show their icon alone (#460, the act in
+//     data/shell.js): `yesIcon` is the icon of the act `yes` names, and is as
+//     required as the verb; `no` always keeps things, so it always wears
+//     `close`. `no: null` is a message with nothing to decide, and has one
 //     button. Escape answers it false, so nothing that awaits it can hang.
 //
 //   escGuard(isOpen, close)  -> { bind(), unbind() }
@@ -159,10 +162,12 @@
     row.className = "button-row";
     const no = document.createElement("button");
     no.type = "button";
-    no.className = "btn question-no";
+    no.className = "btn question-no icon-act";
+    no.innerHTML = window.PAUi.actFace("close", "");
     const yes = document.createElement("button");
     yes.type = "button";
-    yes.className = "btn accent question-yes";
+    yes.className = "btn accent question-yes icon-act";
+    yes.innerHTML = window.PAUi.actFace("check", "");
     row.append(no, yes);
     dialog.append(title, body, row);
     no.addEventListener("click", () => settle(false));
@@ -207,15 +212,16 @@
    * @param {string} q.title - the question itself
    * @param {string} [q.body] - the consequence, one or two sentences
    * @param {string} q.yes - the verb that does it
+   * @param {string} q.yesIcon - the icon of that act (docs/icon-set-provenance.md)
    * @param {string|null} q.no - the verb that keeps things as they are, or
    *   null for a message with nothing to decide
    * @param {boolean} [q.danger] - the act cannot be taken back
    * @param {Element} [q.near] - the control asked from; focus returns to it
    * @returns {Promise<boolean>} true only for `yes`
    */
-  const ask = ({ title, body = "", yes, no, danger = false, near = null } = {}) => {
-    if (!title || !yes || (no !== null && !no)) {
-      throw new Error("PAOverlay.ask needs a title and both answers named as verbs (no: null for a message)");
+  const ask = ({ title, body = "", yes, yesIcon, no, danger = false, near = null } = {}) => {
+    if (!title || !yes || !yesIcon || (no !== null && !no)) {
+      throw new Error("PAOverlay.ask needs a title, both answers named as verbs (no: null for a message) and yes's icon");
     }
     const surface = surfaceFor(near);
     if (!surface) {
@@ -230,11 +236,11 @@
     nodes.title.textContent = title;
     nodes.body.textContent = body;
     nodes.body.hidden = !body;
-    nodes.yes.textContent = yes;
+    window.PAUi.setAct(nodes.yes, yes, yesIcon);
     nodes.yes.classList.toggle("accent", !danger);
     nodes.yes.classList.toggle("danger", Boolean(danger));
     nodes.no.hidden = no === null;
-    nodes.no.textContent = no === null ? "" : no;
+    window.PAUi.setAct(nodes.no, no === null ? "" : no);
     surface.appendChild(nodes.dialog);
     return new Promise((resolve) => {
       const returnFocus = near || document.activeElement;

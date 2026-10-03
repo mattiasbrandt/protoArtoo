@@ -10900,6 +10900,14 @@ label.seq-act {
   pointer-events: auto;
 }
 
+/* A .button-row is a grid of 160 px-and-up cells, which would stretch a
+   square across its cell. A row of acts is a run of squares instead, and
+   keeps the row's own justify-content (a question's answers sit at its end). */
+:root:not(.act-words) .button-row:has(> .icon-act) {
+  display: flex;
+  flex-wrap: wrap;
+}
+
 .act-tip {
   position: fixed;
   z-index: 10100;

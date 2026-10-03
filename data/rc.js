@@ -1918,6 +1918,7 @@
           title: `Move ${partLabel(payload)} to ${channelTitleFromKey(selectedChannel)}?`,
           body: `${channelTitleFromKey(from)} moves it now, and is left unmapped.`,
           yes: 'Move it',
+          yesIcon: 'transfer',
           no: 'Keep it there',
           near: rcEditorApply,
         });
@@ -1937,6 +1938,7 @@
           title: `${partLabel(payload)} shares a servo with ${partLabel(nextMap[shared].payload)}`,
           body: `${channelTitleFromKey(shared)} moves that servo already. Two sticks on one servo take turns.`,
           yes: 'Map it anyway',
+          yesIcon: 'link-variant',
           no: 'Leave it',
           near: rcEditorApply,
         });
@@ -1981,6 +1983,7 @@
       title: 'Clear every mapping?',
       body: 'Every switch loses its action, and the droid\'s own conditions go too. This cannot be taken back.',
       yes: 'Clear them',
+      yesIcon: 'link-variant-off',
       no: 'Keep them',
       danger: true,
       near: rcResetDefaults,

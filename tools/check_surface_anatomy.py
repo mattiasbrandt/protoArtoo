@@ -75,13 +75,14 @@ PICTOGRAPH = re.compile(
 ICON_SYMBOL = re.compile(r'\n    "([a-z0-9-]+)": "M')
 # A reference is a literal <use>, or a name handed to one of the helpers that
 # write one: data/shell.js icon() and actFace(), an act's icon changed in place
-# by setAct(button, words, name), and an act table's `icon: "name"` field
-# (#460). Each alternative captures the name in its own group.
+# by setAct(button, words, name), and an act table's `icon: "name"` field or a
+# question's `yesIcon: "name"` (#460). Each alternative captures the name in
+# its own group.
 ICON_USE = re.compile(
     r'href="#i-([a-z0-9-]+)"'
     r'''|\b(?:icon|actFace)\(["']([a-z0-9-]+)["']'''
     r'''|\bsetAct\([^()]*,\s*["']([a-z0-9-]+)["']\)'''
-    r'|\bicon: "([a-z0-9-]+)"'
+    r'''|\b(?:icon|\w+Icon): ["']([a-z0-9-]+)["']'''
 )
 # The chrome names its icons by field rather than by markup - the rail builds
 # `href="#i-${surface.icon}"` - so the literal <use> regex above cannot see
