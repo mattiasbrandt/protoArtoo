@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include "config.h"          // PA_BOARD
+#include "protocol_check.h"  // protocolCheckSeqIdValid() - a take's owner is a sequence id
 #include "seq_store_util.h"  // SEQ_FILE_MAX_BYTES, PA_SEQ_STR
 
 // TAKE FILE CAP: one take's file at most, header and samples. The sequence
@@ -107,11 +108,11 @@ static const char TAKE_SUFFIX_NEW[] = ".new";
 // Longest file name: owner (16) + '.' + take (8) + ".take" + terminator.
 static const size_t TAKE_FILE_NAME_MAX = 16 + 1 + TAKE_ID_LEN + sizeof(TAKE_SUFFIX_KEPT);
 
-// "<owner>.<take><suffix>" into `out`. False for an id that is not one, or a
-// buffer too small.
+// "<owner>.<take><suffix>" into `out`. False when the owner is not a stable
+// sequence id (protocolCheckSeqIdValid(): 1..16 lowercase letters or digits),
+// the take is not a take id, or the buffer is too small.
 inline bool takeFileName(const char* owner, const char* take, bool kept, char* out, size_t cap) {
-    if (owner == nullptr || owner[0] == '\0' || strlen(owner) > 16 || !takeIdValid(take) ||
-        out == nullptr) {
+    if (!protocolCheckSeqIdValid(owner) || !takeIdValid(take) || out == nullptr) {
         return false;
     }
     const char* suffix = kept ? TAKE_SUFFIX_KEPT : TAKE_SUFFIX_NEW;
@@ -127,7 +128,8 @@ inline bool takeFileName(const char* owner, const char* take, bool kept, char* o
 }
 
 // What a file name in /seq says about a take, or false for a name that is not
-// a take's (a sequence's .json, the save's temporary file).
+// a take's (a sequence's .json, the save's temporary file, an owner that is
+// not a sequence id).
 struct TakeFileNameParts {
     char owner[17];
     char take[TAKE_ID_LEN + 1];
@@ -165,5 +167,8 @@ inline bool takeFileNameParse(const char* name, TakeFileNameParts* out) {
     memcpy(out->take, name + ownerLen + 1, TAKE_ID_LEN);
     out->take[TAKE_ID_LEN] = '\0';
     out->kept = kept;
-    return out->owner[0] != '\0' && takeIdValid(out->take);
+    // The owner must be a sequence id, never merely 1..16 characters: a name
+    // such as "DM:FOO.<take>.take" would otherwise land as a take that no
+    // save, delete or boot ever matches to a sequence, and so never goes.
+    return protocolCheckSeqIdValid(out->owner) && takeIdValid(out->take);
 }
