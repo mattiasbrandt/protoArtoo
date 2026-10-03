@@ -70,7 +70,7 @@
           "frames": [],
           "chain_bytes": 4112,
           "stack_bytes": 5632,
-          "note": "The root frame is 1360 B. The deepest route is failsafeUpdateWebTimeout -> failsafeTrigger's log line -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf) formats with newlib nano's vsniprintf. driveTask's frame grew 1344 -> 1360 B when the ConfigSnapshot, which it holds, reached 944 B with #451's Stand Down Sequence (20 B); 1328 -> 1344 B before that, when #444 and #445 each added 4 B. At 4112 B the rule gives 5632 B, the stack #250 raised it to, so the arm now sits on the rule."
+          "note": "The root frame is 1360 B. The deepest route is failsafeUpdateWebTimeout -> failsafeTrigger's log line -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf) formats with newlib nano's vsniprintf. driveTask's frame grew 1344 -> 1360 B when the ConfigSnapshot, which it holds, reached 944 B with #451's Stand Down Sequence (20 B); 1328 -> 1344 B before that, when #444 and #445 each added 4 B. At 4112 B the rule gives 5632 B, the stack #250 raised it to, so the arm now sits on the rule. #250 raised the 50 Hz drive loop on purpose, on both chips, because the Xtensa figure is the floor of an unknown: that 5632 B stands whatever a re-walk says, and a chain that falls below it does not lower it."
         },
         "esp32p4": {
           "env": "firebeetle2",

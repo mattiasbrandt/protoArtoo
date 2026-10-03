@@ -220,13 +220,13 @@ const ConfigSetting kConfigSettings[] = {
 
 // The floor's bounds are the shortest and the longest servo move a sequence may
 // ask for; held equal here so neither moves without the other.
+static_assert(SEQ_CADENCE_FLOOR_MIN_MS == PC_SM_MOVE_MIN && SEQ_CADENCE_FLOOR_MAX_MS == PC_SM_MOVE_MAX,
+              "the Cadence Floor is bounded by the servo moves Protocol Check accepts");
+
 // The Stand Down Sequence's field holds the longest name Protocol Check
 // accepts, "DM:" and PC_NAME_BODY_MAX characters, and its terminator.
 static_assert(STAND_DOWN_SEQUENCE_SIZE == 3 + PC_NAME_BODY_MAX + 1,
               "the Stand Down Sequence holds exactly one sequence name");
-
-static_assert(SEQ_CADENCE_FLOOR_MIN_MS == PC_SM_MOVE_MIN && SEQ_CADENCE_FLOOR_MAX_MS == PC_SM_MOVE_MAX,
-              "the Cadence Floor is bounded by the servo moves Protocol Check accepts");
 
 #undef PA_RANGE
 #undef PA_BOOL

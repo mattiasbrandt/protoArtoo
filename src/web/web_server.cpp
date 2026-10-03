@@ -173,6 +173,10 @@ static void captureStatusJsonInputs(StatusJsonInputs* in) {
     RcInputActiveConfig activeRc = {};
     configCacheReadActiveRcInput(&activeRc);
 
+    // The Sequence run, under the run record's own lock rather than the one
+    // below: the record is the dispatcher's, not RobotState (#451).
+    seqEvidenceRunState(in->seqRun);
+
     // dome.status.current's two console-queryable fields (ADR 0036) come from
     // captureDomeStatusSnapshot() (api_status_serializers.cpp) instead of the
     // inline reads this block used before #223, so the Console module and this
@@ -184,10 +188,6 @@ static void captureStatusJsonInputs(StatusJsonInputs* in) {
     // other ~60 either way - no consumer of this payload depends on a single
     // atomic instant across all fields (see the independent buildHealthJson/
     // buildWifiJson/buildSerialJson reads elsewhere in the same file/pair).
-    // The Sequence run, under the run record's own lock rather than the one
-    // below: the record is the dispatcher's, not RobotState (#451).
-    seqEvidenceRunState(in->seqRun);
-
     DomeStatusSnapshot domeSnap = {};
     captureDomeStatusSnapshot(&domeSnap);
     in->domeTargetSpeed = domeSnap.domeTargetSpeed;
