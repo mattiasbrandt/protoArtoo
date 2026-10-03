@@ -789,7 +789,7 @@ void AudioDriverChirp::makeRoomBesideBed() {
             continue;
         }
         if (m_streams[s].use == ChirpStreamUse::IdleByProof) {
-            return;  // the module will take this one, or a lower inactive one, never the bed
+            return;  // the module takes this one or a lower inactive one; a playing bed is never inactive
         }
         if (oldest == CHIRP_NO_STREAM || m_streams[s].sentSeq < m_streams[oldest].sentSeq) {
             oldest = s;
