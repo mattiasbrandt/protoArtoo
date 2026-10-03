@@ -71,6 +71,7 @@ const KeyPin kStoredKeys[] = {
     {"domeEscFullTurnMs", "dome_turn_ms", SettingStorage::U16}, {"domeEscFullTurnPct", "dome_turn_pct", SettingStorage::U8},
     {"domeEscPositiveTurn", "dome_turn_dir", SettingStorage::U8},
     {"cadenceFloorMs", "cad_floor_ms", SettingStorage::U16},
+    {"standDownSequence", "seq_standdown", SettingStorage::Text},
     {"logLevel", "log_level", SettingStorage::U8},
     // The audio Settings (#431 addendum), by the key their door takes.
     {"volume", "aud_vol", SettingStorage::U8}, {"scream", "snd_scream", SettingStorage::U16}, {"faint", "snd_faint", SettingStorage::U16},

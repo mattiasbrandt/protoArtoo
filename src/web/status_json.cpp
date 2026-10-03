@@ -281,6 +281,33 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
         }
     }
 
+    // The Sequence run the droid last recorded (#451): its name, whether it is
+    // still under way and when it began, so a page can say what is running
+    // whoever started it - the Dashboard, the Sequences page or an RC Channel.
+    // null until a run has been recorded since boot. The start time is what
+    // tells two runs of one Sequence apart. A name is copied with anything
+    // that would break the string replaced: POST /api/seq/test takes any name
+    // that opens with DM:, and the record keeps what it was given.
+    if (written > 0 && written < (int)bufferSize - 1) {
+        int extra = 0;
+        if (!in.seqRun.valid) {
+            extra = snprintf(buffer + written, bufferSize - (size_t)written, ",\"seqRun\":null");
+        } else {
+            char name[sizeof(in.seqRun.name)] = {};
+            for (size_t i = 0; i + 1 < sizeof(name) && in.seqRun.name[i] != '\0'; ++i) {
+                const char c = in.seqRun.name[i];
+                name[i] = (c == '"' || c == '\\' || (unsigned char)c < 0x20) ? '?' : c;
+            }
+            extra = snprintf(buffer + written, bufferSize - (size_t)written,
+                             ",\"seqRun\":{\"name\":\"%s\",\"running\":%s,\"startMs\":%lu}", name,
+                             in.seqRun.running ? "true" : "false", (unsigned long)in.seqRun.startMs);
+        }
+        if (extra > 0) {
+            // Truncation is read by the bound check below, as above.
+            written += extra;
+        }
+    }
+
     // Conditionally append enabled-component keys - disabled components are absent,
     // not emitted as false placeholders (status/dashboard contract).
     bool ok = written > 0 && written < (int)bufferSize - 1;

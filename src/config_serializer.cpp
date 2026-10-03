@@ -371,8 +371,8 @@ void deserializeWifi(const ConfigReader& r, WifiConfig* out, const WifiConfig& d
 }  // namespace
 
 // =============================================================================
-// Shared defaults  --  ConfigSnapshot is 920 bytes (static_assert in
-// config_store.h), more than a stack local should cost the loopTask that runs
+// Shared defaults  --  ConfigSnapshot is nearly 1 KB (its size is the
+// static_assert in config_store.h), more than a stack local should cost the loopTask that runs
 // setup(), whose stack is sized against a measured chain (platformio.ini).
 // Static BSS allocation; populated once on first use.
 // =============================================================================

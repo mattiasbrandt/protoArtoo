@@ -518,6 +518,9 @@
     renderOpMode(payload);
     renderActiveMood(payload);
     setSleepUi(!!payload.sleepMode);
+    // The run record's name and ending, which the run watch below does not
+    // announce when no run of it was ever under way on this page.
+    paintShowRun();
   };
 
   // Asks the droid once, after an act that changed something. The answer is
@@ -903,6 +906,7 @@
     // second GET of the same document would cost a client slot to learn what
     // this one already said.
     renderDroidBuild(window.DroidBuild?.adopt(config) || null);
+    adoptStandDown(config);
     const level = Number(config?.system?.logLevel);
     if (!LOG_LEVELS[level]) {
       throw new Error(`Unknown log level: ${level}`);
@@ -1450,6 +1454,292 @@
 
 
   // -------------------------------------------------------------------------
+  // Sequences: a show run from the Dashboard (#330, #451)
+  //
+  // Every Sequence on the droid, the builder's own first and then the Factory
+  // ones theirs do not shadow - a Learned name shadows a Factory one, the rule
+  // the droid resolves a name by (the removed quick-sequence row,
+  // 76d9735c^:data/dome_control.js). Each has Play; the one running has Stop
+  // instead, whoever started it. A Sequence mapped to an RC Channel says which,
+  // from GET /api/rc/map: the RC Map is the running order, so the RC Radio and
+  // this list are one list read from two ends, never stored twice.
+  //
+  // What is running is the Live Reading's run watch (data/live_reading.js,
+  // "The run watch"), the one the Sequences page reads too. It starts and
+  // stops runs, judges a press by the run's start time, and says when a run -
+  // from here, an RC Channel or anywhere - begins and ends.
+  //
+  // A name the RC Map fires that has no Sequence behind it - a Learned one
+  // deleted since - is listed and says it will do nothing. POST /api/seq/test
+  // would accept it and the dome would ignore it, so the answer cannot say so
+  // (src/tasks/sequence_dispatcher.cpp): the page knows from the library, sends
+  // nothing, and a press raises the Ignored Input Notice (data/shell.js).
+  // -------------------------------------------------------------------------
+  const showNow = document.getElementById("show-now");
+  const showList = document.getElementById("show-list");
+  const showOther = document.getElementById("show-other");
+  const showUnmapped = document.getElementById("show-unmapped");
+  const showFeedbackEl = document.getElementById("show-feedback");
+  const standDownBtn = document.getElementById("standdown-btn");
+  const standDownName = document.getElementById("standdown-name");
+  const standDownWhy = document.getElementById("standdown-why");
+  const postureBtn = document.getElementById("show-posture");
+
+  // What a never-chosen Stand Down runs: the words table's, one home for the
+  // Dashboard and the Sequences page (data/web_api.js, standDownSequence).
+  const STAND_DOWN_UNSET = window.PAApi.unsetOf("standDownSequence");
+  const NOT_ON_DROID = "Not on the droid. Does nothing.";
+  const NEEDS_REPAIR = "Needs repair on Sequences.";
+
+  // Each null until the droid has answered it once.
+  let showLearned = null;
+  let showFactory = null;
+  let showMapped = null; // [{ name, channel }] - the RC Map's Sequence bindings
+  let standDownChoice = null; // "" when never chosen; null while not known
+
+  const esc = (text) => window.PAUtils.escapeHtml(text);
+  const escAttr = (text) => window.PAUtils.escapeAttr(text);
+  const icon = (name) => `<svg class="i" aria-hidden="true" focusable="false"><use href="#i-${name}"/></svg>`;
+
+  const libraryEntry = (name) =>
+    showLearned?.find((seq) => seq.name === name) || showFactory?.find((seq) => seq.name === name) || null;
+  const libraryAnswered = () => showLearned !== null && showFactory !== null;
+  const standDownEffective = () => (standDownChoice === null ? null : standDownChoice || STAND_DOWN_UNSET);
+
+  // Why a name cannot run, as the row says it and as the notice says it, and
+  // where it is changed; null when it can run. A name only the RC Map holds is
+  // changed on RC; one that needs repair, on Sequences.
+  const refusalOf = (name) => {
+    const entry = libraryEntry(name);
+    if (!entry) return { says: NOT_ON_DROID, notice: `${name} is not on the droid`, page: "rc" };
+    if (entry.valid === false) {
+      return { says: NEEDS_REPAIR, notice: `${name} fails Protocol Check until it is repaired`, page: "seq" };
+    }
+    return null;
+  };
+  const refusedAttrs = (refusal) =>
+    (refusal
+      ? ` disabled aria-disabled="true" data-ignored-says="${escAttr(refusal.notice)}" data-ignored-page="${refusal.page}"`
+      : "");
+
+  const rowHtml = (name) => {
+    const refusal = refusalOf(name);
+    const channels = (showMapped || []).filter((mapped) => mapped.name === name).map((mapped) => mapped.channel);
+    return `
+      <li class="show-item${refusal ? " is-inert" : ""}" data-name="${escAttr(name)}">
+        <span class="show-item-says">
+          <span class="show-name">${esc(name)}</span>
+          ${channels.map((channel) => `<span class="show-rc" aria-label="RC Channel ${escAttr(channel)}">${esc(channel)}</span>`).join("")}
+          <span class="seq-row-run hidden"><span class="indicator ok seq-live" aria-hidden="true"></span>Running</span>
+          ${refusal ? `<span class="why">${refusal.says}</span>` : ""}
+        </span>
+        <span class="show-item-acts">
+          <button type="button" class="btn btn-sm show-play" data-act="play"${refusedAttrs(refusal)}>${icon("play")}Play</button>
+          <button type="button" class="btn btn-sm seq-stop hidden" data-act="stop">${icon("stop")}Stop</button>
+        </span>
+      </li>`;
+  };
+
+  const renderShowList = () => {
+    if (!showList || !libraryAnswered()) return;
+    const names = [];
+    [...showLearned, ...showFactory, ...(showMapped || [])].forEach(({ name }) => {
+      if (name && !names.includes(name)) names.push(name);
+    });
+    showList.innerHTML = names.map(rowHtml).join("");
+    showUnmapped?.classList.toggle("hidden", showMapped === null || showMapped.length > 0);
+    paintShowRun();
+    paintStandDown();
+  };
+
+  // What is running, painted in place: the row of the running Sequence trades
+  // its Play for Stop, and a run of a name with no row here still gets a Stop.
+  // The line for that run is written only when the run it names changes, so a
+  // status frame landing mid-press does not replace the Stop being pressed.
+  let otherShown = null;
+  const paintShowRun = () => {
+    const name = runWatch.running();
+    let shown = false;
+    showList?.querySelectorAll(".show-item").forEach((item) => {
+      const running = name !== null && item.dataset.name === name;
+      shown = shown || running;
+      item.classList.toggle("is-running", running);
+      item.querySelector(".seq-row-run")?.classList.toggle("hidden", !running);
+      item.querySelector('[data-act="play"]')?.classList.toggle("hidden", running);
+      item.querySelector('[data-act="stop"]')?.classList.toggle("hidden", !running);
+    });
+    const other = name !== null && !shown ? name : null;
+    if (showOther && other !== otherShown) {
+      otherShown = other;
+      showOther.classList.toggle("hidden", other === null);
+      showOther.innerHTML = other === null ? ""
+        : `<span class="seq-row-run"><span class="indicator ok seq-live" aria-hidden="true"></span>Running ${esc(other)}</span>
+           <button type="button" class="btn btn-sm seq-stop" data-act="stop">${icon("stop")}Stop</button>`;
+    }
+    if (showNow) {
+      const record = runWatch.record();
+      const answered = libraryAnswered();
+      showNow.classList.toggle("waiting", !answered && name === null && !record);
+      // "ended" only when the record says so: out of touch, the last record
+      // can still say running, and the run watch then says neither.
+      showNow.textContent = name !== null ? `${name} running`
+        : record && record.running !== true ? `${record.name} ended`
+        : answered ? String(showList?.querySelectorAll(".show-item").length || 0) : "";
+    }
+  };
+
+  const paintStandDown = () => {
+    const name = standDownEffective();
+    if (standDownName) {
+      standDownName.textContent = name || "";
+      standDownName.classList.toggle("waiting", name === null);
+    }
+    const answered = name !== null && libraryAnswered();
+    const refusal = answered ? refusalOf(name) : null;
+    if (standDownWhy) {
+      // The default's one decided sentence, and only for the Factory DM:RESET:
+      // a Learned Sequence of the same name shadows it and is the builder's.
+      const factoryDefault = name === STAND_DOWN_UNSET && answered
+        && !showLearned.some((seq) => seq.name === name);
+      standDownWhy.textContent = refusal ? refusal.says : factoryDefault ? "leaves the pies open" : "";
+    }
+    if (!standDownBtn) return;
+    // Until the droid has said which it is, Stand Down waits rather than run
+    // the default over a choice it has not heard yet.
+    standDownBtn.disabled = !answered || Boolean(refusal);
+    standDownBtn.classList.toggle("is-pending", !answered);
+    standDownBtn.setAttribute("aria-disabled", String(!answered || Boolean(refusal)));
+    if (refusal) {
+      standDownBtn.dataset.ignoredSays = refusal.notice;
+      // The Stand Down Sequence is chosen on Sequences, whatever is wrong with it.
+      standDownBtn.dataset.ignoredPage = "seq";
+    } else {
+      delete standDownBtn.dataset.ignoredSays;
+      delete standDownBtn.dataset.ignoredPage;
+    }
+  };
+
+  // The run whose ending the feedback line holds, so the run being heard
+  // again - after a reconnect, say - takes back "Lost touch" rather than leave
+  // it under a row that reads Running.
+  let endingOf = null;
+  const sayShow = (message, level = "") => {
+    endingOf = null;
+    showFeedback(showFeedbackEl, message, level);
+  };
+  const runWatch = window.PALiveReading.watchRuns(({ name, running, outcome }) => {
+    paintShowRun();
+    if (running) {
+      if (endingOf === name) sayShow("");
+      return;
+    }
+    const ending = window.PALiveReading.runEnding(outcome, name);
+    if (!ending) return;
+    sayShow(ending, "error");
+    endingOf = name;
+  });
+
+  const playSequence = async (name, button) => {
+    button.disabled = true;
+    button.classList.add("is-pending");
+    sayShow("");
+    try {
+      await runWatch.start(name);
+    } catch (error) {
+      sayShow(`${name} did not play: ${window.PAApi.messageFor(error)}`, "error");
+    } finally {
+      button.disabled = false;
+      button.classList.remove("is-pending");
+      // Stand Down's own state is paintStandDown()'s, not this press's.
+      paintStandDown();
+    }
+  };
+
+  const stopSequence = async (button) => {
+    button.disabled = true;
+    sayShow("");
+    try {
+      await runWatch.stop();
+    } catch (error) {
+      sayShow(`Stop failed: ${window.PAApi.messageFor(error)}`, "error");
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  document.getElementById("show-bay")?.addEventListener("click", (event) => {
+    const button = event.target.closest?.("button[data-act]");
+    if (!button || button.disabled) return;
+    if (button.dataset.act === "stop") stopSequence(button);
+    else playSequence(button.closest(".show-item").dataset.name, button);
+  });
+
+  standDownBtn?.addEventListener("click", () => {
+    const name = standDownEffective();
+    if (name !== null && !standDownBtn.disabled) playSequence(name, standDownBtn);
+  });
+
+  // The posture is the shell's: this asks for it and paints what it says.
+  postureBtn?.addEventListener("click", () => {
+    const on = !document.body.classList.contains("shell-performing");
+    window.dispatchEvent(new CustomEvent("pa:posture", { detail: { on } }));
+  });
+  window.addEventListener("pa:posture-changed", (event) => {
+    if (!postureBtn) return;
+    const on = event.detail?.on === true;
+    postureBtn.setAttribute("aria-pressed", String(on));
+    postureBtn.innerHTML = on ? `${icon("fullscreen-exit")}<span>Leave full screen</span>`
+      : `${icon("fullscreen")}<span>Full screen</span>`;
+  });
+
+  const loadShowLearned = async ({ handle = null } = {}) => {
+    const answer = await (handle ?? window.PAApi).get("/api/seq/list");
+    showLearned = Array.isArray(answer?.data) ? answer.data : [];
+    renderShowList();
+  };
+
+  const loadShowFactory = async ({ handle = null } = {}) => {
+    const answer = await (handle ?? window.PAApi).get("/api/seq/builtins");
+    showFactory = Array.isArray(answer?.data) ? answer.data : [];
+    renderShowList();
+  };
+
+  const loadShowMap = async ({ handle = null } = {}) => {
+    const answer = await (handle ?? window.PAApi).get("/api/rc/map");
+    const map = Array.isArray(answer?.data?.map) ? answer.data.map : [];
+    showMapped = map
+      .filter((entry) => entry.action === "dome_seq" && entry.payload && window.PAApi.isRcChannelSource(entry.source))
+      .map((entry) => ({ name: entry.payload, channel: window.PAApi.rcChannelTitle(entry.source, entry.channel) }));
+    renderShowList();
+  };
+
+  // The Stand Down choice rides the /api/config payload the log level reads.
+  // Only an answer that carries the key is one: a droid whose firmware does
+  // not know the Setting has not said "never chosen", so Stand Down waits.
+  const adoptStandDown = (config) => {
+    const chosen = config?.seq?.standDown;
+    if (typeof chosen !== "string") return;
+    standDownChoice = chosen;
+    paintStandDown();
+  };
+
+  // Back on the Dashboard after Sequences or RC, the library, the RC Map and
+  // the Stand Down choice may have moved: read again each time the Dashboard
+  // returns (PASurface starts its polls again then, ADR 0048). The Factory
+  // catalog is the firmware's and does not change. The first start is the
+  // mount, whose own sections read all of it.
+  let showMounted = false;
+  window.PASurface.poll(async () => {
+    if (!showMounted) {
+      showMounted = true;
+      return;
+    }
+    await loadShowLearned();
+    await loadShowMap();
+    adoptStandDown((await window.PAApi.get("/api/config"))?.data);
+  }, { runOnStart: true }).start();
+
+  // -------------------------------------------------------------------------
   // Boot — load recent logs, log level, and action tokens
   // -------------------------------------------------------------------------
 
@@ -1462,6 +1752,9 @@
     ["app-log-level", loadLogLevel, "log level setting"],
     ["app-output-names", loadOutputNames, "Output names"],
     ["app-console-catalog", loadConsoleCatalog, "console commands"],
+    ["app-seq-learned", loadShowLearned, "your sequences"],
+    ["app-seq-factory", loadShowFactory, "factory sequences"],
+    ["app-rc-map", loadShowMap, "RC Map"],
   ];
 
   const startPageLoad = () => {
@@ -1470,6 +1763,9 @@
       loadLogLevel().catch(() => {});
       loadOutputNames().catch(() => {});
       loadConsoleCatalog().catch(() => {});
+      loadShowLearned().catch(() => {});
+      loadShowFactory().catch(() => {});
+      loadShowMap().catch(() => {});
       return;
     }
     window.PABootstrap.setResourceLabels?.({

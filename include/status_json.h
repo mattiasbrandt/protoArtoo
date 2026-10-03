@@ -27,6 +27,7 @@
 #include "dome_link_transport.h"
 #include "drive_speed_preset.h"
 #include "robot_state.h"  // FailsafeDiagnostics, RcInputMode, DomeUartOwner
+#include "sequence_run_evidence.h"  // SeqRunState - the "seqRun" key
 
 #if PA_CAP_HOSTED_WIFI
 #include "hosted_link_status.h"
@@ -105,6 +106,7 @@ struct StatusJsonInputs {
     int16_t fbCurrentL;
     int16_t fbCurrentR;
     bool fbValid;
+    SeqRunState seqRun;  // "seqRun": the Sequence run the droid last recorded, or null (#451)
 #if PA_CAP_HOSTED_WIFI
     HostedLinkStatusSnapshot hostedLink;
 #endif
@@ -133,12 +135,19 @@ void captureStatusHeapReadings(StatusJsonInputs* in);
 // the hostedLink block, which src/web/status_json.cpp formats into 256 B first,
 // so it adds at most 255; the native build cannot measure it, so it is added
 // rather than measured.
+//
+// #451 added the run's key, 96 B more: at its widest, a 31-character name
+// and the longest start time, it is
+// `,"seqRun":{"name":"<31>","running":false,"startMs":4294967295}`, 89 B,
+// rounded up to keep the buffer a multiple of 32. Added, not measured, for the
+// same reason as the Dome Bearing's; the worst case in the test above now
+// includes it.
 #if PA_CAP_HOSTED_WIFI
 constexpr size_t STATUS_JSON_HOSTED_LINK_MAX = 255;
 #else
 constexpr size_t STATUS_JSON_HOSTED_LINK_MAX = 0;
 #endif
-constexpr size_t STATUS_JSON_BUFFER_BYTES = 4224 + STATUS_JSON_HOSTED_LINK_MAX;
+constexpr size_t STATUS_JSON_BUFFER_BYTES = 4320 + STATUS_JSON_HOSTED_LINK_MAX;
 
 // Writes the status document into buffer. False when it did not fit, and then
 // buffer holds {"ok":false,"error":"status payload overflow"} instead - the

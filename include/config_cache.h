@@ -39,13 +39,15 @@ void configCacheReadDome(DomeConfig* out);
 bool configCacheDomeEnabled();
 // Whether the Output at `boardOutputIndex` in include/board_outputs.h's
 // BOARD_OUTPUTS is ticked as wired - boardOutputIsWired() on the live config,
-// without copying a 920 B snapshot onto the caller's frame to ask one bit.
+// without copying a whole snapshot (config_store.h's static_assert has its
+// size) onto the caller's frame to ask one bit.
 bool configCacheOutputIsWired(size_t boardOutputIndex);
 void configCacheReadWifi(WifiConfig* out);
 
 // The narrow reads an RC dispatch makes on Core 1 (src/tasks/rc_input.cpp),
-// each by field so a dispatch copies what it uses rather than a 920 B
-// ConfigSnapshot onto the real-time task's stack or into a static (#428).
+// each by field so a dispatch copies what it uses rather than a whole
+// ConfigSnapshot (its size is config_store.h's static_assert) onto the
+// real-time task's stack or into a static (#428).
 //
 // configCacheReadRcActionContext: the twelve sound-category ranges an RC
 // action picks a random track from, and the active speed preset, in one
@@ -271,8 +273,9 @@ void configCacheSetSpeedLimit(int16_t speedLimitMax, SpeedPresetId preset);
 // commandedSetStationary() (src/commanded_modes.cpp) keeps this in step with
 // RobotState.stationary so the next config save persists the commanded mode
 // instead of reverting it from a stale cache. It used to do that with a
-// whole-snapshot round trip - read all 916 B of ConfigSnapshot out, set one
-// bool, write all 916 B back through configCacheApply() - on the SBUS path
+// whole-snapshot round trip - read all of ConfigSnapshot out (its size is
+// config_store.h's static_assert), set one bool, write it all back through
+// configCacheApply() - on the SBUS path
 // (Core 1, once per frame while driving, src/tasks/rc_input.cpp), on the httpd
 // task and on the Console alike. That also marked RobotState.rcConfigDirty on
 // every toggle, making RcInputTask rebuild its cached mapping config for a

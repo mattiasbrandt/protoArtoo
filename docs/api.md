@@ -2020,6 +2020,10 @@ Updates supported config fields and persists to NVS.
   dome, seen from above. `0` and `unset` are "never recorded", and the bearing
   cannot be believed until all three are set.
 - protoR2link: `protoR2linkWifiPeerIp(valid IPv4 or empty)`
+- seq: `standDownSequence(DM:<NAME> or empty)` — the Stand Down Sequence (#451),
+  read back on GET as `seq.standDown`. Empty means never chosen, and the
+  Dashboard's Stand Down then runs `DM:RESET`. Only the form is checked
+  (`DM:[A-Z0-9_]{1,18}`): a Sequence deleted after it was chosen stays chosen.
 - servo capture (ADR 0064, the calibration dial): `captureOutput`,
   `captureEnd`, `captureUs` — sent together or not at all. `captureOutput` is
   an Output Address exactly as `GET /api/servo/outputs` spells it (`ledc:3`);
@@ -2558,6 +2562,12 @@ Returns controller status snapshot.
   rejection, and the smallest sample it has taken since boot (`-1` if none)
 - `wifiRssi`, `wifiConnected`, `wifiClientConnected`, `littleFsReady`
 - `sleepMode`, `sleepSinceMs`, `activeMood`
+- `seqRun` — the Sequence run the droid last recorded, whoever started it
+  (a page, the Console or an RC Channel): `{"name":"DM:LEIA","running":true,"startMs":81234}`,
+  or `null` until one has run since boot. `startMs` tells two runs of one
+  Sequence apart. A run's start and its end each send a status event, so the
+  stream carries it without a poll. `GET /api/seq/last-run` has the rest of the
+  record (#451)
 - `lights` object: one entry per lit wire, keyed by the Output id
   `GET /api/config` names it under `components` (`aux1`), each carrying `r`,
   `g`, `b`, `effect` and `available`. A droid with no light answers `{}`. There

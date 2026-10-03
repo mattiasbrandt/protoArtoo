@@ -201,6 +201,12 @@ StatusJsonInputs widestInputs() {
     in.fbSpeedL = INT16_MIN;
     in.fbCurrentL = INT16_MIN;
     in.fbCurrentR = INT16_MIN;
+    // A recorded run with the longest name its record holds and the widest
+    // start time; "false" is the longer word (#451).
+    in.seqRun.valid = true;
+    in.seqRun.running = false;
+    in.seqRun.startMs = UINT32_MAX;
+    memset(in.seqRun.name, 'X', sizeof(in.seqRun.name) - 1);
     return in;
 }
 

@@ -1281,10 +1281,14 @@ def main() -> int:
         )
 
     results = [
+        # `make test-tools`, not a bare unittest discovery: the target also
+        # runs each test/test_tools/*.js with node, which discovery never sees
+        # (#466). It is the same command CI runs. The Python half alone takes
+        # about 80 s here, so the timeout leaves room for both.
         stage("self-tests", lambda: check_command_exit(
             "gate self-tests",
-            ["python3", "-m", "unittest", "discover", "-s", "test/test_tools", "-q"],
-            timeout=120,
+            ["make", "test-tools"],
+            timeout=240,
         )),
         paused_skip("native tests") if product_suites_paused else (
             skipped("native tests") if web_only else stage("native", lambda: check_native_tests(
