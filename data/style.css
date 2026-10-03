@@ -10895,8 +10895,12 @@ label.seq-act {
 
 /* A switched-off act still says what it is: it takes the pointer for its
    tooltip, and a disabled <button> fires no click, so nothing else changes.
-   An aria-disabled act that is not :disabled keeps the shared none. */
-:root:not(.act-words) .btn.icon-act:disabled {
+   The one act that is a link, Wiring's sheet, takes it too: its own press
+   handler answers "no answer from the droid yet" while it is switched off
+   (data/wiring.js saveSheet). Any other aria-disabled act keeps the shared
+   none. */
+:root:not(.act-words) .btn.icon-act:disabled,
+:root:not(.act-words) a#wiring-save.icon-act[aria-disabled="true"] {
   pointer-events: auto;
 }
 

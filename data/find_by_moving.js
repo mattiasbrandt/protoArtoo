@@ -77,8 +77,8 @@
     line.className = "parts-find-run";
     line.innerHTML =
       `<span class="parts-find-text" role="status" aria-live="polite"></span>` +
-      `<button class="btn btn-sm accent parts-find-that" type="button">That one</button>` +
-      `<button class="btn btn-sm parts-find-stop" type="button">Stop</button>`;
+      `<button class="btn btn-sm accent parts-find-that icon-act" type="button">${window.PAUi.actFace("check", "That one")}</button>` +
+      `<button class="btn btn-sm parts-find-stop icon-act" type="button">${window.PAUi.actFace("stop", "Stop")}</button>`;
     const text = line.querySelector(".parts-find-text");
 
     // The Outputs a run steps through: nothing on them, no light on the wire,

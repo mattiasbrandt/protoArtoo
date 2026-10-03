@@ -553,6 +553,10 @@
     // A row's act is a quiet word at row scale, never a box on every row.
     const actHtml = (act, word, attrs = "") =>
       `<button class="btn btn-sm btn-quiet parts-act" type="button" data-act="${act}"${attrs}>${esc(word)}</button>`;
+    // An act that changes the droid shows its icon alone (#460); the card and
+    // the dome's group above are disclosures and keep their words.
+    const iconActHtml = (act, icon, word) =>
+      `<button class="btn btn-sm btn-quiet parts-act icon-act" type="button" data-act="${act}">${window.PAUi.actFace(icon, word)}</button>`;
 
     // A card opens as a row of the table it belongs to, under the row whose
     // act opened it, and the act says whether it is open.
@@ -616,7 +620,7 @@
         `</th>` +
         `<td class="parts-on">${chosen}</td>` +
         `<td class="parts-carries"></td>` +
-        `<td class="parts-acts">${actHtml("off", output ? "take off" : "remove")}</td></tr>`
+        `<td class="parts-acts">${output ? iconActHtml("off", "link-variant-off", "take off") : iconActHtml("off", "delete-outline", "remove")}</td></tr>`
       );
     };
 
@@ -787,15 +791,11 @@
     const findAct = (part) => {
       const act = document.createElement("button");
       act.type = "button";
-      act.className = "btn btn-sm btn-quiet parts-find-act";
+      act.className = "btn btn-sm btn-quiet parts-find-act icon-act";
       act.dataset.find = part.id;
-      // The magnifying glass beside the words (operator, 2026-09-30 on #411),
-      // in the markup data/shell.js icon() writes: the sprite is the shell's,
-      // and a module names a symbol by its literal <use> so
-      // tools/check_surface_anatomy.py can resolve it.
-      act.innerHTML =
-        `<svg class="i" aria-hidden="true" focusable="false"><use href="#i-magnify"/></svg>find by moving`;
-      act.setAttribute("aria-label", `Find the output ${part.name} is on by moving each free one`);
+      // The magnifying glass (operator, 2026-09-30 on #411), an act that shows
+      // its icon alone (#460): its words are its name and its tooltip.
+      act.innerHTML = window.PAUi.actFace("magnify", "find by moving");
       window.PAApi.gateControls([act], finder.live() && finder.running() === null);
       return act;
     };

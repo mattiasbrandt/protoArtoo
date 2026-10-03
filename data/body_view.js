@@ -647,7 +647,7 @@
         (group) =>
           `<div class="bv-list-row is-addition" data-add-row="${esc(group.key)}" hidden>` +
           `<span class="bv-list-name">${esc(group.label)}</span>` +
-          `<button type="button" class="btn btn-sm" data-add-group="${esc(group.key)}">Add</button>` +
+          `<button type="button" class="btn btn-sm icon-act" data-add-group="${esc(group.key)}">${window.PAUi.actFace("plus", "Add")}</button>` +
           `</div>`
       ).join("");
 
@@ -949,7 +949,8 @@
   //
   // @param {Element} host
   // @param {object} options
-  //   acts  - [{id, label, ariaLabel}] in the order they are offered
+  //   acts  - [{id, label, icon}] in the order they are offered; each is an
+  //           act that shows its icon alone (#460, data/shell.js "The act")
   //   onAct - called with the act id when a builder presses one
   // @returns {{show, clear, root}}
   // ---------------------------------------------------------------------------
@@ -979,12 +980,11 @@
     acts.forEach((act) => {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "btn btn-sm bodyview-act";
+      button.className = "btn btn-sm bodyview-act icon-act";
       button.dataset.act = act.id;
-      button.textContent = act.label;
-      if (act.ariaLabel) button.setAttribute("aria-label", act.ariaLabel);
+      button.innerHTML = window.PAUi.actFace(act.icon, act.label);
       actRow.appendChild(button);
-      buttons.set(act.id, { button, label: act.label });
+      buttons.set(act.id, { button, label: act.label, icon: act.icon });
     });
     root.appendChild(actRow);
 
@@ -1009,8 +1009,9 @@
     // is a button that moves out from under a finger.
     //
     // @param {object} view - {title, subtitle, facts: [{term, value}], why,
-    //   acts: {id: {enabled, shown?, label?}}}. An act is shown unless it says
-    //   `shown: false`, and keeps its own label unless it names another.
+    //   acts: {id: {enabled, shown?, label?, icon?}}}. An act is shown unless
+    //   it says `shown: false`, and keeps its own label and icon unless it
+    //   names others: a label that names another act names its icon too.
     const show = (view) => {
       const description = view || {};
       root.hidden = false;
@@ -1027,11 +1028,11 @@
         facts.appendChild(value);
       });
       const states = description.acts || {};
-      buttons.forEach(({ button, label }, id) => {
+      buttons.forEach(({ button, label, icon }, id) => {
         const act = states[id] || {};
         const enabled = act.enabled === true;
         button.hidden = act.shown === false;
-        button.textContent = act.label || label;
+        window.PAUi.setAct(button, act.label || label, act.icon || icon);
         button.disabled = !enabled;
         button.setAttribute("aria-disabled", enabled ? "false" : "true");
       });
@@ -1046,8 +1047,8 @@
       subtitle.textContent = "";
       subtitle.hidden = true;
       facts.textContent = "";
-      buttons.forEach(({ button, label }) => {
-        button.textContent = label;
+      buttons.forEach(({ button, label, icon }) => {
+        window.PAUi.setAct(button, label, icon);
         button.disabled = true;
         button.setAttribute("aria-disabled", "true");
       });

@@ -255,6 +255,7 @@
         toggle: {
           shown: !marker.panTilt,
           label: open ? "Close it" : "Open it",
+          icon: open ? "arrow-collapse-horizontal" : "arrow-expand-horizontal",
           enabled: canToggle && isFitted && estopRefusal(estop) === null,
         },
       };

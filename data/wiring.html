@@ -49,8 +49,9 @@
       </div>
       <div class="acts wiring-acts">
         <!-- The printer icon stands for the word "Printable" (operator,
-             2026-09-19 on #411), so the whole name rides in aria-label. -->
-        <a class="btn" id="wiring-save" href="#wiring" aria-disabled="true" aria-label="Printable wiring sheet"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-printer-outline"/></svg>wiring sheet</a>
+             2026-09-19 on #411). An act (#460): its words are its name and
+             its tooltip, with no aria-label to keep in step. -->
+        <a class="btn icon-act" id="wiring-save" href="#wiring" aria-disabled="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-printer-outline"/></svg><span class="act-label">wiring sheet</span></a>
         <p class="feedback" id="wiring-save-feedback" role="status" aria-live="polite"></p>
       </div>
     </div>
