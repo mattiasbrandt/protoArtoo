@@ -3,14 +3,17 @@
 
 import json
 import os
-import re
 import sys
 
+from upload_command import find_upload
 
-def extract_target_host(cmd: str) -> str:
-    match = re.search(r"--upload-port\s+(\S+)", cmd)
-    if match:
-        return match.group(1)
+
+def extract_target_host(words: list[str]) -> str:
+    for index, word in enumerate(words):
+        if word == "--upload-port" and index + 1 < len(words):
+            return words[index + 1]
+        if word.startswith("--upload-port="):
+            return word.split("=", 1)[1]
 
     ota_host = os.environ.get("OTA_HOST", "").strip()
     if ota_host:
@@ -33,18 +36,14 @@ def main() -> int:
         return 0
 
     cmd = str(data.get("tool_input", {}).get("command", ""))
-    if "pio" not in cmd:
+    upload = find_upload(cmd)
+    if upload is None:
         return 0
 
-    is_upload = ("-t upload" in cmd) or ("--target upload" in cmd)
-    is_uploadfs = ("-t uploadfs" in cmd) or ("--target uploadfs" in cmd)
-    if not is_upload and not is_uploadfs:
-        return 0
-
-    if is_uploadfs:
+    if upload.kind == "uploadfs":
         context = "UploadFS completed. Suggested check: reload setup/status pages and verify UI assets are current."
     else:
-        target_host = extract_target_host(cmd)
+        target_host = extract_target_host(upload.words)
         context = (
             f"Firmware upload completed. Suggested check: curl -s http://{target_host}/api/status and verify firmwareVersion."
         )

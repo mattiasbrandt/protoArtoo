@@ -8,6 +8,8 @@ hardware availability is checked first.
 import json
 import sys
 
+from upload_command import is_upload_command
+
 
 def main() -> int:
     try:
@@ -19,10 +21,7 @@ def main() -> int:
         return 0
 
     cmd = str(data.get("tool_input", {}).get("command", ""))
-    if "pio" not in cmd:
-        return 0
-
-    if not any(token in cmd for token in ("-t upload", "--target upload", "-t uploadfs", "--target uploadfs")):
+    if not is_upload_command(cmd):
         return 0
 
     payload = {
