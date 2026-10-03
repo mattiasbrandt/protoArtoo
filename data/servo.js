@@ -188,13 +188,13 @@
       `<input class="number-cell outputs-width" type="number" step="10" value="1500" ` +
       `aria-label="${esc(`Width to move ${label} to, in microseconds`)}">` +
       `<span class="outputs-go-group">` +
-      `<button class="btn btn-sm outputs-go icon-act" type="button" data-action="position" disabled aria-disabled="true">` +
+      `<button class="btn btn-sm outputs-go icon-act act-keeps-words" type="button" data-action="position" disabled aria-disabled="true">` +
       `${window.PAUi.actFace("ray-start-arrow", "move")}</button>` +
-      `<button class="btn btn-sm outputs-go icon-act" type="button" data-action="open" disabled aria-disabled="true">` +
+      `<button class="btn btn-sm outputs-go icon-act act-keeps-words" type="button" data-action="open" disabled aria-disabled="true">` +
       `${window.PAUi.actFace("arrow-expand-horizontal", "open")}</button>` +
-      `<button class="btn btn-sm outputs-go icon-act" type="button" data-action="close" disabled aria-disabled="true">` +
+      `<button class="btn btn-sm outputs-go icon-act act-keeps-words" type="button" data-action="close" disabled aria-disabled="true">` +
       `${window.PAUi.actFace("arrow-collapse-horizontal", "close")}</button>` +
-      `<button class="btn btn-sm outputs-go icon-act" type="button" data-action="stop" disabled aria-disabled="true">` +
+      `<button class="btn btn-sm outputs-go icon-act act-keeps-words" type="button" data-action="stop" disabled aria-disabled="true">` +
       `${window.PAUi.actFace("stop", "stop")}</button>` +
       `</span></span></td>` +
       `<td class="outputs-acts">` +
@@ -597,7 +597,8 @@
     applyBar.hidden = outputs.length === 0;
     const count = ticked.size;
     // The count is the warning (r2d2-astromech-simulator v1.79.0,
-    // src/js/maestro/setup-hw-channels.js:637), so it rides in the label.
+    // src/js/maestro/setup-hw-channels.js:637), so it rides in the label, and
+    // the label stays in view beside the icon (act-keeps-words, #460).
     window.PAUi.setAct(applyButton,
       count === 0 ? "Set on ticked outputs" : count === 1 ? "Set on 1 ticked output" : `Set on all ${count} ticked outputs`);
     window.PAApi.gateControls([applyButton], count > 0 && !bulk.busy);

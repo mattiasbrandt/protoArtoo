@@ -1195,7 +1195,7 @@
       </button>
       <span class="rc-action-side">
         ${showSafetyPill ? '<span class="rc-action-safety-pill">Safety critical</span>' : ''}
-        ${showTestButton ? `<button type="button" class="rc-action-test-btn icon-act" data-action-test="${window.PAUtils.escapeHtml(item.token)}"${inFlight ? ' disabled' : ''}>${window.PAUi.actFace('play', 'Try it')}</button>` : ''}
+        ${showTestButton ? `<button type="button" class="rc-action-test-btn icon-act act-keeps-words" data-action-test="${window.PAUtils.escapeHtml(item.token)}"${inFlight ? ' disabled' : ''}>${window.PAUi.actFace('play', 'Try it')}</button>` : ''}
         <span class="rc-action-test-feedback${feedbackClass}" data-action-feedback="${window.PAUtils.escapeHtml(item.token)}">${window.PAUtils.escapeHtml(feedbackText || '')}</span>
       </span>
     </div>`;

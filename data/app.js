@@ -1535,7 +1535,7 @@
           ${refusal ? `<span class="why">${refusal.says}</span>` : ""}
         </span>
         <span class="show-item-acts">
-          <button type="button" class="btn btn-sm show-play icon-act" data-act="play"${refusedAttrs(refusal)}>${actFace("play", "Play")}</button>
+          <button type="button" class="btn btn-sm show-play icon-act act-keeps-words" data-act="play"${refusedAttrs(refusal)}>${actFace("play", "Play")}</button>
           <button type="button" class="btn btn-sm seq-stop icon-act hidden" data-act="stop">${actFace("stop", "Stop")}</button>
         </span>
       </li>`;

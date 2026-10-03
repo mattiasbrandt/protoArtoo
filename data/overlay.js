@@ -162,11 +162,11 @@
     row.className = "button-row";
     const no = document.createElement("button");
     no.type = "button";
-    no.className = "btn question-no icon-act";
+    no.className = "btn question-no icon-act act-keeps-words";
     no.innerHTML = window.PAUi.actFace("close", "");
     const yes = document.createElement("button");
     yes.type = "button";
-    yes.className = "btn accent question-yes icon-act";
+    yes.className = "btn accent question-yes icon-act act-keeps-words";
     yes.innerHTML = window.PAUi.actFace("check", "");
     row.append(no, yes);
     dialog.append(title, body, row);

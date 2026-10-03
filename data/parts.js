@@ -265,7 +265,9 @@
   const railHost = document.getElementById("bodyview-panel");
 
   const ACTS = [
-    { id: "toggle", label: "Open it", icon: "arrow-expand-horizontal" },
+    // Open it moves the Part, and the panel says what it is but not what the
+    // press does, so its words stay in view (#460).
+    { id: "toggle", label: "Open it", icon: "arrow-expand-horizontal", keepsWords: true },
     { id: "fit", label: "Drop from build", icon: "delete-outline" },
     { id: "wire", label: GIVE_IT_AN_OUTPUT, icon: "link-variant" },
   ];

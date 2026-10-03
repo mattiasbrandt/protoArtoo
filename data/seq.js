@@ -732,8 +732,8 @@
           <td class="seq-item-acts">
             <span class="seq-acts">
               <button type="button" class="seq-act is-strong icon-act" data-action="edit" data-seq-name="${name}">${window.PAUi.actFace("pencil-outline", "Edit")}</button>
-              <button type="button" class="seq-act icon-act" data-action="test" ${testBtnDisabled}>${window.PAUi.actFace("play", "Test")}</button>
-              <button type="button" class="btn btn-sm seq-stop icon-act hidden" data-action="stop" data-seq-name="${name}">${window.PAUi.actFace("stop", `Stop ${seq.name}`)}</button>
+              <button type="button" class="seq-act icon-act act-keeps-words" data-action="test" ${testBtnDisabled}>${window.PAUi.actFace("play", "Test")}</button>
+              <button type="button" class="btn btn-sm seq-stop icon-act act-keeps-words hidden" data-action="stop" data-seq-name="${name}">${window.PAUi.actFace("stop", `Stop ${seq.name}`)}</button>
               ${standDownAct(seq.name)}
               <button type="button" class="seq-act seq-disclose" data-action="more" data-seq-name="${name}" aria-expanded="${more}">${chevron}More</button>
               <span class="seq-item-more${more ? "" : " hidden"}">
@@ -1595,7 +1595,7 @@
       + settingRow("Parts", `<span class="setting-value">${esc(names)}</span>`)
       + `</div>`
       // Not offered while a take runs: Keep is the press then.
-      + acts(takePoll === null ? `<button type="button" class="seq-act icon-act" data-picked="perform-again">${window.PAUi.actFace("record-circle-outline", "Perform again")}</button>` : "");
+      + acts(takePoll === null ? `<button type="button" class="seq-act icon-act act-keeps-words" data-picked="perform-again">${window.PAUi.actFace("record-circle-outline", "Perform again")}</button>` : "");
   };
 
   const pickedHtml = (blocks) => {
@@ -1611,7 +1611,7 @@
     const removeWords = takeCount === 0 ? (stepCount > 1 ? `Remove ${stepCount} steps` : "Remove")
       : blocks.length > 1 ? `Remove ${blocks.length} blocks` : "Remove";
     const acts = (others = "") =>
-      `<div class="seq-picked-acts">${others}<button type="button" class="seq-act icon-act" data-picked="remove">${window.PAUi.actFace("delete-outline", removeWords)}</button></div>`;
+      `<div class="seq-picked-acts">${others}<button type="button" class="seq-act icon-act act-keeps-words" data-picked="remove">${window.PAUi.actFace("delete-outline", removeWords)}</button></div>`;
     const remove = acts();
     if (blocks.length > 1) {
       const nudge = window.SeqTimeline;
@@ -3716,13 +3716,13 @@
           <span class="seq-state" id="seq-editor-state" role="status"></span>
           <span class="seq-gap"></span>
           <span class="seq-run">
-            <button id="seq-editor-test" class="btn btn-sm icon-act" type="button">${window.PAUi.actFace("play", "Test on the droid")}</button>
+            <button id="seq-editor-test" class="btn btn-sm icon-act act-keeps-words" type="button">${window.PAUi.actFace("play", "Test on the droid")}</button>
             <span class="hint hidden" id="seq-editor-test-hint">Runs the last saved copy.</span>
             <span class="seq-running hidden" id="seq-editor-running" role="status"><span class="indicator ok seq-live" aria-hidden="true"></span><span id="seq-editor-running-name"></span></span>
-            <button id="seq-editor-stop" class="btn btn-sm seq-stop icon-act hidden" type="button">${window.PAUi.actFace("stop", "Stop")}</button>
+            <button id="seq-editor-stop" class="btn btn-sm seq-stop icon-act act-keeps-words hidden" type="button">${window.PAUi.actFace("stop", "Stop")}</button>
           </span>
           <span class="seq-run">
-            <button id="seq-editor-perform" class="btn btn-sm icon-act" type="button">${window.PAUi.actFace("record-circle-outline", "Perform")}</button>
+            <button id="seq-editor-perform" class="btn btn-sm icon-act act-keeps-words" type="button">${window.PAUi.actFace("record-circle-outline", "Perform")}</button>
             <span class="seq-running hidden" id="seq-editor-performing" role="status"><span class="indicator ok seq-live" id="seq-editor-performing-lamp" aria-hidden="true"></span><span id="seq-editor-performing-words"></span></span>
             <button id="seq-editor-keep" class="btn btn-sm seq-stop icon-act hidden" type="button">${window.PAUi.actFace("check", "Keep")}</button>
           </span>
@@ -3762,7 +3762,7 @@
             <div id="seq-editor-tap" class="setting-row hidden">
               <span class="setting-name">Tap on the beat</span>
               <span class="seq-row-ctl">
-                <button id="seq-editor-tap-play" class="seq-act icon-act" type="button">${window.PAUi.actFace("play", "Play on the droid")}</button>
+                <button id="seq-editor-tap-play" class="seq-act icon-act act-keeps-words" type="button">${window.PAUi.actFace("play", "Play on the droid")}</button>
                 <button id="seq-editor-tap-beat" class="btn btn-sm icon-act" type="button">${window.PAUi.actFace("gesture-tap", "Tap")}</button>
                 <span class="setting-unit" id="seq-editor-tap-count" role="status">0 taps</span>
                 <button id="seq-editor-tap-use" class="seq-act icon-act" type="button" disabled>${window.PAUi.actFace("check", "Use")}</button>

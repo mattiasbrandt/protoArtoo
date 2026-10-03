@@ -205,7 +205,9 @@
    * @param {object} hosts
    * @param {HTMLDialogElement} hosts.dialog - the question, carrying
    *   .move-title, .move-body, .move-confirm and .move-cancel; the words on
-   *   all four are written here, from announcement()
+   *   all four are written here, from announcement(). The two answers are
+   *   acts (#460): each must carry its .act-label span and icon, or
+   *   PAUi.setAct() throws when the question is asked
    * @param {function} hosts.say - (text, level) the surface's feedback line
    * @param {function} hosts.reload - reads the outputs again after a move
    * @param {function} hosts.repaint - draws the controls back to the truth
@@ -555,7 +557,7 @@
       `<button class="btn btn-sm btn-quiet parts-act" type="button" data-act="${act}"${attrs}>${esc(word)}</button>`;
     // An act that changes the droid shows its icon alone (#460); the card and
     // the dome's group above are disclosures and keep their words.
-    const iconActHtml = (act, icon, word) =>
+    const iconActHtml = (icon, act, word) =>
       `<button class="btn btn-sm btn-quiet parts-act icon-act" type="button" data-act="${act}">${window.PAUi.actFace(icon, word)}</button>`;
 
     // A card opens as a row of the table it belongs to, under the row whose
@@ -620,7 +622,7 @@
         `</th>` +
         `<td class="parts-on">${chosen}</td>` +
         `<td class="parts-carries"></td>` +
-        `<td class="parts-acts">${output ? iconActHtml("off", "link-variant-off", "take off") : iconActHtml("off", "delete-outline", "remove")}</td></tr>`
+        `<td class="parts-acts">${output ? iconActHtml("link-variant-off", "off", "take off") : iconActHtml("delete-outline", "off", "remove")}</td></tr>`
       );
     };
 
@@ -791,7 +793,7 @@
     const findAct = (part) => {
       const act = document.createElement("button");
       act.type = "button";
-      act.className = "btn btn-sm btn-quiet parts-find-act icon-act";
+      act.className = "btn btn-sm btn-quiet parts-find-act icon-act act-keeps-words";
       act.dataset.find = part.id;
       // The magnifying glass (operator, 2026-09-30 on #411), an act that shows
       // its icon alone (#460): its words are its name and its tooltip.

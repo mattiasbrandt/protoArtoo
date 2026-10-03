@@ -949,8 +949,9 @@
   //
   // @param {Element} host
   // @param {object} options
-  //   acts  - [{id, label, icon}] in the order they are offered; each is an
-  //           act that shows its icon alone (#460, data/shell.js "The act")
+  //   acts  - [{id, label, icon, keepsWords?}] in the order they are offered;
+  //           each is an act that shows its icon alone (#460, data/shell.js
+  //           "The act"), or its icon and its words with keepsWords: true
   //   onAct - called with the act id when a builder presses one
   // @returns {{show, clear, root}}
   // ---------------------------------------------------------------------------
@@ -980,7 +981,7 @@
     acts.forEach((act) => {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "btn btn-sm bodyview-act icon-act";
+      button.className = `btn btn-sm bodyview-act icon-act${act.keepsWords ? " act-keeps-words" : ""}`;
       button.dataset.act = act.id;
       button.innerHTML = window.PAUi.actFace(act.icon, act.label);
       actRow.appendChild(button);
