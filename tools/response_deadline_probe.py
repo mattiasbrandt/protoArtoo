@@ -78,10 +78,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--deadline-ms", type=int, default=8000,
+        "--deadline-ms", type=int, default=4000,
         help=(
             "the firmware's PA_RESPONSE_DEADLINE_MS. Not enforced here; it is "
-            "what each measured reclaim time is reported against (default 8000)"
+            "what each measured reclaim time is reported against (default "
+            "4000, the [flags_base] value in platformio.ini)"
         ),
     )
     parser.add_argument(
