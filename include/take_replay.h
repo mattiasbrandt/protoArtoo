@@ -35,6 +35,8 @@
 //     holds every take off that Part until the move is over (the flutter's
 //     whole swing). The take then moves the Part again on its next change; it
 //     does not send its held target back, which would undo the step.
+//   - A TOGGLE PLAYS ITS TAKES ON ITS OPEN HALF ONLY (operator, 2026-10-03).
+//     The close half plays its steps alone; `t` counts from the run's start.
 //   - THE END STEP CUTS. A take still playing when its run reaches its end
 //     step stops there, as a Gesture and a flutter do, and commands nothing.
 //

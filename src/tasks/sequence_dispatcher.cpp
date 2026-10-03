@@ -430,10 +430,21 @@ static __attribute__((noinline)) void takeLogStopped(const TakeReplay& t, const 
 
 // The run has just started: the takes it names, if any, are this task's now.
 // Those that will not play - past what this board keeps, or with no memory
-// for them - are said here, and the steps run anyway.
-static __attribute__((noinline)) void takesBegin(uint32_t now) {
+// for them - are said here, and the steps run anyway. A toggle sequence plays
+// its takes on its open half only (operator, 2026-10-03): the half the engine
+// has just chosen is the close half when it runs the entry's closeSteps, and
+// that half plays its steps alone.
+static __attribute__((noinline)) void takesBegin(uint32_t now, const SeqEngineState& engine) {
     SeqStoreTakesUnplayed unplayed = {};
     takeRun = seqStoreClaimRunTakes(&unplayed);
+    if (engine.entry->closeSteps != nullptr && engine.steps == engine.entry->closeSteps) {
+        if (takeRun != nullptr || unplayed.overCap != 0 || unplayed.noMemory != 0) {
+            PA_LOG_INFO(TAG, "takes not played - the close half plays its steps only");
+        }
+        free(takeRun);
+        takeRun = nullptr;
+        return;
+    }
     if (unplayed.overCap != 0) {
         PA_LOG_WARN(TAG, "%u take(s) not played - this droid plays %u a sequence",
                     (unsigned)unplayed.overCap, (unsigned)TAKE_STORE_CAP);
@@ -1431,7 +1442,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 }
                 if (entry != nullptr) {
                     seqEngineStart(engine, entry, now);
-                    takesBegin(now);
+                    takesBegin(now, engine);
                     seqEvidenceBegin(req.name, (uint8_t)req.src, now, bodyQueueFullCount());
                     resyncCloseIdx = SEQ_RESYNC_CLOSE_NONE;  // a new run supersedes any staged resync close
                     // ...and so does a bulk centre still sweeping. A sequence
