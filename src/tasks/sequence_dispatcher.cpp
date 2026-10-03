@@ -542,13 +542,13 @@ static __attribute__((noinline)) void takeSendPart(uint8_t i, uint8_t p, uint32_
     const bool wired = configCacheReadPartOutputEnds(partId, &address, &openUs, &closeUs) &&
                        servoOutputSlotOf(address) != SERVO_OUTPUT_SLOT_NONE;
     if (!wired || !servoTaskDrivesOutput(address)) {
-        // Said once a run; the take asks again only when it moves the Part
-        // on, so wiring the Part mid-run picks it up at its next change.
-        if ((t->told & bit) == 0) {
+        // Said once a run, whichever take covers the Part; the take asks
+        // again only when it moves the Part on, so wiring the Part mid-run
+        // picks it up at its next change.
+        if (takeReplayTellOnce(takeRun, part)) {
             takeLogPart(*t, partId,
                         wired ? "restart the droid to use its Output"
                               : consoleReasonString(CONSOLE_REASON_PART_NOT_ASSIGNED));
-            t->told |= bit;
         }
         t->sent[p] = t->cur[p];
         return;

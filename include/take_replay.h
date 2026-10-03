@@ -82,13 +82,12 @@ struct TakeReplay {
     uint8_t bufAt;
     uint8_t bufCount;
     uint16_t held;                       // bit per Part: a step's move holds it
-    uint16_t told;                       // bit per Part: part-not-assigned said
     uint32_t buf[TAKE_REPLAY_BUF_SAMPLES];
     uint8_t part[TAKE_PARTS_MAX];        // catalog index, DROID_PART_COUNT for an id it lacks
     uint16_t cur[TAKE_PARTS_MAX];        // its target now, TAKE_NO_TARGET before the first
     uint16_t sent[TAKE_PARTS_MAX];       // the target last sent, TAKE_NO_TARGET when one is owed
 };
-static_assert(TAKE_PARTS_MAX <= 16, "held and told are 16-bit masks");
+static_assert(TAKE_PARTS_MAX <= 16, "held is a 16-bit mask");
 
 // The takes of one run: this header, then `count` TakeReplay entries, in one
 // heap block (takeReplayAt()).
@@ -97,6 +96,9 @@ struct TakeReplayRun {
     uint8_t count;
     uint32_t startMs;      // the run's start
     uint32_t stepAtMs;     // the last step move that held a Part
+    // Bit per catalog Part: the run has said it cannot move it, so the line
+    // is said once a run however many takes cover the Part.
+    uint8_t told[(DROID_PART_COUNT + 7) / 8];
 };
 static_assert(sizeof(TakeReplayRun) % alignof(TakeReplay) == 0, "entries follow aligned");
 
@@ -120,7 +122,6 @@ inline void takeReplayBegin(TakeReplay* t, const TakeFileInfo& info) {
     t->bufAt = 0;
     t->bufCount = 0;
     t->held = 0;
-    t->told = 0;
     for (uint8_t p = 0; p < TAKE_PARTS_MAX; ++p) {
         t->cur[p] = TAKE_NO_TARGET;
         t->sent[p] = TAKE_NO_TARGET;
@@ -179,6 +180,15 @@ inline bool takeReplayOutranked(TakeReplayRun* run, uint8_t i, uint8_t p) {
         if (takeReplayCovers(*takeReplayAt(run, j), part, &at)) return true;
     }
     return false;
+}
+
+// Whether the run has said it cannot move the Part at catalog index `part`,
+// and marks it said: true the first time only.
+inline bool takeReplayTellOnce(TakeReplayRun* run, uint8_t part) {
+    const uint8_t bit = (uint8_t)(1u << (part % 8));
+    if (part >= DROID_PART_COUNT || (run->told[part / 8] & bit) != 0) return false;
+    run->told[part / 8] |= bit;
+    return true;
 }
 
 // A step's move of the Part at catalog index `part` was sent at `nowMs`: every
