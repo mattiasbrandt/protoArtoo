@@ -1812,7 +1812,9 @@ On a full store, a take not yet saved into its sequence is replaced.
     nothing moved
   - `replaced`: the id of the take it replaced, when it did
   - `cues`: each cue pressed during the take, `{"t","action","payload"}`, `t`
-    in ms from arming and `action` the RC action token
+    in ms from arming and `action` the RC action token; a cue that sends a
+    `:` or `#` Marcduino line also carries `owner` - `dome`, `body` or `both` -
+    who answers it (Command Ownership, ADR 0055)
   - `cuesPast`: presses past the 24 a take holds, not kept
   - `stopped`, `seq`
 - Errors: `409` when no take is running, or the take could not be written

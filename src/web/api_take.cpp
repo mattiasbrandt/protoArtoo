@@ -13,6 +13,7 @@
 
 #include "api_json_response.h"
 #include "logging.h"
+#include "marcduino_ownership.h"  // marcduinoCommandOwner() - who a cue's line is for
 #include "rc_action_types.h"   // robotActionIdToString()
 #include "take.h"
 #include "take_store.h"
@@ -48,6 +49,31 @@ const char* stageWord(TakeStage stage) {
         case TAKE_STAGE_IDLE:
         default:
             return "idle";
+    }
+}
+
+// Who answers the Marcduino line a cue sends (Command Ownership, ADR 0055), or
+// nullptr for a cue that sends none. The page places a cue as a dome step only
+// where the dome is who answers it: a sequence's dome step reaches the dome
+// and nothing else, so a body-owned line placed there would move a different
+// thing - :OP01 opening a dome panel, not the body's first Output.
+const char* cueOwnerWord(const TakeCue& cue) {
+    char line[24];
+    if (cue.action == DOME_ACTION_MARCDUINO_SEQ) {
+        snprintf(line, sizeof(line), ":SE%s", cue.payload);
+    } else if (cue.action == DOME_ACTION_MARCDUINO_CMD && (cue.payload[0] == ':' || cue.payload[0] == '#')) {
+        snprintf(line, sizeof(line), "%s", cue.payload);
+    } else {
+        return nullptr;
+    }
+    switch (marcduinoCommandOwner(line)) {
+        case MarcduinoOwner::Body:
+            return "body";
+        case MarcduinoOwner::BodyAndDome:
+            return "both";
+        case MarcduinoOwner::Dome:
+        default:
+            return "dome";
     }
 }
 
@@ -187,6 +213,7 @@ void handleTakeKeepPost(WebRequest& req) {
         cue["t"] = c.cues[i].ms;
         cue["action"] = robotActionIdToString(c.cues[i].action);
         cue["payload"] = c.cues[i].payload;
+        if (const char* owner = cueOwnerWord(c.cues[i])) cue["owner"] = owner;
     }
     doc["cuesPast"] = c.cuesPast;
     webSendJsonDocument(req, doc, kTakeKeepMaxBytes, TAG);

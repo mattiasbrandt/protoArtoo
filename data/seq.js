@@ -4410,22 +4410,30 @@
 
   // The step that does what a cue did, or null where none does:
   //   a random sound            -> Sound Category, that category
-  //   a command: $ line         -> Sound command; a : or # line -> Dome command
-  //   a body routine SEnn       -> Dome command :SEnn, as the cue sends it
-  //   a sequence (dome_seq)     -> Sequence, by that name
-  // A toggle, a mode, the estop, Sleep and the speed preset have no step.
+  //   a $ command               -> Sound command
+  //   a : or # line the dome    -> Dome command, as the cue sent it
+  //   answers (`owner` "dome")
+  //   a sequence (dome_seq)     -> Sequence: a Learned one by its id, as the
+  //                                library places one (ADR 0046), else by name
+  // A line the body answers - a body routine :SE30-36, a panel number that is
+  // one of the body's Outputs, a full-droid :SEnn - has no step: a sequence's
+  // dome step reaches the dome only, so placing it would move something else
+  // (Command Ownership, ADR 0055; the droid says `owner` in the receipt). Nor
+  // do a toggle, a mode, the estop, Sleep or the speed preset.
   const CUE_SOUND_PREFIX = "sound_rand_";
-  const cueStep = ({ action = "", payload = "" }) => {
+  const cueStep = ({ action = "", payload = "", owner = "" }) => {
     if (action.startsWith(CUE_SOUND_PREFIX)) {
       const category = action.slice(CUE_SOUND_PREFIX.length);
       return AUDIO_CATEGORIES.includes(category) ? { type: "audioCat", ...stepTypeDefaults.audioCat, category } : null;
     }
-    if (action === "cmd") {
-      if (payload.startsWith("$")) return { type: "audio", cmd: payload };
-      return /^[:#]/.test(payload) ? { type: "dome", cmd: payload } : null;
+    if (action === "cmd" && payload.startsWith("$")) return { type: "audio", cmd: payload };
+    if ((action === "cmd" || action === "seq") && owner === "dome") {
+      return { type: "dome", cmd: action === "seq" ? `:SE${payload}` : payload };
     }
-    if (action === "seq") return /^\d{2}$/.test(payload) ? { type: "dome", cmd: `:SE${payload}` } : null;
-    if (action === "dome_seq") return payload ? { type: "sequence", ref: payload } : null;
+    if (action === "dome_seq" && payload) {
+      const learned = sequences.find((x) => x.id && x.name === payload);
+      return learned ? { type: "sequence", ref: learned.id, name: learned.name } : { type: "sequence", ref: payload };
+    }
     return null;
   };
 
