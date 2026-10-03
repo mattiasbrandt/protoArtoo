@@ -10862,9 +10862,9 @@ label.seq-act {
    The act (#460)
    --------------------------------------------------------------------------- */
 
-/* The act (#460): an action button that shows its icon alone, a square at its
-   own family's height, its words kept in .act-label as its accessible name
-   and named on hover and focus by the one .act-tip data/shell.js draws.
+/* An action button that shows its icon alone, a square at its own family's
+   height, its words kept in .act-label as its accessible name and named on
+   hover and focus by the one .act-tip data/shell.js draws.
 
    Icon-only is a trial the operator decides at the look. Every rule that
    makes it is under :root:not(.act-words), so THE SWITCH is the class

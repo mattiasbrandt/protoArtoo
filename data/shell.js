@@ -939,8 +939,9 @@
   // assistive technology, which already has the words as the button's name.
   //
   // It names the act and nothing more. Why an act is switched off, and what a
-  // control that moves something does, stay visible text on the page
-  // (ADR 0059); the tooltip is never the only place either is said.
+  // control that moves something does, are visible text on the page where a
+  // surface says them (ADR 0059); nothing that was said there moved into the
+  // tooltip.
   // ---------------------------------------------------------------------------
   const actTip = document.createElement("div");
   actTip.className = "act-tip";
