@@ -47,6 +47,7 @@
 #include "../../include/robot_state.h"
 #include "../../include/sbus_decoder.h"
 #include "../../include/sbus_watchdog.h"
+#include "../../include/take.h"
 #include "../../include/web_server.h"
 
 static const char* TAG = "RCInputTask";
@@ -269,6 +270,9 @@ static void __attribute__((noinline)) dispatchPuppetStrings(const RcProcessorOut
                             (unsigned)triggers[i].channel, part);
             }
             rcPuppetSent(&state, ask.permille, nowMs);
+            // A take captures what the string commanded, driven or not: it
+            // names the Part, and replay finds the Output then.
+            takeOnStringTarget(part, ask.permille);
             continue;
         }
 
@@ -292,9 +296,22 @@ static void __attribute__((noinline)) dispatchPuppetStrings(const RcProcessorOut
         cmd.source = SRC_SBUS;
         if (xQueueSend(servoCmdQueue, &cmd, 0) == pdTRUE) {
             rcPuppetSent(&state, ask.permille, nowMs);
+            takeOnStringTarget(part, ask.permille);
             sentTo[sentCount++] = address;
         } else {
             logQueueDrop(QUEUE_SERVO_CMD, "puppet string");
+        }
+    }
+}
+
+// A take was just armed: each string already holding its Part reports that
+// target, so the take starts from where the Parts are (include/take.h). Out of
+// line, off the measured chain, like dispatchPuppetStrings().
+static void __attribute__((noinline)) seedTakeFromStrings() {
+    for (size_t i = 0; i < RC_TRIGGER_MAX; ++i) {
+        const RcPuppetState& state = s_rcProcessor.puppetStates[i];
+        if (state.engaged && state.sent) {
+            takeOnStringTarget(state.part, state.sentPermille);
         }
     }
 }
@@ -336,6 +353,13 @@ static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMap
 
     // Tier 2 trigger results
     rcDispatchTriggerResults(output, triggers);
+
+    // A cue pressed during a take lands in its sequence as a step (#442).
+    for (size_t i = 0; i < RC_TRIGGER_MAX; ++i) {
+        if (output.triggerPressed[i]) {
+            takeOnCue(triggers[i].target, triggers[i].marcduinoPayload);
+        }
+    }
 
     // Puppet strings last, so a cue pressed this frame has the queue first
     dispatchPuppetStrings(output, triggers);
@@ -970,6 +994,13 @@ void rcInputTask(void* pvParameters) {
                 }
             }
         }
+
+        // A take closes its quantum, and stops at its bound or on the
+        // estop, every iteration: with frames or without (include/take.h).
+        if (takeSeedWanted()) {
+            seedTakeFromStrings();
+        }
+        takeOnLoop(millis());
 
         // Feed Task Watchdog Timer
         esp_task_wdt_reset();

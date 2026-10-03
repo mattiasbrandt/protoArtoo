@@ -17,6 +17,7 @@ upload handlers. Breakdown: 61 core API routes + 2 multipart upload routes +
 - [Outputs](#outputs)
 - [Audio and Mood](#audio-and-mood)
 - [Learned Sequences](#learned-sequences)
+- [Takes](#takes)
 - [Configuration and RC](#configuration-and-rc)
 - [Action Registry](#action-registry)
 - [Controller Console](#controller-console)
@@ -1697,6 +1698,11 @@ Sends a full sequence JSON v1 in the body. The endpoint runs Protocol Check vali
   - `steps`: array of valid step objects
   - `toggleGroup`: optional toggle group assignment
   - `suppressMs`: optional suppression interval (1000–120000 ms)
+  - `takes`: optional; the takes the sequence holds, each `{"id","t"}` - the
+    take's 8-character id and where it starts, in ms. Refused (`field`
+    `takes`) when it is not a list of those, names a take twice, holds more
+    than the board keeps, or the sequence has no `id`. The save keeps the takes
+    it names and deletes this sequence's other takes ([Takes](#takes))
 - Success: `200` `{"ok":true}`
 - Errors:
   - `400` `{"ok":false,"error":"...","field":"<field>"}` (Protocol Check failure, see field)
@@ -1723,7 +1729,8 @@ curl -s -X POST http://artoo.local/api/seq \
 
 ### DELETE /api/seq
 
-Deletes a Learned Sequence from storage (Memory Wipe).
+Deletes a Learned Sequence from storage (Memory Wipe), and its takes with it
+unless another sequence carries the same `id`.
 
 - Query params:
   - `name=<sequence-name>`: required; Learned Sequence name to delete
@@ -1744,6 +1751,99 @@ curl -s -X DELETE http://artoo.local/api/seq?name=DM:CUSTOM
 ```json
 {"ok":true}
 ```
+
+## Takes
+
+A take is a performance kept off the sticks: the commanded targets of the Parts
+that had an RC Channel set to Perform a Part when it was armed (#442, ADR 0061).
+Its motion is a file of its own, which a sequence names in its `takes` array;
+the cue presses made during it come back in the receipt for the Sequences page
+to place as ordinary steps. None of these routes asks for Non-RC Control
+consent (ADR 0064).
+
+The file sits in `/seq` as `<owner>.<take>.new` when it is kept off a
+performance and `<owner>.<take>.take` once its sequence is saved naming it;
+`<owner>` is the sequence's stable `id`. A boot deletes the `.new` takes and
+the takes of a sequence that is gone (`include/take_store_util.h`).
+
+### GET /api/take
+
+The take in hand and the store's figures.
+
+- `state`: `idle`, `performing` or `stopped`
+- `stopped`: once it has stopped - `kept`, `full` (it reached its size bound)
+  or `estop` (the estop latched; what was performed is kept)
+- `seq`, `elapsedMs`, `fill` (permille of the size bound used), `nearlyFull`
+  (`fill` at 900 or more), `samples`, `cues`, `parts`: while it is not idle
+- `available`: whether this boot set memory aside to capture into - false
+  when the boot RC mode reads no SBUS receiver
+- `store`: `cap` (takes the board keeps: 1 on `artoo-esp32`, 20 on
+  `firebeetle2`), `held`, `maxBytes` (one take file at most: 12,288 /
+  24,576 B), `floorBytes` (free space a write leaves: twice `maxBytes`),
+  `rateHz` (20)
+
+#### Example response
+
+```json
+{"state":"performing","seq":"DM:WAVE","elapsedMs":4200,"fill":31,"nearlyFull":false,"samples":96,"cues":1,"parts":["domeLid","doorFL"],"available":true,"store":{"cap":1,"held":0,"maxBytes":12288,"floorBytes":24576,"rateHz":20}}
+```
+
+### POST /api/take/arm
+
+Arms a take for a saved sequence. The take covers the Parts with an RC
+Channel set to Perform a Part at this moment.
+
+- Body: `{"seq":"DM:WAVE"}`
+- Success: `200` `{"ok":true}`
+- Errors:
+  - `400` missing or invalid `seq`
+  - `409` `{"ok":false,"error":"..."}` when it cannot be armed, saying why: no
+    RC Channel is set to Perform a Part, no radio is fitted, no frames are
+    arriving, the estop is latched, a take is already running, the sequence
+    is not saved, or there is no room for a take
+
+### POST /api/take/keep
+
+Stops the take in hand - or takes one that stopped by itself - and keeps it.
+On a full store, a take not yet saved into its sequence is replaced.
+
+- Success: `200` with the receipt:
+  - `take`: `{"id","rateHz","lengthMs","samples","parts"}`, or `null` when
+    nothing moved
+  - `replaced`: the id of the take it replaced, when it did
+  - `cues`: each cue pressed during the take, `{"t","action","payload"}`, `t`
+    in ms from arming and `action` the RC action token
+  - `cuesPast`: presses past the 24 a take holds, not kept
+  - `stopped`, `seq`
+- Errors: `409` when no take is running, or the take could not be written
+  (it stays stopped and can be kept again)
+
+#### Example response
+
+```json
+{"ok":true,"seq":"DM:WAVE","stopped":"kept","take":{"id":"k3f9q2ab","rateHz":20,"lengthMs":8450,"samples":212,"parts":["domeLid"]},"cues":[{"t":2100,"action":"sound_rand_scream","payload":""}],"cuesPast":0}
+```
+
+### GET /api/take/file
+
+One take file as stored, `application/octet-stream`.
+
+- Query params: `owner` (the sequence's stable id), `take` (the take's id)
+- Errors: `400` invalid params, `404` no such take
+
+The file is little-endian: `PATK`, format `1`, `rateHz`, `partCount`, a
+reserved byte, `lengthTicks` (u32), `sampleCount` (u32), the Part ids at 11
+bytes each, then each sample as a u32 `tick << 16 | partIndex << 10 |
+permille` (`include/take_capture.h`).
+
+### POST /api/take/file
+
+Puts a take file back, as a multipart upload whose file name is
+`<owner>.<take>.take`. The sequence must be on the droid first. The file is
+checked as it arrives and lands only whole.
+
+- Success: `200` `{"ok":true}`
+- Errors: `400` no file arrived, `409` with the reason it was refused
 
 ## Configuration and RC
 

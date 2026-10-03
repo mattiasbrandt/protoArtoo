@@ -22,6 +22,7 @@
 #include "seq_store_index.h"
 #include "sequence_dispatcher.h"  // sequenceCatalogFind() - a Factory phrase
 #include "sequence_gesture.h"     // seqStepsMayOpenBodyPart() - the index row's flag
+#include "take_store.h"           // a sequence's takes live and die with it (#442)
 
 static const char* TAG = "SEQST";
 static const char* SEQ_DIR = "/seq";
@@ -130,6 +131,43 @@ static void copyStableId(JsonVariantConst root, char* out, size_t cap) {
         strncpy(out, id, cap - 1);
         out[cap - 1] = '\0';
     }
+}
+
+// The takes a sequence holds (#442, ADR 0061): an optional top-level array,
+//   "takes": [ {"id": "k3f9q2ab", "t": 0}, ... ]
+// each naming one take file of this sequence by its id, and placing it `t` ms
+// from the start. The Rehearsal and the timeline read the rest; the store reads
+// the ids, so a save keeps the takes named and drops the others
+// (takeStoreSequenceSaved()). Refused here rather than stored half-read: no
+// other check sees this array (the engine and the parser ignore it, and the
+// browser's Protocol Check does not read it). A sequence saved before takes
+// existed has no array and saves exactly as it did.
+static ProtocolCheckResult readTakeRefs(JsonVariantConst root, TakeRefs* out) {
+    out->count = 0;
+    JsonVariantConst takes = root["takes"];
+    if (takes.isNull()) return pcOk();
+    if (!takes.is<JsonArrayConst>()) return pcFail("takes", "takes must be a list");
+    JsonArrayConst arr = takes.as<JsonArrayConst>();
+    if (arr.size() > TAKE_STORE_CAP) {
+        return pcFail("takes", "more takes than this droid keeps");
+    }
+    for (JsonVariantConst each : arr) {
+        const char* id = each["id"] | (const char*)nullptr;
+        if (!each.is<JsonObjectConst>() || !takeIdValid(id)) {
+            return pcFail("takes", "a take's id must be 8 lowercase letters or digits");
+        }
+        JsonVariantConst t = each["t"];
+        const long long at = t.is<long long>() ? t.as<long long>() : -1LL;
+        if (at < 0 || at > 0x7FFFFFFFLL) {
+            return pcFail("takes", "a take's t must be whole milliseconds from the start");
+        }
+        for (uint8_t k = 0; k < out->count; ++k) {
+            if (strcmp(out->ids[k], id) == 0) return pcFail("takes", "a take is named twice");
+        }
+        memcpy(out->ids[out->count], id, TAKE_ID_LEN + 1);
+        ++out->count;
+    }
+    return pcOk();
 }
 
 // -----------------------------------------------------------------------------
@@ -269,6 +307,16 @@ void seqStoreInit() {
         return;
     }
 
+    // The takes each sequence names, gathered while the directory is open and
+    // settled once it is closed (a walk never edits the directory it reads).
+    // Boot only, from the heap, and given back before this returns.
+    struct BootTakes {
+        char owner[PC_SEQ_ID_MAX + 1];
+        TakeRefs refs;
+    };
+    BootTakes* bootTakes = (BootTakes*)calloc(SEQ_INDEX_CAPACITY, sizeof(BootTakes));
+    uint8_t bootTakeCount = 0;
+
     uint8_t indexed = 0, skipped = 0;
     for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
         if (f.isDirectory()) { f.close(); continue; }
@@ -278,6 +326,13 @@ void seqStoreInit() {
         char file[40];
         strncpy(file, base ? base + 1 : nm, sizeof(file) - 1);
         file[sizeof(file) - 1] = '\0';
+        // A take's file, or a take written half way: not a sequence, and
+        // the take store's to settle (takeStoreInit() below).
+        TakeFileNameParts take;
+        if (takeFileNameParse(file, &take) || strcmp(file, ".tmp.take") == 0) {
+            f.close();
+            continue;
+        }
 
         JsonDocument doc;
         DeserializationError err = deserializeJson(doc, f);
@@ -318,6 +373,13 @@ void seqStoreInit() {
         SeqIndexEntry entry;
         fillIndexEntry(entry, d, root, file, checkResult.ok);
         stagingFree(st);
+        if (bootTakes != nullptr && entry.id[0] != '\0' && bootTakeCount < SEQ_INDEX_CAPACITY) {
+            BootTakes& bt = bootTakes[bootTakeCount];
+            if (readTakeRefs(root, &bt.refs).ok) {
+                memcpy(bt.owner, entry.id, sizeof(bt.owner));
+                ++bootTakeCount;
+            }
+        }
 
         if (!checkResult.ok) {
             PA_LOG_WARN(TAG, "index invalid %s: %s (%s)", file,
@@ -331,6 +393,18 @@ void seqStoreInit() {
     }
     dir.close();
     PA_LOG_INFO(TAG, "indexed %u Learned Sequence(s), skipped %u", indexed, skipped);
+
+    // Each sequence's takes as its file names them - a save cut short after
+    // the sequence was written and before its takes were settled is finished
+    // here - then whatever no sequence holds goes (takeStoreInit()).
+    if (bootTakes == nullptr) {
+        PA_LOG_WARN(TAG, "no memory to read the sequences' takes; takes not saved into a sequence are removed");
+    }
+    for (uint8_t i = 0; i < bootTakeCount; ++i) {
+        takeStoreSequenceSaved(bootTakes[i].owner, bootTakes[i].refs);
+    }
+    free(bootTakes);
+    takeStoreInit();
 }
 
 // -----------------------------------------------------------------------------
@@ -523,6 +597,20 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
         return r;
     }
 
+    // The takes it names, and the id that owns them: a take file is named by
+    // its sequence's stable id, so a sequence with takes must carry one.
+    TakeRefs takeRefs;
+    char selfId[PC_SEQ_ID_MAX + 1];
+    copyStableId(root, selfId, sizeof(selfId));
+    r = readTakeRefs(root, &takeRefs);
+    if (r.ok && takeRefs.count > 0 && selfId[0] == '\0') {
+        r = pcFail("takes", "a sequence holding takes needs its id");
+    }
+    if (!r.ok) {
+        stagingFree(st);
+        return r;
+    }
+
     char path[64];
     if (!nameToPath(d.name, path, sizeof(path))) {
         stagingFree(st);
@@ -542,8 +630,6 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
     // reaches back round to this one, no path is too deep, and the whole run
     // fits (ADR 0046). Checked under the lock, against the files as they are.
     {
-        char selfId[PC_SEQ_ID_MAX + 1];
-        copyStableId(root, selfId, sizeof(selfId));
         ProtocolCheckResult nest = protocolCheckNesting(d, selfId, d.name, nestLookup, nullptr);
         if (!nest.ok) {
             unlock();
@@ -596,6 +682,12 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
 
     seqStoreIndexAdd(entry);  // insert or update in place
     unlock();
+
+    // Its takes as it names them now: those kept, any other of its own gone.
+    // After the lock, never inside it (include/take_store.h).
+    if (selfId[0] != '\0') {
+        takeStoreSequenceSaved(selfId, takeRefs);
+    }
     return pcOk();
 }
 
@@ -607,6 +699,10 @@ bool seqStoreDelete(const char* name) {
     if (!nameToPath(name, path, sizeof(path))) return false;
 
     if (!lock()) return false;
+    char ownerId[PC_SEQ_ID_MAX + 1] = {};
+    if (const SeqIndexEntry* e = seqStoreIndexFind(name)) {
+        memcpy(ownerId, e->id, sizeof(ownerId));
+    }
     const bool fileExisted = LittleFS.exists(path);
     if (fileExisted && !LittleFS.remove(path)) {
         // Keep the index entry: the file is still on flash and would be
@@ -617,7 +713,13 @@ bool seqStoreDelete(const char* name) {
         return false;
     }
     const bool removedIdx = seqStoreIndexRemove(name);
+    // Its takes go with it - unless another sequence still carries the same
+    // id (one saved under a new name keeps its id), whose takes they are too.
+    const bool idStillHeld = ownerId[0] == '\0' || seqStoreIndexFindRef(ownerId) != nullptr;
     unlock();
+    if (!idStillHeld) {
+        takeStoreSequenceDeleted(ownerId);
+    }
     return fileExisted || removedIdx;
 }
 

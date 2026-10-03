@@ -43,6 +43,7 @@
 #include "robot_state.h"
 #include "safety.h"
 #include "seq_store.h"
+#include "take.h"
 #include "sequence_dispatcher.h"
 #include "pca9685.h"        // the PCA9685's bring-up and sender (#444)
 #include "servo_backend.h"  // servoBackendMemberIsPca9685()
@@ -570,6 +571,9 @@ void setup() {
         // The SBUS decoders this boot's RC mode reads, and no others, here
         // rather than in the task: nothing on Core 1 allocates after setup().
         rcInputAllocateDecoders(rcPlan);
+        // And the buffer a take is captured into, for an SBUS plan only: a
+        // puppet string exists only on SBUS (include/take.h).
+        takeAllocate(rcPlan);
         // Size is chip-target specific; RC_INPUT_TASK_STACK_BYTES (tools/task_stack_recipes.json)
         // carries the measured chain and the sizing rule on each chip.
         xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", RC_INPUT_TASK_STACK_BYTES,

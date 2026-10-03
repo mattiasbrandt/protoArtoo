@@ -129,6 +129,7 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
 
             // Dispatch action
             output.triggerResults[i] = rcDispatchAction(ap);
+            output.triggerPressed[i] = dr.pressed;
 
             // Update stationary lock if action requested it
             if (output.triggerResults[i].setStationary) {

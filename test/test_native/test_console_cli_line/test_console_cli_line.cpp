@@ -192,7 +192,9 @@ void tearDown() {}
 // servo.action.travel, taking action to 125; #440 added
 // dome.action.pose-sequence, taking action to 126; #445 added
 // dome.action.front-is-here and dome.action.go-home, taking action to 128;
-// #442 added servo.action.puppet-part, taking action to 129.
+// #442 added servo.action.puppet-part, taking action to 129, and its take
+// slice dome.action.arm-take, -keep-take, -restore-take-file and
+// dome.api.get-take-file, taking it to 133.
 // -----------------------------------------------------------------------------
 
 void test_operations_type_action_filters_through_the_real_adapter_path() {
@@ -201,8 +203,8 @@ void test_operations_type_action_filters_through_the_real_adapter_path() {
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(129, g_itemCount,
-        "operations type=action must list exactly the 129 action entries when "
+    TEST_ASSERT_EQUAL_INT_MESSAGE(133, g_itemCount,
+        "operations type=action must list exactly the 133 action entries when "
         "typed as one line through the real embedded-cli parser and "
         "consoleBuildCommandLine() - not when the module is called directly "
         "with a hand-built \"operations type=action\" string");
@@ -239,7 +241,7 @@ void test_bare_operations_still_lists_everything_through_the_real_adapter_path()
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT(205, g_itemCount);  // #347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home, #442 servo.action.puppet-part; #413 retired aux.config.led-pin
+    TEST_ASSERT_EQUAL_INT(210, g_itemCount);  // #347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home, #442 servo.action.puppet-part and the five take rows; #413 retired aux.config.led-pin
 }
 
 // help <op> must still work through the same real path (the reconstruction

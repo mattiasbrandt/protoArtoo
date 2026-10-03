@@ -673,6 +673,117 @@ rows:
     executor_or_core: "seqStoreIndexAt"
     missing_metadata: []
     notes: ""
+  - name: dome.api.get-take
+    type: status
+    registry_api_path: /api/take
+    registry_cpp_enum: null
+    registry_cpp_file: src/web/api_take.cpp
+    registry_sse_event: null
+    registry_nvs_key: null
+    registry_requires_web_control: false
+    registry_sources:
+      - web_api
+    registry_marcduino_cmd: null
+    anchor_kind: "api"
+    evidence:
+      - "src/web/web_seam_routes.cpp - `webRegisterRoute(\"/api/take\", WebMethod::kGet, handleTakeGet)`"
+      - "include/api_take.h - `void handleTakeGet(WebRequest& req)`"
+      - "src/web/api_take.cpp - `void handleTakeGet(WebRequest& req)`"
+      - "src/web/api_take.cpp - `takeStatusRead(&st)`"
+    executor_or_core: "takeStatusRead"
+    missing_metadata: []
+    notes: "REST-only: the Sequences page polls it while a take runs; the Console has no take to report."
+  - name: dome.action.arm-take
+    type: action
+    registry_api_path: /api/take/arm
+    registry_cpp_enum: null
+    registry_cpp_file: src/take.cpp
+    registry_sse_event: null
+    registry_nvs_key: null
+    registry_params:
+      - name: seq
+        type: string
+        required: true
+    registry_requires_web_control: false
+    registry_sources:
+      - web_api
+    registry_marcduino_cmd: null
+    anchor_kind: "api"
+    evidence:
+      - "src/web/web_seam_routes.cpp - `webRegisterRoute(\"/api/take/arm\", WebMethod::kPost, handleTakeArmPost)`"
+      - "include/api_take.h - `void handleTakeArmPost(WebRequest& req)`"
+      - "src/web/api_take.cpp - `void handleTakeArmPost(WebRequest& req)`"
+      - "src/web/api_take.cpp - `takeArm(seq, refusal, sizeof(refusal))`"
+    executor_or_core: "takeArm"
+    missing_metadata: []
+    notes: "Out of scope for the Console: a take belongs to the sequence open in the editor."
+  - name: dome.action.keep-take
+    type: action
+    registry_api_path: /api/take/keep
+    registry_cpp_enum: null
+    registry_cpp_file: src/web/api_take.cpp
+    registry_sse_event: null
+    registry_nvs_key: null
+    registry_requires_web_control: false
+    registry_sources:
+      - web_api
+    registry_marcduino_cmd: null
+    anchor_kind: "api"
+    evidence:
+      - "src/web/web_seam_routes.cpp - `webRegisterRoute(\"/api/take/keep\", WebMethod::kPost, handleTakeKeepPost)`"
+      - "include/api_take.h - `void handleTakeKeepPost(WebRequest& req)`"
+      - "src/web/api_take.cpp - `void handleTakeKeepPost(WebRequest& req)`"
+      - "src/web/api_take.cpp - `takeStoreWriteNew(keep.ownerId, c, takeId, replaced, refusal, sizeof(refusal))`"
+    executor_or_core: "takeStoreWriteNew"
+    missing_metadata: []
+    notes: "Out of scope for the Console: the answer is the receipt the Sequences page places."
+  - name: dome.api.get-take-file
+    type: action
+    registry_api_path: /api/take/file
+    registry_cpp_enum: null
+    registry_cpp_file: src/web/api_take.cpp
+    registry_sse_event: null
+    registry_nvs_key: null
+    registry_params:
+      - name: owner
+        type: string
+        required: true
+      - name: take
+        type: string
+        required: true
+    registry_requires_web_control: false
+    registry_sources:
+      - web_api
+    registry_marcduino_cmd: null
+    anchor_kind: "api"
+    evidence:
+      - "src/web/web_seam_routes.cpp - `webRegisterRoute(\"/api/take/file\", WebMethod::kGet, handleTakeFileGet)`"
+      - "include/api_take.h - `void handleTakeFileGet(WebRequest& req)`"
+      - "src/web/api_take.cpp - `void handleTakeFileGet(WebRequest& req)`"
+      - "src/web/api_take.cpp - `req.sendChunked(\"application/octet-stream\", takeFileFiller)`"
+    executor_or_core: "takeStoreReadSlice"
+    missing_metadata: []
+    notes: "Out of scope for the Console: a binary document transfer, as dome.api.get-sequence."
+  - name: dome.action.restore-take-file
+    type: action
+    registry_api_path: /api/take/file
+    registry_cpp_enum: null
+    registry_cpp_file: src/web/api_take.cpp
+    registry_sse_event: null
+    registry_nvs_key: null
+    registry_requires_web_control: false
+    registry_sources:
+      - web_api
+    registry_marcduino_cmd: null
+    anchor_kind: "api"
+    evidence:
+      - "src/web/web_seam_routes.cpp - `webRegisterUploadRoute(\"/api/take/file\", handleTakeFileUploadChunk, handleTakeFileUploadDone)`"
+      - "include/api_take.h - `void handleTakeFileUploadDone(WebRequest& req)`"
+      - "src/web/api_take.cpp - `void handleTakeFileUploadDone(WebRequest& req)`"
+      - "src/web/api_take.cpp - `takeStoreRestoreBegin(filename, refusal, sizeof(refusal))`"
+    executor_or_core: "takeStoreRestoreBegin"
+    missing_metadata: []
+    notes: "Out of scope for the Console: a file upload, the mechanism system.action.upload-filesystem uses."
   - name: dome.event.cue-alarm
     type: event
     registry_api_path: null
