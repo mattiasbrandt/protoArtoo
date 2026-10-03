@@ -234,31 +234,3 @@ inline void rcPuppetSent(RcPuppetState* state, uint16_t permille, uint32_t nowMs
     state->sentPermille = permille;
     state->sentMs = nowMs;
 }
-
-// -----------------------------------------------------------------------------
-// rcPuppetMayRetarget()
-// Whether a new target may replace the move ServoTask is making on the Part's
-// Output now, read from that Output's commanded mirror (servoCommandedOf()).
-//
-// ServoTask plans every move from rest (servoMotionPlan(), include/
-// servo_motion_model.h): a target replacing a move part way through starts the
-// Output from standstill again. Sent every frame, a stick that keeps moving
-// would hold the Part inside the first few milliseconds of its ramp - about
-// 1 us a frame on the default profile (1000 ms throw, 250 ms to speed) - and
-// it would crawl at a twentieth of its own speed until the stick stopped. So a
-// target that only carries the move further the way it is already going waits
-// for the move to arrive, and then goes as one move at the Output's own pace.
-// A target that turns the Part back, or stops it short of where it is going,
-// goes at once: waiting there would carry the Part past where the stick is.
-// `movingToUs` is where the move settles; on an overshoot's way out the Output
-// passes it, so for those frames a further target reads as a turn back and
-// goes early. That costs one restart of a move already ending, nothing more.
-// -----------------------------------------------------------------------------
-inline bool rcPuppetMayRetarget(uint16_t nowUs, uint16_t movingToUs, bool moving, uint16_t newTargetUs) {
-    if (!moving) {
-        return true;
-    }
-    const bool extends = (movingToUs > nowUs && newTargetUs > movingToUs) ||
-                         (movingToUs < nowUs && newTargetUs < movingToUs);
-    return !extends;
-}

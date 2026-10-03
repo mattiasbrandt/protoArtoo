@@ -101,6 +101,12 @@ static uint32_t s_unreachable_mask = 0;
 // `limp` is why there is no pulse, read only while `known` is false, so a
 // surface can say "pulses off" and "the estop let go" differently.
 //
+// `moveThrowMs` and `moveEasingPlusOne` are the Gesture's own pace the move in
+// progress was planned with (servoMotionOverride(), both 0 for the Output's
+// own), kept so the second half of a move that had to stop first goes at the
+// pace the first half did (ADR 0049, #442). They sit in the padding after
+// `limp`, so they cost no RAM: the struct is 60 B either way.
+//
 // `release` is the Output Release the last move to ARRIVE owes (ADR 0043,
 // #443): armed by armReleaseOnArrival() at every place a move arrives, and
 // cancelled by endMove(), which everything that starts a move or takes the
@@ -145,6 +151,8 @@ static struct {
     bool moving;
     ServoHoldState hold;
     ServoLimpReason limp;
+    uint8_t moveEasingPlusOne;  // the Gesture's ease for the move in progress, or 0
+    uint16_t moveThrowMs;       // the Gesture's throw for the move in progress, or 0
     ServoReleaseTimer release;  // the Output Release owed since the last arrival
     ServoMotionRamp ramp;
     uint8_t legNo;             // 1..kLegCount while an out-and-back is in progress, else 0
@@ -490,6 +498,41 @@ static void writeOutputPulse(uint8_t slot, uint16_t pulseUs) {
 }
 
 // -----------------------------------------------------------------------------
+// planMove()
+// Plan a move to targetUs from where the Output is, into the Output's `ramp`,
+// and answer whether it ramps: false is a snap, which the caller writes. One
+// that replaces a move in progress starts where that move has got to and as
+// fast as it is going, both read off its ramp at nowMs (#442): commandedUs is
+// the last frame's write, up to a frame old, and paired with the speed now it
+// would be a step. One from rest starts from commandedUs, and
+// servoMotionRetarget() at a speed of zero is servoMotionPlan() exactly, so it
+// is the move it always was.
+//
+// `wasMoving` is the Output's `moving` as it stood before endMove(), which every
+// caller has run by now: endMove() clears the flag and leaves the ramp, and the
+// flag is what says the ramp is still the Output's -- a move ended where it was
+// by a hold or a stop leaves a ramp behind it that the Output no longer follows.
+// A leg's dwell is `moving` over a ramp that has arrived, which reads as no
+// speed at all (servoMotionSpeedAt()).
+//
+// noinline, and storing rather than returning the plan, deliberately: the
+// retarget's float locals and the 16 B plan stay in this frame, off
+// servoTask()'s, which processCommand() and so driveOutputTo() are inlined into
+// and which every route on ServoTask's measured chain starts from (ADR 0040).
+// A plan returned by value is a temporary in the caller's frame.
+// -----------------------------------------------------------------------------
+static bool __attribute__((noinline)) planMove(uint8_t slot, bool wasMoving, uint16_t targetUs,
+                                               const ServoMotionProfile& profile, uint32_t nowMs) {
+    const ServoMotionRamp& was = s_out[slot].ramp;
+    const ServoMotionRamp plan =
+        wasMoving ? servoMotionRetarget(servoMotionPositionAt(was, nowMs),
+                                        servoMotionSpeedAt(was, nowMs), targetUs, profile, nowMs)
+                  : servoMotionRetarget(s_out[slot].commandedUs, 0.0f, targetUs, profile, nowMs);
+    s_out[slot].ramp = plan;
+    return plan.durationMs != 0;
+}
+
+// -----------------------------------------------------------------------------
 // driveOutputTo()
 // Send an Output to a pulse width at the pace its Motion Profile sets.
 //
@@ -506,6 +549,10 @@ static void writeOutputPulse(uint8_t slot, uint16_t pulseUs) {
 // table, so no 72 B ServoOutputRow is put on ServoTask's measured chain
 // (ADR 0040). Its ease is already the one that runs (servoMotionProfileOf()),
 // so an overshoot on an unmeasured Output never reaches the planner as one.
+//
+// A move that replaces one in progress keeps its speed (planMove()): a
+// stick kept moving glides with it, and a sequence step that lands part way
+// through a move carries it on rather than stopping it dead first.
 // -----------------------------------------------------------------------------
 //
 // A Gesture's move may carry its own throw time and easing (`throwMs`,
@@ -519,7 +566,9 @@ static void driveOutputTo(uint8_t slot, uint16_t pulseUs, uint16_t throwMs = 0,
     }
     const ServoOutputAddress output = servoOutputSlotAddress(slot);
     // Whatever the Output was doing is over: a new command replaces a ramp part
-    // way through, and a nudge part way through, alike.
+    // way through, and a nudge part way through, alike. How it was moving is
+    // read first, because the new move starts from it (planMove()).
+    const bool wasMoving = s_out[slot].moving;
     endMove(slot);
 
     // A snap arrives in the frame it is written, so its release counts from
@@ -535,15 +584,14 @@ static void driveOutputTo(uint8_t slot, uint16_t pulseUs, uint16_t throwMs = 0,
     }
 
     servoMotionOverride(&profile, throwMs, easingPlusOne);
-    const ServoMotionRamp ramp =
-        servoMotionPlan(s_out[slot].commandedUs, targetUs, profile, millis());
-    if (ramp.durationMs == 0) {
+    if (!planMove(slot, wasMoving, targetUs, profile, millis())) {
         writeOutputPulse(slot, targetUs);
         armReleaseOnArrival(slot, millis());
         return;
     }
-    s_out[slot].ramp = ramp;
     s_out[slot].moving = true;
+    s_out[slot].moveThrowMs = throwMs;
+    s_out[slot].moveEasingPlusOne = easingPlusOne;
     // Nothing is written until the next frame, but the move already has a
     // target, and that is what a surface shows beside where the output stands.
     publishCommanded(slot);
@@ -572,7 +620,9 @@ static void driveOutputTo(uint8_t slot, uint16_t pulseUs, uint16_t throwMs = 0,
 // move by either route. Both planners hand this machine the same three leg
 // targets, and from here on the motion is one thing.
 // -----------------------------------------------------------------------------
-static void beginLeg(uint8_t slot, uint8_t leg, uint32_t nowMs);
+// `wasMoving` is the Output's `moving` before the out-and-back's endMove(), for
+// the first leg (planMove()); every later leg leaves a dwell, at rest.
+static void beginLeg(uint8_t slot, uint8_t leg, uint32_t nowMs, bool wasMoving);
 
 // The leg has arrived. Rest there where an eye can catch it, or, after the
 // last leg, the out-and-back is over: the output is back where it started.
@@ -593,7 +643,7 @@ static void legArrived(uint8_t slot, uint32_t nowMs) {
                 (unsigned)s_out[slot].commandedUs);
 }
 
-static void beginLeg(uint8_t slot, uint8_t leg, uint32_t nowMs) {
+static void beginLeg(uint8_t slot, uint8_t leg, uint32_t nowMs, bool wasMoving) {
     uint16_t targetUs = 0;
     // A leg number outside 1..kLegCount is the return, never another way out:
     // the same rule both planners' own LegTarget() keeps, so a caller that has
@@ -620,9 +670,10 @@ static void beginLeg(uint8_t slot, uint8_t leg, uint32_t nowMs) {
     const ServoOutputAddress output = servoOutputSlotAddress(slot);
     ServoMotionProfile profile = {};
     configCacheReadServoOutputMotionProfile(output.driver, output.channel, &profile);
-    const ServoMotionRamp ramp = servoMotionPlan(s_out[slot].commandedUs, targetUs, profile, nowMs);
-    s_out[slot].ramp = ramp;
-    if (ramp.durationMs == 0) {
+    // A leg goes at the Output's own pace; no Gesture paces an out-and-back.
+    s_out[slot].moveThrowMs = 0;
+    s_out[slot].moveEasingPlusOne = 0;
+    if (!planMove(slot, wasMoving, targetUs, profile, nowMs)) {
         // A snap: the leg is over the moment it is written.
         writeOutputPulse(slot, targetUs);
         legArrived(slot, nowMs);
@@ -739,7 +790,8 @@ static void beginNudge(uint8_t slot, CommandSource source) {
         return;
     }
     // Whatever the Output was doing is over, an out-and-back in progress included:
-    // this one starts from the width on the pin now.
+    // this one starts from the width on the pin now, as fast as it was going.
+    const bool wasMoving = s_out[slot].moving;
     endMove(slot);
     for (uint8_t leg = 1; leg <= kLegCount; ++leg) {
         s_out[slot].legTargetUs[leg - 1] = servoNudgeLegTarget(plan, leg);
@@ -748,7 +800,7 @@ static void beginNudge(uint8_t slot, CommandSource source) {
     PA_LOG_INFO(TAG, "[%s] %s nudged %u/%u us about %u us", commandSourceToString(source),
                 servoOutputSlotName(slot), (unsigned)plan.hiUs, (unsigned)plan.loUs,
                 (unsigned)plan.homeUs);
-    beginLeg(slot, 1, millis());
+    beginLeg(slot, 1, millis(), wasMoving);
 }
 
 // -----------------------------------------------------------------------------
@@ -810,7 +862,9 @@ static void beginTravel(uint8_t slot, CommandSource source) {
         return;
     }
     // Whatever the Output was doing is over, an out-and-back in progress included:
-    // this one comes back to the width on the pin now.
+    // this one comes back to the width on the pin now, and sets off from it as
+    // fast as it was going.
+    const bool wasMoving = s_out[slot].moving;
     endMove(slot);
     for (uint8_t leg = 1; leg <= kLegCount; ++leg) {
         s_out[slot].legTargetUs[leg - 1] = servoTravelLegTarget(plan, leg);
@@ -819,7 +873,7 @@ static void beginTravel(uint8_t slot, CommandSource source) {
     PA_LOG_INFO(TAG, "[%s] %s travelling open %u us, close %u us, back to %u us",
                 commandSourceToString(source), servoOutputSlotName(slot), (unsigned)plan.openUs,
                 (unsigned)plan.closeUs, (unsigned)plan.homeUs);
-    beginLeg(slot, 1, millis());
+    beginLeg(slot, 1, millis(), wasMoving);
 }
 
 // -----------------------------------------------------------------------------
@@ -833,6 +887,10 @@ static void beginTravel(uint8_t slot, CommandSource source) {
 // stands now, and the Output stays `moving` through both halves -- so a new
 // command, a hold, stopAllMoves() or a release ends an overshoot exactly where
 // it has got to, the same way it ends any ramp.
+//
+// A move that had to stop first -- a retarget behind the Output, or one too
+// close to slow down for (servoMotionRetarget()) -- is the same two halves: the
+// stop arrives, and servoMotionSettleBack() plans the rest from rest.
 // -----------------------------------------------------------------------------
 static bool stepMove(uint8_t slot, uint32_t nowMs) {
     writeOutputPulse(slot, servoMotionPositionAt(s_out[slot].ramp, nowMs));
@@ -847,6 +905,11 @@ static bool stepMove(uint8_t slot, uint32_t nowMs) {
     const ServoOutputAddress output = servoOutputSlotAddress(slot);
     ServoMotionProfile profile = {};
     configCacheReadServoOutputMotionProfile(output.driver, output.channel, &profile);
+    // The rest of a move that had to stop goes at the pace its first half did,
+    // a Gesture's own included (ADR 0049); an overshoot's settle is the row's.
+    if (s_out[slot].ramp.restarts) {
+        servoMotionOverride(&profile, s_out[slot].moveThrowMs, s_out[slot].moveEasingPlusOne);
+    }
     s_out[slot].ramp = servoMotionSettleBack(s_out[slot].ramp, profile, nowMs);
     if (s_out[slot].ramp.durationMs == 0) {
         writeOutputPulse(slot, s_out[slot].ramp.toUs);
@@ -863,7 +926,7 @@ static void advanceLegs(uint8_t slot, uint32_t nowMs) {
         if ((int32_t)(nowMs - s_out[slot].legDwellEndMs) < 0) {
             return;
         }
-        beginLeg(slot, (uint8_t)(s_out[slot].legNo + 1), nowMs);
+        beginLeg(slot, (uint8_t)(s_out[slot].legNo + 1), nowMs, false);
         return;
     }
     if (stepMove(slot, nowMs)) {
@@ -1067,8 +1130,8 @@ static void noticeAnUnreachableExpander() {
 // ceiling, and can never take back an output a bound, the estop or pulses off
 // let go (#417). A dropped refresh drives nothing. A hold at the width the
 // output is already going to -- the page's keepalive -- is a refresh and no
-// move at all: replanning a ramp part way through, once a second, would
-// restart the move the builder is watching.
+// move at all: the ramp in progress already ends there, and replanning it once
+// a second would plan the same move again every second for nothing.
 //
 // The drive itself is driveOutputTo()'s, like every other command: through the
 // component clamp (ADR 0041), at the Output's own pace (ADR 0052), and a snap

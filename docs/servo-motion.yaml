@@ -74,9 +74,15 @@ records:
     doc: |
       One planned move: where it starts and ends, when, and how long it spends
       getting up to speed.
+
+      Every plan is laid out from rest. A move that starts already moving is the
+      tail of one: startMs and fromUs are where and when a move from rest at the
+      profile's acceleration would have set off to be going that fast where the
+      Output is now (servoMotionRetarget()), so the Output is only ever placed on
+      it from that moment on.
     fields:
-      - {name: startMs, type: u32}
-      - {name: fromUs, type: u16}
+      - {name: startMs, type: u32, doc: "when the plan left rest; in the past on a moving start"}
+      - {name: fromUs, type: u16, doc: "where it left rest; behind the Output on a moving start"}
       - {name: toUs, type: u16, doc: "where this plan ends: the target, or an overshoot's aim"}
       - name: settleUs
         type: u16
@@ -87,6 +93,14 @@ records:
       - {name: durationMs, type: u16, doc: "0 = a snap: toUs is where the output is, at once"}
       - {name: rampMs, type: u16, doc: "time spent getting up to speed, and slowing down"}
       - {name: softStart, type: bool, doc: "`soft`: the speed rises along a smoothstep"}
+      - name: restarts
+        type: bool
+        doc: |
+          This plan is a stop on the way: the Output could not reach settleUs
+          going the way it was going without braking harder than its profile,
+          so toUs is where it comes to rest, and the move to settleUs then
+          starts from rest with the profile's own ease (servoMotionSettleBack()).
+          It sits in what was the record's padding, so it costs no RAM.
 
 functions:
   servoMotionOvershootAim:
@@ -122,6 +136,37 @@ functions:
       if (delta > 0 and aim <= i32(toUs)) or (delta < 0 and aim >= i32(toUs)):
           return toUs
       return u16(aim)
+
+  servoMotionRampMs:
+    doc: |
+      How long a move by this profile spends getting up to speed, and slowing
+      down: the profile's own ramp time, and at least a millisecond.
+    params:
+      - {name: profile, type: ServoMotionProfile}
+    returns: f32
+    body: |
+      fullThrowMs: f32 = f32(profile.throwMs)
+      # A ramp longer than half the throw would leave no time to slow down, so
+      # the profile's ramp is held to half -- a full throw is then a triangle and
+      # still takes exactly throw_ms.
+      rampMs: f32 = f32(1 if profile.accelMs == 0 else profile.accelMs)
+      if rampMs > fullThrowMs / 2.0:
+          rampMs = fullThrowMs / 2.0
+      return rampMs
+
+  servoMotionCruiseUsPerMs:
+    doc: |
+      The speed a move by this profile cruises at, in microseconds a
+      millisecond: the one that makes a full throw, ramps included, take exactly
+      throw_ms. rampMs is servoMotionRampMs(profile). The acceleration is this
+      over rampMs, so the profile's two times fix both limits a move keeps to.
+    params:
+      - {name: profile, type: ServoMotionProfile}
+      - {name: rampMs, type: f32}
+    returns: f32
+    body: |
+      spanUs: u16 = u16(profile.hiUs - profile.loUs) if profile.hiUs > profile.loUs else 0
+      return f32(spanUs) / (f32(profile.throwMs) - rampMs)
 
   servoMotionPlan:
     doc: |
@@ -171,14 +216,8 @@ functions:
       # plan ends and nothing else about it.
       aimUs: u16 = servoMotionOvershootAim(fromUs, toUs, profile.loUs, profile.hiUs) if profile.easing == SERVO_EASE_OVERSHOOT else toUs
 
-      fullThrowMs: f32 = f32(profile.throwMs)
-      # A ramp longer than half the throw would leave no time to slow down, so
-      # the profile's ramp is held to half -- a full throw is then a triangle and
-      # still takes exactly throw_ms.
-      rampMs: f32 = f32(1 if profile.accelMs == 0 else profile.accelMs)
-      if rampMs > fullThrowMs / 2.0:
-          rampMs = fullThrowMs / 2.0
-      cruiseUsPerMs: f32 = f32(spanUs) / (fullThrowMs - rampMs)
+      rampMs: f32 = servoMotionRampMs(profile)
+      cruiseUsPerMs: f32 = servoMotionCruiseUsPerMs(profile, rampMs)
       accelUsPerMs2: f32 = cruiseUsPerMs / rampMs
 
       distanceUs: f32 = f32(aimUs - fromUs if aimUs > fromUs else fromUs - aimUs)
@@ -205,12 +244,131 @@ functions:
       plan.rampMs = u16(roundedRamp)
       return plan
 
+  servoMotionRetarget:
+    doc: |
+      Plan a move to toUs for an Output that is at fromUs and going speedUsPerMs
+      (signed: positive towards the higher width) -- a new target replacing a
+      move part way through, whatever sent it (#442). Wherever it carries the
+      speed it keeps to the profile's two limits: it speeds up to the cruise
+      speed and never past it, and slows down at the profile's acceleration and
+      never harder. Where it cannot, it steps the speed down, in the three cases
+      listed last.
+
+      At a speed of zero it is servoMotionPlan(), exactly. Every move from rest
+      -- and so every move a saved sequence makes from rest, and every time the
+      Rehearsal gives -- is the move it was.
+
+      Going the way the target lies, with room to slow down before it: no stop.
+      A move from rest at the profile's acceleration is going speedUsPerMs at
+      one moment of its ramp, so the plan is that move, begun that long ago from
+      that far behind the Output, and the Output carries on along it
+      (ServoMotionRamp).
+
+      A target behind the Output, or one too close to slow down for: the plan
+      slows it to a stop at the profile's acceleration and says so (`restarts`),
+      and the rest is planned from rest where it stopped, once it gets there
+      (servoMotionSettleBack()).
+
+      The ease, on a move that is already moving:
+        - `soft` shapes a start from rest and nothing else. Carrying on is not a
+          start, so it is the plain ramp; the rest after a stop is one, so it is
+          soft.
+        - `overshoot` aims when a move from rest over the same distance would --
+          from where the Output is to the target -- and settles back as it does
+          from rest. The rest after a stop aims, or not, over its own distance,
+          as every move from rest does.
+
+      Where the speed steps down at once rather than along the profile's
+      acceleration -- three cases, so that is braking harder than the profile
+      in each:
+        - a speed over the cruise is taken as the cruise. Reachable only when
+          the move in progress was faster than this profile: a Gesture's own
+          throw (servoMotionOverride()), or the row changed under the move;
+        - a stop never carries the Output past the recorded end it is heading
+          for. Every point of a ramp lies between two widths already inside the
+          component's band (ADR 0041) and a brake point past the end need not,
+          so the stop is planned from the speed that ends it on the end --
+          reachable the same two ways, and by a whole-millisecond rounding on a
+          stop that ends on the end;
+        - every `return rest` below while the Output is moving: the speed goes
+          to zero and the move is the one from rest, from where the Output is.
+          That is a profile that cannot ramp at all (it snaps), an Output that
+          has to stop but is already on or past the end it is heading for, a speed
+          that a stop inside one millisecond would end, a plan from an origin
+          outside 0..65535, and a moving plan too short for the planner to ramp
+          -- a brake shorter than one 20 ms ServoTask frame among them. Most of
+          these are speeds no frame shows; none passes the target or an end.
+
+      The move from rest may itself be a snap, as from rest it would be. A
+      moving plan is never one: ServoTask writes a snap's target, so a snap to a
+      brake point or an aim would put the Output in the wrong place.
+    params:
+      - {name: fromUs, type: u16}
+      - {name: speedUsPerMs, type: f32}
+      - {name: toUs, type: u16}
+      - {name: profile, type: ServoMotionProfile}
+      - {name: startMs, type: u32}
+    returns: ServoMotionRamp
+    body: |
+      rest: ServoMotionRamp = servoMotionPlan(fromUs, toUs, profile, startMs)
+      if speedUsPerMs == 0.0 or not profile.calibrated or profile.hiUs <= profile.loUs or profile.throwMs < SERVO_THROW_MS_MIN:
+          return rest
+
+      rampMs: f32 = servoMotionRampMs(profile)
+      cruiseUsPerMs: f32 = servoMotionCruiseUsPerMs(profile, rampMs)
+      accelUsPerMs2: f32 = cruiseUsPerMs / rampMs
+      rising: bool = speedUsPerMs > 0.0
+      speed: f32 = speedUsPerMs if rising else -speedUsPerMs
+      if speed > cruiseUsPerMs:
+          speed = cruiseUsPerMs
+      # How long ago, to the millisecond, a move from rest would have set off to
+      # be going this fast now, and how far behind the Output. The distance is
+      # the one that whole millisecond gives, so the plan passes through the
+      # Output now rather than half a millisecond either side of it.
+      sinceMs: long = lroundf(speed / accelUsPerMs2)
+      behindUs: long = lroundf(0.5 * accelUsPerMs2 * f32(sinceMs) * f32(sinceMs))
+
+      aimUs: u16 = servoMotionOvershootAim(fromUs, toUs, profile.loUs, profile.hiUs) if profile.easing == SERVO_EASE_OVERSHOOT else toUs
+      # behindUs is also how far the Output needs to stop: the move from rest
+      # turned round covers it again slowing down.
+      aheadUs: i32 = i32(aimUs) - i32(fromUs) if rising else i32(fromUs) - i32(aimUs)
+      carriesOn: bool = aheadUs >= i32(behindUs)
+      if not carriesOn:
+          # Room to stop in: up to the recorded end it is heading for. Past it
+          # already, there is none, and the move is the one from rest.
+          roomUs: i32 = i32(profile.hiUs) - i32(fromUs) if rising else i32(fromUs) - i32(profile.loUs)
+          if roomUs < 1:
+              return rest
+          if roomUs < i32(behindUs):
+              # The fastest it can be going and still stop on the end, whole
+              # milliseconds rounded down so the stop lands on it or short.
+              sinceMs = lroundf(sqrtf(2.0 * f32(roomUs) / accelUsPerMs2) - 0.5)
+              behindUs = lroundf(0.5 * accelUsPerMs2 * f32(sinceMs) * f32(sinceMs))
+      # Slow enough to stop inside a millisecond is at rest.
+      if sinceMs < 1 or behindUs < 1:
+          return rest
+      originUs: i32 = i32(fromUs) - i32(behindUs) if rising else i32(fromUs) + i32(behindUs)
+      if originUs < 0 or originUs > 0xFFFF:
+          return rest
+      stopUs: i32 = i32(fromUs) + i32(behindUs) if rising else i32(fromUs) - i32(behindUs)
+
+      # The ramp this is the tail of is the plain one: `soft` shapes a start
+      # from rest, and neither carrying on nor stopping is one.
+      plain: ServoMotionProfile = profile
+      plain.easing = SERVO_EASE_NONE
+      plan: ServoMotionRamp = servoMotionPlan(u16(originUs), aimUs if carriesOn else u16(stopUs), plain, startMs - u32(sinceMs))
+      if plan.durationMs == 0:
+          return rest
+      plan.settleUs = toUs
+      plan.restarts = not carriesOn
+      return plan
+
   servoMotionSettles:
     doc: |
-      The second half of an overshoot. A plan that settles has ended at its aim
-      rather than its target; the way back is an ordinary move from the aim to the
-      target, shaped `none`, because it is the settle and not a new move with a
-      character of its own. ServoTask chains it when the first plan arrives.
+      The second half of an overshoot, or of a move that had to stop first. A
+      plan that settles has ended at its aim, or where it stopped, rather than
+      its target; ServoTask chains the move to the target
+      (servoMotionSettleBack()) when the first plan arrives.
     params:
       - {name: ramp, type: ServoMotionRamp}
     returns: bool
@@ -219,8 +377,18 @@ functions:
 
   servoMotionSettleBack:
     doc: |
-      The way back from an overshoot's aim to its target: servoMotionPlan() again,
-      from where the first plan arrived, shaped `none`.
+      The move from where a plan that settles arrived to its target:
+      servoMotionPlan() again, from rest.
+
+      From an overshoot's aim it is shaped `none`, because it is the settle and
+      not a new move with a character of its own. From a stop (`restarts`) it is
+      the rest of the move, and a start from rest like any other, so it has the
+      profile's own ease -- an overshoot of its own included.
+
+      The profile is the caller's. ServoTask passes the row's as it reads it on
+      arrival, and for the rest after a stop puts back the Gesture's own throw
+      and ease that the stop was planned with (servoMotionOverride(), ADR 0049),
+      so the whole move keeps one pace. An overshoot's settle is the row's.
     params:
       - {name: arrived, type: ServoMotionRamp}
       - {name: profile, type: ServoMotionProfile}
@@ -228,7 +396,8 @@ functions:
     returns: ServoMotionRamp
     body: |
       settle: ServoMotionProfile = profile
-      settle.easing = SERVO_EASE_NONE
+      if not arrived.restarts:
+          settle.easing = SERVO_EASE_NONE
       return servoMotionPlan(arrived.toUs, arrived.settleUs, settle, nowMs)
 
   servoMotionArrivalMs:
