@@ -4485,7 +4485,7 @@
   // and it is kept the same way. Keeping places the receipt into the routine
   // as ONE edit, so one Undo takes all of it back:
   //   - the take, as an entry in the sequence's `takes` - the droid holds its
-  //     motion in a file of its own, and slice 4 draws it on the timeline;
+  //     motion in a file of its own, drawn on the timeline as one block;
   //   - each cue pressed during it, as the step that does what the cue did,
   //     at the moment it was pressed (cueStep()). A cue with no such step, or
   //     one Protocol Check would refuse where it lands, is named in the

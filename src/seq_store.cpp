@@ -50,7 +50,7 @@ static SeqStep* s_runClose = nullptr;
 static SeqDraft s_stagedDraft;  // step pointers into s_staging
 static char     s_runName[24];
 
-// A run's takes (#442 slice 3): read off the sequence's `takes` array when it
+// A run's takes (#442): read off the sequence's `takes` array when it
 // is loaded to run, into the one heap block the Coordinator plays them from
 // (include/take_replay.h). Staged with the steps and handed on with them:
 // seqStoreCommit() moves the staged block to s_runTakes, and

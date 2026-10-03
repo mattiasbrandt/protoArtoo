@@ -390,7 +390,7 @@ static_assert(SEQ_FLUTTER_PARTS_MAX >= SEQ_GESTURE_MEMBERS_MAX,
               "every member of one Gesture can flutter at once");
 
 // -----------------------------------------------------------------------------
-// The takes the running sequence plays (#442 slice 3, include/take_replay.h,
+// The takes the running sequence plays (#442, include/take_replay.h,
 // which carries the rules). One heap block, claimed from the store when the
 // run starts and freed when it ends; nullptr between runs, which is all a take
 // costs while none plays.

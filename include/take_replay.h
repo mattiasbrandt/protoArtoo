@@ -1,11 +1,11 @@
 // =============================================================================
 // include/take_replay.h
 //
-// Replaying a sequence's takes beside its steps (#442 slice 3, ADR 0061).
+// Replaying a sequence's takes beside its steps (#442, ADR 0061).
 //
 // WHAT PLAYS. A Learned Sequence names its takes in its `takes` array, each
 // with the moment it starts (`t`, ms from the run's start) and, when it has
-// been trimmed on the timeline (#442 slice 4), the part of it that plays:
+// been trimmed on the timeline, the part of it that plays:
 // `from` and `to`, ms into the take (see A TRIMMED TAKE below). When the sequence
 // runs, the Sequence Coordinator plays each take from its file: every sample
 // is the permille target the string commanded when it was performed, sent to
@@ -19,7 +19,7 @@
 // STREAMED, NOT LOADED. A take file is up to 12 KB (24 KB on the P4). Each
 // take holds TAKE_REPLAY_BUF_SAMPLES samples at a time, read from LittleFS
 // through one open of its file a tick (takeStoreReadBegin()) and checked as
-// they arrive with the slice-2 checks (take_capture.h), and the whole state is one
+// they arrive with the take file's own checks (take_capture.h), and the whole state is one
 // heap block taken when the run is loaded and given back when it ends.
 //
 // THE RULES, written once here and applied by takeReplayOutranked() and the

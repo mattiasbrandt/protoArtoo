@@ -62,9 +62,9 @@
 //                           covers is kept and the later one wins; the
 //                           overlap is reported, because nothing is destroyed
 //                           and the earlier take's motion silently is not seen.
-//   take-after-end          #442 slice 3: the droid opens a take only once its
+//   take-after-end          #442: the droid opens a take only once its
 //                           start has come, and a run is over at its end step.
-//   take-cut                #442 slice 3: the droid ends a take still playing
+//   take-cut                #442: the droid ends a take still playing
 //                           at its run's end step and commands nothing there.
 //
 // One computation behind three appearances (#287 specific 6): the figures in
