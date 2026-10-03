@@ -518,6 +518,15 @@
     phrasesListed();
   };
 
+  const STAND_DOWN_SECTION = "seq-stand-down";
+
+  const loadStandDown = async ({ handle = null } = {}) => {
+    const answer = await (handle || window.PAApi).get("/api/config");
+    const chosen = answer.data?.seq?.standDown;
+    standDownChoice = typeof chosen === "string" ? chosen : "";
+    renderListView();
+  };
+
   const loadFactory = async ({ handle = null } = {}) => {
     const answer = await (handle || window.PAApi).get("/api/seq/builtins");
     builtins = answer.data || [];
@@ -564,6 +573,23 @@
   // list again neither resets the filter nor folds a row shut.
   let listShow = "all";
   const moreOpen = new Set();
+
+  // The droid's Stand Down Sequence (CONTEXT.md, #451): one name, chosen here
+  // with the mark beside each row and run by the Dashboard's Stand Down. The
+  // Setting stores an empty name until one is chosen, and DM:RESET stands in
+  // for it (data/app.js STAND_DOWN_DEFAULT). Null until GET /api/config has
+  // answered, and no row is marked or offers the mark until then.
+  let standDownChoice = null;
+  const standDownName = () => (standDownChoice === null ? null : standDownChoice || "DM:RESET");
+
+  // The mark, on a Learned and a Factory row alike: DM:RESET, the default, is
+  // a Factory one, and a Factory row has no More to hold it. The chosen row
+  // says so in its name cell; every other row offers to be chosen.
+  const standDownBadge = (name) =>
+    (name === standDownName() ? '<span class="seq-badge">Stand Down</span>' : "");
+  const standDownAct = (name) =>
+    (standDownName() === null || name === standDownName() ? ""
+      : `<button type="button" class="seq-act" data-action="stand-down" data-seq-name="${window.PAUtils.escapeAttr(name)}">Use as Stand Down</button>`);
 
   // Name, What it does, Steps, Runs, and the row's acts.
   const LIST_COLUMNS = 5;
@@ -800,7 +826,7 @@
     return `
       <tbody class="seq-item" data-seq-name="${name}">
         <tr>
-          <th scope="row"><span class="seq-name">${window.PAUtils.escapeHtml(seq.name)}</span>${badges.join("")}</th>
+          <th scope="row"><span class="seq-name">${window.PAUtils.escapeHtml(seq.name)}</span>${badges.join("")}${standDownBadge(seq.name)}</th>
           <td>${purposeHtml(seq)}${saved ? `<span class="seq-meta">${saved}</span>` : ""}
             <span class="seq-row-run hidden" role="status"><span class="indicator ok seq-live" aria-hidden="true"></span>Running</span></td>
           <td class="seq-count-cell">${reportedSteps(seq)}</td>
@@ -810,6 +836,7 @@
               <button type="button" class="seq-act is-strong" data-action="edit" data-seq-name="${name}">Edit</button>
               <button type="button" class="seq-act" data-action="test" ${testBtnDisabled}>Test</button>
               <button type="button" class="btn btn-sm seq-stop hidden" data-action="stop" data-seq-name="${name}">Stop ${window.PAUtils.escapeHtml(seq.name)}</button>
+              ${standDownAct(seq.name)}
               <button type="button" class="seq-act seq-disclose" data-action="more" data-seq-name="${name}" aria-expanded="${more}">${chevron}More</button>
               <span class="seq-item-more${more ? "" : " hidden"}">
                 <button type="button" class="seq-act" data-action="duplicate" data-seq-name="${name}">Duplicate</button>
@@ -834,7 +861,7 @@
     return `
       <tbody class="seq-item seq-item-factory" data-seq-name="${name}">
         <tr>
-          <th scope="row"><span class="seq-name">${window.PAUtils.escapeHtml(builtin.name)}</span></th>
+          <th scope="row"><span class="seq-name">${window.PAUtils.escapeHtml(builtin.name)}</span>${standDownBadge(builtin.name)}</th>
           <td>${purposeHtml(builtin)}${group}</td>
           <td class="seq-count-cell">${reportedSteps(builtin)}</td>
           <td class="seq-count-cell">${reportedLength(builtin)}</td>
@@ -842,6 +869,7 @@
             <span class="seq-acts">
               <button type="button" class="seq-act is-strong" data-action="tune" data-builtin-name="${name}" title="Open to edit. Save under the same name to retrain it.">Tune</button>
               <button type="button" class="seq-act" data-action="timeline" data-builtin-name="${name}">Timeline</button>
+              ${standDownAct(builtin.name)}
             </span>
           </td>
         </tr>
@@ -4823,6 +4851,27 @@
       case "timeline":
         leaveSession(() => handleOpenTimeline(builtinName, rowEl));
         break;
+      case "stand-down":
+        await handleChooseStandDown(seqName, rowEl, btn);
+        break;
+    }
+  };
+
+  // Nominate a Sequence as the droid's Stand Down Sequence: one Setting,
+  // stored on the droid (POST /api/config standDownSequence). A refusal says
+  // so on the row that was pressed, in the words table's terms.
+  const handleChooseStandDown = async (seqName, rowEl, btn) => {
+    btn.disabled = true;
+    try {
+      await PAApi.postForm("/api/config", { standDownSequence: seqName }, { timeoutMs: 3000 });
+      standDownChoice = seqName;
+      renderListView();
+    } catch (error) {
+      btn.disabled = false;
+      const feedbackEl = rowEl?.querySelector(".seq-item-feedback");
+      if (!feedbackEl) return;
+      feedbackEl.textContent = `Not chosen: ${PAApi.messageFor(error)}`;
+      feedbackEl.className = "seq-item-feedback feedback error";
     }
   };
 
@@ -5281,12 +5330,14 @@
   const SECTIONS = [
     [LEARNED_SECTION, loadLearned, "your sequences"],
     [FACTORY_SECTION, loadFactory, "the factory sequences"],
+    [STAND_DOWN_SECTION, loadStandDown, "the Stand Down Sequence"],
   ];
 
   const startPageLoad = () => {
     if (!window.PABootstrap) {
       loadLearned().catch((error) => console.warn("[seq] your sequences unavailable:", error));
       loadFactory().catch((error) => console.warn("[seq] factory sequences unavailable:", error));
+      loadStandDown().catch((error) => console.warn("[seq] Stand Down Sequence unavailable:", error));
       return;
     }
     window.PABootstrap.setResourceLabels?.({
