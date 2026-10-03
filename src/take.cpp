@@ -141,10 +141,17 @@ const char* takeArm(const char* seqName, char* refusal, size_t refusalCap) {
     bool estop = false;
     uint32_t lastSbus1Ms = 0;
     uint32_t lastSbus2Ms = 0;
+    bool sbus1Failed = false;
+    bool sbus2Failed = false;
     taskENTER_CRITICAL(&robotStateMux);
     estop = robotState.estop;
     lastSbus1Ms = robotState.lastSbus1Ms;
     lastSbus2Ms = robotState.lastSbus2Ms;
+    // Every frame stamps its receiver's time, a hardware-failsafe frame too:
+    // a receiver whose transmitter is off keeps sending them. So a fresh
+    // stamp is not enough; the receiver must also not be in failsafe or lost.
+    sbus1Failed = robotState.sbusSignalLost || robotState.sbusHwFailsafe;
+    sbus2Failed = robotState.sbus2SignalLost || robotState.sbus2HwFailsafe;
     taskEXIT_CRITICAL(&robotStateMux);
     if (estop) {
         return refuse(refusal, refusalCap, "The estop is latched. Clear it to perform.");
@@ -182,8 +189,10 @@ const char* takeArm(const char* seqName, char* refusal, size_t refusalCap) {
     }
     const uint32_t nowMs = millis();
     const uint32_t timeoutMs = configCacheSbusTimeoutMs();
-    const bool sbus1Live = onSbus1 && lastSbus1Ms != 0 && (uint32_t)(nowMs - lastSbus1Ms) <= timeoutMs;
-    const bool sbus2Live = onSbus2 && lastSbus2Ms != 0 && (uint32_t)(nowMs - lastSbus2Ms) <= timeoutMs;
+    const bool sbus1Live = onSbus1 && !sbus1Failed && lastSbus1Ms != 0 &&
+                           (uint32_t)(nowMs - lastSbus1Ms) <= timeoutMs;
+    const bool sbus2Live = onSbus2 && !sbus2Failed && lastSbus2Ms != 0 &&
+                           (uint32_t)(nowMs - lastSbus2Ms) <= timeoutMs;
     if (!sbus1Live && !sbus2Live) {
         return refuse(refusal, refusalCap,
                       "No frames are arriving from the radio. Switch it on and check the receiver.");
