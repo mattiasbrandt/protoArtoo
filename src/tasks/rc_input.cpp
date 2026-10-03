@@ -226,7 +226,9 @@ static constexpr UBaseType_t kPuppetQueueReserve = 4;
 // the string with it - and the stick's share of the throw becomes a width
 // between that Output's own close and open ends. ServoTask clamps it to the
 // component's band and moves there at the Output's Motion Profile; nothing here
-// ramps (SERVO_CMD_PUPPET).
+// ramps (SERVO_CMD_PUPPET). A target replacing a move in progress keeps the
+// Output's speed (servoMotionRetarget()), so a stick kept moving is followed at
+// the Output's own pace and a string sends every target it has.
 //
 // A Part nothing drives, or one on an Output this image cannot drive, is said
 // once, on the string's first target after it takes the Part, and the target
@@ -234,9 +236,9 @@ static constexpr UBaseType_t kPuppetQueueReserve = 4;
 //
 // One target per Output per frame. A Part has one string, but an Output may
 // carry several Parts (SERVO_OUTPUT_PART_SLOTS), and two strings on two Parts
-// of one Output would each restart the other's move from rest. So the first
-// string to reach an Output in a frame has it, and a second is skipped and
-// asks again next frame. Across frames the two can still take turns: that is
+// of one Output would each replace the other's target in the same frame. So the
+// first string to reach an Output in a frame has it, and a second is skipped
+// and asks again next frame. Across frames the two can still take turns: that is
 // what wiring two Parts to one Output means - they cannot move apart, which the
 // Rehearsal already warns about (CONTEXT.md "Output").
 //
@@ -279,10 +281,6 @@ static void __attribute__((noinline)) dispatchPuppetStrings(const RcProcessorOut
         }
 
         const uint16_t targetUs = rcPuppetTargetUs(openUs, closeUs, ask.permille);
-        const ServoCommandedPosition at = servoCommandedOf(address);
-        if (!rcPuppetMayRetarget(at.nowUs, at.targetUs, at.moving, targetUs)) {
-            continue;
-        }
         if (uxQueueSpacesAvailable(servoCmdQueue) <= kPuppetQueueReserve) {
             continue;
         }
