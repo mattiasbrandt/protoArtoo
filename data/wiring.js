@@ -1669,7 +1669,6 @@
       "/droid_parts.js": "parts list",
       "/outputs.js": "the outputs",
       "/wiring.js": "the wiring sheet",
-      "/output_settings.js": "the outputs",
       "/dome_command_map.js": "the dome's commands",
       "/find_by_moving.js": "find by moving",
       "/parts_mapping.js": "the parts on each output",

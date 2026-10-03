@@ -248,7 +248,7 @@
     (part.aliases || []).find((alias) => domeVocabulary?.targets.includes(alias)) || "";
 
   // A picked-one-of-many, in the house treatment: the accent tint and inset
-  // ring data/output_settings.js's segmented() gives its active choice. Nine
+  // ring data/parts_mapping.js's segmented() gives its active choice. Nine
   // modes are too wide for one segmented bar, so they wrap as pills instead of
   // hiding in a drop-down (operator, 2026-09-20: the selects "look way too
   // big").
@@ -352,7 +352,7 @@
     let settle = null;
 
     // PICKING IS APPLYING, the way every other control on this droid works
-    // (data/output_settings.js, the Component Picker): a chip or a swatch goes
+    // (Wiring's parts table, the Component Picker): a chip or a swatch goes
     // to the dome on its own, so there is no button to press afterwards. The
     // short settle is what makes picking a mode and then a color one command
     // rather than two.

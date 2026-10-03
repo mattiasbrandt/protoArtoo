@@ -279,7 +279,6 @@ const boot = async ({
     "/droid_parts.js": readData("droid_parts.js"),
     "/droid_part_kind.js": readData("droid_part_kind.js"),
     "/outputs.js": readData("outputs.js"),
-    "/output_settings.js": readData("output_settings.js"),
     // The part-first picker the screen mounts under the sheet (#411).
     "/dome_command_map.js": readData("dome_command_map.js"),
     "/parts_mapping.js": readData("parts_mapping.js"),

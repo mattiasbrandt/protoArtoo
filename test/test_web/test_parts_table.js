@@ -262,7 +262,6 @@ const bootPicker = async ({ outputs = freshOutputs(), catalogSource = readData("
     "/droid_part_kind.js": readData("droid_part_kind.js"),
     "/outputs.js": readData("outputs.js"),
     "/apply_timing.js": readData("apply_timing.js"),
-    "/output_settings.js": readData("output_settings.js"),
     "/dome_command_map.js": readData("dome_command_map.js"),
     "/find_by_moving.js": readData("find_by_moving.js"),
     "/parts_mapping.js": readData("parts_mapping.js"),

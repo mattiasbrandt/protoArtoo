@@ -52,8 +52,8 @@
 // It also runs the once-a-second follow of the table, as a handle the surface
 // that wants it starts, so the surface still owns its poll (#360).
 //
-// DATA ONLY. Nothing here touches the page: the plates are drawn by
-// data/output_settings.js from what this module holds.
+// DATA ONLY. Nothing here touches the page: Wiring's parts table
+// (data/parts_mapping.js) draws from what this module holds.
 // =============================================================================
 (() => {
   "use strict";

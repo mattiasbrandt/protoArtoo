@@ -410,7 +410,6 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
     "/droid_picture.js": readData("droid_picture.js"),
     "/parts.js": readData("parts.js"),
     "/apply_timing.js": readData("apply_timing.js"),
-    "/output_settings.js": readData("output_settings.js"),
     "/servo.js": readData("servo.js"),
     "/wiring.js": readData("wiring.js"),
   };

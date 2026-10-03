@@ -7310,7 +7310,7 @@ body.shell-performing .show-list {
 }
 
 /* The Output a Part is on, and what is on its wire: the one segmented control
-   (data/output_settings.js segmented()) at row scale, as wide as its choices
+   (data/parts_mapping.js segmented()) at row scale, as wide as its choices
    and no wider. A bar with more Outputs than the row has room for wraps
    rather than pushing the table sideways. */
 .parts-row .output-seg {
