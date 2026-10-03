@@ -40,11 +40,12 @@ static_assert(TAKE_FILE_MAX_BYTES == SEQ_FILE_MAX_BYTES, "a take's cap is its bo
 //
 //   firebeetle2: 20, two for each of the ten sequences it stores - a routine
 //   built up in passes, dome then panels. Its 10,354,688 B partition is 2,528
-//   blocks; the image's budget takes 256, ten full 24 KB sequences 70 (7
-//   written blocks each, measured with the platform's littlefs-python
-//   parameters, the 24,576 B file plus its CTZ pointers), twenty full takes
-//   140, and a write's floor below 18: 1,744 blocks to spare. Nothing on that
-//   board makes the number scarce; it is a count a builder can keep in mind.
+//   blocks. Measured with the platform's littlefs-python parameters, a full
+//   24,576 B file costs 7 blocks (6 of data and its CTZ pointers), and the
+//   save paths replayed over an image at its 256-block budget take ten full
+//   sequences and then twenty full takes, every one under its floor, with
+//   lfs_fs_size() at 468 blocks of 2,528 afterwards. Nothing on that board
+//   makes the number scarce; it is a count a builder can keep in mind.
 #if PA_BOARD == PA_BOARD_ARTOO_ESP32
   #define PA_TAKE_STORE_CAP 1
 #elif PA_BOARD == PA_BOARD_FIREBEETLE2

@@ -72,10 +72,12 @@ void seqStoreReleaseRun();
 // (transient heap staging), enforces capacity (the board's store cap,
 // SEQ_STORE_CAP + free-space floor + per-file size), writes temp-file + rename,
 // and reindexes. Returns a field-level error on rejection (nothing written), ok
-// on success.
+// on success. Once saved, the takes it names are kept and its other takes are
+// deleted (takeStoreSequenceSaved(), include/take_store.h).
 ProtocolCheckResult seqStoreSave(const char* json, size_t len);
 
-// Delete a Learned Sequence and its index entry (Memory Wipe). Returns true
+// Delete a Learned Sequence, its index entry and its takes (Memory Wipe;
+// takeStoreSequenceDeleted(), unless another sequence carries its id). Returns true
 // only if the file is actually gone (removed, or index-only entry cleaned
 // up); a failed file removal keeps the index entry so the store and the
 // filesystem cannot diverge.
