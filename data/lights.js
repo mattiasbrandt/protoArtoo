@@ -32,7 +32,7 @@
 //   a dome light   the dome controller owns the hardware, so it has NO Light
 //                  Type and offers that controller's own modes and colors
 //                  instead, under the labels a sequence already shows
-//                  (data/seq_protocol_check.js). Offering it on/off/flash
+//                  (data/dome_lights.js). Offering it on/off/flash
 //                  would hide modes its hardware has. It is NEVER "not
 //                  driven": no Output of ours drives it, which is a different
 //                  sentence, and a builder commands it from here today.
@@ -56,7 +56,7 @@
   const kinds = window.DroidPartKind;
   const catalog = window.DroidParts;
   const OUTPUTS = window.PAOutputs;
-  const domeVocabulary = window.SeqProtocolCheck?.domeLights || null;
+  const domeVocabulary = window.DomeLights || null;
 
   const element = (tag, className, text) => {
     const node = document.createElement(tag);
@@ -695,7 +695,7 @@
     window.PABootstrap.setResourceLabels?.({
       "/droid_parts.js": "the parts catalog",
       "/droid_part_kind.js": "the parts catalog",
-      "/seq_protocol_check.js": "the dome's commands",
+      "/dome_lights.js": "the dome's commands",
       "/outputs.js": "what each wire carries",
       "/lights.js": "the lights",
     });

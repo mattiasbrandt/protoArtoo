@@ -18,7 +18,7 @@ const vm = require("node:vm");
 
 // The modules the Rehearsal reads beside it on data/seq.html: the generated
 // motion model, the dome command map and Protocol Check's mirror.
-const MODULES = ["servo_motion.js", "dome_command_map.js", "seq_protocol_check.js", "seq_rehearsal.js"];
+const MODULES = ["servo_motion.js", "dome_command_map.js", "dome_lights.js", "seq_protocol_check.js", "seq_rehearsal.js"];
 
 const loadRehearsal = () => {
   const sandbox = { window: {} };
@@ -189,10 +189,9 @@ test("Protocol Check's mirror answers with a verdict and carries no advice chann
   // with a place for it is how the two would start to diverge.
   const sandbox = { window: {} };
   vm.createContext(sandbox);
-  vm.runInContext(
-    fs.readFileSync(path.resolve(__dirname, "../../data/seq_protocol_check.js"), "utf8"),
-    sandbox,
-    { filename: "seq_protocol_check.js" },
+  // The dome's light vocabulary loads first, as on data/seq.html.
+  ["dome_lights.js", "seq_protocol_check.js"].forEach((name) =>
+    vm.runInContext(fs.readFileSync(path.resolve(__dirname, "../../data", name), "utf8"), sandbox, { filename: name }),
   );
   const check = sandbox.window.SeqProtocolCheck;
   const accepted = check.validateSequence(
@@ -392,7 +391,7 @@ test("a weak or stale tempo is warned about and never refused", () => {
 test("a gesture the dome cannot perform saves with a warning, and generated moves are not an author's overlap", () => {
   const sandbox = { window: {} };
   vm.createContext(sandbox);
-  ["droid_parts.js", "servo_motion.js", "dome_command_map.js", "seq_protocol_check.js", "seq_gesture.js", "seq_rehearsal.js"].forEach((name) =>
+  ["droid_parts.js", "servo_motion.js", "dome_command_map.js", "dome_lights.js", "seq_protocol_check.js", "seq_gesture.js", "seq_rehearsal.js"].forEach((name) =>
     vm.runInContext(fs.readFileSync(path.resolve(__dirname, "../../data", name), "utf8"), sandbox, { filename: name }),
   );
   const { SeqProtocolCheck: check, SeqRehearsal: rehearsal } = sandbox.window;

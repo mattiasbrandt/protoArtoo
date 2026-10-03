@@ -244,7 +244,7 @@ prefix, then its own script(s).
 | `maintenance.html` | 6 | Adds `feature_availability.js` |
 | `rc.html` | 5 | Safety-adjacent (RC mapping) |
 | `drive.html` | 5 | Safety-adjacent (live vehicle control) |
-| `seq.html` | 10 | Adds `seq_protocol_check.js` plus the dome layout/panel-model chain |
+| `seq.html` | 10 | Adds `dome_lights.js` and `seq_protocol_check.js` plus the dome layout/panel-model chain |
 | `dashboard.html` | 11 | Heaviest; the landing surface, split out of `index.html` when that file became the shell |
 
 Each of these files also carries a thin delegate that hands a direct visit to

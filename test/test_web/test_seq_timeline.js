@@ -58,6 +58,7 @@ const read = (name) => readFileSync(join(__dirname, "../../data", name), "utf-8"
 
 // The script chain data/seq.html declares, from the page's own modules on.
 const PAGE_MODULES = [
+  "dome_lights.js",
   "seq_protocol_check.js",
   "seq_tempo.js",
   "seq_gesture.js",
@@ -310,7 +311,7 @@ test("a step on a beat is drawn where its beat falls, not at a stale time", () =
   const sandbox = { window: {}, console };
   sandbox.window.window = sandbox.window;
   vm.createContext(sandbox);
-  ["seq_protocol_check.js", "servo_motion.js", "seq_rehearsal.js", "droid_parts.js", "dome_command_map.js", "seq_timeline.js"]
+  ["dome_lights.js", "seq_protocol_check.js", "servo_motion.js", "seq_rehearsal.js", "droid_parts.js", "dome_command_map.js", "seq_timeline.js"]
     .forEach((name) => vm.runInContext(`(function(window){${read(name)}}).call(window, window)`, sandbox, { filename: name }));
   const model = sandbox.window.SeqTimeline.build({
     name: "DM:ONBEAT",

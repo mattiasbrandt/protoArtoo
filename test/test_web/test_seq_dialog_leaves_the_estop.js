@@ -41,6 +41,7 @@ const PAGE_MODULES = [
   "dome_command_map.js",
   "dome_panel_model.js",
   "dome_layout.js",
+  "dome_lights.js",
   "seq_protocol_check.js",
   "servo_motion.js",
   "seq_rehearsal.js",
