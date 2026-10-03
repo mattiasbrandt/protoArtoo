@@ -292,8 +292,8 @@ functions:
           stop that ends on the end;
         - every `return rest` below while the Output is moving: the speed goes
           to zero and the move is the one from rest, from where the Output is.
-          That is a profile that cannot ramp at all (it snaps), an Output
-          already past the end it is heading away from the target to, a speed
+          That is a profile that cannot ramp at all (it snaps), an Output that
+          has to stop but is already on or past the end it is heading for, a speed
           that a stop inside one millisecond would end, a plan from an origin
           outside 0..65535, and a moving plan too short for the planner to ramp
           -- a brake shorter than one 20 ms ServoTask frame among them. Most of

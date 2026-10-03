@@ -4,7 +4,7 @@
 // Auto-generated from docs/servo-motion.yaml by tools/generate_servo_motion.py
 // DO NOT EDIT MANUALLY
 //
-// Source digest: sha256 651f52e6b9a40550eede6fb3df5339e9b66b07fbc73a6a9dc2a040e38240481a
+// Source digest: sha256 203d6278f341678f88660b46b58603bab7760c1defcb50a2b2172950e6abb988
 //
 // The Servo Output motion model, as ServoTask runs it: the functions below
 // are generated from the same declaration as include/servo_motion_model.h, so
@@ -222,8 +222,8 @@
   //     stop that ends on the end;
   //   - every `return rest` below while the Output is moving: the speed goes
   //     to zero and the move is the one from rest, from where the Output is.
-  //     That is a profile that cannot ramp at all (it snaps), an Output
-  //     already past the end it is heading away from the target to, a speed
+  //     That is a profile that cannot ramp at all (it snaps), an Output that
+  //     has to stop but is already on or past the end it is heading for, a speed
   //     that a stop inside one millisecond would end, a plan from an origin
   //     outside 0..65535, and a moving plan too short for the planner to ramp
   //     -- a brake shorter than one 20 ms ServoTask frame among them. Most of
@@ -353,7 +353,7 @@
   window.ServoMotion = Object.freeze({
     source: "docs/servo-motion.yaml",
     generator: "tools/generate_servo_motion.py",
-    sourceSha256: "651f52e6b9a40550eede6fb3df5339e9b66b07fbc73a6a9dc2a040e38240481a",
+    sourceSha256: "203d6278f341678f88660b46b58603bab7760c1defcb50a2b2172950e6abb988",
     SERVO_THROW_MS_MIN,
     SEQ_CADENCE_FLOOR_MS,
     ServoEasing: Object.freeze({ SERVO_EASE_NONE, SERVO_EASE_SOFT, SERVO_EASE_OVERSHOOT, SERVO_EASE_COUNT }),
