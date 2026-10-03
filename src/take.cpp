@@ -27,6 +27,17 @@ static const char* TAG = "TAKE";
 static_assert(TAKE_PARTS_MAX >= RC_TRIGGER_MAX,
               "a take must cover every string the trigger slots can hold");
 
+// The buffer a take is captured into: taken by the arm that needs it and given
+// back when the take is kept, so an idle droid holds none of it (critic, #442
+// round 1). Written only under s_takeMux, and only by Core 0.
+//
+// WHY A CORE 1 HOOK NEVER SEES IT FREED. Every hook reads s_capture inside
+// s_takeMux and only while the stage is PERFORMING, and the stage is PERFORMING
+// only between an arm that published a live buffer and the stop that ends it.
+// Core 0 frees the buffer in one place, takeKeepEnd(), and only after setting
+// the stage to IDLE and the pointer to null under the same lock. A hook either
+// holds the lock first - and the buffer is still there - or after, and finds the
+// stage IDLE and touches nothing.
 static TakeCapture* s_capture = nullptr;
 
 // The stage and what was armed, under s_takeMux. Small and fixed; the buffer
@@ -40,49 +51,28 @@ static bool s_seedWanted = false;
 static char s_ownerId[17] = {};
 static char s_seqName[24] = {};
 
-void takeAllocate(const RcInputStartupPlan& plan) {
-    if (s_capture != nullptr || !(plan.driveSbusEnabled || plan.domeSbusEnabled)) {
-        return;
-    }
-    // PSRAM where the board has it (firebeetle2), internal RAM otherwise: the
-    // buffer is read and written from task context only, never an ISR.
-    void* storage = heap_caps_malloc_prefer(sizeof(TakeCapture), 2,
-                                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
-                                            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (storage == nullptr) {
-        PA_LOG_ERROR(TAG, "no memory for a take (%u B); taking one is refused this boot",
-                     (unsigned)sizeof(TakeCapture));
-        return;
-    }
-    s_capture = new (storage) TakeCapture();
-    PA_LOG_INFO(TAG, "take buffer %u B (%u samples, %u cues)", (unsigned)sizeof(TakeCapture),
-                (unsigned)TAKE_SAMPLES_MAX, (unsigned)TAKE_CUES_MAX);
-}
-
 // -----------------------------------------------------------------------------
 // RCInputTask
 // -----------------------------------------------------------------------------
 void takeOnStringTarget(const char* part, uint16_t permille) {
-    if (s_capture == nullptr || part == nullptr) return;
+    if (part == nullptr) return;
     taskENTER_CRITICAL(&s_takeMux);
-    if (s_stage == TAKE_STAGE_PERFORMING) {
+    if (s_stage == TAKE_STAGE_PERFORMING && s_capture != nullptr) {
         takeCaptureTarget(s_capture, takeCaptureFindPart(s_capture, part), permille);
     }
     taskEXIT_CRITICAL(&s_takeMux);
 }
 
 void takeOnCue(RobotActionId action, const char* payload) {
-    if (s_capture == nullptr) return;
     const uint32_t nowMs = millis();
     taskENTER_CRITICAL(&s_takeMux);
-    if (s_stage == TAKE_STAGE_PERFORMING) {
+    if (s_stage == TAKE_STAGE_PERFORMING && s_capture != nullptr) {
         takeCaptureCue(s_capture, nowMs, action, payload);
     }
     taskEXIT_CRITICAL(&s_takeMux);
 }
 
 void takeOnLoop(uint32_t nowMs) {
-    if (s_capture == nullptr) return;
     bool estop = false;
     taskENTER_CRITICAL(&robotStateMux);
     estop = robotState.estop;
@@ -90,7 +80,7 @@ void takeOnLoop(uint32_t nowMs) {
 
     TakeStop stopped = TAKE_STOP_NONE;
     taskENTER_CRITICAL(&s_takeMux);
-    if (s_stage == TAKE_STAGE_PERFORMING) {
+    if (s_stage == TAKE_STAGE_PERFORMING && s_capture != nullptr) {
         // The quantum closes first, so an estop keeps what the last one held.
         const bool full = takeCaptureAdvance(s_capture, nowMs);
         if (estop) {
@@ -114,7 +104,6 @@ void takeOnLoop(uint32_t nowMs) {
 }
 
 bool takeSeedWanted() {
-    if (s_capture == nullptr) return false;
     taskENTER_CRITICAL(&s_takeMux);
     const bool wanted = s_seedWanted && s_stage == TAKE_STAGE_PERFORMING;
     s_seedWanted = false;
@@ -197,10 +186,6 @@ const char* takeArm(const char* seqName, char* refusal, size_t refusalCap) {
         return refuse(refusal, refusalCap,
                       "No frames are arriving from the radio. Switch it on and check the receiver.");
     }
-    if (s_capture == nullptr) {
-        return refuse(refusal, refusalCap,
-                      "The droid had no memory to set aside for a take when it started. Restart it.");
-    }
 
     // The sequence the take belongs to, by its stable id, which the file
     // name carries: a sequence the droid holds, saved since ids existed.
@@ -231,15 +216,36 @@ const char* takeArm(const char* seqName, char* refusal, size_t refusalCap) {
         return refuse(refusal, refusalCap, "A take is already running.");
     }
 
-    takeCaptureBegin(s_capture, millis());
+    // The buffer: the one a stopped take that is now discarded still holds, or
+    // a fresh one. PSRAM where the board has it (firebeetle2), internal RAM
+    // otherwise - read and written from task context only, never an ISR.
+    TakeCapture* capture = s_capture;
+    if (capture == nullptr) {
+        void* storage = heap_caps_malloc_prefer(sizeof(TakeCapture), 2,
+                                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
+                                                MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (storage == nullptr) {
+            taskENTER_CRITICAL(&s_takeMux);
+            s_stage = TAKE_STAGE_IDLE;
+            taskEXIT_CRITICAL(&s_takeMux);
+            PA_LOG_WARN(TAG, "no memory for a take (%u B)", (unsigned)sizeof(TakeCapture));
+            return refuse(refusal, refusalCap,
+                          "The droid has no memory free for a take. Stop any sequence that is "
+                          "running, close other pages open on the droid, and try again.");
+        }
+        capture = new (storage) TakeCapture();
+    }
+
+    takeCaptureBegin(capture, millis());
     for (size_t i = 0; i < slotCount; ++i) {
         const RcTriggerBinding& b = slots[i];
         if (b.target == SERVO_ACTION_PUPPET_PART && rcPuppetChannelCanMove(b.source, b.channel)) {
-            takeCaptureAddPart(s_capture, b.marcduinoPayload);
+            takeCaptureAddPart(capture, b.marcduinoPayload);
         }
     }
 
     taskENTER_CRITICAL(&s_takeMux);
+    s_capture = capture;
     memcpy(s_ownerId, ownerId, sizeof(s_ownerId));
     memcpy(s_seqName, ownerName, sizeof(s_seqName));
     s_why = TAKE_STOP_NONE;
@@ -247,7 +253,8 @@ const char* takeArm(const char* seqName, char* refusal, size_t refusalCap) {
     s_seedWanted = true;
     s_stage = TAKE_STAGE_PERFORMING;
     taskEXIT_CRITICAL(&s_takeMux);
-    PA_LOG_INFO(TAG, "take armed for %s: %u Part(s)", ownerName, (unsigned)s_capture->partCount);
+    PA_LOG_INFO(TAG, "take armed for %s: %u Part(s), %u B", ownerName, (unsigned)capture->partCount,
+                (unsigned)sizeof(TakeCapture));
     return nullptr;
 }
 
@@ -256,14 +263,12 @@ const char* takeArm(const char* seqName, char* refusal, size_t refusalCap) {
 // -----------------------------------------------------------------------------
 void takeStatusRead(TakeStatus* out) {
     *out = {};
-    out->available = s_capture != nullptr;
-    if (s_capture == nullptr) return;
     const uint32_t nowMs = millis();
     taskENTER_CRITICAL(&s_takeMux);
     out->stage = s_stage;
     out->why = s_why;
     memcpy(out->seqName, s_seqName, sizeof(out->seqName));
-    if (s_stage == TAKE_STAGE_PERFORMING || s_stage == TAKE_STAGE_STOPPED) {
+    if ((s_stage == TAKE_STAGE_PERFORMING || s_stage == TAKE_STAGE_STOPPED) && s_capture != nullptr) {
         const uint32_t endMs = (s_stage == TAKE_STAGE_PERFORMING) ? nowMs : s_stopMs;
         out->elapsedMs = (uint32_t)(endMs - s_capture->startMs);
         out->fill = takeCaptureFill(s_capture, endMs);
@@ -280,9 +285,6 @@ void takeStatusRead(TakeStatus* out) {
 // -----------------------------------------------------------------------------
 const char* takeKeepBegin(TakeKeep* out, char* refusal, size_t refusalCap) {
     *out = {};
-    if (s_capture == nullptr) {
-        return refuse(refusal, refusalCap, "No take is running.");
-    }
     const uint32_t nowMs = millis();
     bool ok = false;
     taskENTER_CRITICAL(&s_takeMux);
@@ -293,7 +295,7 @@ const char* takeKeepBegin(TakeKeep* out, char* refusal, size_t refusalCap) {
         s_stopMs = nowMs;
         s_finished = false;
     }
-    if (s_stage == TAKE_STAGE_STOPPED) {
+    if (s_stage == TAKE_STAGE_STOPPED && s_capture != nullptr) {
         s_stage = TAKE_STAGE_HELD;
         ok = true;
         out->why = s_why;
@@ -318,7 +320,12 @@ const char* takeKeepBegin(TakeKeep* out, char* refusal, size_t refusalCap) {
     return nullptr;
 }
 
+// The one place the buffer is freed: kept, the take is done with it. The
+// stage goes IDLE and the pointer null under the lock first, and the memory
+// goes after it (see s_capture). Not kept, the take keeps its buffer and goes
+// back to STOPPED, to be kept again.
 void takeKeepEnd(bool kept) {
+    TakeCapture* release = nullptr;
     taskENTER_CRITICAL(&s_takeMux);
     if (s_stage == TAKE_STAGE_HELD) {
         s_stage = kept ? TAKE_STAGE_IDLE : TAKE_STAGE_STOPPED;
@@ -326,7 +333,13 @@ void takeKeepEnd(bool kept) {
             s_why = TAKE_STOP_NONE;
             s_seqName[0] = '\0';
             s_ownerId[0] = '\0';
+            release = s_capture;
+            s_capture = nullptr;
         }
     }
     taskEXIT_CRITICAL(&s_takeMux);
+    if (release != nullptr) {
+        release->~TakeCapture();
+        heap_caps_free(release);
+    }
 }

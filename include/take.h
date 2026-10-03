@@ -12,23 +12,26 @@
 // that does - arming, reading the status, writing the file - runs on Core 0
 // from the web routes (src/web/api_take.cpp).
 //
-// THE BUFFER is one TakeCapture, taken once at setup() and only when the boot
-// RC mode reads an SBUS receiver - a puppet string exists only on SBUS - the
-// precedent rcInputAllocateDecoders() set (#428). Its size is the take file's
-// cap plus the cue log: sizeof(TakeCapture) is 12,908 B on the artoo-esp32,
-// from internal RAM (it has no PSRAM), and 25,196 B on firebeetle2, from PSRAM
-// when the heap offers it. A droid with no SBUS receiver pays nothing.
+// THE BUFFER is one TakeCapture, taken from the heap by the arm that needs it
+// (Core 0, a web request) and given back when the take is kept, so an idle
+// droid holds none of it. It is the take file's cap plus the cue log:
+// sizeof(TakeCapture) is 12,908 B on the artoo-esp32, from internal RAM (it has
+// no PSRAM), and 25,196 B on firebeetle2, from PSRAM when the heap offers it.
+// An arm that finds no block that size refuses, and says so.
 //
 // WHO HOLDS THE BUFFER. One stage, under a spinlock of its own:
-//   IDLE        Core 0 may arm: it fills the buffer, then sets PERFORMING.
+//   IDLE        no buffer. Core 0 may arm: it takes one, fills it, then
+//               sets PERFORMING.
 //   PERFORMING  RCInputTask stores into the buffer; nobody else reads it
 //               except a few counters, under the lock.
 //   STOPPED     the take ended - kept by the builder, full, or the estop -
 //               and RCInputTask will not touch the buffer again.
 //   HELD        Core 0 holds the buffer: finishing a take and writing its
 //               file, or filling it for a take being armed.
-// A take that stopped by itself waits in STOPPED until the Sequences page
-// keeps it; arming a new take over it discards it.
+// A take that stopped by itself waits in STOPPED, holding its buffer, until
+// the Sequences page keeps it; arming a new take over it discards the take
+// and reuses the buffer. Keeping it frees the buffer (src/take.cpp says why a
+// Core 1 hook can never see it freed).
 //
 // No Non-RC Control consent anywhere here: arming, performing and keeping a
 // take is RC motion (ADR 0061, ADR 0064).
@@ -39,12 +42,7 @@
 #include <stdint.h>
 
 #include "rc_action_types.h"  // RobotActionId
-#include "rc_input_step.h"    // RcInputStartupPlan
 #include "take_capture.h"     // TakeCapture, TakeStop
-
-// setup(): take the capture buffer if the boot RC plan reads SBUS. Call with
-// the plan rcInputAllocateDecoders() was given, before RCInputTask starts.
-void takeAllocate(const RcInputStartupPlan& plan);
 
 // -----------------------------------------------------------------------------
 // RCInputTask (Core 1)
@@ -82,7 +80,6 @@ enum TakeStage : uint8_t {
 };
 
 struct TakeStatus {
-    bool available;          // the buffer exists on this boot
     TakeStage stage;
     TakeStop why;            // why it stopped, once it has
     char seqName[24];        // the sequence it was armed for

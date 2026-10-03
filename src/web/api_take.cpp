@@ -124,9 +124,6 @@ void handleTakeGet(WebRequest& req) {
         JsonArray parts = doc["parts"].to<JsonArray>();
         for (uint8_t i = 0; i < st.partCount; ++i) parts.add(st.parts[i]);
     }
-    // Whether this boot set memory aside to capture into: false on a droid
-    // whose RC mode reads no SBUS receiver, where no string exists.
-    doc["available"] = st.available;
     JsonObject store = doc["store"].to<JsonObject>();
     store["cap"] = TAKE_STORE_CAP;
     store["held"] = takeStoreHeld();

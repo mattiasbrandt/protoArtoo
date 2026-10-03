@@ -1775,8 +1775,6 @@ The take in hand and the store's figures.
   or `estop` (the estop latched; what was performed is kept)
 - `seq`, `elapsedMs`, `fill` (permille of the size bound used), `nearlyFull`
   (`fill` at 900 or more), `samples`, `cues`, `parts`: while it is not idle
-- `available`: whether this boot set memory aside to capture into - false
-  when the boot RC mode reads no SBUS receiver
 - `store`: `cap` (takes the board keeps: 1 on `artoo-esp32`, 20 on
   `firebeetle2`), `held`, `maxBytes` (one take file at most: 12,288 /
   24,576 B), `floorBytes` (free space a write leaves: twice `maxBytes`),
@@ -1785,7 +1783,7 @@ The take in hand and the store's figures.
 #### Example response
 
 ```json
-{"state":"performing","seq":"DM:WAVE","elapsedMs":4200,"fill":31,"nearlyFull":false,"samples":96,"cues":1,"parts":["domeLid","doorFL"],"available":true,"store":{"cap":1,"held":0,"maxBytes":12288,"floorBytes":24576,"rateHz":20}}
+{"state":"performing","seq":"DM:WAVE","elapsedMs":4200,"fill":31,"nearlyFull":false,"samples":96,"cues":1,"parts":["domeLid","doorFL"],"store":{"cap":1,"held":0,"maxBytes":12288,"floorBytes":24576,"rateHz":20}}
 ```
 
 ### POST /api/take/arm
@@ -1800,7 +1798,9 @@ Channel set to Perform a Part at this moment.
   - `409` `{"ok":false,"error":"..."}` when it cannot be armed, saying why: no
     RC Channel is set to Perform a Part, no radio is fitted, no frames are
     arriving, the estop is latched, a take is already running, the sequence
-    is not saved, or there is no room for a take
+    is not saved, there is no room for a take, or no memory free to capture
+    one (the buffer is taken when a take is armed and given back when it is
+    kept)
 
 ### POST /api/take/keep
 
