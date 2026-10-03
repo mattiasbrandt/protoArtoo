@@ -616,54 +616,6 @@ void test_drive_watchdog_disabled_decoder_emits_no_actions() {
 }
 
 // ============================================================================
-// Zero-Frame Submission Decisions on Signal Loss
-// ============================================================================
-
-void test_zero_frame_submitted_on_pwm_signal_lost() {
-    RcInputStepZeroFrameInputs in = {
-        .pwmSignalLost = true,
-        .sbusHwFailsafe = false,
-    };
-
-    RcInputStepZeroFrameActions out = rcInputStepZeroFrame(in);
-
-    TEST_ASSERT_TRUE(out.submitDriveZeroFrame);
-}
-
-void test_zero_frame_submitted_on_sbus_hw_failsafe() {
-    RcInputStepZeroFrameInputs in = {
-        .pwmSignalLost = false,
-        .sbusHwFailsafe = true,
-    };
-
-    RcInputStepZeroFrameActions out = rcInputStepZeroFrame(in);
-
-    TEST_ASSERT_TRUE(out.submitDriveZeroFrame);
-}
-
-void test_zero_frame_submitted_on_both_pwm_and_sbus_fail() {
-    RcInputStepZeroFrameInputs in = {
-        .pwmSignalLost = true,
-        .sbusHwFailsafe = true,
-    };
-
-    RcInputStepZeroFrameActions out = rcInputStepZeroFrame(in);
-
-    TEST_ASSERT_TRUE(out.submitDriveZeroFrame);
-}
-
-void test_zero_frame_not_submitted_when_both_ok() {
-    RcInputStepZeroFrameInputs in = {
-        .pwmSignalLost = false,
-        .sbusHwFailsafe = false,
-    };
-
-    RcInputStepZeroFrameActions out = rcInputStepZeroFrame(in);
-
-    TEST_ASSERT_FALSE(out.submitDriveZeroFrame);
-}
-
-// ============================================================================
 // Per-Frame Decisions: SBUS1 (drive) receiver frames
 // ============================================================================
 
@@ -1052,11 +1004,6 @@ int main(void) {
     RUN_TEST(test_sbus2_routed_sustained_failsafe_triggers_and_zeroes_every_frame);
     RUN_TEST(test_sbus2_routed_latch_latches_across_lost_frame);
     RUN_TEST(test_sbus2_routed_frame_failsafe_logs_warn_on_rising_edge_only);
-
-    RUN_TEST(test_zero_frame_submitted_on_pwm_signal_lost);
-    RUN_TEST(test_zero_frame_submitted_on_sbus_hw_failsafe);
-    RUN_TEST(test_zero_frame_submitted_on_both_pwm_and_sbus_fail);
-    RUN_TEST(test_zero_frame_not_submitted_when_both_ok);
 
     return UNITY_END();
 }

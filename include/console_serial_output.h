@@ -15,7 +15,8 @@
 //    redraw -- input line cleared, the line, the break, the prompt, the
 //    buffered command -- rendered by embedded-cli into one buffer and written
 //    as one frame, waiting for room under the same bound as a record
-//    (consoleSerialEmitLine, reached through consoleSerialDrainLogs).
+//    (consoleSerialEmitLine, reached through consoleSerialDrainLogs; its
+//    contract is in include/console_serial_output_test_hooks.h).
 //
 // WHAT ADR 0039 CHANGED, and what it removed. The wire used to be writable by
 // any task that took a mutex: paLogLine() wrote from the calling task's
@@ -249,28 +250,6 @@ void consoleSerialBindCli(EmbeddedCli* cli);
 // the boot banner away on the one board where it is not otherwise repeated
 // until #260's re-attach path fires. Same bytes, same policy, one seam.
 void consoleSerialWriteText(const char* text);
-
-// Emit one drained log line, with its mid-entry redraw, in ONE frame.
-//
-// Renders the whole redraw -- input line cleared, the line, the break, the
-// prompt, the buffered command -- into a buffer with embeddedCliPrintToBuffer()
-// and writes that buffer as one frame, waiting for transmit room under the
-// same bound as a Console Record (ADR 0039 supersedes ADR 0038's "logs stay
-// best-effort": the reason logs could not wait was a TWDT-subscribed logger
-// blocking on the CDC, and the Console task is not TWDT-subscribed).
-//
-// If the redraw does not fit CONSOLE_SERIAL_FRAME_MAX the render is refused
-// whole rather than truncated, and the line alone is sent through
-// consoleSerialEmitFramedLine(). The line is still written whole; only the
-// prompt redraw is lost, and the operator's next keystroke or log line draws
-// it again.
-//
-// CONSTRAINT: the Console task only. It renders through the line editor, whose
-// state that task also mutates in embeddedCliProcess(); single ownership is
-// what makes both safe without a lock, so a second caller re-opens exactly the
-// cross-core editor race ADR 0039 removed. It is also not re-entrant --
-// embeddedCliPrintToBuffer() refuses a render started from inside a render.
-void consoleSerialEmitLine(const char* line);
 
 // Drain the Log Ring to the wire, and return how many lines were written.
 //

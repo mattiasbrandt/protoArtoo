@@ -170,14 +170,6 @@ bool ledcPwmInit(uint8_t enabledMask);
 // Returns true on success, false if channel invalid or LEDC write fails.
 bool ledcPwmSetPulseWidth(uint8_t channel, uint16_t pulseUs);
 
-// Set pulse width as a percentage of range (0.0-1.0).
-// 0.0 = minimum pulse, 1.0 = maximum pulse.
-// Useful for mapping normalized SBUS commands to servo positions.
-bool ledcPwmSetPercent(uint8_t channel, float percent);
-
-// Set channel to neutral position (1500us).
-bool ledcPwmSetNeutral(uint8_t channel);
-
 // Take the pulse off a channel (ADR 0043, #364): duty 0, so the pin sits low
 // for the whole period and the servo sees no pulse at all -- it goes limp
 // where it is. The channel stays configured, so the next

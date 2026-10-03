@@ -534,10 +534,6 @@ bool seqEngineActive(const SeqEngineState& st) {
     return st.entry != nullptr;
 }
 
-const char* seqEngineName(const SeqEngineState& st) {
-    return st.entry != nullptr ? st.entry->name : nullptr;
-}
-
 void seqEngineClearLatches(SeqEngineState& st) {
     st.latches.piesOpen = false;
     st.latches.ringOpen = false;

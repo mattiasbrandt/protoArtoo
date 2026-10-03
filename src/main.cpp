@@ -30,7 +30,6 @@
 #include "dome_task.h"
 #include "drive.h"
 #include "drive_arbiter.h"
-#include "failsafe_boot_sbus.h"
 #include "failsafe_boot_twdt.h"
 #include "failsafe_gate.h"
 #include "heap_reading.h"

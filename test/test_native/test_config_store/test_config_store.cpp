@@ -722,7 +722,7 @@ void test_sound_member_survives_a_save_and_load() {
     TEST_ASSERT_TRUE(configSaveSystem(prefs, saved.system));
 
     SystemConfig loaded = {};
-    configLoadSystem(prefs, &loaded);
+    configDeserializeSystem(PrefsReader(prefs), &loaded);
     prefs.end();
 
     TEST_ASSERT_EQUAL_UINT8(mp3->value, loaded.sound_member);
@@ -1272,10 +1272,11 @@ void test_config_domain_load_functions_are_independently_callable() {
     AudioConfig audio = {};
     DomeConfig dome = {};
     SystemConfig system = {};
-    configLoadDrive(prefs, &drive);
-    configLoadAudio(prefs, &audio);
-    configLoadDome(prefs, &dome);
-    configLoadSystem(prefs, &system);
+    PrefsReader reader(prefs);
+    configDeserializeDrive(reader, &drive);
+    configDeserializeAudio(reader, &audio);
+    configDeserializeDome(reader, &dome);
+    configDeserializeSystem(reader, &system);
     prefs.end();
 
     TEST_ASSERT_EQUAL_INT16(550, drive.speedLimitMax);
@@ -1295,7 +1296,7 @@ void test_config_domain_save_preserves_other_domains() {
     TEST_ASSERT_TRUE(configSave(prefs, snap));
 
     AudioConfig audio = {};
-    configLoadAudio(prefs, &audio);
+    configDeserializeAudio(PrefsReader(prefs), &audio);
     audio.audioVolume = 27;
     TEST_ASSERT_TRUE(configSaveAudio(prefs, audio));
 
@@ -1434,7 +1435,7 @@ void test_configUpdateAudioMoodMasks_round_trips_through_audio_store() {
     TEST_ASSERT_TRUE(configUpdateAudioMoodMasks(prefs, 0x0001, 0x0002, 0x0004, 0x0008));
 
     AudioConfig audio = {};
-    configLoadAudio(prefs, &audio);
+    configDeserializeAudio(PrefsReader(prefs), &audio);
     prefs.end();
 
     TEST_ASSERT_EQUAL_UINT16(0x0001, audio.snd_moodcat_quiet);

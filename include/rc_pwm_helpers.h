@@ -9,15 +9,6 @@ static constexpr uint16_t RC_PWM_MAX_US = 2000;
 static constexpr uint16_t RC_PWM_CENTER_US = 1500;
 static constexpr uint16_t RC_PWM_VALID_MIN_US = 900;
 static constexpr uint16_t RC_PWM_VALID_MAX_US = 2100;
-static constexpr uint16_t RC_PWM_SWITCH_LOW_US = 1300;
-static constexpr uint16_t RC_PWM_SWITCH_HIGH_US = 1700;
-
-enum RcPwmSwitchState : uint8_t {
-    RC_PWM_SWITCH_LOW = 0,
-    RC_PWM_SWITCH_MID,
-    RC_PWM_SWITCH_HIGH,
-    RC_PWM_SWITCH_INVALID,
-};
 
 inline bool rcPwmPulseIsValid(uint32_t pulseUs) {
     return pulseUs >= RC_PWM_VALID_MIN_US && pulseUs <= RC_PWM_VALID_MAX_US;
@@ -29,21 +20,6 @@ inline float rcPwmPulseToNormalized(uint32_t pulseUs) {
     if (pulseUs >= RC_PWM_MAX_US)
         return 1.0f;
     return ((float)pulseUs - (float)RC_PWM_CENTER_US) / 500.0f;
-}
-
-inline int16_t rcPwmPulseToDrive(uint32_t pulseUs, int16_t maxOut) {
-    float normalized = rcPwmPulseToNormalized(pulseUs);
-    return (int16_t)(normalized * maxOut);
-}
-
-inline RcPwmSwitchState rcPwmPulseToSwitchState(uint32_t pulseUs) {
-    if (!rcPwmPulseIsValid(pulseUs))
-        return RC_PWM_SWITCH_INVALID;
-    if (pulseUs <= RC_PWM_SWITCH_LOW_US)
-        return RC_PWM_SWITCH_LOW;
-    if (pulseUs >= RC_PWM_SWITCH_HIGH_US)
-        return RC_PWM_SWITCH_HIGH;
-    return RC_PWM_SWITCH_MID;
 }
 
 // -----------------------------------------------------------------------------

@@ -1079,36 +1079,6 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
 }
 
 
-void configLoadDrive(Preferences& prefs, DriveConfig* out) {
-    if (out == nullptr) return;
-    PrefsReader reader(prefs);
-    configDeserializeDrive(reader, out);
-}
-
-void configLoadAudio(Preferences& prefs, AudioConfig* out) {
-    if (out == nullptr) return;
-    PrefsReader reader(prefs);
-    configDeserializeAudio(reader, out);
-}
-
-void configLoadDome(Preferences& prefs, DomeConfig* out) {
-    if (out == nullptr) return;
-    PrefsReader reader(prefs);
-    configDeserializeDome(reader, out);
-}
-
-void configLoadSystem(Preferences& prefs, SystemConfig* out) {
-    if (out == nullptr) return;
-    PrefsReader reader(prefs);
-    configDeserializeSystem(reader, out);
-}
-
-void configLoadWifi(Preferences& prefs, WifiConfig* out) {
-    if (out == nullptr) return;
-    PrefsReader reader(prefs);
-    configDeserializeWifi(reader, out);
-}
-
 void configLoadServoOutputs(Preferences& prefs, ServoOutputRepairReport* report) {
     PrefsReader reader(prefs);
     // Deserialised straight into the live table rather than through a caller's

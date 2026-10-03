@@ -8,6 +8,7 @@
 
 #include "config_write_lock.h"
 #include "config_write_window_check.h"
+#include "config_write_window_test_hooks.h"  // configWriteWindowMisses(), defined below for tests only
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>

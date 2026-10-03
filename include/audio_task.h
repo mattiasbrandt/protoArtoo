@@ -9,7 +9,6 @@
 // Queue design:
 //   - AUDIO_CMD_DOLLAR      : raw '$' command string, parsed inside AudioTask.
 //   - AUDIO_CMD_PLAY_TRACK  : direct play-by-track-number (e.g. from web API).
-//   - AUDIO_CMD_STOP        : direct stop.
 //   - AUDIO_CMD_SET_VOLUME  : direct absolute volume set.
 //   - AUDIO_CMD_QUERY_STATUS: on-demand module status query (web UI poll button).
 //                             Used for manual DY-SV5W poll and modules without
@@ -41,7 +40,6 @@ enum AudioCommandType : uint8_t {
     AUDIO_CMD_PLAY_TRACK_BANKED,  // play CHIRP bank/page/index tuple
     AUDIO_CMD_PLAY_SLOT,  // play named/system slot with backend-aware resolution
     AUDIO_CMD_PLAY_CATEGORY,  // play random category track with optional fallback slot
-    AUDIO_CMD_STOP,          // stop playback (mood Quiet only  --  disables random mode)
     AUDIO_CMD_TRACK_STOP,    // Track Stop (ADR 0010): stop current playback only,
                              // preserve random/idle mood
     AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30
@@ -117,10 +115,6 @@ bool audioQueuePlaySlot(AudioPlaybackSlot slot, CommandSource src);
 // Enqueue category playback with optional named/system fallback slot.
 bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fallbackSlot,
                             CommandSource src);
-
-// Enqueue a stop command. Full stop: also disables random/idle mood. Reserved for
-// the mood system's Quiet path ($s / SE10)  --  do not call from any other surface.
-bool audioQueueStop(CommandSource src);
 
 // Enqueue a Track Stop (ADR 0010): stops current playback only, preserves
 // random/idle mood, and bumps the anti-spam cadence so idle chatter resumes after

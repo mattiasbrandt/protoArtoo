@@ -95,9 +95,8 @@ struct ServoPulseBand {
     uint16_t hi;
 };
 
-// 1000-2000 us, the cautious sweep, and exactly what an MG996R takes -- the
-// same pair servoTypeDefaultClose()/servoTypeDefaultOpen() already record for
-// that part. Written out rather than borrowed from ESC_PULSE_MIN_US /
+// 1000-2000 us, the cautious sweep, and exactly what an MG996R takes.
+// Written out rather than borrowed from ESC_PULSE_MIN_US /
 // ESC_PULSE_MAX_US, which carry the same two numbers for an unrelated reason
 // (the dome ESC's range) and would couple a servo policy to an ESC fact.
 constexpr ServoPulseBand SERVO_BAND_STD = {1000, 2000};

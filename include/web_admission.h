@@ -27,10 +27,11 @@
 // The calling layer uses a WebAdmissionSession handle to manage connection-level
 // admission state (rate limiter, heap sample cache, sampler function). The session
 // bundles these implementation details so the caller owns a single opaque reference
-// rather than threading through separate parameters. The pure decision functions
-// (webAcceptDecide, webAcceptRateLimiterTake, etc.) remain directly reachable for
-// native tests, keeping the decision logic independently testable per ADR 0011
-// (pure core, visible shell).
+// rather than threading through separate parameters. The session decides by
+// calling the pure webAcceptDecide() with a sampler that reads through its heap
+// cache, so there is one copy of the decision and the native tests of
+// webAcceptDecide() cover what the server runs (ADR 0011, pure core, visible
+// shell).
 //
 // See docs/adr/0018-early-admission-seam-feasibility.md for why admission has
 // to gate the costly work rather than run beside it, and CONTEXT.md for the

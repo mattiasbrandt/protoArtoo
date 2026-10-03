@@ -40,7 +40,11 @@ read, starting with `FailsafeDiagnostics`. Each zone gets
 (takes the mux). Consumer captures (`ValidationSnapshot`, the `api_status`
 builders) compose several zone copies inside a single critical section, keeping
 whole-response atomicity while the types teach ownership. The existing
-single-field accessors (`isEstopActive`, `getDriveSpeed`, ...) remain.
+single-field accessors (`isEstopActive`, `getDriveSpeed`, ...) remained at the
+time. *Later (#466, 2026-10-03):* the six that no caller ever used
+(`isEstopActive`, `getDriveSpeed`, `getDriveSteer`, `getFailsafeSource`,
+`isSbusSignalLost`, and `captureFailsafeDiagnostics`) were deleted; readers use
+the zone copies.
 
 **Delivery.** Behavior-preserving slices on `phase/v1.0.0`, queued behind Apply
 Core slice 1 (ADR 0011): Z1 header zone reorder + `FailsafeDiagnostics` + its four

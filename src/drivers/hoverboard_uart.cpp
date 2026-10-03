@@ -86,28 +86,6 @@ static void parseGen2xFrame(const uint8_t* buf, HoverboardFeedback* out) {
     memcpy(&out->boardTempRaw, buf + 20, sizeof(out->boardTempRaw));
 }
 
-// -----------------------------------------------------------------------------
-// parseHoverboardFeedbackFrame()
-// Pure parser for one complete feedback frame.
-// -----------------------------------------------------------------------------
-bool parseHoverboardFeedbackFrame(const uint8_t* buf, int len, HoverboardFeedback* out) {
-    if (buf == nullptr || out == nullptr) {
-        return false;
-    }
-
-    if (len == kHoverFocFrameLen && validateXorFrame(buf, 9)) {
-        parseFocFrame(buf, out);
-        return true;
-    }
-
-    if (len == kHoverGen2xFrameLen && validateXorFrame(buf, 13)) {
-        parseGen2xFrame(buf, out);
-        return true;
-    }
-
-    return false;
-}
-
 // initHoverboardFeedbackParser()
 // Zero-initialise the struct and set seekingStart so the parser starts fresh.
 // Preserves no state from a prior session.

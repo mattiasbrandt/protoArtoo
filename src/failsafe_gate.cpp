@@ -28,6 +28,7 @@
 // =============================================================================
 
 #include "failsafe_gate.h"
+#include "failsafe_gate_test_hooks.h"  // failsafeActiveReason(), defined below for tests only
 
 #ifdef ARDUINO
 #include <Arduino.h>

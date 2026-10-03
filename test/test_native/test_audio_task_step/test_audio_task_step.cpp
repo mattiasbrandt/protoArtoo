@@ -223,20 +223,6 @@ void test_track_stop_preserves_random_mode_and_bumps_cadence() {
     TEST_ASSERT_EQUAL_UINT32(2000, s.lastPlayMs);
 }
 
-void test_quiet_stop_disables_random_mode() {
-    AudioStepState s = initializedState();
-    s.randomMode = true;
-    AudioNamedTracks named{};
-    AudioStepCommandInputs in = commandInputs(nullptr, &named, nullptr, 2000, false);
-
-    AudioCommand cmd{};
-    cmd.type = AUDIO_CMD_STOP;
-    AudioStepCommandActions a = audioStepCommand(s, in, cmd);
-    TEST_ASSERT_TRUE(a.hasIntent);
-    TEST_ASSERT_EQUAL(AUDIO_PLAYBACK_INTENT_STOP, a.intent.kind);
-    TEST_ASSERT_FALSE(s.randomMode);
-}
-
 // --- command: $8nn, ShadowMD's bank form (#449) -----------------------------------
 
 // $803 is bank 8, sound 3, and plays only where the fitted module reported a
@@ -412,7 +398,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_dollar_volume_down_clamps_at_min);
     RUN_TEST(test_dollar_bank_form_plays_only_where_the_module_has_the_bank);
     RUN_TEST(test_track_stop_preserves_random_mode_and_bumps_cadence);
-    RUN_TEST(test_quiet_stop_disables_random_mode);
     RUN_TEST(test_catalog_commands_gated_on_capability);
     RUN_TEST(test_random_tick_gated_on_mode_and_sleep);
     RUN_TEST(test_random_tick_does_not_replay_before_interval);

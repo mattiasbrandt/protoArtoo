@@ -11,7 +11,7 @@ then proves the reclaim happened by observing:
 3. The inflightRequests counter returns to its resting value after each breach.
 4. The stalled socket is reset (not gracefully closed) by the server.
 
-Reuses tools/issue65_live_ab_runtime.py's primitives (Timeline, NDJSON, atomic
+Reuses tools/live_run_runtime.py's primitives (Timeline, NDJSON, atomic
 JSON writers) rather than re-deriving them, following this repo's webload_*
 convention.
 """
@@ -26,7 +26,7 @@ import time
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import issue65_live_ab_runtime as r65  # noqa: E402  (reused, hardened primitives)
+import live_run_runtime as live  # noqa: E402  (reused, hardened primitives)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_ROOT = REPO_ROOT / "tasks" / "evidence" / "webload"
@@ -78,10 +78,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--deadline-ms", type=int, default=8000,
+        "--deadline-ms", type=int, default=4000,
         help=(
             "the firmware's PA_RESPONSE_DEADLINE_MS. Not enforced here; it is "
-            "what each measured reclaim time is reported against (default 8000)"
+            "what each measured reclaim time is reported against (default "
+            "4000, the [flags_base] value in platformio.ini)"
         ),
     )
     parser.add_argument(
@@ -120,7 +121,7 @@ class StatusMonitor:
     that other traffic is unaffected and slots are released.
     """
 
-    def __init__(self, controller: str, samples_path: Path, timeline: r65.Timeline) -> None:
+    def __init__(self, controller: str, samples_path: Path, timeline: live.Timeline) -> None:
         self.controller = controller
         self.samples_path = samples_path
         self.timeline = timeline
@@ -145,14 +146,14 @@ class StatusMonitor:
     def _sample(self) -> None:
         started = time.monotonic()
         try:
-            status = r65._http_json(
+            status = live._http_json(
                 f"http://{self.controller}/api/status", STATUS_REQUEST_DEADLINE_SECONDS,
             )
             success, error = True, None
-        except r65.Issue65RuntimeError as request_error:
+        except live.LiveRunError as request_error:
             status, success, error = None, False, str(request_error)
         latency_ms = round((time.monotonic() - started) * 1000, 1)
-        record = r65.append_ndjson(
+        record = live.append_ndjson(
             self.samples_path, self.timeline, "status-sample",
             success=success, error=error, latencyMs=latency_ms,
             responseDeadlineClosures=(status or {}).get("responseDeadlineClosures"),
@@ -182,7 +183,7 @@ class StatusMonitor:
 
 
 def _open_stalling_connection(
-    controller: str, port: int, path: str, receive_buffer: int, timeline: r65.Timeline,
+    controller: str, port: int, path: str, receive_buffer: int, timeline: live.Timeline,
 ) -> tuple[socket.socket, dict[str, Any], float]:
     """Open a socket, read only the response headers, then stop reading forever.
 
@@ -330,7 +331,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         args.out.parent if args.out else EVIDENCE_ROOT / "deadline-probe"
     )
     run_dir.mkdir(parents=True, exist_ok=True)
-    timeline = r65.Timeline.start()
+    timeline = live.Timeline.start()
     events: list[dict[str, Any]] = []
 
     reclaim_timeout = (
@@ -494,9 +495,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "pass": closures_ok and all_polls_ok and inflight_ok and reclaimed_all,
     }
 
-    r65.atomic_write_json(run_dir / "outcome.json", outcome)
+    live.atomic_write_json(run_dir / "outcome.json", outcome)
     for event in events:
-        r65._append_ndjson_record(run_dir / "events.ndjson", event)
+        live._append_ndjson_record(run_dir / "events.ndjson", event)
 
     return outcome
 
@@ -506,7 +507,7 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     try:
         outcome = run(args)
-    except (ProbeError, r65.Issue65RuntimeError, OSError) as error:
+    except (ProbeError, live.LiveRunError, OSError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
 

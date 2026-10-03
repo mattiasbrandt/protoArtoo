@@ -401,12 +401,6 @@ static_assert(sizeof(ConfigSnapshot) == 944,
 // Returns false + logs warning on schema mismatch; true on success.
 bool configLoad(Preferences& prefs, ConfigSnapshot* out);
 
-void configLoadDrive(Preferences& prefs, DriveConfig* out);
-void configLoadAudio(Preferences& prefs, AudioConfig* out);
-void configLoadDome(Preferences& prefs, DomeConfig* out);
-void configLoadSystem(Preferences& prefs, SystemConfig* out);
-void configLoadWifi(Preferences& prefs, WifiConfig* out);
-
 // configSave: Persist full ConfigSnapshot to NVS.
 // Caller opens Preferences with begin() before calling.
 // Holds no mutex and performs no robotState reads/writes. After boot it runs

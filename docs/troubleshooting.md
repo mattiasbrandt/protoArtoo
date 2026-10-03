@@ -731,6 +731,43 @@ Retype the command in the dashboard's Live Logs command box, where the limit is
   the current example) — retrying won't help until the underlying
   configuration is fixed.
 
+## 7. Re-measuring the web-server envelope (live measurement tools)
+
+These are the only way to re-measure the ADR 0017 (browser load) and ADR 0024
+(response deadline) numbers against a live controller. Each one's `--help` is
+the full reference; `--controller` / `--host` default to `10.0.0.22`, and
+evidence lands under `tasks/evidence/webload/` (`static_asset_probe.py` writes
+only its `--json`).
+
+- `tools/webload_baseline_run.py` -- the ADR 0017 browser-load run: power
+  cycle, ping/status/serial sampling, browser captures, cooldown, outcome.
+  `python3 tools/webload_baseline_run.py --stage preflight` (then `identity`,
+  `build`, `full`; the `build` stage OTA-flashes `--build-env`, and `full`
+  waits for a physical power cycle). `--page <name>` picks the page.
+  - `tools/webload_browser_capture.js` / `tools/webload_multitab_capture.js`
+    -- the single-tab and multi-tab browser collectors; `--stage full` runs
+    both, they are not run by hand.
+  - `tools/webload_page_profiles.js` -- what each page loads and when it
+    counts as up; `node tools/webload_page_profiles.js --list` names the pages.
+- `tools/webload_sse_stall.py` -- one SSE client that stops reading while
+  `/api/status` is polled beside it.
+  `python3 tools/webload_sse_stall.py --run-id <id> --recv-buffer-bytes 2048`.
+- `tools/response_deadline_probe.py` -- proves the response-phase deadline
+  drops a stalled response and frees its slot.
+  `python3 tools/response_deadline_probe.py` (`--deadline-ms` if the build
+  overrides `PA_RESPONSE_DEADLINE_MS`).
+- `tools/response_deadline_calibrate.py` -- the controller's own
+  `responseMaxMs` across every GET route, static asset and a page-shaped
+  load, to set that deadline from evidence.
+  `python3 tools/response_deadline_calibrate.py`.
+- `tools/static_asset_probe.py` -- byte-exact raw-socket fetch of the served
+  files against the staged image (`.pio/build/<env>/fsdata_gz` must exist).
+  `python3 tools/static_asset_probe.py --host <ip> --json report.json`.
+- `tools/live_run_runtime.py` -- not run directly: the shared library behind
+  `webload_baseline_run.py`, `webload_sse_stall.py` and
+  `response_deadline_probe.py` (NDJSON/JSON writers, stop arbiter, sampling
+  loop).
+
 ## References
 
 - API: [api.md](api.md) — `/api/coredump*`, `/api/profiler`, `/api/status`, `/api/logs`, `/api/seq/last-run`.

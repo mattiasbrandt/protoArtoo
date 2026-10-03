@@ -58,6 +58,7 @@
 #include "console_module.h"
 #include "console_record.h"
 #include "config_write_window_check.h"  // the holder check this suite arms (#418)
+#include "config_write_window_test_hooks.h"  // configWriteWindowMisses()
 
 // =============================================================================
 // Capture: one per concurrent request, so the two answers can be compared

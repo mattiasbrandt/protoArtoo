@@ -171,19 +171,3 @@ RcInputStepSbus2FrameActions rcInputStepSbus2Frame(const RcInputStepSbus2FrameIn
 
 // Drive decoder frames routed as SBUS2 (single_sbus + useCh2).
 RcInputStepSbus2FrameActions rcInputStepSbus2RoutedFrame(const RcInputStepSbus2FrameInputs& in);
-
-// ============================================================================
-// Zero-Frame Submission Phase (PWM and HW failsafe paths)
-// ============================================================================
-
-struct RcInputStepZeroFrameInputs {
-    bool pwmSignalLost = false;   // PWM mode signal lost check
-    bool sbusHwFailsafe = false;  // SBUS HW failsafe flag from receiver
-};
-
-struct RcInputStepZeroFrameActions {
-    bool submitDriveZeroFrame = false;
-    uint32_t submitMs = 0;
-};
-
-RcInputStepZeroFrameActions rcInputStepZeroFrame(const RcInputStepZeroFrameInputs& in);

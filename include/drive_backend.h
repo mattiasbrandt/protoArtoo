@@ -8,7 +8,9 @@
 //
 //   - the DriveTask speed cap and the failsafe zeroing  (driveArbiterResolve())
 //   - the latching estop                                (include/failsafe_gate.h)
-//   - the 50 Hz zero-frame continuity guarantee         (driveTickDecide())
+//   - the 50 Hz zero-frame continuity guarantee         (the unconditional
+//                                                        driveBackendSend() in
+//                                                        src/tasks/drive.cpp)
 //
 // Those four are AGENTS.md safety invariants. A seam that let any of them
 // become a backend's choice would be the wrong seam, so what a backend gets is

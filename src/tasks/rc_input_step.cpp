@@ -238,18 +238,3 @@ RcInputStepSbus2FrameActions rcInputStepSbus2RoutedFrame(const RcInputStepSbus2F
 
     return out;
 }
-
-// ============================================================================
-// Zero-Frame Submission Phase
-// ============================================================================
-
-RcInputStepZeroFrameActions rcInputStepZeroFrame(const RcInputStepZeroFrameInputs& in) {
-    RcInputStepZeroFrameActions out = {};
-
-    if (in.pwmSignalLost || in.sbusHwFailsafe) {
-        out.submitDriveZeroFrame = true;
-        out.submitMs = 0;  // Will be filled in by adapter with millis()
-    }
-
-    return out;
-}

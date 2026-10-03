@@ -181,41 +181,6 @@ bool ledcPwmSetPulseWidth(uint8_t channel, uint16_t pulseUs) {
 }
 
 // -----------------------------------------------------------------------------
-// ledcPwmSetPercent()
-// Set pulse width as a fraction of the channel's full range (0.0-1.0).
-// Derives min/max from clampPulseWidth to stay consistent with clamping logic.
-// Returns false silently (no log) if channel is not in the configured mask.
-// -----------------------------------------------------------------------------
-bool ledcPwmSetPercent(uint8_t channel, float percent) {
-    if (channel >= LEDC_CH_MAX) {
-        return false;
-    }
-
-    if (!(s_configuredMask & (1 << channel))) {
-        return false;
-    }
-
-    if (percent < 0.0f)
-        percent = 0.0f;
-    if (percent > 1.0f)
-        percent = 1.0f;
-
-    // Probe channel bounds via clampPulseWidth  --  single source of truth for limits.
-    uint16_t minUs = clampPulseWidth(channel, 0);
-    uint16_t maxUs = clampPulseWidth(channel, 65535U);
-    uint16_t pulseUs = minUs + (uint16_t)(percent * (float)(maxUs - minUs));
-
-    return ledcPwmSetPulseWidth(channel, pulseUs);
-}
-
-// -----------------------------------------------------------------------------
-// ledcPwmSetNeutral()
-// -----------------------------------------------------------------------------
-bool ledcPwmSetNeutral(uint8_t channel) {
-    return ledcPwmSetPulseWidth(channel, SERVO_PULSE_NEUTRAL_US);
-}
-
-// -----------------------------------------------------------------------------
 // ledcPwmRelease()
 // Duty 0 and nothing else: no clamp, because there is no width to clamp, and
 // no neutral, because a release commands no position (ADR 0043). Same mask

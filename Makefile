@@ -139,8 +139,16 @@ test-web: ## Run web behavioral tests (node:test)
 	@python3 tools/suite_pause.py --check && exit 0; \
 	node --test --test-reporter=tap --test-timeout=10000 'test/test_web/test_*.js'
 
-test-tools: ## Run Python tooling tests (incl. slice gate self-tests)
+# unittest discovery never picks up the node:test files beside the Python
+# ones, so each test/test_tools/*.js runs on its own; the first failure fails
+# the target. CI runs this target, so the two cannot drift.
+test-tools: ## Run tooling tests: Python unittest (incl. slice gate self-tests), then the JS files
 	python3 -m unittest discover -s test/test_tools -q
+	@for f in test/test_tools/*.js; do \
+		[ -e "$$f" ] || continue; \
+		echo "node $$f"; \
+		node "$$f" || exit 1; \
+	done
 
 pw-fixture: ## Run fixture Playwright scripts in DIR (make pw-fixture DIR=seq)
 	python3 tools/pw_fixture.py --dir $(DIR)
