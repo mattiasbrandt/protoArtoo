@@ -857,10 +857,13 @@ TakeReplayRun* seqStoreClaimRunTakes(SeqStoreTakesUnplayed* unplayed) {
 #include "take_store.h"
 
 // The take store is LittleFS's; the host holds no take file to read.
-size_t takeStoreReadSlice(const char* /*owner*/, const char* /*take*/, size_t /*offset*/,
-                          uint8_t* /*out*/, size_t /*capacity*/) {
+bool takeStoreReadBegin(const char* /*owner*/, const char* /*take*/, size_t /*offset*/) {
+    return false;
+}
+size_t takeStoreReadOn(uint8_t* /*out*/, size_t /*capacity*/) {
     return 0;
 }
+void takeStoreReadEnd() {}
 
 ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
     g_test_seq_save_calls++;

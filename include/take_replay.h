@@ -4,7 +4,9 @@
 // Replaying a sequence's takes beside its steps (#442 slice 3, ADR 0061).
 //
 // WHAT PLAYS. A Learned Sequence names its takes in its `takes` array, each
-// with the moment it starts (`t`, ms from the run's start). When the sequence
+// with the moment it starts (`t`, ms from the run's start) and, when it has
+// been trimmed on the timeline (#442 slice 4), the part of it that plays:
+// `from` and `to`, ms into the take (see A TRIMMED TAKE below). When the sequence
 // runs, the Sequence Coordinator plays each take from its file: every sample
 // is the permille target the string commanded when it was performed, sent to
 // ServoTask as a SERVO_CMD_PUPPET at the Output's own Motion Profile - the
@@ -16,8 +18,8 @@
 //
 // STREAMED, NOT LOADED. A take file is up to 12 KB (24 KB on the P4). Each
 // take holds TAKE_REPLAY_BUF_SAMPLES samples at a time, read from LittleFS
-// through the slice-2 reader (takeStoreReadSlice()) and checked as they
-// arrive with the slice-2 checks (take_capture.h), and the whole state is one
+// through one open of its file a tick (takeStoreReadBegin()) and checked as
+// they arrive with the slice-2 checks (take_capture.h), and the whole state is one
 // heap block taken when the run is loaded and given back when it ends.
 //
 // THE RULES, written once here and applied by takeReplayOutranked() and the
@@ -39,6 +41,14 @@
 //     The close half plays its steps alone; `t` counts from the run's start.
 //   - THE END STEP CUTS. A take still playing when its run reaches its end
 //     step stops there, as a Gesture and a flutter do, and commands nothing.
+//   - A TRIMMED TAKE plays the part of its file from `from` to `to` (ms into
+//     the take; absent, its start and its end), and `t` is where `from`
+//     plays: the block's start on the timeline, not where the untrimmed take
+//     would have started. At `t` every Part the take has moved by `from` is
+//     sent where the take had it then - the samples before `from` are read
+//     into the Parts' targets, never played - so a Part that held still across
+//     the in-point is still covered from it. The take ends at `to`, or at its
+//     own length where that comes first, as an untrimmed take ends.
 //
 // Pure: no FreeRTOS, no Arduino, no clock, no file. The Coordinator does the
 // reading and the sending, with the time passed in.
@@ -64,6 +74,9 @@ static constexpr uint8_t TAKE_REPLAY_BUF_SAMPLES = 8;
 // taken before the Output's moving flag is trusted.
 static constexpr uint32_t TAKE_REPLAY_STEP_SETTLE_MS = 40;
 
+// A take's `to` when its entry has none: it plays to its own end.
+static constexpr uint32_t TAKE_REPLAY_WHOLE = 0xFFFFFFFFu;
+
 enum TakeReplayState : uint8_t {
     TAKE_REPLAY_WAITING = 0,  // its start has not come; its file is not open yet
     TAKE_REPLAY_PLAYING,
@@ -77,6 +90,8 @@ struct TakeReplay {
     uint8_t rateHz;
     uint8_t partCount;
     uint32_t atMs;                       // where it starts, from the run's start
+    uint32_t fromMs;                     // the trim: what plays, in ms into the take,
+    uint32_t toMs;                       //   TAKE_REPLAY_WHOLE for "to its end"
     uint16_t lengthTicks;
     uint16_t sampleCount;
     uint16_t samplesRead;                // taken from the file into `buf` so far
@@ -140,11 +155,14 @@ inline TakeFileInfo takeReplayInfo(const TakeReplay& t) {
 // Take every buffered sample due by `runMs` into the Parts' current targets.
 // Returns true when the buffer ran dry with samples still in the file - the
 // Coordinator refills it and asks again - and false when every due sample is
-// taken. Ends the take once its length has run out.
+// taken. Ends the take once its length, or its trim's `to`, has run out. A
+// trimmed take is `fromMs` into its file at its start, so its first call
+// takes every sample before the in-point (A TRIMMED TAKE, above).
 // -----------------------------------------------------------------------------
 inline bool takeReplayConsume(TakeReplay* t, uint32_t runMs) {
-    const uint32_t intoMs = runMs - t->atMs;
-    if (intoMs >= takeTicksToMs(t->lengthTicks, t->rateHz)) {
+    const uint32_t intoMs = runMs - t->atMs + t->fromMs;
+    const uint32_t lengthMs = takeTicksToMs(t->lengthTicks, t->rateHz);
+    if (intoMs >= ((t->toMs < lengthMs) ? t->toMs : lengthMs)) {
         t->state = TAKE_REPLAY_OVER;
         return false;
     }

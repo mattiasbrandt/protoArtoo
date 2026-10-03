@@ -79,6 +79,17 @@ bool takeStoreHas(const char* owner, const char* take);
 size_t takeStoreReadSlice(const char* owner, const char* take, size_t offset, uint8_t* out,
                           size_t capacity);
 
+// That take's file read on through ONE open (the Sequence Coordinator's
+// replay, include/take_replay.h): begun at `offset`, read piece by piece, and
+// ended once. A trimmed take reads every sample before its in-point at its
+// start, which one open per piece would make hundreds of opens in one tick.
+// The store's lock is held from a begin that succeeded to its end, so nothing
+// renames or removes the file between two pieces; one reader at a time.
+// takeStoreReadOn() answers the bytes read, 0 at the end or with nothing begun.
+bool takeStoreReadBegin(const char* owner, const char* take, size_t offset);
+size_t takeStoreReadOn(uint8_t* out, size_t capacity);
+void takeStoreReadEnd();
+
 // -----------------------------------------------------------------------------
 // A take file arriving in pieces (a backup's restore, POST /api/take/file):
 // begun with the file's name, fed each piece as it arrives, finished once.

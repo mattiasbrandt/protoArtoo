@@ -47,7 +47,7 @@
 #include "servo_motion_ramp.h"  // servoMotionArrivalMs() - how long a flutter's leg takes
 #include "servo_task.h"  // servoTaskDrivesOutput() - an undriven Output is passed over (#364)
 #include "take_replay.h"  // a run's takes, played beside its steps (#442)
-#include "take_store.h"   // takeStoreReadSlice() - a take's file, a piece at a time
+#include "take_store.h"   // takeStoreReadBegin() - a take's file, read on through one open
 
 // Platform definition seam  --  hardware vs native test builds.
 // This is the irreducible guard needed because queue definition must differ:
@@ -395,8 +395,8 @@ static_assert(SEQ_FLUTTER_PARTS_MAX >= SEQ_GESTURE_MEMBERS_MAX,
 // run starts and freed when it ends; nullptr between runs, which is all a take
 // costs while none plays.
 //
-// Each take's file is read a few samples at a time through the slice-2 reader
-// (takeStoreReadSlice()), which waits on the take store's lock the way a run's
+// Each take's file is read a few samples at a time, through one open a tick
+// (takeStoreReadBegin()), which waits on the take store's lock the way a run's
 // load waits on the sequence store's. Each sample goes to ServoTask the way a
 // puppet string's target does - SERVO_CMD_PUPPET, at the Output's own Motion
 // Profile, its Part resolved to an Output as it goes - but as SRC_SEQ, so
@@ -467,64 +467,81 @@ static __attribute__((noinline)) void takesEnd(const char* why) {
     }
 }
 
-// A take's start has come: its header, read into its own sample buffer so
-// nothing sits on this task's stack - the fixed 16 bytes, then each Part id.
-// A Part the catalog does not hold is said now, once for this take, and
-// passed over for the run.
+// A take's start has come: its header, read through one open into its own
+// sample buffer so nothing sits on this task's stack - the fixed 16 bytes,
+// then each Part id. A Part the catalog does not hold is said now, once for
+// this take, and passed over for the run.
 // Returns why the take cannot play, or nullptr.
 static __attribute__((noinline)) const char* takeOpen(TakeReplay* t) {
     uint8_t* b = (uint8_t*)t->buf;
     TakeFileInfo info = {};
-    if (takeStoreReadSlice(takeRun->owner, t->id, 0, b, TAKE_FILE_FIXED_BYTES) !=
-        TAKE_FILE_FIXED_BYTES) {
+    if (!takeStoreReadBegin(takeRun->owner, t->id, 0)) {
         return "its file is not on the droid";
     }
-    if (!takeFileReadFixed(b, &info)) {
-        return "its file is not a take this droid can read";
-    }
-    takeReplayBegin(t, info);
-    static_assert(sizeof(t->buf) >= TAKE_PART_ID_BYTES, "a Part id is read into the buffer");
-    for (uint8_t p = 0; p < t->partCount; ++p) {
-        const size_t at = TAKE_FILE_FIXED_BYTES + (size_t)p * TAKE_PART_ID_BYTES;
-        if (takeStoreReadSlice(takeRun->owner, t->id, at, b, TAKE_PART_ID_BYTES) !=
-                TAKE_PART_ID_BYTES ||
-            !takeFilePartIdValid(b)) {
-            return "it names a Part this droid cannot read";
+    const char* stop = nullptr;
+    if (takeStoreReadOn(b, TAKE_FILE_FIXED_BYTES) != TAKE_FILE_FIXED_BYTES ||
+        !takeFileReadFixed(b, &info)) {
+        stop = "its file is not a take this droid can read";
+    } else {
+        takeReplayBegin(t, info);
+        static_assert(sizeof(t->buf) >= TAKE_PART_ID_BYTES, "a Part id is read into the buffer");
+        for (uint8_t p = 0; p < t->partCount; ++p) {
+            if (takeStoreReadOn(b, TAKE_PART_ID_BYTES) != TAKE_PART_ID_BYTES ||
+                !takeFilePartIdValid(b)) {
+                stop = "it names a Part this droid cannot read";
+                break;
+            }
+            const size_t part = droidPartIndexOf((const char*)b);
+            t->part[p] = (uint8_t)((part < DROID_PART_COUNT) ? part : DROID_PART_COUNT);
+            if (part >= DROID_PART_COUNT) {
+                // Not part-not-assigned: that says no Output claims a Part the
+                // droid knows, and this id is not in its catalog at all.
+                takeLogPart(*t, (const char*)b, "not a Part this droid knows");
+            }
         }
-        const size_t part = droidPartIndexOf((const char*)b);
-        t->part[p] = (uint8_t)((part < DROID_PART_COUNT) ? part : DROID_PART_COUNT);
-        if (part >= DROID_PART_COUNT) {
-            // Not part-not-assigned: that says no Output claims a Part the
-            // droid knows, and this id is not in its catalog at all.
-            takeLogPart(*t, (const char*)b, "not a Part this droid knows");
-        }
     }
-    return nullptr;
+    takeStoreReadEnd();
+    return stop;
 }
 
-// The take's next samples from its file, each checked as it arrives as a
-// restore checks them (takeFileSampleValid()). The file's byte order is both
-// chips' own (take_capture.h), so they land in the buffer as they are.
+// The take's samples from its file, read on through one open and each checked
+// as it arrives as a restore checks them (takeFileSampleValid()), taken into
+// the Parts' targets piece by piece until every sample due by `runMs` is in:
+// one piece on most ticks, and at a trimmed take's start every sample before
+// its in-point (include/take_replay.h, A TRIMMED TAKE). The file's byte order
+// is both chips' own (take_capture.h), so they land in the buffer as they are.
 // Returns why the take cannot play on, or nullptr.
-static __attribute__((noinline)) const char* takeRefill(TakeReplay* t) {
-    const uint16_t left = (uint16_t)(t->sampleCount - t->samplesRead);
-    const uint8_t n = (left < TAKE_REPLAY_BUF_SAMPLES) ? (uint8_t)left : TAKE_REPLAY_BUF_SAMPLES;
+static __attribute__((noinline)) const char* takeRefill(TakeReplay* t, uint32_t runMs) {
     const size_t at = takeFileHeaderBytes(t->partCount) + (size_t)t->samplesRead * TAKE_SAMPLE_BYTES;
-    const size_t bytes = (size_t)n * TAKE_SAMPLE_BYTES;
-    if (takeStoreReadSlice(takeRun->owner, t->id, at, (uint8_t*)t->buf, bytes) != bytes) {
-        return "its file is cut short";
+    if (!takeStoreReadBegin(takeRun->owner, t->id, at)) {
+        return "its file is not on the droid";
     }
     const TakeFileInfo info = takeReplayInfo(*t);
-    for (uint8_t k = 0; k < n; ++k) {
-        if (!takeFileSampleValid(t->buf[k], t->prevTick, info)) {
-            return "its samples are out of order or out of range";
+    const char* stop = nullptr;
+    for (;;) {
+        const uint16_t left = (uint16_t)(t->sampleCount - t->samplesRead);
+        const uint8_t n = (left < TAKE_REPLAY_BUF_SAMPLES) ? (uint8_t)left : TAKE_REPLAY_BUF_SAMPLES;
+        const size_t bytes = (size_t)n * TAKE_SAMPLE_BYTES;
+        if (takeStoreReadOn((uint8_t*)t->buf, bytes) != bytes) {
+            stop = "its file is cut short";
+            break;
         }
-        t->prevTick = takeSampleTick(t->buf[k]);
+        uint8_t k = 0;
+        while (k < n && takeFileSampleValid(t->buf[k], t->prevTick, info)) {
+            t->prevTick = takeSampleTick(t->buf[k]);
+            ++k;
+        }
+        if (k < n) {
+            stop = "its samples are out of order or out of range";
+            break;
+        }
+        t->samplesRead = (uint16_t)(t->samplesRead + n);
+        t->bufAt = 0;
+        t->bufCount = n;
+        if (!takeReplayConsume(t, runMs)) break;
     }
-    t->samplesRead = (uint16_t)(t->samplesRead + n);
-    t->bufAt = 0;
-    t->bufCount = n;
-    return nullptr;
+    takeStoreReadEnd();
+    return stop;
 }
 
 // Part `p` of take `i`, if it owes a target: sent unless a later take covers
@@ -605,8 +622,8 @@ static __attribute__((noinline)) void takesTick(uint32_t now) {
         if (t->state == TAKE_REPLAY_WAITING && runMs >= t->atMs) {
             stop = takeOpen(t);
         }
-        while (stop == nullptr && t->state == TAKE_REPLAY_PLAYING && takeReplayConsume(t, runMs)) {
-            stop = takeRefill(t);
+        if (stop == nullptr && t->state == TAKE_REPLAY_PLAYING && takeReplayConsume(t, runMs)) {
+            stop = takeRefill(t, runMs);
         }
         if (stop != nullptr) {
             takeLogStopped(*t, stop);

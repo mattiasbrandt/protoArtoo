@@ -1704,9 +1704,12 @@ Sends a full sequence JSON v1 in the body. The endpoint runs Protocol Check vali
   - `toggleGroup`: optional toggle group assignment
   - `suppressMs`: optional suppression interval (1000–120000 ms)
   - `takes`: optional; the takes the sequence holds, each `{"id","t"}` - the
-    take's 8-character id and where it starts, in ms. Refused (`field`
-    `takes`) when it is not a list of those, names a take twice, holds more
-    than the board keeps, or the sequence has no `id`. The save keeps the takes
+    take's 8-character id and where it starts, in ms - and, for a take trimmed
+    on the timeline, `from` and `to`: the part of it that plays, in ms into the
+    take, each optional (absent: its start, its end). `t` is where `from`
+    plays. Refused (`field` `takes`) when it is not a list of those, names a
+    take twice, holds more than the board keeps, has a `from` not before its
+    `to`, or the sequence has no `id`. The save keeps the takes
     it names and deletes this sequence's other takes ([Takes](#takes))
 - Success: `200` `{"ok":true}`
 - Errors:
@@ -1772,7 +1775,9 @@ performance and `<owner>.<take>.take` once its sequence is saved naming it;
 the takes of a sequence that is gone (`include/take_store_util.h`).
 
 When the sequence runs, by any route that starts it, each take it names plays
-from its `t`, beside the steps (`include/take_replay.h`). Each sample goes to
+from its `t`, beside the steps (`include/take_replay.h`). A trimmed take plays
+from its `from` to its `to`: at its `t` each Part it has moved by `from` is
+sent where the take had it then, and it ends at `to`. Each sample goes to
 its Part's Output at that Output's own Motion Profile, the way the stick's
 target did. A Part with no Output is logged as `part-not-assigned` and the rest
 of the take plays. Where two takes cover one Part at once, the later one in
