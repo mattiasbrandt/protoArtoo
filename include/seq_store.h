@@ -69,9 +69,10 @@ bool seqStoreCommit(SequenceEntry& out);
 void seqStoreReleaseRun();
 
 // Validate + persist a Learned Sequence from JSON text. Runs Protocol Check
-// (transient heap staging), enforces capacity (16-file cap + free-space floor +
-// per-file size), writes temp-file + rename, and reindexes. Returns a
-// field-level error on rejection (nothing written), ok on success.
+// (transient heap staging), enforces capacity (the board's store cap,
+// SEQ_STORE_CAP + free-space floor + per-file size), writes temp-file + rename,
+// and reindexes. Returns a field-level error on rejection (nothing written), ok
+// on success.
 ProtocolCheckResult seqStoreSave(const char* json, size_t len);
 
 // Delete a Learned Sequence and its index entry (Memory Wipe). Returns true
