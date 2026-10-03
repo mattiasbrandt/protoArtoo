@@ -744,6 +744,10 @@ static __attribute__((noinline)) void flutterOneLeg(uint32_t now) {
     if (!sendBodyPosition(plan, e.speedMs, e.easing)) {
         return;
     }
+    // Every leg holds the takes off the Part, as a step's move does: the run
+    // lets go of the entry as the last back leg is sent, and a flutter ends
+    // closed, so a take must not retarget the Part while that leg closes it.
+    takesStepMoved(flutterMove.payload);
     sequenceFlutterSent(&flutterRun, idx, now, leg, outMs, backMs, plan.output, &gestureRun.dueMs,
                         &gestureRun.awaitOutput, floorMs);
 }
