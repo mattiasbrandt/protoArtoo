@@ -54,7 +54,10 @@
   const rcLearnStop   = document.getElementById("rc-learn-stop");
   let rcInputsEnabled = true;
   
-  const ANALOG_ACTION_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed']);
+  // A stick, not a press: the three axes, and a puppet string, which moves one
+  // Part as far as the stick is pushed (#442). Never fired once, so never
+  // tried, and never bound to a droid condition.
+  const ANALOG_ACTION_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed', 'puppet_part']);
   // Hardcoded fallback used until GET /api/actions resolves.
   // Matches robotActionIdToString() NVS token keys in rc_mapping.h.
   // It carries no action about one Output (the toggles): those are named by
@@ -95,6 +98,7 @@
     { token: 'droid_seq_screams', label: 'Screams', group: 'Sequences', description: 'SE15. Screams from the body, and the dome does its part.', disabled: false, testable: true, safetyCritical: false },
     { token: 'droid_seq_wiggle', label: 'Panel Wiggle', group: 'Sequences', description: 'SE16. A body wave, and the dome joins in.', disabled: false, testable: true, safetyCritical: false },
     { token: 'speed_preset_cycle', label: 'Speed Preset Cycle', group: 'Movement', description: 'Step the speed preset: Slow, Normal, Turbo, and round again.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'puppet_part', label: 'Perform a Part', group: 'Outputs', description: 'Move one Part with a stick: push to open it that far. Let go and it closes.', disabled: false, testable: false, safetyCritical: false },
   ];
 
   // ==== ACTION TEST OUTCOME (#220) BEGIN ====
@@ -149,7 +153,7 @@
   };
   const ACTION_GROUP_ORDER = ['Movement', 'Mode', 'Outputs', 'Sound', 'Sequences', 'Command', 'Safety', 'System', 'Aux', 'Other'];
   const DEFAULT_COLLAPSED_GROUPS = new Set(['Sound', 'Sequences']);
-  const NON_TESTABLE_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed', 'estop']);
+  const NON_TESTABLE_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed', 'puppet_part', 'estop']);
 
   // dome_seq is now enabled.
   const UNAVAILABLE_TOKENS = new Set();
@@ -340,6 +344,62 @@
       });
     }
     return payloadPillsHtml('Dome Sequence', options, known ? known.value : sel);
+  };
+
+  // The Parts a puppet string can move: every Part on a servo Output, as the
+  // droid reports its rows (data/outputs.js), in the droid's Output order.
+  // What a Part is CALLED comes from the catalog (data/droid_parts.js). Null
+  // until the droid has answered, so no stored string is called unwired early.
+  let puppetPartIds = null;
+  const catalogPartById = new Map((window.DroidParts?.parts || []).map((part) => [part.id, part]));
+  const partLabel = (id) => {
+    const part = catalogPartById.get(id);
+    if (!part) return id;
+    return part.shorthand ? `${part.name} (${part.shorthand})` : part.name;
+  };
+
+  const loadPuppetParts = async () => {
+    if (!window.PAOutputs) return;
+    try {
+      const outputs = await window.PAOutputs.refresh();
+      puppetPartIds = outputs.filter((output) => !output.light).flatMap((output) => output.parts);
+    } catch (error) {
+      console.warn('[RC] Outputs not loaded:', window.PAApi.messageFor(error));
+    }
+  };
+
+  // The Part this string already names stays offered when nothing drives it
+  // any more, marked, so opening the editor never moves the string elsewhere.
+  const puppetPartPills = (selectedPart) => {
+    const sel = String(selectedPart || '');
+    const ids = puppetPartIds || [];
+    const options = ids.map((id) => ({ value: id, label: partLabel(id), title: '' }));
+    if (sel && !ids.includes(sel)) {
+      const unwired = puppetPartIds !== null;
+      options.push({
+        value: sel,
+        label: unwired ? `${partLabel(sel)} (not wired)` : partLabel(sel),
+        title: unwired ? 'No servo moves this Part.' : '',
+      });
+    }
+    if (!options.length) {
+      return `<input data-field="payload" type="hidden" value="">
+        <p class="hint">${puppetPartIds === null
+          ? 'Reading the Parts on this droid...'
+          : 'No Part is on a servo yet. Put one on in <a class="setup-link" href="#wiring">Wiring</a>.'}</p>`;
+    }
+    return payloadPillsHtml('Part', options, sel || options[0].value);
+  };
+
+  // The Parts arrived while the editor is open: only the Part pills are drawn
+  // again, around whatever is picked, so a draft is kept.
+  const refreshPuppetPartPills = () => {
+    const group = rcEditorContent?.querySelector('[data-cond="puppet_part"]');
+    if (!group) return;
+    const picked = group.querySelector('[data-field="payload"]')?.value || '';
+    group.innerHTML = `<span class="rc-action-label-head">Part</span>
+        ${puppetPartPills(picked)}`;
+    wirePayloadPills(group);
   };
 
   // A pill picks its payload: the hidden field beside it takes the value.
@@ -619,6 +679,7 @@
     const label = actionLabelFromToken(token);
     if (!entry?.payload) return label;
     if (token === 'seq') return `${label} · SE${entry.payload}`;
+    if (token === 'puppet_part') return `${label} · ${partLabel(entry.payload)}`;
     if (token === 'dome_seq') {
       return `${label} · ${entry.payload}${domeSequenceMissing(entry.payload) ? ' (missing)' : ''}`;
     }
@@ -1224,7 +1285,7 @@
           threshold.min / threshold.scale, 1 / threshold.scale, threshold.max / threshold.scale) : ''}
         ${numberField('quietS', 'Quiet after firing', entry.quietS ?? REACTION_QUIET.fallback, 's', REACTION_QUIET.min, 1, REACTION_QUIET.max)}
       </div>`
-      : `<p class="hint">Source <b>${window.PAUtils.escapeHtml(sourceLabel(source))}</b> &middot; channel <b>${window.PAUtils.escapeHtml(String(channel))}</b></p>`;
+      : '';
 
     rcEditorContent.innerHTML = `
       <h4 class="rc-editor-title">Edit ${window.PAUtils.escapeHtml(channelTitleFromKey(selectedChannel))}</h4>
@@ -1239,6 +1300,10 @@
       <div data-cond="dome_seq" class="rc-editor-cond ${displayToken === 'dome_seq' ? 'block' : 'hidden'}">
         <span class="rc-action-label-head">Dome Sequence</span>
         ${domeSequencePills(entry.payload)}
+      </div>
+      <div data-cond="puppet_part" class="rc-editor-cond ${displayToken === 'puppet_part' ? 'block' : 'hidden'}">
+        <span class="rc-action-label-head">Part</span>
+        ${puppetPartPills(entry.payload)}
       </div>
       <div data-cond="cmd" class="rc-editor-cond ${displayToken === 'cmd' ? 'block' : 'hidden'}">
         <label class="rc-reaction-field">
@@ -1257,10 +1322,12 @@
       const seq = rcEditorContent.querySelector('[data-cond="seq"]');
       const domeSeq = rcEditorContent.querySelector('[data-cond="dome_seq"]');
       const cmd = rcEditorContent.querySelector('[data-cond="cmd"]');
+      const puppet = rcEditorContent.querySelector('[data-cond="puppet_part"]');
       const estop = rcEditorContent.querySelector('[data-cond="estop"]');
       if (seq) seq.className = `rc-editor-cond ${target === 'seq' ? 'block' : 'hidden'}`;
       if (domeSeq) domeSeq.className = `rc-editor-cond ${target === 'dome_seq' ? 'block' : 'hidden'}`;
       if (cmd) cmd.className = `rc-editor-cond ${target === 'cmd' ? 'block' : 'hidden'}`;
+      if (puppet) puppet.className = `rc-editor-cond ${target === 'puppet_part' ? 'block' : 'hidden'}`;
       if (estop) estop.className = `rc-editor-cond ${target === 'estop' ? 'block' : 'hidden'}`;
     };
 
@@ -1771,6 +1838,11 @@
       }
     }
 
+    if (target === 'puppet_part' && !payload) {
+      setEditorFeedback('Pick the Part this stick moves.', 'error');
+      return;
+    }
+
     if (!sourceAllowedInMode(source, mode)) {
       setEditorFeedback(`Channel source ${sourceLabel(source)} is not valid in ${modeLabel(mode)} mode.`, 'error');
       return;
@@ -1805,6 +1877,27 @@
       nextMap[selectedChannel] = normalizeMapEntry({ source, channel, action: target, payload, ...reaction });
     }
 
+    // One Part, one stick (#442): a Part another channel already moves leaves
+    // it. Asked first, naming both channels, because the other one goes
+    // unmapped.
+    let moved = '';
+    if (target === 'puppet_part') {
+      const from = Object.keys(nextMap).find((key) => key !== selectedChannel
+        && mapEntryAction(nextMap[key]) === 'puppet_part' && nextMap[key].payload === payload);
+      if (from) {
+        const go = await window.PAOverlay.ask({
+          title: `Move ${partLabel(payload)} to ${channelTitleFromKey(selectedChannel)}?`,
+          body: `${channelTitleFromKey(from)} moves it now, and is left unmapped.`,
+          yes: 'Move it',
+          no: 'Keep it there',
+          near: rcEditorApply,
+        });
+        if (!go) return;
+        delete nextMap[from];
+        moved = ` ${channelTitleFromKey(from)} is unmapped.`;
+      }
+    }
+
     setEditorDirtyState('saving', 'Saving changes…');
     setEditorFeedback('Saving...');
 
@@ -1813,7 +1906,7 @@
       const serverMap = Array.isArray(result.data?.map) ? result.data.map : Object.values(nextMap);
       channelMap = modeMapFromArray(serverMap);
       const savedAt = new Date().toLocaleTimeString();
-      setEditorFeedback(`Saved at ${savedAt}`, 'success');
+      setEditorFeedback(`Saved at ${savedAt}.${moved}`, 'success');
       markEditorClean(savedAt);
       renderSummaryTable();
       renderChannelList();
@@ -1975,6 +2068,12 @@
     refreshDomeSequencePills();
   };
 
+  // The droid's Parts arrived: the editor's Part pills are drawn again around
+  // the draft.
+  const redrawPartNames = () => {
+    refreshPuppetPartPills();
+  };
+
   const loadActionTargetsWithFallback = async ({ handle = null } = {}) => {
     await loadActionTargets({ handle });
     redrawActionNames();
@@ -1997,6 +2096,7 @@
       loadRcDiagnostics();
       loadActionTargets().then(redrawActionNames);
       loadLearnedSequences().then(redrawSequenceNames);
+      loadPuppetParts().then(redrawPartNames);
       return;
     }
 
@@ -2011,9 +2111,10 @@
     SECTIONS.forEach(([name, load, label]) =>
       window.PABootstrap.registerSection(name, load, { label })
     );
-    // Not a section: the page works without it. Until it answers, no binding
-    // is called missing.
+    // Not sections: the page works without them. Until each answers, no
+    // binding is called missing or unwired.
     loadLearnedSequences().then(redrawSequenceNames);
+    loadPuppetParts().then(redrawPartNames);
   };
 
   startPageLoad();
