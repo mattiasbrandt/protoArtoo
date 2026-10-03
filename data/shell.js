@@ -134,6 +134,13 @@
     // "a magnifying glass to the \"find by moving\" button"): not among the
     // #398 twenty-two, so read from @mdi/svg 7.4.47 svg/magnify.svg.
     "magnify": "M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z",
+    // The Dashboard's Sequences (#451): Play and Stop on a Sequence's row, and
+    // the full-screen posture's way in and out. Read from @mdi/svg 7.4.47
+    // svg/play.svg, svg/stop.svg, svg/fullscreen.svg, svg/fullscreen-exit.svg.
+    "play": "M8,5.14V19.14L19,12.14L8,5.14Z",
+    "stop": "M18,18H6V6H18V18Z",
+    "fullscreen": "M5,5H10V7H7V10H5V5M14,5H19V10H17V7H14V5M17,14H19V19H14V17H17V14M10,17V19H5V14H7V17H10Z",
+    "fullscreen-exit": "M14,14H19V16H16V19H14V14M5,14H10V19H8V16H5V14M8,5H10V10H5V8H8V5M19,8V10H14V5H16V8H19Z",
   };
 
   const spriteHtml = () =>
@@ -1291,7 +1298,23 @@
     noticeHideTimer = window.setTimeout(hideNotice, NOTICE_VISIBLE_MS);
   };
 
-  const reportIgnoredInput = () => {
+  const reportIgnoredInput = (refused) => {
+    // A control that is off for a reason of its own says so itself, and needs
+    // no reading to say it: a Sequence on the Dashboard that is no longer on
+    // the droid (#451). `data-ignored-says` is the sentence, and
+    // `data-ignored-page` the surface where that is changed. Its cause is
+    // never released by releaseSettledCauses() below, which knows only the
+    // plate's: the notice comes down on its timer, and the burst window
+    // expires on its own.
+    const own = refused?.dataset?.ignoredSays;
+    if (own) {
+      const cause = { id: `own:${own}`, says: own, page: refused.dataset.ignoredPage || DEFAULT_PAGE };
+      const shownAt = noticeShownAt.get(cause.id);
+      if (shownAt !== undefined && Date.now() - shownAt < NOTICE_BURST_MS) return;
+      noticeShownAt.set(cause.id, Date.now());
+      showNotice(cause);
+      return;
+    }
     // Nothing has arrived yet, so there is nothing to name. The plate's own
     // freshness state is already saying so.
     const reading = LIVE.current();
@@ -1383,7 +1406,7 @@
         // to answer is false, and it would fire on exactly the second press an
         // impatient operator makes.
         if (refused.classList?.contains?.("is-pending")) return;
-        reportIgnoredInput();
+        reportIgnoredInput(refused);
       },
       true
     );
@@ -1625,6 +1648,37 @@
       });
   };
 
+  // ---------------------------------------------------------------------------
+  // The full-screen posture (#330, #451)
+  //
+  // A surface asks for it with a pa:posture event, and the shell clears its own
+  // chrome around that surface: the nav rail, the Status Plate and the
+  // topbar's name, place and acts (data/style.css, "The full-screen posture").
+  // The Latching Estop is never cleared: hiding the nav never hides the estop
+  // (#325, ADR 0048), so the posture keeps the topbar's estop on screen and
+  // pressable, and the Ignored Input Notice above the plate too.
+  //
+  // It is a look, not a state - the reference's frozen kiosk
+  // (r2d2-astromech-simulator v1.79.0, src/js/app/kiosk.js:30-35): entering
+  // sends nothing to the droid and changes no Commanded Mode, so leaving has
+  // nothing to put back. Nothing is stored and the address does not change, so
+  // a reload lands on the ordinary surface (operator, 2026-09-30). The shell
+  // ends it when the surface that asked is left, and on Escape.
+  // ---------------------------------------------------------------------------
+  let postureOwner = null;
+
+  const setPosture = (owner) => {
+    postureOwner = owner;
+    document.body.classList.toggle("shell-performing", owner !== null);
+    window.dispatchEvent(new CustomEvent("pa:posture-changed", { detail: { on: owner !== null } }));
+  };
+
+  window.addEventListener("pa:posture", (event) =>
+    setPosture(event.detail?.on && currentSurface ? currentSurface.page : null));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && postureOwner !== null) setPosture(null);
+  });
+
   const mount = (surface) => {
     if (currentSurface === surface) return;
 
@@ -1634,6 +1688,9 @@
     // re-reading it is the whole resume path (see pa:surface-release below);
     // staying puts the address back (pa:surface-stay).
     if (currentSurface && window.PASurface?.unmountHeld(currentSurface.page)) return;
+
+    // The posture belongs to the surface that asked for it, and goes with it.
+    if (postureOwner !== null) setPosture(null);
 
     // Stop asking before the screen changes, so the surface being left is not
     // still competing for the controller's three-client budget while the one

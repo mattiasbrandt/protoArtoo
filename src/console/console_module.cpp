@@ -2107,6 +2107,7 @@ struct ConsoleSettingOp {
 };
 
 static const ConsoleSettingOp g_settingOps[] = {
+    {"dome.config.stand-down", "standDownSequence"},
     {"drive.config.speed-limit", "speedLimitMax"},
     {"rc.config.mode", "rcInputMode"},
     {"servo.config.cadence-floor", "cadenceFloorMs"},

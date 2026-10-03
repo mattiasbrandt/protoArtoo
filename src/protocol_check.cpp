@@ -771,6 +771,8 @@ bool protocolCheckSeqRefValid(const char* ref) {
     return nameValid(ref) || protocolCheckSeqIdValid(ref);
 }
 
+bool protocolCheckSeqNameValid(const char* name) { return nameValid(name); }
+
 // The walk: a depth-first path of at most PC_NEST_DEPTH_MAX phrases below the
 // sequence being saved. Each level holds the reference it was entered by, what
 // the store said about that phrase, and which of the phrase's own references

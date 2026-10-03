@@ -527,6 +527,7 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
                 break;
             case SettingRule::Words:
             case SettingRule::Ipv4:
+            case SettingRule::SequenceName:
             default:
                 configSettingFormat(setting, snap, text, sizeof(text));
                 getShapeSlot(root, setting.path).set(text);  // char[]: copied

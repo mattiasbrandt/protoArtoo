@@ -5039,6 +5039,194 @@ body[data-page="maintenance"] .status-item .hint {
   line-height: 1.3;
 }
 
+/* Sequences: every Sequence on the droid, run from the Dashboard (#451).
+   Under the drawings in the same bay, divided by the same seam. The head
+   carries the run's state, Stand Down and the posture; the list is compact
+   rows, two or three across, each a soft tile with no frame of its own -
+   its name, the RC Channel that fires it, and Play or Stop at card scale. */
+.show-bay {
+  margin-top: var(--space-xl);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--border);
+}
+
+.show-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm) var(--space-lg);
+  margin-bottom: var(--space-md);
+}
+
+.show-head h3 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+  color: var(--text);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.show-head h3 .now {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 400;
+}
+
+.show-acts,
+.show-standdown {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm) var(--space-md);
+}
+
+.show-standdown-name,
+.show-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
+  color: var(--text);
+}
+
+.show-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.show-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 44px;
+  padding: var(--space-xs) var(--space-sm) var(--space-xs) var(--space-md);
+  background: var(--surface-alt);
+  border-radius: var(--radius-xs);
+}
+
+/* The running row: the same green seam the Sequences list draws. */
+.show-item.is-running {
+  box-shadow: inset 2px 0 0 var(--success);
+}
+
+.show-item.is-inert .show-name {
+  color: var(--text-dim);
+}
+
+.show-rc {
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* What the row says - its name, the RC Channel, Running, why it does
+   nothing - wraps inside its own column, so the act beside it holds its
+   place on every row. */
+.show-item-says {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2xs) var(--space-sm);
+  min-width: 0;
+}
+
+.show-item-acts {
+  flex: 0 0 auto;
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.show-item .btn .i,
+.show-acts .btn .i,
+.show-other .btn .i {
+  width: 14px;
+  height: 14px;
+}
+
+.show-other {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+/* ---- The full-screen posture (#330, #451) ----
+   The shell sets body.shell-performing when the Dashboard asks for it
+   (data/shell.js, "The full-screen posture"). The nav rail, the Status Plate
+   and the topbar's name, place and acts clear away; the topbar keeps the
+   Latching Estop on screen and pressable, and the Ignored Input Notice keeps
+   its place above where the plate was. The plate's freshness line comes back
+   whenever the droid is not being heard live, so a row still reading Running
+   from the last frame is never the only thing on screen. On the Dashboard
+   everything but the Sequences bay clears, and the bay takes the whole work
+   area. */
+body.shell-performing {
+  grid-template-columns: minmax(0, 1fr);
+  padding-bottom: var(--space-xl);
+}
+
+body.shell-performing #shell-nav,
+body.shell-performing .topbar-brand,
+body.shell-performing .topbar-where,
+body.shell-performing .topbar-actions,
+body.shell-performing .status-plate,
+body.shell-performing .status-plate-affordance,
+body.shell-performing .status-plate-region[data-freshness="live"] .status-plate-fresh {
+  display: none;
+}
+
+body.shell-performing .topbar {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+body.shell-performing .topbar-right {
+  grid-column: 2;
+}
+
+body.shell-performing .status-plate-region {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body.shell-performing .status-plate-region[data-freshness="live"] {
+  background: none;
+  border-top: 0;
+  box-shadow: none;
+}
+
+body.shell-performing .status-plate-fresh {
+  border-left: 0;
+}
+
+body.shell-performing #shell-content {
+  grid-column: 1 / -1;
+  max-width: none;
+}
+
+body.shell-performing [data-surface="home"] > :not(.dash-controls):not(.sleep-overlay),
+body.shell-performing .dash-controls .sect,
+body.shell-performing .dash-controls .ctl-row,
+body.shell-performing .dash-controls .moving-parts-bay {
+  display: none;
+}
+
+body.shell-performing .show-bay {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+body.shell-performing .show-list {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
 /* ---- Readouts and Build: instrument tiles ----
    Both sections are rows of tiles on the card's plate: a soft face with no
    frame of its own, told apart by the air between them. Inside a tile the

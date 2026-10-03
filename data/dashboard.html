@@ -24,9 +24,10 @@
     </div>
 
     <!-- What the droid is doing, first: the three controls that change it,
-         side by side in one bay and divided by seams, and under them the
-         droid's two drawings, which change it too. What the droid is and its
-         telemetry sit at the foot of the page, in Build. -->
+         side by side in one bay and divided by seams, under them the droid's
+         two drawings, which change it too, and under those the Sequences it
+         performs (#451). What the droid is and its telemetry sit at the foot
+         of the page, in Build. -->
     <div class="bay dash-controls">
       <section>
         <div class="sect">
@@ -95,6 +96,36 @@
             <!-- The dome drawing and where it came from -->
             <div class="moving-parts-dome"></div>
           </div>
+        </div>
+
+        <!-- Sequences: where a droid is performed (#330, #451). Every Sequence
+             on the droid - yours first, then the Factory ones yours do not
+             shadow - each with Play, and Stop on the one that is running,
+             whoever started it. One mapped to an RC Channel says which, read
+             from the RC Map, so the RC Radio and this list are one list read
+             from two ends. Stand Down runs the droid's Stand Down Sequence,
+             chosen on Sequences. Full screen clears the chrome to this bay and
+             the estop (data/shell.js, "The full-screen posture"). Filled by
+             data/app.js. -->
+        <div class="show-bay" id="show-bay">
+          <div class="show-head">
+            <h3>Sequences <span class="now waiting" id="show-now" role="status"></span></h3>
+            <div class="show-acts">
+              <span class="show-standdown">
+                <button class="btn btn-sm" id="standdown-btn" type="button">Stand Down</button>
+                <span class="show-standdown-name waiting" id="standdown-name"></span>
+                <span class="why" id="standdown-why"></span>
+                <a class="btn btn-sm btn-quiet link-btn" href="#seq">Change</a>
+              </span>
+              <button class="btn btn-sm btn-quiet" id="show-posture" type="button" aria-pressed="false">
+                <svg class="i" aria-hidden="true" focusable="false"><use href="#i-fullscreen"/></svg><span>Full screen</span>
+              </button>
+            </div>
+          </div>
+          <div class="show-other hidden" id="show-other"></div>
+          <ul class="show-list" id="show-list"><li class="hint waiting" role="status"></li></ul>
+          <p class="hint hidden" id="show-unmapped">None is on an RC Channel yet. <a class="link-btn" href="#rc">Map one on RC</a></p>
+          <div id="show-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
         </div>
       </section>
     </div>

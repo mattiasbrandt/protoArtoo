@@ -2609,14 +2609,15 @@ void test_every_single_field_setting_op_refuses_as_the_http_door_does() {
         const char* operationName;
         const char* form;
     };
-    Op ops[4 + kComponentToggleFieldCount] = {
+    Op ops[5 + kComponentToggleFieldCount] = {
+        {"dome.config.stand-down", "standDownSequence"},
         {"drive.config.speed-limit", "speedLimitMax"},
         {"rc.config.mode", "rcInputMode"},
         {"servo.config.cadence-floor", "cadenceFloorMs"},
         {"system.config.log-level", "logLevel"},
     };
     for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
-        ops[4 + i] = {kComponentToggleFields[i].operationName, kComponentToggleFields[i].paramKey};
+        ops[5 + i] = {kComponentToggleFields[i].operationName, kComponentToggleFields[i].paramKey};
     }
 
     static ConfigApplyResult result;

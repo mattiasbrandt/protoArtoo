@@ -249,9 +249,188 @@
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // The run watch (#441, #451)
+  //
+  // What Sequence is running, for every surface that starts or stops one - the
+  // Sequences page and the Dashboard - and the one judge of it, so the two
+  // cannot tell one run two ways.
+  //
+  // It reads the status frame's `seqRun` (the run record's name, whether it is
+  // under way and when it began; src/web/status_json.cpp). The droid sends a
+  // status when a run begins and when it ends, so a run started from an RC
+  // Channel, the Console or another page shows here with nothing polled; the
+  // multi-KB GET /api/seq/last-run is never asked.
+  //
+  // A press is judged by the start time, never by the name. The droid answers
+  // POST /api/seq/test before the run has begun - the dispatcher takes it up a
+  // pass later and only then writes the record - so for a moment the record is
+  // still the one from before the press, and when the same Sequence ran last,
+  // it carries this name and says it ended. The press is this run's only once
+  // a record under its name with ANOTHER start time is heard. The record from
+  // before the press is the reading's own frame, so no read is needed for it;
+  // only a page with no frame yet reads /api/status once before it sends.
+  // ---------------------------------------------------------------------------
+
+  // How long the droid gets to take up a run it accepted. It does so within a
+  // dispatcher pass, so this is generous.
+  const RUN_START_WAIT_MS = 5000;
+
+  // The frame's run record, or null when it carries none.
+  const runOf = (status) => {
+    const run = status?.seqRun;
+    return run !== null && typeof run === "object" && typeof run.name === "string" ? run : null;
+  };
+
+  // The endings a surface has a sentence for. A run that ends by itself, is
+  // stopped, or gives way to a later run ends without one: the lamp going out
+  // is the word.
+  const RUN_ENDINGS = {
+    "not-started": (name) => `The droid did not start ${name}.`,
+    lost: (name) => `Lost touch with the droid; ${name} may still be running.`,
+    // The droid takes a run even under a latched estop and ends it in the same
+    // pass (src/tasks/sequence_dispatcher.cpp). The record says why it ended
+    // and the frame does not carry that, so a run that ends while the reading
+    // is latched is the estop's - the one ending the estop causes.
+    estop: (name) => `The estop stopped ${name}.`,
+  };
+
+  // `onChange({ name, running, outcome })` is told when a run starts being
+  // under way and when it stops; `outcome` is one of RUN_ENDINGS' keys or
+  // undefined. Create it in the surface's script body: it learns the surface
+  // is being left from PASurface.holdUnmount() and drops a press it was still
+  // judging then, so no timer outlives the surface (ADR 0048).
+  const watchRuns = (onChange) => {
+    // { name, before, timer } from a press the droid accepted until its run is
+    // heard, or until the wait runs out.
+    let pending = null;
+    // The name last said to be under way, or null.
+    let said = null;
+    let ready = false;
+
+    const runningName = () => {
+      // Out of touch, the last frame cannot say a run is still under way.
+      if (reading.notHearing === "link") return null;
+      if (pending) return pending.name;
+      const run = runOf(reading.status);
+      return run?.running === true ? run.name : null;
+    };
+
+    const endingNow = () => {
+      if (reading.notHearing === "link") return "lost";
+      if (reading.estopLatched) return "estop";
+      return undefined;
+    };
+
+    const report = (outcome) => {
+      const name = runningName();
+      if (name === said) return;
+      const was = said;
+      said = name;
+      if (was !== null) onChange({ name: was, running: false, outcome: outcome || endingNow() });
+      if (name !== null) onChange({ name, running: true });
+    };
+
+    const drop = () => {
+      if (pending) window.clearTimeout(pending.timer);
+      pending = null;
+    };
+
+    // The press is answered once its own record is heard: its name, under
+    // another start time than the record from before it.
+    const judge = () => {
+      const run = runOf(reading.status);
+      if (pending && run && run.name === pending.name && run.startMs !== pending.before) drop();
+    };
+
+    const expire = async (mine) => {
+      let outcome = "not-started";
+      try {
+        // One read before saying so: with no stream, frames come only as often
+        // as the fallback poll asks.
+        await read();
+      } catch (error) {
+        // Not answering is not "did not start": the run may be playing.
+        console.warn("[live-reading] status read for a pending run failed:", error);
+        outcome = "lost";
+      }
+      if (pending !== mine) return;
+      judge();
+      if (pending !== mine) {
+        report();
+        return;
+      }
+      drop();
+      // A newer record under another name is a run that replaced this one -
+      // an RC Channel's, say - before this page heard this run's own record.
+      // That is not "did not start": the lamp on the run that replaced it is
+      // the word. "Did not start" is only a record that is still the one from
+      // before the press.
+      const run = runOf(reading.status);
+      const replaced = outcome !== "lost" && run !== null && run.startMs !== mine.before && run.name !== mine.name;
+      report(replaced ? undefined : outcome);
+    };
+
+    // Resolves once the droid has accepted the run; rejects when it could not
+    // be asked or refused, and then nothing is watched.
+    // `before` is the newest frame this page holds, not a fresh read. So a
+    // begin frame for an earlier run of the same name that is still in flight
+    // when this press is sent can be taken for this press's own. The window is
+    // one frame wide, and a fresh read per press would cost the droid a status
+    // document every time; the race is accepted (coordinator, #451).
+    const start = async (name) => {
+      if (reading.status === null) await read();
+      const before = runOf(reading.status)?.startMs ?? null;
+      await window.PAApi.postJson("/api/seq/test", { name });
+      drop();
+      const mine = { name, before, timer: 0 };
+      mine.timer = window.setTimeout(() => expire(mine), RUN_START_WAIT_MS);
+      pending = mine;
+      judge();
+      report();
+    };
+
+    // The droid's non-latching stop. The run is over when its record says so,
+    // not when this is answered.
+    const stop = () => window.PAApi.postJson("/api/seq/stop", {});
+
+    window.PALiveReading.subscribe(() => {
+      if (!ready) return;
+      judge();
+      report();
+    });
+    // The first judgement waits until the surface's script has finished, so
+    // onChange never runs before the code it calls has been declared.
+    Promise.resolve().then(() => {
+      ready = true;
+      judge();
+      report();
+    });
+    // Called on every attempt to leave; never holds the surface. It runs
+    // before a hold the surface registers later - Sequences' unsaved-edit
+    // question - so a press being judged is forgotten on ANY attempt to leave,
+    // even one the operator then cancels by staying. Nothing is lost that
+    // matters: the run's lamp comes back with the next frame that carries it.
+    window.PASurface?.holdUnmount(() => {
+      drop();
+      report();
+      return false;
+    });
+
+    return {
+      start,
+      stop,
+      running: runningName,
+      // The run record the reading holds, ended or not.
+      record: () => runOf(reading.status),
+    };
+  };
+
   window.PALiveReading = {
     WAITING,
     UNKNOWN,
+    watchRuns,
+    runEnding: (outcome, name) => (RUN_ENDINGS[outcome] ? RUN_ENDINGS[outcome](name) : null),
     // What a slot that holds nothing but this answer is written: empty for
     // Waiting, so its `waiting` class draws the dots, and the word otherwise.
     slotText: (word) => (word === WAITING ? "" : word),

@@ -371,6 +371,8 @@
   //   refused - what a refusal with nothing to accept says, where "was not
   //            saved" says too little: a part the droid does not list, an
   //            address that is not one
+  //   unset  - what a Setting stands for while it holds nothing, where that
+  //            is a value of its own: the Stand Down Sequence's DM:RESET
   //   malformed - what a refusal of a request the droid could not read says
   //   missing - what a refusal of a value the Setting cannot be without says:
   //            the field was not sent, or was sent empty and the droid would
@@ -454,6 +456,12 @@
       refused: "must be empty or an address like 192.168.4.2",
     },
     cadenceFloorMs: { applies: "immediate", word: "gap between servo starts", unit: MS, path: "servo.cadenceFloorMs" },
+    // `unset` is what the Stand Down runs while none has been chosen (the
+    // Setting stores an empty name; CONTEXT.md "Stand Down Sequence").
+    standDownSequence: {
+      applies: "immediate", word: "Stand Down Sequence", path: "seq.standDown",
+      refused: "must be empty or a sequence name like DM:RESET", unset: "DM:RESET",
+    },
     logLevel: { applies: "immediate", word: "log level", path: "system.logLevel" },
 
     // Device WiFi Settings (POST /api/wifi, src/web/api_wifi_apply.cpp), named
@@ -632,6 +640,19 @@
     return entry[what];
   };
   const labelOf = (name) => entryFor(SETTING_WORDS, name, "label");
+  const unsetOf = (name) => entryFor(SETTING_WORDS, name, "unset");
+
+  // An RC Channel as the builder reads it, "SBUS#1 CH 5", from the source and
+  // channel GET /api/rc/map gives it. The RC page and the Dashboard both say a
+  // channel this way, so the RC Radio's list reads the same at both ends
+  // (#330, #451). A source this table does not name reads "Unknown CH 5", as
+  // the RC page always has. A droid condition (`speed`, `rest`, ...) is a
+  // Reaction, not an RC Channel: isRcChannelSource() says which is which, and
+  // the RC page names a condition by its own label.
+  const RC_SOURCE_LABELS = Object.freeze({ pwm: "PWM", sbus1: "SBUS#1", sbus2: "SBUS#2" });
+  const isRcChannelSource = (source) => Object.hasOwn(RC_SOURCE_LABELS, source);
+  const rcSourceLabel = (source) => RC_SOURCE_LABELS[source] || "Unknown";
+  const rcChannelTitle = (source, channel) => `${rcSourceLabel(source)} CH ${channel || "—"}`;
   const timingOf = (name) => entryFor(SETTING_WORDS, name, "applies");
   const rowTimingOf = (key) => entryFor(ROW_SETTING_WORDS, key, "applies");
 
@@ -802,6 +823,10 @@
     sayRefusal,
     nameOutputsWith,
     labelOf,
+    unsetOf,
+    isRcChannelSource,
+    rcSourceLabel,
+    rcChannelTitle,
     timingOf,
     rowTimingOf,
     gateControls,
