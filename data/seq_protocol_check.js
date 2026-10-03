@@ -16,7 +16,16 @@
   const SUPPRESS_MS_MIN = 1000;
   const SUPPRESS_MS_MAX = 120000;
   const TOGGLE_GROUPS = ["none", "pies", "low", "all"];
-  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "domeBearing", "body", "gesture", "sequence", "end"];
+  const STEP_TYPES = [
+    "audio", "dome", "loop", "random", "audioCat", "domeRotate", "domeBearing", "body", "gesture", "sequence",
+    "backgroundTrack", "backgroundTrackStop", "end",
+  ];
+  // A Background Track's loudest volume: the interface's 0-30
+  // (PC_BACKGROUND_TRACK_VOL_MAX, include/protocol_check.h).
+  const BACKGROUND_TRACK_VOL_MAX = 30;
+  // The one-letter '$' names that play a sound, a Named Track each
+  // (audioSlotForDollar(), src/tasks/audio_config_map.cpp).
+  const SOUND_LETTERS = "SFLcCWMBDH";
   // A bearing step's target (domeBearingTargetValid(), include/dome_bearing_act.h):
   // `front`, or a dome Part the catalog gives a bearing. A Part is named by its
   // id, never by its bearing, so a step survives a corrected `bearing_deg`.
@@ -72,6 +81,19 @@
   const TEMPO_HASH = /^[0-9a-f]{1,64}$/;
 
   const isWhole = (value) => Number.isInteger(value);
+
+  // Whether a '$' command plays a sound, as audioDollarNamesSound()
+  // (src/tasks/audio_config_map.cpp) judges it: $ and one to six letters or
+  // digits, which are a Named Track's letter, $8nn with nn not 00, or another
+  // number 1..65535. Form only: what a Named Track is set to is the droid's.
+  const namesSound = (cmd) => {
+    const said = /^\$([0-9A-Za-z]{1,6})$/.exec(cmd);
+    if (!said) return false;
+    const arg = said[1];
+    if (/^8[0-9]{2}$/.test(arg)) return arg !== "800";
+    if (/^[0-9]+$/.test(arg)) return Number(arg) >= 1 && Number(arg) <= 65535;
+    return arg.length === 1 && SOUND_LETTERS.includes(arg);
+  };
 
   // A logic text as the bytes the droid decodes it to, or null where it
   // refuses the encoding (percentDecode(), src/protocol_check.cpp): an escape
@@ -299,6 +321,8 @@
         case "domeBearing": return this._validateDomeBearingStep(step);
         case "body":     return this._validateBodyStep(step);
         case "gesture":  return this._validateGestureStep(step);
+        case "backgroundTrack": return this._validateBackgroundTrackStep(step);
+        case "backgroundTrackStop": return { ok: true };
         case "sequence":
           return typeof step.ref === "string" && SEQ_REF.test(step.ref)
             ? { ok: true }
@@ -410,6 +434,25 @@
       }
       // A flutter owes no close after it: it ends closed, on the dome and on
       // the body (ADR 0049, amended 2026-10-02; #453).
+      return { ok: true };
+    },
+
+    // A Background Track's start: the wire's rules (parseStepFields(),
+    // src/seq_json.cpp) and Protocol Check's (STEP_BACKGROUND_TRACK in
+    // protocolCheckBranch(), src/protocol_check.cpp). Form and only form
+    // (ADR 0054, ADR 0044): whether the fitted module can mix is the
+    // Rehearsal's, and a sequence with a Background Track saves either way.
+    _validateBackgroundTrackStep(step) {
+      const fail = (field, error) => ({ ok: false, field, error });
+      if (typeof step.cmd !== "string" || !namesSound(step.cmd)) {
+        return fail("cmd", "Pick a sound for the Background Track, like $W or $212");
+      }
+      if (!isWhole(step.vol) || step.vol < 0 || step.vol > BACKGROUND_TRACK_VOL_MAX) {
+        return fail("vol", `The Background Track's volume is 0 to ${BACKGROUND_TRACK_VOL_MAX}`);
+      }
+      if (step.boundAudio !== undefined && step.boundAudio !== null && typeof step.boundAudio !== "boolean") {
+        return fail("boundAudio", "Must be a boolean (true or false)");
+      }
       return { ok: true };
     },
 

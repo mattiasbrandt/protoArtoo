@@ -2148,7 +2148,11 @@ Updates supported config fields and persists to NVS.
   Absent when nothing was clamped, and never on `GET /api/config`.
   `components.audio` carries `member` (the saved choice) and `activeMember` (the
   module running since the last boot). The two differ exactly while a member
-  change is staged and the controller has not rebooted.
+  change is staged and the controller has not rebooted. Beside them,
+  `activeMixes` says whether that running module can play a Background Track
+  under its vocals (its `AUDIO_CAP_MIXES` bit): `true` on the CHIRP Audio
+  Trigger, `false` on a module that plays one sound at a time. Like
+  `activeMember` it is a reading, ignored when a GET answer is posted back.
 - Errors:
 - `400` on invalid value/type or unsupported request with no accepted fields,
   with `field`, `reason` and `accepts` (see "Refusals from a settings write")
