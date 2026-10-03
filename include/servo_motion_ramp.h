@@ -61,8 +61,12 @@
 // #439). Edit the declaration and run tools/generate_servo_motion.py; what stays
 // written by hand here is what reads a row and what follows a plan in time.
 // Only ServoTask follows a plan in time: the browser asks how long a move from
-// rest takes (servoMotionArrivalMs()) and never where a move is, so the two
-// evaluators below are not generated into data/ to sit there unused.
+// rest takes (servoMotionArrivalMs()) and never where a move is or how fast,
+// so the evaluators below stay written here for ServoTask alone. That is a
+// choice about these functions, not a rule the outputs keep: the generator has
+// no per-output switch, so everything declared in docs/servo-motion.yaml ships
+// in data/servo_motion.js, servoMotionRetarget() and its two helpers included,
+// although no page calls them.
 //
 // Pure: no FreeRTOS, no Arduino, no clock of its own -- ServoTask passes now in.
 // =============================================================================
