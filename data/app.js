@@ -1619,21 +1619,34 @@
     }
   };
 
+  // The run whose ending the feedback line holds, so the run being heard
+  // again - after a reconnect, say - takes back "Lost touch" rather than leave
+  // it under a row that reads Running.
+  let endingOf = null;
+  const sayShow = (message, level = "") => {
+    endingOf = null;
+    showFeedback(showFeedbackEl, message, level);
+  };
   const runWatch = window.PALiveReading.watchRuns(({ name, running, outcome }) => {
     paintShowRun();
-    if (running) return;
+    if (running) {
+      if (endingOf === name) sayShow("");
+      return;
+    }
     const ending = window.PALiveReading.runEnding(outcome, name);
-    if (ending) showFeedback(showFeedbackEl, ending, "error");
+    if (!ending) return;
+    sayShow(ending, "error");
+    endingOf = name;
   });
 
   const playSequence = async (name, button) => {
     button.disabled = true;
     button.classList.add("is-pending");
-    showFeedback(showFeedbackEl, "");
+    sayShow("");
     try {
       await runWatch.start(name);
     } catch (error) {
-      showFeedback(showFeedbackEl, `${name} did not play: ${window.PAApi.messageFor(error)}`, "error");
+      sayShow(`${name} did not play: ${window.PAApi.messageFor(error)}`, "error");
     } finally {
       button.disabled = false;
       button.classList.remove("is-pending");
@@ -1644,11 +1657,11 @@
 
   const stopSequence = async (button) => {
     button.disabled = true;
-    showFeedback(showFeedbackEl, "");
+    sayShow("");
     try {
       await runWatch.stop();
     } catch (error) {
-      showFeedback(showFeedbackEl, `Stop failed: ${window.PAApi.messageFor(error)}`, "error");
+      sayShow(`Stop failed: ${window.PAApi.messageFor(error)}`, "error");
     } finally {
       button.disabled = false;
     }
@@ -1695,9 +1708,8 @@
     const answer = await (handle ?? window.PAApi).get("/api/rc/map");
     const map = Array.isArray(answer?.data?.map) ? answer.data.map : [];
     showMapped = map
-      .filter((entry) => entry.action === "dome_seq" && entry.payload)
-      .map((entry) => ({ name: entry.payload, channel: window.PAApi.rcChannelTitle(entry.source, entry.channel) }))
-      .filter((entry) => entry.channel !== null);
+      .filter((entry) => entry.action === "dome_seq" && entry.payload && window.PAApi.isRcChannelSource(entry.source))
+      .map((entry) => ({ name: entry.payload, channel: window.PAApi.rcChannelTitle(entry.source, entry.channel) }));
     renderShowList();
   };
 

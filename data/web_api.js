@@ -645,13 +645,14 @@
   // An RC Channel as the builder reads it, "SBUS#1 CH 5", from the source and
   // channel GET /api/rc/map gives it. The RC page and the Dashboard both say a
   // channel this way, so the RC Radio's list reads the same at both ends
-  // (#330, #451). A droid condition (`speed`, `rest`, ...) is a Reaction, not
-  // an RC Channel: rcChannelTitle() is null for it, and the RC page names it
-  // by its own label.
+  // (#330, #451). A source this table does not name reads "Unknown CH 5", as
+  // the RC page always has. A droid condition (`speed`, `rest`, ...) is a
+  // Reaction, not an RC Channel: isRcChannelSource() says which is which, and
+  // the RC page names a condition by its own label.
   const RC_SOURCE_LABELS = Object.freeze({ pwm: "PWM", sbus1: "SBUS#1", sbus2: "SBUS#2" });
+  const isRcChannelSource = (source) => Object.hasOwn(RC_SOURCE_LABELS, source);
   const rcSourceLabel = (source) => RC_SOURCE_LABELS[source] || "Unknown";
-  const rcChannelTitle = (source, channel) =>
-    (RC_SOURCE_LABELS[source] ? `${RC_SOURCE_LABELS[source]} CH ${channel || "—"}` : null);
+  const rcChannelTitle = (source, channel) => `${rcSourceLabel(source)} CH ${channel || "—"}`;
   const timingOf = (name) => entryFor(SETTING_WORDS, name, "applies");
   const rowTimingOf = (key) => entryFor(ROW_SETTING_WORDS, key, "applies");
 
@@ -823,6 +824,7 @@
     nameOutputsWith,
     labelOf,
     unsetOf,
+    isRcChannelSource,
     rcSourceLabel,
     rcChannelTitle,
     timingOf,

@@ -717,9 +717,7 @@
     const condition = droidConditionFor(channelKey);
     if (condition) return condition.label;
     const { source, channel } = parseChannelKey(channelKey);
-    // Null only for a source that is no RC Channel, which a key here never
-    // names once the droid conditions above have answered.
-    return window.PAApi.rcChannelTitle(source, channel) || sourceLabel(source);
+    return window.PAApi.rcChannelTitle(source, channel);
   };
 
   // What the droid last said about the Reaction on a condition (the

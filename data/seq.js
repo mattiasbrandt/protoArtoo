@@ -213,10 +213,20 @@
   // an RC Channel included - is under way and when it ends. The strip and the
   // list row both show it, and both are painted from it (paintRun() below).
   // =========================================================================
+  // The ending last said of a run, so the run being heard again - after a
+  // reconnect, say - can take it back rather than leave "Lost touch" under a
+  // lamp that reads Running.
+  let saidEnding = null; // { name, message }
   const runWatch = window.PALiveReading.watchRuns(({ name, running, outcome }) => {
     paintRun();
-    const ending = running ? null : window.PALiveReading.runEnding(outcome, name);
-    if (ending) sayOfRun(name, ending);
+    if (running) {
+      if (saidEnding?.name === name) unsayOfRun(saidEnding);
+      return;
+    }
+    const ending = window.PALiveReading.runEnding(outcome, name);
+    if (!ending) return;
+    sayOfRun(name, ending);
+    saidEnding = { name, message: ending };
   });
 
   let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)
@@ -615,6 +625,18 @@
     if (!feedbackEl) return;
     feedbackEl.textContent = message;
     feedbackEl.className = "seq-item-feedback feedback error";
+  };
+
+  // Take back an ending sayOfRun() wrote, where it is still what is said: a
+  // line rewritten since says something else and is left alone.
+  const unsayOfRun = ({ name, message }) => {
+    saidEnding = null;
+    const editorEl = document.getElementById("seq-editor-feedback");
+    if (editorEl?.textContent.includes(message)) showEditorFeedback("");
+    const feedbackEl = rowOf(name)?.querySelector(".seq-item-feedback");
+    if (feedbackEl?.textContent !== message) return;
+    feedbackEl.textContent = "";
+    feedbackEl.className = "seq-item-feedback feedback hidden";
   };
 
   // A press on a run's Stop, on the strip or on its row.
@@ -4778,9 +4800,10 @@
       feedbackEl.textContent = `Sending ${seqName} to droid...`;
       feedbackEl.className = "seq-item-feedback feedback info";
     }
-    // Held until the droid has accepted or refused the run: starting one is
-    // two requests, and a second press in that time would send a second run,
-    // which preempts the first.
+    // Held until the droid has accepted or refused the run: one POST, and one
+    // /api/status read before it only when the page holds no frame yet. A
+    // second press in that time would send a second run, which preempts the
+    // first.
     btn.disabled = true;
     try {
       await runWatch.start(seqName);
