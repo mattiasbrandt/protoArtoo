@@ -19,7 +19,7 @@
 // sound that would be playing, started from its beginning, because the sound
 // modules cannot seek. A Part the routine has not yet moved by the instant is
 // not commanded. It needs no new bound: every command is one a normal run of
-// the same routine sends (ADR 0062). Four things it deliberately does not
+// the same routine sends (ADR 0062). Five things it deliberately does not
 // command, each because the routine does not say:
 //   - a panel whose last word is a flutter (:OF). Where a flutter leaves a
 //     panel is the dome's to know, and the engine records it as uncertain too
@@ -39,7 +39,8 @@
 //     music under the routine, started from its beginning on each press, and
 //     a pose that restarted it at every marker drag would be a stream of
 //     music starts rather than a moment, with no run end to stop it again.
-//     A Background Track already playing plays on.
+//     A Background Track already playing plays on, unless the pose ends the
+//     Sequence that started it: that end stops it, as any abnormal end does.
 // A light mode is started again with its whole duration, as the sound is.
 //
 // PAST THE END it is what the engine leaves (beginFinish(),

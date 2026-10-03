@@ -14,9 +14,9 @@
 //              editor's clone-to-retrain).
 //
 // Format v1:
-//   boundAudio (STEP_AUDIO only, optional, default true): Track Stop this track on
-//   normal sequence completion too (ADR 0010 Bounded Audio); set false to let it ring
-//   out past SEQ_TERM like SEQ_AUDIO_CAT does.
+//   boundAudio (STEP_AUDIO and backgroundTrack only, optional, default true): stop
+//   this track on normal sequence completion too (ADR 0010 Bounded Audio); set false
+//   to let it ring out past SEQ_TERM like SEQ_AUDIO_CAT does.
 //
 //   body (STEP_BODY): `part` is a Droid Parts Catalog id and is required;
 //   `shape` (open|close|flutter), `howFar` (1..100 percent of that Part's own

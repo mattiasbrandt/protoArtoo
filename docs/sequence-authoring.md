@@ -225,8 +225,10 @@ it either way. A Track Stop, which ends the vocals, leaves it playing.
 Only a sound module that mixes can play one: today that is the CHIRP Audio Trigger.
 On any other module the sequence still saves and runs, without the Background
 Track; the run reports `module-cannot-mix` and carries on, and the Rehearsal warns
-about it beforehand. A pose press (the timeline's send to this moment) does not
-start or stop a Background Track.
+about it beforehand. With Sound switched off the run reports `component-disabled`
+instead. A pose press (the timeline's send to this moment) does not
+start or stop a Background Track, unless the press ends the sequence that
+started it: that end stops it, as any abnormal end does.
 
 ## Tempo and beats
 
