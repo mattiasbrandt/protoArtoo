@@ -1425,13 +1425,6 @@
 
   let clockTimer = null;
 
-  const stopClock = () => {
-    if (clockTimer !== null) {
-      window.clearTimeout(clockTimer);
-      clockTimer = null;
-    }
-  };
-
   const startClock = () => {
     if (clockTimer !== null || !hasPendingWork()) return;
     clockTimer = window.setTimeout(tick, TICK_MS);

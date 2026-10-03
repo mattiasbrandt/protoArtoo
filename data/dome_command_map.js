@@ -14,9 +14,6 @@
  *   Example: ':OPP1' -> { id: 'PP1', capability: 'open', kind: 'pie' }
  *   Keys on command FORM (numeric vs alias) to resolve P1 collision.
  *
- * GROUPS: resolveGroupCommand(groupId, capability) -> command string
- *   Example: 'pie' + 'open' -> ':OP14'
- *
  * Static MK4 commandable set: rings P1/P2/P3/P4/P7/P11/P13,
  * pies PP1/PP2/PP3/PP4/PP5/PP6. Fixed panels (P5, P6, P8, P9, P10, P12, P14)
  * are not commandable and will return null when queried.
@@ -189,35 +186,11 @@
     }
   }
 
-  /**
-   * FORWARD: Resolve a group ID and capability to a Panel Intent
-   * group command string.
-   *
-   * @param {string} groupId - Group ID (e.g., 'all', 'pie', 'ring').
-   * @param {string} capability - Generic capability (e.g., 'open', 'close', 'flutter').
-   * @returns {string|null} Group command string (e.g., ':OP00', ':OP14', ':OP15')
-   *   or null if the group or capability is unknown.
-   */
-  function resolveGroupCommand(groupId, capability) {
-    const prefix = CAPABILITY_PREFIXES[capability];
-    if (!prefix) {
-      return null;  // Unknown capability
-    }
-
-    const target = GROUP_TARGETS[groupId];
-    if (target === undefined) {
-      return null;  // Unknown group
-    }
-
-    return prefix + target;
-  }
-
   // Export public API
   window.DomeCommandMap = {
     PANEL_COMMAND_TARGETS,
     GROUP_TARGETS,
     resolvePanelCommand,
     decodeCommandToElement,
-    resolveGroupCommand,
   };
 })();

@@ -285,7 +285,8 @@ test("the dome picker draws with the stylesheet's palette, not one of its own", 
   // not paint (#372). Rendered for real here, from a live layout, because the
   // markup a browser receives is what has to carry no color.
   const vm = require("node:vm");
-  const context = { window: {} };
+  // The picker escapes through the page's one escaper (data/web_api.js).
+  const context = { window: { PAUtils: { escapeAttr: (value) => String(value ?? "") } } };
   vm.runInNewContext(readFileSync("data/dome_layout_render.js", "utf8"), context);
   const svg = context.window.DomeLayoutRender.renderPicker({
     viewBox: "0 0 480 480",

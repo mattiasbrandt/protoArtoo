@@ -36,77 +36,9 @@
 window.DomeLayoutRender = (() => {
   const MARKER_RADIUS = 6;
 
-  /**
-   * Escape attribute values for safe inline XML.
-   */
-  function escapeAttr(value) {
-    if (value === null || value === undefined) {
-      return "";
-    }
-    return String(value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
-  /**
-   * Convert geometry object to SVG element markup.
-   * Pure function; exported for testing.
-   *
-   * @param {Object} geometry - {type, cx?, cy?, r?, d?, rx?, ry?, rotation?}
-   * @returns {string} SVG element string
-   */
-  function geometryToSvg(geometry) {
-    if (!geometry || !geometry.type) {
-      return "";
-    }
-
-    switch (geometry.type) {
-      case "svg_path":
-        return `<path d="${escapeAttr(geometry.d)}"/>`;
-
-      case "circle": {
-        const cx = Number(geometry.cx);
-        const cy = Number(geometry.cy);
-        const r = Number(geometry.r);
-        if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(r)) {
-          return "";
-        }
-        return `<circle cx="${cx}" cy="${cy}" r="${r}"/>`;
-      }
-
-      case "ellipse": {
-        const cx = Number(geometry.cx);
-        const cy = Number(geometry.cy);
-        const rxVal = geometry.rx !== undefined ? Number(geometry.rx) : 0;
-        const ryVal = geometry.ry !== undefined ? Number(geometry.ry) : 0;
-        const rotationVal = geometry.rotation !== undefined ? Number(geometry.rotation) : 0;
-        if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(rxVal) || !Number.isFinite(ryVal) || !Number.isFinite(rotationVal)) {
-          return "";
-        }
-        const transform =
-          rotationVal !== 0
-            ? ` transform="rotate(${rotationVal} ${cx} ${cy})"`
-            : "";
-        return `<ellipse cx="${cx}" cy="${cy}" rx="${rxVal}" ry="${ryVal}"${transform}/>`;
-      }
-
-      case "point": {
-        const cx = Number(geometry.cx);
-        const cy = Number(geometry.cy);
-        const rVal = geometry.r !== undefined ? Number(geometry.r) : MARKER_RADIUS;
-        if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(rVal)) {
-          return "";
-        }
-        return `<circle cx="${cx}" cy="${cy}" r="${rVal}"/>`;
-      }
-
-      default:
-        return "";
-    }
-  }
+  // Attribute values go through PAUtils.escapeAttr (data/web_api.js), the
+  // page's one escaper.
+  const escapeAttr = (value) => window.PAUtils.escapeAttr(value);
 
   /**
    * Determine CSS class string for element state.
@@ -422,8 +354,6 @@ ${labelLayer}
   // Public API
   return {
     renderPicker,
-    geometryToSvg,
-    escapeAttr,
     MARKER_RADIUS,
   };
 })();
