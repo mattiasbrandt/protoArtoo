@@ -74,15 +74,24 @@ PICTOGRAPH = re.compile(
 
 ICON_SYMBOL = re.compile(r'\n    "([a-z0-9-]+)": "M')
 # A reference is a literal <use>, or a name handed to one of the helpers that
-# write one: data/shell.js icon() and actFace(), an act's icon changed in place
-# by setAct(button, words, name), and an act table's `icon: "name"` field or a
-# question's `yesIcon: "name"` (#460). Each alternative captures the name in
-# its own group.
+# write one (#460): data/shell.js actFace(), and any helper whose own name says
+# icon (icon(), iconActHtml()) given the icon's name as its FIRST argument; an
+# act's icon changed in place by setAct(button, words, name); and an act
+# table's `icon:` field or a question's `yesIcon:`. The last two may be a
+# ternary between two names, and both branches are read. Each alternative
+# captures its names in groups of its own.
+#
+# WHAT IT CANNOT SEE: a name that only exists at run time - one held in a
+# variable or a property (`actFace(act.icon, ...)`, `setAct(b, w, icon)`), one
+# built in a template (`#i-${surface.icon}`), or one a helper takes in any
+# position but the first. Those resolve only where the literal they came from
+# is written, so the literal must be written in one of the shapes above.
 ICON_USE = re.compile(
     r'href="#i-([a-z0-9-]+)"'
-    r'''|\b(?:icon|actFace)\(["']([a-z0-9-]+)["']'''
-    r'''|\bsetAct\([^()]*,\s*["']([a-z0-9-]+)["']\)'''
-    r'''|\b(?:icon|\w+Icon): ["']([a-z0-9-]+)["']'''
+    r'''|\b(?:\w*[Ii]con\w*|actFace)\(\s*["']([a-z0-9-]+)["']'''
+    r'''|\bsetAct\((?:[^()]|\([^()]*\))*?,\s*(?:[^,()?]*\?\s*)?["']([a-z0-9-]+)["']'''
+    r'''(?:\s*:\s*["']([a-z0-9-]+)["'])?\s*\)'''
+    r'''|\b(?:icon|\w+Icon):\s*(?:[^,\n?{}]*\?\s*)?["']([a-z0-9-]+)["'](?:\s*:\s*["']([a-z0-9-]+)["'])?'''
 )
 # The chrome names its icons by field rather than by markup - the rail builds
 # `href="#i-${surface.icon}"` - so the literal <use> regex above cannot see
@@ -137,7 +146,7 @@ def check_icon_references(files: list[Path], data: Path, symbols: set[str], erro
     for path in files:
         name = path.relative_to(data).as_posix()
         text = path.read_text(encoding="utf-8", errors="replace")
-        used = {name for groups in ICON_USE.findall(text) for name in groups if name}
+        used = {icon for groups in ICON_USE.findall(text) for icon in groups if icon}
         uses += len(used)
         missing = sorted(used - symbols)
         if missing:
