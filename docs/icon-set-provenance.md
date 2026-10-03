@@ -71,6 +71,8 @@ no symbol, which is the failure this list would otherwise hide.
 | `printer-outline` | Wiring's printable wiring sheet act (#411; read from `@mdi/svg` 7.4.47 `svg/printer-outline.svg`, not one of the #398 twenty-two) |
 | `lightbulb-outline` | Lights, in the nav rail (#410; read from `@mdi/svg` 7.4.47 `svg/lightbulb-outline.svg`, not one of the #398 twenty-two) |
 | `magnify` | Find by Moving, on a Part's row on Wiring (#411; read from `@mdi/svg` 7.4.47 `svg/magnify.svg`, not one of the #398 twenty-two) |
+| `play`, `stop` | Play and Stop on a Sequence's row on the Dashboard (#451; read from `@mdi/svg` 7.4.47 `svg/play.svg` and `svg/stop.svg`, not among the #398 twenty-two) |
+| `fullscreen`, `fullscreen-exit` | the Dashboard's full-screen posture, in and out (#451; read from `@mdi/svg` 7.4.47 `svg/fullscreen.svg` and `svg/fullscreen-exit.svg`) |
 
 The #398 prototype (`git show 83acf0db:prototypes/395-surface-anatomy/chrome.js`;
 the prototype left the tree for the gitignored `tasks/prototypes/` on
