@@ -188,8 +188,8 @@
       <p class="prose">A restore <b>replaces</b> the parts you tick; it never merges.</p>
 
       <div class="button-row button-row-compact">
-        <button id="backup-download-btn" class="btn btn-sm" type="button">Download backup</button>
-        <button id="backup-file-trigger" class="btn btn-sm" type="button">Choose a file to restore</button>
+        <button id="backup-download-btn" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download-outline"/></svg><span class="act-label">Download backup</span></button>
+        <button id="backup-file-trigger" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Choose a file to restore</span></button>
       </div>
       <input type="file" id="backup-file-input" accept=".json" hidden aria-label="Select backup file">
 
@@ -225,7 +225,7 @@
       </div>
 
       <div id="restore-btn-row" class="button-row button-row-compact" hidden>
-        <button id="backup-restore-btn" class="btn btn-sm" type="button">Restore the ticked parts</button>
+        <button id="backup-restore-btn" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Restore the ticked parts</span></button>
       </div>
 
       <!-- Asked after the parts and before the first write: nothing reaches
@@ -233,9 +233,9 @@
       <div id="restore-question" hidden>
         <p class="note note-act" id="restore-question-text"></p>
         <div class="button-row button-row-compact">
-          <button id="restore-cancel-btn" class="btn btn-sm btn-quiet" type="button">Keep what I have</button>
-          <button id="restore-copy-btn" class="btn btn-sm" type="button">Save a copy first, then restore</button>
-          <button id="restore-replace-btn" class="btn btn-sm danger" type="button">Replace</button>
+          <button id="restore-cancel-btn" class="btn btn-sm btn-quiet icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-close"/></svg><span class="act-label">Keep what I have</span></button>
+          <button id="restore-copy-btn" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download-outline"/></svg><span class="act-label">Save a copy first, then restore</span></button>
+          <button id="restore-replace-btn" class="btn btn-sm danger icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Replace</span></button>
         </div>
       </div>
 
@@ -248,7 +248,7 @@
     <div class="card">
       <div class="sect"><h2>Guided Setup</h2><span class="sub">the first run, again</span></div>
       <div class="button-row button-row-compact">
-        <button id="setup-again-button" class="btn btn-sm" type="button">Run guided Setup again</button>
+        <button id="setup-again-button" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-compass-outline"/></svg><span class="act-label">Run guided Setup again</span></button>
       </div>
       <p class="hint">For a droid you skipped setting up, or rebuilt. Nothing you set is cleared.</p>
       <div id="setup-again-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -259,7 +259,7 @@
       <div class="sect"><h2>Restart</h2><span class="sub">about ten seconds off the air</span></div>
       <p class="hint">Every output cuts out; nothing saved is lost.</p>
       <div class="button-row button-row-compact">
-        <button id="reboot-button" class="btn btn-sm danger" type="button">Restart the Body Controller</button>
+        <button id="reboot-button" class="btn btn-sm danger icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-restart"/></svg><span class="act-label">Restart the Body Controller</span></button>
       </div>
       <div id="reboot-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>

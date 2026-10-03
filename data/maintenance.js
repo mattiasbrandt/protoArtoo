@@ -885,7 +885,7 @@
     });
     const n = tickedParts().length;
     if (restoreBtn) {
-      restoreBtn.textContent = `Restore ${n} ticked part${n === 1 ? '' : 's'}`;
+      window.PAUi.setAct(restoreBtn, `Restore ${n} ticked part${n === 1 ? '' : 's'}`);
       restoreBtn.disabled = restoring || n === 0 || !facts?.library;
     }
     if (question) question.hidden = true;
