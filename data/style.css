@@ -10906,8 +10906,10 @@ label.seq-act {
 
 /* A .button-row is a grid of 160 px-and-up cells, which would stretch a
    square across its cell. A row of acts is a run of squares instead, and
-   keeps the row's own justify-content (a question's answers sit at its end). */
-:root:not(.act-words) .button-row:has(> .icon-act) {
+   keeps the row's own justify-content (a question's answers sit at its end).
+   Not a hidden row: .button-row[hidden] is less specific than this, and a
+   restore act on screen before a file was chosen is a shipped defect. */
+:root:not(.act-words) .button-row:not([hidden]):has(> .icon-act) {
   display: flex;
   flex-wrap: wrap;
 }
