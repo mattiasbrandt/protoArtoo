@@ -62,8 +62,8 @@ static char     s_runName[24];
 // route the Coordinator has (ADR 0040).
 static TakeReplayRun* s_stagedTakes = nullptr;
 static TakeReplayRun* s_runTakes    = nullptr;
-static uint8_t        s_stagedTakesUnplayed = 0;
-static uint8_t        s_runTakesUnplayed    = 0;
+static SeqStoreTakesUnplayed s_stagedTakesUnplayed = {};
+static SeqStoreTakesUnplayed s_runTakesUnplayed    = {};
 
 static void takesFree(TakeReplayRun** takes) {
     free(*takes);
@@ -468,9 +468,9 @@ void seqStoreInit() {
 // The takes `root` names, staged for its run, or nullptr when it names none or
 // has no stable id to find their files by. The array was checked when the
 // sequence was saved (readTakeRefs()); an entry this read cannot use is passed
-// over rather than costing the run. A run that cannot have the memory plays
-// its steps, and the takes it could not play are counted for the Coordinator
-// to report. Out of line, and it logs nothing: seqStorePrepare()'s frame heads
+// over rather than costing the run. Takes past what this board keeps, and a
+// run that cannot have the memory, are counted for the Coordinator to report,
+// and the run plays its steps. Out of line, and it logs nothing: seqStorePrepare()'s frame heads
 // the Coordinator's deepest route (ADR 0040), and this one sits beside the
 // parse under it, never on top of it.
 static __attribute__((noinline)) TakeReplayRun* stageTakes(JsonVariantConst root) {
@@ -480,9 +480,11 @@ static __attribute__((noinline)) TakeReplayRun* stageTakes(JsonVariantConst root
     const size_t named = arr.size();
     if (named == 0 || owner[0] == '\0') return nullptr;
     const uint8_t cap = (named < TAKE_STORE_CAP) ? (uint8_t)named : TAKE_STORE_CAP;
+    const size_t over = named - cap;
+    s_stagedTakesUnplayed.overCap = (over > 0xFF) ? (uint8_t)0xFF : (uint8_t)over;
     TakeReplayRun* run = (TakeReplayRun*)calloc(1, takeReplayRunBytes(cap));
     if (run == nullptr) {
-        s_stagedTakesUnplayed = cap;
+        s_stagedTakesUnplayed.noMemory = cap;
         return nullptr;
     }
     memcpy(run->owner, owner, sizeof(owner));
@@ -504,7 +506,7 @@ ProtocolCheckResult seqStorePrepare(const char* name) {
         stagingFree(s_staging);
     }
     takesFree(&s_stagedTakes);
-    s_stagedTakesUnplayed = 0;
+    s_stagedTakesUnplayed = {};
     if (!lock()) return pcFail("name", "store busy");
 
     const SeqIndexEntry* idx = seqStoreIndexFind(name);
@@ -658,11 +660,11 @@ bool seqStoreCommit(SequenceEntry& out) {
     return true;
 }
 
-TakeReplayRun* seqStoreClaimRunTakes(uint8_t* unplayed) {
+TakeReplayRun* seqStoreClaimRunTakes(SeqStoreTakesUnplayed* unplayed) {
     TakeReplayRun* takes = s_runTakes;
     s_runTakes = nullptr;
     *unplayed = s_runTakesUnplayed;
-    s_runTakesUnplayed = 0;
+    s_runTakesUnplayed = {};
     return takes;
 }
 
@@ -676,7 +678,7 @@ void seqStoreReleaseRun() {
     free(s_runClose);
     s_runClose = nullptr;
     takesFree(&s_runTakes);
-    s_runTakesUnplayed = 0;
+    s_runTakesUnplayed = {};
 }
 
 // -----------------------------------------------------------------------------

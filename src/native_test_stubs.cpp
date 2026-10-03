@@ -849,8 +849,8 @@ void seqStoreReleaseRun() {
 
 // No sequence the host loads names a take (#442): the store's commit is a stub
 // that never commits, so there is no run for a take to play in.
-TakeReplayRun* seqStoreClaimRunTakes(uint8_t* unplayed) {
-    *unplayed = 0;
+TakeReplayRun* seqStoreClaimRunTakes(SeqStoreTakesUnplayed* unplayed) {
+    *unplayed = {};
     return nullptr;
 }
 

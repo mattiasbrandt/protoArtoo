@@ -429,13 +429,18 @@ static __attribute__((noinline)) void takeLogStopped(const TakeReplay& t, const 
 }
 
 // The run has just started: the takes it names, if any, are this task's now.
-// Those its load had no memory for are said here, and the steps run anyway.
+// Those that will not play - past what this board keeps, or with no memory
+// for them - are said here, and the steps run anyway.
 static __attribute__((noinline)) void takesBegin(uint32_t now) {
-    uint8_t unplayed = 0;
+    SeqStoreTakesUnplayed unplayed = {};
     takeRun = seqStoreClaimRunTakes(&unplayed);
-    if (unplayed != 0) {
+    if (unplayed.overCap != 0) {
+        PA_LOG_WARN(TAG, "%u take(s) not played - this droid plays %u a sequence",
+                    (unsigned)unplayed.overCap, (unsigned)TAKE_STORE_CAP);
+    }
+    if (unplayed.noMemory != 0) {
         PA_LOG_WARN(TAG, "%u take(s) not played - no memory for them; the steps run",
-                    (unsigned)unplayed);
+                    (unsigned)unplayed.noMemory);
     }
     if (takeRun != nullptr) {
         takeRun->startMs = now;
