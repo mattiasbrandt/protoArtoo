@@ -6278,8 +6278,8 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 /* A take (#442): one linked block on the lane of each Part it moves, edited
-   whole. A performance is continuous motion, so its fill is a soft wave rather
-   than the phrase's flat one, under the Gesture's leading edge. */
+   whole. A performance is continuous motion, so its fill is a diagonal stripe
+   rather than the phrase's flat one, under the Gesture's leading edge. */
 .tl-take {
   top: 1px;
   bottom: 1px;
