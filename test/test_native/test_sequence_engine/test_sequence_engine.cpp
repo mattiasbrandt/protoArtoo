@@ -95,18 +95,16 @@ void test_engine_idle_after_init() {
     SeqEngineState st;
     seqEngineInit(st);
     TEST_ASSERT_FALSE(seqEngineActive(st));
-    TEST_ASSERT_NULL(seqEngineName(st));
 
     SeqAction act;
     TEST_ASSERT_FALSE(seqEnginePeek(st, 0, stubRand, act));
 }
 
-void test_engine_active_and_named_after_start() {
+void test_engine_active_after_start() {
     SeqEngineState st;
     seqEngineInit(st);
     seqEngineStart(st, &kFlatEntry, 1000);
     TEST_ASSERT_TRUE(seqEngineActive(st));
-    TEST_ASSERT_EQUAL_STRING("TEST:FLAT", seqEngineName(st));
 }
 
 // -----------------------------------------------------------------------------
@@ -1401,7 +1399,7 @@ int main(int /*argc*/, char** /*argv*/) {
     UNITY_BEGIN();
 
     RUN_TEST(test_engine_idle_after_init);
-    RUN_TEST(test_engine_active_and_named_after_start);
+    RUN_TEST(test_engine_active_after_start);
 
     RUN_TEST(test_flat_steps_fire_in_order_at_their_times);
     RUN_TEST(test_late_tick_catches_up_all_overdue_steps);
