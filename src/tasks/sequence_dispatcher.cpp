@@ -453,7 +453,8 @@ static __attribute__((noinline)) void takesEnd(const char* why) {
 
 // A take's start has come: its header, read into its own sample buffer so
 // nothing sits on this task's stack - the fixed 16 bytes, then each Part id.
-// A Part the catalog does not hold is said now and passed over for the run.
+// A Part the catalog does not hold is said now, once for this take, and
+// passed over for the run.
 // Returns why the take cannot play, or nullptr.
 static __attribute__((noinline)) const char* takeOpen(TakeReplay* t) {
     uint8_t* b = (uint8_t*)t->buf;
@@ -477,7 +478,9 @@ static __attribute__((noinline)) const char* takeOpen(TakeReplay* t) {
         const size_t part = droidPartIndexOf((const char*)b);
         t->part[p] = (uint8_t)((part < DROID_PART_COUNT) ? part : DROID_PART_COUNT);
         if (part >= DROID_PART_COUNT) {
-            takeLogPart(*t, (const char*)b, consoleReasonString(CONSOLE_REASON_PART_NOT_ASSIGNED));
+            // Not part-not-assigned: that says no Output claims a Part the
+            // droid knows, and this id is not in its catalog at all.
+            takeLogPart(*t, (const char*)b, "not a Part this droid knows");
         }
     }
     return nullptr;
