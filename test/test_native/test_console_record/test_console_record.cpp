@@ -304,8 +304,6 @@ int main(void) {
     RUN_TEST(test_status_string_ok);
     RUN_TEST(test_status_string_err);
 
-    // Format tests
-
     // Quote tests
     RUN_TEST(test_quote_value_simple_no_quote);
     RUN_TEST(test_quote_value_with_space_adds_quotes);
