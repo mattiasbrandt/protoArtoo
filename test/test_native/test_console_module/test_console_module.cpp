@@ -65,9 +65,10 @@
 #include "console_module.h"
 #include "console_record.h"  // consoleReasonString() - pins the wire spelling of the
                              // read-only reason, not just its enum value (#226)
-#include "drive_arbiter.h"  // driveArbiterInit/Reset/Submit/Resolve() - #222's motion
+#include "drive_arbiter.h"  // driveArbiterInit/Submit/Resolve() - #222's motion
                             // executors submit through the REAL arbiter, so its own
                             // resolve() is the queue/state evidence these tests read
+#include "drive_arbiter_test_hooks.h"  // driveArbiterReset() between cases
 #include "drive_speed_preset.h"  // SpeedPresetId - #222's speed-preset executors
 #include "failsafe_gate.h"  // failsafeInit() - driveArbiterSubmit()'s WEB_API path
                             // clears FailsafeLayer::WEB_TIMEOUT through this module

@@ -7,6 +7,7 @@
 #include <unity.h>
 
 #include "drive_arbiter.h"
+#include "drive_arbiter_test_hooks.h"  // driveArbiterReset()
 #include "failsafe_gate.h"
 #include "robot_state.h"
 

@@ -12,6 +12,7 @@
 
 #include "commanded_modes_test_hooks.h"  // g_test_status_broadcast_count
 #include "failsafe_gate.h"
+#include "failsafe_gate_test_hooks.h"  // failsafeActiveReason()
 #include "robot_state.h"
 
 // robotState and robotStateMux are provided by native_test_stubs.cpp

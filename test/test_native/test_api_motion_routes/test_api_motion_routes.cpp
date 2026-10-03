@@ -29,7 +29,9 @@
 #include "dome_link.h"
 #include "dome_link_transport.h"
 #include "drive_arbiter.h"
+#include "drive_arbiter_test_hooks.h"  // driveArbiterReset()
 #include "failsafe_gate.h"
+#include "failsafe_gate_test_hooks.h"  // failsafeActiveReason()
 #include "audio_test_hooks.h"      // the sound module's catalog banks (#449)
 #include "audio_catalog_gate.h"     // the catalog reader gate a refresh closes
 #include "commanded_modes_test_hooks.h"  // g_test_commanded_stationary and the rest of the Commanded Mode stubs
