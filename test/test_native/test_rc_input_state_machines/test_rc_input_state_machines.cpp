@@ -28,7 +28,7 @@ void test_mapping_cache_misses_when_empty() {
     RcMappingConfig out = {};
 
     TEST_ASSERT_FALSE(rcMappingCacheGet(cache, RC_INPUT_SINGLE_SBUS, &out));
-    TEST_ASSERT_FALSE(rcMappingCacheIsDirty(cache));
+    TEST_ASSERT_FALSE(cache.dirty);
 }
 
 void test_mapping_cache_hits_after_set() {
@@ -40,7 +40,7 @@ void test_mapping_cache_hits_after_set() {
     RcMappingConfig out = {};
     TEST_ASSERT_TRUE(rcMappingCacheGet(cache, RC_INPUT_SINGLE_SBUS, &out));
     TEST_ASSERT_EQUAL_INT16(700, out.maxOut);
-    TEST_ASSERT_FALSE(rcMappingCacheIsDirty(cache));
+    TEST_ASSERT_FALSE(cache.dirty);
 }
 
 void test_mapping_cache_invalidate_blocks_hit_until_reset() {
@@ -49,7 +49,7 @@ void test_mapping_cache_invalidate_blocks_hit_until_reset() {
     rcMappingCacheInvalidate(&cache);
 
     RcMappingConfig out = {};
-    TEST_ASSERT_TRUE(rcMappingCacheIsDirty(cache));
+    TEST_ASSERT_TRUE(cache.dirty);
     TEST_ASSERT_FALSE(rcMappingCacheGet(cache, RC_INPUT_SINGLE_SBUS, &out));
 
     rcMappingCacheSet(&cache, RC_INPUT_SINGLE_SBUS, makeMappingConfig(900));

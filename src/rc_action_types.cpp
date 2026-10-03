@@ -341,22 +341,6 @@ bool rcPayloadValidForBodySequence(const char* payload) {
     return seqNum >= 30 && seqNum <= 36;
 }
 
-// Validate Marcduino sequence payload for dome sequences (SE10-SE16).
-bool rcPayloadValidForDomeSequence(const char* payload) {
-    if (payload == nullptr || payload[0] == '\0') {
-        return false;
-    }
-    size_t len = strlen(payload);
-    if (len != 2) {
-        return false;
-    }
-    if (!isdigit((unsigned char)payload[0]) || !isdigit((unsigned char)payload[1])) {
-        return false;
-    }
-    int seqNum = (payload[0] - '0') * 10 + (payload[1] - '0');
-    return seqNum >= 10 && seqNum <= 16;
-}
-
 // Classify actions that work as button/toggle triggers.
 bool robotActionIsButton(RobotActionId target) {
     return target == SERVO_ACTION_ARM1_TOGGLE || target == SERVO_ACTION_ARM2_TOGGLE ||
