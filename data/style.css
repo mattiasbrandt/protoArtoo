@@ -5091,10 +5091,6 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--text);
 }
 
-.show-standdown-change {
-  font-size: var(--fs-sect);
-}
-
 .show-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
