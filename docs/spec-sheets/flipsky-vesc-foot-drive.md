@@ -728,18 +728,18 @@ e-bike hub motors modified for R2 feet.
 
 ## 12. What protoArtoo would have to do
 
-### 12.1 The seam is already decided and still does not exist
+### 12.1 The seam is already decided and now exists
 
 [#304](https://github.com/mattiasbrandt/protoArtoo/issues/304) put the seam
-**below `driveTickDecide()`**, with the four AGENTS.md invariants staying in
+**at `driveBackendSend()`** (`include/drive_backend.h`), with the four AGENTS.md invariants staying in
 generic code no driver can reach, and the driver's contract as `send(speed,
 steer)` plus a `begin()` where it may program its own hardware timeout. That
 holds here, with one amendment Section 8.3 forces: **a VESC driver's `begin()`
 cannot program its own timeout.** It can only read the app config and report what
 it found, or not look at all.
 
-The insertion point is unchanged: `drive.cpp:153-156`, the two lines that call
-`buildHoverboardFrame()` and `hoverSerial.write()`.
+The insertion point is `driveBackendSend()`, which `src/tasks/drive.cpp` calls
+unconditionally every 50 Hz tick; a VESC backend implements that call.
 
 ### 12.2 The units are the hoverboard's, and a VESC has no idea what they mean
 
