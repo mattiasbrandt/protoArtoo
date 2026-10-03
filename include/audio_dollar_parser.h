@@ -24,7 +24,6 @@
 //   $W     --  play Star Wars theme
 //   $M     --  play Imperial March
 //   $B     --  play startup / boot sound
-//   $H     --  play happy / greeting
 //   $D     --  play disco (NVS key snd_disco, disabled when 0)
 //   $R     --  enable random playback mode
 //   $O     --  disable random mode (does not stop current sound)
