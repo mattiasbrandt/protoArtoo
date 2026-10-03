@@ -77,7 +77,7 @@
         </div>
       </details>
       <div id="mod-poll-section">
-        <button id="btn-poll-status" class="btn" type="button">Poll status</button>
+        <button id="btn-poll-status" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg><span class="act-label">Poll status</span></button>
       </div>
       <div id="mod-status-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
@@ -101,9 +101,9 @@
       </label>
 
       <div class="button-row button-row-compact">
-        <button class="btn" id="btn-stop" type="button">Stop</button>
-        <button class="btn" id="btn-random-on" type="button">Random on</button>
-        <button class="btn" id="btn-random-off" type="button">Random off</button>
+        <button class="btn btn-sm icon-act" id="btn-stop" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-stop"/></svg><span class="act-label">Stop</span></button>
+        <button class="btn btn-sm icon-act" id="btn-random-on" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-shuffle-variant"/></svg><span class="act-label">Random on</span></button>
+        <button class="btn btn-sm icon-act" id="btn-random-off" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-shuffle-disabled"/></svg><span class="act-label">Random off</span></button>
       </div>
       <p class="hint">Stop ends this track only.</p>
 
@@ -145,9 +145,9 @@
     <div id="chirp-catalog-card" class="card hidden">
       <div class="sect"><h2>CHIRP catalog</h2><span class="sub">from the module's card</span></div>
       <div class="button-row button-row-compact">
-        <button id="btn-catalog-refresh" class="btn" type="button">Refresh catalog</button>
-        <button id="btn-catalog-apply-suggestions" class="btn" type="button">Apply suggestions</button>
-        <button id="btn-catalog-bulk" class="btn" type="button">Bulk</button>
+        <button id="btn-catalog-refresh" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg><span class="act-label">Refresh catalog</span></button>
+        <button id="btn-catalog-apply-suggestions" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-auto-fix"/></svg><span class="act-label">Apply suggestions</span></button>
+        <button id="btn-catalog-bulk" class="btn btn-sm" type="button">Bulk</button>
       </div>
       <p class="hint" id="catalog-status"></p>
       <p class="note note-info hidden" id="catalog-limits" role="status" aria-live="polite" aria-atomic="true"></p>
@@ -161,9 +161,9 @@
         <select id="catalog-bulk-target" class="sound-track-input-md catalog-map-select" aria-label="Bulk map target">
           <option value="">Choose target…</option>
         </select>
-        <button id="btn-catalog-bulk-map" class="btn sound-btn-compact" type="button">Map checked</button>
-        <button id="btn-catalog-bulk-clear" class="btn sound-btn-compact" type="button">Clear</button>
-        <button id="btn-catalog-bulk-cancel" class="btn sound-btn-compact" type="button">Done</button>
+        <button id="btn-catalog-bulk-map" class="btn sound-btn-compact icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-link-variant"/></svg><span class="act-label">Map checked</span></button>
+        <button id="btn-catalog-bulk-clear" class="btn sound-btn-compact icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-link-variant-off"/></svg><span class="act-label">Clear</span></button>
+        <button id="btn-catalog-bulk-cancel" class="btn sound-btn-compact icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-check"/></svg><span class="act-label">Done</span></button>
       </div>
       <div class="sound-table-wrap">
         <table class="sound-table">
@@ -230,7 +230,7 @@
         </table>
       </div>
       <div class="button-row button-row-compact">
-        <button class="btn" id="btn-mood-map-save" type="button">Save changes</button>
+        <button class="btn btn-sm icon-act" id="btn-mood-map-save" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-content-save-outline"/></svg><span class="act-label">Save changes</span></button>
       </div>
       <div id="mood-map-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
@@ -262,7 +262,7 @@
       <div class="sound-inline-row tight">
         <input type="number" id="direct-track" min="1" max="65535" value="1"
                class="sound-track-input-lg" placeholder="Track #" aria-label="Direct track number">
-        <button class="btn" id="btn-direct-play" type="button">Play</button>
+        <button class="btn btn-sm icon-act" id="btn-direct-play" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-play"/></svg><span class="act-label">Play</span></button>
       </div>
       <div id="direct-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
@@ -283,7 +283,7 @@
           <input type="number" id="rand-max" value="100" class="sound-track-input-md">
         </div>
         <div class="sound-align-end">
-          <button class="btn" id="btn-rand-save" type="button">Save range</button>
+          <button class="btn btn-sm icon-act" id="btn-rand-save" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-content-save-outline"/></svg><span class="act-label">Save range</span></button>
         </div>
       </div>
       <div id="rand-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -335,7 +335,7 @@
         </table>
       </div>
       <div class="button-row button-row-compact">
-        <button class="btn" id="btn-int-save" type="button">Save intervals</button>
+        <button class="btn btn-sm icon-act" id="btn-int-save" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-content-save-outline"/></svg><span class="act-label">Save intervals</span></button>
       </div>
       <div id="int-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
