@@ -209,7 +209,8 @@
 // restore writes the parts ticked, each replacing what the droid holds and
 // never merging into it (CONTEXT.md "Backup", ADR 0056 and its 2026-09-25
 // amendment, #448):
-//   Sequences      every Learned Sequence, as GET /api/seq?name= answers it
+//   Sequences      every Learned Sequence, as GET /api/seq?name= answers it,
+//                  and the take files they name (#442)
 //   Configuration  the config and the Outputs' rows, and the sound setup
 //   RC Map         which action each RC Channel fires
 // Every answer is taken before the first write: the parts, then whether to save
@@ -317,6 +318,48 @@
     return sequences;
   };
 
+  // A take file's bytes as text the backup's JSON can carry, and back. In
+  // pieces, so a 24 KB file never becomes one huge argument list.
+  const bytesToBase64 = (buffer) => {
+    const bytes = new Uint8Array(buffer);
+    let text = '';
+    for (let at = 0; at < bytes.length; at += 0x2000) {
+      text += String.fromCharCode(...bytes.subarray(at, at + 0x2000));
+    }
+    return btoa(text);
+  };
+  const base64ToBlob = (data) => {
+    const text = atob(data);
+    const bytes = new Uint8Array(text.length);
+    for (let at = 0; at < text.length; at += 1) bytes[at] = text.charCodeAt(at);
+    return new Blob([bytes], { type: 'application/octet-stream' });
+  };
+
+  // The take files the Learned Sequences name (#442, ADR 0061), each as the
+  // droid stores it, carried in the Sequences part beside them as
+  // `takes: [{seq, owner, id, data}]` - `owner` the sequence's stable id the
+  // droid files it under, `data` the file in base64. A take a sequence names
+  // that the droid does not hold (404) has nothing to carry and is left out;
+  // one that does not come back otherwise is in `failed`, as a sequence is.
+  const readTakes = async (sequences, failed) => {
+    const takes = [];
+    for (const seq of sequences) {
+      if (!Array.isArray(seq.takes) || typeof seq.id !== 'string') continue;
+      for (const ref of seq.takes) {
+        if (typeof ref?.id !== 'string') continue;
+        const path = `/api/take/file?owner=${encodeURIComponent(seq.id)}&take=${encodeURIComponent(ref.id)}`;
+        try {
+          const answer = await window.PAApi.getBytes(path, { timeoutMs: 10000 });
+          takes.push({ seq: seq.name, owner: seq.id, id: ref.id, data: bytesToBase64(answer.data) });
+        } catch (error) {
+          if (error?.kind === 'http' && error.status === 404) continue;
+          failed.push(`a take of ${seq.name}`);
+        }
+      }
+    }
+    return takes;
+  };
+
   // A backup of `parts` ('sequences', 'configuration', 'rc_map') read off the
   // droid, with the board that wrote it, or the reads that did not answer.
   // A read counts only when it returned data: an answer with no JSON body is
@@ -337,6 +380,7 @@
       else failed.push(key);
     });
     const sequences = parts.includes('sequences') ? await readSequences(failed) : undefined;
+    const takes = sequences ? await readTakes(sequences, failed) : undefined;
     if (failed.length > 0) return { failed };
     const { identity, ...held } = read;
     return {
@@ -345,7 +389,7 @@
         generated: new Date().toISOString(),
         fw_version: fwRes.status === 'fulfilled' ? (fwRes.value?.firmwareVersion || 'unknown') : 'unknown',
         board: identity?.board,
-        ...(sequences ? { sequences } : {}),
+        ...(sequences ? { sequences, takes } : {}),
         ...held,
       },
     };
@@ -658,6 +702,36 @@
     return { refused, notBack, held };
   };
 
+  // ---- RESTORE: the takes ----
+  // After the Sequences, as part of them: a take goes back only to a sequence
+  // the droid now holds, under the stable id it was kept with - its owner on
+  // the droid, which files it by that id (include/take_store_util.h). Each is
+  // an upload the droid checks as it arrives; one it refuses is named and the
+  // rest still go.
+  const restoreTakes = async (takes, sequences) => {
+    const owners = new Set(sequences
+      .filter((seq) => typeof seq?.id === 'string')
+      .map((seq) => `${seq.name}\n${seq.id}`));
+    let restored = 0;
+    const failed = [];
+    for (const take of Array.isArray(takes) ? takes : []) {
+      if (!owners.has(`${take.seq}\n${take.owner}`)) continue;
+      try {
+        await window.PAApi.postFile('/api/take/file', 'take', base64ToBlob(take.data),
+          `${take.owner}.${take.id}.take`, { timeoutMs: 15000 });
+        restored += 1;
+      } catch (error) {
+        failed.push(`${take.seq} (${window.PAApi.messageFor(error)})`);
+      }
+    }
+    return { restored, failed };
+  };
+
+  const takesLine = ({ restored, failed }) => {
+    if (failed.length > 0) return `Takes: partial — ${restored} restored; refused: ${listOf(failed)}`;
+    return restored > 0 ? `Takes: restored ${restored}` : null;
+  };
+
   // ---- RESTORE: the RC Map ----
   // POST /api/rc/map refuses the WHOLE map over one dome_seq binding whose
   // Sequence the droid does not hold (isValidDomeSeqPayload(),
@@ -894,7 +968,10 @@
       before = backup;
       if (withCopy) {
         const kept = { ...backup };
-        if (!parts.includes('sequences')) delete kept.sequences;
+        if (!parts.includes('sequences')) {
+          delete kept.sequences;
+          delete kept.takes;
+        }
         saveFile(kept, '-before-restore');
       }
     }
@@ -915,6 +992,14 @@
       } else {
         lines.push(`Sequences: partial — ${result.restored.length} restored; left out, this droid holds ${known.cap}: ${listOf(result.leftOut)}`);
       }
+      // The takes of what landed, or - where the droid refused and the
+      // library was put back - of what was put back, whose takes went with
+      // the sequences the restore deleted.
+      const takes = result.refused
+        ? await restoreTakes(before.takes, before.sequences)
+        : await restoreTakes(file.takes, result.restored);
+      const line = takesLine(takes);
+      if (line) lines.push(line);
     }
 
     if (parts.includes('configuration')) {
@@ -1028,6 +1113,10 @@
     if (has('sequences') && !(Array.isArray(backup.sequences)
         && backup.sequences.every((seq) => isObject(seq) && typeof seq.name === 'string'))) {
       return 'its Sequences are incomplete';
+    }
+    if (has('takes') && !(Array.isArray(backup.takes) && backup.takes.every((take) => isObject(take)
+        && ['seq', 'owner', 'id', 'data'].every((key) => typeof take[key] === 'string')))) {
+      return 'its takes are incomplete';
     }
     if (has('rc_map') && !(isObject(backup.rc_map) && Array.isArray(backup.rc_map.map))) {
       return 'its RC Map is incomplete';

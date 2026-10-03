@@ -49,6 +49,11 @@ dome.action.delete-sequence|Memory Wipe|Wipe a Learned Sequence off the droid. N
 dome.action.test-sequence|Test Sequence|Play a sequence by name, Learned or Factory.|sequenceStart|name:string:1
 dome.action.pose-sequence|Send To This Moment|Send the droid to one moment of a sequence, Learned or Factory. Each part goes where the routine had it then, one at a time; lights and the sound that was playing follow. Refused while the estop is latched or the droid is asleep.|sequencePoseRequest|name:string:1|t:int32:1
 dome.api.get-sequence-last-run|Get Last Sequence Run|What the last sequence run did: how it ended, and every command it sent.|seqEvidenceSnapshot|
+dome.api.get-take|Get Take|The take in hand: performing, stopped and why, how full. And how many takes the droid keeps, how big one may be, and the free space it leaves.|takeStatusRead|
+dome.action.arm-take|Arm Take|Start a take for a saved sequence. Perform on the sticks; the Parts with a stick set to Perform a Part are captured. Refused with no such stick, no radio frames, the estop latched, or a take already running.|takeArm|seq:string:1
+dome.action.keep-take|Keep Take|Stop the take and keep it. Answers with the take and every cue pressed during it, for the editor to place.|takeStoreWriteNew|
+dome.api.get-take-file|Get Take File|One take's file, as the droid stores it. A backup carries it with its sequence.|takeStoreReadSlice|owner:string:1|take:string:1
+dome.action.restore-take-file|Restore Take File|Put a take's file back from a backup, after its sequence. Checked as it arrives.|takeStoreRestoreBegin|
 sound.action.play-track|Play Track|Play a track number off the card.|audioQueuePlayTrack|track:uint16:1
 sound.action.play-track-scream|Play Scream|Play the scream.|audioQueuePlayTrackBanked|
 sound.action.play-track-faint|Play Short Circuit|Play the short circuit.|audioQueuePlayTrackBanked|

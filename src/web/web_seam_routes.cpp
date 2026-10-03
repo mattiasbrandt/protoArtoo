@@ -25,6 +25,7 @@
 #include "../../include/api_servo.h"
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"
+#include "../../include/api_take.h"
 #include "../../include/api_upload.h"
 #include "../../include/api_validation.h"
 #include "../../include/seq_store_util.h"  // SEQ_FILE_MAX_BYTES
@@ -158,6 +159,16 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/seq", WebMethod::kGet, handleSeqGet);
     webRegisterRoute("/api/seq", WebMethod::kPost, handleSeqPost, SEQ_FILE_MAX_BYTES);
     webRegisterRoute("/api/seq", WebMethod::kDelete, handleSeqDelete);
+
+    // Takes (#442, ADR 0061): a performance kept off the sticks, in a file of
+    // its own that a sequence names. The file goes back to the droid as an
+    // upload rather than a buffered body, so no route here raises the
+    // server-wide body ceiling (web_body_ceiling.h) to a take file's size.
+    webRegisterRoute("/api/take", WebMethod::kGet, handleTakeGet);
+    webRegisterRoute("/api/take/arm", WebMethod::kPost, handleTakeArmPost);
+    webRegisterRoute("/api/take/keep", WebMethod::kPost, handleTakeKeepPost);
+    webRegisterRoute("/api/take/file", WebMethod::kGet, handleTakeFileGet);
+    webRegisterUploadRoute("/api/take/file", handleTakeFileUploadChunk, handleTakeFileUploadDone);
 
 #if PA_ADMISSION_TRACE
     // Absent entirely on builds without the admission trace, so a harness that

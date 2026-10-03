@@ -46,6 +46,10 @@ struct RcProcessorOutput {
     bool domeFiltered;
     int domeRawFiltered;  // raw SBUS value after filter (calibrate before dispatch)
     RcActionResult triggerResults[RC_TRIGGER_MAX];
+    // Per trigger slot, whether its cue was pressed this frame: the press
+    // edge alone, never a release, whatever the action did with it. A take
+    // records a cue press here as a step to place (#442, include/take.h).
+    bool triggerPressed[RC_TRIGGER_MAX];
     // Per trigger slot, what its puppet string asks for this frame (#442,
     // include/rc_puppet.h); `send` false for a slot that holds a cue, holds
     // nothing, or whose string has nothing new. The caller resolves the Part

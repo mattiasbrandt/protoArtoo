@@ -72,11 +72,12 @@
 // /api/identity (learned_sequence_cap) and the Sequences page reads it from
 // there, so no page carries a copy of its own.
 //
-//   artoo-esp32: 5. Its 160-block filesystem partition holds both the web image
-//   and the saved sequences, and tools/build_budgets.json derives the image's
-//   budget from this number: four full-size sequences, plus the free space the
-//   fifth save demands (SEQ_FS_FREE_FLOOR + the file). Changing it means
-//   redoing that arithmetic.
+//   artoo-esp32: 5. Its 160-block filesystem partition holds the web image,
+//   the saved sequences and one take (TAKE_STORE_CAP, take_store_util.h), and
+//   tools/build_budgets.json derives the image's budget from these numbers:
+//   four full-size sequences, one full take, plus the free space the last save
+//   demands (SEQ_FS_FREE_FLOOR + the file). Changing it means redoing that
+//   arithmetic.
 //
 //   firebeetle2: 10. Its partition is 9.88 MB; the web image never competes.
 //

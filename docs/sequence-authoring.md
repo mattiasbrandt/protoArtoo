@@ -374,6 +374,11 @@ model -- no `fx` field (inferred), no manual cleanup steps (automatic).
 - A toggle sequence (`toggleGroup` != `none`) carries a `closeSteps` branch; a non-toggle
   must not. `GET /api/seq/builtins` returns every Factory Sequence in this format as a
   starting point for cloning (clone-to-retrain).
+- `takes` (optional) names the takes the sequence holds, each `{"id": "k3f9q2ab", "t": 0}`:
+  a performance kept off the sticks, whose motion is a file of its own on the droid
+  (ADR 0061, `docs/api.md` "Takes"). The engine and the parser ignore it; the store reads
+  it, and a save keeps the takes it names and deletes the sequence's others. A take is
+  made by Perform in the editor, never written by hand.
 
 ### Named tracks vs `$NNN`
 

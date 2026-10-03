@@ -33,6 +33,10 @@
 //   of the file analysed, the analysed route only) are optional. A sequence
 //   with no tempo parses exactly as one saved before tempos existed.
 //
+//   takes (top level, optional, #442): the takes the sequence holds, each
+//   {"id","t"}. Not parsed here and never in SeqDraft: the store reads and
+//   checks it (seq_store.cpp readTakeRefs()), the engine never sees it.
+//
 //   beat / spanBeats (any step, optional, need a tempo): `beat` is the whole
 //   beat the step starts on and `spanBeats` how many beats its duration lasts
 //   (a dome turn's durationMs, a body flutter's flutterMs). Both are resolved

@@ -1023,6 +1023,110 @@ entries:
   - startMs
   - endMs
   executor: seqEvidenceSnapshot
+- name: dome.api.get-take
+  display_name: Get Take
+  description: 'The take in hand: performing, stopped and why, how full. And how many takes the droid keeps, how big one may be, and the free space it leaves.'
+  domain: dome
+  type: status
+  marcduino_cmd: null
+  api_path: /api/take
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_take.cpp
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  # REST-only, as system.api.event-stream is: the Sequences page polls it while
+  # a take runs and reads the store's figures from it (#442, include/take.h). A
+  # take is armed and kept from that page and performed on the sticks, so the
+  # Console has no take to report.
+  executor: takeStatusRead
+  is_query: false
+- name: dome.action.arm-take
+  display_name: Arm Take
+  description: Start a take for a saved sequence. Perform on the sticks; the Parts with a stick set to Perform a Part are captured. Refused with no such stick, no radio frames, the estop latched, or a take already running.
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/take/arm
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/take.cpp
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  # No Non-RC Control consent: a take is RC motion (ADR 0061, ADR 0064). Out of
+  # scope for the Console: a take belongs to the sequence open in the editor,
+  # whose receipt places its cue presses as steps (#442).
+  params:
+  - name: seq
+    explanation: The saved sequence the take belongs to. Arming moves nothing; the sticks do.
+    type: string
+    required: true
+  executor: takeArm
+- name: dome.action.keep-take
+  display_name: Keep Take
+  description: Stop the take and keep it. Answers with the take and every cue pressed during it, for the editor to place.
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/take/keep
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_take.cpp
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  # Out of scope for the Console, as dome.action.arm-take: the answer is the
+  # receipt the Sequences page turns into a take reference and cue steps.
+  executor: takeStoreWriteNew
+- name: dome.api.get-take-file
+  display_name: Get Take File
+  description: One take's file, as the droid stores it. A backup carries it with its sequence.
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/take/file
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_take.cpp
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  # Out of scope for the Console: a binary document transfer, the exclusion
+  # #206 states for sequence documents and dome.api.get-sequence follows.
+  params:
+  - name: owner
+    explanation: The stable id of the sequence that holds the take.
+    type: string
+    required: true
+  - name: take
+    explanation: The take's own id, as the sequence names it.
+    type: string
+    required: true
+  executor: takeStoreReadSlice
+- name: dome.action.restore-take-file
+  display_name: Restore Take File
+  description: Put a take's file back from a backup, after its sequence. Checked as it arrives.
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/take/file
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_take.cpp
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  # Out of scope for the Console: a file upload (webRegisterUploadRoute()), the
+  # dedicated mechanism system.action.upload-filesystem uses, never a Console
+  # record.
+  executor: takeStoreRestoreBegin
 - name: sound.action.play-track
   display_name: Play Track
   description: Play a track number off the card.
