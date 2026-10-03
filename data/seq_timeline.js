@@ -614,8 +614,10 @@
       span.parts.forEach((cover) => {
         const lane = partLane(cover.part);
         add(lane, { kind: "take", t0: span.t0, t1: span.t1, label, ...trim });
-        const under = overruns.filter((over) => over.earlier === span.index && over.part === cover.part);
-        under.forEach((over) => add(lane, { kind: "overrun", t0: over.t0, t1: over.t1, label: `Take ${over.later + 1} moves it here` }));
+        // The stretches where another take, later in the list, moves this
+        // Part over this one's block.
+        const under = overruns.filter((over) => over.part === cover.part && over.takes.includes(span.index) && over.winner !== span.index);
+        under.forEach((over) => add(lane, { kind: "overrun", t0: over.t0, t1: over.t1, label: `Take ${over.winner + 1} moves it here` }));
         const outranked = (t) => under.some((over) => over.t0 <= t && t < over.t1);
         cover.changes.filter((change) => !outranked(change.t)).forEach((change) => lane.changes.push(change));
         under.forEach((over) => {

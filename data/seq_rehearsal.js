@@ -1012,36 +1012,54 @@
     });
   };
 
-  // Where two takes cover one Part at once: [{part, earlier, later, t0, t1}],
-  // by the takes' places in the list. There the later one moves the Part
-  // (LATER TAKE WINS, include/take_replay.h) - later in the list, which a drag
-  // on the timeline does not change.
+  // Where two or more takes cover one Part at once: [{part, takes, winner,
+  // t0, t1}], one span for each stretch of time the same takes cover it,
+  // with the takes by their places in the list and the one that moves the
+  // Part there - the latest in the list (LATER TAKE WINS,
+  // include/take_replay.h), which a drag on the timeline does not change.
+  // With three takes over one Part this is who actually wins each stretch,
+  // not a pair's guess at it.
   const takeOverlaps = (spans) => {
+    const covering = new Map(); // Part id -> [{index, from, until}]
+    spans.forEach((span) => {
+      if (!span.facts) return;
+      span.parts.forEach((cover) => {
+        if (!cover.covers) return;
+        const list = covering.get(cover.part) || [];
+        list.push({ index: span.index, from: cover.covers[0], until: cover.covers[1] });
+        covering.set(cover.part, list);
+      });
+    });
     const out = [];
-    spans.forEach((earlier, i) => {
-      if (!earlier.facts) return;
-      spans.slice(i + 1).forEach((later) => {
-        if (!later.facts) return;
-        earlier.parts.forEach((mine) => {
-          const theirs = later.parts.find((cover) => cover.part === mine.part);
-          if (!mine.covers || !theirs?.covers) return;
-          const t0 = Math.max(mine.covers[0], theirs.covers[0]);
-          const t1 = Math.min(mine.covers[1], theirs.covers[1]);
-          if (t1 > t0) out.push({ part: mine.part, earlier: earlier.index, later: later.index, t0, t1 });
-        });
+    covering.forEach((list, part) => {
+      if (list.length < 2) return;
+      const edges = [...new Set(list.flatMap((each) => [each.from, each.until]))].sort((a, b) => a - b);
+      edges.slice(0, -1).forEach((t0, k) => {
+        const t1 = edges[k + 1];
+        const takes = list.filter((each) => each.from <= t0 && t1 <= each.until).map((each) => each.index).sort((a, b) => a - b);
+        if (takes.length < 2) return;
+        const last = out[out.length - 1];
+        // The same takes on into the next stretch are the one span.
+        if (last && last.part === part && last.t1 === t0 && last.takes.join() === takes.join()) last.t1 = t1;
+        else out.push({ part, takes, winner: takes[takes.length - 1], t0, t1 });
       });
     });
     return out;
   };
 
-  // Two takes over one Part at once: both are kept, and the earlier one's
-  // motion there is never seen. One line per Part and pair, naming the span.
+  // Two or more takes over one Part at once: all are kept, and only the
+  // latest in the list is seen there. One line per Part and span, naming
+  // who moves it.
+  const takeNumbers = (takes) => {
+    const numbers = takes.map((index) => String(index + 1));
+    return numbers.length === 2 ? numbers.join(" and ") : `${numbers.slice(0, -1).join(", ")} and ${numbers[numbers.length - 1]}`;
+  };
   const takeOverlap = (spans) =>
     takeOverlaps(spans).map((over) =>
       finding(
         "warning",
         "take-overlap",
-        `${partName(over.part)}: takes ${over.earlier + 1} and ${over.later + 1} both move it from ${seconds(over.t0)} to ${seconds(over.t1)}. Take ${over.later + 1} wins.`,
+        `${partName(over.part)}: takes ${takeNumbers(over.takes)} ${over.takes.length === 2 ? "both" : "all"} move it from ${seconds(over.t0)} to ${seconds(over.t1)}. Take ${over.winner + 1} wins.`,
         `Trim or move one of them, or remove the take you do not want.`,
         { part: over.part },
       ));
