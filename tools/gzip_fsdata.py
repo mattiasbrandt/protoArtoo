@@ -48,10 +48,12 @@ must NOT carry the kernel — eleven copies cost ten filesystem blocks and could
 never execute (#382) — and one that does is refused, so the copies cannot
 creep back.
 
-Minification: .js and .css are minified by esbuild (whitespace and comments
-only, names kept) before gzipping, so the repo keeps its comments and the image
-does not pay for them (#382). A missing esbuild is a hard failure rather than a
-quietly larger image. See MINIFY_LOADERS for why it is esbuild.
+Minification: .js and .css are minified by esbuild before gzipping, so the
+repo keeps its comments and the image does not pay for them (#382). Both lose
+whitespace and comments; .js also has its local names shortened, while every
+top-level name stays as written (#381, see MINIFY_LOADERS for why that is safe).
+A missing esbuild is a hard failure rather than a quietly larger image. See
+MINIFY_LOADERS for why it is esbuild.
 
 Markup: after include expansion, every page loses its markup comments, and
 whitespace that spans a newline between two tags becomes one newline
@@ -154,8 +156,21 @@ SHELL_DELEGATE_MARKER = "window.PAShellDelegate = true"
 # whitespace inside nested template literals in six files -- class="parts-row${`
 # ${x}`}" lost its space and joined two class names -- and every file still
 # passed `node --check`, so a syntax check is not evidence a minifier is safe.
-# Identifiers are never renamed: these are classic scripts sharing globals.
+#
+# A .js file's local names are shortened too (--minify-identifiers), and its
+# top-level names never are. These are classic scripts sharing globals: one
+# file's top-level `function`, `const` or `var` is another's free reference,
+# and esbuild, transforming a script rather than a module, leaves the top level
+# as written for exactly that reason. A name inside a function is visible only
+# there, so shortening it changes nothing another file or the page can see;
+# esbuild never picks a short name that one of the file's own free references
+# uses. --keep-names stays off: nothing in data/ reads a function's `.name`,
+# and it would add two top-level `var` helpers and a call per function, which
+# _member_parts() rightly refuses in a bundle member (#381). Inline <script>
+# bodies in a page are not minified at all (_stage_markup()).
 MINIFY_LOADERS = {".js": "js", ".css": "css"}
+# Shortens local names; on a script, never top-level ones (see above).
+MINIFY_JS_ONLY_ARGS = ("--minify-identifiers",)
 
 
 # Script bundles (#461). Each group is loaded by exactly the same pages, one
@@ -529,8 +544,9 @@ def _minify(path, text):
             "node_modules/.bin on PATH." % path
         )
     loader = MINIFY_LOADERS[os.path.splitext(path)[1].lower()]
+    extra = list(MINIFY_JS_ONLY_ARGS) if loader == "js" else []
     result = subprocess.run(
-        [esbuild, "--minify-whitespace", "--charset=utf8", "--log-level=warning",
+        [esbuild, "--minify-whitespace", *extra, "--charset=utf8", "--log-level=warning",
          "--loader=%s" % loader],
         input=text,
         capture_output=True,
