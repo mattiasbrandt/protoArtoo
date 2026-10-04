@@ -272,6 +272,7 @@
     // Import modal
     modalImport: document.getElementById("seq-modal-import"),
     importFileInput: document.getElementById("seq-import-file-input"),
+    importFileTrigger: document.getElementById("seq-import-file-trigger"),
     importTextarea: document.getElementById("seq-import-textarea"),
     importFeedback: document.getElementById("seq-import-feedback"),
     modalImportCancel: document.getElementById("seq-modal-import-cancel"),
@@ -3850,7 +3851,7 @@
                   <span class="setting-unit">BPM</span>
                 </span>
                 <button id="seq-editor-tap-open" class="seq-act icon-act" type="button" aria-expanded="false" aria-controls="seq-editor-tap">${window.PAUi.actFace("metronome", "Tap along")}</button>
-                <label class="seq-act icon-act" for="seq-editor-track">${window.PAUi.actFace("waveform", "Analyze a track")}</label>
+                <button id="seq-editor-track-open" class="seq-act icon-act" type="button">${window.PAUi.actFace("waveform", "Analyze a track")}</button>
                 <input id="seq-editor-track" class="hidden" type="file" accept="audio/*" aria-label="Your copy of the track">
                 <button id="seq-editor-retime" class="seq-act icon-act${seq.tempo ? "" : " hidden"}" type="button">${window.PAUi.actFace("grid", "Retime to the grid")}</button>
               </span>
@@ -4249,6 +4250,8 @@
     }
     const trackInput = document.getElementById("seq-editor-track");
     if (trackInput) {
+      // A real button, not a <label>, so Analyze a track is a Tab stop.
+      document.getElementById("seq-editor-track-open")?.addEventListener("click", () => trackInput.click());
       trackInput.addEventListener("change", async () => {
         const file = trackInput.files && trackInput.files[0];
         trackInput.value = "";
@@ -5271,6 +5274,9 @@
       els.modalImportConfirm.disabled = !isValidJson;
     };
 
+    // The file input is hidden and a <label> is not a Tab stop, so Choose file
+    // is a real button that opens the input's chooser.
+    els.importFileTrigger.addEventListener("click", () => els.importFileInput.click());
     els.importFileInput.addEventListener("change", updateImportConfirmButton);
     els.importTextarea.addEventListener("input", updateImportConfirmButton);
 

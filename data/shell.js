@@ -580,13 +580,19 @@
     latched: "latched",
   };
 
-  // What a press on STOP does, in its two directions: the line beside the
-  // button and the button's accessible name. Both names open with the word on
-  // the face, STOP (WCAG 2.5.3 Label in Name), and the release names itself as
-  // one, so a clear can never be read as a stop.
+  // What a press on STOP, or on the plate's ESTOP cell, does in its two
+  // directions: the line beside the button (the cell's title), the button's
+  // accessible name and the latched cell's. Each name opens with the word on
+  // its face, STOP or ESTOP (WCAG 2.5.3 Label in Name), and the release names
+  // itself as one, so a clear can never be read as a stop. The cell has no
+  // name of its own while it would stop: its visible state is the name then.
   const ESTOP_PRESS = {
     stop: { label: "STOP - cuts all movement.", line: "Cuts all movement" },
-    clear: { label: "STOP - latched. Press to release the estop.", line: "Press to release" },
+    clear: {
+      label: "STOP - latched. Press to release the estop.",
+      line: "Press to release",
+      cellLabel: "ESTOP - latched. Press to release the estop.",
+    },
   };
 
   // ---------------------------------------------------------------------------
@@ -687,8 +693,9 @@
       id: "estop",
       label: "ESTOP",
       // The single cell that acts rather than routes, so it carries no page.
+      // Its title is STOP's line and follows the latch (renderEstopCell).
       page: null,
-      affordance: "Cuts all movement",
+      affordance: ESTOP_PRESS.stop.line,
       // The Live Reading's three-valued estop, not the frame's field: when
       // contact is lost the latch is not known any more, and this chip says so.
       read: (_status, reading) => {
@@ -813,7 +820,9 @@
   // being reported cannot drift into each other (the reference's fixed-title
   // discipline, src/js/maestro/hw-ui.js:227). Nothing carries an aria-label:
   // the visible text IS the accessible name, so there is no second copy of
-  // the state to keep in step (WCAG 2.5.3).
+  // the state to keep in step (WCAG 2.5.3). The ESTOP cell is the exception,
+  // because its press changes direction: it is STOP's toggle, so its title and,
+  // while latched, its name say a release, as STOP's do (renderEstopCell).
   const chipHtml = (chip) => {
     // Label over value, with the signal light inside the value line: the shape
     // an instrument uses, where the label is the engraving on the panel and the
@@ -1056,7 +1065,7 @@
              same seam, so the plate reads as one instrument. -->
         <div class="status-plate-fresh">
           <p class="status-plate-freshness" id="status-plate-freshness" role="status" aria-live="polite">Waiting for the droid.</p>
-          <p class="status-plate-affordance">Press a chip to go where it is changed. ESTOP cuts drive right here.</p>
+          <p class="status-plate-affordance">Press a chip to go where it is changed. ESTOP stops or releases right here.</p>
         </div>
       </div>
     `;
@@ -1277,9 +1286,9 @@
   // looked like it did nothing.
   //
   // One function, two entrances: the STOP button in the topbar and the plate's
-  // ESTOP chip at the foot of the page both call it. Two copies of a stop
-  // could drift, and the one control where that matters most is this one.
-  // The chip only ever stops; it never releases.
+  // ESTOP chip at the foot of the page both reach it through pressEstop. Two
+  // copies of a stop could drift, and the one control where that matters most
+  // is this one.
   const requestStop = async () => {
     if (!window.PAApi) return;
     stopsInFlight += 1;
@@ -1394,6 +1403,18 @@
       cell.node.className = painted.state ? `status-chip status-chip-${painted.state}` : "status-chip";
       if (cell.value) cell.value.textContent = painted.value === CHIP_WAITING ? "" : painted.value;
     });
+  };
+
+  // The plate's ESTOP cell says which way its next press goes, from the same
+  // reading pressEstop decides on. Its value and light are the plate's paint;
+  // this writes only the press's words.
+  const renderEstopCell = (reading) => {
+    const cell = plateCells.get("estop")?.node;
+    if (!cell) return;
+    const press = reading.estopLatched ? ESTOP_PRESS.clear : ESTOP_PRESS.stop;
+    cell.title = press.line;
+    if (press.cellLabel) cell.setAttribute("aria-label", press.cellLabel);
+    else cell.removeAttribute("aria-label");
   };
 
   // A frame that is not a reading changes nothing here but the freshness line:
@@ -1670,10 +1691,12 @@
       renderPlateFreshness(LIVE.current());
     }, PLATE_TICK_MS);
 
-    // The one cell that acts instead of routing, wired to the same function
-    // the topbar's STOP button calls. The other seven are anchors carrying a
-    // hash address and need no handler at all.
-    plateCells.get("estop")?.node.addEventListener("click", requestStop);
+    // The one cell that acts instead of routing, wired to the same toggle
+    // the topbar's STOP button calls: a press on a droid heard latched
+    // releases it, any other press stops it (#359, 2026-10-04). The other
+    // seven are anchors carrying a hash address and need no handler at all.
+    plateCells.get("estop")?.node.addEventListener("click", pressEstop);
+    LIVE.subscribe(renderEstopCell);
   }
 
   // ---------------------------------------------------------------------------
