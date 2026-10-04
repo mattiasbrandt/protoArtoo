@@ -65,6 +65,7 @@ sound.action.play-track-sw-theme|Play Star Wars Theme|Play the Star Wars theme.|
 sound.action.play-track-imperial-march|Play Imperial March|Play the Imperial March.|audioQueuePlayTrackBanked|
 sound.action.play-track-startup|Play Startup Sound|Play the startup sound.|audioQueuePlayTrackBanked|
 sound.action.play-track-disco|Play Disco|Play the disco track. Silent when none is set.|audioQueuePlayTrackBanked|
+sound.action.play-track-happy|Play Happy|Play the happy greeting.|audioQueuePlayTrackBanked|
 sound.api.get-catalog|Get Catalog|Every clip the CHIRP knows, by bank.|audioGetCatalogEntries|
 sound.api.refresh-catalog|Refresh Catalog|Read the CHIRP's clip list again. Takes up to a minute.|audioQueueRefreshCatalog|
 sound.api.play-banked|Play Banked Entry|Play a CHIRP clip by bank, page and index.|audioQueuePlayTrackBanked|bank:uint8:1|page:string:1|index:uint16:1

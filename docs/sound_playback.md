@@ -482,6 +482,7 @@ the wire.
 | `$M` | Play Imperial March | `playTrack(cfg_snd_imp_march)` |
 | `$B` | Play startup sound | `playTrack(cfg_snd_startup)` |
 | `$D` | Disco | `playTrack(cfg_snd_disco)` when configured |
+| `$H` | Happy / greeting clip | `playTrack(cfg_snd_happy)` |
 | `$R` | Enable random playback mode | AudioTask state — no driver call |
 | `$O` | Disable random playback mode | AudioTask state — no driver call |
 | `$s` | Stop + disable random mode | `stop()` |

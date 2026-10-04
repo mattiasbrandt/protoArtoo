@@ -24,7 +24,7 @@
 base_commit: f0b0dbc
 ticket: 209
 domains: [sound]
-row_count: 55
+row_count: 56
 rows:
 - name: sound.action.dollar-command
   type: action
@@ -161,6 +161,27 @@ rows:
   missing_metadata:
   - executor reference not in registry
   notes: dome-rx only; named track snd_faint
+- name: sound.action.play-track-happy
+  type: action
+  registry_api_path: null
+  registry_cpp_enum: null
+  registry_cpp_file: include/audio_task.h
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - dome_rx
+  registry_marcduino_cmd: $H
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/audio", WebMethod::kPost, handleAudioPost)`
+  - include/api_audio.h - `void handleAudioPost(WebRequest& req)`
+  - src/web/api_audio.cpp - `if (strcmp(action, "play") == 0)`
+  - include/audio_dollar_parser.h - `constexpr uint16_t AUDIO_TRACK_HAPPY`, the track this action plays
+  executor_or_core: audioQueuePlayTrackBanked
+  missing_metadata:
+  - executor reference not in registry
+  notes: dome-rx only; named track snd_happy (read, never written)
 - name: sound.action.play-track-imperial-march
   type: action
   registry_api_path: null

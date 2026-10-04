@@ -1305,6 +1305,21 @@ entries:
   safety_critical: false
   requires_web_control: false
   executor: audioQueuePlayTrackBanked
+- name: sound.action.play-track-happy
+  display_name: Play Happy
+  description: Play the happy greeting.
+  domain: sound
+  type: action
+  marcduino_cmd: $H
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources:
+  - dome_rx
+  safety_critical: false
+  requires_web_control: false
+  executor: audioQueuePlayTrackBanked
 - name: sound.api.get-catalog
   display_name: Get Catalog
   description: Every clip the CHIRP knows, by bank.
