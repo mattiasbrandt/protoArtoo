@@ -699,6 +699,10 @@
   // said. A warning and never a refusal (ADR 0044): the sequence saves and runs,
   // and only the Background Track is missing. One finding for every start step,
   // carrying the count.
+  // Its words, which the timeline also puts on the Background Track's block
+  // (data/seq_timeline.js), so the two cannot say it differently.
+  const CANNOT_MIX_WORDS =
+    "The sound module on this droid plays one sound at a time, so the Background Track does not play. The rest of the sequence runs.";
   const backgroundTrackCannotMix = (events, context) => {
     if (context.config?.components?.audio?.activeMixes !== false) return [];
     // By step, not by event: a start inside a loop is one step however often it repeats.
@@ -708,7 +712,7 @@
       finding(
         "warning",
         "background-track-cannot-mix",
-        "The sound module on this droid plays one sound at a time, so the Background Track does not play. The rest of the sequence runs.",
+        CANNOT_MIX_WORDS,
         "Fit a sound module that mixes, like the CHIRP Audio Trigger, or delete the Background Track.",
         { step: starts[0].step, n: starts.length },
       ),
@@ -1356,6 +1360,7 @@
 
   window.SeqRehearsal = Object.freeze({
     LEVELS,
+    CANNOT_MIX_WORDS,
     finding,
     rehearse,
     // The expansion and a body move's resolution, for the timeline to draw

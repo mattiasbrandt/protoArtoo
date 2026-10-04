@@ -6492,6 +6492,28 @@ body.shell-performing .show-list {
   pointer-events: none;
 }
 
+/* A Background Track (ADR 0054): one band on the Sound row, under the sounds
+   fired over it, whose marks are drawn on top. One that plays on past the end
+   runs out as a Part left open does; one this droid's sound module cannot
+   play is amber, because the Rehearsal warns of it. */
+.tl-background {
+  min-width: 10px;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 40%, transparent);
+  border-left: 3px solid var(--text-dim);
+}
+
+.tl-background.is-past {
+  border-top-style: dashed;
+  border-bottom-style: dashed;
+  border-right: 0;
+}
+
+.tl-background.is-mute {
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  border-color: var(--warning);
+}
+
 .tl-tick {
   top: 2px;
   bottom: 2px;
