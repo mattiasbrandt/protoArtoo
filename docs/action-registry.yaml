@@ -1897,7 +1897,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.play-next
   display_name: Next Sound
-  description: Play the next sound in the same bank and page, or category.
+  description: Play the sound after the last one played.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1913,7 +1913,7 @@ entries:
   executor: audioQueueStepSound
 - name: sound.action.play-previous
   display_name: Previous Sound
-  description: Play the sound before it in the same bank and page, or category.
+  description: Play the sound before the last one played.
   domain: sound
   type: action
   marcduino_cmd: null
