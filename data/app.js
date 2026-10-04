@@ -267,7 +267,10 @@
       state = entry.state || "enabled";
       detail = entry.detail || COMPONENT_ENABLED_TEXT;
     }
-    return { state: String(state).replace(/_/g, " "), detail, light: COMPONENT_STATE_LIGHTS[state] || "off" };
+    // The firmware's token as a word, capitalised like the readers' words
+    // above, so "Ready" and "No answer" sit side by side as one voice.
+    const word = String(state).replace(/_/g, " ");
+    return { state: word.charAt(0).toUpperCase() + word.slice(1), detail, light: COMPONENT_STATE_LIGHTS[state] || "off" };
   };
 
   const renderComponentStatus = (payload) => {
