@@ -50,9 +50,10 @@ struct AudioStepState {
     // vocal sent to the driver, never a Background Track. Bank and page are
     // CHIRP's (a flat track is AUDIO_FLAT_BANK / AUDIO_FLAT_PAGE there, where
     // it plays); on a flat module the index is the track. currentIndex 0 is
-    // nothing played since boot. Bank and page sit in the padding before the
-    // words below, because AudioTask's stack chain is recorded to the byte
-    // (tools/task_stack_recipes.json).
+    // nothing played since boot. Bank and page fill the padding before the
+    // words below; currentIndex does not fit there and grows the struct from
+    // 20 to 24 B. It is a local in audioTask(), whose stack chain is recorded
+    // to the byte (tools/task_stack_recipes.json).
     uint8_t currentBank = 0;
     char currentPage = 'A';
     uint32_t lastRandMs = 0;

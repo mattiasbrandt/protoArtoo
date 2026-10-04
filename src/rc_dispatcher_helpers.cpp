@@ -232,6 +232,13 @@ void rcDispatchTriggerResults(const RcProcessorOutput& output,
                         robotActionIdToString(b.target), res.audioDollarCmd);
         }
 
+        if (res.audioStep != 0) {
+            const RcTriggerBinding& b = triggers[i];
+            PA_LOG_INFO(TAG, "[RC] sound %s CH%u %s -> %s", rcBindingSourceToLabel(b.source),
+                        (unsigned)b.channel, robotActionIdToString(b.target),
+                        res.audioStep > 0 ? "next" : "previous");
+        }
+
         // Dispatch audio, servo, dome, marcduino commands. This loop is the
         // live SBUS Tier-2 trigger path; always attributed to SRC_SBUS
         // (unchanged from before #220's src parameter). The return value is
