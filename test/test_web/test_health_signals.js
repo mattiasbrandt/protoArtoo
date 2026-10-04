@@ -227,13 +227,15 @@ test("dome esc reports OFF when disabled or missing", () => {
   assert.equal(disabled["h-dome-esc"].reason, "Disabled");
 });
 
-test("dome esc reports OK for idle and spinning states", () => {
-  const idle = toSignalMap({ domeEnabled: true, domeEsc: { state: "idle" } });
-  assert.equal(idle["h-dome-esc"].state, "ok");
-  assert.equal(idle["h-dome-esc"].reason, "Idle");
+// Idle and spinning are what the droid commands; a PWM ESC answers nothing
+// back, so the row is grey and its word carries the command (#399).
+test("dome esc reads OFF for idle and spinning, saying what is commanded", () => {
+  const idle = toSignalMap({ domeEnabled: true, domeEsc: { state: "idle", detail: "Target 0%" } });
+  assert.equal(idle["h-dome-esc"].state, "off");
+  assert.equal(idle["h-dome-esc"].reason, "Idle, Target 0%");
 
   const spinning = toSignalMap({ domeEnabled: true, domeEsc: { state: "spinning" } });
-  assert.equal(spinning["h-dome-esc"].state, "ok");
+  assert.equal(spinning["h-dome-esc"].state, "off");
   assert.equal(spinning["h-dome-esc"].reason, "Spinning");
 });
 

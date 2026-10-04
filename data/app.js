@@ -225,39 +225,40 @@
     if (lastStatus) renderComponentStatus(lastStatus);
   };
 
-  // What one row of the Readouts card says. protoR2link and the sound link
-  // are the health-signal model's word, the same one the Health card, the
-  // Status Plate, Maintenance and Sound show (data/health_signals.js, #422),
-  // and carry no line of their own beneath it: the firmware's detail there
-  // restated the state in other words. Every other row is the firmware's
-  // state and detail.
+  // What one row of the Readouts card says. protoR2link, the sound link, the
+  // Dome ESC and the Foot Drive are the health-signal model's word, the same
+  // one Health shows (and, for the two links, the Status Plate, Maintenance
+  // and Sound: data/health_signals.js, #422, #399). The links carry no line of
+  // their own beneath it: the firmware's detail there restated the state in
+  // other words. The Dome ESC and the Foot Drive carry what the droid commands
+  // as their line ("Target 0%", "Command 120/0"). Every other row is the
+  // firmware's state and detail.
   const LINK_COMPONENT_READERS = {
     protoR2link: (payload) => HEALTH_SIGNAL_MODEL.readProtoR2link(payload, { unknown: window.PALiveReading.UNKNOWN }),
     audio: (payload) => HEALTH_SIGNAL_MODEL.readSoundLink(payload, { unknown: window.PALiveReading.UNKNOWN }),
+    domeEsc: (payload) => HEALTH_SIGNAL_MODEL.readDomeEsc(payload, { unknown: window.PALiveReading.UNKNOWN }),
+    drive: (payload) => HEALTH_SIGNAL_MODEL.readFootDrive(payload),
   };
 
-  // The lamp beside each row's state (CONTEXT.md "Status Color"). The two
-  // links take the health-signal model's own light, so they match Health and
-  // the Status Plate. Every other row is the firmware's state word
-  // (src/web/status_json.cpp), and only a word that reports something heard
-  // lights: SBUS frames arriving or lost, and the dome ESC's and the foot
-  // drive's command, which Health reads as ok (evaluateDomeEsc). Everything
-  // else is grey, `ready` above all: an Output says ready whether or not a
-  // servo is on it, and PWM channels say it with nothing measured, so a green
-  // there would be the "we did not check" the colour must never say.
+  // The lamp beside each row's state (CONTEXT.md "Status Color"). The rows
+  // above take the health-signal model's own light, so they match Health.
+  // Every other row is the firmware's state word (src/web/status_json.cpp),
+  // and only a word that reports something heard lights: SBUS frames arriving
+  // or lost. Everything else is grey, `ready` above all: an Output says ready
+  // whether or not a servo is on it, and PWM channels say it with nothing
+  // measured, so a green there would be the "we did not check" the colour must
+  // never say. A command is not a report either, which is why the Dome ESC
+  // and the Foot Drive are no longer in this table (#399).
   const COMPONENT_STATE_LIGHTS = Object.freeze({
     active: "ok",
     signal_lost: "fail",
-    spinning: "ok",
-    idle: "ok",
-    commanding: "ok",
   });
 
   const componentReading = (key, payload) => {
     const readLink = LINK_COMPONENT_READERS[key];
     if (readLink && HEALTH_SIGNAL_MODEL) {
-      const { state, word } = readLink(payload);
-      return { state: word, detail: "", light: state };
+      const { state, word, detail = "" } = readLink(payload);
+      return { state: word, detail, light: state };
     }
     const entry = payload[key];
     let state = entry ? "enabled" : "disabled";

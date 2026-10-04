@@ -17,6 +17,9 @@
 //   field name is not something a builder reads (#298, #422)
 // - protoR2link and the sound link are answered from one word table, which
 //   every page that shows either link reads (readProtoR2link, readSoundLink)
+// - The Dome ESC and the Foot Drive are answered the same way (readDomeEsc,
+//   readFootDrive): green only for something heard back, and what the droid
+//   commands is the detail, never the light (#399)
 // - Memory is judged against one table of heap floors (HEAP_FLOORS), which
 //   Maintenance's memory rows read too
 // =============================================================================
@@ -219,6 +222,67 @@
     return readSoundBlock(isObject(status) ? status.audio : undefined, checked);
   };
 
+  // ---------------------------------------------------------------------------
+  // The Dome ESC and the Foot Drive: one word table each, the shape Sound's is
+  //
+  // Both rows used to light green on what the droid COMMANDS - a target speed,
+  // a drive command - which is not a report (CONTEXT.md "Status Color": green
+  // is nominal and reporting). Each answer is linkAnswer()'s { state, word,
+  // short } plus `detail`, the firmware's own line for what is commanded
+  // (src/web/status_json.cpp: "Target 0%", "Command 120/0"), which a page may
+  // print under the word and never lights.
+  // ---------------------------------------------------------------------------
+  const commanded = (answer, entry) =>
+    ({ ...answer, detail: isObject(entry) && typeof entry.detail === "string" ? entry.detail : "" });
+
+  // A PWM ESC has no return wire, so nothing is ever heard from it: fitted, it
+  // is grey and its word says what is commanded. Never green, never red.
+  const DOME_ESC_DISABLED = linkAnswer("off", "Disabled");
+  const DOME_ESC_WORDS = Object.freeze({
+    idle: linkAnswer("off", "Idle"),
+    spinning: linkAnswer("off", "Spinning"),
+  });
+
+  const readDomeEsc = (status, { unknown }) => {
+    if (!isObject(status) || status.domeEnabled !== true) return { ...DOME_ESC_DISABLED, detail: "" };
+    const entry = isObject(status.domeEsc) ? status.domeEsc : null;
+    const domeState = entry ? entry.state : null;
+    if (Object.hasOwn(DOME_ESC_WORDS, domeState)) return commanded(DOME_ESC_WORDS[domeState], entry);
+    // A state we have no branch for is one we do not understand, which is not
+    // reporting rather than degraded. The state string stays in the word so
+    // the row still says what arrived.
+    if (typeof domeState === "string" && domeState.length > 0) {
+      return commanded(linkAnswer("off", `${unknown} (${domeState})`), entry);
+    }
+    return { ...linkAnswer("off", unknown), detail: "" };
+  };
+
+  // The Foot Drive is heard only through its backend's feedback: the frame
+  // carries the `hoverboard` block while those readings are valid, and drops it
+  // once they go stale (src/web/status_json.cpp, src/tasks/drive.cpp). The
+  // frame has no `drive` key while the feet are not running this boot.
+  //
+  // The word for a drive heard is keyed off that block's own name: the frame
+  // carries no name for the backend, and the hoverboard is the only one the
+  // firmware builds (include/drive_backend.h). A second backend needs a name
+  // field in the frame before this word can be its. "No answer" is red for the
+  // same reason: the hoverboard declares that it reports back
+  // (DRIVE_CAP_REPORTS_FEEDBACK), so its silence is a fault. A backend that
+  // declares no feedback would read grey instead, as Wiring's Foot Drive row
+  // does from GET /api/identity/components, which this page does not read.
+  const FOOT_DRIVE_WORDS = Object.freeze({
+    off: linkAnswer("off", "Off"),
+    hoverboard: linkAnswer("ok", "Hoverboard"),
+    noAnswer: linkAnswer("fail", "No answer"),
+  });
+
+  const readFootDrive = (status) => {
+    const entry = isObject(status) ? status.drive : undefined;
+    if (entry === undefined) return { ...FOOT_DRIVE_WORDS.off, detail: "" };
+    if (isObject(status.hoverboard)) return commanded(FOOT_DRIVE_WORDS.hoverboard, entry);
+    return commanded(FOOT_DRIVE_WORDS.noAnswer, entry);
+  };
+
   const evaluateDomeLink = (payload, unknown) => {
     const { state, word } = readProtoR2link(payload, { unknown });
     return healthSignal(state, word);
@@ -229,21 +293,11 @@
     return healthSignal(state, word);
   };
 
+  // Health's row is one line, so the commanded detail rides after the word
+  // ("Idle, Target 0%"): it says what the grey is about.
   const evaluateDomeEsc = (payload, unknown) => {
-    if (payload.domeEnabled !== true) return healthSignal("off", "Disabled");
-
-    const domeData = payload.domeEsc && typeof payload.domeEsc === "object" ? payload.domeEsc : null;
-    const domeState = domeData ? domeData.state : null;
-
-    if (domeState === "spinning") return healthSignal("ok", "Spinning");
-    if (domeState === "idle") return healthSignal("ok", "Idle");
-    // A state we have no branch for is one we do not understand, which is not
-    // reporting rather than degraded. The state string stays in the word so
-    // the row still says what arrived.
-    if (typeof domeState === "string" && domeState.length > 0) {
-      return healthSignal("off", `${unknown} (${domeState})`);
-    }
-    return healthSignal("off", unknown);
+    const { state, word, detail } = readDomeEsc(payload, { unknown });
+    return healthSignal(state, detail ? `${word}, ${detail}` : word);
   };
 
   const HEALTH_EVALUATORS = Object.freeze({
@@ -284,6 +338,8 @@
     deriveHealthSignals,
     readProtoR2link,
     readSoundLink,
+    readDomeEsc,
+    readFootDrive,
   });
 
   if (typeof window !== "undefined") {
