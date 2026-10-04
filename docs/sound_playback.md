@@ -517,6 +517,23 @@ otherwise it falls back to numeric playback from `snd_cat_*`/`snd_rand_*`.
 - Playback uses the configurable `snd_disco` slot.
 - If `snd_disco` is `0`, `$D` resolves to no playback by design.
 
+### Next and previous sound
+
+`sound.action.play-next` and `sound.action.play-previous` are RC-bindable registry
+actions (`sound_next`, `sound_previous`), so the Controller Console runs them too
+(#326 specific 4, #447). Each plays the sound after, or before, the one the droid
+last played: the last vocal AudioTask sent to the module, from any source. A
+Background Track is never that sound.
+
+| Module | Steps within | At the ends |
+|---|---|---|
+| With a catalog (CHIRP) | the current sound's bank and page | wraps at the count the catalog lists for that page; with no catalog read yet, next goes up by one and previous stops at 1 |
+| Flat (DY-SV5W, MP3 Trigger) | the first category range (`snd_cat_*_lo..hi`) that holds the current track | wraps at the range's ends; a track no range holds steps by one, never below 1 |
+
+With nothing played since boot, both play sound 1: Bank 1, Page A, sound 1 on CHIRP.
+They are plays like any other: ignored in Sleep Mode and inside the 300 ms anti-spam
+window. The resolution is `soundStepRequest()` in `src/tasks/audio_task_step.cpp`.
+
 ---
 
 ## 4. Random Playback Mode

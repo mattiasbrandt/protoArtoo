@@ -46,9 +46,19 @@ struct AudioStepState {
     bool randomMode = false;
     bool wasSleeping = false;
     uint8_t currentVol = 20;         // replaced by config volume on first init
+    // The sound the droid last played, which next and previous step from: a
+    // vocal sent to the driver, never a Background Track. Bank and page are
+    // CHIRP's (a flat track is AUDIO_FLAT_BANK / AUDIO_FLAT_PAGE there, where
+    // it plays); on a flat module the index is the track. currentIndex 0 is
+    // nothing played since boot. Bank and page sit in the padding before the
+    // words below, because AudioTask's stack chain is recorded to the byte
+    // (tools/task_stack_recipes.json).
+    uint8_t currentBank = 0;
+    char currentPage = 'A';
     uint32_t lastRandMs = 0;
     uint32_t lastPlayMs = 0;         // anti-spam: last play timestamp
     uint32_t lastAutoQueryMs = 0;
+    uint16_t currentIndex = 0;
 };
 
 enum AudioStepStopReason : uint8_t {
@@ -124,6 +134,12 @@ struct AudioStepCommandInputs {
     // The driver may still be playing a vocal (AudioDriver::vocalHeld()), so
     // a Background Track stop leaves the droid's sound playing.
     bool vocalHeld = false;
+    // AUDIO_CMD_STEP_SOUND only: how many sounds the module reported on the
+    // current sound's bank and page (audioCatalogPageCount(), include/
+    // audio_driver.h), 0 where it reported none. The answer rather than the
+    // bank table, for the reason dollarBankPage gives; it sits in this struct's
+    // tail padding.
+    uint16_t currentPageCount = 0;
 };
 
 struct AudioStepCommandActions {

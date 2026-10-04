@@ -65,6 +65,12 @@ enum RobotActionId : uint8_t {
     // dispatched as a press, and reads no drive or dome-speed binding.
     // Appended, so every value above keeps its number.
     SERVO_ACTION_PUPPET_PART,
+    // Button: the sound after, or before, the one the droid last played: within
+    // its bank and page on a module that numbers sounds that way, within its
+    // category range on one that does not (#447, ADR 0054). AudioTask knows
+    // which sound that was, so the press carries only the direction.
+    SOUND_ACTION_NEXT,
+    SOUND_ACTION_PREVIOUS,
 };
 
 // -----------------------------------------------------------------------------

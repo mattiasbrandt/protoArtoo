@@ -54,6 +54,17 @@ static void applyIntentToState(AudioStepState& state, const AudioPlaybackIntent&
         case AUDIO_PLAYBACK_INTENT_RANDOM_OFF:
             state.randomMode = false;
             break;
+        case AUDIO_PLAYBACK_INTENT_PLAY_FLAT:
+            // Where CHIRP plays a flat track; a flat module reads the index alone.
+            state.currentBank = AUDIO_FLAT_BANK;
+            state.currentPage = AUDIO_FLAT_PAGE;
+            state.currentIndex = intent.track;
+            break;
+        case AUDIO_PLAYBACK_INTENT_PLAY_BANKED:
+            state.currentBank = intent.bank;
+            state.currentPage = intent.page;
+            state.currentIndex = intent.index;
+            break;
         default:
             break;
     }
@@ -217,6 +228,67 @@ static bool __attribute__((noinline)) backgroundTrackAddress(const AudioStepComm
     return false;
 }
 
+// The play request for next (step > 0) or previous sound, from the sound the
+// droid last played (AudioStepState::currentIndex). ADR 0054 specific 4: next
+// means within the current bank and page on a module with a catalog, within
+// the current category range on a flat module.
+//
+// - With a catalog: the same bank and page, wrapping at the count the module
+//   reported for it (in.currentPageCount). With no count - no catalog read
+//   yet, or a page the catalog does not list - next goes up by one and
+//   previous stops at 1, rather than guess where the page ends.
+// - Flat: the first category range that holds the track, wrapping at its
+//   ends. A track no range holds steps by one, never below 1.
+// - Nothing played since boot: sound 1, Bank 1 Page A with a catalog.
+//
+// Out of line for the same reason as backgroundTrackAddress() above.
+static AudioPlaybackRequest __attribute__((noinline)) soundStepRequest(const AudioStepState& state,
+                                                                       const AudioStepCommandInputs& in,
+                                                                       int8_t step) {
+    AudioPlaybackRequest request{};
+    const uint16_t current = state.currentIndex;
+    if (in.catalogCapable) {
+        request.kind = AUDIO_PLAYBACK_REQ_DIRECT_BANKED;
+        request.banked.bank = current == 0 ? AUDIO_FLAT_BANK : state.currentBank;
+        request.banked.page = current == 0 ? AUDIO_FLAT_PAGE : state.currentPage;
+        const uint16_t count = in.currentPageCount;
+        uint16_t index = 1;
+        if (current != 0 && step > 0) {
+            index = (count != 0 && current >= count) ? 1 : (uint16_t)(current + 1);
+        } else if (current != 0) {
+            index = current > 1 ? (uint16_t)(current - 1) : (count != 0 ? count : 1);
+        }
+        request.banked.index = index;
+        return request;
+    }
+
+    request.kind = AUDIO_PLAYBACK_REQ_DIRECT_TRACK;
+    request.track = 1;
+    if (current == 0) {
+        return request;
+    }
+    if (in.playback != nullptr) {
+        for (uint8_t c = 0; c < AUDIO_CATEGORY_COUNT; ++c) {
+            const SoundCategoryRange& range = in.playback->categoryRanges[c];
+            if (range.lo == 0 || range.lo > range.hi || current < range.lo || current > range.hi) {
+                continue;
+            }
+            if (step > 0) {
+                request.track = current >= range.hi ? range.lo : (uint16_t)(current + 1);
+            } else {
+                request.track = current <= range.lo ? range.hi : (uint16_t)(current - 1);
+            }
+            return request;
+        }
+    }
+    if (step > 0) {
+        request.track = current < 65535u ? (uint16_t)(current + 1) : current;
+    } else {
+        request.track = current > 1 ? (uint16_t)(current - 1) : 1;
+    }
+    return request;
+}
+
 AudioStepCommandActions audioStepCommand(AudioStepState& state,
                                          const AudioStepCommandInputs& in,
                                          const AudioCommand& cmd) {
@@ -373,6 +445,15 @@ AudioStepCommandActions audioStepCommand(AudioStepState& state,
             request.kind = AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_STOP;
             request.vocalHeld = in.vocalHeld;
             resolvePlayback(state, in, request, false, &actions);
+            break;
+        }
+
+        case AUDIO_CMD_STEP_SOUND: {
+            if (in.sleepMode) {
+                actions.ignored = AUDIO_STEP_IGNORE_SLEEP;
+                break;
+            }
+            resolvePlayback(state, in, soundStepRequest(state, in, cmd.step), true, &actions);
             break;
         }
 

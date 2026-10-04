@@ -96,6 +96,8 @@ sound.action.random-surprised|Random Surprised|Play a random Surprised sound.|au
 sound.action.random-alert|Random Alert|Play a random Alert sound.|audioQueuePlayTrack|
 sound.action.random-snarky|Random Snarky|Play a random Snarky sound.|audioQueuePlayTrack|
 sound.action.random-whistle|Random Whistle|Play a random Whistle sound.|audioQueuePlayTrack|
+sound.action.play-next|Next Sound|Play the next sound in the same bank and page, or category.|audioQueueStepSound|
+sound.action.play-previous|Previous Sound|Play the sound before it in the same bank and page, or category.|audioQueueStepSound|
 sound.status.current|Sound Status|What the sound module is doing: playing, volume and health.|captureAudioStatusSnapshot|
 sound.config.volume|Volume|Volume at power-on, 0 to 30.|audioSetVolumeCommitApplied|volume:uint8:1
 sound.config.random-min|Random Min Track|Lowest track random playback can pick.|audioTracksApply|track:uint16:1

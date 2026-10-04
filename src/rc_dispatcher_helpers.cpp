@@ -131,6 +131,13 @@ RcDispatchOutcome rcDispatchSingleAction(const RcActionResult& res, CommandSourc
         }
     }
 
+    if (res.audioStep != 0) {
+        if (!audioQueueStepSound(res.audioStep, src)) {
+            PA_LOG_WARN(TAG, "%s sound dropped: queue full", res.audioStep > 0 ? "next" : "previous");
+            queueFull = true;
+        }
+    }
+
     if (res.servoIndex >= 0) {
         if (res.servoIsSequence) {
             if (!startBodyRoutine(res.servoSequenceId, src)) {

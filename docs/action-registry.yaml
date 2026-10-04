@@ -1895,6 +1895,38 @@ entries:
   safety_critical: false
   requires_web_control: false
   executor: audioQueuePlayTrack
+- name: sound.action.play-next
+  display_name: Next Sound
+  description: Play the next sound in the same bank and page, or category.
+  domain: sound
+  type: action
+  marcduino_cmd: null
+  api_path: null
+  sse_event: null
+  cpp_enum: SOUND_ACTION_NEXT
+  cpp_file: include/rc_mapping.h
+  rc_token: sound_next
+  sources:
+  - sbus
+  safety_critical: false
+  requires_web_control: false
+  executor: audioQueueStepSound
+- name: sound.action.play-previous
+  display_name: Previous Sound
+  description: Play the sound before it in the same bank and page, or category.
+  domain: sound
+  type: action
+  marcduino_cmd: null
+  api_path: null
+  sse_event: null
+  cpp_enum: SOUND_ACTION_PREVIOUS
+  cpp_file: include/rc_mapping.h
+  rc_token: sound_previous
+  sources:
+  - sbus
+  safety_critical: false
+  requires_web_control: false
+  executor: audioQueueStepSound
 - name: sound.status.current
   display_name: Sound Status
   description: 'What the sound module is doing: playing, volume and health.'

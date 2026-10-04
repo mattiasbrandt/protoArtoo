@@ -43,6 +43,10 @@ const char* robotActionIdToString(RobotActionId target) {
             return "sound_rand_chatty";
         case SOUND_ACTION_RANDOM_HAPPY:
             return "sound_rand_happy";
+        case SOUND_ACTION_NEXT:
+            return "sound_next";
+        case SOUND_ACTION_PREVIOUS:
+            return "sound_previous";
         case SOUND_ACTION_RANDOM_PROCESSING:
             return "sound_rand_processing";
         case SOUND_ACTION_RANDOM_SAD:
@@ -163,6 +167,14 @@ bool parseRobotActionId(const char* raw, RobotActionId* out) {
     }
     if (strcmp(raw, "sound_rand_happy") == 0) {
         *out = SOUND_ACTION_RANDOM_HAPPY;
+        return true;
+    }
+    if (strcmp(raw, "sound_next") == 0) {
+        *out = SOUND_ACTION_NEXT;
+        return true;
+    }
+    if (strcmp(raw, "sound_previous") == 0) {
+        *out = SOUND_ACTION_PREVIOUS;
         return true;
     }
     if (strcmp(raw, "sound_rand_processing") == 0) {
@@ -321,7 +333,8 @@ bool robotActionValidForTier2(RobotActionId target) {
            target == DROID_SEQ_FAINT || target == DROID_SEQ_CANTINA ||
            target == DROID_SEQ_LEIA || target == DROID_SEQ_DISCO ||
            target == DROID_SEQ_SCREAMS || target == DROID_SEQ_WIGGLE ||
-           target == DRIVE_ACTION_SPEED_PRESET_CYCLE || target == SERVO_ACTION_PUPPET_PART;
+           target == DRIVE_ACTION_SPEED_PRESET_CYCLE || target == SERVO_ACTION_PUPPET_PART ||
+           target == SOUND_ACTION_NEXT || target == SOUND_ACTION_PREVIOUS;
 }
 
 // Validate Marcduino sequence payload for body sequences (SE30-SE36).
@@ -360,7 +373,8 @@ bool robotActionIsButton(RobotActionId target) {
            target == DROID_SEQ_FAINT || target == DROID_SEQ_CANTINA ||
            target == DROID_SEQ_LEIA || target == DROID_SEQ_DISCO ||
            target == DROID_SEQ_SCREAMS || target == DROID_SEQ_WIGGLE ||
-           target == DRIVE_ACTION_SPEED_PRESET_CYCLE;
+           target == DRIVE_ACTION_SPEED_PRESET_CYCLE || target == SOUND_ACTION_NEXT ||
+           target == SOUND_ACTION_PREVIOUS;
 }
 
 // One-shot actions fire once per button click on latched channels.
@@ -381,7 +395,8 @@ bool robotActionIsOneShotButton(RobotActionId target) {
            target == DROID_SEQ_FAINT || target == DROID_SEQ_CANTINA ||
            target == DROID_SEQ_LEIA || target == DROID_SEQ_DISCO ||
            target == DROID_SEQ_SCREAMS || target == DROID_SEQ_WIGGLE ||
-           target == DRIVE_ACTION_SPEED_PRESET_CYCLE;
+           target == DRIVE_ACTION_SPEED_PRESET_CYCLE || target == SOUND_ACTION_NEXT ||
+           target == SOUND_ACTION_PREVIOUS;
 }
 
 uint16_t rcReactionThresholdMax(RcBindingSource source) {

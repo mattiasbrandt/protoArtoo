@@ -104,6 +104,21 @@ inline bool audioCatalogBankPage(const AudioCatalogBank* banks, uint8_t count, u
     return false;
 }
 
+// How many sounds the fitted module reported on one bank and page, or 0 where
+// it reported no such page, or no catalog. Where next and previous sound wrap.
+inline uint16_t audioCatalogPageCount(const AudioCatalogBank* banks, uint8_t count, uint8_t bank,
+                                      char page) {
+    if (banks == nullptr) {
+        return 0;
+    }
+    for (uint8_t i = 0; i < count; ++i) {
+        if (banks[i].bank == bank && banks[i].page == page) {
+            return banks[i].count;
+        }
+    }
+    return 0;
+}
+
 // -----------------------------------------------------------------------------
 // AudioCatalogCompleteness  --  what the last catalog discovery could NOT see.
 //

@@ -168,7 +168,7 @@ void tearDown() {}
 // The regression: "operations type=<t>" typed as one line, through the real
 // parser and the real reconstruction function, must actually filter.
 // Catalog totals (docs/action-registry.yaml, confirmed against
-// test_console_catalog.cpp's exact-212 count): action 134, config 37,
+// test_console_catalog.cpp's exact-214 count): action 136, config 37,
 // event 15, status 26. Config was 36 before #451 added
 // dome.config.stand-down, and 35 before #453 added
 // servo.config.cadence-floor: #225 (system.config.log-level) and #227
@@ -196,7 +196,8 @@ void tearDown() {}
 // #442 added servo.action.puppet-part, taking action to 129, and its take
 // slice dome.action.arm-take, -keep-take, -restore-take-file and
 // dome.api.get-take-file, taking it to 133; #447 added
-// sound.action.play-track-happy ($H), taking it to 134.
+// sound.action.play-track-happy ($H), taking it to 134, and
+// sound.action.play-next and -play-previous, taking it to 136.
 // -----------------------------------------------------------------------------
 
 void test_operations_type_action_filters_through_the_real_adapter_path() {
@@ -205,8 +206,8 @@ void test_operations_type_action_filters_through_the_real_adapter_path() {
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(134, g_itemCount,
-        "operations type=action must list exactly the 134 action entries when "
+    TEST_ASSERT_EQUAL_INT_MESSAGE(136, g_itemCount,
+        "operations type=action must list exactly the 136 action entries when "
         "typed as one line through the real embedded-cli parser and "
         "consoleBuildCommandLine() - not when the module is called directly "
         "with a hand-built \"operations type=action\" string");
@@ -243,7 +244,7 @@ void test_bare_operations_still_lists_everything_through_the_real_adapter_path()
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT(212, g_itemCount);  // #347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home, #442 servo.action.puppet-part and the five take rows, #451 dome.config.stand-down, #447 sound.action.play-track-happy; #413 retired aux.config.led-pin
+    TEST_ASSERT_EQUAL_INT(214, g_itemCount);  // #347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home, #442 servo.action.puppet-part and the five take rows, #451 dome.config.stand-down, #447 sound.action.play-track-happy, -play-next and -play-previous; #413 retired aux.config.led-pin
 }
 
 // help <op> must still work through the same real path (the reconstruction
