@@ -40,6 +40,8 @@ files are never reported. Checks:
 11. no fenced pathspec (--fenced, comma-separated, repeatable) in the diff
 12. the tooling test suite (test/test_tools/, includes the gate's own unit
     tests) passes — the evidence producer is not exempt from prove-it-works
+13. no added line, in any file, names the glossary by the name it had before
+    50c74203 (OLD_GLOSSARY_RE); it is GLOSSARY.md
 
 The block opens with provenance lines — blob hashes of both verifier
 scripts, HEAD sha, a
@@ -100,6 +102,12 @@ EXTERN_RE = re.compile(r'\bextern\b(?!\s*"C")')
 ARDUINO_GUARD_RE = re.compile(
     r"#\s*(?:ifndef|ifdef)\s+ARDUINO\b|#\s*(?:if|elif)\b.*defined\s*\(\s*ARDUINO\s*\)"
 )
+# The glossary had this name until 50c74203 (mattpocock/skills v1.3.0 renamed
+# the convention to GLOSSARY.md). Branches cut before the rename still carry
+# the old name, so a worker writing it from habit or a stale brief is the way
+# it comes back. The brackets keep this line from matching itself, or the CI
+# grep.
+OLD_GLOSSARY_RE = re.compile(r"CONTEXT[.]md|CONTEXT[-]MAP")
 TEST_TOTAL_RE = re.compile(r"(\d+) test cases:")
 TEST_SUCCEEDED_RE = re.compile(r"(\d+) succeeded")
 TEST_FAILED_RE = re.compile(r"(\d+) failed")
@@ -972,6 +980,9 @@ def main() -> int:
         check_added_pattern("new extern in .cpp", base_sha, ["*.cpp"], EXTERN_RE),
         check_added_pattern(
             "new #ifndef ARDUINO in inc/", base_sha, ["include/"], ARDUINO_GUARD_RE
+        ),
+        check_added_pattern(
+            "old glossary name added", base_sha, [], OLD_GLOSSARY_RE
         ),
         check_gate_script(base_sha, args.expect_gate_edit),
         check_fenced_paths(base_sha, fences),

@@ -185,6 +185,19 @@ jobs:
         continue-on-error: true
         run: make check-action-drift
 
+      # The glossary is GLOSSARY.md since 50c74203. The slice gate refuses the
+      # old name on lines a slice adds (tools/slice_verify.py OLD_GLOSSARY_RE);
+      # this is the backstop for a commit that never went through the gate.
+      # The brackets keep the pattern from matching this file.
+      - name: 📖 Glossary name
+        id: glossary-name
+        continue-on-error: true
+        run: |
+          if git grep -nE 'CONTEXT[.]md|CONTEXT[-]MAP'; then
+            echo "The glossary is GLOSSARY.md; the lines above use its old name." >&2
+            exit 1
+          fi
+
       - name: 🌐 Web logic tests
         id: web-tests
         continue-on-error: true
@@ -210,6 +223,7 @@ jobs:
           TESTS_OUTCOME: ${{ steps.native-tests.outcome }}
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
           DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
+          GLOSSARY_NAME_OUTCOME: ${{ steps.glossary-name.outcome }}
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
           TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -242,6 +256,7 @@ jobs:
             row "$TESTS_OUTCOME"    "Native tests"          "pio test -e native"
             row "$ANALYSIS_OUTCOME" "Static analysis"      "pio check -e artoo_esp32"
             row "$DRIFT_OUTCOME"    "Action registry drift" "make check-action-drift"
+            row "$GLOSSARY_NAME_OUTCOME" "Glossary name"   "git grep for the old glossary name"
             row "$WEB_OUTCOME"      "Web logic tests"       "node --test test/test_web/*.js"
             row "$TOOLING_OUTCOME"  "Tooling tests"         "python3 -m unittest discover -s test/test_tools -q"
             echo ""
@@ -267,6 +282,7 @@ jobs:
           TESTS_OUTCOME: ${{ steps.native-tests.outcome }}
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
           DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
+          GLOSSARY_NAME_OUTCOME: ${{ steps.glossary-name.outcome }}
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
           TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
           CODE_CHANGED: ${{ steps.changes.outputs.code }}
@@ -289,6 +305,7 @@ jobs:
           check "$TESTS_OUTCOME"        "native-tests"
           check "$ANALYSIS_OUTCOME"     "static-analysis"
           check "$DRIFT_OUTCOME"        "action-drift"
+          check "$GLOSSARY_NAME_OUTCOME" "glossary-name"
           check "$WEB_OUTCOME"          "web-tests"
           check "$TOOLING_OUTCOME"      "tooling-tests"
 
