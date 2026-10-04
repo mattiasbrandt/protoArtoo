@@ -33,6 +33,54 @@
 timeout 8
 settle 0.5
 
+# =============================================================================
+# The flash, first -- Round 2 on board 2 (#355, 2026-10-04)
+#
+# These two rows sit above everything else so a replay reaches them first:
+# flashing the filesystem image replaces LittleFS, and the Learned Sequences
+# board 2 holds are lost at the flash unless the first row keeps them. The
+# flash pause in first-command-and-help below is then already done: press Enter
+# at it. Board 2 by operator decision only (its C6 is the only working one);
+# board 1 has no network, and both rows are HTTP.
+# =============================================================================
+
+# #413 - what board 2 holds before the final tip goes on. Its NVS is
+# epic-lineage, last written by a 2026-09-29 image: 0556328b by the operator's
+# note of 2026-10-04, f3626fca by #355's body. The kept GET /api/status answer's
+# firmwareVersion says which. Both already carry #413's upgrade path
+# (adoptRetiredAuxLedKeys, src/config_serializer.cpp), so unlike artoo's
+# before-the-flash this first boot does not run it. What the tip's first boot
+# does cross here: the Output rows are read from the same soNN records, whose
+# release field was stored before and is read now (#443, 0 is never); and the
+# Settings added since have no key on this board yet, so they read their
+# defaults: seq_standdown (#451; empty, and Stand Down then runs DM:RESET),
+# cad_floor_ms (#453), srv_member and pca_addr (#444), dome_turn_ms,
+# dome_turn_pct and dome_turn_dir (#445). snd_happy was read before and is now a
+# Setting under the same key (#447). The three plain reads and the status read
+# are http steps; the pause keeps what a sheet cannot do: the Backup file is
+# built by the Maintenance page, and the sequences are fetched by names only
+# this droid's list knows. The image on the board predates #448, so its Backup
+# file does not hold the sequences: they are fetched one by one.
+@row 413 before-the-flash-on-the-p4
+send system.status.health
+http GET /api/status > p4-before-flash-status.json
+http GET /api/config > p4-before-flash-config.json
+http GET /api/servo/outputs > p4-before-flash-servo-outputs.json
+http GET /api/seq/list > p4-before-flash-seq-list.json
+pause BEFORE flashing: keep a Maintenance -> Backup file from http://10.0.0.51, and every Learned Sequence named in p4-before-flash-seq-list.json (GET /api/seq?name=... each). Press Enter.
+pause Flash firebeetle2 firmware AND filesystem images, let it boot, re-attach, then press Enter
+
+# The comparison with the before-the-flash copies is #355's: every Output row
+# reads what it held, release 0 where nothing set one, and nothing else moved.
+# Board 2 had no Output wired on 2026-09-29, so a row with a Part on it may not
+# exist to compare; the reads say so.
+@row 413 after-the-flash-nothing-moved-on-the-p4
+send system.status.health
+send servo.api.get-outputs
+http GET /api/status > p4-after-flash-status.json
+http GET /api/config > p4-after-flash-config.json
+http GET /api/servo/outputs > p4-after-flash-servo-outputs.json
+
 # #217 - first command + help over USB CDC with logs streaming; stack
 # high-water and before/after-flash checks are bench-observed, not
 # console-expressible, and stay on #215's own evidence comment.
