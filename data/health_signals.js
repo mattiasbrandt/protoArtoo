@@ -259,8 +259,15 @@
 
   // The Foot Drive is heard only through its backend's feedback: the frame
   // carries the `hoverboard` block while those readings are valid, and drops it
-  // once they go stale (src/web/status_json.cpp, src/tasks/drive.cpp). The
-  // frame has no `drive` key while the feet are not running this boot.
+  // once they go stale (src/web/status_json.cpp, src/tasks/drive.cpp).
+  //
+  // The `drive` key follows the SAVED Foot Drive toggle, not what this boot
+  // started: the frame reads it from the live config cache
+  // (src/web/web_server.cpp captureStatusJsonInputs), while DriveTask reads it
+  // once at boot (enableDrive applies at reboot). So no key is "switched off
+  // in Configuration", and a toggle saved on and not yet restarted carries the
+  // key with no drive running behind it - which reads "No answer" here until
+  // the restart. Telling those apart needs a boot-state field in the frame.
   //
   // The word for a drive heard is keyed off that block's own name: the frame
   // carries no name for the backend, and the hoverboard is the only one the
