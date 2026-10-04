@@ -8,7 +8,7 @@
 // here.
 //
 //   - THIS PAGE NAMES NO OUTPUT. Where a wire plugs in is Wiring's answer
-//     (CONTEXT.md "Lights", ADR 0067). The page reads the Outputs - it has to,
+//     (GLOSSARY.md "Lights", ADR 0067). The page reads the Outputs - it has to,
 //     to know what lights a Part - so it is one line of code away from printing
 //     one, and three iterations of this surface were rejected for doing exactly
 //     that with board labels and "AUX" on screen.
@@ -39,7 +39,7 @@ const ready = async (options) => {
 };
 
 // The same droid with its Dome Controller fitted: the dome link switched on,
-// which is when the dome's lights are on the droid (CONTEXT.md "Lights").
+// which is when the dome's lights are on the droid (GLOSSARY.md "Lights").
 const withDome = (answer = droid()) => {
   answer.config.components.protoR2link = { enabled: true, label: "S3" };
   return answer;
@@ -191,7 +191,7 @@ test("an LED count saved before the page opened still waits for a restart", asyn
 });
 
 // Every "no" names the builder's next move, and a destination the builder
-// cannot act on is the defect CONTEXT.md "Availability Family" records. A Part
+// cannot act on is the defect GLOSSARY.md "Availability Family" records. A Part
 // is put on its Output on Wiring since the mapping moved there (operator,
 // 2026-09-28 on #411), so a lit wire with no Part on it sends them there and
 // not to Parts, which no longer has a picker to offer.
@@ -209,7 +209,7 @@ test("a lit wire with no Part on it sends the builder to Wiring to put one on", 
 
 // Lights lists only lights on the droid (operator, 2026-09-29 on #411: "we
 // have hardcoded listing of these two lights even when there is no such things
-// defined in the wiring config"; CONTEXT.md "Lights"): a body light once a
+// defined in the wiring config"; GLOSSARY.md "Lights"): a body light once a
 // Part-first row on Wiring puts it on an Output, and the dome's lights while
 // the Dome Controller is fitted. A light on neither is not a plate at all.
 test("a body light is listed only on an Output, and dome lights only with the Dome Controller fitted", async () => {

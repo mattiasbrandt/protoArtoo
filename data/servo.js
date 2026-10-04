@@ -1,7 +1,7 @@
 // =============================================================================
 // data/servo.js
 //
-// Servos (CONTEXT.md "Servos"): the body's Outputs as servos. One section of
+// Servos (GLOSSARY.md "Servos"): the body's Outputs as servos. One section of
 // Outputs, one row each, named by what the board prints beside the pin and by
 // the Part(s) on it. On each row a builder drives it (open, close, stop, or a
 // typed width sent once), records its ends with the calibration dial, and
@@ -91,7 +91,7 @@
   // The Outputs this page lists: only those with a Part on them, because an
   // Output with a Part on it is wired and one with none is free (operator,
   // 2026-09-29 on #411: "why is the servos page hardcoded to list out these
-  // when I have no parts defined with wiring?!"; CONTEXT.md "Servos"). Read
+  // when I have no parts defined with wiring?!"; GLOSSARY.md "Servos"). Read
   // from the Parts, never from the wired tick, as Wiring reads it.
   const listed = (outputs) => outputs.filter((output) => output.parts.length > 0);
 
@@ -146,7 +146,7 @@
   const addPills = partPills(catalog.parts);
 
   // A row is headed by the Part(s) on it and the pin the board prints beside
-  // it (CONTEXT.md "Servos"); an Output nobody has named - an expander's row -
+  // it (GLOSSARY.md "Servos"); an Output nobody has named - an expander's row -
   // shows its address for the pin. The Parts are painted (paintOutputRow()),
   // since a Part moves without the rows being rebuilt. Which servo it carries
   // is picked on Wiring, on the Part's row (#411). Every act starts refused:

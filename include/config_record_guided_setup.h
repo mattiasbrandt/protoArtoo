@@ -1,7 +1,7 @@
 // =============================================================================
 // include/config_record_guided_setup.h
 //
-// Guided Setup's Record (#351; CONTEXT.md "Record"): where the guided run
+// Guided Setup's Record (#351; GLOSSARY.md "Record"): where the guided run
 // stands and which of its steps have been on screen. Its shared interface is
 // declared in include/config_records.h; this header adds the storage form,
 // pure, for the tests that pin it.

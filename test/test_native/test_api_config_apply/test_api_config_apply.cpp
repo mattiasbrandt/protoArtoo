@@ -157,7 +157,7 @@ void test_configApply_rcInputMode_accepts_elrs(void) {
     TEST_ASSERT_EQUAL_UINT8(RC_INPUT_ELRS, snap.system.rc_input_mode);
 }
 
-// No radio fitted is one answer (CONTEXT.md "Radio Controller", #369): the
+// No radio fitted is one answer (GLOSSARY.md "Radio Controller", #369): the
 // mode alone - the Console's rc.config.mode - clears the radio and every RC
 // channel. A field the same request states stands (a backup posted back comes
 // back whole; test_api_config_write proves the round trip). A radio picked

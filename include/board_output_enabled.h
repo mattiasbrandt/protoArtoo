@@ -61,7 +61,7 @@ inline bool boardOutputIsWired(const SystemConfig& system, size_t index) {
 // -----------------------------------------------------------------------------
 // boardOutputTickFollowsParts()
 // An Output with a Part on it is wired, and one with none is free: there is no
-// separate wired switch any more (CONTEXT.md "Wiring"; operator, 2026-09-29 on
+// separate wired switch any more (GLOSSARY.md "Wiring"; operator, 2026-09-29 on
 // #411: "it was meant to define and wire a body part/panel to a output").
 //
 // The tick stays the stored answer every consumer already reads - ServoTask and

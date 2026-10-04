@@ -1,7 +1,7 @@
 // =============================================================================
 // include/config_records.inc
 //
-// Every Record, one line each (CONTEXT.md "Record"; ADR 0068, second amendment
+// Every Record, one line each (GLOSSARY.md "Record"; ADR 0068, second amendment
 // of 2026-09-26). Included by include/config_records.h and
 // src/config_records.cpp with PA_CONFIG_RECORD defined; not a header of its own.
 //

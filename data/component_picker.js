@@ -2,7 +2,7 @@
 // data/component_picker.js
 //
 // The Component Picker: which product is actually fitted in each Component
-// Family, chosen from cards (CONTEXT.md "Component Picker", #297, #369).
+// Family, chosen from cards (GLOSSARY.md "Component Picker", #297, #369).
 //
 // ONE BUILDER, DRAWN INTO A HOST. Every Hardware components category on
 // Configuration is a data-setup-step host, and guided Setup shows that same
@@ -27,7 +27,7 @@
 // nothing on it to press.
 //
 // RUN ON A DROID IS A SECOND MARK, NEVER A STATE. The registry says which
-// supported products the project has seen run on a real droid (CONTEXT.md
+// supported products the project has seen run on a real droid (GLOSSARY.md
 // "Confirmed on a Droid", #455). A card that has carries a quiet mark beside
 // whatever its state badge says; it takes no Status Color, and it never
 // orders, preselects or recommends - the cards stay in the registry's order,
@@ -83,7 +83,7 @@
   const memberTiming = (family) =>
     MEMBER_FIELDS[family] ? window.PAApi.timingOf(MEMBER_FIELDS[family].param) : null;
 
-  // The RC Receiver a chosen RC Radio talks to (CONTEXT.md "RC Radio", "RC
+  // The RC Receiver a chosen RC Radio talks to (GLOSSARY.md "RC Radio", "RC
   // Receiver"). The receivers are rows of the Radio Controller family, told
   // apart from the radios by the wire they declare, and picking one writes
   // the controller's rcInputMode. `modes[0]` is what a pick writes; a second
@@ -95,7 +95,7 @@
     param: "rcInputMode",
     saved: (config) => config?.rc?.inputMode,
     // The Radio Controller's Not fitted answer: no radio and no receiver, a
-    // droid driven from the web alone (CONTEXT.md "Radio Controller"). The
+    // droid driven from the web alone (GLOSSARY.md "Radio Controller"). The
     // droid stores it as a receiver type and, in the same save, clears the
     // radio and every RC channel (configApply()); this page unticks the
     // channels too, because a save sends every tick it holds.
@@ -347,7 +347,7 @@
     image.alt = "";
     // A photograph this set does not carry leaves the frame empty, never
     // dimmed: a missing picture is a cosmetic gap, not a part the board
-    // cannot take (CONTEXT.md "Component Picker").
+    // cannot take (GLOSSARY.md "Component Picker").
     image.onerror = () => image.remove();
     // Image fetches wait for the one-shot deferred-asset sweep, so the event
     // stream opens before they compete for the controller's connections; a

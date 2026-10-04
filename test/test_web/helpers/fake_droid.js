@@ -149,7 +149,7 @@ export const freshOutputs = () => [
 
 /**
  * The same board with a body door on each of its five Outputs: every Output
- * wired, since an Output with a Part on it is wired (CONTEXT.md "Wiring",
+ * wired, since an Output with a Part on it is wired (GLOSSARY.md "Wiring",
  * #411). What a surface that lists only Outputs with a Part - Servos - is
  * booted against when a test acts on the rows rather than on the Parts.
  */

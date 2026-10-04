@@ -56,7 +56,7 @@ test("cancelling from this table sends nothing and leaves both Outputs as they w
   assert.equal(env.text("ledc:4", "outputs-parts"), "Rear-right body door");
 });
 
-// An Output with no Part is free and not a row (CONTEXT.md "Servos"), so when
+// An Output with no Part is free and not a row (GLOSSARY.md "Servos"), so when
 // the last Part leaves, the table goes and one line sends the builder to
 // Wiring, where Parts are put on Outputs.
 test("with no Part on any Output, the table is one line that routes to Wiring", async () => {

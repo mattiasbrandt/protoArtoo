@@ -264,7 +264,7 @@
    *
    * The Dome Design is the builder's statement and the dome's layout is the
    * dome's; when both are present and disagree, the difference is reported for
-   * the builder to resolve and nothing here changes either one (CONTEXT.md
+   * the builder to resolve and nothing here changes either one (GLOSSARY.md
    * "Dome Design", #333, #368). This returns the difference and writes nothing.
    *
    * Only a LIVE layout is a connected dome. A cached one is a dome that was

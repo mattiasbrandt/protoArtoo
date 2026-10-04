@@ -70,7 +70,7 @@ struct ConfigCommitOutcome {
     uint32_t centreClampedRows = 0;
 };
 
-// Write Window for a config write (ADR 0011, amended 2026-09-24; CONTEXT.md
+// Write Window for a config write (ADR 0011, amended 2026-09-24; GLOSSARY.md
 // "Write Window"): the one guarded span of POST /api/config and the Console's
 // scalar config write alike - take the config write lock
 // (include/config_write_lock.h), read the cache into `*working`, run

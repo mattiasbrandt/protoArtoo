@@ -109,7 +109,7 @@ void test_elrs_plans_no_input_whatever_is_switched_on() {
     }
 }
 
-// No Radio Controller fitted (#369, CONTEXT.md "Failsafe Layer"): the two
+// No Radio Controller fitted (#369, GLOSSARY.md "Failsafe Layer"): the two
 // radio layers stand down, so the plan must start nothing - no RC task, no
 // SBUS decoder, no drive watchdog source, whatever channel is switched on -
 // and main.cpp's boot SBUS lock, which fires only for a watchdog source, stays

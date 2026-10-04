@@ -105,7 +105,7 @@ bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool m
 #include "board_capabilities.inc"
 #undef PA_BOARD_CAPABILITY
 
-    // Board Lanes sit beside the Gates deliberately (CONTEXT.md "Board Lane"):
+    // Board Lanes sit beside the Gates deliberately (GLOSSARY.md "Board Lane"):
     // a Gate answers whether the board can support something, a Lane answers
     // where it is routed, and an operator surface needs both from one payload
     // rather than keeping its own copy of one board's wiring.
@@ -214,7 +214,7 @@ void appendPartJson(JsonSliceWriter& writer, const ComponentPartEntry& part) {
 
     // Whether the product has run on a real droid: a project fact like
     // `status`, and evidence about it rather than a softer value of it
-    // (CONTEXT.md "Confirmed on a Droid", #455). Always present, so a browser
+    // (GLOSSARY.md "Confirmed on a Droid", #455). Always present, so a browser
     // can tell "not yet" from a controller too old to say.
     writer.append(",\"confirmed_on_droid\":");
     writer.append(part.confirmedOnDroid ? "true" : "false");

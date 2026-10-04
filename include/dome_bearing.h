@@ -1,7 +1,7 @@
 // =============================================================================
 // include/dome_bearing.h
 //
-// The Dome Bearing (ADR 0051 as amended 2026-09-30, CONTEXT.md "Dome Bearing",
+// The Dome Bearing (ADR 0051 as amended 2026-09-30, GLOSSARY.md "Dome Bearing",
 // #445): where the dome BELIEVES it is pointing, as an angle from the droid's
 // own front, clockwise viewed from above - so front is 0, and a quarter turn
 // clockwise from above is 90. Never a heading in the room; there is no sensor
@@ -173,7 +173,7 @@ inline float domeBearingRateDegPerMs(uint16_t pulseUs, const DomeTurnCalibration
 // -----------------------------------------------------------------------------
 // domeBearingFacingFrontDeg()
 // The Dome Bearing at which a dome Part faces the droid's front - the one place
-// a Part's `bearing_deg` and the Dome Bearing meet (CONTEXT.md, Flagged
+// a Part's `bearing_deg` and the Dome Bearing meet (GLOSSARY.md, Flagged
 // Ambiguities). Two frames, never mixed up:
 //
 //   - a Part's bearing is fixed on the dome, in the catalog's frame: 0 dead

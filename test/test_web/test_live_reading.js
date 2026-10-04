@@ -1,7 +1,7 @@
 // =============================================================================
 // test/test_web/test_live_reading.js
 //
-// The Live Reading (data/live_reading.js, CONTEXT.md "Live Reading"): the one
+// The Live Reading (data/live_reading.js, GLOSSARY.md "Live Reading"): the one
 // place that decides what the droid has reported, for the shell and every
 // surface (#419).
 //

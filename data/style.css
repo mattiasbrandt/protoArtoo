@@ -12,7 +12,7 @@
    the parsed stylesheet, which is why the tools/ checker beside it does not.
 
    The identity is the INSIDE of the droid, an instrument panel (ADR 0066,
-   CONTEXT.md "Surface Anatomy"). Color does two jobs here and they never mix:
+   GLOSSARY.md "Surface Anatomy"). Color does two jobs here and they never mix:
 
      INTERACTION is the droid's blue, and only the blue - selection, the row
      shown, the primary act, the focus ring.
@@ -20,7 +20,7 @@
      A SIGNAL LIGHT is a droid LED and takes a real LED color. Green nominal,
      amber degraded and you can do something about it, red stopped or refused,
      and the dim ink for a thing that is not reporting (operator, 2026-09-16,
-     which amends CONTEXT.md "Status Color" as it was written). Nothing that
+     which amends GLOSSARY.md "Status Color" as it was written). Nothing that
      reports a state is blue, and nothing you can press is green.
 
      --success   clear, armed, linked, mounted, reporting
@@ -30,7 +30,7 @@
 
    A chosen posture - a speed preset, a sleep state, a control mode - takes no
    color at all: it is a readout, not a symptom. And none of this reaches
-   CONTEXT.md "Availability Family": WHY a thing is unusable is still told by
+   GLOSSARY.md "Availability Family": WHY a thing is unusable is still told by
    treatment and never by hue, which is a different axis from how it is doing.
 
    Everything else is a ground, a plate, a seam or an ink.
@@ -127,7 +127,7 @@
   --panel-open: #ff9f43;
   --panel-open-edge: #ff7f00;
 
-  /* The Wiring diagram's wires (operator, 2026-09-19 on #411, CONTEXT.md
+  /* The Wiring diagram's wires (operator, 2026-09-19 on #411, GLOSSARY.md
      "Status Color"). Each wire takes its own color, the way a real loom is
      told apart, and the color NAMES the wire: it carries no state, so none of
      these sits on the green / amber / red / grey of a health signal or on the
@@ -263,7 +263,7 @@ html {
 }
 
 /* ---------------------------------------------------------------------------
-   The frame (ADR 0066, CONTEXT.md "Operator Shell").
+   The frame (ADR 0066, GLOSSARY.md "Operator Shell").
 
    The Operator Shell document carries four regions and nothing else, and this
    grid is where they sit: the topbar across the top, the nav rail down the
@@ -666,7 +666,7 @@ nav > a {
 }
 
 /* ===========================================================================
-   The Surface Anatomy (ADR 0066, CONTEXT.md "Surface Anatomy").
+   The Surface Anatomy (ADR 0066, GLOSSARY.md "Surface Anatomy").
 
    The parts every operator surface is drawn from, so a builder who has learned
    one screen has learned them all: a title that is the name in the nav (the
@@ -1079,13 +1079,13 @@ body[data-page="firmware"] .card > * + * {
   white-space: nowrap;
 }
 
-/* A signal light is a droid LED (operator, 2026-09-16, amending CONTEXT.md
+/* A signal light is a droid LED (operator, 2026-09-16, amending GLOSSARY.md
    "Status Color"): 7 px, and a lit one glows, which is what makes it read as
    an LED rather than as a colored pixel.
 
    A lamp with no state class yet: the dashboard renders these before the first
    status frame arrives, and page_bootstrap.js lights one "info" while a page
-   is still loading. Both are things nobody has answered yet, and CONTEXT.md
+   is still loading. Both are things nobody has answered yet, and GLOSSARY.md
    "Health Signal" says a thing never asked reads grey - never green, and never
    amber either, because amber promises the builder something to do. So both
    are the unlit dot, and neither is blue: blue is interaction, and a lamp
@@ -1975,7 +1975,7 @@ input[type="number"]::-webkit-inner-spin-button {
    Feature Availability: the astromech power-rail states shared by component
    rows and by build-conditional diagnostic panels.
 
-   CONTEXT.md "Availability Family" groups every way protoArtoo says no into
+   GLOSSARY.md "Availability Family" groups every way protoArtoo says no into
    four, named by what the builder does next, and states that a family is told
    apart by treatment, never by hue. The carriers below are therefore rail
    style, brightness and motion, and not one of the four spends --warning or
@@ -1983,7 +1983,7 @@ input[type="number"]::-webkit-inner-spin-button {
    which told a builder that a board which will never run a feature and a
    controller still fetching its manifest were the same kind of answer.
 
-   Amber cannot come back here. CONTEXT.md "Status Color" reserves it for
+   Amber cannot come back here. GLOSSARY.md "Status Color" reserves it for
    "you can do something about this, and should", and two of these families -
    change it elsewhere, settled no - are things the builder cannot change from
    any screen protoArtoo has, while a third is a transient unknown.
@@ -2008,7 +2008,7 @@ input[type="number"]::-webkit-inner-spin-button {
 
    One state covers two families. identity-unavailable is a transport failure
    that is retryable, or a manifest the controller could not describe, which
-   is terminal - and CONTEXT.md puts the first in "waiting" and the
+   is terminal - and GLOSSARY.md puts the first in "waiting" and the
    second in "settled no". It is dressed as "waiting" here, and the
    element also carries its family class (data/feature_availability.js
    familyClassFor(), #369), which the "B1's fourth answer" block near the end
@@ -2027,7 +2027,7 @@ input[type="number"]::-webkit-inner-spin-button {
 /* Switched on, and this image can offer it. It is the brightest of the four
    rails and nothing else: a component the builder ticked is a CHOSEN POSTURE
    and takes no color at all, and an Availability Family is told apart by
-   treatment, never by hue (CONTEXT.md "Status Color", "Availability Family").
+   treatment, never by hue (GLOSSARY.md "Status Color", "Availability Family").
 
    This rail was --success until #399 slice 2. Green was defensible while #327
    reserved only amber and red; the operator's 2026-09-16 amendment made green
@@ -2278,7 +2278,7 @@ input[type="number"]::-webkit-inner-spin-button {
   50% { opacity: 0.35; }
 }
 
-/* Waiting (CONTEXT.md): a slot that holds nothing but an answer shows the
+/* Waiting (GLOSSARY.md): a slot that holds nothing but an answer shows the
    wait as three dots that fill in, one, two, three, and start again. The slot
    is written empty while it waits and carries this class for good, so the
    first real answer written into it ends the dots with no class to clear.
@@ -2758,11 +2758,11 @@ body[data-page="wifi"] .wifi-mode-title {
    for state. Two pixels rather than a recolored one-pixel seam, for the
    reason .card.danger gives: a one-pixel red is not a warning anybody sees.
 
-   Standalone AP Mode gets no band at all - CONTEXT.md calls it a valid
+   Standalone AP Mode gets no band at all - GLOSSARY.md calls it a valid
    operator-selected posture beyond onboarding, and a color on a chosen
    posture would read it as a symptom.
 
-   Amber and red are told apart by what the builder does next (CONTEXT.md
+   Amber and red are told apart by what the builder does next (GLOSSARY.md
    "Status Color"). A controller in WiFi Provisioning or Network Recovery Mode
    has not failed at anything: it is waiting for the builder to save settings,
    which is exactly "you can do something about this". A client that was given
@@ -3361,7 +3361,7 @@ p.output-parts {
   font-size: var(--fs-hint);
 }
 
-/* The Status Plate (CONTEXT.md "Status Plate", #324, #346, ADR 0066).
+/* The Status Plate (GLOSSARY.md "Status Plate", #324, #346, ADR 0066).
 
    One recessed instrument plate fixed to the foot of the viewport, carrying
    eight borderless cells in fixed positions and one freshness statement, so it
@@ -3591,7 +3591,7 @@ p.output-parts {
   color: var(--text-dim);
 }
 
-/* The Ignored Input Notice (CONTEXT.md, #324, #346).
+/* The Ignored Input Notice (GLOSSARY.md, #324, #346).
 
    Uncolored on purpose. Nothing failed and nothing is refusing the operator
    personally: a control is switched off and the notice says which droid state
@@ -3961,7 +3961,7 @@ label.sound-search-field {
 /* Green says NOMINAL, and a module sitting idle is exactly as nominal as one
    playing a clip - so only the link state takes it. "Playing" is what the
    module is doing, which is a value and reads in the ink tier beside "Idle"
-   (CONTEXT.md "Status Color"). */
+   (GLOSSARY.md "Status Color"). */
 .sound-state-badge[data-state="disabled"] { color: var(--text-dim); }
 .sound-state-badge[data-state="playing"]  { color: var(--text); }
 .sound-state-badge[data-state="idle"]     { color: var(--text); }
@@ -5433,7 +5433,7 @@ body.shell-performing .show-items {
 }
 
 /* Build: five facts in one row. No picture - data/dashboard.html has
-   never held one, and CONTEXT.md "Body View" puts a recognisable droid
+   never held one, and GLOSSARY.md "Body View" puts a recognisable droid
    silhouette in its _Avoid_ list, because the real drawing of the droid is an
    arrangement and not a likeness (#317, ADR 0063). The Body View is C4's. */
 .build {
@@ -5472,7 +5472,7 @@ body.shell-performing .show-items {
 }
 
 /* The state is a component's reading, so it carries the lamp that says how
-   that reading is doing (CONTEXT.md "Status Color"): the same droid LED the
+   that reading is doing (GLOSSARY.md "Status Color"): the same droid LED the
    Health rows light, set by app.js from COMPONENT_STATE_LIGHTS. Never blue:
    blue is interaction. Build's facts are identity and numbers, not
    health, and take no lamp. */
@@ -5872,7 +5872,7 @@ body.shell-performing .show-items {
 }
 
 /* The sequence's own name, in ink and at the row's size: a name on a list,
-   never the interaction blue (CONTEXT.md "Status Color"). */
+   never the interaction blue (GLOSSARY.md "Status Color"). */
 .seq-name {
   color: var(--text);
   font-family: var(--font-mono);
@@ -6220,7 +6220,7 @@ body.shell-performing .show-items {
 /* Where the dome drawing came from, when it did not come from the dome. It is
    a .note now and carries nothing of its own but the gap under it: the two
    treatments it used to declare are the anatomy's two note voices, and one of
-   them was blue, which reports no state at all (CONTEXT.md "Status Color"). */
+   them was blue, which reports no state at all (GLOSSARY.md "Status Color"). */
 .dome-source-banner {
   margin-bottom: var(--space-md);
 }
@@ -7793,7 +7793,7 @@ body.shell-performing .show-items {
 /* A receipt is a plate, not an alarm: its kind is its left edge and nothing
    else, per Status Color. An act that went through takes no color; amber is
    one the builder can act on; red is refused or failed. Never blue, never
-   green (CONTEXT.md "Receipt"). */
+   green (GLOSSARY.md "Receipt"). */
 .receipt {
   pointer-events: auto;
   cursor: pointer;
@@ -7890,7 +7890,7 @@ body.shell-performing .show-items {
 
 /* The bound, said out loud under the list: what is on the droid and that this
    image never moves. It carries no act, because there is nothing for a
-   builder to do about it - a settled no (CONTEXT.md "Availability Family"). */
+   builder to do about it - a settled no (GLOSSARY.md "Availability Family"). */
 .parts-unused-bound {
   max-width: var(--measure);
 }
@@ -10719,7 +10719,7 @@ button.droid-build-card:disabled {
 }
 
 /* How the light is lit: its Light Type, or the controller that owns it. A
-   path is not a state, so it takes no signal color (CONTEXT.md "Status
+   path is not a state, so it takes no signal color (GLOSSARY.md "Status
    Color") - it is the dim readout voice, like an address. */
 .light-lit {
   margin-left: auto;

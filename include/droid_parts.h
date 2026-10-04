@@ -4,7 +4,7 @@
 // Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
 // DO NOT EDIT MANUALLY
 //
-// Source digest: sha256 4a2c49771947619235e5cd1462be3139bc23b06e0e684fd4dfd1186904204453
+// Source digest: sha256 74c0358628eafeddb0240c7b45a5c1366f4787265fe8cbfa8b0bf0c5b7a36981
 //
 // The Droid Parts Catalog's id vocabulary, and where each Part sits. A
 // Part is identity; an Output Address is only wiring, so nothing here
@@ -372,7 +372,7 @@ inline constexpr const char* const DROID_BUILD_DEFAULT_FITTED_IDS[DROID_BUILD_DE
 //
 // THIS IS THE PART'S FRAME, NOT THE DOME BEARING'S. A Dome Bearing is
 // measured from the droid's own front, so front is 0 there and 1800 here
-// (CONTEXT.md "Dome Bearing"). The two meet in one place, the
+// (GLOSSARY.md "Dome Bearing"). The two meet in one place, the
 // Part-targeted dome turn, which converts between them
 // (domeBearingFacingFrontDeg(), include/dome_bearing.h, #445).
 //

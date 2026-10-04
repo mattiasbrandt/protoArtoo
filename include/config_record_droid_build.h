@@ -1,7 +1,7 @@
 // =============================================================================
 // include/config_record_droid_build.h
 //
-// The Droid Build Record (ADR 0047; CONTEXT.md "Record"): which droid a builder
+// The Droid Build Record (ADR 0047; GLOSSARY.md "Record"): which droid a builder
 // says they built, and which Parts are on it. Its shared interface is declared
 // in include/config_records.h; this header adds the storage form, pure, for the
 // tests that pin it.

@@ -329,7 +329,7 @@ void handleServoPost(WebRequest& req) {
 // of their press. The EXPANSION -- which Outputs, in what order, how far apart
 // -- belongs to the Sequence Coordinator and is not in this handler, in the
 // request, or in the browser that sent it, because a safe pace a page held is
-// one a hand-edited or imported client could walk around (CONTEXT.md "Cadence
+// one a hand-edited or imported client could walk around (GLOSSARY.md "Cadence
 // Floor", "Sequence Coordinator").
 //
 // So the handler validates nothing and queues no servo command. It sets the

@@ -165,7 +165,7 @@ struct AudioSetVolumeCommitOutcome {
 };
 AudioSetVolumeCommitOutcome audioSetVolumeCommitApplied(uint8_t level, CommandSource source);
 
-// Write Windows (ADR 0011, amended 2026-09-24; CONTEXT.md "Write Window") for
+// Write Windows (ADR 0011, amended 2026-09-24; GLOSSARY.md "Write Window") for
 // the four audio config writes: each takes the config write lock, runs its
 // Commit Step - after reading the cache into the caller's `*working` and
 // running the Apply Core, for the two that write a snapshot back - and

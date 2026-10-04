@@ -31,7 +31,7 @@
   // last sent" - the same fact the Status Plate's one freshness line already
   // states, in a second aria-live region on the same screen, so a screen reader
   // heard it twice. The plate's line is the better of the two because it
-  // carries the AGE, which is the half a builder actually needs, and CONTEXT.md
+  // carries the AGE, which is the half a builder actually needs, and GLOSSARY.md
   // "Status Plate" already makes it the surface's one freshness statement
   // (#324, #402). Nothing here replaces it: one fact, one place.
   // The Controls section head's subtitle: a state, in three words, read off the
@@ -240,7 +240,7 @@
     drive: (payload) => HEALTH_SIGNAL_MODEL.readFootDrive(payload),
   };
 
-  // The lamp beside each row's state (CONTEXT.md "Status Color"). The rows
+  // The lamp beside each row's state (GLOSSARY.md "Status Color"). The rows
   // above take the health-signal model's own light, so they match Health.
   // Every other row is the firmware's state word (src/web/status_json.cpp),
   // and only a word that reports something heard lights: SBUS frames arriving
@@ -1473,7 +1473,7 @@
   // Rest runs the droid's Stand Down Sequence, which is chosen on Sequences;
   // the tile of the one it runs carries the Rest mark, so Rest needs no words
   // of its own beside it (operator, 2026-10-04). The Factory DM:RESET default
-  // says on its tile that it leaves the pies open (CONTEXT.md "Stand Down
+  // says on its tile that it leaves the pies open (GLOSSARY.md "Stand Down
   // Sequence").
   //
   // What is running is the Live Reading's run watch (data/live_reading.js,

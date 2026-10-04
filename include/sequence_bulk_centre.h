@@ -2,7 +2,7 @@
 // include/sequence_bulk_centre.h
 //
 // Put every Servo Output back to centre, one press, paced by the droid
-// (#318, #365; CONTEXT.md "Cadence Floor") -- and, on the same cursor, the boot
+// (#318, #365; GLOSSARY.md "Cadence Floor") -- and, on the same cursor, the boot
 // pass that sends each Output home at power-up as its boot behaviour says
 // (ADR 0052, #414).
 //
@@ -12,7 +12,7 @@
 // What the operator asks for is the whole act; the EXPANSION -- which Outputs,
 // in what order, how far apart -- is the Sequence Coordinator's and lives here,
 // never in the browser, because a safe pace a page holds is one a hand-edited
-// or imported client could walk around (CONTEXT.md "Sequence Coordinator").
+// or imported client could walk around (GLOSSARY.md "Sequence Coordinator").
 //
 // The boot pass is the other thing this cursor runs, and it is the same act
 // asked a different way: nobody pressed, so each row's own boot behaviour
@@ -62,7 +62,7 @@
 // that drops this paragraph.
 //
 // THE FLOOR IS A STORED SETTING, and this constant is only what a droid nobody
-// has set holds (#453; CONTEXT.md "Cadence Floor" has said settable from the
+// has set holds (#453; GLOSSARY.md "Cadence Floor" has said settable from the
 // start). It lives on the droid as the Setting `cadenceFloorMs`
 // (src/config_settings.cpp): GET /api/config reports it at
 // `servo.cadenceFloorMs`, POST /api/config and the Controller Console's
@@ -80,7 +80,7 @@
 // BODY_CLOSE steps at t=0 (kSe31Steps), and flooring those would change what
 // seven shipped sequences do, on a number nobody has measured for the body,
 // and would rewrite what an author asked for. Pacing what you generated is not
-// rewriting what somebody wrote (CONTEXT.md "Cadence Floor").
+// rewriting what somebody wrote (GLOSSARY.md "Cadence Floor").
 // -----------------------------------------------------------------------------
 constexpr uint32_t SEQ_CADENCE_FLOOR_MS = 450;
 
@@ -414,7 +414,7 @@ inline bool sequenceBulkCentreRowDue(const SeqBulkCentreRun& run, uint32_t nowMs
 // include/servo_motion_ramp.h), and a move that starts outside the recorded
 // ends, where the calibration dial can leave an Output, is longer than a full
 // throw. Starting the next row at the throw time would put two Outputs in
-// motion together, which is what the Cadence Floor is for (CONTEXT.md: one
+// motion together, which is what the Cadence Floor is for (GLOSSARY.md: one
 // servo actuating at a time); a release then would cut the drive part way
 // through the settle, leaving the Part wherever it had got to. So both wait, a
 // tick at a time, until ServoTask no longer reports a move in progress. Equal

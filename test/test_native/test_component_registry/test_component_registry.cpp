@@ -25,7 +25,7 @@ void tearDown() {
 }
 
 // A Component Member setting exists ONLY where identity reports more than one
-// selectable member (CONTEXT.md "Component Member"). This is the invariant the
+// selectable member (GLOSSARY.md "Component Member"). This is the invariant the
 // manifest's member_key column has to answer to -- a family that declares a key
 // without a second member would put a chooser in front of a builder with
 // nothing to choose.

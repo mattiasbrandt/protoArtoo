@@ -5,7 +5,7 @@ hands on to the Dome Controller instead. If you are arriving from ShadowMD or
 Padawan360 with bindings you already have, this is the page that says which of
 them the body runs and which go to the dome.
 
-The rule behind it is **Command Ownership** (`CONTEXT.md`, ADR 0055): the body
+The rule behind it is **Command Ownership** (`GLOSSARY.md`, ADR 0055): the body
 answers a command that names something it models, and forwards the rest.
 
 ## Where a line comes from

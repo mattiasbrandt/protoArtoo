@@ -24,7 +24,7 @@
 //   member_key  the NVS key holding this family's Component Member, or nullptr
 //               where the family has no member setting. A member setting
 //               exists ONLY where identity reports more than one selectable
-//               member (CONTEXT.md "Component Member"); the invariant is
+//               member (GLOSSARY.md "Component Member"); the invariant is
 //               asserted in test/test_native/test_component_registry, not
 //               trusted to whoever edits this file.
 //
@@ -47,7 +47,7 @@
 //                 One protocol commonly serves several products, and two rows
 //                 sharing a token is the visible form of that -- `de_packet_serial`
 //                 drives a Sabertooth under Foot Drive and a SyRen under Dome
-//                 Rotation from one implementation (CONTEXT.md "Component
+//                 Rotation from one implementation (GLOSSARY.md "Component
 //                 Protocol"). `none` is the Body Controller's: it hosts
 //                 protoArtoo rather than being driven by it.
 //   status        COMPONENT_STATUS_SUPPORTED (implemented and drivable) or
@@ -56,7 +56,7 @@
 //   confirmed_on_droid
 //                 COMPONENT_CONFIRMED_ON_DROID where the product has run on a
 //                 real droid, COMPONENT_NOT_CONFIRMED_ON_DROID where it is
-//                 built and drivable but has not yet (CONTEXT.md "Confirmed on
+//                 built and drivable but has not yet (GLOSSARY.md "Confirmed on
 //                 a Droid", #455). Evidence about a supported row, never a
 //                 third status: a roadmap row has no driver to have run, so it
 //                 cannot carry it (asserted in src/component_registry.cpp and
@@ -129,7 +129,7 @@ PA_COMPONENT_PART( 2, "firebeetle2", "FireBeetle 2 (ESP32-P4)", COMPONENT_CATEGO
 
 // -----------------------------------------------------------------------------
 // Radio Controller -- the RC Radio a builder holds and the RC Receiver it
-// talks to, both members of this one category (CONTEXT.md "RC Radio";
+// talks to, both members of this one category (GLOSSARY.md "RC Radio";
 // operator, 2026-09-18 on #369).
 //
 // The radios are the family's cards and its Component Member (rc_member). A

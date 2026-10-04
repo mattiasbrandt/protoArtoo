@@ -45,7 +45,7 @@
   // In the order a builder walks the droid: the dome top down, then the body.
   // A Common Addition is a Part the base design does not carry (`cadName:
   // null` in the catalog), and it gets its own group so a builder can tell the
-  // arms they added from the ones the design came with (CONTEXT.md "Parts").
+  // arms they added from the ones the design came with (GLOSSARY.md "Parts").
   // `dome: true` marks the groups that sit on the dome (isDomePart()).
   const GROUPS = [
     { id: "dome-pies", label: "Dome pie panels", sections: ["dome_pies"], dome: true },
@@ -98,7 +98,7 @@
   const servoWord = (output) => output.label;
   const hasServoWord = (output) => servoWord(output) !== "";
 
-  // An Output with a Part on it is wired, and one with none is free (CONTEXT.md
+  // An Output with a Part on it is wired, and one with none is free (GLOSSARY.md
   // "Wiring"): the word a builder reads for an empty Output.
   const FREE = "free";
 
@@ -331,7 +331,7 @@
   // path a Part CAN be moved through on the design. Which Output a Part is on
   // for THIS droid is still the Servo Output rows and never this field (#375).
   //
-  // UNCLAIMED is the Availability Reason for exactly this Part (CONTEXT.md
+  // UNCLAIMED is the Availability Reason for exactly this Part (GLOSSARY.md
   // "Availability Reason"): the droid reports it when a sequence names one.
   // ---------------------------------------------------------------------------
   const UNCLAIMED = "part-not-assigned";
@@ -927,7 +927,7 @@
 
     // What is on the wire a Part is on, on the Part's own row: which servo
     // for a servo Part, which Light Type for a light Part. It is the Output's
-    // answer (CONTEXT.md "Output"), so two Parts ganged on one wire show the
+    // answer (GLOSSARY.md "Output"), so two Parts ganged on one wire show the
     // same pick, and a pick saves the Output's row.
     const typeBar = (part, output) => {
       const light = Boolean(kinds?.isLight(part));

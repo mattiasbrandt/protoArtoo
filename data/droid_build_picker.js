@@ -5,7 +5,7 @@
 // and a Body Design, each at its Design Variant (ADR 0047, #333, #368).
 //
 // ONE BUILDER, DRAWN INTO A HOST. The Droid Build is asked once during guided
-// Setup and stated again wherever it is changed later (CONTEXT.md "Droid
+// Setup and stated again wherever it is changed later (GLOSSARY.md "Droid
 // Build"), so this draws into whatever host element a surface hands it and
 // keeps no markup of its own in any page. Configuration hosts it today, and
 // guided Setup shows that same host as its step (data/setup.js); a second home
@@ -26,12 +26,12 @@
 // THREE CARD KINDS, and only two of them are controls. A `supported` card and
 // the `own-build` card ("my own build") are buttons. A `roadmap` card is static
 // content - not a disabled button - so there is nothing on it to press, and
-// "greyed but still clickable" cannot happen (CONTEXT.md "Component Picker").
+// "greyed but still clickable" cannot happen (GLOSSARY.md "Component Picker").
 //
 // THE STATED DOME DESIGN STANDS. A connected dome may report panels the stated
 // design does not list, or miss ones it does. That difference is shown under
 // the Dome Design and nothing else happens: the builder's statement is theirs
-// to change, never the dome's to overwrite (CONTEXT.md "Dome Design", #333).
+// to change, never the dome's to overwrite (GLOSSARY.md "Dome Design", #333).
 // =============================================================================
 (() => {
   "use strict";
@@ -125,7 +125,7 @@
     plate.dataset.option = design.id;
 
     // A roadmap plate is static content, never a control: no button, no
-    // listener, nothing a press could reach (CONTEXT.md "Component Picker").
+    // listener, nothing a press could reach (GLOSSARY.md "Component Picker").
     const face = element(roadmap ? "div" : "button", "droid-build-card");
     face.dataset.design = design.id;
     if (roadmap) {

@@ -1,7 +1,7 @@
 // =============================================================================
 // test/test_web/test_servo_calibration_test_card.js
 //
-// Servos' drive controls (data/servo.js; CONTEXT.md "Servos"): on each Output's
+// Servos' drive controls (data/servo.js; GLOSSARY.md "Servos"): on each Output's
 // row, a typed width sent once, and open, close and stop. There is no separate
 // test section any more - testing a servo is driving its Output (operator,
 // 2026-09-19 on #412) - so this file, named for the test card it once covered,
@@ -97,7 +97,7 @@ test("an Output carrying the LED strip offers no drive at all", async () => {
 
 // Servos lists the servos a builder actually has (operator, 2026-09-29 on
 // #411: "why is the servos page hardcoded to list out these when I have no
-// parts defined with wiring?!"; CONTEXT.md "Servos"): only the Outputs the
+// parts defined with wiring?!"; GLOSSARY.md "Servos"): only the Outputs the
 // firmware reports with a Part on them, in its order, each named by its Part
 // and the pin the board prints. An Output with no Part is not a row, whatever
 // its wired tick says, and nothing here comes from a list of this page's own.

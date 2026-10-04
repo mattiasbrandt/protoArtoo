@@ -296,7 +296,7 @@
   // `route` is the builder's next move where there is one, and null where there
   // is not. A refusal by a safety rule is a settled no: nothing to do about it,
   // so no destination, no link, and no suggestion to buy or fit anything
-  // (CONTEXT.md "Availability Family").
+  // (GLOSSARY.md "Availability Family").
   const DEVICE_REFUSALS = Object.freeze({
     invalid_action_token: Object.freeze({
       text: "Unknown action. Reload the page.",
@@ -457,7 +457,7 @@
     },
     cadenceFloorMs: { applies: "immediate", word: "gap between servo starts", unit: MS, path: "servo.cadenceFloorMs" },
     // `unset` is what the Stand Down runs while none has been chosen (the
-    // Setting stores an empty name; CONTEXT.md "Stand Down Sequence").
+    // Setting stores an empty name; GLOSSARY.md "Stand Down Sequence").
     standDownSequence: {
       applies: "immediate", word: "Stand Down Sequence", path: "seq.standDown",
       refused: "must be empty or a sequence name like DM:RESET", unset: "DM:RESET",

@@ -1,7 +1,7 @@
 // =============================================================================
 // include/config_records.h
 //
-// The Records, behind the one interface every Record shares (CONTEXT.md
+// The Records, behind the one interface every Record shares (GLOSSARY.md
 // "Record"; ADR 0068, second amendment of 2026-09-26).
 //
 // A Record is values the droid stores that the builder, or guided Setup, states

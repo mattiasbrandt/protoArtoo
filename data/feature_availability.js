@@ -96,7 +96,7 @@
     // Where a builder goes about a "no" (#348). One entry per state that HAS a
     // next move, and nothing for the states that do not: an Availability Family
     // decides whether there is a destination at all, so the absence here is the
-    // answer rather than a gap (CONTEXT.md "Availability Family").
+    // answer rather than a gap (GLOSSARY.md "Availability Family").
     //
     //   off                 change it here - the Component Toggle is a control
     //                       the builder owns, on Configuration
@@ -169,7 +169,7 @@
       return route ? `${text} ${route.label}.` : text;
     };
 
-    // The Availability Family a resolved state is painted in (CONTEXT.md
+    // The Availability Family a resolved state is painted in (GLOSSARY.md
     // "Availability Family"), where the state class alone cannot say it. An
     // identity that could not be read is two different answers: a controller
     // that did not respond is retryable and still being found out, and one

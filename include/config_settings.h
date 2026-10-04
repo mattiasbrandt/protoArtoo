@@ -1,7 +1,7 @@
 // =============================================================================
 // include/config_settings.h
 //
-// Each Setting, declared once (ADR 0068, amended 2026-09-26; CONTEXT.md
+// Each Setting, declared once (ADR 0068, amended 2026-09-26; GLOSSARY.md
 // "Setting").
 //
 // A Setting is one value the droid stores that a builder can change. It

@@ -758,7 +758,7 @@ rows:
   - src/console/console_module.cpp - `g_settingOps` row, executed by `consoleExecuteSettingOp()`
   executor_or_core: configApply
   missing_metadata: []
-  notes: The Cadence Floor (#453, CONTEXT.md). NVS key cad_floor_ms, GET path servo.cadenceFloorMs, Immediate. The default is the dome's measured figure; the body's is unmeasured (#355).
+  notes: The Cadence Floor (#453, GLOSSARY.md). NVS key cad_floor_ms, GET path servo.cadenceFloorMs, Immediate. The default is the dome's measured figure; the body's is unmeasured (#355).
 - name: servo.action.stop
   type: action
   registry_api_path: /api/servo

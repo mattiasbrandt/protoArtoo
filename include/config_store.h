@@ -257,14 +257,14 @@ struct SystemConfig {
     // are kept clear by decision - configApply() refuses them, and so does
     // pca9685Begin(). Read once at start.
     uint8_t pca_address;
-    // The Cadence Floor (CONTEXT.md): the least time, in ms, the Sequence
+    // The Cadence Floor (GLOSSARY.md): the least time, in ms, the Sequence
     // Coordinator leaves between two body Outputs it starts itself. Its
     // default is the dome's measured figure, standing in for the body's, which
     // nobody has measured; include/sequence_bulk_centre.h says so at length.
     // Read from the cache each time something is paced, so a saved value is
     // the pace from the next move on.
     uint16_t cadence_floor_ms;
-    // The Stand Down Sequence (CONTEXT.md, #330, #451): the one Sequence the
+    // The Stand Down Sequence (GLOSSARY.md, #330, #451): the one Sequence the
     // builder nominates as putting the droid back the way it stands, as its
     // name ("DM:RESET"). Empty is never chosen, and the Stand Down then runs
     // DM:RESET (data/app.js). Nothing on the controller runs it: the page's

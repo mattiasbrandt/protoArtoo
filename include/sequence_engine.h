@@ -159,7 +159,7 @@ enum SeqRandomMode : uint8_t {
 };
 
 // -----------------------------------------------------------------------------
-// Move Shape  --  what a step says one Part does (ADR 0049, CONTEXT.md).
+// Move Shape  --  what a step says one Part does (ADR 0049, GLOSSARY.md).
 //
 // These are the dome's own three words, so one word means one thing across the
 // droid: a builder who has learned that a dome panel opens, closes and flutters

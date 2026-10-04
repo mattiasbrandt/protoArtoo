@@ -2,17 +2,17 @@
 // data/health_signals.js
 //
 // Shared health indicator derivation for the dashboard traffic-light grid.
-// - Explicit state semantics (CONTEXT.md "Status Color"): ok=nominal,
+// - Explicit state semantics (GLOSSARY.md "Status Color"): ok=nominal,
 //   warn=degraded and the builder can do something about it, fail=hard fault,
 //   off=not reporting, never asked, not fitted
 // - A field the status frame does not carry reads the Live Reading's Unknown
-//   (CONTEXT.md "Live Reading"). The word is handed in by the caller rather
+//   (GLOSSARY.md "Live Reading"). The word is handed in by the caller rather
 //   than written here, so this model and every surface say the same one
 // - A reading we do not have is off, never warn: amber promises a next move,
 //   and "we have not heard" offers none (#402)
 // - Staleness is not a health state. A stale row keeps the state the
 //   controller last reported; the Status Plate carries the one freshness
-//   statement for the whole surface (CONTEXT.md "Health Signal", _Avoid_)
+//   statement for the whole surface (GLOSSARY.md "Health Signal", _Avoid_)
 // - A signal is a state and one word. It carries no key=value detail: a raw
 //   field name is not something a builder reads (#298, #422)
 // - protoR2link and the sound link are answered from one word table, which
@@ -125,7 +125,7 @@
   // - dome_link.state, and the sound block's rx_status - and this is the one
   // place a page turns that into a word and a light. No page reads the line
   // owner or combines it with a state to reach a verdict of its own (#422,
-  // CONTEXT.md "Health Signal").
+  // GLOSSARY.md "Health Signal").
   //
   // Each answer is { state, word, short }: `state` is the light (ok green,
   // fail red, off grey - neither table has an amber row), `word` is what a
@@ -140,7 +140,7 @@
   const linkAnswer = (state, word, short = word) => ({ state, word, short });
 
   // While linked, the transport IS the value: the glossary's operator labels,
-  // and the chip's short form of each (CONTEXT.md "protoR2link Transport
+  // and the chip's short form of each (GLOSSARY.md "protoR2link Transport
   // Visibility").
   const PROTO_R2LINK_TRANSPORT_WORDS = Object.freeze({
     uart: linkAnswer("ok", "UART (slip ring)", "UART"),
@@ -222,7 +222,7 @@
   // The Dome ESC and the Foot Drive: one word table each, the shape Sound's is
   //
   // Both rows used to light green on what the droid COMMANDS - a target speed,
-  // a drive command - which is not a report (CONTEXT.md "Status Color": green
+  // a drive command - which is not a report (GLOSSARY.md "Status Color": green
   // is nominal and reporting). Each answer is linkAnswer()'s { state, word,
   // short } plus `detail`, the firmware's own line for what is commanded
   // (src/web/status_json.cpp: "Target 0%", "Command 120/0"), which a page may

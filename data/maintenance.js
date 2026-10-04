@@ -2,7 +2,7 @@
 // data/maintenance.js
 //
 // Maintenance: inspecting and repairing a controller that is already configured
-// (CONTEXT.md "Maintenance", #288). The serial lanes, the diagnostics, the
+// (GLOSSARY.md "Maintenance", #288). The serial lanes, the diagnostics, the
 // Memory Profiler, Backup & Restore, Restart - and the single
 // deliberate way back into guided Setup, for a builder who skipped it or
 // rebuilt the droid wholesale (#297).
@@ -92,7 +92,7 @@
   const diagHeapLargestLight = document.getElementById("diag-heap-largest-light");
 
   // A health signal reads as a droid LED and the COLOR IS THE READING: the
-  // light carries it and the value beside it stays ink (CONTEXT.md "Health
+  // light carries it and the value beside it stays ink (GLOSSARY.md "Health
   // Signal", "Status Color"). Before this the state was painted onto the text
   // with element.style.color and spelled with an emoji beside it, which put a
   // color on a number and a picture in a readout.
@@ -208,7 +208,7 @@
 //
 // A backup holds what the builder made on the controller in three parts, and a
 // restore writes the parts ticked, each replacing what the droid holds and
-// never merging into it (CONTEXT.md "Backup", ADR 0056 and its 2026-09-25
+// never merging into it (GLOSSARY.md "Backup", ADR 0056 and its 2026-09-25
 // amendment, #448):
 //   Sequences      every Learned Sequence, as GET /api/seq?name= answers it,
 //                  and the take files they name (#442)
@@ -1048,7 +1048,7 @@
     }
 
     // What the Rehearsal finds in each Sequence written, against the droid as
-    // it now stands. It never refuses (CONTEXT.md "Rehearsal"): nothing here
+    // it now stands. It never refuses (GLOSSARY.md "Rehearsal"): nothing here
     // stops or changes the restore. A read that fails leaves the rules that
     // need the droid's rows silent, exactly as in the editor.
     if (sequencesDone?.restored?.length > 0 && window.SeqRehearsal) {
@@ -1223,7 +1223,7 @@
 
   // The same two thresholds as before, answering with a Status Color state
   // rather than with a hard-coded hex: a color literal outside :root is a
-  // defect (CONTEXT.md "Status Color"), and these three were Material's own
+  // defect (GLOSSARY.md "Status Color"), and these three were Material's own
   // green, amber and red rather than the droid's.
   function hwmState(hwm) {
     if (hwm > 2048) return "ok";
@@ -1430,7 +1430,7 @@
 
 
 // =============================================================================
-// The way back into guided Setup (#297, CONTEXT.md "Maintenance")
+// The way back into guided Setup (#297, GLOSSARY.md "Maintenance")
 //
 // ONE way in. Guided Setup is drawn over Configuration whenever the droid is
 // not set up (data/setup.js), and this is the only control that makes a droid

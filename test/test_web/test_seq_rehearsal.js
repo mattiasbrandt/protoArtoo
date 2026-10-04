@@ -170,7 +170,7 @@ test("DM:RESET's $s is a quiet-in-sequence warning, and $S is not", () => {
 
 
 test("a count of zero warnings takes no state color", () => {
-  // CONTEXT.md "Status Color": amber is "degraded, and you can do something
+  // GLOSSARY.md "Status Color": amber is "degraded, and you can do something
   // about it". There is nothing to do about no warnings, and a count of nothing
   // wrong reading as something wrong is the defect on the surface whose whole
   // job is telling a builder what will not happen. The badge already guarded

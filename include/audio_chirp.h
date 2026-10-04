@@ -92,7 +92,7 @@ class AudioDriverChirp : public AudioDriver {
     bool vocalHeld() const override;
     // The Sound page's Driver row is operator-facing, and bare "CHIRP" also
     // names CHIRP Droid Control, a different product by the same author
-    // (CONTEXT.md Flagged Ambiguities, 2026-09-08: always qualify in operator
+    // (GLOSSARY.md Flagged Ambiguities, 2026-09-08: always qualify in operator
     // copy). Read from this product's Component Registry row rather than
     // restated here, exactly as capabilities() is - as the other two sound
     // drivers do (#422).

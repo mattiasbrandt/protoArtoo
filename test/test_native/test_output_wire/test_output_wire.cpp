@@ -93,7 +93,7 @@ void test_an_index_past_the_table_answers_no() {
     TEST_ASSERT_FALSE(outputWireStripDriven(in, BOARD_OUTPUT_COUNT));
 }
 
-// A light can fight nothing, so it never has an Output Release (CONTEXT.md
+// A light can fight nothing, so it never has an Output Release (GLOSSARY.md
 // "Output Release", #443) - even when a time is stored on its row from when it
 // carried a servo. Every servo component lets go at the time its row holds.
 void test_a_light_never_lets_go_and_a_servo_lets_go_at_its_time() {

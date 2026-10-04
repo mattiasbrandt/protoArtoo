@@ -472,13 +472,13 @@ body_lights:              # what the body carries that lights up — parts, not 
   #
   # `cad_name: null` on every row: a body light is a Common Addition, offered
   # to every droid and fitted by default on none, because a builder bolts these
-  # on rather than getting them with a design (ADR 0047, CONTEXT.md "Common
+  # on rather than getting them with a design (ADR 0047, GLOSSARY.md "Common
   # Addition"). No design seeds one.
   #
   # AN LED STRIP IS NOT A ROW HERE, AND NEVER WAS ONE TO WRITE. It is a Light
   # Type - what protoArtoo puts on the end of one of its own leads to light a
   # Part, the light half of the answer a servo gives as its model (ADR 0067,
-  # CONTEXT.md "Light Type"). The thing on the droid is the Data Panel or the
+  # GLOSSARY.md "Light Type"). The thing on the droid is the Data Panel or the
   # Charge Bay Indicator; what lights it belongs to the wire it is on, and the
   # Part inherits it. A row here for the strip would put a technology beside
   # two things, which is the defect that cost this ticket three iterations -

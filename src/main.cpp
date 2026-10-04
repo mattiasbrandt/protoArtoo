@@ -370,7 +370,7 @@ void loadConfigToState() {
 
     // Every board Output's wired tick from the Parts on its row, before
     // anything reads it: an Output with a Part on it is wired and one with none
-    // is free (CONTEXT.md "Wiring", #411). Every start, and idempotent: it
+    // is free (GLOSSARY.md "Wiring", #411). Every start, and idempotent: it
     // clears a tick stored with no Part - one saved before the tick followed
     // the Parts, or the wire `main` lit from its retired slot, which now waits
     // for a light Part on Wiring - and ticks an Output a Part is on. The rows

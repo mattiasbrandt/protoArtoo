@@ -1330,7 +1330,7 @@ void test_a_part_move_takes_it_off_one_output_and_is_committed() {
 }
 
 // An Output with a Part on it is wired and one with none is free, with no
-// separate switch (CONTEXT.md "Wiring", #411). The tick is what ServoTask
+// separate switch (GLOSSARY.md "Wiring", #411). The tick is what ServoTask
 // reads at start, so a move writes it: on for the Output the Part lands on,
 // off for the one it leaves empty, and left on for one that keeps a Part.
 void test_a_part_move_writes_the_wired_tick_of_each_output_it_touches() {

@@ -105,7 +105,7 @@ inline bool outputWireCentreable(const ServoOutputRow& row) {
 // Output Release (ADR 0043, #443) - or SERVO_RELEASE_MS_NEVER.
 //
 // Never for a light, whatever the row stores: release exists so a jammed or
-// fought servo cannot grind, and a light can fight nothing (CONTEXT.md "Output
+// fought servo cannot grind, and a light can fight nothing (GLOSSARY.md "Output
 // Release"). The stored number is kept rather than cleared, as the LED count is
 // kept on a servo's row, so naming a light by mistake and naming the servo back
 // does not cost the builder the time they set.

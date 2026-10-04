@@ -204,7 +204,7 @@ test("the component card names both links in the model's words", async () => {
 });
 
 // A Readouts lamp is a health signal, so a green one says something was heard
-// (CONTEXT.md "Status Color": a thing never asked reads grey, never good). An
+// (GLOSSARY.md "Status Color": a thing never asked reads grey, never good). An
 // Output reports `ready` whether or not a servo is on it, and a PWM channel
 // reports it with nothing measured, so neither lights; SBUS frames arriving
 // do, and a lost SBUS link is red. The lamp follows the frame on the patch

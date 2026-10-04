@@ -90,7 +90,7 @@ prototype drew it on, and Configuration kept the `tune-variant` the Setup page
 it split from had worn.
 
 `robot-outline` is the one choice the prototype did not make for us: it left
-Servos out of the rail because `CONTEXT.md` **Activity Group** does not list it
+Servos out of the rail because `GLOSSARY.md` **Activity Group** does not list it
 and its fate is #364's, so the shipped nav needed an icon the reference had no
 row for. It was picked from the twenty-two already taken rather than adding a
 twenty-third from an unread source.

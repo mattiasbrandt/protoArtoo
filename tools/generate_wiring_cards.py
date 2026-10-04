@@ -39,7 +39,7 @@ This generator refuses, each because the alternative ships something wrong:
     reads a bare `5` or `off` as a number or a boolean, and a card is text;
   - a `source` naming a section its own sheet does not have. Every line of a
     card is proven by a section, so a citation of nothing is a guess;
-  - "lead", "driven" or "drives" (CONTEXT.md "Wiring" _Avoid_), and anything
+  - "lead", "driven" or "drives" (GLOSSARY.md "Wiring" _Avoid_), and anything
     outside ASCII, which is where a pictograph would arrive from.
 
 A value the sheet does not know is written `UNKNOWN` on the card, never filled.
@@ -99,7 +99,7 @@ REGISTRY_ROW_RE = re.compile(
 )
 SUPPORTED = "SUPPORTED"
 
-# CONTEXT.md "Wiring" _Avoid_: a wire is a wire, and nothing is "driven".
+# GLOSSARY.md "Wiring" _Avoid_: a wire is a wire, and nothing is "driven".
 AVOIDED_WORDS = re.compile(r"\b(leads?|driven|drives)\b", re.I)
 
 
@@ -145,7 +145,7 @@ def _text(where, key, value, problems):
     if avoided:
         problems.append(
             f"{where}: `{key}` says {avoided.group(0)!r}; a wire is a wire and nothing "
-            f'is "driven" (CONTEXT.md "Wiring")'
+            f'is "driven" (GLOSSARY.md "Wiring")'
         )
     return value.strip()
 

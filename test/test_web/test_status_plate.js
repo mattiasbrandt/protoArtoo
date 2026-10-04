@@ -1,7 +1,7 @@
 // =============================================================================
 // test/test_web/test_status_plate.js
 //
-// The Status Plate on the Operator Shell (#346, #324, CONTEXT.md).
+// The Status Plate on the Operator Shell (#346, #324, GLOSSARY.md).
 //
 // The shipped page_bootstrap.js + shell.js + status_stream.js are executed
 // against the shipped data/index.html in a real node tree, with the event
@@ -446,7 +446,7 @@ test("only the estop acts, and it is the same stop the topbar button sends", asy
   );
 });
 
-// The light is the reading (CONTEXT.md "Health Signal"): a repaint that wrote
+// The light is the reading (GLOSSARY.md "Health Signal"): a repaint that wrote
 // the word over the whole value line took the light with it on the first frame,
 // and every chip after that was a word with no light at all (#355).
 test("every chip keeps its light once the droid's reading is painted", async () => {
@@ -660,7 +660,7 @@ test("a frame missing the fields a safety reading is made from is not read as sa
 
 test("a missing safety field reads as unknown, and never as clear", async () => {
   // With no earlier frame to keep, an unverifiable one leaves the plate saying
-  // it has not heard -- grey, per CONTEXT.md "Status Color", where grey is
+  // it has not heard -- grey, per GLOSSARY.md "Status Color", where grey is
   // "not reporting, never asked". Green here would be a droid reporting itself
   // healthy on a frame that never mentioned its estop.
   const withoutEstop = { ...HEALTHY };

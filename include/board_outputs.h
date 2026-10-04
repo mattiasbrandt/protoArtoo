@@ -7,7 +7,7 @@
 // Component Label - on every screen, in the Console's list and completion, and
 // as the word typed in the Console and sent to POST /api/servo: ARM1..ARM5 on
 // the Artoo PCB, GPIO 49 / GPIO 50 / GPIO 4 / GPIO 5 / GPIO 51 on the
-// FireBeetle 2 (CONTEXT.md "Output Address", "Board Component Label"; ADR 0033
+// FireBeetle 2 (GLOSSARY.md "Output Address", "Board Component Label"; ADR 0033
 // Amendment 2026-09-19). There is no protoArtoo-wide name for an Output and no
 // split into arm and AUX kinds.
 //
@@ -217,7 +217,7 @@ constexpr const BoardOutput* boardOutputOnChannel(uint8_t channel) {
 
 // The Output whose wired tick the POST /api/config form name `form` names
 // (its `enabledField`, enableArm1..enableAux3), or nullptr. A tick follows the
-// Parts on its Output and no door writes it on its own (CONTEXT.md "Wiring",
+// Parts on its Output and no door writes it on its own (GLOSSARY.md "Wiring",
 // #411), so configApply() refuses a form that names one.
 constexpr const BoardOutput* boardOutputByEnabledField(const char* form) {
     if (form == nullptr) {

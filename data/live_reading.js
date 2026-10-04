@@ -1,7 +1,7 @@
 // =============================================================================
 // data/live_reading.js
 //
-// The Live Reading (CONTEXT.md): what every surface is handed about the droid's
+// The Live Reading (GLOSSARY.md): what every surface is handed about the droid's
 // live state, and the one place that decides it (#419).
 //
 // - The last status frame that carried all six core fields. A frame missing

@@ -1,4 +1,4 @@
-// Droid Part control-path inventory (CONTEXT.md "Droid Parts Catalog"; #301, #356).
+// Droid Part control-path inventory (GLOSSARY.md "Droid Parts Catalog"; #301, #356).
 //
 // A control path is HOW protoArtoo can reach a Part: the dome's serial link,
 // a local PWM channel, or nothing yet. It says what is DRIVABLE, never what is

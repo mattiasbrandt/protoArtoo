@@ -29,7 +29,7 @@
 //
 //   receipt(text, kind)
 //     The short line after an act whose own question has closed, or after a
-//     download (CONTEXT.md "Receipt"): `<verb-ed> <object> - <consequence, or
+//     download (GLOSSARY.md "Receipt"): `<verb-ed> <object> - <consequence, or
 //     what was not touched>`. It never replaces a feedback line
 //     (docs/ui-copy-voice.md rule 18) and is never for anything the droid
 //     streams. One per act, three at most, each gone after a few seconds or on
@@ -261,7 +261,7 @@
   const RECEIPT_MS = 3500;
   // Its kind is its edge, and follows Status Color: an act that went through
   // takes no color, one the builder can act on amber, one refused or failed
-  // red. Never blue and never green (CONTEXT.md "Status Color", "Receipt").
+  // red. Never blue and never green (GLOSSARY.md "Status Color", "Receipt").
   const RECEIPT_KINDS = { done: "", act: "receipt-act", refused: "receipt-refused" };
 
   /**

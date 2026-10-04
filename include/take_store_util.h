@@ -8,7 +8,7 @@
 //
 // A take is a performance captured off the sticks: the commanded targets of
 // the Parts that had puppet strings when it was armed, in a file of its own
-// that a Learned Sequence references by id (CONTEXT.md "Take"). The figures
+// that a Learned Sequence references by id (GLOSSARY.md "Take"). The figures
 // below are the droid's own: GET /api/take reports all three, so no page
 // carries a copy.
 // =============================================================================

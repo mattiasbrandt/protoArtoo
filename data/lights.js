@@ -2,12 +2,12 @@
 // data/lights.js
 //
 // Lights: what lights this droid has, how each one is lit, and what it can be
-// told to do (CONTEXT.md "Lights", ADR 0067). The page is every Part whose
+// told to do (GLOSSARY.md "Lights", ADR 0067). The page is every Part whose
 // Part Kind is a light and is on this droid, read from the catalog and grouped
 // by where it sits, so a row added to docs/droid-parts.yaml appears here with
 // no code change once it is on the droid (operator, 2026-09-29 on #411: "we
 // have hardcoded listing of these two lights even when there is no such things
-// defined in the wiring config"; CONTEXT.md "Lights"):
+// defined in the wiring config"; GLOSSARY.md "Lights"):
 //
 //   a body light   once a Part-first row on Wiring puts it on an Output
 //   a dome light   while the Dome Controller is fitted, because it never goes
@@ -93,7 +93,7 @@
   // the frame does not name has not reported: neither is Off. The firmware
   // keeps the two apart on purpose - {} is "no lights", a missing answer is
   // not an answer (include/api_aux_led.h) - and a surface shows no state
-  // nobody reported (CONTEXT.md, Health Signal).
+  // nobody reported (GLOSSARY.md, Health Signal).
   let showing = null;
   // What a wire with no reading says instead, in the Live Reading's words:
   // Waiting before the droid has sent a frame, Unknown once frames

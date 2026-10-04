@@ -47,7 +47,7 @@ enum ComponentStatus : uint8_t {
 
 // -----------------------------------------------------------------------------
 // The two words the manifest's `confirmed_on_droid` column is written in
-// (CONTEXT.md "Confirmed on a Droid", #455): whether the product has run on a
+// (GLOSSARY.md "Confirmed on a Droid", #455): whether the product has run on a
 // real droid. Evidence about a supported row and never a third status, which
 // is why it is a bool beside ComponentStatus rather than a value of it.
 // -----------------------------------------------------------------------------
@@ -186,7 +186,7 @@ constexpr bool componentPartExists(const char* id) {
 // driver for it. That pair -- not the Board Capability Gate's option set -- is
 // what "more than one selectable member" counts: the Gate answers what the
 // board can be wired for, and what the running image carries is a different
-// question (ADR 0042 amended 2026-09-09, CONTEXT.md "Component Member").
+// question (ADR 0042 amended 2026-09-09, GLOSSARY.md "Component Member").
 //
 // Written over the two fields as well as over a row, because the constexpr
 // count below walks the manifest rather than the table and would otherwise

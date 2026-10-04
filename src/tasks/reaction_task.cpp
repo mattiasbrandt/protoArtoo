@@ -1,7 +1,7 @@
 // =============================================================================
 // src/tasks/reaction_task.cpp
 //
-// ReactionTask - fires the droid's Reactions (ADR 0053, #450; CONTEXT.md
+// ReactionTask - fires the droid's Reactions (ADR 0053, #450; GLOSSARY.md
 // "Reaction"): a trigger binding whose source is a droid condition, which the
 // droid fires itself. Core 0, 20 Hz.
 //

@@ -2,7 +2,7 @@
 // test/test_native/test_board_outputs/test_board_outputs.cpp
 //
 // An Output is called by what its board prints beside its pin, and that word is
-// what the Console and POST /api/servo take (CONTEXT.md "Output Address", ADR
+// what the Console and POST /api/servo take (GLOSSARY.md "Output Address", ADR
 // 0033 Amendment 2026-09-19; include/board_outputs.h).
 //
 // The native image is built for the Artoo PCB, so the running board's answers

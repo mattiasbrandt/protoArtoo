@@ -1,7 +1,7 @@
 // =============================================================================
 // data/wiring.js
 //
-// Wiring (CONTEXT.md "Wiring"): the destination that answers the one question
+// Wiring (GLOSSARY.md "Wiring"): the destination that answers the one question
 // no other screen can -- "I am holding a servo wire: which output does it go
 // to, and which part will it move?" The sheet is a reference, not a control
 // surface: it writes nothing, and no act on it reaches the droid. What writes
@@ -29,7 +29,7 @@
 // plates; the printable bench copy (#366) wraps the same strings in a file of
 // its own, wiringSheetFile(). That is why the sheet is built as strings rather
 // than nodes: the two copies cannot disagree if there is only one thing that
-// makes them, and CONTEXT.md "Wiring" is explicit that they are "the same
+// makes them, and GLOSSARY.md "Wiring" is explicit that they are "the same
 // document from one generator". A second generator is the one thing this group
 // can get wrong that cannot be fixed cheaply later.
 //
@@ -240,7 +240,7 @@
   // Each wire's own color
   //
   // A wire is told apart from its neighbours the way a real loom's are: by its
-  // own color (CONTEXT.md "Status Color", the Wiring exception, operator
+  // own color (GLOSSARY.md "Status Color", the Wiring exception, operator
   // 2026-09-19 on #411). The color NAMES a wire and carries no state. Only the
   // wires a builder has run are drawn at all (sheetWires()).
   //
@@ -499,7 +499,7 @@
   };
 
   // An Output's wire is named first by what the board prints beside its pin,
-  // ARM3 on the Artoo PCB and GPIO 4 on the FireBeetle 2 (CONTEXT.md "Output
+  // ARM3 on the Artoo PCB and GPIO 4 on the FireBeetle 2 (GLOSSARY.md "Output
   // Address"), then by its address. Only an Output with a Part on it gets one
   // (sheetWires()), so the box names what is on the end.
   const outputWire = (output, { parts, order }) => ({
@@ -536,7 +536,7 @@
   // Only the wires a builder has run are drawn (operator, 2026-09-29 on #411:
   // "the drawing should only draw the actaul lines (wires) currently
   // assigned/wired in"). An Output is wired when a Part is on it and free when
-  // none is (CONTEXT.md "Wiring"), whatever drives it - a board pin or an
+  // none is (GLOSSARY.md "Wiring"), whatever drives it - a board pin or an
   // expander's channel alike. A serial link is wired while its component is
   // switched on in Configuration; one Not fitted or switched off rides no wire
   // (operator, 2026-09-29: "foot drive is now set to "not fitted" so why is
@@ -553,7 +553,7 @@
     ];
   };
 
-  // An Output with no Part on it, in the one word for it (CONTEXT.md "Wiring"),
+  // An Output with no Part on it, in the one word for it (GLOSSARY.md "Wiring"),
   // which is the parts wiring table's own (data/parts_mapping.js). The word is
   // kept here too for a page where that script did not load: the drawing and
   // its count stand without the table, and say so in the same word.
@@ -589,12 +589,12 @@
   // ---------------------------------------------------------------------------
   const promiseHtml = () => esc(SUBTITLE);
 
-  // The shared rail is described and never drawn (CONTEXT.md "Wiring"), and this
+  // The shared rail is described and never drawn (GLOSSARY.md "Wiring"), and this
   // is the one place the droid's own pacing is stated, because the reason it
   // paces itself is the rail every servo shares.
   //
   // The cadence carries its provenance in the line after it, and that is not
-  // padding. CONTEXT.md "Cadence Floor" puts "the ~450 ms cadence (that figure
+  // padding. GLOSSARY.md "Cadence Floor" puts "the ~450 ms cadence (that figure
   // is the dome's)" in its _Avoid_ list, and include/sequence_bulk_centre.h
   // says why both are true: the default is the DOME's measured figure, adopted
   // deliberately and explicitly as the body's stand-in until the body's own is
@@ -940,7 +940,7 @@
   // IT READS, IT NEVER RESOLVES. A row names both facts and the answer to
   // change, and its route is a link to where that answer lives. Nothing here
   // writes to the droid, unmaps a Part or overwrites the stated Dome Design
-  // (CONTEXT.md "Dome Design", #373).
+  // (GLOSSARY.md "Dome Design", #373).
   // ===========================================================================
   const STATES = Object.freeze({
     contradicted: "contradicted",
@@ -975,7 +975,7 @@
   const SILENT = "Asked, and no answer. Check its wire and its power.";
 
   // A Health Signal's answer as a row: its own word and its own light, so the
-  // list never reads a signal differently from the Status Plate (CONTEXT.md
+  // list never reads a signal differently from the Status Plate (GLOSSARY.md
   // "Health Signal"). ok is observed; fail and a grey "asked, nobody answered"
   // are declared; anything else nobody could ask is not probed.
   const signalRow = (base, answer, { askedWithNoAnswer = [], silent = SILENT } = {}) => {
@@ -1103,7 +1103,7 @@
   // no encoder, no feedback path (#318) - so a pulse on the pin is never a
   // servo being there. The one thing that has ever confirmed one moves is the
   // builder recording its ends by moving it: `calibrated`. Until then it is
-  // amber, as CONTEXT.md "Status Color" puts an uncalibrated Servo Output.
+  // amber, as GLOSSARY.md "Status Color" puts an uncalibrated Servo Output.
   const outputRow = (output, parts) => {
     const base = {
       key: output.address,
@@ -1414,7 +1414,7 @@
   // question first, or taken off, and what is on its wire is chosen
   // (data/parts_mapping.js picker(), #347, #411, #463). Mounted here and never
   // made by wiringDocument(), which makes the same table as text: the printed
-  // sheet stays a reference that writes nothing (CONTEXT.md "Wiring"). The
+  // sheet stays a reference that writes nothing (GLOSSARY.md "Wiring"). The
   // links and the cards are handed over as this file reads them, and
   // only once the droid has answered: a lane whose switch has not been read
   // is not yet known to be fitted.

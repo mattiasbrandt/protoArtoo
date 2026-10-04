@@ -194,7 +194,7 @@ const ConfigSetting kConfigSettings[] = {
      PA_SETTING_FIELD(Dome, DomeConfig, dome_wifi_peer_ip), SettingRule::Ipv4, 0, 0, 0, nullptr, 0,
      "must be empty or a valid IPv4 address"},
 
-    // The Cadence Floor (CONTEXT.md, #453): the pace the Sequence Coordinator
+    // The Cadence Floor (GLOSSARY.md, #453): the pace the Sequence Coordinator
     // holds between body Outputs it starts itself. It reads it from the cache
     // each time it paces something, so a saved value is Immediate. The default
     // is the dome's figure and the body's own is unmeasured; the bounds are the
@@ -203,7 +203,7 @@ const ConfigSetting kConfigSettings[] = {
     PA_RANGE("cadenceFloorMs", "servo.cadenceFloorMs", "cad_floor_ms", Immediate, System, SystemConfig,
              cadence_floor_ms, SEQ_CADENCE_FLOOR_MIN_MS, SEQ_CADENCE_FLOOR_MAX_MS, SEQ_CADENCE_FLOOR_MS),
 
-    // The Stand Down Sequence (CONTEXT.md, #451): one name, droid-wide. Empty
+    // The Stand Down Sequence (GLOSSARY.md, #451): one name, droid-wide. Empty
     // until a builder chooses one, and the Dashboard's Stand Down runs
     // DM:RESET until then. Only its form is checked: a Sequence deleted since
     // it was chosen stays chosen, and the page says it will do nothing. Nothing

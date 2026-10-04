@@ -9,7 +9,7 @@
 // is the same move the row's own picker makes (data/parts_mapping.js mover()).
 //
 // A FREE OUTPUT HAS NO PULSE, AND THE RUN IS WHAT GIVES IT ONE. An Output with
-// no Part on it is free and never wired, so nothing drives it (CONTEXT.md
+// no Part on it is free and never wired, so nothing drives it (GLOSSARY.md
 // "Wiring"). A nudge on one is the firmware's cue to take it for the run: it
 // puts the Output's recorded centre on the pin - a jump, on a servo nobody has
 // driven - and nudges about it (POST /api/servo action=nudge; operator,

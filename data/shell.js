@@ -43,13 +43,13 @@
     { page: "dome", doc: "/dome.html", icon: "rotate-360", name: "Dome", aliases: [] },
     { page: "sound", doc: "/sound.html", icon: "volume-high", name: "Sound", aliases: [] },
     // The #398 reference has no icon for Servos: it left Servos out of the rail
-    // on purpose, because CONTEXT.md "Activity Group" does not list it and its
+    // on purpose, because GLOSSARY.md "Activity Group" does not list it and its
     // fate is #364's. This is the nearest of the paths that reference committed
     // rather than a twenty-third taken from somewhere unread.
     { page: "servo", doc: "/servo.html", icon: "robot-outline", name: "Servos", aliases: ["servos"] },
     { page: "parts", doc: "/parts.html", icon: "puzzle-outline", name: "Parts", aliases: [] },
     // Wiring sits beside Parts in Configure and answers the neighbouring
-    // question - where does this wire go (CONTEXT.md "Wiring"). The member row
+    // question - where does this wire go (GLOSSARY.md "Wiring"). The member row
     // in the Configure group below has been waiting for this one since #288.
     { page: "wiring", doc: "/wiring.html", icon: "connection", name: "Wiring", aliases: [] },
     // Every light on the droid: the LED strip, the dome's lights and the body
@@ -63,7 +63,7 @@
     // #setup was written to reach: the page a component is switched on from.
     // Guided Setup, the first-run run, has no row and no nav entry of its own:
     // it is drawn over this surface while the droid is not set up
-    // (data/setup.js, CONTEXT.md "Setup").
+    // (data/setup.js, GLOSSARY.md "Setup").
     { page: "configuration", doc: "/configuration.html", icon: "tune-variant", name: "Configuration", aliases: ["setup"] },
     // Inspecting and repairing the controller, and the one way back into
     // guided Setup (#288, #297, #404).
@@ -558,7 +558,7 @@
   window.PAUi.setAct = setAct;
 
   // What the droid has reported, as the Live Reading answers it
-  // (data/live_reading.js, CONTEXT.md "Live Reading"). The plate, the estop and
+  // (data/live_reading.js, GLOSSARY.md "Live Reading"). The plate, the estop and
   // the notice read it the way every surface does; this file decides nothing
   // about a frame on its own account, and it is the one thing that starts it.
   const LIVE = window.PALiveReading;
@@ -601,7 +601,7 @@
   // The cut is the decision, not the list. /api/status carries 112 keys and
   // the great majority are web-server internals; a chip earns its place only
   // if seeing it would change what the operator does next, which is what
-  // leaves eight (#324, CONTEXT.md "Status Plate"). Telemetry -- uptime, heap,
+  // leaves eight (#324, GLOSSARY.md "Status Plate"). Telemetry -- uptime, heap,
   // signal strength, loop rate -- belongs to the Dashboard and never here,
   // and WiFi earns no chip because if WiFi is down nobody is reading this.
   //
@@ -1290,7 +1290,7 @@
 
   // The release keeps the priority lane the stop has: it skips the request
   // slot and is never retried, because an operator command about drive safety
-  // must not wait behind page work and must not be replayed (CONTEXT.md,
+  // must not wait behind page work and must not be replayed (GLOSSARY.md,
   // Browser Request Priority).
   const requestClear = async () => {
     if (!window.PAApi) return;
@@ -1685,7 +1685,7 @@
     return;
   }
 
-  // Where a Receipt is shown (CONTEXT.md "Receipt", #456): one host for every
+  // Where a Receipt is shown (GLOSSARY.md "Receipt", #456): one host for every
   // surface, written by data/overlay.js. The shell owns it, beside the mounted
   // surface rather than in it, because detach() removes only the surface's
   // own node, so a receipt outlives a surface change. Inside #shell-content,

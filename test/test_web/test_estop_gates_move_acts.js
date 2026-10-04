@@ -1,7 +1,7 @@
 // =============================================================================
 // test/test_web/test_estop_gates_move_acts.js
 //
-// A move act is live only on a heard, clear estop (CONTEXT.md "Live Reading").
+// A move act is live only on a heard, clear estop (GLOSSARY.md "Live Reading").
 //
 // Servos and Parts each used to decide the latch for themselves with
 // `payload.estop === true`, so a status frame that did not carry the estop at

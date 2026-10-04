@@ -141,7 +141,7 @@
   // absent is a name nobody has read out of the design files yet; `cadName`
   // null is a part the design does not carry at all, which is what marks a
   // Common Addition (data/droid_parts.js). This list bridges the two naming
-  // systems (CONTEXT.md "Part"), so neither case prints as a blank cell a
+  // systems (GLOSSARY.md "Part"), so neither case prints as a blank cell a
   // builder would read as a missing row.
   const designNameHtml = (part) => {
     if (typeof part.cadName === "string" && part.cadName !== "") {
@@ -188,7 +188,7 @@
 
   // The bound, said out loud: the Parts this image never moves are named and
   // counted rather than filtered away in silence. It carries no act, because
-  // there is nothing for a builder to do about it - a settled no (CONTEXT.md
+  // there is nothing for a builder to do about it - a settled no (GLOSSARY.md
   // "Availability Family").
   const boundHtml = () => {
     const outside = catalog.parts.filter((part) => !P.thisImageMoves(part));

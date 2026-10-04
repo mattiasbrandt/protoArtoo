@@ -5,7 +5,7 @@
 // operator, 2026-09-30 on #411: "Pulse free Outputs in a run").
 //
 // An Output with no Part on it is free, and a free Output is never ticked
-// wired, so ServoTask puts no pulse on it at start (CONTEXT.md "Wiring").
+// wired, so ServoTask puts no pulse on it at start (GLOSSARY.md "Wiring").
 // A run looking for which wire moves a Part has to twitch exactly those
 // Outputs, so for the length of the run the firmware takes a free servo Output
 // the moment a nudge names it, and lets it go again when the run moves on.

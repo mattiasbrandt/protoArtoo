@@ -62,7 +62,7 @@
   // The three readouts this surface used to paint as colored pills are now
   // words, and the setPillState that painted them is gone with them. None of
   // the three was a health signal, which is the only thing that may take a
-  // signal color (CONTEXT.md "Status Color"):
+  // signal color (GLOSSARY.md "Status Color"):
   //
   //   the dome motor switched on or off in Configuration is an AVAILABILITY FAMILY,
   //   "change it here", and those are told apart by treatment and never by hue

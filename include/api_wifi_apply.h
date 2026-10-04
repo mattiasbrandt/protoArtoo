@@ -71,7 +71,7 @@ struct WifiCommitOutcome {
 WifiCommitOutcome wifiCommitApplied(WifiConfig* working);
 
 // Write Window for a Device WiFi Settings write (ADR 0011, amended 2026-09-24;
-// CONTEXT.md "Write Window"): take the config write lock, read the current
+// GLOSSARY.md "Write Window"): take the config write lock, read the current
 // settings into `*working`, run wifiApply(), and when it is ok run
 // wifiCommitApplied(), then release. The HTTP handler (handleWifiPost) and the
 // Console's WiFi write both call this and hold no lock of their own: the

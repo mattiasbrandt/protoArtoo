@@ -6,7 +6,7 @@
 // them works the answer out again.
 //
 // AN OUTPUT IS ITS ROW (ADR 0068). GET /api/servo/outputs answers one row per
-// Output, keyed by its Output Address (CONTEXT.md "Output Address"), with
+// Output, keyed by its Output Address (GLOSSARY.md "Output Address"), with
 // everything a builder sets on it - its wired tick, what is on the wire, its
 // light's LED count, its Motion Profile and boot behaviour, its ends and the
 // Parts on it - and what each row can save, as data: `switchable`,
@@ -25,11 +25,11 @@
 // no tick anybody could have turned off, so it reads as wired and is called by
 // its address (operator, 2026-09-23 on #415). The tick follows the Part: a
 // Part move writes it (docs/api.md, `movePart`), because an Output with a Part
-// on it is wired and one with none is free (CONTEXT.md "Wiring", #411). It is
+// on it is wired and one with none is free (GLOSSARY.md "Wiring", #411). It is
 // what the droid reads at start, so a page says whether a wire is used or free
 // from its Parts, and uses the tick only to say what waits for a restart.
 //
-// WHAT IS ON THE WIRE IS ONE ANSWER IN TWO VOCABULARIES (CONTEXT.md "Output",
+// WHAT IS ON THE WIRE IS ONE ANSWER IN TWO VOCABULARIES (GLOSSARY.md "Output",
 // ADR 0067): a servo's model where the wire drives a servo, a Light Type where
 // it lights something. One stored field holds either, so `rgb` is not a servo
 // model - it is the LED strip Light Type. Both word lists live here and
@@ -66,7 +66,7 @@
   ]);
   const NO_SERVO = Object.freeze({ id: "none", label: "None" });
 
-  // The Light Types protoArtoo can put on one of its own wires (CONTEXT.md
+  // The Light Types protoArtoo can put on one of its own wires (GLOSSARY.md
   // "Light Type", ADR 0067). One today; the list is what grows when there are
   // more, and the stored token stays the one the firmware already saves.
   const LIGHT_TYPES = Object.freeze([Object.freeze({ id: "rgb", label: "LED strip" })]);
@@ -414,7 +414,7 @@
     const address = dot > 0 ? field.slice(0, dot) : "";
     const output = address ? at(address) : null;
     if (!output) return error;
-    // A Part is on at most one Output (CONTEXT.md "Part"): a row set that puts
+    // A Part is on at most one Output (GLOSSARY.md "Part"): a row set that puts
     // one on two is refused as a conflict, and says so in a sentence of its own,
     // naming the Part when the rows sent show which one it is.
     if (error.reason === "conflict" && field.slice(dot + 1) === "parts") {
@@ -505,7 +505,7 @@
   const save = (address, patch, opts) => saveAll({ [address]: patch }, opts);
 
   // The Output a Part is on. The firmware keeps a Part on at most one
-  // (CONTEXT.md "Part"), so the first answer is the only answer. `among` is a
+  // (GLOSSARY.md "Part"), so the first answer is the only answer. `among` is a
   // list a surface is painting from, where it holds one.
   const forPart = (partId, among = outputs) => among.find((output) => output.parts.includes(partId)) || null;
 

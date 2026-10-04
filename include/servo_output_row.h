@@ -131,7 +131,7 @@ constexpr uint16_t SERVO_ACCEL_MS_DEFAULT = SERVO_THROW_MS_DEFAULT / 4;
 constexpr uint16_t SERVO_RELEASE_MS_NEVER = 0;
 constexpr uint16_t SERVO_RELEASE_MS_MAX = 60000;
 
-// A Light Type's settings: how many LEDs are on the wire (CONTEXT.md "Light
+// A Light Type's settings: how many LEDs are on the wire (GLOSSARY.md "Light
 // Type", ADR 0067). One per Output, beside the type that says what is on it,
 // because a droid may have several lit Parts each on its own wire. Read once
 // when a strip starts (src/tasks/aux_led.cpp). One is the default because a

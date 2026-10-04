@@ -2,7 +2,7 @@
 // =============================================================================
 // data/setup.js
 //
-// Guided Setup - the first-run takeover (#351, #297, CONTEXT.md "Setup"), and
+// Guided Setup - the first-run takeover (#351, #297, GLOSSARY.md "Setup"), and
 // nothing else.
 //
 // A controller arrives provisioned and inert: every component toggle defaults

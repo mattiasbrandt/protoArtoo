@@ -141,12 +141,12 @@ inline SeqBodyStepPlan sequenceBodyStepPlan(const SeqAction& act,
 // "Back to centre" names the row's THIRD recorded position. `centre_us` is
 // stored and is deliberately not derived from the other two, so a builder who
 // pressed Set CENTER off-middle gets the number they set, not the midpoint of
-// their Endpoint Pair (include/servo_output_row.h, CONTEXT.md "Endpoint Pair").
+// their Endpoint Pair (include/servo_output_row.h, GLOSSARY.md "Endpoint Pair").
 //
 // That is why this is its own plan rather than a fourth Move Shape. The three
 // shapes an authored Body Step carries -- open, close, flutter -- all resolve
 // ALONG the pair through seqBodyTargetUs() above, and none of them can name a
-// third position. A fourth shape would change the vocabulary CONTEXT.md fixes
+// third position. A fourth shape would change the vocabulary GLOSSARY.md fixes
 // at three, the wire codec that spells it, and what Protocol Check accepts on
 // save. A bulk centre is generated at run time and never authored, so it needs
 // no word in an authoring vocabulary.

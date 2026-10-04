@@ -85,7 +85,7 @@
 
   // A step no timing rule can judge from here, and what would change that.
   // These are Rehearsal Gaps, not findings: they owe the author the truth rather
-  // than a fix (CONTEXT.md).
+  // than a fix (GLOSSARY.md).
   const GAPS = Object.freeze({
     "dome-timing": {
       msg: "Only the dome knows how long its panels take, so a panel move cannot be timed here.",
@@ -1265,7 +1265,7 @@
   // for a note); only a refusal names a severity (docs/ui-copy-voice.md rule 11).
   //
   // A count of ZERO takes no color. Amber means "degraded, and you can do
-  // something about it" (CONTEXT.md "Status Color"), and there is nothing to do
+  // something about it" (GLOSSARY.md "Status Color"), and there is nothing to do
   // about no warnings - a count of nothing wrong reading as something wrong, on
   // the surface whose whole job is telling a builder what will not happen. The
   // badge below already guarded itself this way; the count did not.

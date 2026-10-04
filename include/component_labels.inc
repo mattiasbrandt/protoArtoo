@@ -6,7 +6,7 @@
 // component is physically connected on that board. For an Output (enable_arm1 ..
 // enable_aux3) the label IS the Output's name on screen, so every board declares
 // one for each of its Outputs; any other entry may be absent where the board has
-// no established label (CONTEXT.md "Board Component Label", ADR 0033 Amendment
+// no established label (GLOSSARY.md "Board Component Label", ADR 0033 Amendment
 // 2026-09-19).
 //
 // Component names correspond to registry entries:
@@ -47,7 +47,7 @@ PA_COMPONENT_LABEL(artoo_esp32, enable_rc_ch6, "CH6")
 
 // firebeetle2 board component labels, from docs/pin_map.md "FireBeetle 2: GPIO
 // Assignment Summary". The DFR1237 prints a bare GPIO number beside each pin
-// and nothing else, so every label here is `GPIO <n>` (CONTEXT.md "Board
+// and nothing else, so every label here is `GPIO <n>` (GLOSSARY.md "Board
 // Component Label", ADR 0033 Amendment 2026-09-19) - a serial lane names both
 // of its pins. The SPI block prints "28/SCK", "29/MO" and "30/MI"; the number
 // is what a builder finds, so those read the same way as the main field.

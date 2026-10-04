@@ -241,7 +241,7 @@ static constexpr UBaseType_t kPuppetQueueReserve = 4;
 // first string to reach an Output in a frame has it, and a second is skipped
 // and asks again next frame. Across frames the two can still take turns: that is
 // what wiring two Parts to one Output means - they cannot move apart, which the
-// Rehearsal already warns about (CONTEXT.md "Output").
+// Rehearsal already warns about (GLOSSARY.md "Output").
 //
 // Out of line, so its frame is not folded into dispatchProcessorOutput()'s on
 // RCInputTask's measured chain.

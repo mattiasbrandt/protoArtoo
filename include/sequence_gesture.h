@@ -140,7 +140,7 @@ inline int16_t seqGestureStartBearingTenths(uint8_t start) {
     return (int16_t)((DROID_BEARING_DEAD_AHEAD_TENTHS + turns * quarter) % 3600);
 }
 
-// Easing, the Motion Profile's own three words (CONTEXT.md "Motion Profile").
+// Easing, the Motion Profile's own three words (GLOSSARY.md "Motion Profile").
 // GESTURE_EASING_OUTPUT means the Gesture says nothing and the Output's own
 // profile applies, which is the default and is stored as absence.
 // The values are ServoEasing + 1 on purpose (include/servo_output_row.h), so a

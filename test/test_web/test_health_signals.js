@@ -5,10 +5,10 @@
 //
 // #402: a signal that means "we have not heard" reads grey. Amber is reserved
 // for a droid that is genuinely degraded and that the builder can do something
-// about (CONTEXT.md "Status Color"), so stale, unknown, never-asked and
+// about (GLOSSARY.md "Status Color"), so stale, unknown, never-asked and
 // not-fitted all resolve to the unlit state. Staleness is not a state at all:
 // a stale row keeps what the controller last reported, and the Status Plate
-// carries the one freshness statement for the surface (CONTEXT.md "Health
+// carries the one freshness statement for the surface (GLOSSARY.md "Health
 // Signal", _Avoid_).
 // =============================================================================
 const test = require("node:test");

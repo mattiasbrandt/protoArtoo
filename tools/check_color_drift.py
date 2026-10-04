@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check that nothing a surface paints with invents a color the palette has not.
 
-`data/style.css` declares the palette once, in `:root`, and CONTEXT.md "Status
+`data/style.css` declares the palette once, in `:root`, and GLOSSARY.md "Status
 Color" makes the rule explicit: "The palette is **dark only** and declared once
 in `data/style.css`, so there is no second palette to drift against; a color
 literal outside `:root` is a defect, which is what makes the rule true rather
@@ -328,7 +328,7 @@ def _judge(name: str, line: int, where: str, value: str,
         elif rgb not in palette:
             findings.append(
                 f"{name}:{line}: {where} paints {literal}, which data/style.css :root does not "
-                "declare - a second palette to drift against (CONTEXT.md \"Status Color\"). "
+                "declare - a second palette to drift against (GLOSSARY.md \"Status Color\"). "
                 "Next move: paint with a token, or add the color to :root if it is a new one"
             )
     return findings

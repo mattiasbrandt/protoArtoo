@@ -89,7 +89,7 @@ enum RcInputMode : uint8_t {
     // a droid with no radio.
     RC_INPUT_ELRS,
     // No Radio Controller is fitted: a droid driven from the web alone
-    // (CONTEXT.md "Radio Controller", operator 2026-09-29 on #369). The same
+    // (GLOSSARY.md "Radio Controller", operator 2026-09-29 on #369). The same
     // shape as ELRS above - rcInputStepStartupPlan() starts no decoder and no
     // RC task - so the two radio Failsafe Layers never trigger and the stale
     // web drive command and the estop hold the feet. configApply() makes it

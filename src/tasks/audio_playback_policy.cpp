@@ -293,7 +293,7 @@ AudioPlaybackIntent audioPlaybackResolveRandomTick(const AudioPlaybackRandomCont
     }
 
     // Idle chatter is Resting Behaviour, and that is held while the droid is
-    // driving (CONTEXT.md, #450). Asked before the interval, and restarting it
+    // driving (GLOSSARY.md, #450). Asked before the interval, and restarting it
     // on every tick, so the chatter comes back a whole pause after the droid
     // stops rather than on the tick it does.
     if (context.driving) {

@@ -3,14 +3,14 @@
 
 A droid carries at least four: the **Body Controller** that runs this firmware,
 the **Radio Controller** the builder drives it with, the **Dome Controller** in
-the dome, and a motor controller turning the feet. `CONTEXT.md` settled it by
+the dome, and a motor controller turning the feet. `GLOSSARY.md` settled it by
 qualifying every one and never using the bare word in operator copy **at all -
 unconditionally, not only where a second kind can be on screen, so the word
-never depends on what else the page happens to show** (`CONTEXT.md` Flagged
+never depends on what else the page happens to show** (`GLOSSARY.md` Flagged
 Ambiguities, #298, 2026-09-08). #348 then did the sweep. Nothing mechanical
 stopped it coming back, which is what this is.
 
-It parses `CONTEXT.md` rather than restating it: the qualified forms are its
+It parses `GLOSSARY.md` rather than restating it: the qualified forms are its
 own `**... Controller**:` term headings, so adding a term adds a qualifier and
 this file needs no edit. "A list written down twice is a list that drifts."
 
@@ -22,7 +22,7 @@ five registry descriptions saying it are, because they are generated into
 `data/console_help.txt` and read in the Console.
 
 WHAT IT DELIBERATELY DOES NOT DO. It does not run the `_Avoid_` lines of
-`CONTEXT.md` as a general banned-string list, although `CONTEXT.md:5-19`
+`GLOSSARY.md` as a general banned-string list, although `GLOSSARY.md:5-19`
 describes exactly that and calls backticks the mark of a greppable entry.
 Measured on `epic/operator-experience` while this was written: 212 `_Avoid_`
 lines carry **8** backticked entries, and not one of them is a banned string -
@@ -30,7 +30,7 @@ every one quotes a token the rule is *about* (`amber on `checking``, "editing
 `secrets.h``, "`:SM` sequence authoring"). Run as banned strings they fail the
 build on 33 correct uses of `Checking`, which is the shipped Availability
 state. The convention's own worked example, ``main controller``, is written
-plain in the real line. The engine goes in the day `CONTEXT.md` can say which
+plain in the real line. The engine goes in the day `GLOSSARY.md` can say which
 backtick means "never write this"; until then a rule with no exact source is a
 rule that gets muted (#353).
 
@@ -56,7 +56,7 @@ from operator_copy import (  # noqa: E402  (after the path insert above)
     surface_copy,
 )
 
-CONTEXT = ROOT / "CONTEXT.md"
+CONTEXT = ROOT / "GLOSSARY.md"
 
 WORD = re.compile(r"\bcontrollers?\b", re.I)
 
@@ -83,7 +83,7 @@ PRECEDING_WORD = re.compile(r"([\w$']+)[\s’]*$")
 
 
 def qualified_forms(context: Path = CONTEXT) -> list[str]:
-    """Every `CONTEXT.md` term that carries the word, longest first.
+    """Every `GLOSSARY.md` term that carries the word, longest first.
 
     Longest first so "Controller Upload Verified" is matched before
     "Controller Console" could claim its first word.
@@ -141,7 +141,7 @@ def check(context: Path = CONTEXT, data: Path | None = None,
         for phrase in bare_uses(piece.text, terms):
             findings.append(
                 f'{piece.where()}: "{phrase}" - which controller? ({piece.kind}). '
-                'Next move: name it, as CONTEXT.md "Body Controller" does'
+                'Next move: name it, as GLOSSARY.md "Body Controller" does'
             )
     return findings, len(copy), terms
 

@@ -437,7 +437,7 @@ void domeTask(void* pvParameters) {
             drive.wheelSpeedR   = robotState.driveFeedbackSpeedR;
             taskEXIT_CRITICAL(&robotStateMux);
 
-            // Resting Behaviour is held while the droid is driving (CONTEXT.md,
+            // Resting Behaviour is held while the droid is driving (GLOSSARY.md,
             // #450) - commanded, still rolling, or just stopped
             // (include/drive_motion.h). Driving goes through the same
             // not-active branch, and the first tick at rest draws a fresh

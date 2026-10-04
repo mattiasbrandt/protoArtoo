@@ -2,7 +2,7 @@
 // On Maintenance a light goes amber only for memory, and nothing on the
 // surface calls a reading "stale": a link the droid has not reported is grey,
 // never amber, and how old the readings are is the Status Plate's to say.
-// Introduced by #402 (CONTEXT.md "Status Color", "Health Signal").
+// Introduced by #402 (GLOSSARY.md "Status Color", "Health Signal").
 //
 // PRECONDITION: none beyond a droid that answers. Writes nothing.
 //

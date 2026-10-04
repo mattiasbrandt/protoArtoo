@@ -44,7 +44,7 @@
 # include/board_capabilities.inc and include/build_flags.inc. An absent field
 # means the entry is universal for that compile-time tier (ADR 0029).
 #
-# Outputs are named by the running board, never here (CONTEXT.md "Output Address",
+# Outputs are named by the running board, never here (GLOSSARY.md "Output Address",
 # ADR 0033 Amendment 2026-09-19). The registry is one file for every board, so:
 #   board_output: true   on a param means its value is one of the running board's
 #                        Output labels (ARM1..ARM5 on artoo_esp32, GPIO 49 .. GPIO 51
@@ -992,7 +992,7 @@ entries:
   # The pose and its pace are the Sequence Coordinator's, worked out from the
   # stored steps (#440): the caller names a sequence and an instant and nothing
   # else, because a pace a caller could name is a pace a caller could walk
-  # around (CONTEXT.md "Cadence Floor"). No Non-RC Control consent: it commands
+  # around (GLOSSARY.md "Cadence Floor"). No Non-RC Control consent: it commands
   # what a normal run commands at that instant (ADR 0062, ADR 0064).
   params:
   - name: name
@@ -2467,7 +2467,7 @@ entries:
   # No params, and that is the decision rather than an omission: which outputs
   # the sweep covers, in what order and how far apart is the Sequence
   # Coordinator's, because a pace a caller could name is a pace a caller could
-  # walk around (CONTEXT.md "Cadence Floor").
+  # walk around (GLOSSARY.md "Cadence Floor").
   params: []
   executor: robotState.bulkCentreRequest
 - name: servo.config.cadence-floor

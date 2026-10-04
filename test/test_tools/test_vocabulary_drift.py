@@ -64,7 +64,7 @@ class Tree:
 
     def __init__(self, stack, *, surface="", html="", glossary=GLOSSARY, registry=REGISTRY):
         root = Path(stack.enter_context(tempfile.TemporaryDirectory()))
-        self.glossary = root / "CONTEXT.md"
+        self.glossary = root / "GLOSSARY.md"
         self.glossary.write_text(glossary, encoding="utf-8")
         self.data = root / "data"
         self.data.mkdir()
@@ -116,7 +116,7 @@ class VocabularyCheck(unittest.TestCase):
     def test_the_qualified_forms_come_from_the_glossary(self):
         # A term is accepted because the glossary declares it, not because this
         # file lists it: "the Controller Console" has a bare word in it by every
-        # other rule here, and passes only while CONTEXT.md carries the term.
+        # other rule here, and passes only while GLOSSARY.md carries the term.
         surface = 'const A = "Open the Controller Console.";\n'
         self.assertEqual([], Tree(self.stack, surface=surface).findings())
         without = GLOSSARY.split("**Controller Console**")[0]

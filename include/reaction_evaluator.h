@@ -1,7 +1,7 @@
 // =============================================================================
 // include/reaction_evaluator.h
 //
-// When a Reaction fires (ADR 0053, #450; CONTEXT.md "Reaction").
+// When a Reaction fires (ADR 0053, #450; GLOSSARY.md "Reaction").
 //
 // A Reaction is a trigger binding whose source is a droid condition rather
 // than a radio channel (include/rc_binding_types.h). This is the half that
@@ -104,7 +104,7 @@ struct ReactionInputs {
 };
 
 // Why a Reaction is not simply armed. The first four belong to an Availability
-// Family (CONTEXT.md): two are "change it elsewhere", spelled
+// Family (GLOSSARY.md): two are "change it elsewhere", spelled
 // `not-in-this-build` on every surface, and two are "waiting". The last three
 // are the gate: the droid can sense the condition and is holding every
 // Reaction back.

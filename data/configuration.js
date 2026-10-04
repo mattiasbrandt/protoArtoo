@@ -1,7 +1,7 @@
 // =============================================================================
 // data/configuration.js
 //
-// Configuration: what this droid is made of (CONTEXT.md "Configuration", #288).
+// Configuration: what this droid is made of (GLOSSARY.md "Configuration", #288).
 // The Droid Build, the Component Picker's families and the toggles behind
 // them, and the droid's name. The Outputs moved to Wiring and Servos
 // (data/parts_mapping.js, #369), and the LED strip to Lights
@@ -480,7 +480,7 @@ const BOARD_LABELS = {
   // The section head's subtitle: how many of the components this image can
   // offer are switched on. It is a count and takes no color - what a builder
   // ticked is a chosen posture, and a green count would read as a verdict on
-  // their droid (CONTEXT.md "Status Color").
+  // their droid (GLOSSARY.md "Status Color").
   const updateEnabledSummary = () => {
     if (!setupEnabledSummary) return;
     const toggles = Object.values(featureToggles).filter((toggle) => Boolean(toggle.input) && toggle.available);

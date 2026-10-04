@@ -106,7 +106,7 @@ test("before the droid has answered, the radio and receiver cards never say noth
   }
 });
 
-// A droid with no radio fitted has answered (CONTEXT.md "Radio Controller",
+// A droid with no radio fitted has answered (GLOSSARY.md "Radio Controller",
 // #369): the cards say so, never that a radio is still to be picked.
 test("a droid with no radio fitted is shown as Not fitted, never as nothing picked yet", async () => {
   const notFitted = (path) => (path === "/api/config"

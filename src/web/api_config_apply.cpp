@@ -554,7 +554,7 @@ bool readOutputRow(const RowSource& row, const char* address, const BoardOutput*
             continue;
         }
         // The wired tick. It follows the Parts on the Output, and the Part
-        // wins over a `wired` a row states (CONTEXT.md "Wiring", #411): the
+        // wins over a `wired` a row states (GLOSSARY.md "Wiring", #411): the
         // Commit Step sets every tick from the Parts once the rows have landed
         // (configCacheTicksFollowParts()), so it is read and checked here and
         // never written. A restore sends each row's `wired` beside its `parts`
@@ -710,7 +710,7 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
         }
         // A board Output's wired tick has no door of its own: it follows the
         // Parts on that Output, and the Commit Step sets it from them
-        // (CONTEXT.md "Wiring", #411). A write here could only leave a tick
+        // (GLOSSARY.md "Wiring", #411). A write here could only leave a tick
         // the Parts contradict, so it is refused whatever it says, with where
         // the answer is made instead.
         if (boardOutputByEnabledField(setting.form) != nullptr) {
@@ -732,7 +732,7 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
         result->changed = true;
     }
 
-    // No Radio Controller fitted is one answer, not three (CONTEXT.md "Radio
+    // No Radio Controller fitted is one answer, not three (GLOSSARY.md "Radio
     // Controller", operator 2026-09-29 on #369): storing it also clears the
     // radio and turns off every RC channel the same request did not state, so
     // the Console's bare rc.config.mode and a page's Not fitted card leave the

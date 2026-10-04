@@ -1,7 +1,7 @@
 // =============================================================================
 // include/marcduino_ownership.h
 //
-// Command Ownership (CONTEXT.md, ADR 0055): whether the body answers a ':' or
+// Command Ownership (GLOSSARY.md, ADR 0055): whether the body answers a ':' or
 // '#' Marcduino line itself or hands it on to the Dome Controller.
 //
 // The body owns a line when its own code resolves it to something it models,

@@ -11,7 +11,7 @@
 // instant (the operator's decision, 2026-09-30 on #440). The pose itself --
 // which Parts, where to, in what order and how far apart -- is worked out and
 // paced HERE, never in the browser, because a safe pace a page held is one a
-// hand-edited client could walk around (CONTEXT.md "Cadence Floor").
+// hand-edited client could walk around (GLOSSARY.md "Cadence Floor").
 //
 // WHAT THE POSE COMMANDS is everything the routine has at that instant
 // (operator, 2026-09-30): each dome panel and body Part to where the last step

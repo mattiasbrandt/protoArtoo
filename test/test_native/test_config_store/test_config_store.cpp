@@ -466,7 +466,7 @@ void test_a_narrowed_pair_keeps_its_keys_until_that_output_is_saved() {
 //
 // The wire keeps its strip and its LED count on its row, and waits for a
 // light Part: `main` had no Parts, and an Output with no Part on it is free
-// (CONTEXT.md "Wiring", "Lights"; #411), so its tick is cleared at start and
+// (GLOSSARY.md "Wiring", "Lights"; #411), so its tick is cleared at start and
 // the strip is dark until a light Part is put on that Output on Wiring. Until
 // #411 the adoption ticked it so the strip stayed lit (#417).
 static void walkTheUpgradeFromMain(bool litWireTicked) {
@@ -540,7 +540,7 @@ void test_the_upgrade_from_main_keeps_an_unticked_lit_wires_strip_waiting_for_a_
 
 // Test: every start sets each wired tick from the Parts on its row (#411)
 //
-// An Output with a Part on it is wired and one with none is free (CONTEXT.md
+// An Output with a Part on it is wired and one with none is free (GLOSSARY.md
 // "Wiring"). A tick stored before the tick followed the Parts - ARM1 ticked
 // with nothing on it - is cleared, so its pin carries no pulse; an Output a
 // Part is on but whose tick was never set - ARM4 - is ticked. Both before the

@@ -41,7 +41,7 @@ rewriting a file - the convention `tools/check_action_registry_drift.py` set.
    silently stops surviving a reboot.
 
 4. **A `roadmap` row is not Confirmed on a Droid.** The column records that a
-   product has run on a real droid (CONTEXT.md "Confirmed on a Droid", #455).
+   product has run on a real droid (GLOSSARY.md "Confirmed on a Droid", #455).
    It is evidence about a `supported` row: a roadmap row has no driver to have
    run. `src/component_registry.cpp` holds the same rule as a `static_assert`;
    this is the form that names the row and says what to change.

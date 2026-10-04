@@ -1,7 +1,7 @@
 // =============================================================================
 // test/test_web/test_component_picker.js
 //
-// The Component Picker (#369, CONTEXT.md "Component Picker") on the surface it
+// The Component Picker (#369, GLOSSARY.md "Component Picker") on the surface it
 // is drawn into: data/configuration.html with Configuration's own chain and
 // guided Setup over it, and the lineup read from a controller that answers the
 // way src/web/api_identity_serializers.cpp does, row for row from
@@ -26,7 +26,7 @@
 //   - the Radio Controller's Not fitted is one answer: no receiver and every
 //     RC channel off, and no later save from this page turns a channel back on
 //     from a tick it still held; a droid holding it reads Not fitted in both
-//     homes (CONTEXT.md "Radio Controller", operator 2026-09-29 on #369).
+//     homes (GLOSSARY.md "Radio Controller", operator 2026-09-29 on #369).
 //   - a card says a product has run on a droid only where the controller's
 //     own row says so: a controller on older firmware sends no such field
 //     (firmware and web assets are uploaded separately) and claims nothing, a

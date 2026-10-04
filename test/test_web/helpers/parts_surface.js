@@ -4,7 +4,7 @@
 // Boots the shipped Operator Shell with the shipped Parts or Servos surface
 // against a fake droid - Parts carries the droid picture and the Unused list,
 // Servos the output-first table, Find by Moving, the calibration dial and back
-// to centre (CONTEXT.md "Parts", "Servos"; #412) - and serves Wiring as well,
+// to centre (GLOSSARY.md "Parts", "Servos"; #412) - and serves Wiring as well,
 // because a Part off the droid that is still on an Output is sent to its row
 // there (Take it off on Wiring). A Part's Output is picked on Parts too, with
 // Wiring's bar and move question (operator, 2026-10-04 on #463). It adds what a

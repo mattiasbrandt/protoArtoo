@@ -6,7 +6,7 @@
 //
 // PRECONDITION: the Dome Controller is fitted (GET /api/config
 // components.protoR2link.enabled): Lights lists the dome's lights only then
-// (#411, CONTEXT.md "Lights"). Offline, the fixture's droid is given one
+// (#411, GLOSSARY.md "Lights"). Offline, the fixture's droid is given one
 // fitted. And Lights must draw a dome light that takes a command (NOT ASSESSED
 // otherwise). Writes nothing: a pick is sent
 // at once as POST /api/dome/cmd, and the guard records it and blocks it, so the

@@ -106,7 +106,7 @@ test("every var() site resolves to a declared token or to a value the page sets"
   assert.deepEqual(unresolved, [], "a var() naming no declared token renders its fallback, silently");
 });
 
-// The four Availability Families, in the order CONTEXT.md lists them, each
+// The four Availability Families, in the order GLOSSARY.md lists them, each
 // with the bare class a later surface wears and the shipped state classes that
 // must resolve to the same treatment.
 const FAMILIES = {
@@ -152,7 +152,7 @@ const AVAILABILITY_RULES = NON_ROOT.filter((rule) =>
 );
 
 test("no Availability Family spends a reserved color", () => {
-  // CONTEXT.md "Status Color": amber is "you can do something about this, and
+  // GLOSSARY.md "Status Color": amber is "you can do something about this, and
   // should", red is "something is stopped or refused". A way of saying no is
   // neither, and before #341 four of these states shared one amber hatch.
   const amber = TOKENS.get("--warning");
@@ -219,7 +219,7 @@ test("a dimmed Availability Family lifts on hover and on focus-within", () => {
 });
 
 test("neither reserved color is spent on a choice or on an answer that has not arrived", () => {
-  // CONTEXT.md "Status Color" avoid-list: amber for "not normal", amber on a
+  // GLOSSARY.md "Status Color" avoid-list: amber for "not normal", amber on a
   // transient unknown. Every rule below carried one of those before #341.
   //
   // Matched by selector shape rather than by a fixed list, so re-adding a rule

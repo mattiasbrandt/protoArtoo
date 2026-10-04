@@ -88,7 +88,7 @@
 //
 // An overshoot still never passes the recorded ends: on an Output nobody has
 // measured it degrades to none, exactly as the Output's own overshoot does
-// (servoOutputEffectiveEasing(), CONTEXT.md "Motion Profile").
+// (servoOutputEffectiveEasing(), GLOSSARY.md "Motion Profile").
 // -----------------------------------------------------------------------------
 inline void servoMotionOverride(ServoMotionProfile* profile, uint16_t throwMs, uint8_t easingPlusOne) {
     if (profile == nullptr) return;

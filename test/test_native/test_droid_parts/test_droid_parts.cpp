@@ -84,7 +84,7 @@ void test_a_body_light_is_named_here_and_fitted_by_no_design() {
     // so firmware names them. What a builder does NOT get is one they never
     // bolted on: a body light is a Common Addition, seeded by no design, so a
     // controller nobody has opened a browser at must not come up claiming a
-    // Charge Bay Indicator this droid may not have (CONTEXT.md "Common
+    // Charge Bay Indicator this droid may not have (GLOSSARY.md "Common
     // Addition"). Both halves are one sentence, and this is the end of it that
     // a stray seeds: entry in the catalog would break silently.
     TEST_ASSERT_TRUE(droidPartIdIsKnown("cbi"));

@@ -1,7 +1,7 @@
 // The Sequences list loading through the Page Recovery View's sections.
 //
 // Right after a boot or an upload the controller sheds connections in the
-// opening burst by design (CONTEXT.md "Page Recovery View"). A list read that
+// opening burst by design (GLOSSARY.md "Page Recovery View"). A list read that
 // is shed must come back through the section machinery's retry and end on the
 // page; before #434 the section loaders filled the lists without repainting,
 // so the factory list showed only if something else repainted the page later.

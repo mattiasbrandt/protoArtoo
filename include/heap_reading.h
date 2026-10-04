@@ -2,7 +2,7 @@
 // include/heap_reading.h
 //
 // The one place the firmware reads its heap. It offers two named readings
-// (CONTEXT.md), and the capability mask behind each is chosen here and nowhere
+// (GLOSSARY.md), and the capability mask behind each is chosen here and nowhere
 // else, because both recent heap defects were a caller's own pick of mask:
 // #245 paired two masks on the ESP32-P4, and the low-heap warning read a mask
 // that counts IRAM until 990dd9b0 moved it.

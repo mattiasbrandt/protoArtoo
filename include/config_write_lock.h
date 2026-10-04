@@ -2,7 +2,7 @@
 // include/config_write_lock.h
 //
 // The config write lock, for Write Window implementations only (ADR 0011,
-// amended 2026-09-24; CONTEXT.md "Write Window").
+// amended 2026-09-24; GLOSSARY.md "Write Window").
 //
 // A Write Window is the one guarded span of a config write: take this lock,
 // read the cache into the caller's Working Snapshot, run the Apply Core, run

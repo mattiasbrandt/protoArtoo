@@ -33,7 +33,7 @@ Wrap-up means:
 3. Preserve memory:
   - MemPalace writes are refused while the daemon holds the writer lease (AGENTS.md
     "Memory (MemPalace)"): put significant decisions, outcomes and unresolved
-    constraints on the active issue, in `CONTEXT.md` or in `docs/adr/`
+    constraints on the active issue, in `GLOSSARY.md` or in `docs/adr/`
   - when a write does succeed, file it in `wing_protoartoo` (`hall_events`,
     `hall_discoveries`, or `hall_facts`)
 4. Leave the repo understandable:

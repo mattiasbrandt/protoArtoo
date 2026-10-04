@@ -1,7 +1,7 @@
 // =============================================================================
 // test/test_web/test_settings_ruled_by_the_droid.js
 //
-// What a Setting accepts is ruled on by the droid, once (CONTEXT.md "Setting";
+// What a Setting accepts is ruled on by the droid, once (GLOSSARY.md "Setting";
 // ADR 0068, amended 2026-09-26). A page keeps no copy of a firmware range: it
 // sends what the builder typed, and a value the droid will not take comes back
 // as a refusal worded by data/web_api.js.

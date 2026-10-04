@@ -194,7 +194,7 @@ PART_KEYS = frozenset(
 )
 
 # The Part Kinds a row may declare: what a Part usually IS, as opposed to what
-# drives it (CONTEXT.md "Part Kind", ADR 0045). Successor to the `lit:` note the
+# drives it (GLOSSARY.md "Part Kind", ADR 0045). Successor to the `lit:` note the
 # six lit dome panels used to carry, and advisory in the same way that note was
 # - a Kind gives a Part its own treatment on a surface and lets one query a
 # surprising mapping. Nothing here ever refuses one.
@@ -203,7 +203,7 @@ PART_KEYS = frozenset(
 # manifest, because firmware has no use for it: a Kind decides what a browser
 # surface may show for a Part, and a flag declared where nothing consults it is
 # exactly the defect this field exists to avoid. So it lists what the catalog
-# actually declares today - CONTEXT.md names servo-driven and indicator as the
+# actually declares today - GLOSSARY.md names servo-driven and indicator as the
 # other two the model foresees, and each joins this set on the day a row needs
 # it rather than sitting here unused.
 PART_KINDS = frozenset(("light",))
@@ -1237,7 +1237,7 @@ def geometry_header_lines(catalog):
         "//",
         "// THIS IS THE PART'S FRAME, NOT THE DOME BEARING'S. A Dome Bearing is",
         "// measured from the droid's own front, so front is 0 there and 1800 here",
-        "// (CONTEXT.md \"Dome Bearing\"). The two meet in one place, the",
+        "// (GLOSSARY.md \"Dome Bearing\"). The two meet in one place, the",
         "// Part-targeted dome turn, which converts between them",
         "// (domeBearingFacingFrontDeg(), include/dome_bearing.h, #445).",
         "//",

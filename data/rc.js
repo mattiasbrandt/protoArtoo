@@ -734,7 +734,7 @@
   };
 
   // Why a Reaction is not armed: the short word for a row, and for the two
-  // the builder can do something about, the move (CONTEXT.md "Availability
+  // the builder can do something about, the move (GLOSSARY.md "Availability
   // Family": every no names the next move). `no-feedback` is this firmware's
   // drive, so its move is another image and the route is Firmware, in the
   // words data/feature_availability.js gives that destination. `no-current`
@@ -876,7 +876,7 @@
       const linked = Boolean(src.linked);
       const age = Number(src.ageMs || 0);
       // A receiver being heard or not is a Health Signal, so it reads as a
-      // droid LED and the color IS the reading (CONTEXT.md "Health Signal"):
+      // droid LED and the color IS the reading (GLOSSARY.md "Health Signal"):
       // linked is nominal, waiting is degraded and something the builder can
       // act on, and a source nobody switched on is unlit rather than green.
       // These three rows used to be three words on three plain plates, with

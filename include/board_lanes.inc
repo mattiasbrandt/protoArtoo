@@ -1,4 +1,4 @@
-// Board Lane inventory (CONTEXT.md "Board Lane"; #339, from #304).
+// Board Lane inventory (GLOSSARY.md "Board Lane"; #339, from #304).
 //
 // A Board Lane is a per-Board-Variant declared value naming WHERE that board
 // routes a signal. A Board Capability Gate says what a board can be wired for;

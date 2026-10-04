@@ -545,7 +545,7 @@ test("a design card shows the picture its catalog row names, and my own build sh
 });
 
 // =============================================================================
-// The one way back in (#297, CONTEXT.md "Maintenance")
+// The one way back in (#297, GLOSSARY.md "Maintenance")
 //
 // The run never re-opens by itself. Maintenance carries the single deliberate
 // way back, and it may not do it by wiping what the builder answered: the

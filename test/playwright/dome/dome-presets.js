@@ -104,7 +104,7 @@ const HEADLESS = process.env.HEADLESS === 'true';
     if (forward.rotationState !== 'Forward' || forward.speedText !== '72%') throw new Error('Forward status not rendered');
     // A direction is a value, not a symptom: neither the word nor the bar may
     // take a signal color, and the bar is one color whichever way it goes
-    // (CONTEXT.md 'Status Color').
+    // (GLOSSARY.md 'Status Color').
     if (reverse.rotationStateClass !== 'dome-rotation-state') throw new Error('Rotation state took a state class');
     if (forward.rotationStateClass !== 'dome-rotation-state') throw new Error('Rotation state took a state class');
     if (reverse.liveFillBackground !== forward.liveFillBackground) throw new Error('The live bar changed color with direction');

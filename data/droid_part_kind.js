@@ -4,7 +4,7 @@
 // What a Part Kind promises, and therefore what a surface must not show (#357).
 //
 // The Droid Parts Catalog declares a `kind` on the Parts it can classify - a
-// light today, and CONTEXT.md names servo-driven and indicator as the two the
+// light today, and GLOSSARY.md names servo-driven and indicator as the two the
 // model foresees. This module is what reads it. A caller branches on the answer
 // here, never on an id prefix or a name match: the Magic Panel is a light
 // because `docs/droid-parts.yaml` says so, not because it is called one.
@@ -56,7 +56,7 @@
   //   throw     how long a full travel takes
   //   position  the commanded position right now
   //   release   Output Release - how long the Output holds after arrival
-  //   brightness  "how far" as a light hears it (CONTEXT.md, Part Action)
+  //   brightness  "how far" as a light hears it (GLOSSARY.md, Part Action)
   const SERVO_AFFORDANCES = Object.freeze(["travel", "throw", "position", "release"]);
   const LIGHT_AFFORDANCES = Object.freeze(["brightness"]);
 

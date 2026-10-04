@@ -503,7 +503,7 @@ rows:
       - "src/console/console_module.cpp - `{\"dome.config.stand-down\", \"standDownSequence\"}` - g_settingOps row, written through configApply()"
     executor_or_core: "configApply"
     missing_metadata: []
-    notes: "The Stand Down Sequence (#451, CONTEXT.md). NVS key seq_standdown, GET path seq.standDown, Immediate. Empty is never chosen, and the Dashboard's Stand Down then runs DM:RESET. Nothing on the controller runs it."
+    notes: "The Stand Down Sequence (#451, GLOSSARY.md). NVS key seq_standdown, GET path seq.standDown, Immediate. Empty is never chosen, and the Dashboard's Stand Down then runs DM:RESET. Nothing on the controller runs it."
   - name: dome.action.set-speed
     type: action
     registry_api_path: null

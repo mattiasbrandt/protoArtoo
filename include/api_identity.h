@@ -20,7 +20,7 @@
 // Availability manifest from board_capabilities.inc and build_flags.inc, and
 // the Board Lanes from board_lanes.inc -- where the running firmware routes
 // each signal, so no operator surface keeps its own copy of one board's wiring
-// (CONTEXT.md "Board Lane"). It also carries the board's Learned Sequence
+// (GLOSSARY.md "Board Lane"). It also carries the board's Learned Sequence
 // save cap, learned_sequence_cap (SEQ_STORE_CAP, include/seq_store_util.h), and
 // the per-file byte cap, learned_sequence_max_bytes (SEQ_FILE_MAX_BYTES).
 // Returns false if the payload does not fit in buf.
@@ -46,7 +46,7 @@ struct IdentitySetCommitOutcome {
 };
 IdentitySetCommitOutcome identitySetCommitApplied(ConfigSnapshot* working);
 
-// Write Window for an identity write (ADR 0011, amended 2026-09-24; CONTEXT.md
+// Write Window for an identity write (ADR 0011, amended 2026-09-24; GLOSSARY.md
 // "Write Window"): take the config write lock, read the cache into
 // `*working`, set the already-validated `droidName` and `mdnsUseName` on it,
 // run identitySetCommitApplied(), release. POST /api/identity and the

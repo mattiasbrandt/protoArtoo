@@ -458,10 +458,10 @@
   let listShow = "all";
   const moreOpen = new Set();
 
-  // The droid's Stand Down Sequence (CONTEXT.md, #451): one name, chosen here
+  // The droid's Stand Down Sequence (GLOSSARY.md, #451): one name, chosen here
   // with the mark beside each row and run by the Dashboard's Rest act. Only
   // that act says Rest (operator, 2026-10-04); this page says Stand Down
-  // (CONTEXT.md "Stand Down Sequence"). The
+  // (GLOSSARY.md "Stand Down Sequence"). The
   // Setting stores an empty name until one is chosen, and the words table says
   // what stands in for it (data/web_api.js, standDownSequence `unset`). Null
   // until GET /api/config has answered with it, and no row is marked or offers
@@ -1325,7 +1325,7 @@
 
   // The Move Shape as a builder reads it, by Part Kind: one stored token, said
   // as open / close / flutter on a servo Part and on / off / flash on a light
-  // (CONTEXT.md "Move Shape").
+  // (GLOSSARY.md "Move Shape").
   const SHAPE_WORDS = {
     servo: { open: "Open", close: "Close", flutter: "Flutter" },
     light: { open: "On", close: "Off", flutter: "Flash" },
@@ -1419,7 +1419,7 @@
   let gestureMoreOpen = false;
 
   // The Move Shape's words over a Gesture's set: a light's when every Part it
-  // spreads across is a light, a servo's otherwise (CONTEXT.md "Move Shape").
+  // spreads across is a light, a servo's otherwise (GLOSSARY.md "Move Shape").
   const gestureShapeWords = (step) => {
     const members = window.SeqGesture.members(step);
     const lights = members.length > 0 && members.every((id) => window.DroidPartKind?.isLight(catalogPart(id)));
@@ -1452,7 +1452,7 @@
 
   // What is rarely set, folded under the Gesture's rows: the pace, the
   // repeat, and the full-throw time and easing only a Gesture overrides
-  // (CONTEXT.md "Body Step"). Every and Again are in beats where the routine
+  // (GLOSSARY.md "Body Step"). Every and Again are in beats where the routine
   // has a tempo and in milliseconds where it has none. An
   // empty field shows what the Gesture does when it says nothing.
   const gestureMore = (step) => {
@@ -2498,9 +2498,9 @@
   // from the tempo and the end - and only those it makes before the end step,
   // where the droid stops a Gesture. A written step says nothing of a full
   // throw's time or an easing: those are the Output's, and only a Gesture
-  // overrides them (CONTEXT.md "Body Step"). What was generated and paced by
+  // overrides them (GLOSSARY.md "Body Step"). What was generated and paced by
   // the droid is hand-written after this, and keeps the timing written here
-  // (CONTEXT.md "Cadence Floor").
+  // (GLOSSARY.md "Cadence Floor").
   //
   // A flutter Gesture's members each flutter for the length it states, or for
   // one step of its pace where it states none (seqGestureFlutterMs(),
@@ -2892,7 +2892,7 @@
       case "body": {
         // A Body Step names a Part and a Move Shape (ADR 0049). A light Part
         // hears the same three stored words as on, off and flash, so it reads
-        // that way here (CONTEXT.md "Move Shape").
+        // that way here (GLOSSARY.md "Move Shape").
         const part = catalogPart(step.part);
         const { shape, words } = moveOf(step);
         const howFar = step.howFar ? `, ${step.howFar}%` : "";
@@ -4064,7 +4064,7 @@
     // Protocol Check's two outcomes take the signal colors their own meanings
     // already have - a green lamp for a sequence the droid will accept, red
     // for one it would refuse - and the sentence says which on its own
-    // (CONTEXT.md "Status Color", ADR 0044).
+    // (GLOSSARY.md "Status Color", ADR 0044).
     const status = validation.ok ? "valid" : "error";
     // A refusal is a sentence, so it takes a line of its own under the acts.
     // In a sequence with two halves it says which half it is in.
@@ -5046,7 +5046,7 @@
         els.modalWipeCancel.focus();
       } else {
         hideModal(els.modalWipe);
-        // Its dialog has closed, so the answer is a receipt (CONTEXT.md
+        // Its dialog has closed, so the answer is a receipt (GLOSSARY.md
         // "Receipt"). With nothing left dangling, either a factory sequence
         // of the same name took its place or no RC binding played it
         // (src/web/api_seq.cpp).
@@ -5217,7 +5217,7 @@
       editorState.isNew = true;
       currentEditingSeq = parsed;
       renderEditorView(parsed);
-      // Its dialog has closed, so the answer is a receipt (CONTEXT.md
+      // Its dialog has closed, so the answer is a receipt (GLOSSARY.md
       // "Receipt"), given where the restore has happened.
       window.PAOverlay.receipt(`Restored ${parsed.name || "the sequence"} - nothing reaches the droid until you save it.`);
     });

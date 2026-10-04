@@ -244,7 +244,7 @@ jobs:
         continue-on-error: true
         run: make check-board-label-drift
 
-      # "There is no second palette to drift against" (CONTEXT.md "Status
+      # "There is no second palette to drift against" (GLOSSARY.md "Status
       # Color"). The stylesheet's own half is test_style_token_layer.js, in the
       # web suite below; this is everything else data/ paints with (#353).
       - name: 🎨 Color drift

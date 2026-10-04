@@ -408,7 +408,7 @@ static_assert((UART_PORT_AUDIO == UART_PORT_DOME) == (PA_CAP_DEDICATED_AUDIO_UAR
     " capability 0 means audio shares UART_PORT_DOME, capability 1 means it does not");
 
 // -----------------------------------------------------------------------------
-// Board Lane coherence guards (CONTEXT.md "Board Lane").
+// Board Lane coherence guards (GLOSSARY.md "Board Lane").
 //
 // Every lane in include/board_lanes.inc is reported to the browser in the
 // identity manifest, so an unrouted lane would put PA_PIN_UNASSIGNED (255) on

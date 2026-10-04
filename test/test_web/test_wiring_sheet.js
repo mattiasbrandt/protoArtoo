@@ -51,7 +51,7 @@ const { servoRow: output, freshOutputs, describe } = require("./helpers/fake_dro
 const { shippedWords } = require("./helpers/shipped_words.cjs");
 
 // The Component Toggles the Board Lanes join on, all off, which is what an
-// unprovisioned controller carries (CONTEXT.md "Setup").
+// unprovisioned controller carries (GLOSSARY.md "Setup").
 const LANE_TOGGLES = {
   drive: { enabled: false, label: "S1" },
   audio: { enabled: false, label: "S2" },
@@ -348,7 +348,7 @@ const boot = async ({
 // The drawing is the wires a builder has run, and nothing else (operator,
 // 2026-09-29 on #411: "the drawing should only draw the actaul lines (wires)
 // currently assigned/wired in"). An Output is wired when a Part is on it and
-// free when none is (CONTEXT.md "Wiring"), whatever its tick says - the tick
+// free when none is (GLOSSARY.md "Wiring"), whatever its tick says - the tick
 // follows the Part on the droid, and an expander's channel has none. A free
 // Output draws no line and reads free by what its board prints, in the one
 // place the page says so: the free row of the parts wiring table (operator,
@@ -452,7 +452,7 @@ test("a latched estop does not rewrite the sheet", async () => {
 // ---------------------------------------------------------------------------
 
 // The bench copy and the screen copy are "the same document from one
-// generator" (CONTEXT.md "Wiring"): the file a builder saves and prints must
+// generator" (GLOSSARY.md "Wiring"): the file a builder saves and prints must
 // carry exactly the wires the surface is showing, and none of what writes -
 // the controls of the parts wiring table are the screen's, never the
 // generator's (#411, #463). And it is opened at a bench, often with no droid in
@@ -584,7 +584,7 @@ test("mounting asks the droid for each answer once, not twice", async () => {
 // and light, the Status Plate's "No answer" - and is never contradicted. A
 // foot drive that declares it reports nothing cannot be asked at all, so it is
 // not probed rather than declared-and-silent. Every value here is live, so none
-// of it reaches the saved sheet (research 5.3, 9.2; CONTEXT.md "Health Signal").
+// of it reaches the saved sheet (research 5.3, 9.2; GLOSSARY.md "Health Signal").
 test("a fitted part the droid cannot hear from is never read as contradicting you, and the list stays off the saved sheet", async () => {
   const env = await boot({
     lanes: {
