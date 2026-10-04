@@ -466,3 +466,81 @@ send dome.api.get-sequence-last-run
 send system.status.health
 http POST /api/console command=dome.api.get-sequence-last-run > p4-web-console-last-run.json
 http GET /api/status
+
+# =============================================================================
+# Round 2 on board 2 (#355, 2026-10-04) -- what the epic built after 2026-09-29
+#
+# The P4 half of the artoo rows from #438 on, and the Bench-Mode rows the
+# merged tickets carried onto #355. Board 2 only: every row needs HTTP or a
+# page. #355's body and each carry say what a row must answer; a check that
+# needs a servo, a radio, a dome, a sound module, a strip or a drive backend is
+# droid-only and is never here.
+# =============================================================================
+
+# #441 - WRITES A SEQUENCE and deletes it again. The editor's Save was proven
+# in a browser against stubs (the request it sends); this is what the droid
+# stores. Make DM:BENCH (Edit any sequence, or a Factory one through Tune, and
+# rename it), tap a tempo of about 120 BPM and press Use, set the Interrupt
+# group to Pies and the Mute period to 9 s, Save. Reload the page and open it
+# again: the tempo, the interrupt group and the mute period read back as saved.
+# The list read keeps what the store indexed. On board 2 the store is on its
+# own LittleFS, freshly flashed above.
+@row 441 a-sequence-round-trips-on-the-p4
+pause At http://10.0.0.51/#seq save DM:BENCH as above, reload, reopen it and check the three settings, then press Enter
+http GET /api/seq/list > p4-seq-list-after-save.json
+http GET /api/seq?name=DM%3ABENCH > p4-seq-bench.json
+send dome.api.list-sequences
+
+# #441 - a duplicate is saved under an id of its own (a shipped defect:
+# Duplicate copied the original's id, and the firmware resolves a nested
+# reference by its stable id). Duplicate DM:BENCH, Save the copy as
+# DM:BENCH_COPY. In the list read, the two rows carry different ids.
+@row 441 a-duplicate-has-its-own-id-on-the-p4
+pause Duplicate DM:BENCH, save DM:BENCH_COPY, then press Enter
+http GET /api/seq/list > p4-seq-list-after-duplicate.json
+send dome.api.list-sequences
+
+# #441 - Running and its Stop against the real firmware. The droid writes a
+# run's record only when its dispatcher takes the run up, a moment after it
+# answers the press, and that gap is what a stub cannot show. On the list,
+# press Test on DM:BENCH: its row reads Running with the green lamp and offers
+# Stop DM:BENCH. Let it end by itself and press Test again: it reads Running
+# again, and does not flick straight back to Test on the earlier run's record.
+# Then press Stop DM:BENCH while it reads Running: the row goes back to Test.
+# The record then says aborted - or completed, when the routine was too short
+# to catch. The gap is a timing over this board's own link (the C6), which is
+# why it is replayed here rather than taken from artoo's.
+@row 441 a-run-reads-running-and-its-stop-ends-it-on-the-p4
+pause On the list press Test on DM:BENCH and let it end; press Test again, then Stop DM:BENCH while it reads Running, then press Enter
+http GET /api/seq/last-run > p4-seq-last-run-after-stop.json
+
+# #441 - Test and the pose press against the real firmware, not a stub: the
+# droid takes both and reports the run. Nothing is connected, so nothing moves;
+# the answer is what proves it. Then Memory Wipe both bench sequences, so the
+# board keeps its own Learned Sequences and room under the cap.
+@row 441 test-and-pose-reach-the-droid-on-the-p4
+pause Open DM:BENCH, press Test on the droid, then Move the droid to this moment at 1.00 s, then press Enter
+http GET /api/seq/last-run > p4-seq-last-run.json
+send system.status.health
+pause Memory Wipe DM:BENCH_COPY and DM:BENCH from the list, then press Enter
+send dome.api.list-sequences
+
+# #443 (ADR 0043) - an Output with a release time lets go that long after its
+# move ARRIVES, and a later move starts the count again. Read from the firmware
+# with nothing on the pin: the pulse and the limp token are ServoTask's, so a
+# servo stopping its fight is droid-only and never here. Needs one enabled
+# Output, named from the get-outputs answer; board 2 had none wired on
+# 2026-09-29, and with none this row is Not Assessed and says so. The first
+# read after each wait says limp:release, the read straight after the second
+# move says limp:- (a pulse, the count restarted); #355 checks them.
+@row 443 a-release-lets-go-after-it-arrives-on-the-p4
+send system.action.enable-web-control
+send servo.api.get-outputs
+pause POST /api/config outputRow=<an enabled Output's address> release=3000, then POST /api/servo action=position arm=<it> positionUs=1500. Wait 5 s, then press Enter.
+send servo.api.get-outputs
+pause POST /api/servo action=position arm=<it> positionUs=1600, then press Enter at once.
+send servo.api.get-outputs
+listen 5
+send servo.api.get-outputs
+pause POST /api/config outputRow=<its address> release=0 to leave it holding again, then press Enter.
+send system.action.disable-web-control
