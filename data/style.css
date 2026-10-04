@@ -5193,10 +5193,9 @@ body[data-page="maintenance"] .status-item .hint {
   background: color-mix(in srgb, var(--text) 4%, var(--surface-alt));
 }
 
-/* The running tile: the same green seam the Sequences list draws, on a face
-   tinted toward it. */
+/* The running tile: the same green seam the Sequences list draws. The seam
+   and the lamp say Running; the face keeps its own color. */
 .show-item.is-running {
-  background: color-mix(in srgb, var(--success) 8%, var(--surface-alt));
   box-shadow: inset 3px 0 0 var(--success);
 }
 
