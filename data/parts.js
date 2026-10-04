@@ -103,24 +103,28 @@
     (again || buttons.find((each) => each.classList.contains("active")))?.focus?.();
   };
 
-  // A Part's bar, and under it, while the Part is on no Output, the words
-  // that say a pick is waiting and the board's suggestion as one press.
-  const barFor = (part, outputs, { prompt = true } = {}) => {
+  // A Part's bar; under it, while the Part is on no Output, the board's
+  // suggestion as one press, and why an Output on it is refused where one
+  // is - the chooser's own sentence, the one Wiring's row says. No "Pick an
+  // output" here: Unused is the list of Parts waiting for one, and the
+  // panel's Servo fact already says it has none.
+  const barFor = (part, outputs) => {
     const holder = document.createDocumentFragment();
     holder.appendChild(chooser.bar(part, outputs));
-    if (window.PAOutputs.forPart(part.id, outputs)) return holder;
-    const use = chooser.suggestion(part, outputs);
-    if (!prompt && !use) return holder;
-    const line = document.createElement("span");
-    line.className = "parts-pick";
-    if (prompt) {
-      const word = document.createElement("span");
-      word.className = "parts-pick-word";
-      word.textContent = "Pick an output";
-      line.appendChild(word);
+    const use = window.PAOutputs.forPart(part.id, outputs) ? null : chooser.suggestion(part, outputs);
+    if (use) {
+      const line = document.createElement("span");
+      line.className = "parts-pick";
+      line.appendChild(use);
+      holder.appendChild(line);
     }
-    if (use) line.appendChild(use);
-    holder.appendChild(line);
+    const reason = chooser.reason(part, outputs);
+    if (reason) {
+      const why = document.createElement("span");
+      why.className = "why";
+      why.textContent = reason;
+      holder.appendChild(why);
+    }
     return holder;
   };
 
@@ -211,20 +215,19 @@
     return `<ul class="parts-unused-footnote">${lines.join("")}</ul>`;
   };
 
-  // Each row's bar, written into the cell the row left for it. No pick
-  // prompt on these rows: every one of them is waiting for an Output, and
-  // the column says so once. A dome Part is offered no body Output
-  // (PAParts.isDomePart()): its cell says what moves it instead.
+  // Each row's bar, written into the cell the row left for it. A dome Part
+  // is offered no body Output (PAParts.isDomePart()): its cell says what
+  // moves it instead, in the one sentence for it.
   const fillUnusedBars = (outputs) => {
     if (!chooser) return;
     unusedRegion.querySelectorAll("[data-bar-for]").forEach((cell) => {
       const part = partById.get(cell.dataset.barFor);
       if (!part) return;
       if (P.isDomePart(part)) {
-        if (!cell.childNodes.length) cell.innerHTML = '<span class="parts-word">the Dome Controller moves it</span>';
+        if (!cell.childNodes.length) cell.innerHTML = `<span class="parts-word">${esc(P.domeMovesText(partLabel(part.id)))}</span>`;
         return;
       }
-      rebuildHolding(cell, part.id, () => cell.replaceChildren(barFor(part, outputs, { prompt: false })));
+      rebuildHolding(cell, part.id, () => cell.replaceChildren(barFor(part, outputs)));
     });
   };
 
@@ -241,12 +244,21 @@
     const key = unused.map((part) => part.id).join(",");
     if (key !== unusedKey) {
       // The row the builder was on - focused, or owed the focus while its
-      // move was on its way - by its place in the list. A Part given an
-      // Output leaves the list, and the focus goes to the row that takes
-      // its place rather than falling off the page.
+      // move was on its way - and the choice in it. The focus follows that
+      // Part: the same row and the same choice wherever the row now sits,
+      // since another client changing a row above moves it. Only a Part that
+      // has left the list - given its Output - hands the focus to the row
+      // that took its place, so it never falls off the page, and never lands
+      // on another Part's Output by its index while its own row is there.
       const rows = Array.from(unusedRegion.querySelectorAll("tr[data-part]"));
-      const at = rows.findIndex((row) =>
-        row.contains(document.activeElement) || Array.from(owed.keys()).some((host) => row.contains(host)));
+      const owedHost = Array.from(owed.keys()).find((host) => rows.some((row) => row.contains(host))) || null;
+      const at = rows.findIndex((row) => row.contains(document.activeElement) || (owedHost !== null && row.contains(owedHost)));
+      const heldPart = at === -1 ? null : rows[at].dataset.part;
+      const heldChoice = at === -1
+        ? null
+        : rows[at].contains(document.activeElement)
+          ? choiceKey(document.activeElement)
+          : (owed.get(owedHost) || "").slice((owed.get(owedHost) || "").lastIndexOf("|") + 1);
       unusedKey = key;
       unusedBars = null;
       unusedRegion.innerHTML =
@@ -260,8 +272,10 @@
         fillUnusedBars(outputs);
         unusedBars = barState(outputs);
         const next = Array.from(unusedRegion.querySelectorAll("tr[data-part]"));
-        const row = next[Math.min(at, next.length - 1)];
-        const target = row ? Array.from(row.querySelectorAll("button")).find((each) => !each.disabled) : null;
+        const same = next.find((row) => row.dataset.part === heldPart) || null;
+        const row = same || next[Math.min(at, next.length - 1)];
+        const buttons = row ? Array.from(row.querySelectorAll("button")).filter((each) => !each.disabled) : [];
+        const target = (same && buttons.find((each) => choiceKey(each) === heldChoice)) || buttons[0];
         if (target) target.focus();
         else {
           unusedSummary.tabIndex = -1;
@@ -348,7 +362,8 @@
   //                       leaves the Part's Output alone: the builder took the
   //                       Part off, and whether the wire came off too is theirs
   //                       to say, so the panel says the Output is still mapped
-  //                       and routes to its picker rather than unmapping it.
+  //                       and offers Take it off on Wiring rather than
+  //                       unmapping it.
   //                       A Common Addition comes off as the group the Parts
   //                       list fits it as: an arm takes its claw or tool.
   //   The Output bar      not an act but the panel's slot: a body Part's
@@ -435,16 +450,22 @@
     };
   };
 
-  // The panel's slot: the picked Part's Output bar, or, for a Part the Dome
-  // Controller moves, the sentence that says so. Empty until the droid has
-  // answered with its Outputs, and with nothing picked.
-  let slotKey = null;
-  const paintSlot = (pick) => {
-    const slot = panel.slot;
+  // What the panel's slot holds for a pick: the picked Part's Output bar
+  // (`part`), or, for a Part the Dome Controller moves, the sentence that
+  // says so (`dome`). Nothing until the droid has answered with its Outputs,
+  // and with nothing picked.
+  const slotFor = (pick) => {
     const marker = pick ? pick.marker : null;
     const ids = marker ? marker.parts.filter((id) => partById.has(id)) : [];
     const dome = ids.length > 0 && ids.every((id) => P.isDomePart(partById.get(id)));
-    const part = !dome && ids.length && answered() && chooser ? partById.get(ids[0]) : null;
+    const first = !dome && ids.length && answered() && chooser ? partById.get(ids[0]) : null;
+    return { marker, dome, part: first && P.thisImageMoves(first) ? first : null };
+  };
+
+  let slotKey = null;
+  const paintSlot = (pick) => {
+    const slot = panel.slot;
+    const { marker, dome, part } = slotFor(pick);
     const outputs = OUTPUTS.list();
     const key = `${marker ? marker.id : ""}|${dome}|${part ? part.id : ""}|${part ? barState(outputs) : ""}`;
     if (key === slotKey) return;
@@ -456,7 +477,7 @@
         line.className = "bodyview-panel-why";
         line.textContent = P.domeMovesText(marker.label);
         slot.appendChild(line);
-      } else if (part && P.thisImageMoves(part)) {
+      } else if (part) {
         const host = document.createElement("div");
         host.className = "parts-bar";
         host.appendChild(barFor(part, outputs));
@@ -473,7 +494,9 @@
       return;
     }
     const pick = describePick(markerId);
-    panel.show(pick);
+    // One fact once: where the slot offers the Output, a reason that only
+    // says the Part has none is not said again under the acts.
+    panel.show(slotFor(pick).part && pick.noOutput ? { ...pick, why: "" } : pick);
     paintSlot(pick);
   };
 
@@ -592,7 +615,7 @@
       return;
     }
     if (actId === "wire") {
-      if (pick.offButMapped && partById.has(pick.wiredPart)) P.routeToOutput(pick.wiredPart, { off: true });
+      if (pick.offButMapped && partById.has(pick.wiredPart)) P.routeToOutput(pick.wiredPart);
       return;
     }
     if (actId !== "toggle" || !pick.acts.toggle.enabled) return;
