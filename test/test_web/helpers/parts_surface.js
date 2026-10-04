@@ -5,8 +5,9 @@
 // against a fake droid - Parts carries the droid picture and the Unused list,
 // Servos the output-first table, Find by Moving, the calibration dial and back
 // to centre (CONTEXT.md "Parts", "Servos"; #412) - and serves Wiring as well,
-// because Parts' "Give it an output" routes to the part-first picker there
-// (operator, 2026-09-28 on #411). It adds what a
+// because a Part off the droid that is still on an Output is sent to its row
+// there (Take it off on Wiring). A Part's Output is picked on Parts too, with
+// Wiring's bar and move question (operator, 2026-10-04 on #463). It adds what a
 // Find by Moving run needs the droid to answer: a nudgesDone count
 // on every Output, POST /api/servo, a status stream the test can push an estop
 // onto, and a PAApi.gateControls the shipped one's shape. The droid picture
@@ -394,8 +395,10 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
   // against a page the device never serves. #352 added the Droid Build and the
   // body view to the chain; #412 moved the output-first table to Servos; #411
   // moved the part-first picker to Wiring, whose sheet script mounts it (its
-  // board picture's scripts are left out: the picker does not read them).
+  // board picture's scripts are left out: the picker does not read them); #463
+  // gave Parts the same Output bar and move question, which need overlay.js.
   const REAL_SCRIPTS = {
+    "/overlay.js": readData("overlay.js"),
     "/shell.js": readData("shell.js"),
     "/status_stream.js": readData("status_stream.js"),
     "/live_reading.js": readData("live_reading.js"),
@@ -429,13 +432,14 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
   // The part-first picker, on Wiring.
   env.partsRegion = () => document.getElementById("wiring-parts-table");
   env.partRow = (id) => env.partsRegion().querySelectorAll("[data-part]").find((node) => node.dataset.part === id);
-  // Parts' Unused list: its rows, and a press on one row's act.
+  // Parts' Unused list: its rows, a row's Output bar, and a press on one of
+  // its Outputs (the bar's own button, as a click lands on it).
   env.unusedRows = () => document.getElementById("parts-unused").querySelectorAll("[data-part]");
-  env.pressUnused = (id) => {
-    const button = env.unusedRows().find((row) => row.dataset.part === id).querySelector("[data-wire]");
-    document.getElementById("parts-unused").fire("click", { target: button });
-  };
-  env.wiringFeedback = () => document.getElementById("wiring-parts-feedback").textContent;
+  env.unusedBar = (id) =>
+    env.unusedRows().find((row) => row.dataset.part === id)?.querySelector("[data-bar-for]")?.querySelectorAll("[role='radiogroup'] button") ?? [];
+  env.pressUnusedOutput = (id, address) => env.unusedBar(id).find((button) => button.dataset.value === address).fire("click", {});
+  // The picture panel's Output bar, for the Part picked on the picture.
+  env.panelBar = () => document.querySelector(".bodyview-panel-slot")?.querySelectorAll("[role='radiogroup'] button") ?? [];
   // Find by moving sits over Servos' rows: one button, which opens the Parts
   // nothing drives as pills, and pressing one of those starts the run.
   env.findTray = () => document.getElementById("outputs-find-tray");
@@ -575,8 +579,8 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
   // A browser's <dialog>; mini_dom has none. Only show() is given: a
   // showModal() would make the shell's STOP inert (#359), so a call to it
   // throws here rather than quietly passing.
-  // Parts has none: its acts route to the one on Wiring.
-  const dialog = surface === "servo" ? document.getElementById("outputs-move-dialog") : null;
+  // Parts asks the same question as Wiring, in its own dialog (#463).
+  const dialog = document.getElementById(surface === "servo" ? "outputs-move-dialog" : "parts-move-dialog");
   if (!dialog) return env;
   dialog.open = false;
   dialog.show = () => {

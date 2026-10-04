@@ -253,7 +253,7 @@ test("a repaint keeps the pick a builder is holding", () => {
 
 const ACTS = [
   { id: "toggle", label: "Open it" },
-  { id: "wire", label: "Give it an output" },
+  { id: "wire", label: "Take it off on Wiring" },
 ];
 
 test("an act that cannot run is refused and says why, rather than vanishing", () => {

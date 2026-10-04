@@ -8,8 +8,8 @@
 // The renderer's own contract is held by test_body_view.js. What these hold
 // is the thing that only exists once a caller is wired up: that the picture is
 // painted from the SAME answer the Unused list and Servos are painted from,
-// that "Give it an output" and each Unused row reach the one picker on Wiring
-// (#411), that a click
+// that the panel and each Unused row pick a Part's Output with Wiring's bar
+// and send Wiring's one move (#463), that a click
 // sends nothing, that a press sends exactly one command and no width, that the
 // estop holds every move the picture can start, that a holoprojector is never
 // offered one, and that every refusal names the builder's next move.
@@ -192,40 +192,26 @@ test("a holoprojector is offered no Open at all, only its facts", async () => {
 // 2026-09-28 on #411). A Part asked for from Parts arrives with the cursor in
 // its own row there - a row it is given if it is on no Output yet - and the
 // route itself asks the droid to change nothing.
-const landsOnPicker = async (env, partId) => {
-  const deadline = Date.now() + 3000;
-  // The Part's row, and not its pill among the Parts to add.
-  const row = () =>
-    env.partsRegion()?.querySelectorAll("[data-part]").find((node) => node.dataset.part === partId && node.classList.contains("parts-row"));
-  const inRow = () => env.document.activeElement?.closest?.("[data-part]") === row();
-  while (!row() || !inRow()) {
-    if (Date.now() > deadline) break;
-    await sleep(5);
-  }
-  assert.equal(env.window.location.hash, "#wiring", "the route goes to Wiring");
-  assert.ok(row(), `Wiring's table has a row for ${partId}`);
-  assert.ok(inRow(), "the cursor is on a control of that Part's own row");
-};
+// What Wiring's row sends for a Part put on a free Output: one move, from no
+// Output to that one, and nothing else (data/parts_mapping.js moveFor()).
+const movesOf = (env) => env.moves().filter((post) => "movePart" in post.form).map((post) => post.form);
+const putOn = (partId, address) => ({ movePart: partId, movePartFrom: "none", movePartTo: address });
 
-test("Give it an output routes to the Part's row in the picker on Wiring and writes nothing", async () => {
+test("the panel picks a Part's output with Wiring's bar and sends Wiring's one move", async () => {
   const env = await bootParts({ outputs: measuredArm1() });
-  const before = env.posts.length;
 
   pick(env, "smallDoor");
-  pressAct(env, "wire");
-  await landsOnPicker(env, "smallDoor");
+  const bar = env.panelBar();
+  assert.deepEqual(bar.map((button) => button.dataset.value), ["ledc:0", "ledc:1", "ledc:3"], "every Output is on the bar");
+  assert.ok(!bar.some((button) => button.classList.contains("active")), "and none is lit before a press");
+  assert.deepEqual(movesOf(env), [], "a pick on the picture is not a write");
 
-  assert.equal(env.posts.length, before, "a route is not a write");
-  assert.match(env.wiringFeedback(), /Choose the output that moves Small long door/);
+  bar.find((button) => button.dataset.value === "ledc:1").fire("click", {});
+  await sleep(30);
+  assert.equal(env.window.location.hash, "#parts", "the pick is made where the builder is");
+  assert.deepEqual(movesOf(env), [putOn("smallDoor", "ledc:1")]);
 });
 
-// ---------------------------------------------------------------------------
-// Unused: the Parts no Output claims (moved here from Wiring, #411)
-// ---------------------------------------------------------------------------
-
-// Whether an Output is wired is a fact about the droid's wiring, and whether a
-// Part is on one is the mapping's: a Part on an Output nobody has marked wired
-// is still claimed. The Availability Reason rides each row.
 test("a part on an output is not Unused, whether or not the output is wired", async () => {
   const outputs = withParts({ "ledc:0": ["doorFL"], "ledc:1": ["utilUp"] }, [
     output("ledc:0", "ARM1", { commandedUs: 1500, targetUs: 1500 }),
@@ -241,17 +227,16 @@ test("a part on an output is not Unused, whether or not the output is wired", as
   assert.equal(row.dataset.tier, "part-not-assigned", "with the reason the droid reports for it");
 });
 
-// Each row acts rather than pointing, and it is the picture's act: the same
-// route, to the same row of the same picker.
-test("an Unused row's act routes to the Part's row in the picker on Wiring and writes nothing", async () => {
+// Each row acts rather than pointing, and with the picture's control: the
+// same bar, and the same one move Wiring's row sends.
+test("an Unused row picks a Part's output with Wiring's bar and sends Wiring's one move", async () => {
   const env = await bootParts({ outputs: measuredArm1() });
-  const before = env.posts.length;
+  assert.deepEqual(env.unusedBar("smallDoor").map((button) => button.dataset.value), ["ledc:0", "ledc:1", "ledc:3"]);
 
-  env.pressUnused("smallDoor");
-  await landsOnPicker(env, "smallDoor");
-
-  assert.equal(env.posts.length, before, "a route is not a write");
-  assert.match(env.wiringFeedback(), /Choose the output that moves Small long door/);
+  env.pressUnusedOutput("smallDoor", "ledc:3");
+  await sleep(30);
+  assert.equal(env.window.location.hash, "#parts");
+  assert.deepEqual(movesOf(env), [putOn("smallDoor", "ledc:3")]);
 });
 
 // What the droid holds as its Droid Build, changed the way a builder elsewhere
@@ -302,7 +287,7 @@ test("Drop takes a Part off through the Droid Build alone, and leaves its Output
   assert.deepEqual(env.outputs.find((each) => each.address === "ledc:0").parts, ["doorFL"], "the Output keeps the Part");
   assert.ok(marker(env, "doorFL").classList.contains("is-unfitted"));
   assert.match(env.feedback(), /Still mapped to ARM1/);
-  assert.equal(actButton(env, "wire").hidden, false, "the way to change the Output is offered");
+  assert.equal(actButton(env, "wire").hidden, false, "Take it off on Wiring is offered, for the wire");
 });
 
 test("Drop takes a Common Addition off as the group it was fitted as", async () => {

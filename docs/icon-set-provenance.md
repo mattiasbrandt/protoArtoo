@@ -180,8 +180,8 @@ is not carried.
 | Hold it again | `hand-back-right-outline` | Servos' dial, take it again |
 | Test sweep | `arrow-left-right` | Servos' dial |
 | Tick all, clear ticks | `checkbox-multiple-marked-outline`, `checkbox-multiple-blank-outline` | Servos |
-| Map, unmap | `link-variant`, `link-variant-off` | Sound's Map, Map checked and Clear; RC Control's Unmap, Clear all mappings and its questions; Parts' Give it an output and Change its output (the same button, for a Part off the droid with an Output still mapped); Wiring's take off. Unmapping one and clearing them all are one act on a different reach, told apart by Clear all mappings' danger colour |
-| Move a Part or a mapping | `transfer` | the move question on Servos and Wiring; RC Control's Move it |
+| Map, unmap | `link-variant`, `link-variant-off` | Sound's Map, Map checked and Clear; RC Control's Unmap, Clear all mappings and its questions; Parts' Take it off on Wiring (for a Part off the droid with an Output still mapped); Wiring's take off. Unmapping one and clearing them all are one act on a different reach, told apart by Clear all mappings' danger colour |
+| Move a Part or a mapping | `transfer` | the move question on Servos, Wiring and Parts; RC Control's Move it |
 | Apply suggestions | `auto-fix` | Sound |
 | Random on, off | `shuffle-variant`, `shuffle-disabled` | Sound |
 | Share | `share-variant-outline` | Sequences' Share to project |

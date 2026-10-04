@@ -216,10 +216,13 @@
       // A holoprojector is offered no act at all, so there is nothing refused
       // to explain.
       let why = "";
+      // Whether `why` is only that the Part is on no Output: a caller that
+      // offers the Output beside it says that already (Parts' panel).
+      let noOutput = false;
       if (marker.panTilt) {
         why = "";
       } else if (offButMapped) {
-        why = `Not on your droid, but still mapped to ${output.name}. Add it back, or change its output.`;
+        why = `Not on your droid, but still mapped to ${output.name}. Add it back, or take it off on Wiring.`;
       } else if (!isFitted) {
         why = "Not on your droid. Add it to your build first.";
       } else if (!answered() && !marker.target) {
@@ -228,6 +231,7 @@
         why = estopRefusal(estop);
       } else if (!output && !marker.target) {
         why = "No output mapped. Give it one first.";
+        noOutput = true;
       } else if (output && isLightRow(output)) {
         why = "A light has no travel. Nothing to open.";
       } else if (output && hasServoWord(output) && output.driven === false) {
@@ -252,6 +256,7 @@
         unwired,
         offButMapped,
         why,
+        noOutput,
         toggle: {
           shown: !marker.panTilt,
           label: open ? "Close it" : "Open it",
