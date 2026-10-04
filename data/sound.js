@@ -346,7 +346,7 @@
 
     if (soundModeFeedback) {
       soundModeFeedback.textContent = normalizedMode === SOUND_VIEW_MODE_COMPACT
-        ? "Compact mode active. Advanced tuning cards are hidden."
+        ? "Advanced tuning hidden."
         : "";
     }
 
@@ -595,6 +595,8 @@
     }, timeoutMs);
     feedbackTimers.set(el, timer);
   };
+
+  const countOf = (count, one, many) => `${count} ${count === 1 ? one : many}`;
 
   const getApiErrorMessage = (error) => window.PAApi?.messageFor(error) || String(error);
 
@@ -1253,7 +1255,8 @@
     if (catalogStatus && catalogReady && !catalogRefreshInFlight) {
       const baseText = catalogStatus.dataset.baseText || catalogStatus.textContent || "";
       if (suggestionCount > 0) {
-        catalogStatus.textContent = `${baseText} ${suggestionCount} suggestion(s) ready.`.trim();
+        catalogStatus.textContent =
+          `${baseText} ${countOf(suggestionCount, "suggestion", "suggestions")} ready.`.trim();
       } else {
         catalogStatus.textContent = baseText;
       }
@@ -1393,7 +1396,7 @@
     const refreshRunning = Boolean(locked);
     syncCatalogControls();
     if (catalogStatus && refreshRunning) {
-      catalogStatus.textContent = "Refreshing catalog... this can take around 1 minute for 100+ entries.";
+      catalogStatus.textContent = "Refreshing. A full card takes about a minute.";
     }
     renderCatalogBankTabs();
     renderCatalogRows();
@@ -1431,7 +1434,7 @@
     tabs.forEach((tab) => {
       const selected = catalogBankFilter === tab.key;
       const button = document.createElement("button");
-      button.className = `btn sound-btn-compact catalog-bank-tab${selected ? " accent" : ""}`;
+      button.className = `part-pill${selected ? " active" : ""}`;
       button.type = "button";
       button.textContent = tab.label;
       button.setAttribute("role", "tab");
@@ -1679,7 +1682,8 @@
             const bank1PageCount = catalogBanks.filter((bankRow) =>
               Number.parseInt(String(bankRow?.bank ?? "0"), 10) === 1
             ).length;
-            let statusText = `${catalogEntries.length} entries across ${catalogBanks.length} bank(s).`;
+            let statusText = `${countOf(catalogEntries.length, "sound", "sounds")} in ` +
+              `${countOf(catalogBanks.length, "bank", "banks")}.`;
             if (bank1PageCount === 1) {
               statusText += " CHIRP reports one active Bank 1 page per refresh.";
             }
@@ -1732,7 +1736,7 @@
 
     catalogRefreshInFlight = true;
     setCatalogActionLock(true);
-    showFeedback(catalogFeedback, "Catalog refresh queued. This can take around 1 minute for large banks.", true, 0);
+    showFeedback(catalogFeedback, "Refresh queued.", null, 0);
 
     try {
       const result = await window.PAApi.postForm("/api/audio/catalog/refresh", {}, { timeoutMs: 3000 });

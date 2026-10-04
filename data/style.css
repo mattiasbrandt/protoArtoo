@@ -3925,7 +3925,12 @@ label.sound-search-field {
   margin-top: var(--space-2xs);
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
-  min-height: 1.1em;
+}
+
+/* A row's answer takes room only while it says something: the reserved line
+   sat under every row's acts and lifted them off the row's centre. */
+.sound-feedback-inline:empty {
+  display: none;
 }
 
 .sound-category-hint {
@@ -3994,9 +3999,14 @@ label.sound-search-field {
 
 .chirp-file-changed {
   display: flex;
+  flex-wrap: wrap;
   flex-basis: 100%;
   align-items: center;
   gap: var(--space-2xs);
+}
+
+.chirp-file-changed > * {
+  white-space: nowrap;
 }
 
 .chirp-file-chip {
@@ -4004,15 +4014,15 @@ label.sound-search-field {
   margin-right: var(--space-2xs);
 }
 
+/* The bank and page filter: the house pills (.part-pills), which wrap as a
+   card grows banks, where a row of boxed buttons did not say they were one
+   choice. */
 #catalog-bank-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  margin: var(--space-sm) 0;
 }
 
-.catalog-bank-tab {
-  min-height: 32px;
-  padding: 4px 10px;
+#catalog-bank-tabs:empty {
+  display: none;
 }
 
 #catalog-status {
@@ -4074,7 +4084,10 @@ label.sound-search-field {
     cursor: not-allowed;
   }
 
+/* A menu's words read from the left; the number boxes this shares a class
+   with are the ones that align right. */
 .catalog-map-select {
+  text-align: left;
   min-width: 190px;
   max-width: 260px;
   width: 100%;
@@ -4857,7 +4870,8 @@ body[data-page="maintenance"] .status-item .hint {
 
 /* A payload picked from many: the house pills (.part-pills), with the picked
    one lit the way a segmented control lights its choice. */
-.rc-pills .part-pill.active {
+.rc-pills .part-pill.active,
+#catalog-bank-tabs .part-pill.active {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   border-color: var(--accent);
   color: var(--text);
