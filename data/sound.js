@@ -34,6 +34,7 @@
     named("imp_march", "$M"),
     named("cantina_l", "$C"),
     named("startup", "$B"),
+    named("happy", "$H"),
     { label: "Random On", cmd: "$R", key: null, editable: false },
     { label: "Random Off", cmd: "$O", key: null, editable: false },
     { label: "Stop / Chatter Off", cmd: "$s", key: null, editable: false },
