@@ -3855,8 +3855,10 @@ label.sound-search-field {
 }
 
 /* An edit the droid has not been told about yet. Amber earns its place: it is
-   something the builder can and should do something about, namely press Save. */
-.sound-dirty-pill {
+   something the builder can and should do something about, namely press Save -
+   or, for a file changed under a Named Track, Keep or Re-point. */
+.sound-dirty-pill,
+.chirp-file-chip {
   display: inline-block;
   margin-top: 2px;
   padding: 1px var(--space-sm);
@@ -3923,7 +3925,14 @@ label.sound-search-field {
   margin-top: var(--space-2xs);
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
-  min-height: 1.1em;
+}
+
+/* A row's answer takes room only while it says something: the reserved line
+   sat under every row's acts and lifted them off the row's centre. Collapsed,
+   never display:none - it is a live region, and one that is not rendered when
+   its text lands is often not announced. */
+.sound-feedback-inline:empty {
+  margin-top: 0;
 }
 
 .sound-category-hint {
@@ -3977,19 +3986,58 @@ label.sound-search-field {
   text-transform: uppercase;
 }
 
-#catalog-bank-tabs {
+/* A track's number, the address it is bound to, and when the file there
+   changed, the two answers on a line of their own under them. */
+.sound-track-cell {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: var(--space-2xs) var(--space-sm);
 }
 
-.catalog-bank-tab {
-  min-height: 32px;
-  padding: 4px 10px;
+.sound-track-cell .chirp-binding-badge {
+  margin-top: 0;
 }
 
-#catalog-status {
-  min-height: 1.2em;
+.chirp-file-changed {
+  display: flex;
+  flex-wrap: wrap;
+  flex-basis: 100%;
+  align-items: center;
+  gap: var(--space-2xs);
+}
+
+.chirp-file-changed > * {
+  white-space: nowrap;
+}
+
+.chirp-file-chip {
+  margin-top: 0;
+  margin-right: var(--space-2xs);
+}
+
+/* The bank and page filter: the house pills (.part-pills), which wrap as a
+   card grows banks, where a row of boxed buttons did not say they were one
+   choice. */
+#catalog-bank-tabs {
+  margin: var(--space-sm) 0;
+}
+
+#catalog-bank-tabs:empty {
+  display: none;
+}
+
+#catalog-status:empty {
+  display: none;
+}
+
+/* A re-point under way: the instruction and its way out, on one line. */
+.catalog-repoint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-dim);
+  font-size: var(--fs-cell);
 }
 
   .catalog-bulk-bar {
@@ -4047,7 +4095,10 @@ label.sound-search-field {
     cursor: not-allowed;
   }
 
+/* A menu's words read from the left; the number boxes this shares a class
+   with are the ones that align right. */
 .catalog-map-select {
+  text-align: left;
   min-width: 190px;
   max-width: 260px;
   width: 100%;
@@ -4830,7 +4881,8 @@ body[data-page="maintenance"] .status-item .hint {
 
 /* A payload picked from many: the house pills (.part-pills), with the picked
    one lit the way a segmented control lights its choice. */
-.rc-pills .part-pill.active {
+.rc-pills .part-pill.active,
+#catalog-bank-tabs .part-pill.active {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   border-color: var(--accent);
   color: var(--text);

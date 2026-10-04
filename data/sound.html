@@ -49,6 +49,10 @@
           <dt>Module link</dt>
           <dd><span id="mod-link" class="sound-state-badge" data-state="disabled">—</span></dd>
         </div>
+        <div class="status-item">
+          <dt>Background Track</dt>
+          <dd><span id="mod-background-track">—</span></dd>
+        </div>
       </dl>
       <details class="disclose">
         <summary>
@@ -141,21 +145,29 @@
     </div>
 
 
-    <!-- CHIRP catalog (visible only when the fitted module can be asked for one) -->
-    <div id="chirp-catalog-card" class="card hidden">
-      <div class="sect"><h2>CHIRP catalog</h2><span class="sub">from the module's card</span></div>
+    <!-- The module's catalog. The card stays on every module: one that cannot
+         list its contents keeps it in place and says so, so the page does not
+         change shape with the hardware (ADR 0054). -->
+    <div id="chirp-catalog-card" class="card">
+      <div class="sect"><h2>Catalog</h2><span class="sub hidden" id="catalog-sub">from the module's card</span></div>
       <div class="button-row button-row-compact">
         <button id="btn-catalog-refresh" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg><span class="act-label">Refresh catalog</span></button>
-        <button id="btn-catalog-apply-suggestions" class="btn btn-sm icon-act act-keeps-words" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-auto-fix"/></svg><span class="act-label">Apply suggestions</span></button>
-        <button id="btn-catalog-bulk" class="btn btn-sm" type="button">Bulk</button>
+        <button id="btn-catalog-apply-suggestions" class="btn btn-sm btn-quiet icon-act act-keeps-words" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-auto-fix"/></svg><span class="act-label">Apply suggestions</span></button>
+        <button id="btn-catalog-bulk" class="btn btn-sm btn-quiet" type="button">Bulk</button>
       </div>
       <p class="hint" id="catalog-status"></p>
+      <div class="catalog-repoint hidden" id="catalog-repoint" role="status" aria-live="polite">
+        <span id="catalog-repoint-text"></span>
+        <button id="btn-catalog-repoint-cancel" class="btn btn-sm btn-quiet" type="button">Cancel</button>
+      </div>
       <p class="note note-info hidden" id="catalog-limits" role="status" aria-live="polite" aria-atomic="true"></p>
-      <label class="field sound-search-field" for="catalog-filter">
-        <span>Filter catalog</span>
-        <input type="text" id="catalog-filter" placeholder="Search by name, bank, or index" autocomplete="off">
-      </label>
-      <div id="catalog-bank-tabs" role="tablist" aria-label="Catalog bank filter"></div>
+      <div class="sound-toolbar">
+        <label class="field sound-search-field" for="catalog-filter">
+          <span>Filter catalog</span>
+          <input type="text" id="catalog-filter" placeholder="Search by name, bank, or index" autocomplete="off">
+        </label>
+      </div>
+      <div id="catalog-bank-tabs" class="part-pills" role="tablist" aria-label="Catalog bank filter"></div>
       <div id="catalog-bulk-bar" class="catalog-bulk-bar hidden" aria-live="polite">
         <span id="catalog-bulk-count" class="catalog-bulk-count">0 selected</span>
         <select id="catalog-bulk-target" class="sound-track-input-md catalog-map-select" aria-label="Bulk map target">

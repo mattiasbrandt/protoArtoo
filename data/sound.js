@@ -34,6 +34,7 @@
     named("imp_march", "$M"),
     named("cantina_l", "$C"),
     named("startup", "$B"),
+    named("happy", "$H"),
     { label: "Random On", cmd: "$R", key: null, editable: false },
     { label: "Random Off", cmd: "$O", key: null, editable: false },
     { label: "Stop / Chatter Off", cmd: "$s", key: null, editable: false },
@@ -132,6 +133,10 @@
   const AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
 
   const AUDIO_CAP_CATALOG = 0x20;
+  // The module plays a Background Track under its vocals (ADR 0054). Read for
+  // the module card's Background Track reading; a Sequence that asks for one on
+  // a module without it is the Rehearsal's warning, not this page's.
+  const AUDIO_CAP_MIXES = 0x40;
   const tbody = document.getElementById("named-sound-rows");
   const systemTbody = document.getElementById("system-sound-rows");
   const categoryTbody = document.getElementById("category-sound-rows");
@@ -177,6 +182,7 @@
   const SOUND_LIST_UNCHECKED_NOTE =
     "The sound list could not be checked against these assignments.";
   const CATALOG_STALE_NOTE = "This listing is from an earlier refresh.";
+  const CATALOG_NOT_LOADED_LINE = "Not read yet. Refresh the catalog.";
   const CATALOG_PARTIAL_SUGGESTION_NOTE =
     "Suggestions need the whole listing, and part of it is missing. Refresh the catalog first.";
   // A full walk is 300 sounds and can wait 450 ms on each one, so a refresh
@@ -244,6 +250,7 @@
   const modPlayState = document.getElementById("mod-play-state");
   const modTotalTracks = document.getElementById("mod-total-tracks");
   const modCurrentTrack = document.getElementById("mod-current-track");
+  const modBackgroundTrack = document.getElementById("mod-background-track");
   const modDeviceRow = document.getElementById("mod-device-row");
   const modCurrentTrackRow = document.getElementById("mod-current-track-row");
   const modTotalTracksRow = document.getElementById("mod-total-tracks-row");
@@ -254,6 +261,9 @@
   const modStatusFb = document.getElementById("mod-status-feedback");
   const trackNumberNote = document.getElementById("track-number-note");
   const chirpCatalogCard = document.getElementById("chirp-catalog-card");
+  const catalogSub = document.getElementById("catalog-sub");
+  const catalogRepointBar = document.getElementById("catalog-repoint");
+  const catalogRepointText = document.getElementById("catalog-repoint-text");
   const catalogRows = document.getElementById("catalog-rows");
   const catalogStatus = document.getElementById("catalog-status");
   const catalogLimits = document.getElementById("catalog-limits");
@@ -273,7 +283,12 @@
   const catalogSelectAll = document.getElementById("catalog-select-all");
   const catalogSelectCol = document.getElementById("catalog-col-select");
   let lastCapabilities = null; // null = not yet received
+  // The fitted module's registry name, as GET /api/audio reports it: what the
+  // catalog card names when the module cannot list its contents.
+  let lastDriverName = "";
   let catalogSupported = false;
+  // Whether the module has said yet whether it can list its contents.
+  let catalogCapabilityKnown = false;
   let catalogReady = false;
   let catalogBanks = [];
   let catalogEntries = [];
@@ -299,6 +314,12 @@
   let catalogAutoLoadAttempted = false;
   let catalogBulkMode = false;
   let chirpBindings = {};
+  // The Named Track the builder is re-pointing from its row, whose key every
+  // catalog row's target then starts on; null when none is.
+  let catalogRepointKey = null;
+  // The bank tab that was showing before a re-point chose its own, which
+  // Cancel puts back.
+  let catalogRepointPriorFilter = "";
   let chirpCategoryBindings = {};
   const catalogSelectedKeys = new Set();
   let catalogCategoryRanges = [];
@@ -329,9 +350,8 @@
     setModeButtonState(soundModeCompactBtn, normalizedMode === SOUND_VIEW_MODE_COMPACT);
 
     if (soundModeFeedback) {
-      soundModeFeedback.textContent = normalizedMode === SOUND_VIEW_MODE_COMPACT
-        ? "Compact mode active. Advanced tuning cards are hidden."
-        : "";
+      // The lit Compact button says which workspace this is; nothing to add.
+      soundModeFeedback.textContent = "";
     }
 
     if (!persist) return;
@@ -416,10 +436,20 @@
     const supportsCurrentTrack = (caps & AUDIO_CAP_CURRENT_TRACK) !== 0;
     const supportsSafePlayingQuery = (caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0;
     const supportsCatalog = (caps & AUDIO_CAP_CATALOG) !== 0;
+    const supportsMixes = (caps & AUDIO_CAP_MIXES) !== 0;
     const showManualPoll = supportsStatusQuery && !supportsSafePlayingQuery;
 
+    if (modBackgroundTrack) {
+      modBackgroundTrack.textContent = supportsMixes ? "Plays under vocals" : "Not on this module";
+    }
+
+    // The card keeps its shape on every module; only what is in it changes.
+    // Its controls and rows are redrawn when the answer changes, not on every
+    // poll, so a target picked in a row survives the two-second status read.
+    const catalogAnswerChanged = !catalogCapabilityKnown || catalogSupported !== supportsCatalog;
+    catalogCapabilityKnown = true;
     catalogSupported = supportsCatalog;
-    setElementVisible(chirpCatalogCard, supportsCatalog);
+    setElementVisible(catalogSub, supportsCatalog);
     if (!supportsCatalog) {
       catalogReady = false;
       catalogBanks = [];
@@ -436,19 +466,26 @@
       catalogSelectedKeys.clear();
       chirpCategoryBindings = {};
       catalogSuggestedCategoryMappings = [];
-      if (catalogRows) catalogRows.innerHTML = "";
-      if (catalogBankTabs) catalogBankTabs.innerHTML = "";
+      // No wipe of the rows or the tabs here: this runs on every status read,
+      // and the table is redrawn only when the answer changes, so a wipe took
+      // the "cannot list" line away on the second read. The render functions
+      // clear before they draw.
       if (catalogBulkTarget) catalogBulkTarget.value = "";
-      if (catalogStatus) catalogStatus.textContent = "Catalog unavailable for this backend.";
+      endNamedTrackRepoint();
+      if (catalogStatus) {
+        delete catalogStatus.dataset.baseText;
+        catalogStatus.textContent = "";
+      }
       renderCatalogLimits();
     } else if (!catalogReady && catalogEntries.length === 0 && !catalogAutoLoadAttempted) {
       catalogAutoLoadAttempted = true;
-      if (catalogStatus && !catalogStatus.textContent) {
-        catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
-      }
       loadCatalog().catch(() => {});
     }
-    syncCatalogBulkUi();
+    if (catalogAnswerChanged) {
+      setCatalogActionLock(catalogRefreshInFlight);
+    } else {
+      syncCatalogBulkUi();
+    }
     applyChirpBindingBadges();
     renderSoundListWarning();
 
@@ -478,6 +515,7 @@
       const result = await api.get("/api/audio");
       const d = result.data;
 
+      lastDriverName = typeof d.driver === "string" ? d.driver : "";
       if (d.capabilities !== undefined && d.capabilities !== null) {
         const caps = Number(d.capabilities) & 0xFF;
         const capabilitiesChanged = lastCapabilities !== caps;
@@ -540,6 +578,8 @@
     }
   };
 
+  // ok is true (success), false (error), or null for a plain line that is
+  // neither: an instruction rather than an outcome.
   const showFeedback = (el, msg, ok, timeoutMs = 2500) => {
     if (!el) return;
     const priorTimer = feedbackTimers.get(el);
@@ -551,7 +591,7 @@
       el.dataset.baseClass = el.className || "feedback";
     }
     el.textContent = msg;
-    el.className = `${el.dataset.baseClass} ${ok ? "success" : "error"}`;
+    el.className = ok === null ? el.dataset.baseClass : `${el.dataset.baseClass} ${ok ? "success" : "error"}`;
     if (timeoutMs <= 0) {
       return;
     }
@@ -562,6 +602,8 @@
     }, timeoutMs);
     feedbackTimers.set(el, timer);
   };
+
+  const countOf = (count, one, many) => `${count} ${count === 1 ? one : many}`;
 
   const getApiErrorMessage = (error) => window.PAApi?.messageFor(error) || String(error);
 
@@ -618,11 +660,17 @@
   };
 
   const setSoundHardwareEnabled = (enabled) => {
+    const changed = soundHardwareEnabled !== enabled;
     soundHardwareEnabled = enabled;
     soundDisabledCard?.classList.toggle("hidden", enabled);
 
+    // The catalog card is left out: its controls also wait on the module being
+    // able to list and on a refresh in flight, and its own sync below says so.
+    // Enabling them here on every status frame woke Refresh on a module that
+    // cannot list, and every row in the middle of a refresh.
+    const cardControls = ".card:not(#sound-disabled-card):not(#chirp-catalog-card)";
     const controls = document.querySelectorAll(
-      '.card:not(#sound-disabled-card) button, .card:not(#sound-disabled-card) input, .card:not(#sound-disabled-card) select, .card:not(#sound-disabled-card) textarea'
+      ["button", "input", "select", "textarea"].map((tag) => `${cardControls} ${tag}`).join(", ")
     );
     controls.forEach((control) => {
       if (SOUND_UI_ALWAYS_ENABLED_IDS.has(control.id)) return;
@@ -635,7 +683,13 @@
       refreshCategoryTestButtons();
     }
     syncMoodMapControlState();
-    syncCatalogBulkUi();
+    syncCatalogControls();
+    if (changed) {
+      renderCatalogBankTabs();
+      renderCatalogRows();
+    } else {
+      syncCatalogBulkUi();
+    }
   };
 
   // What a sound control says when Sound is switched off. Eight controls said
@@ -756,7 +810,10 @@
     if (!Number.isFinite(bank) || !Number.isFinite(index) || bank < 1 || index < 1 || page.length !== 1) {
       return null;
     }
-    return { bank, page, index };
+    // Whether the card still holds the file this was bound to: same, changed,
+    // or unchecked when there was nothing to compare (docs/api.md).
+    const file = String(raw.file ?? "unchecked");
+    return { bank, page, index, file };
   };
 
   const formatBindingLabel = (binding) => `CHIRP B${binding.bank}${binding.page} #${binding.index}`;
@@ -775,14 +832,55 @@
       const badge = document.getElementById(`chirp-binding-${key}`);
       if (!badge) return;
       const binding = getSlotBinding(key);
-      if (!catalogSupported || !binding) {
-        badge.textContent = "";
-        badge.classList.add("hidden");
-        return;
-      }
-      badge.textContent = formatBindingLabel(binding);
-      badge.classList.remove("hidden");
+      const shown = catalogSupported && binding !== null;
+      badge.textContent = shown ? formatBindingLabel(binding) : "";
+      badge.classList.toggle("hidden", !shown);
+      // A file changed under the address is the builder's to resolve (ADR
+      // 0054): the row says so and offers both answers. Same and unchecked
+      // say nothing more than the badge does.
+      setElementVisible(document.getElementById(`chirp-file-${key}`), shown && binding.file === "changed");
     });
+  };
+
+  // Keep: bind the same address again, which records the file the card holds
+  // there now. Re-point is the catalog's own map flow, opened on this track.
+  const keepNamedTrackFile = async (key, feedbackEl) => {
+    const binding = getSlotBinding(key);
+    if (!binding) return;
+    const ok = await postTrack(key, binding.index, feedbackEl, binding);
+    if (ok) await loadTracks();
+  };
+
+  const startNamedTrackRepoint = (key, label, feedbackEl) => {
+    if (!catalogReady) {
+      showFeedback(feedbackEl, "Refresh the catalog first.", false);
+      return;
+    }
+    const binding = getSlotBinding(key);
+    if (!catalogRepointKey) catalogRepointPriorFilter = catalogBankFilter;
+    catalogRepointKey = key;
+    const pageKey = binding ? catalogBankPageKey(binding.bank, binding.page) : "";
+    catalogBankFilter = catalogBanks.some((bankRow) =>
+      catalogBankPageKey(bankRow?.bank, bankRow?.page) === pageKey) ? pageKey : "";
+    // A typed filter could hide every row of that bank under the instruction.
+    if (catalogFilterInput) catalogFilterInput.value = "";
+    if (catalogRepointText) catalogRepointText.textContent = `Pick the sound for ${label}, then Map.`;
+    setElementVisible(catalogRepointBar, true);
+    renderCatalogBankTabs();
+    renderCatalogRows();
+    chirpCatalogCard?.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+
+  // Ends a re-point: by Cancel, which puts back the bank tab it changed, or by
+  // the track being resolved, which leaves the builder where they are.
+  const endNamedTrackRepoint = ({ restoreFilter = false } = {}) => {
+    if (!catalogRepointKey) return;
+    catalogRepointKey = null;
+    if (restoreFilter) catalogBankFilter = catalogRepointPriorFilter;
+    catalogRepointPriorFilter = "";
+    setElementVisible(catalogRepointBar, false);
+    renderCatalogBankTabs();
+    renderCatalogRows();
   };
 
   const catalogEntryKey = (entry) => {
@@ -864,7 +962,9 @@
         return false;
       }
       const key = target.slice(SLOT_TARGET_PREFIX.length);
-      return postTrack(key, index, feedbackEl || catalogFeedback, { bank, page });
+      const ok = await postTrack(key, index, feedbackEl || catalogFeedback, { bank, page });
+      if (ok && key === catalogRepointKey) endNamedTrackRepoint();
+      return ok;
     }
 
     if (target.startsWith(CATEGORY_TARGET_PREFIX)) {
@@ -1178,7 +1278,8 @@
     if (catalogStatus && catalogReady && !catalogRefreshInFlight) {
       const baseText = catalogStatus.dataset.baseText || catalogStatus.textContent || "";
       if (suggestionCount > 0) {
-        catalogStatus.textContent = `${baseText} ${suggestionCount} suggestion(s) ready.`.trim();
+        catalogStatus.textContent =
+          `${baseText} ${countOf(suggestionCount, "suggestion", "suggestions")} ready.`.trim();
       } else {
         catalogStatus.textContent = baseText;
       }
@@ -1301,17 +1402,24 @@
     syncCatalogBulkUi();
   };
 
-  const setCatalogActionLock = (locked) => {
-    const refreshRunning = Boolean(locked);
+  // Refresh and the filter: usable only with a catalog to read, Sound on, and
+  // no refresh already walking the card.
+  const syncCatalogControls = () => {
+    const usable = catalogSupported && soundHardwareEnabled && !catalogRefreshInFlight;
     if (catalogRefreshBtn) {
-      catalogRefreshBtn.disabled = refreshRunning || !soundHardwareEnabled || !catalogSupported;
-      catalogRefreshBtn.setAttribute("aria-disabled", catalogRefreshBtn.disabled ? "true" : "false");
+      catalogRefreshBtn.disabled = !usable;
+      catalogRefreshBtn.setAttribute("aria-disabled", usable ? "false" : "true");
     }
     if (catalogFilterInput) {
-      catalogFilterInput.disabled = refreshRunning || !catalogSupported || !soundHardwareEnabled;
+      catalogFilterInput.disabled = !usable;
     }
+  };
+
+  const setCatalogActionLock = (locked) => {
+    const refreshRunning = Boolean(locked);
+    syncCatalogControls();
     if (catalogStatus && refreshRunning) {
-      catalogStatus.textContent = "Refreshing catalog... this can take around 1 minute for 100+ entries.";
+      catalogStatus.textContent = "Refreshing. A full card takes about a minute.";
     }
     renderCatalogBankTabs();
     renderCatalogRows();
@@ -1323,6 +1431,7 @@
     select.className = "sound-track-input-md catalog-map-select";
     select.setAttribute("aria-label", "Select mapping target");
     populateCatalogTargetSelect(select, "Choose target…");
+    if (catalogRepointKey) select.value = `${SLOT_TARGET_PREFIX}${catalogRepointKey}`;
     return select;
   };
 
@@ -1348,7 +1457,7 @@
     tabs.forEach((tab) => {
       const selected = catalogBankFilter === tab.key;
       const button = document.createElement("button");
-      button.className = `btn sound-btn-compact catalog-bank-tab${selected ? " accent" : ""}`;
+      button.className = `part-pill${selected ? " active" : ""}`;
       button.type = "button";
       button.textContent = tab.label;
       button.setAttribute("role", "tab");
@@ -1383,36 +1492,39 @@
     if (!catalogRows) return;
     catalogRows.innerHTML = "";
 
-    const columnCount = catalogBulkMode ? 6 : 5;
-    if (!catalogSupported) {
+    // The table's one line when it has no rows to show: why it has none.
+    const showCatalogLine = (text) => {
+      const tr = document.createElement("tr");
+      tr.className = "sound-row-divider";
+      const td = document.createElement("td");
+      td.colSpan = catalogBulkMode ? 6 : 5;
+      td.className = "desc";
+      td.textContent = text;
+      tr.appendChild(td);
+      catalogRows.appendChild(tr);
       syncCatalogBulkUi([]);
+    };
+
+    if (!catalogCapabilityKnown) {
+      showCatalogLine("Waiting for the module.");
+      return;
+    }
+
+    if (!catalogSupported) {
+      showCatalogLine(lastDriverName
+        ? `The ${lastDriverName} cannot list its contents.`
+        : "This module cannot list its contents.");
       return;
     }
 
     if (!catalogReady) {
-      const tr = document.createElement("tr");
-      tr.className = "sound-row-divider";
-      const td = document.createElement("td");
-      td.colSpan = columnCount;
-      td.className = "desc";
-      td.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
-      tr.appendChild(td);
-      catalogRows.appendChild(tr);
-      syncCatalogBulkUi([]);
+      showCatalogLine(CATALOG_NOT_LOADED_LINE);
       return;
     }
 
     const visibleEntries = getVisibleCatalogEntries();
     if (!visibleEntries.length) {
-      const tr = document.createElement("tr");
-      tr.className = "sound-row-divider";
-      const td = document.createElement("td");
-      td.colSpan = columnCount;
-      td.className = "desc";
-      td.textContent = "No catalog entries match the current filter.";
-      tr.appendChild(td);
-      catalogRows.appendChild(tr);
-      syncCatalogBulkUi([]);
+      showCatalogLine("No sound matches the filter.");
       return;
     }
 
@@ -1587,12 +1699,18 @@
 
         if (catalogStatus) {
           if (!catalogReady) {
-            catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
+            delete catalogStatus.dataset.baseText;
+            catalogStatus.textContent = "";
           } else {
             const bank1PageCount = catalogBanks.filter((bankRow) =>
               Number.parseInt(String(bankRow?.bank ?? "0"), 10) === 1
             ).length;
-            let statusText = `${catalogEntries.length} entries across ${catalogBanks.length} bank(s).`;
+            // A bank's pages are rows of their own here (B2A, B2B); the count
+            // is of banks.
+            const bankCount = new Set(catalogBanks.map((bankRow) =>
+              Number.parseInt(String(bankRow?.bank ?? "0"), 10))).size;
+            let statusText = `${countOf(catalogEntries.length, "sound", "sounds")} in ` +
+              `${countOf(bankCount, "bank", "banks")}.`;
             if (bank1PageCount === 1) {
               statusText += " CHIRP reports one active Bank 1 page per refresh.";
             }
@@ -1645,7 +1763,7 @@
 
     catalogRefreshInFlight = true;
     setCatalogActionLock(true);
-    showFeedback(catalogFeedback, "Catalog refresh queued. This can take around 1 minute for large banks.", true, 0);
+    showFeedback(catalogFeedback, "Refresh queued.", null, 0);
 
     try {
       const result = await window.PAApi.postForm("/api/audio/catalog/refresh", {}, { timeoutMs: 3000 });
@@ -1694,9 +1812,13 @@
       catalogRefreshInFlight = false;
       setCatalogActionLock(false);
       if (!catalogReady && catalogStatus) {
-        catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
+        delete catalogStatus.dataset.baseText;
+        catalogStatus.textContent = "";
       }
-      renderCatalogRows();
+      // Whether each Named Track's file changed is worked out against the
+      // catalog as it stands when the tracks are read, so a walk that may have
+      // found a different card is followed by a fresh read of them.
+      await loadTracks();
     }
   };
 
@@ -1836,6 +1958,43 @@
     return input;
   };
 
+  // A bound track's cell: its number, the address it is bound to on the card,
+  // and - when the file there changed - the two answers. Shared by the Named
+  // Track and system sound rows, which bind the same way.
+  const buildTrackCell = (tdTrack, input, key, label, feedbackEl) => {
+    const cell = document.createElement("div");
+    cell.className = "sound-track-cell";
+    cell.appendChild(input);
+
+    const bindingBadge = document.createElement("span");
+    bindingBadge.id = `chirp-binding-${key}`;
+    bindingBadge.className = "chirp-binding-badge hidden";
+    cell.appendChild(bindingBadge);
+
+    const fileChanged = document.createElement("div");
+    fileChanged.id = `chirp-file-${key}`;
+    fileChanged.className = "chirp-file-changed hidden";
+    const chip = document.createElement("span");
+    chip.className = "chirp-file-chip";
+    chip.textContent = "File changed";
+    const keepButton = document.createElement("button");
+    keepButton.type = "button";
+    keepButton.className = "btn btn-sm btn-quiet";
+    keepButton.textContent = "Keep";
+    keepButton.setAttribute("aria-label", `Keep the new file for ${label}`);
+    keepButton.addEventListener("click", () => keepNamedTrackFile(key, feedbackEl));
+    const repointButton = document.createElement("button");
+    repointButton.type = "button";
+    repointButton.className = "btn btn-sm btn-quiet";
+    repointButton.textContent = "Re-point";
+    repointButton.setAttribute("aria-label", `Pick another sound for ${label}`);
+    repointButton.addEventListener("click", () => startNamedTrackRepoint(key, label, feedbackEl));
+    fileChanged.append(chip, keepButton, repointButton);
+    cell.appendChild(fileChanged);
+
+    tdTrack.appendChild(cell);
+  };
+
   const buildNamedSoundRows = () => {
     if (!tbody) return;
     tbody.innerHTML = "";
@@ -1874,13 +2033,8 @@
           ariaLabel: `${sound.label} track number`,
           datasetKey: sound.key,
         });
-        tdTrack.appendChild(rowInput);
-        const bindingBadge = document.createElement("span");
-        bindingBadge.id = `chirp-binding-${sound.key}`;
-        bindingBadge.className = "chirp-binding-badge hidden";
-        tdTrack.appendChild(bindingBadge);
-
         rowFeedback = createInlineFeedback();
+        buildTrackCell(tdTrack, rowInput, sound.key, sound.label, rowFeedback);
         dirtyMarker = createDirtyMarker();
         dirtyTracker = createRowDirtyTracker({ row: tr, inputs: [rowInput], marker: dirtyMarker });
         namedDirtyTrackers.set(sound.key, dirtyTracker);
@@ -2110,14 +2264,9 @@
         datasetKey: sound.key,
         placeholder: "(silent / not set)",
       });
-      tdTrack.appendChild(input);
-      const bindingBadge = document.createElement("span");
-      bindingBadge.id = `chirp-binding-${sound.key}`;
-      bindingBadge.className = "chirp-binding-badge hidden";
-      tdTrack.appendChild(bindingBadge);
-
       const { tdActions, actionsWrap } = createActionCell();
       const rowFeedback = createInlineFeedback();
+      buildTrackCell(tdTrack, input, sound.key, sound.label, rowFeedback);
       const dirtyMarker = createDirtyMarker();
       const dirtyTracker = createRowDirtyTracker({ row: tr, inputs: [input], marker: dirtyMarker });
       systemDirtyTrackers.set(sound.key, dirtyTracker);
@@ -2173,6 +2322,12 @@
       chirpCategoryBindings = (data && typeof data.chirp_category_bindings === "object" && data.chirp_category_bindings)
         ? data.chirp_category_bindings
         : {};
+      // A re-point ends when its track no longer says its file changed, however
+      // that came about: Keep, a Map from any row, a restore. Left standing, the
+      // preset target would bind the next Map pressed to the wrong track.
+      if (catalogRepointKey && getSlotBinding(catalogRepointKey)?.file !== "changed") {
+        endNamedTrackRepoint();
+      }
       NAMED_SOUNDS.forEach((sound) => {
         if (!sound.editable || !sound.key) return;
         const input = document.getElementById(`track-input-${sound.key}`);
@@ -2300,8 +2455,8 @@
   buildCategorySoundRows();
   buildMoodMapRows();
   buildSystemSoundRows();
-  if (catalogStatus) catalogStatus.textContent = "Catalog unavailable for this backend.";
   populateCatalogTargetSelect(catalogBulkTarget, "Map checked to target…");
+  syncCatalogControls();
   renderCatalogBankTabs();
   renderCatalogRows();
   syncCatalogBulkUi([]);
@@ -2322,6 +2477,10 @@
 
   catalogFilterInput?.addEventListener("input", () => {
     renderCatalogRows();
+  });
+
+  document.getElementById("btn-catalog-repoint-cancel")?.addEventListener("click", () => {
+    endNamedTrackRepoint({ restoreFilter: true });
   });
 
   catalogRefreshBtn?.addEventListener("click", async () => {
