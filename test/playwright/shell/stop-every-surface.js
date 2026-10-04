@@ -5,8 +5,8 @@
 // below is held to the direction the button showed before it: lit
 // (aria-pressed="true") means the press must send POST /api/estop/clear, say
 // "Estop released", read "Estop: clear" and go out; unlit means POST
-// /api/estop, "Stop sent", "Estop: latched" and lit. The ESTOP chip only ever
-// stops.
+// /api/estop, "Stop sent", "Estop: latched" and lit. The plate's ESTOP chip is
+// the same toggle, held to the same direction (#359, 2026-10-04).
 //
 // THE RULES IT HOLDS. Each is a standing rule of the Operator Shell; the
 // ticket or fix that introduced it is history, in brackets. The numbers are
@@ -30,15 +30,16 @@
 //      (#chip-estop) must each be the topmost thing at its own centre
 //      (document.elementFromPoint), and a press of each must land. STOP is
 //      unlit, so its press LATCHES the estop; the chip's press on the now
-//      latched droid must still be a stop (POST /api/estop, "Stop sent"),
-//      never a release. The overlay's "Wake Droid" is then pressed
-//      (POST /api/wake) and the overlay must come down.
+//      latched droid is the same toggle, so it must RELEASE it
+//      (POST /api/estop/clear, "Estop released", "Estop: clear", STOP out).
+//      The overlay's "Wake Droid" is then pressed (POST /api/wake) and the
+//      overlay must come down.
 //   3. A dialog is never a keyboard trap: STOP is reachable by Tab from inside
 //      one and a key press on it stops the droid (history: #359). With the
 //      Sequences "Restore backup" dialog open (data/seq.js showModal), Tab
 //      from the dialog's first control must reach STOP, and Enter and then
-//      Space on it must each land: the droid is latched from rule 2, so Enter
-//      releases and Space stops again. Shift+Tab is walked and reported.
+//      Space on it must each land: the droid is clear from rule 2, so Enter
+//      stops and Space releases. Shift+Tab is walked and reported.
 //   4. The Page Recovery View covers the work area and never the chrome
 //      (ADR 0048; history: #359, fix aa63f311). On two surfaces not yet
 //      mounted, the surface's document (its SURFACES `doc`, e.g. /dome.html)
@@ -329,37 +330,9 @@ const readStop = (page) => readControl(page, STOP);
 const pathOf = (response) => new URL(response.url()).pathname;
 const isEstopPost = (response) => response.request().method() === 'POST' && pathOf(response).startsWith('/api/estop');
 
-// A press of the ESTOP chip, which only ever stops: whether it reached the
-// droid as a stop - a POST /api/estop, never /api/estop/clear, answered 2xx and
-// the feedback line saying "Stop sent". Returns the reasons it did not land,
-// empty when it did.
 // How many stops and releases the droid answered in this run.
 let stopsAnswered = 0;
 let releasesAnswered = 0;
-const pressLands = async (page, selector, { key = null } = {}) => {
-  const reasons = [];
-  await page.evaluate(() => {
-    window.__stopFeedback = [];
-  });
-  const posted = page.waitForResponse(isEstopPost, { timeout: 8000 }).catch(() => null);
-  try {
-    if (key) await page.keyboard.press(key);
-    else await page.locator(selector).click({ timeout: 4000 });
-  } catch (error) {
-    reasons.push(`the press did not land: ${String(error.message).split('\n')[0]}`);
-    return reasons;
-  }
-  const response = await posted;
-  if (!response) reasons.push('no POST /api/estop followed the press');
-  else if (pathOf(response) !== '/api/estop') reasons.push(`the press sent POST ${pathOf(response)}, where a stop was the only thing it may send`);
-  else if (!response.ok()) reasons.push(`POST /api/estop answered ${response.status()}`);
-  else stopsAnswered += 1;
-  const sent = await page
-    .waitForFunction(() => window.__stopFeedback.includes('Stop sent'), null, { timeout: 8000 })
-    .then(() => true, () => false);
-  if (!sent) reasons.push(`feedback never said "Stop sent": ${JSON.stringify(await page.evaluate(() => window.__stopFeedback.slice()))}`);
-  return reasons;
-};
 
 // Whether STOP is lit: the droid reported a latch (data/shell.js
 // renderEstopState).
@@ -369,14 +342,15 @@ const stopLit = (page) =>
     return Boolean(button && button.classList.contains('is-latched') && button.getAttribute('aria-pressed') === 'true');
   }, STOP);
 
-// A press of STOP - by pointer, or by `key` on the focused button - held to
-// the direction the button showed before it (header). Waits for the press's
+// A press of STOP, or of the ESTOP chip (`selector`) - by pointer, or by `key`
+// on the focused control - held to the direction STOP showed before it
+// (header): the two are one toggle on one latch. Waits for the press's
 // own confirmation read (GET /api/status) as well, because a press that
 // follows a stop before that read is back is deliberately another stop
 // (data/shell.js pressEstop), so a quicker next press would test the guard
 // rather than the toggle. Returns { reasons, did } - `did` is "stop" or
 // "release", the direction it was held to.
-const pressToggles = async (page, { key = null } = {}) => {
+const pressToggles = async (page, { key = null, selector = STOP } = {}) => {
   const reasons = [];
   const lit = await stopLit(page);
   const want = lit
@@ -391,7 +365,7 @@ const pressToggles = async (page, { key = null } = {}) => {
     .catch(() => null);
   try {
     if (key) await page.keyboard.press(key);
-    else await page.locator(STOP).click({ timeout: 4000 });
+    else await page.locator(selector).click({ timeout: 4000 });
   } catch (error) {
     reasons.push(`the press did not land: ${String(error.message).split('\n')[0]}`);
     return { reasons, did: want.did };
@@ -597,12 +571,9 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
         const stopPress = await pressToggles(page);
         if (stopPress.did !== 'stop') reasons.push('STOP was lit on a droid the precondition read as clear');
         reasons.push(...stopPress.reasons.map((reason) => `STOP: ${reason}`));
-        const chipPress = await pressLands(page, CHIP);
-        reasons.push(...chipPress.map((reason) => `ESTOP chip: ${reason}`));
-        const latched = await page
-          .waitForFunction((text) => document.getElementById('shell-estop-state').textContent === text, LATCHED, { timeout: 10000 })
-          .then(() => true, () => false);
-        if (!latched) reasons.push(`state line never read "${LATCHED}"`);
+        const chipPress = await pressToggles(page, { selector: CHIP });
+        if (chipPress.did !== 'release') reasons.push('STOP was not lit after its own stop, so the chip could not be held to a release');
+        reasons.push(...chipPress.reasons.map((reason) => `ESTOP chip: ${reason}`));
         // Wake, through the overlay's own button.
         const wakePost = page
           .waitForResponse((response) => response.url().includes('/api/wake') && response.request().method() === 'POST', { timeout: 8000 })
@@ -627,7 +598,7 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
         }
         allowSleep = false;
       }
-      check('2', 'sleep overlay: STOP and ESTOP chip topmost, STOP latches, the chip only stops', reasons);
+      check('2', 'sleep overlay: STOP and ESTOP chip topmost, STOP latches, the chip releases', reasons);
     }
 
     // -----------------------------------------------------------------------
