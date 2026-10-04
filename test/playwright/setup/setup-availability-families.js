@@ -85,9 +85,9 @@ const READ = `(row) => {
     }
     if (path === '/api/identity') {
       if (identityMode === 'slow') {
-        // Held long enough to read "checking", and not so long that the Page
-        // Recovery View takes over - that backdrop dims the whole body to 0.4
-        // and would be read as this rule's opacity.
+        // Held long enough to read "checking". The Page Recovery View is up
+        // while it is held (READ records recoveryActive), so the checking
+        // opacity is the backdrop's and is not asserted.
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
       if (identityMode === 'error') {
