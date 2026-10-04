@@ -1537,11 +1537,14 @@
       ? ` disabled aria-disabled="true" data-ignored-says="${escAttr(refusal.notice)}" data-ignored-page="${refusal.page}"`
       : "");
 
-  // How long a run is: "6 s", "1.5 s" - the same words as Runs on Sequences
-  // (data/seq.js lengthWords). The droid sends 0 for a stored Sequence it
-  // could not find the end of, which is only ever an invalid one.
+  // How long a run is: "6 s", "1.5 s", "0 s" - the same words and the same
+  // condition as Runs on Sequences (data/seq.js lengthWords, reportedLength):
+  // nothing when the droid sent no length, and nothing for the 0 it sends for
+  // an invalid stored Sequence it could not find the end of. A valid 0 ms
+  // Sequence reads "0 s".
   const lengthWords = (entry) =>
-    (Number.isInteger(entry?.lengthMs) && entry.lengthMs > 0 ? `${Number((entry.lengthMs / 1000).toFixed(2))} s` : "");
+    (!Number.isInteger(entry?.lengthMs) || (entry.lengthMs === 0 && entry.valid === false)
+      ? "" : `${Number((entry.lengthMs / 1000).toFixed(2))} s`);
 
   // A tile: its act first, a round Play that shows its icon alone and says
   // Play <name> as its tooltip and accessible name (operator, 2026-10-04);
@@ -1570,7 +1573,7 @@
           <span class="show-item-name">
             <span class="show-name">${esc(name)}</span>
             ${isRest ? `<span class="seq-badge show-rest-mark">${icon("human-handsdown")}<span class="show-said">Rest</span></span>` : ""}
-            ${channels.map((channel) => `<span class="show-rc" aria-label="RC Channel ${escAttr(channel)}">${esc(channel)}</span>`).join("")}
+            ${channels.map((channel) => `<span class="show-rc"><span class="show-said">RC Channel </span>${esc(channel)}</span>`).join("")}
           </span>
           <span class="show-item-line">
             <span class="seq-row-run hidden"><span class="indicator ok seq-live" aria-hidden="true"></span>Running</span>
