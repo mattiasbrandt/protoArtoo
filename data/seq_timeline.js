@@ -103,9 +103,6 @@
   // bounds, which a typed or dragged length is held to. Without them, the
   // limits any length has here.
   const flutterRange = () => window.SeqProtocolCheck?.BODY_FLUTTER_MS || [MIN_LENGTH_MS, STEP_T_MAX_MS];
-  // Why a Background Track does not play on this droid: the Rehearsal
-  // Warning's own words (data/seq_rehearsal.js backgroundTrackCannotMix()).
-  const MUTE_WORDS = "The sound module on this droid plays one sound at a time, so the Background Track does not play.";
 
   // Logic and PSI targets that name more than one light Part, as the dome
   // command grammar spells them (kDlTargets, src/protocol_check.cpp). A single
@@ -242,9 +239,10 @@
   //            a Background Track (ADR 0054), on the Sound row under the
   //            sounds fired over it: from the step that starts it to the
   //            step that stops it, or to the end, or on past it where it
-  //            is not bounded. `sound` is the address it plays, and `mute`
-  //            marks one the droid's sound module cannot play, because it
-  //            plays one sound at a time
+  //            is not bounded. `sound` is the address it plays; `ends` says
+  //            what ends it - "stop", "end", "on" (past the end) or "cut",
+  //            by a later start or Quiet - and `mute` marks one the droid's
+  //            sound module cannot play, because it plays one sound at a time
   //   tick     one command at its instant: every step draws at least this
   // `ghost` marks an item from a loop's second pass or later, which the
   // as-written reading draws faintly.
@@ -409,10 +407,21 @@
     // Whether this droid's module can play one at all is what it reported
     // (GET /api/config `components.audio.activeMixes`), read as the Rehearsal
     // reads it (data/seq_rehearsal.js): nothing is said where it did not say.
-    const background = { item: null, bounded: false };
+    //
+    // A sequence inside this one is spliced in when the droid runs it, so a
+    // start, a stop or a Quiet in it acts on this Background Track; the span
+    // is drawn straight through the phrase's block all the same, because what
+    // a phrase does is not drawn inside it.
+    //
+    // `stopped` is the last span its own stop ended, until the next thing
+    // that would have cut it short: a later start or a Quiet marks it
+    // `cutAfter`, because without its stop it would be cut there.
+    const background = { item: null, stopped: null, bounded: false };
     const mute = context.config?.components?.audio?.activeMixes === false;
-    const backgroundEnds = (t) => {
-      if (background.item) background.item.t1 = t;
+    const backgroundEnds = (t, ends) => {
+      if (ends === "cut" && background.stopped) background.stopped.cutAfter = true;
+      background.stopped = null;
+      if (background.item) Object.assign(background.item, { t1: t, ends });
       background.item = null;
     };
 
@@ -537,35 +546,40 @@
         case "audioCat":
           // Quiet ($s) stops every stream, a Background Track with them
           // (AUDIO_PLAYBACK_INTENT_STOP, src/tasks/audio_task.cpp).
-          if (def.type === "audio" && def.cmd === "$s") backgroundEnds(t);
+          if (def.type === "audio" && def.cmd === "$s") backgroundEnds(t, "cut");
           add(rowLane("sound", "Sound"), { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
           return;
-        case "backgroundTrack":
+        case "backgroundTrack": {
           // One block, under the sounds fired over it. The droid plays one
           // Background Track at a time, so a start ends the one before it
           // (playBackgroundTrack(), src/drivers/audio_chirp.cpp). Its left
           // edge is its start; it has a right edge once a stop step ends it.
-          backgroundEnds(t);
+          // `held`: a start before this one was bounded, so the droid stops
+          // this one at the end whatever it says itself.
+          backgroundEnds(t, "cut");
+          const held = background.bounded;
           if (def.boundAudio !== false) background.bounded = true;
           background.item = add(rowLane("sound", "Sound"), {
-            kind: "background", t0: t, t1: null, sent: t, label, ghost, mute, sound: def.cmd,
+            kind: "background", t0: t, t1: null, sent: t, label, ghost, mute, held, sound: def.cmd,
             ...(step === null ? {} : { steps: [step], l: { step, field: "t" } }),
           });
           return;
+        }
         case "backgroundTrackStop": {
           // A stop ends the span it stops, which then runs from its start to
-          // here and is moved and stretched as one block. One with nothing
-          // playing is a mark of its own.
+          // here and is moved and stretched as one block. One that cannot be
+          // that block's edge - nothing is playing, or what plays is a loop's
+          // later pass, which nobody wrote - is a mark of its own, so every
+          // written stop can still be taken hold of.
           const playing = background.item;
-          if (!playing) {
-            add(rowLane("sound", "Sound"), { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
-            return;
-          }
-          backgroundEnds(t);
-          if (playing.l && step !== null) {
+          backgroundEnds(t, "stop");
+          if (playing && playing.l && step !== null) {
             playing.steps = [playing.l.step, step];
             playing.r = { step, field: "t" };
+            background.stopped = playing;
+            return;
           }
+          add(rowLane("sound", "Sound"), { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
           return;
         }
         case "domeRotate": {
@@ -705,7 +719,7 @@
     if (domeVisual.item && domeVisual.item.t1 === null) domeVisual.item.t1 = endMs;
     // A Background Track still playing stops at the end where the droid stops
     // it, and plays on to the right edge where it does not (below).
-    if (background.bounded) backgroundEnds(endMs);
+    if (background.bounded) backgroundEnds(endMs, "end");
     // A sequence inside this one stops at this routine's end step too: the
     // droid cuts what it splices in past the end (seqStoreSplicePhrase(),
     // include/seq_store_util.h).
@@ -732,7 +746,7 @@
       }
     });
     if (background.item) background.item.past = true;
-    backgroundEnds(windowMs);
+    backgroundEnds(windowMs, "on");
 
     // Loops, as written: the header and how many passes it makes. The passes
     // are the same steps, drawn again, never stored (ADR 0057).
@@ -840,7 +854,8 @@
     // warns of it; one that plays on past the end runs out as `left` does.
     const state = `${item.mute ? " is-mute" : ""}${item.past ? " is-past" : ""}`;
     const said = item.label ? `${item.label}, ${seconds(item.t0)}` : seconds(item.t0);
-    const title = item.mute ? `${said}. ${MUTE_WORDS}` : said;
+    const mute = item.mute ? window.SeqRehearsal?.CANNOT_MIX_WORDS : "";
+    const title = mute ? `${said}. ${mute}` : said;
     const width = item.kind === "tick" ? "" : `;width:${pct(Math.max(0, t1 - item.t0), windowMs)}`;
     // A Gesture's block holds the moves it becomes, each with its own words,
     // so its own are in its title and not written over theirs.
@@ -926,8 +941,7 @@
   //
   // `hosts` is the three places the caller gives it: `bar` (the moment, the
   // pose press and what the droid answered), `lanes` (the note about Parts
-  // this droid cannot move and a Background Track it cannot play, and the
-  // routine itself) and `side` (the droid at
+  // this droid cannot move, and the routine itself) and `side` (the droid at
   // the marker, and what the routine has commanded by then).
   //
   // `source` is the sequence, or a function that returns it. An editor passes
@@ -966,7 +980,8 @@
   // Returns {refresh(context), at(), dragging(), cancel(), picked(),
   // pick(indices), movePickedTo(ms, landed), pickedRange(), removePicked(),
   // aim(point, isEnd),
-  // beatAt(ms), standing(index), sizeStanding(index, ms), say(answer),
+  // beatAt(ms), standing(index), background(index), sizeStanding(index, ms),
+  // say(answer),
   // destroy()}.
   // ---------------------------------------------------------------------------
   const mount = (hosts, source, options = {}) => {
@@ -1045,13 +1060,9 @@
       const ids = unwired(model, context);
       dim = new Set(ids);
       const names = ids.map((id) => model.parts.find((lane) => lane.part === id)?.name || id);
-      const mute = model.rows.some((row) => row.items.some((item) => item.mute));
-      unwiredNote.hidden = names.length === 0 && !mute;
-      unwiredNote.textContent = [
-        names.length === 0 ? ""
-          : `${names.length} ${names.length === 1 ? "part here is" : "parts here are"} not wired on this droid: ${names.join(", ")}.`,
-        mute ? MUTE_WORDS : "",
-      ].filter(Boolean).join(" ");
+      unwiredNote.hidden = names.length === 0;
+      unwiredNote.textContent = names.length === 0 ? ""
+        : `${names.length} ${names.length === 1 ? "part here is" : "parts here are"} not wired on this droid: ${names.join(", ")}.`;
     };
 
     // Only the routine as written is edited: the Expanded reading is the
@@ -1165,7 +1176,8 @@
         ["Open", open.length ? open.join(", ") : "none"],
         ...pose.lights.map((lit) => [lit.name, lit.label]),
         ...(pose.sound ? [["Sound", `${pose.sound.label}, from ${seconds(pose.sound.t0)}`]] : []),
-        ...(pose.background ? [["Background Track", `${pose.background.sound}, from ${seconds(pose.background.t0)}`]] : []),
+        ...(pose.background
+          ? [["Background Track", [pose.background.sound, `from ${seconds(pose.background.t0)}`].filter(Boolean).join(", ")]] : []),
       ];
       readout.innerHTML = rowsHtml.map(([term, value]) => `<dt>${esc(term)}</dt><dd>${esc(value)}</dd>`).join("");
       if (drawing) {
@@ -1671,6 +1683,21 @@
       const item = standingItem(index);
       return item ? { close: item.r.step, ms: item.t1 - item.sent } : null;
     };
+    // The Background Track the start at `index` begins, as drawn: what ends
+    // it (the item's `ends`); whether an earlier bounded start has the droid
+    // stop it at the end whatever it says (`held`); whether, ended by its
+    // stop, it would be cut short without it (`cutAfter`); and when it was
+    // cut short by a later start or a Quiet, how long it plays first - the
+    // room a stop has. Null for a step that starts none on the routine as
+    // written.
+    const background = (index) => {
+      const item = (model.rows.find((row) => row.key === "sound")?.items || [])
+        .find((each) => each.kind === "background" && each.l && each.l.step === index);
+      return item ? {
+        ends: item.ends, held: item.held, cutAfter: Boolean(item.cutAfter), room: item.ends === "cut" ? item.t1 - item.t0 : Infinity,
+      } : null;
+    };
+
     // Typed rather than dragged: the block the step at `index` opens runs
     // for `ms`, its close moved as far as its limits allow, and it is one
     // edit. The close comes no earlier than the step that opens the Part; one
@@ -1841,6 +1868,7 @@
       aim,
       beatAt,
       standing,
+      background,
       sizeStanding,
       say,
       destroy() {
