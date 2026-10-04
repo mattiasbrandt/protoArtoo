@@ -459,7 +459,9 @@
   const moreOpen = new Set();
 
   // The droid's Stand Down Sequence (CONTEXT.md, #451): one name, chosen here
-  // with the mark beside each row and run by the Dashboard's Stand Down. The
+  // with the mark beside each row and run by the Dashboard's Rest act. A
+  // surface calls it Rest (operator, 2026-10-04); the term stays Stand Down
+  // Sequence in code and docs (CONTEXT.md "Stand Down Sequence"). The
   // Setting stores an empty name until one is chosen, and the words table says
   // what stands in for it (data/web_api.js, standDownSequence `unset`). Null
   // until GET /api/config has answered with it, and no row is marked or offers
@@ -472,10 +474,10 @@
   // a Factory one, and a Factory row has no More to hold it. The chosen row
   // says so in its name cell; every other row offers to be chosen.
   const standDownBadge = (name) =>
-    (name === standDownName() ? '<span class="seq-badge">Stand Down</span>' : "");
+    (name === standDownName() ? '<span class="seq-badge">Rest</span>' : "");
   const standDownAct = (name) =>
     (standDownName() === null || name === standDownName() ? ""
-      : `<button type="button" class="seq-act icon-act" data-action="stand-down" data-seq-name="${window.PAUtils.escapeAttr(name)}">${window.PAUi.actFace("pin-outline", "Use as Stand Down")}</button>`);
+      : `<button type="button" class="seq-act icon-act" data-action="stand-down" data-seq-name="${window.PAUtils.escapeAttr(name)}">${window.PAUi.actFace("pin-outline", "Use as Rest")}</button>`);
 
   // Name, What it does, Steps, Runs, and the row's acts.
   const LIST_COLUMNS = 5;
@@ -5333,7 +5335,7 @@
   const SECTIONS = [
     [LEARNED_SECTION, loadLearned, "your sequences"],
     [FACTORY_SECTION, loadFactory, "the factory sequences"],
-    [STAND_DOWN_SECTION, loadStandDown, "the Stand Down Sequence"],
+    [STAND_DOWN_SECTION, loadStandDown, "the Rest Sequence"],
   ];
 
   const startPageLoad = () => {
