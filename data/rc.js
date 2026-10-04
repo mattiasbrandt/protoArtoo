@@ -1866,9 +1866,11 @@
     renderSourceHealth();
     renderSummaryTable();
     renderChannelList();
-    // The editor draws nothing from the diagnostics, so it is left alone:
-    // drawing it again here rebuilt it from the saved binding and threw a
-    // draft away on every poll and every return to the tab (#355).
+    // The editor is not drawn again here. It reads one thing the diagnostics
+    // carry, the receiver mode (getEditorMode()), for which actions the picker
+    // offers (actionAllowedOnSelected()); a new mode reaches the picker at its
+    // next draw. Drawing the editor here rebuilt it from the saved binding and
+    // threw a draft away on every poll and every return to the tab (#355).
     if (selectedChannel) renderLivePreview();
   };
 
