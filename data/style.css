@@ -5072,40 +5072,58 @@ body[data-page="maintenance"] .status-item .hint {
   font-weight: 400;
 }
 
-/* Moving parts: the drawings under the three controls, in the same bay and
-   divided from them by a seam rather than by a card of their own. The label
-   takes the controls' own heading voice. */
-.moving-parts-bay {
+/* The stage: the droid's two drawings and its Sequences, one block under the
+   three controls, divided from them by a seam rather than by a card of its
+   own (#451). Full screen sits at its head, on the drawings' heading line,
+   because full screen keeps both (operator, 2026-10-04). */
+.stage-bay {
+  position: relative;
   margin-top: var(--space-xl);
   padding-top: var(--space-lg);
   border-top: 1px solid var(--border);
 }
 
-.moving-parts-bay > h3 {
-  margin-bottom: var(--space-md);
+.stage-head {
+  position: absolute;
+  top: var(--space-md);
+  right: 0;
+}
+
+.stage-head .btn .i {
+  width: 14px;
+  height: 14px;
+}
+
+/* The labels take the controls' own heading voice. */
+.moving-parts-bay > h3,
+.show-head h3 {
   color: var(--text);
   font-size: var(--fs-body);
   font-weight: 600;
   line-height: 1.3;
 }
 
+.moving-parts-bay > h3 {
+  margin-bottom: var(--space-md);
+}
+
 /* Sequences: every Sequence on the droid, run from the Dashboard (#451).
-   Under the drawings in the same bay, divided by the same seam. The head
-   carries the run's state, Stand Down and the posture; the list is compact
-   rows, two or three across, each a soft tile with no frame of its own -
-   its name, the RC Channel that fires it, and Play or Stop at card scale. */
+   Under the drawings in the same block, told apart by air rather than a
+   seam. The head carries the run's state and Rest; the list is the two groups
+   Sequences lists them in, each a grid of tiles. A tile is a soft face with no
+   frame of its own (#399's "fewer frames"), its round Play first, then the
+   name, the RC Channel and the Rest mark, and one quiet line under them -
+   the softer corner the operator asked of Lights' plates (2026-09-20, #410)
+   rather than an instrument plate's chamfer, because a tile is pressed. */
 .show-bay {
   margin-top: var(--space-xl);
-  padding-top: var(--space-lg);
-  border-top: 1px solid var(--border);
 }
 
 .show-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-sm) var(--space-lg);
+  gap: var(--space-lg);
   margin-bottom: var(--space-md);
 }
 
@@ -5113,10 +5131,6 @@ body[data-page="maintenance"] .status-item .hint {
   display: flex;
   align-items: baseline;
   gap: var(--space-md);
-  color: var(--text);
-  font-size: var(--fs-body);
-  font-weight: 600;
-  line-height: 1.3;
 }
 
 .show-head h3 .now {
@@ -5126,25 +5140,39 @@ body[data-page="maintenance"] .status-item .hint {
   font-weight: 400;
 }
 
-.show-acts,
-.show-standdown {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-sm) var(--space-md);
-}
-
-.show-standdown-name,
-.show-name {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cell);
-  color: var(--text);
+.show-head .btn .i,
+.show-other .btn .i {
+  width: 14px;
+  height: 14px;
 }
 
 .show-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--space-xs);
+  gap: var(--space-lg);
+}
+
+.show-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.show-group-count {
+  color: var(--text-dim);
+  letter-spacing: 0;
+}
+
+.show-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-sm);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -5153,52 +5181,132 @@ body[data-page="maintenance"] .status-item .hint {
 .show-item {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  min-height: 44px;
-  padding: var(--space-xs) var(--space-sm) var(--space-xs) var(--space-md);
+  gap: var(--space-md);
+  min-height: 56px;
+  padding: var(--space-sm) var(--space-md) var(--space-sm) var(--space-sm);
   background: var(--surface-alt);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-soft);
+  transition: background-color 0.15s;
 }
 
-/* The running row: the same green seam the Sequences list draws. */
+.show-item:hover {
+  background: color-mix(in srgb, var(--text) 4%, var(--surface-alt));
+}
+
+/* The running tile: the same green seam the Sequences list draws, on a face
+   tinted toward it. */
 .show-item.is-running {
-  box-shadow: inset 2px 0 0 var(--success);
+  background: color-mix(in srgb, var(--success) 8%, var(--surface-alt));
+  box-shadow: inset 3px 0 0 var(--success);
+}
+
+.show-item-act {
+  flex: 0 0 auto;
+  display: flex;
+}
+
+/* Play and Stop are round, at a size a finger finds on a stand. Play is the
+   tile's one prominent act, in the accent; Stop keeps the neutral face
+   .seq-stop gives it, never red (operator, 2026-10-01). */
+.show-item-act .btn {
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: var(--radius-pill);
+}
+
+.show-item-act .btn .i {
+  width: 16px;
+  height: 16px;
+}
+
+.show-item-act .show-play {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: var(--accent);
+  color: var(--accent-bright);
+}
+
+.show-item-act .show-play:hover {
+  background: var(--accent-dim);
+  color: var(--text);
+}
+
+.show-item-act .show-play:disabled {
+  background: transparent;
+  border-color: var(--border-strong);
+  color: var(--text-faint);
+}
+
+/* What the tile says - its name and marks, and the line under them - takes
+   the room left of nothing: the act holds its place on every tile. */
+.show-item-says {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  min-width: 0;
+}
+
+.show-item-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2xs) var(--space-sm);
+}
+
+.show-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
+  font-weight: 600;
+  color: var(--text);
 }
 
 .show-item.is-inert .show-name {
   color: var(--text-dim);
+  font-weight: 400;
 }
 
 .show-rc {
+  padding: 0 var(--space-sm);
+  border-radius: var(--radius-pill);
+  background: var(--well);
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
+  line-height: 1.8;
   color: var(--text-dim);
   white-space: nowrap;
 }
 
-/* What the row says - its name, the RC Channel, Running, why it does
-   nothing - wraps inside its own column, so the act beside it holds its
-   place on every row. */
-.show-item-says {
+.show-item .show-rest-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  color: var(--text-dim);
+}
+
+.show-item .show-rest-mark .i {
+  width: 11px;
+  height: 11px;
+}
+
+.show-item-line {
   display: flex;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2xs) var(--space-sm);
+  align-items: center;
+  gap: var(--space-sm);
   min-width: 0;
+  color: var(--text-faint);
+  font-size: var(--fs-hint);
+  line-height: 1.4;
 }
 
-.show-item-acts {
-  flex: 0 0 auto;
-  display: flex;
-  gap: var(--space-xs);
+.show-item-about {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.show-item .btn .i,
-.show-acts .btn .i,
-.show-other .btn .i {
-  width: 14px;
-  height: 14px;
+.show-item-line .seq-row-run {
+  font-size: var(--fs-hint);
+  gap: var(--space-2xs);
 }
 
 .show-other {
@@ -5216,8 +5324,9 @@ body[data-page="maintenance"] .status-item .hint {
    its place above where the plate was. The plate's freshness line comes back
    whenever the droid is not being heard live, so a row still reading Running
    from the last frame is never the only thing on screen. On the Dashboard
-   everything but the Sequences bay clears, and the bay takes the whole work
-   area. */
+   everything but the stage clears, and the stage takes the whole work area:
+   the drawings and the Sequences side by side, so every quick trigger is on
+   one screen (operator, 2026-10-04). */
 body.shell-performing {
   grid-template-columns: minmax(0, 1fr);
   padding-bottom: var(--space-xl);
@@ -5262,19 +5371,34 @@ body.shell-performing #shell-content {
 
 body.shell-performing [data-surface="home"] > :not(.dash-controls):not(.sleep-overlay),
 body.shell-performing .dash-controls .sect,
-body.shell-performing .dash-controls .ctl-row,
-body.shell-performing .dash-controls .moving-parts-bay {
+body.shell-performing .dash-controls .ctl-row {
   display: none;
 }
 
-body.shell-performing .show-bay {
+body.shell-performing .stage-bay {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(340px, 1fr);
+  gap: var(--space-xl);
+  align-items: start;
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
 }
 
-body.shell-performing .show-list {
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+/* Full screen's way out heads both columns, on a row of its own. */
+body.shell-performing .stage-head {
+  position: static;
+  grid-column: 1 / -1;
+  justify-self: end;
+  margin-bottom: calc(-1 * var(--space-md));
+}
+
+body.shell-performing .show-bay {
+  margin-top: 0;
+}
+
+body.shell-performing .show-items {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* ---- Readouts and Build: instrument tiles ----

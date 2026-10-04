@@ -1457,13 +1457,21 @@
   // -------------------------------------------------------------------------
   // Sequences: a show run from the Dashboard (#330, #451)
   //
-  // Every Sequence on the droid, the builder's own first and then the Factory
-  // ones theirs do not shadow - a Learned name shadows a Factory one, the rule
-  // the droid resolves a name by (the removed quick-sequence row,
-  // 76d9735c^:data/dome_control.js). Each has Play; the one running has Stop
-  // instead, whoever started it. A Sequence mapped to an RC Channel says which,
-  // from GET /api/rc/map: the RC Map is the running order, so the RC Radio and
-  // this list are one list read from two ends, never stored twice.
+  // Every Sequence on the droid, in the two groups Sequences lists them in:
+  // Yours, then the Factory ones yours do not shadow - a Learned name shadows
+  // a Factory one, the rule the droid resolves a name by (the removed
+  // quick-sequence row, 76d9735c^:data/dome_control.js). Each is a tile: its
+  // Play, its name, how long a run is and what it does, as the droid lists it.
+  // The one running has Stop instead of Play, whoever started it. A Sequence
+  // mapped to an RC Channel says which, from GET /api/rc/map: the RC Map is the
+  // running order, so the RC Radio and this list are one list read from two
+  // ends, never stored twice.
+  //
+  // Rest runs the droid's Stand Down Sequence, which is chosen on Sequences;
+  // the tile of the one it runs carries the Rest mark, so Rest needs no words
+  // of its own beside it (operator, 2026-10-04). The Factory DM:RESET default
+  // says on its tile that it leaves the pies open (CONTEXT.md "Stand Down
+  // Sequence").
   //
   // What is running is the Live Reading's run watch (data/live_reading.js,
   // "The run watch"), the one the Sequences page reads too. It starts and
@@ -1479,11 +1487,8 @@
   const showNow = document.getElementById("show-now");
   const showList = document.getElementById("show-list");
   const showOther = document.getElementById("show-other");
-  const showUnmapped = document.getElementById("show-unmapped");
   const showFeedbackEl = document.getElementById("show-feedback");
   const standDownBtn = document.getElementById("standdown-btn");
-  const standDownName = document.getElementById("standdown-name");
-  const standDownWhy = document.getElementById("standdown-why");
   const postureBtn = document.getElementById("show-posture");
 
   // What a never-chosen Stand Down runs: the words table's, one home for the
@@ -1491,6 +1496,7 @@
   const STAND_DOWN_UNSET = window.PAApi.unsetOf("standDownSequence");
   const NOT_ON_DROID = "Not on the droid. Does nothing.";
   const NEEDS_REPAIR = "Needs repair on Sequences.";
+  const LEAVES_PIES_OPEN = "Leaves the pies open.";
 
   // Each null until the droid has answered it once.
   let showLearned = null;
@@ -1510,10 +1516,14 @@
 
   // Why a name cannot run, as the row says it and as the notice says it, and
   // where it is changed; null when it can run. A name only the RC Map holds is
-  // changed on RC; one that needs repair, on Sequences.
+  // changed on RC; one that needs repair, or the Stand Down Sequence whatever
+  // is wrong with it, on Sequences, where it is chosen.
   const refusalOf = (name) => {
     const entry = libraryEntry(name);
-    if (!entry) return { says: NOT_ON_DROID, notice: `${name} is not on the droid`, page: "rc" };
+    if (!entry) {
+      const page = name === standDownEffective() ? "seq" : "rc";
+      return { says: NOT_ON_DROID, notice: `${name} is not on the droid`, page };
+    }
     if (entry.valid === false) {
       return { says: NEEDS_REPAIR, notice: `${name} fails Protocol Check until it is repaired`, page: "seq" };
     }
@@ -1524,32 +1534,69 @@
       ? ` disabled aria-disabled="true" data-ignored-says="${escAttr(refusal.notice)}" data-ignored-page="${refusal.page}"`
       : "");
 
-  const rowHtml = (name) => {
+  // How long a run is: "6 s", "1.5 s" - the same words as Runs on Sequences
+  // (data/seq.js lengthWords). The droid sends 0 for a stored Sequence it
+  // could not find the end of, which is only ever an invalid one.
+  const lengthWords = (entry) =>
+    (Number.isInteger(entry?.lengthMs) && entry.lengthMs > 0 ? `${Number((entry.lengthMs / 1000).toFixed(2))} s` : "");
+
+  // A tile: its act first, a round Play that shows its icon alone and says
+  // Play <name> as its tooltip and accessible name (operator, 2026-10-04);
+  // then the name, the RC Channels that fire it and the Rest mark; then one
+  // quiet line - why it does nothing, or how long it runs and what it does,
+  // cut to the tile's width (the whole purpose is on Sequences).
+  const tileHtml = (name) => {
     const refusal = refusalOf(name);
+    const entry = libraryEntry(name);
     const channels = (showMapped || []).filter((mapped) => mapped.name === name).map((mapped) => mapped.channel);
+    const isRest = name === standDownEffective();
+    const factoryDefault = isRest && name === STAND_DOWN_UNSET && !showLearned.some((seq) => seq.name === name);
+    const purpose = entry?.purpose ? `${entry.purpose}${entry.purposeCut ? "..." : ""}` : "";
+    const about = factoryDefault ? LEAVES_PIES_OPEN : purpose;
+    const line = refusal ? `<span class="why">${refusal.says}</span>`
+      : [lengthWords(entry), about].filter(Boolean).map(esc).join(" &middot; ");
     return `
       <li class="show-item${refusal ? " is-inert" : ""}" data-name="${escAttr(name)}">
-        <span class="show-item-says">
-          <span class="show-name">${esc(name)}</span>
-          ${channels.map((channel) => `<span class="show-rc" aria-label="RC Channel ${escAttr(channel)}">${esc(channel)}</span>`).join("")}
-          <span class="seq-row-run hidden"><span class="indicator ok seq-live" aria-hidden="true"></span>Running</span>
-          ${refusal ? `<span class="why">${refusal.says}</span>` : ""}
+        <span class="show-item-act">
+          <button type="button" class="btn show-play icon-act" data-act="play"${refusedAttrs(refusal)}>${actFace("play", `Play ${name}`)}</button>
+          <button type="button" class="btn seq-stop icon-act hidden" data-act="stop">${actFace("stop", `Stop ${name}`)}</button>
         </span>
-        <span class="show-item-acts">
-          <button type="button" class="btn btn-sm show-play icon-act act-keeps-words" data-act="play"${refusedAttrs(refusal)}>${actFace("play", "Play")}</button>
-          <button type="button" class="btn btn-sm seq-stop icon-act hidden" data-act="stop">${actFace("stop", "Stop")}</button>
+        <span class="show-item-says">
+          <span class="show-item-name">
+            <span class="show-name">${esc(name)}</span>
+            ${isRest ? `<span class="seq-badge show-rest-mark">${icon("human-handsdown")}Rest</span>` : ""}
+            ${channels.map((channel) => `<span class="show-rc" aria-label="RC Channel ${escAttr(channel)}">${esc(channel)}</span>`).join("")}
+          </span>
+          <span class="show-item-line">
+            <span class="seq-row-run hidden"><span class="indicator ok seq-live" aria-hidden="true"></span>Running</span>
+            <span class="show-item-about">${line}</span>
+          </span>
         </span>
       </li>`;
   };
 
+  const groupHtml = (label, names) => (names.length === 0 ? "" : `
+      <section class="show-group">
+        <h4 class="show-group-head">${label} <span class="show-group-count">${names.length}</span></h4>
+        <ul class="show-items">${names.map(tileHtml).join("")}</ul>
+      </section>`);
+
+  // Yours holds the builder's own and every name the droid would fire that
+  // it does not hold - one the RC Map binds, or the Stand Down Sequence -
+  // which can only ever have been theirs: a Factory name is never missing.
   const renderShowList = () => {
     if (!showList || !libraryAnswered()) return;
-    const names = [];
-    [...showLearned, ...showFactory, ...(showMapped || [])].forEach(({ name }) => {
-      if (name && !names.includes(name)) names.push(name);
-    });
-    showList.innerHTML = names.map(rowHtml).join("");
-    showUnmapped?.classList.toggle("hidden", showMapped === null || showMapped.length > 0);
+    const factoryNames = new Set(showFactory.map(({ name }) => name));
+    const yours = [];
+    const factory = [];
+    const standDown = standDownEffective();
+    [...showLearned, ...showFactory, ...(showMapped || []), ...(standDown ? [{ name: standDown }] : [])]
+      .forEach(({ name }) => {
+        if (!name || yours.includes(name) || factory.includes(name)) return;
+        const learned = showLearned.some((seq) => seq.name === name);
+        (learned || !factoryNames.has(name) ? yours : factory).push(name);
+      });
+    showList.innerHTML = groupHtml("Yours", yours) + groupHtml("Factory", factory);
     paintShowRun();
     paintStandDown();
   };
@@ -1590,24 +1637,15 @@
     }
   };
 
+  // Rest's own state. The tile of the Sequence it runs says which that is and
+  // why it does nothing, if it does nothing; the button itself says Rest.
   const paintStandDown = () => {
+    if (!standDownBtn) return;
     const name = standDownEffective();
-    if (standDownName) {
-      standDownName.textContent = name || "";
-      standDownName.classList.toggle("waiting", name === null);
-    }
     const answered = name !== null && libraryAnswered();
     const refusal = answered ? refusalOf(name) : null;
-    if (standDownWhy) {
-      // The default's one decided sentence, and only for the Factory DM:RESET:
-      // a Learned Sequence of the same name shadows it and is the builder's.
-      const factoryDefault = name === STAND_DOWN_UNSET && answered
-        && !showLearned.some((seq) => seq.name === name);
-      standDownWhy.textContent = refusal ? refusal.says : factoryDefault ? "leaves the pies open" : "";
-    }
-    if (!standDownBtn) return;
-    // Until the droid has said which it is, Stand Down waits rather than run
-    // the default over a choice it has not heard yet.
+    // Until the droid has said which it is, Rest waits rather than run the
+    // default over a choice it has not heard yet.
     standDownBtn.disabled = !answered || Boolean(refusal);
     standDownBtn.classList.toggle("is-pending", !answered);
     standDownBtn.setAttribute("aria-disabled", String(!answered || Boolean(refusal)));
@@ -1722,6 +1760,8 @@
     const chosen = config?.seq?.standDown;
     if (typeof chosen !== "string") return;
     standDownChoice = chosen;
+    // The list draws the Rest mark and may list the name itself.
+    renderShowList();
     paintStandDown();
   };
 
