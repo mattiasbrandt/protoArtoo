@@ -240,12 +240,34 @@
     unusedSummary.textContent = plural(unused.length, ["part", "parts"]);
     const key = unused.map((part) => part.id).join(",");
     if (key !== unusedKey) {
+      // The row the builder was on - focused, or owed the focus while its
+      // move was on its way - by its place in the list. A Part given an
+      // Output leaves the list, and the focus goes to the row that takes
+      // its place rather than falling off the page.
+      const rows = Array.from(unusedRegion.querySelectorAll("tr[data-part]"));
+      const at = rows.findIndex((row) =>
+        row.contains(document.activeElement) || Array.from(owed.keys()).some((host) => row.contains(host)));
       unusedKey = key;
       unusedBars = null;
       unusedRegion.innerHTML =
         (unused.length ? unusedTableHtml(unused) : '<p class="hint">Every part is on an output.</p>') +
         boundHtml() +
         footnoteHtml(unused);
+      Array.from(owed.keys()).forEach((host) => {
+        if (!host.isConnected) owed.delete(host);
+      });
+      if (at !== -1) {
+        fillUnusedBars(outputs);
+        unusedBars = barState(outputs);
+        const next = Array.from(unusedRegion.querySelectorAll("tr[data-part]"));
+        const row = next[Math.min(at, next.length - 1)];
+        const target = row ? Array.from(row.querySelectorAll("button")).find((each) => !each.disabled) : null;
+        if (target) target.focus();
+        else {
+          unusedSummary.tabIndex = -1;
+          unusedSummary.focus();
+        }
+      }
     }
     const bars = barState(outputs);
     if (bars === unusedBars) return;
