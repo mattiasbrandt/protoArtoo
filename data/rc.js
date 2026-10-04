@@ -2043,8 +2043,15 @@
     }
   };
 
+  // loadMappings() rethrows for the bootstrap's section retry. A Revert has no
+  // retry to hand it to, and the failure is already in the editor feedback, so
+  // the rejection stops here and the editor stays dirty.
   const revertMapping = async () => {
-    await loadMappings();
+    try {
+      await loadMappings();
+    } catch (_error) {
+      return;
+    }
     setEditorFeedback('Reverted to last saved mapping.');
     markEditorClean();
   };
