@@ -116,7 +116,7 @@ We decided:
   numbers.
 - Password writes are excluded (`secret-not-settable`) and the serial editor is
   embedded-cli's own with editor-only cursor sequences; both are recorded in the
-  plan and CONTEXT.md rather than here because either can be reversed without
+  plan and GLOSSARY.md rather than here because either can be reversed without
   touching this architecture.
 - Help text (description, display_name, parameter schema, executor details) is
   stored in LittleFS as a machine-generated file indexed by operation name,

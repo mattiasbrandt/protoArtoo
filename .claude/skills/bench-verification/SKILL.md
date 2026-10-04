@@ -76,13 +76,13 @@ however green, never closes it.
 
 ## 1. Bench-Mode is the boundary, and it is not negotiable
 
-`CONTEXT.md` "Bench-Mode": *"powered by the computer's USB cable with **nothing
+`GLOSSARY.md` "Bench-Mode": *"powered by the computer's USB cable with **nothing
 else connected to it** - no droid hardware and no test gear"*, and *"a criterion
 that assumes gear on the bench is **mis-written**"*.
 
 **No check that needs a servo, an RC radio, a dome, a sound module or a drive
 backend may become a row.** Not as a candidate, not "if we have time", not
-behind a `pause`. `hardware gate` and `droid gate` are both in CONTEXT.md's
+behind a `pause`. `hardware gate` and `droid gate` are both in GLOSSARY.md's
 `_Avoid_` list, and a sheet full of droid-only rows is a gate in everything but
 name.
 

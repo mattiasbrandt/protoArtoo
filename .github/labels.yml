@@ -1,7 +1,7 @@
 # protoArtoo issue label manifest
 #
 # This file documents the issue label set used by the repo. It is grouped by
-# domain labels and work-type labels, matching CONTEXT.md and the issue
+# domain labels and work-type labels, matching GLOSSARY.md and the issue
 # templates. Keep labels lightweight and human-readable.
 
 labels:

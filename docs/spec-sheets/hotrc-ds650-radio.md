@@ -95,7 +95,7 @@ against -- `README.md:75` says *"tested: HOTRC 650"* -- and because a builder
 picking parts wants to know which radio is the one that is actually proven, not
 merely which protocol is supported.
 
-Under `CONTEXT.md`'s test -- *"whether it changes the driver"* -- the DS-650 is
+Under `GLOSSARY.md`'s test -- *"whether it changes the driver"* -- the DS-650 is
 **not** a protocol question. It speaks SBUS, the driver we already have. It earns
 a product row and this sheet because its *profile* within SBUS is unusual enough
 to have cost four bench sessions, and because that profile is worth writing down

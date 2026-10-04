@@ -64,7 +64,7 @@ wiring_card:
 
 #311's body is right that this is a **sub-choice of the generic RC Receiver
 entry**, beside Standard PWM and SBUS, both of which already ship
-(`docs/pin_map.md:166-172`). Under `CONTEXT.md`'s test -- *"if it changes the
+(`docs/pin_map.md:166-172`). Under `GLOSSARY.md`'s test -- *"if it changes the
 driver it is a protocol; if it does not, it is configuration"* -- CRSF is
 unambiguously a protocol: a different wire format, a different baud, a different
 transport, and a different failsafe model.
@@ -211,7 +211,7 @@ One pass reported that **CHIRP Droid Control could not be found** and that "no
 public GitHub, website, documentation, or forum thread" for it exists. That is
 wrong: it is `github.com/joymonkey/CHIRP`, it is **cloned on this machine**, and
 Section 11.5 quotes its README. Where this project has already recorded that
-something exists -- `CONTEXT.md` names it explicitly -- an agent's failure to
+something exists -- `GLOSSARY.md` names it explicitly -- an agent's failure to
 find it is not evidence of absence.
 
 ## 5. Electrical and the wire
@@ -730,7 +730,7 @@ Its stated goals, quoted because two of them are things protoArtoo also wants:
 >   extent**"
 > - "Be expandable"
 
-`CONTEXT.md` already records what this is: *"a peer body controller... which a
+`GLOSSARY.md` already records what this is: *"a peer body controller... which a
 builder would choose **instead of** protoArtoo rather than alongside it."* That
 framing is right, and it makes CHIRP the closest thing this project has to a
 direct comparator on the radio side.

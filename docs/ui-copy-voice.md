@@ -14,7 +14,7 @@ rules** below say how a sentence is written. **The anatomy**, further down,
 says where that sentence sits and what it is written on — which is the other
 half of whether a builder gets it on first read, because a consequence line in
 the wrong place is a consequence line nobody read (ADR 0066). Neither half
-defines terms: operator vocabulary lives in `CONTEXT.md`, and the anatomy's own
+defines terms: operator vocabulary lives in `GLOSSARY.md`, and the anatomy's own
 term is **Surface Anatomy** there.
 
 Operator decision, 2026-09-18 on #175, after seeing the first anatomy pages:
@@ -120,7 +120,7 @@ A third sentence is two notes, or it is too long.
     confusion** — not in separate paragraphs a reader must assemble.
     `Saving keeps the sequence in your library. Put on the droid is what
     it can actually fire.`
-    *(`CONTEXT.md`'s Flagged Ambiguities ledger exists because this recurs.)*
+    *(`GLOSSARY.md`'s Flagged Ambiguities ledger exists because this recurs.)*
 
 10. **A warning opens with the fact, and the consequence is physical and
     specific** — never "may cause damage". This sharpens rules 1 and 5.
@@ -172,7 +172,7 @@ an unpaid rule is cut. Kept here because they are good craft when they fit.
 ## The anatomy — where the sentence sits
 
 Every operator surface is the same shape, so a builder who has learned one
-screen has learned them all (`CONTEXT.md` **Surface Anatomy**, ADR 0066). The
+screen has learned them all (`GLOSSARY.md` **Surface Anatomy**, ADR 0066). The
 decision is that ADR's; the shape is below; the numbers are tokens declared once
 in `data/style.css`; and `prototypes/395-surface-anatomy/` (in git history at
 `83acf0db`; local copies under the gitignored `tasks/prototypes/`) is the drawn
@@ -234,7 +234,7 @@ review that reads the words and not the layout has read half the page.
     defect: cut it, or fold the fact into the note.
 
 20. **Color reports how a thing is doing, and nothing else.** Four signal
-    colors, from `CONTEXT.md` **Status Color**: `--success` nominal,
+    colors, from `GLOSSARY.md` **Status Color**: `--success` nominal,
     `--warning` degraded and you can do something about it, `--danger` stopped
     or refused, and the dim ink unlit for never asked, not fitted, switched
     off. **Blue is interaction alone** — selection, the row shown, the primary
@@ -301,7 +301,7 @@ endpoint-typed versus endpoint-measured, saved-but-not-yet-applied.
 - One name per concept, everywhere: UI, docs, API descriptions, and release
   notes agree. Renames are a real change, not a copy tweak.
 - This file carries the *rules*, not the word list. Operator terms and any
-  collision between two meanings of a word are written in `CONTEXT.md`
+  collision between two meanings of a word are written in `GLOSSARY.md`
   (Language, and the Flagged Ambiguities ledger) - whichever audience the
   word started in. Do not start a second glossary here.
 - Part names follow `docs/droid-parts.yaml`: design part names as the base,
@@ -327,7 +327,7 @@ reviewed (ADR 0059):
   populated by convention;
 - a raw identifier reaches a surface only through a **mapping table**, so the
   code cannot print the identifier;
-- the backticked entries in `CONTEXT.md`'s `_Avoid_` lines are **greppable**,
+- the backticked entries in `GLOSSARY.md`'s `_Avoid_` lines are **greppable**,
   and a vocabulary checker reports them.
 
 What remains for the gate is what no grep can judge: whether a sentence names

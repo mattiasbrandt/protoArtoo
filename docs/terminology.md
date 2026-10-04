@@ -4,7 +4,7 @@ This document explains common project terms used in code, docs, logs, and planni
 
 It covers acronyms and framework names. Operator-facing vocabulary - what a
 page is called, what a control is called, and how a word that means two things
-was resolved - lives in `CONTEXT.md` under Language and Flagged Ambiguities.
+was resolved - lives in `GLOSSARY.md` under Language and Flagged Ambiguities.
 
 ## Table of Contents
 
@@ -329,7 +329,7 @@ When to use which:
 ## Validation Language
 
 Project verification labels and public-facing release wording live in
-`CONTEXT.md`, `AGENTS.md`, and `docs/status.md`.
+`GLOSSARY.md`, `AGENTS.md`, and `docs/status.md`.
 
 Use this glossary for technical terms like SBUS, NVS, RMT, Marcduino, RobotState,
 and AP/STA. Use the validation docs for status wording and release-note evidence

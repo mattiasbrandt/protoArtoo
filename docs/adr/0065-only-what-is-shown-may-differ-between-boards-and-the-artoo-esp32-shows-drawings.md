@@ -38,7 +38,7 @@ gave it two compile-time tiers. Assets never got the equivalent, and nothing in
 at all — which is why `partitions/partitions_ota.csv` and `tools/gzip_fsdata.py`
 both still carry size comments that predate the UI's growth.
 
-`CONTEXT.md`'s **Supported ESP32 Board** entry had ruled the other way in one
+`GLOSSARY.md`'s **Supported ESP32 Board** entry had ruled the other way in one
 sentence — *"ESP32-P4 Target support does not relax the current requirement"* — and
 the operator reopened it on 2026-09-11. A larger-flash module is not the way out:
 the ESP32 is socketed on the Artoo PCB and Espressif ships WROOM-32E in N8 and N16,

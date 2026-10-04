@@ -165,7 +165,7 @@ they were left, and tidying becomes something the operator remembers.
   move goes. That is simpler than the trapezoidal estimate the reference needs.
 - **"Speed" now names three unrelated quantities on one droid** — a **Foot
   Drive** preset tier, a signed dome percentage, and a Servo Output's *time*.
-  Recorded in `CONTEXT.md`'s Flagged Ambiguities; never used bare in operator
+  Recorded in `GLOSSARY.md`'s Flagged Ambiguities; never used bare in operator
   copy.
 - **An uncalibrated Output is now visibly less capable, on purpose**: no
   derivable rate, and overshoot degraded to `none`. That is a reason to

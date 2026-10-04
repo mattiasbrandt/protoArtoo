@@ -65,7 +65,7 @@ problem operators do not have.
   not an operator guide.
 - The editor drops the Guild badge and reframes import as self-restore; it gains Share to
   project. New `.github/ISSUE_TEMPLATE` entries: `sequence-request`, `sequence-contribution`.
-- CONTEXT.md retires "Guild Sequence" (runtime tier) in favor of **Migrated Sequence**
+- GLOSSARY.md retires "Guild Sequence" (runtime tier) in favor of **Migrated Sequence**
   (a Factory Sequence) and redefines **Lineage** as code-comment + credits-file provenance.
 - The slice-3/4 hardware gate is unchanged; a Migrated Sequence is verified like any Factory
   Sequence (native engine test + the integrated-droid gate for fidelity).

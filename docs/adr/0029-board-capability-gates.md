@@ -152,5 +152,5 @@ from artoo-esp32, before any decision was made).
   project-wide fact.
 - `include/config.h:202`: firebeetle2's UART1 comment states hoverboard as
   this board's *default*, not its identity, and notes the wiring headroom.
-- CONTEXT.md's **Board Capability Gate** entry gains the set-with-a-default
+- GLOSSARY.md's **Board Capability Gate** entry gains the set-with-a-default
   form.

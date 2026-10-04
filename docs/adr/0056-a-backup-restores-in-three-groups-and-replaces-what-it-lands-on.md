@@ -31,7 +31,7 @@ The map excluded *endpoint-normalised* cross-droid sequence sharing on
 2026-08-21, when a step was assumed to carry raw servo positions. That premise
 has since expired. A **Body Step** names a **Part** and *how far it goes as a
 fraction of that Part's own throw*; speed, acceleration and easing live on the
-**Output** and not in the sequence (ADR 0052, #319, #331) - `CONTEXT.md` already
+**Output** and not in the sequence (ADR 0052, #319, #331) - `GLOSSARY.md` already
 puts it as *"a builder's choreography travels and their physics does not"*. Dome
 steps are **Panel Intent Command**s. **Nothing in a protoArtoo sequence is
 expressed in microseconds**, so the ~60-line rescaling the reference needs has no

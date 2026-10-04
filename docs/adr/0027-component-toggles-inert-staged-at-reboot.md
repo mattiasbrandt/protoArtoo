@@ -67,7 +67,7 @@ Shortcut posture) remains the only compile-time flag.
 
 `enableArm1`..`enableAux3` - each board Output's wired tick - are no longer set by
 a builder. An **Output** with a **Part** on it is wired and one with none is free
-(`CONTEXT.md` **Wiring**, operator 2026-09-29 on #411), so the firmware sets every
+(`GLOSSARY.md` **Wiring**, operator 2026-09-29 on #411), so the firmware sets every
 board Output's tick from the Parts its row holds, at every start and in every
 config commit (`configCacheTicksFollowParts()`, #411). A write of one of those form
 names, from the form or the Controller Console, is refused as a conflict with a

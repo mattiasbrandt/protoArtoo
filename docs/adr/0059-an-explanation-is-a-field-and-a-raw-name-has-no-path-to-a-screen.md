@@ -79,7 +79,7 @@ provenance the detail goes in the explanation slot the entrance rule already
 guarantees, rather than a vocabulary of marks per source. ADR 0058's Sequence
 Tempo, which stores a source and a confidence, is the first consumer.
 
-**`CONTEXT.md`'s `_Avoid_` lines are the vocabulary checker's input, and testable
+**`GLOSSARY.md`'s `_Avoid_` lines are the vocabulary checker's input, and testable
 entries are written in backticks.** The glossary becomes executable: adding a term
 to `_Avoid_` is how a rule is added, and there is one home rather than a second
 list that drifts. The entries are a mix today — `main controller` and `brain` are
@@ -105,7 +105,7 @@ so the backticks mark which is which.
   failure of ours is behind the blanket version, and #287's third pass cut five
   rules on exactly that test.
 - **The checker keeps its own rule list.** Rejected: precise and free of false
-  positives, and a second list that drifts from `CONTEXT.md` is the failure mode
+  positives, and a second list that drifts from `GLOSSARY.md` is the failure mode
   this ADR exists to close.
 - **A value renders its source on the control.** Rejected: most informative, and it
   needs a vocabulary of marks per source on every surface.
@@ -116,10 +116,10 @@ so the backticks mark which is which.
   it has never had — today it checks parity only.
 - `docs/action-registry.yaml`'s `params` sub-schema gains an explanation field, and
   62 parameters need one written.
-- **A one-time pass over roughly a hundred `CONTEXT.md` terms** backticks the
+- **A one-time pass over roughly a hundred `GLOSSARY.md` terms** backticks the
   testable `_Avoid_` entries, and every future term follows the convention. A
   glossary edit becomes a build-affecting change.
-- A vocabulary checker is built, reading `CONTEXT.md` and following
+- A vocabulary checker is built, reading `GLOSSARY.md` and following
   `check_action_registry_drift.py`'s report-never-rewrite convention. #298's spec
   stands: bare "controller", pin numbers in page markup, silkscreen labels outside
   `include/component_labels.inc`.

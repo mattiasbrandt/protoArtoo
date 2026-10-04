@@ -4,7 +4,7 @@ The Controller Console is one command language shared by two operator surfaces:
 the **Live Logs** command box in the browser dashboard and a **serial terminal**
 attached to the controller's USB port. Both surfaces send the same lines and
 receive the same results; this page is the reference for that language and its
-result format. Architecture and rationale: ADR 0036. Vocabulary: `CONTEXT.md`
+result format. Architecture and rationale: ADR 0036. Vocabulary: `GLOSSARY.md`
 (Controller Console, Operation, Console Record, Request ID, Availability
 Reason, Non-RC Control).
 

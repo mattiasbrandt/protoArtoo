@@ -243,7 +243,7 @@ newer boards:
 | WAV Trigger | up to **14** stereo | uncompressed WAV | ~8 ms trigger latency |
 | Tsunami | **32** mono / 18 stereo | uncompressed WAV | 8 output channels |
 
-**This is the same axis CHIRP sits on.** `CONTEXT.md` defines a **Background Track** as
+**This is the same axis CHIRP sits on.** `GLOSSARY.md` defines a **Background Track** as
 something that exists *"where the fitted module mixes"*, and names the MP3 Trigger
 and the DY-SV5W as *"the single-track modules it contrasts itself with"*. A droid
 that wants a Background Track under a performance needs CHIRP, a WAV Trigger, or a Tsunami --
@@ -354,7 +354,7 @@ blinks and no sound is a wiring or baud problem; anything else is a card problem
 | `~/Documents/GitHub/AstroPixelsPlus/MarcduinoSound.h` | read on disk | The same volume formula we use -- and a different blank track (**252**), and the measured audibility floor of **100** that Section 8.3 turns on |
 | `~/Documents/GitHub/ShadowMD`, `~/Documents/GitHub/Padawan360_mega_maestro_DYSV5W` | read on disk | Neither drives this board directly today: ShadowMD delegates to MarcDuino over `$8x`, and the Padawan360 on this disk is a port **away** from the MP3 Trigger with its calls left commented out |
 | protoArtoo driver, tests, registry, config defaults | read on disk | Sections 8-11, and the four findings in Section 15 |
-| protoArtoo docs | read on disk | `docs/sound_playback.md:238-320`, `docs/status.md:125-126`, `docs/goal.md:133-135`, `CONTEXT.md:401` |
+| protoArtoo docs | read on disk | `docs/sound_playback.md:238-320`, `docs/status.md:125-126`, `docs/goal.md:133-135`, `GLOSSARY.md:401` |
 
 **What did not survive checking.** A web research pass attributed to the hookup
 guide a *"~80 ms MP3 startup latency"*, a *"~100-500 ms gap between sequential
@@ -1118,7 +1118,7 @@ and dependent work stops.
   `test_audio_sound_member/`, `test_component_registry/`,
   `test/test_web/test_sound_capability_consumers.js`
 - `docs/sound_playback.md`, `docs/api.md`, `docs/status.md`, `docs/goal.md`,
-  `CONTEXT.md`, ADR 0027, ADR 0042
+  `GLOSSARY.md`, ADR 0027, ADR 0042
 - [`dy-sv5w-sound.md`](dy-sv5w-sound.md), [`dfplayer-mini-sound.md`](dfplayer-mini-sound.md)
 
 > [!NOTE]

@@ -101,7 +101,7 @@ static constexpr uint32_t CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS = CONSOLE_RECORD_ROO
 
 // How many CONSECUTIVE frames must be dropped after their room-wait, while
 // `Serial` reads a host present, before the sink reports Serial Backpressure
-// (CONTEXT.md) in the Log Ring (#276). Decided at the 2026-09-05 grilling and
+// (GLOSSARY.md) in the Log Ring (#276). Decided at the 2026-09-05 grilling and
 // counted in writeFrameCounted() (console_serial_output.cpp), the one place a
 // frame can be dropped:
 //
@@ -141,7 +141,7 @@ static constexpr uint32_t CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS = CONSOLE_RECORD_ROO
 //    record line or a prefixed log line rarely is. A stall that reports as
 //    a WARN/INFO pair rather than one WARN is this, not a second episode.
 //  - A drop into no host (`Serial` false) is the detached state, not
-//    backpressure (CONTEXT.md), and leaves the count as it was.
+//    backpressure (GLOSSARY.md), and leaves the count as it was.
 //
 // artoo-esp32 is unchanged by construction rather than by #if: UART0's write
 // blocks until the FIFO takes every byte and the reservation is capped at that

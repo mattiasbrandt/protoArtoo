@@ -17,7 +17,7 @@ no surface to answer it.
 **The reference's answer does not transfer.** Its `AUTO-MAP BY NAME` works because
 its channels carry **builder-typed names** it matches against part roles. An
 Output here is `(driver, channel)` plus the Part it drives - ADR 0041 deliberately
-gave it no name, and `CONTEXT.md` is explicit that the Part is identity while the
+gave it no name, and `GLOSSARY.md` is explicit that the Part is identity while the
 address is only where the wire plugs in. The catalog's `aliases` are first-class
 for **import** matching, which is #294's, not for a blank device. So on a droid
 nobody has configured yet there is nothing at all to match on, and the ticket's own
@@ -120,7 +120,7 @@ community's, not one invented per droid.
 
 **Auto-map by name**, the reference's own answer. Rejected on fact: there is no
 name on an Output to match against, and adding one creates a second identity beside
-the Part, which is the coupling `CONTEXT.md` separates on purpose.
+the Part, which is the coupling `GLOSSARY.md` separates on purpose.
 
 **Proposing from the Board Lane, then correcting.** Cheap and needs no motion.
 Rejected: only the two arm headers carry a convention worth proposing.
@@ -146,7 +146,7 @@ claiming one Part means firmware resolves by scan order.
 **CAD names as row labels.** Rejected: inconsistent casing on adjacent rows, absent
 for every dome part, and the wrong voice.
 
-**Wiring as the home.** Its CONTEXT entry already asks this ticket's question
+**Wiring as the home.** Its GLOSSARY.md entry already asks this ticket's question
 word for word. Rejected: #293 decided Wiring writes nothing and that its promise is
 bounded to what the running firmware reports; making it the place you reassign a
 servo reopens that decision rather than extending it.
@@ -161,7 +161,7 @@ project already spends it on **Bench-Mode** and the **Bench Runbook**.
 
 ## Consequences
 
-- **`CONTEXT.md`'s Output changes shape**: "drives exactly one Part" becomes "one
+- **`GLOSSARY.md`'s Output changes shape**: "drives exactly one Part" becomes "one
   or more". Every consumer asking *which Output drives this Part* still gets one
   answer, so nothing downstream of the sequence engine changes.
 - **A bulk "test everything" needs no special case.** It is a generated set of
@@ -183,4 +183,4 @@ project already spends it on **Bench-Mode** and the **Bench Runbook**.
 
 ## Amendment 2026-09-19: it lives on Servos
 
-Find by Moving moves from **Parts** to **Servos**, with the rest of Parts' Outputs section (the output-first table, *centre all*, the calibration dial and Find by Moving). Operator, #412: *"move bascially all of the "Outputs" section pieces to the "Servos" page. They all seem related to servo calibration"*. The behaviour this ADR decides is unchanged; only the page it sits on moves. See `CONTEXT.md` **Servos** and **Parts**.
+Find by Moving moves from **Parts** to **Servos**, with the rest of Parts' Outputs section (the output-first table, *centre all*, the calibration dial and Find by Moving). Operator, #412: *"move bascially all of the "Outputs" section pieces to the "Servos" page. They all seem related to servo calibration"*. The behaviour this ADR decides is unchanged; only the page it sits on moves. See `GLOSSARY.md` **Servos** and **Parts**.

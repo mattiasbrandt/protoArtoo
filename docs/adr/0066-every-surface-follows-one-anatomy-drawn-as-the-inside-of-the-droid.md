@@ -39,7 +39,7 @@ of those patterns; nothing had adopted the layout half.
 
 ## Decision
 
-**Every surface follows one Surface Anatomy** (`CONTEXT.md`): a title that is
+**Every surface follows one Surface Anatomy** (`GLOSSARY.md`): a title that is
 the name in the nav (the page-question line was retired on 2026-09-18),
 sections whose heading carries a count, a state or a provenance, the work
 area, the acts named beside what they act on, a feedback line. The structure
@@ -84,7 +84,7 @@ Plate first and then for health generally:
 > correct" - and, confirming the reading: *"green representing good and working
 > makes much more sense than the blue color"*.
 
-So **#327's two-color rule is superseded for health**, and `CONTEXT.md` gains
+So **#327's two-color rule is superseded for health**, and `GLOSSARY.md` gains
 **Health Signal** beside a rewritten **Status Color**: green nominal, amber
 degraded and actionable, red stopped or refused, grey not reporting. A chosen
 posture - a speed preset, a sleep state, a control mode - still takes no color,
@@ -180,12 +180,12 @@ the words, not the routing of a no.
 
 ## Consequences
 
-- `CONTEXT.md` gains **Surface Anatomy**; `AGENTS.md`'s emoji rule is retired.
-- Per the 2026-09-16 amendment, `CONTEXT.md` also gains **Health Signal** and a
+- `GLOSSARY.md` gains **Surface Anatomy**; `AGENTS.md`'s emoji rule is retired.
+- Per the 2026-09-16 amendment, `GLOSSARY.md` also gains **Health Signal** and a
   rewritten **Status Color**; the sweep ticket (#399) owns landing the tokens
   in `data/style.css`, and every brief that describes a status indicator in
   blue is repaired at its next refresh.
-- Per the 2026-09-18 amendment, `CONTEXT.md` **Surface Anatomy** drops the
+- Per the 2026-09-18 amendment, `GLOSSARY.md` **Surface Anatomy** drops the
   page question; **Maker Voice** is the register; `docs/ui-copy-voice.md`
   replaces the literary examples. The live strings wait on [#407](https://github.com/mattiasbrandt/protoArtoo/issues/407).
 - A prototype ticket under #175 owns the mockup pass and carries the anatomy's

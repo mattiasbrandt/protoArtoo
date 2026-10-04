@@ -243,7 +243,7 @@ EXIT_INVALID = 3
 # rewording has one place to land instead of being buried in an output path.
 #
 # A Soak Driver's verdict and the Run Verdict speak the same three words
-# (CONTEXT.md, Run Verdict): a run that says PASS is saying what its drivers
+# (GLOSSARY.md, Run Verdict): a run that says PASS is saying what its drivers
 # said, not translating them into a second vocabulary.
 # ---------------------------------------------------------------------------
 
@@ -2749,7 +2749,7 @@ def progress_status_fields(
             scope = container if isinstance(container, dict) else {}
         state = scope.get(names["state"])
         # Named for the thing rather than abbreviated: "recovery ladder" is the
-        # project's word for it (CONTEXT.md), and a progress line an operator
+        # project's word for it (GLOSSARY.md), and a progress line an operator
         # quotes a year from now should use the same word the report and the
         # firmware do.
         fields["recoveryLadder"] = state if isinstance(state, str) else None
@@ -6027,7 +6027,7 @@ def _run_verdict_contract_scenarios(failures: list[str]) -> None:
     The verdict STRINGS are prose and may be reworded, so they are read from
     the constants; what is pinned about them is the ranking, and that one
     driver's verdict IS the run's rather than being translated into a second
-    vocabulary (CONTEXT.md, Run Verdict).
+    vocabulary (GLOSSARY.md, Run Verdict).
     """
 
     def check(name: str, body: Callable[[], None]) -> None:
@@ -6962,7 +6962,7 @@ def main(argv: list[str]) -> int:
         ("started", format_timestamp(started_at)),
         ("device", f"{args.device}:{args.port}"),
         # "image mode" and "soak driver" are the project's words for these
-        # (CONTEXT.md): the image whose /api/status schema is read, declared
+        # (GLOSSARY.md): the image whose /api/status schema is read, declared
         # here and checked against the payload at preflight, and the named
         # Soak Drivers this run will attempt.
         ("image mode", f"{args.image} (build env {args.build_env or SCHEMAS[args.image].build_env})"),

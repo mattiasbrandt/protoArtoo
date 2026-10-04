@@ -169,7 +169,7 @@ The shell is zsh. Quote a glob (`--include='*.cpp'`). An unquoted `$var` does no
 
 - Use the [AGENTS.md](../AGENTS.md) verification sequence as applicable.
 - Classify validation status with one of the five AGENTS.md labels (defined in
-  `CONTEXT.md`; reporting template in `.claude/verification-playbook.md`).
+  `GLOSSARY.md`; reporting template in `.claude/verification-playbook.md`).
 - Do not use "bench verified" or "bench-tested" as a status. Public docs should
   use plain evidence phrases instead of internal labels.
 - For hardware-touching changes, state what was and was not proven.

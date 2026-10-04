@@ -99,7 +99,7 @@ today. Where they differ, Section 14 says how -- and
 > `id` token `astropixels_plus` is persisted in NVS and must never be
 > renumbered or renamed, and changing the operator-visible `name` is an operator
 > decision, not a research one. The same substitution runs through
-> `CONTEXT.md:706`, `docs/topology.md:37,64`, `docs/goal.md:41` and
+> `GLOSSARY.md:706`, `docs/topology.md:37,64`, `docs/goal.md:41` and
 > `docs/terminology.md:139`, all of which say "AstroPixelsPlus-class board"
 > where they mean an AstroPixels board running AstroPixelsPlus.
 

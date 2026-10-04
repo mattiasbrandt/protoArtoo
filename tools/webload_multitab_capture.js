@@ -3,7 +3,7 @@
 
 // Multi-tab Browser Load Profile collector for issue #73.
 //
-// CONTEXT.md's Browser Load Profile: "primarily one visible Firefox tab, with
+// GLOSSARY.md's Browser Load Profile: "primarily one visible Firefox tab, with
 // a second ordinary tab supported; development may add a parallel Playwright
 // Chromium session and briefly reach three tabs." webload_browser_capture.js
 // (issue #66/#72) only ever opens one tab -- this is a sibling collector for
@@ -77,7 +77,7 @@ function isSuccessStatus(status) {
 
 // Scenario timeline (ms from t0): 2 ordinary tabs open together, briefly
 // overlap with a 3rd, then one refresh on tab 1, then settle. Reasonable
-// scope per CONTEXT.md's own "briefly reach three tabs" wording, not a
+// scope per GLOSSARY.md's own "briefly reach three tabs" wording, not a
 // sustained 3-tab soak.
 const TAB2_OPEN_AT_MS = 500;
 const TAB3_OPEN_AT_MS = 12_000;

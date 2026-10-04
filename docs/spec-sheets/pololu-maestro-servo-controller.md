@@ -207,7 +207,7 @@ assembled or as a partial kit; the kit difference is connectors only. USB VID
 - **ADR 0041 / 0042 / 0043 / 0052** -- Endpoint Pair, Component Member, Output
   Release, Motion Profile. ADR 0052 explicitly rejects *"Maestro units, as the
   reference stores them"*; Section 8.4 is the conversion that rejection implies.
-- **`CONTEXT.md`** -- **Motion Profile**, **Output Release**, **Cadence Floor**,
+- **`GLOSSARY.md`** -- **Motion Profile**, **Output Release**, **Cadence Floor**,
   **Servo Output**. The Cadence Floor entry is load-bearing for Section 14.1.
 
 ## 4. Sources Checked
@@ -538,8 +538,8 @@ Checked against every published number that exists for this engine:
 | --- | --- | --- | --- | --- |
 | 0J40, Set Speed | S=1, A=0 | 4000 qus | *"40 seconds"* | **40.0 s** |
 | 0J40, Set Speed | S=140, A=0 | 1400 qus | *"100 ms"* | **100 ms** |
-| ADR 0052 / `CONTEXT.md` | S=80, A=10 | 2752 qus | *"~344 ms speed alone"* | **344 ms** |
-| ADR 0052 / `CONTEXT.md` | S=80, A=10 | 2752 qus | *"really ~940 ms"* | **938 ms** |
+| ADR 0052 / `GLOSSARY.md` | S=80, A=10 | 2752 qus | *"~344 ms speed alone"* | **344 ms** |
+| ADR 0052 / `GLOSSARY.md` | S=80, A=10 | 2752 qus | *"really ~940 ms"* | **938 ms** |
 | 0J40, Set Acceleration | S=0, A=1 | 4000 qus | *"about 3 seconds"* | 3.58 s |
 
 Four land exactly; the fifth is the guide's loosest wording, against a derivation
@@ -561,7 +561,7 @@ about one tick until someone scopes a channel.
 
 In the triangular case **`S` does not appear**. Below `8*S^2/A` the servo never
 reaches its speed limit, so raising speed changes nothing. That is the general
-form of the lesson `CONTEXT.md` records as the reference's bench finding --
+form of the lesson `GLOSSARY.md` records as the reference's bench finding --
 *"speed 80 with acceleration 10 reads as ~344 ms and is really ~940 ms"*.
 Increasing speed past `sqrt(A*D/8)` buys exactly nothing; with `A = 10` and
 `D = 2752` that ceiling is **59**.
@@ -799,7 +799,7 @@ transition to the specified position on an error, but not during start-up, since
 it has no information about the previous position"*.
 
 **`Off` is right for this project and is already the factory default.** `Go to`
-turns an error into simultaneous motion on every channel, and `CONTEXT.md` records
+turns an error into simultaneous motion on every channel, and `GLOSSARY.md` records
 the cost: *"overlapping servo inrush is what browns a controller out."*
 
 `Ignore` has one legitimate use -- a part held against gravity, exactly the case
@@ -1161,7 +1161,7 @@ motion at all.**
 | --- | --- |
 | ADR 0052 -- easing is `none`, `soft`, `overshoot` | the Maestro has only the trapezoid, which is `none`. The other two cannot exist on-device (Section 8.4) |
 | ADR 0052 -- speed and acceleration are **times** | a script stores rates, authored on a PC, on a device whose period firmware cannot read (Section 8.1) |
-| `CONTEXT.md` **Cadence Floor** | moves into the Maestro's script, where the Sequence Coordinator cannot hold it -- and *"keeping the safe pace out of the browser is the reason the Floor lives in firmware at all"* |
+| `GLOSSARY.md` **Cadence Floor** | moves into the Maestro's script, where the Sequence Coordinator cannot hold it -- and *"keeping the safe pace out of the browser is the reason the Floor lives in firmware at all"* |
 | ADR 0043 -- Output Release scheduled **from arrival** | firmware stops knowing when arrival is; `Get Moving State` is global and Mini-only (Section 10.5) |
 | #301 / #318 -- the builder edits Outputs in protoArtoo's UI | the choreography lives in an XML on a PC. Two editors, one droid, no sync |
 
@@ -1322,7 +1322,7 @@ Section 10.1's keep-alive.
 
 ### 14.7 Registry, Gate, Member
 
-**Component Protocol.** #303's **Maestro serial** stands. It passes `CONTEXT.md`'s
+**Component Protocol.** #303's **Maestro serial** stands. It passes `GLOSSARY.md`'s
 test decisively: a different wire format, a different transport class from both
 peers, and a device holding state firmware cannot read.
 
@@ -1425,6 +1425,6 @@ part's ticket should carry it alone.
 
 **protoArtoo**
 
-- `include/config.h`, `include/ledc_pwm.h`, `src/tasks/servo_task.cpp`, `src/drivers/audio_soft_uart_tx.h`, `docs/pin_map.md`, `CONTEXT.md`
+- `include/config.h`, `include/ledc_pwm.h`, `src/tasks/servo_task.cpp`, `src/drivers/audio_soft_uart_tx.h`, `docs/pin_map.md`, `GLOSSARY.md`
 - ADR 0041, 0042, 0043, 0052
 - [`pca9685-servo-expander.md`](pca9685-servo-expander.md), [`elrs-crsf-radio.md`](elrs-crsf-radio.md), [`sabertooth-syren-packet-serial.md`](sabertooth-syren-packet-serial.md), [`flipsky-vesc-foot-drive.md`](flipsky-vesc-foot-drive.md)

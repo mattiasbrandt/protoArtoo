@@ -23,9 +23,9 @@ It assumes one, everywhere, silently:
 |---|---|
 | `docs/droid-parts.yaml:1` | *"MrBaddeley MK4 (default model)"* — one catalog, one lineage |
 | `docs/droid-parts.yaml:45` | `model: design: MrBaddeley MK4` — a label, not an axis: nothing varies by it |
-| `CONTEXT.md` **Panel Command Target** | *"bounded to the MK4 commandable set"* |
-| `CONTEXT.md` **Dome Layout View Model** | *"the vendored MK4 model as offline fallback"* |
-| `CONTEXT.md` **Layout Fallback Hierarchy** tier 3 | *"render the offline MK4 model"* |
+| `GLOSSARY.md` **Panel Command Target** | *"bounded to the MK4 commandable set"* |
+| `GLOSSARY.md` **Dome Layout View Model** | *"the vendored MK4 model as offline fallback"* |
+| `GLOSSARY.md` **Layout Fallback Hierarchy** tier 3 | *"render the offline MK4 model"* |
 
 A real droid is a mixture. The operator's own is an **MK4 complex dome on an MK4
 basic body** (written *simple* until 2026-09-18; *Basic* is MrBaddeley's name, #409), assembled months apart, and that is the ordinary case rather than
@@ -165,7 +165,7 @@ rule together: it refuses a save for the part you are about to fit.
 - **`docs/droid-parts.yaml` gains a `designs:` section and loses its single
   lineage.** The `model:` block at line 45 becomes one design entry among
   several; `dome_pies_small: 6` stops being a header fact.
-- **Three `CONTEXT.md` definitions stop naming MK4.** **Panel Command Target**
+- **Three `GLOSSARY.md` definitions stop naming MK4.** **Panel Command Target**
   becomes bounded to the catalog's commandable set across every design;
   **Dome Layout View Model** and **Layout Fallback Hierarchy** tier 3 fall back
   to the stated **Dome Design** rather than a vendored MK4.

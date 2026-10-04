@@ -100,7 +100,7 @@ Settled by grilling the operator after the architecture review of 2026-09-26
 
 ### Context
 
-This ADR made GET and POST one contract, but left each **Setting** (`CONTEXT.md`)
+This ADR made GET and POST one contract, but left each **Setting** (`GLOSSARY.md`)
 written out by hand at every door. Measured on `epic/operator-experience` @
 `6ee43d45`:
 
@@ -196,7 +196,7 @@ the browser. Three things stayed outside it, measured on
 
 ### Decision
 
-- **A Record is its own thing, not a Setting** (`CONTEXT.md` **Record**): values
+- **A Record is its own thing, not a Setting** (`GLOSSARY.md` **Record**): values
   stated together that only mean something together. Each Record is one module
   owning its fields end to end - check (field, reason, accepts), merge onto the
   Working Snapshot, GET answer, NVS save and load, and when it is saved - behind

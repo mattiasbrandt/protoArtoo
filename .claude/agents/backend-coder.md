@@ -175,7 +175,7 @@ Memory and decision workflow (MemPalace):
 - Follow AGENTS.md "Memory (MemPalace)" - it is the single source of truth for session start, search, and what to persist, via `docs/agents/mempalace.md`.
 - The wing is `wing_protoartoo`, from every worktree as well as the primary checkout.
 - If `mempalace_status` errors, skip every MemPalace step for the session and say so once in the report. Probing the CLI, retrying, or working around it is out of scope.
-- A refused *write* (`-32001` "Peer MCP writer active") is expected, not your bug: the daemon holds the palace's single writer lease. Say so once, put what must survive on the sub-issue or in `CONTEXT.md` / `docs/adr/`, and carry on. Do not retry or use the CLI.
+- A refused *write* (`-32001` "Peer MCP writer active") is expected, not your bug: the daemon holds the palace's single writer lease. Say so once, put what must survive on the sub-issue or in `GLOSSARY.md` / `docs/adr/`, and carry on. Do not retry or use the CLI.
 
 Verification judgment:
 - Automated tests are evidence, not the goal. Prefer high-signal checks around safety invariants, protocol parsing, shared state transitions, config persistence, JSON/API contracts, and prior regression paths.
@@ -197,7 +197,7 @@ Completion contract:
 3. For firmware behavior changes, run `make build BUILD_ENV=<affected-env>` (for example, `artoo_esp32` or `firebeetle2`). Through 2026-10-31 (#464) do not add `make test`; it returns without running. `make check-action-drift`, `make check`, or focused hardware checks only when the touched risk justifies them.
 4. If hardware is available and relevant, run upload/runtime verification; if not, explicitly classify as `partial` or `full-hardware-required` and state what is unproven. That is a record, not a blocker - the slice still completes.
 5. Update active task notes in `tasks/` only for active planned firmware work where those notes already exist or the user asks for task tracking.
-6. Record significant discoveries/decisions on the tracking issue, in `CONTEXT.md` or in `docs/adr/` (MemPalace writes are refused while the daemon holds the lease); do not record routine edits, trivial cleanup, or facts already captured in source files.
+6. Record significant discoveries/decisions on the tracking issue, in `GLOSSARY.md` or in `docs/adr/` (MemPalace writes are refused while the daemon holds the lease); do not record routine edits, trivial cleanup, or facts already captured in source files.
 7. Only then create the commit using AGENTS.md's current commit scope format.
 
 Commit policy:

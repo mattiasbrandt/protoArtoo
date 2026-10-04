@@ -34,7 +34,7 @@
 // shell).
 //
 // See docs/adr/0018-early-admission-seam-feasibility.md for why admission has
-// to gate the costly work rather than run beside it, and CONTEXT.md for the
+// to gate the costly work rather than run beside it, and GLOSSARY.md for the
 // Connection Admission / Immediate Request Refusal distinction.
 // =============================================================================
 #pragma once

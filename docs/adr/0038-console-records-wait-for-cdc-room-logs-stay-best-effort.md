@@ -136,7 +136,7 @@ the P4 (USJ hw_ver3) at `017b168d`; register evidence on #275.
 The record policy above drops a frame whole when its room never comes, and
 since ADR 0039 a drained log line drops the same way. Both were silent apart
 from the #275 DEBUG probe. The state they share has a name now, **Serial
-Backpressure** (CONTEXT.md): a host is present on the wire but its transmit
+Backpressure** (GLOSSARY.md): a host is present on the wire but its transmit
 path is not draining - distinct from a detached host, where nothing is
 written, and from the endpoint wedge #275 fixed, which is permanent. The
 grilling of 2026-09-05 weighed refusing commands on such a link and rejected

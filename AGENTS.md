@@ -22,9 +22,9 @@ The shell on this bench is zsh. Quote a glob (`--include='*.cpp'`). An unquoted 
 - Public planning baseline (commit/push allowed): `docs/status.md`, `docs/goal.md`.
   These two carry no agent/tool/model wording ("agent", "LLM", "model",
   "Copilot", "Claude").
-- Project language decisions: `CONTEXT.md`; architecture decisions: `docs/adr/`.
+- Project language decisions: `GLOSSARY.md`; architecture decisions: `docs/adr/`.
   An operator's rejection of a word is recorded the day it is made, in
-  `CONTEXT.md` Flagged Ambiguities or in an ADR.
+  `GLOSSARY.md` Flagged Ambiguities or in an ADR.
 - Operator intent and design source (local only, never commit/push):
   `tasks/research-r2d2-*` — the operator's own curated statement of what
   protoArtoo should become, carrying dated operator decisions, a source-verified
@@ -143,7 +143,7 @@ a question of fact, and the codebase can only report what somebody already built
 1. A dated operator decision — an issue comment, an ADR, this file.
 2. `tasks/research-r2d2-*`, the operator's design source. Read it before the
    code, in full, screenshots included.
-3. `CONTEXT.md` and `docs/adr/` — the model as it stands. These record decisions
+3. `GLOSSARY.md` and `docs/adr/` — the model as it stands. These record decisions
    already taken; they do not fence off decisions not yet taken.
 4. The implementation.
 
@@ -218,7 +218,7 @@ verification scope exists. Where the two seem to pull apart: this section decide
 what gets verified, that one decides how honestly each piece is done.
 
 - **An epic's verification tail is one ticket.** Bench rows, soak, audit, budget
-  table and closure PR live in one Closing Ticket (CONTEXT.md). Never a runbook
+  table and closure PR live in one Closing Ticket (GLOSSARY.md). Never a runbook
   ticket per board, never a separate audit ticket, never a separate
   integration-readiness ticket, never a gathering ticket that stays open by design.
 - **A device check is tracked in one place.** The executable form of a bench row is
@@ -268,7 +268,7 @@ truthfully each one is run.
 Long-term project memory lives in MemPalace (MCP server plus a user-level
 daemon). The protocol — session-start status call, when to search, what to
 persist — is `docs/agents/mempalace.md`; follow it. The issue tracker, commits,
-`CONTEXT.md` and `docs/adr/` remain the durable record for anything a reader
+`GLOSSARY.md` and `docs/adr/` remain the durable record for anything a reader
 must be able to find without the MCP server.
 
 **The wing for this repository is `wing_protoartoo`** - searches, diary entries
@@ -288,7 +288,7 @@ writer active; this server is read-only for mutating tools"*. Reads and the
 logstream tools are unaffected, and the hook auto-save still works because it
 routes through the daemon's own queue. Do not retry, do not shell out to the
 CLI, do not work around it: note once in the report that a write was refused,
-and put what must survive on the sub-issue, in `CONTEXT.md` or in `docs/adr/` -
+and put what must survive on the sub-issue, in `GLOSSARY.md` or in `docs/adr/` -
 where it outlives a palace entry anyway.
 
 If `mempalace_status` errors, skip every MemPalace step for that session and say
@@ -667,7 +667,7 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
   A heading, a nav entry or a card is text plus, where a glyph earns its place, an
   icon from the project's own small SVG set that inherits text color and keeps
   its label alongside. State chips stay verb-free text labels; the **Surface
-  Anatomy** (`CONTEXT.md`) is the standard for the look.
+  Anatomy** (`GLOSSARY.md`) is the standard for the look.
 
 ## Change Hygiene
 
@@ -716,7 +716,7 @@ merge; independent branches coexist.
 
 | Branch | Purpose |
 |---|---|
-| `main` | Stable, released state. Tagged at every version. Substantive changes land only via a Mattias-approved PR merge; docs, chore, and agent-facing maintenance commits may land directly (CONTEXT.md "Post-Release Main Workflow"). |
+| `main` | Stable, released state. Tagged at every version. Substantive changes land only via a Mattias-approved PR merge; docs, chore, and agent-facing maintenance commits may land directly (GLOSSARY.md "Post-Release Main Workflow"). |
 | `feature/<what>` | New user-facing functionality. |
 | `fix/<what>` | Bug fixes. |
 | `refactor/<what>` | Code restructuring, no behavior change. |
@@ -787,7 +787,7 @@ person pushing a tag. Cutting a prerelease or a tag out of band still needs
 approval, and so does deleting one.
 
 **Docs and chore do not require a PR to `main`.** That is the post-release
-workflow (CONTEXT.md "Post-Release Main Workflow"), live since `v1.0.0` was
+workflow (GLOSSARY.md "Post-Release Main Workflow"), live since `v1.0.0` was
 tagged, and the Branch model table above says the same. What still needs a
 Mattias-approved PR is substantive firmware work — including an epic branch,
 which reaches `main` through one PR at closure. The last row is a separate rule
@@ -853,17 +853,28 @@ push to `main`. Mechanism and fallbacks: the docstring in
 
 - Never land substantive firmware work directly on `main` — it goes through a
   Mattias-approved PR. Docs, chore, and agent-facing maintenance commits may land
-  directly (CONTEXT.md "Post-Release Main Workflow")
+  directly (GLOSSARY.md "Post-Release Main Workflow")
 - Ad-hoc incidental improvements are permitted commits without plan amendment; formal scope additions require PM approval
 - Mattias approves every PR merge to `main`, unconditionally — no agent self-merge regardless of change size or risk
 - Merge method for ongoing feature-branch PRs is "Rebase and merge" (the one-time `phase/v1.0.0` exception is history in CONTRIBUTING.md)
 - Pushing your own work branch is free; pushing to a shared branch, opening or merging a PR, and pushing tags each need explicit operator approval (see "Push and remote policy")
 
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `mattiasbrandt/protoArtoo` via `gh`; relationships through the `github-issues` skill. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical labels under their default names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
 ## Disclosed references
 
-- Issue tracker (GitHub, `gh` conventions): `docs/agents/issue-tracker.md`
-- Triage labels: `docs/agents/triage-labels.md`
-- Domain docs (`CONTEXT.md`, `docs/adr/`): `docs/agents/domain.md`
 - MemPalace protocol: `docs/agents/mempalace.md`
 - Wrap-up procedure: `docs/agents/wrap-up.md`
 - Worker slice gate contract and evidence rules: `docs/agents/slice-gate.md`

@@ -92,7 +92,7 @@ pointer go wherever a Component Member exists.
   in prebuilt artifacts.
 - **Extend the Board Capability Gate to name the active member per build.** One
   compile-time mechanism, no NVS key. Rejected for the same reason, plus it
-  overloads a *board fact* with an *operator choice* — the distinction CONTEXT.md
+  overloads a *board fact* with an *operator choice* — the distinction GLOSSARY.md
   keeps by refusing "capability as a runtime setting".
 - **Hybrid: runtime for cheap families, build-time for heavy ones.** Honest about
   real costs. Rejected because ADR 0027 already rejected this shape for toggles —
@@ -177,7 +177,7 @@ bytes against a 1.625 MB app partition. That is not the 57–141 KB question.
   `PIN_AUDIO_TX = 26` and `include/audio_chirp.h:7` and
   `include/audio_mp3trigger.h:6` both name that pin, so all three sound modules
   bolt to it. A Board Capability Gate excluding one would state a falsehood about
-  topology, and CONTEXT.md already lists *capability as a runtime setting* under
+  topology, and GLOSSARY.md already lists *capability as a runtime setting* under
   that Gate's own _Avoid_ line.
 - **A release image per member.** `Makefile:218-237` already ships `ota-chirp`,
   `ota-mp3trigger` and `ota-dysv5w`, so this needed no new mechanism. Rejected: it
@@ -215,7 +215,7 @@ bytes against a 1.625 MB app partition. That is not the 57–141 KB question.
 - This deliberately spends ADR 0027's **Public Release Operator** promise for a
   builder whose supported part is cut from their board's image — the same promise
   this ADR's Context cites as its own justification.
-- CONTEXT.md's **Component Member** and **Component Registry** entries move, and
+- GLOSSARY.md's **Component Member** and **Component Registry** entries move, and
   the **Board Capability Gate** _Avoid_ line gains the narrowed-set case.
 - #300 cites this ADR only for "`ledc-direct` must remain a selectable member",
   which is unchanged by this amendment.

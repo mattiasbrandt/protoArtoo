@@ -248,7 +248,7 @@ third-party inventions.
   yet implemented"*; carries the `$` command mapping this module must serve, the
   MP3 Trigger's inverted volume scaling, and the DY-SV5W contiguous-numbering
   finding that Section 9.2 builds on.
-- **`CONTEXT.md`** -- **Audio Step Core**, **Audio Config Map**, **Component
+- **`GLOSSARY.md`** -- **Audio Step Core**, **Audio Config Map**, **Component
   Toggle**. The init-retry lifecycle a driver's `begin()` should lean on lives in
   the Step Core.
 - **[ADR 0042](../adr/0042-component-families-are-selected-at-runtime-where-the-board-offers-a-choice.md)**
@@ -1340,7 +1340,7 @@ and assert the translation in a native test.
 
 **Component Protocol.** #303's **DFPlayer serial** stands. It changes the driver
 -- a different frame, a different checksum, a different addressing model -- so it
-passes `CONTEXT.md`'s test.
+passes `GLOSSARY.md`'s test.
 
 **Board Capability Gate.** **Probably none needed**, and this is the one category
 where that answer is easy: every Sound member already wires to the same audio TX
@@ -1459,7 +1459,7 @@ more build.**
 **protoArtoo**
 
 - `include/audio_driver.h`, `include/audio_serial_io.h`, `src/drivers/audio_dy_sv5w.cpp`, `src/tasks/audio_task.cpp`, `src/drivers/audio_soft_uart_tx.h`, `include/config.h`
-- `docs/sound_playback.md`, `docs/pin_map.md`, `CONTEXT.md`, ADR 0042, ADR 0043
+- `docs/sound_playback.md`, `docs/pin_map.md`, `GLOSSARY.md`, ADR 0042, ADR 0043
 - `test/test_native/test_audio_frames/`, `test_audio_io_seam/`, `test_audio_driver/`
 - [`pololu-maestro-servo-controller.md`](pololu-maestro-servo-controller.md), [`pca9685-servo-expander.md`](pca9685-servo-expander.md)
 
