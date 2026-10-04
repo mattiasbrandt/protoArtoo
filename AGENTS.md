@@ -831,11 +831,22 @@ push to `main`. Mechanism and fallbacks: the docstring in
 - Merge method for ongoing feature-branch PRs is "Rebase and merge" (the one-time `phase/v1.0.0` exception is history in CONTRIBUTING.md)
 - Pushing your own work branch is free; pushing to a shared branch, opening or merging a PR, and pushing tags each need explicit operator approval (see "Push and remote policy")
 
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `mattiasbrandt/protoArtoo` via `gh`; relationships through the `github-issues` skill. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical labels under their default names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
 ## Disclosed references
 
-- Issue tracker (GitHub, `gh` conventions): `docs/agents/issue-tracker.md`
-- Triage labels: `docs/agents/triage-labels.md`
-- Domain docs (`GLOSSARY.md`, `docs/adr/`): `docs/agents/domain.md`
 - MemPalace protocol: `docs/agents/mempalace.md`
 - Wrap-up procedure: `docs/agents/wrap-up.md`
 - Worker slice gate contract and evidence rules: `docs/agents/slice-gate.md`
