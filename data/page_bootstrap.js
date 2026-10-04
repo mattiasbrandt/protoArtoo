@@ -1046,9 +1046,11 @@
 
     // No Tab handler. This view used to contain Tab inside the panel and wrap
     // it at both ends; containment now lives on the surface, as `inert`, for
-    // the reason holdSurfacesInert() gives. Tab out of the panel reaches the
-    // topbar's STOP and the Status Plate's ESTOP cell and nothing in between,
-    // which is the containment #115 asked for and the reach #359 asked for.
+    // the reason holdSurfacesInert() gives. Tab out of the panel walks the
+    // chrome and never the failed surface: forward, the Status Plate's eight
+    // cells (its ESTOP cell first), one stop on the page body, the brand link,
+    // Sleep and Reboot, then the topbar's STOP on the 13th press, then the nav.
+    // That is the containment #115 asked for and the reach #359 asked for.
 
     return backdrop;
   };
