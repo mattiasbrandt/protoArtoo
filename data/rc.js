@@ -1419,6 +1419,31 @@
       }
     };
 
+    const runActionTest = async (token) => {
+      if (actionPickerInFlightToken) return;
+      const channelAtStart = selectedChannel;
+      actionPickerInFlightToken = token;
+      actionPickerFeedback = { token, kind: 'info', text: 'Testing...' };
+      syncActionTestUi();
+      try {
+        const result = await window.PAApi.postForm('/api/actions/test', { token }, { timeoutMs: 5000 });
+        if (selectedChannel !== channelAtStart) return;
+        actionPickerFeedback = { token, ...actionTestFeedbackForOutcome(result?.data?.outcome) };
+      } catch (error) {
+        if (selectedChannel !== channelAtStart) return;
+        // A refusal the droid named in its own vocabulary comes back as a
+        // sentence and, where there is one, the route to the next move
+        // (data/web_api.js). Everything else is the ordinary transport message.
+        const refusal = window.PAApi.refusalFor(error);
+        actionPickerFeedback = refusal
+          ? { token, kind: 'error', text: refusal.text, route: refusal.route }
+          : { token, kind: 'error', text: window.PAApi.messageFor(error) };
+      } finally {
+        if (actionPickerInFlightToken === token) actionPickerInFlightToken = null;
+        if (selectedChannel === channelAtStart) syncActionTestUi();
+      }
+    };
+
     wirePayloadPills(rcEditorContent);
 
     rcEditorContent.querySelectorAll('[data-field]').forEach((field) => {
