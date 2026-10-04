@@ -1545,7 +1545,9 @@
 
   // A tile: its act first, a round Play that shows its icon alone and says
   // Play <name> as its tooltip and accessible name (operator, 2026-10-04);
-  // then the name, the RC Channels that fire it and the Rest mark; then one
+  // then the name, the RC Channels that fire it and the Rest mark - Rest's
+  // own icon, its word for a screen reader only, because Rest is the button's
+  // word alone (operator, 2026-10-04); then one
   // quiet line - why it does nothing, or how long it runs and what it does,
   // cut to the tile's width (the whole purpose is on Sequences).
   const tileHtml = (name) => {
@@ -1567,7 +1569,7 @@
         <span class="show-item-says">
           <span class="show-item-name">
             <span class="show-name">${esc(name)}</span>
-            ${isRest ? `<span class="seq-badge show-rest-mark">${icon("human-handsdown")}Rest</span>` : ""}
+            ${isRest ? `<span class="seq-badge show-rest-mark">${icon("human-handsdown")}<span class="show-said">Rest</span></span>` : ""}
             ${channels.map((channel) => `<span class="show-rc" aria-label="RC Channel ${escAttr(channel)}">${esc(channel)}</span>`).join("")}
           </span>
           <span class="show-item-line">

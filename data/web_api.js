@@ -457,10 +457,9 @@
     },
     cadenceFloorMs: { applies: "immediate", word: "gap between servo starts", unit: MS, path: "servo.cadenceFloorMs" },
     // `unset` is what the Stand Down runs while none has been chosen (the
-    // Setting stores an empty name; CONTEXT.md "Stand Down Sequence"). A
-    // surface says Rest for it (operator, 2026-10-04, #451).
+    // Setting stores an empty name; CONTEXT.md "Stand Down Sequence").
     standDownSequence: {
-      applies: "immediate", word: "Rest Sequence", path: "seq.standDown",
+      applies: "immediate", word: "Stand Down Sequence", path: "seq.standDown",
       refused: "must be empty or a sequence name like DM:RESET", unset: "DM:RESET",
     },
     logLevel: { applies: "immediate", word: "log level", path: "system.logLevel" },
