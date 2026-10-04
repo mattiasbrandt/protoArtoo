@@ -1,17 +1,31 @@
 // bench-auto: fixture rc.html
+// A layout audit of RC at desktop width: no sideways scroll, every button
+// carries words, the Bindings table has its three columns, the source list and
+// the mapping editor sit side by side, and the page logs no error of its own.
+//
+// The audit used to wait for the receiver-type grid (`.rc-mode-grid`) and
+// record its mode cards. The type is now chosen on Configuration and RC shows
+// it (data/rc.html "Receiver type"; operator, 2026-09-18 on #369), so the
+// audit waits for the source list instead and records the type the card
+// reads. Its second pass at 1100 px is gone: the operator surfaces are
+// desktop-only, and a tablet width is not a width this project checks.
+//
+// The fixture server answers no /api/* route RC reads, so the page meets a
+// droid that does not answer: its "Failed to load resource" lines are the
+// fixture's 404s, not the page's errors, and are not counted.
 const { chromium } = require('playwright');
 
 const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/rc.html';
-const HEADLESS = process.env.HEADLESS === 'true';
+const HEADLESS = process.env.HEADLESS !== 'false';
 
 async function collect(page, label) {
   await page.goto(TARGET_URL, { waitUntil: 'networkidle' });
-  await page.waitForSelector('.rc-mode-grid', { timeout: 10000 });
+  await page.waitForSelector('#rc-channel-items .rc-channel-item', { timeout: 10000 });
   await page.waitForTimeout(600);
 
   const metrics = await page.evaluate(() => {
     const isVisible = (el) => {
-      if (!el) return false;
+      if (!el || el.hidden) return false;
       const style = getComputedStyle(el);
       return style.display !== 'none' && style.visibility !== 'hidden';
     };
@@ -23,7 +37,7 @@ async function collect(page, label) {
       })
       .filter((button) => button.text.length > 0 && !/[A-Za-z0-9]/.test(button.text));
 
-    const cards = Array.from(document.querySelectorAll('.card h3')).map((h3) => h3.textContent?.trim() || '');
+    const cards = Array.from(document.querySelectorAll('.card .sect > h2, .card .sect > h3')).map((h) => h.textContent?.trim() || '');
     const feedback = Array.from(document.querySelectorAll('.feedback')).map((n) => ({
       id: n.id || null,
       text: (n.textContent || '').trim(),
@@ -35,8 +49,12 @@ async function collect(page, label) {
       th.textContent?.trim(),
     );
     const summaryRows = Array.from(document.querySelectorAll('#rc-summary-body tr')).map((tr) => {
-      const cells = Array.from(tr.querySelectorAll('td')).map((td) => (td.textContent || '').trim());
-      return { cellCount: cells.length, first: cells[0] || '' };
+      const cells = Array.from(tr.querySelectorAll('td'));
+      return {
+        cellCount: cells.length,
+        span: cells.reduce((sum, td) => sum + (td.colSpan || 1), 0),
+        first: (cells[0]?.textContent || '').trim(),
+      };
     });
 
     const mapper = document.querySelector('.rc-mapper-grid');
@@ -51,16 +69,10 @@ async function collect(page, label) {
       feedback,
       summaryHeaders,
       summaryRows,
-      modeCards: Array.from(document.querySelectorAll('.rc-mode-card')).map((card) => ({
-        mode: card.getAttribute('data-mode'),
-        pressed: card.getAttribute('aria-pressed'),
-        selectedClass: card.classList.contains('selected'),
-      })),
+      receiverType: document.getElementById('rc-mode-summary')?.textContent?.trim() || '',
+      sources: document.querySelectorAll('#rc-channel-items .rc-channel-item').length,
       mapperColumns: mapperStyle ? mapperStyle.gridTemplateColumns : null,
       mapperWidth: mapper ? Math.round(mapper.getBoundingClientRect().width) : null,
-      panelTitles: Array.from(document.querySelectorAll('.rc-panel-title')).map(
-        (n) => n.textContent?.trim() || '',
-      ),
       learnBannerVisible: isVisible(document.getElementById('rc-learn-banner')),
       disabledCardVisible: isVisible(document.getElementById('rc-disabled-card')),
     };
@@ -74,26 +86,45 @@ async function collect(page, label) {
   const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 60 });
   const page = await browser.newPage({ viewport: { width: 1680, height: 980 } });
   const consoleErrors = [];
+  const failures = [];
+  const check = (ok, message) => {
+    if (!ok) failures.push(message);
+  };
 
   page.on('console', (msg) => {
-    if (msg.type() === 'error') {
+    if (msg.type() === 'error' && !msg.text().startsWith('Failed to load resource:')) {
       consoleErrors.push(msg.text());
     }
   });
 
   try {
     const desktop = await collect(page, 'desktop-audit');
-    await page.setViewportSize({ width: 1100, height: 900 });
-    const tablet = await collect(page, 'tablet-audit');
 
     console.log('RC_AUDIT_START');
-    console.log(JSON.stringify({ desktop, tablet, consoleErrors }, null, 2));
+    console.log(JSON.stringify({ desktop, consoleErrors }, null, 2));
     console.log('RC_AUDIT_END');
-    console.log('Saved screenshots: /tmp/rc-desktop-audit.png, /tmp/rc-tablet-audit.png');
+    console.log('Saved screenshot: /tmp/rc-desktop-audit.png');
+
+    check(!desktop.horizontalOverflow,
+      `the page scrolls sideways: ${desktop.bodyScrollWidth} px wide in a ${desktop.viewport.width} px window`);
+    check(desktop.iconOnlyButtons.length === 0, `buttons with no words: ${JSON.stringify(desktop.iconOnlyButtons)}`);
+    check(JSON.stringify(desktop.summaryHeaders) === JSON.stringify(['Action', 'Source', 'Live']),
+      `the Bindings table heads read ${JSON.stringify(desktop.summaryHeaders)}`);
+    check(desktop.summaryRows.length > 0 && desktop.summaryRows.every((row) => row.span === desktop.summaryHeaders.length),
+      `a Bindings row does not span the table's columns: ${JSON.stringify(desktop.summaryRows)}`);
+    check(desktop.receiverType !== '', 'the Receiver type card reads nothing');
+    check(desktop.sources > 0, 'the source list is empty');
+    check((desktop.mapperColumns || '').trim().split(/\s+/).length === 2,
+      `the source list and the mapping editor are not side by side: columns "${desktop.mapperColumns}"`);
+    check(!desktop.learnBannerVisible, 'the Detect channel banner shows before Detect channel was pressed');
+    check(consoleErrors.length === 0, `the page logged errors: ${JSON.stringify(consoleErrors)}`);
   } catch (error) {
-    console.error('RC audit failed:', error.message);
-    process.exitCode = 1;
+    failures.push(`RC audit failed: ${error.message}`);
   } finally {
     await browser.close();
   }
+
+  failures.forEach((message) => console.error(`FAIL ${message}`));
+  console.log(failures.length === 0 ? 'PASS rc audit' : `${failures.length} failed`);
+  process.exitCode = failures.length === 0 ? 0 : 1;
 })();
