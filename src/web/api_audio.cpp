@@ -155,14 +155,14 @@ bool saveSoundListBaseline(Preferences& prefs) {
 // both of the builder's answers to a changed file - binding the same address
 // again keeps it, binding another re-points it - and an ordinary bind.
 //
-// With no name to read (no catalog since boot, a refresh holding the gate, or
-// the card naming the sound only by index), the same address keeps the file it
-// was recorded against, which still describes it; a new address, or an
-// unbound one, keeps none, so it reads unchecked rather than compared against
-// another address's file. False on a refused NVS write: the binding itself is
-// saved either way.
-bool recordNamedTrackFile(Preferences& prefs, const char* fileKey, uint32_t previousPacked,
-                          uint32_t packed) {
+// With no name to read (no catalog since boot - the catalog is only read when
+// asked for, so after a reboot that is the usual state - a refresh holding the
+// gate, or the card naming the sound only by index), the record is removed,
+// same address or not, and the binding reads unchecked. Keeping the old record
+// would let a pending "file changed" outlive the builder's answer, a restore
+// included. An unbound key keeps no record either. False on a refused NVS
+// write: the binding itself is saved either way.
+bool recordNamedTrackFile(Preferences& prefs, const char* fileKey, uint32_t packed) {
     uint8_t bank = 0;
     char page = 'A';
     uint16_t index = 0;
@@ -178,9 +178,6 @@ bool recordNamedTrackFile(Preferences& prefs, const char* fileKey, uint32_t prev
     }
     if (file != AUDIO_NAMED_TRACK_FILE_UNRECORDED) {
         return prefs.putUInt(fileKey, file) > 0;
-    }
-    if (bound && packed == previousPacked) {
-        return true;
     }
     return !prefs.isKey(fileKey) || prefs.remove(fileKey);
 }
@@ -703,11 +700,10 @@ AudioTracksCommitOutcome audioTracksCommitApplied(ConfigSnapshot* snap,
 
         if (wroteTrack && chirpBindingKey != nullptr) {
             uint32_t chirpPacked = useBanked ? packChirpBinding(t, bank, page) : 0;
-            const uint32_t previousPacked = prefs.getUInt(chirpBindingKey, 0);
             wroteChirp = prefs.putUInt(chirpBindingKey, chirpPacked) > 0;
             const ChirpBindingKeyMapEntry* binding = chirpBindingEntry(key);
             if (wroteChirp && binding != nullptr &&
-                !recordNamedTrackFile(prefs, binding->fileKey, previousPacked, chirpPacked)) {
+                !recordNamedTrackFile(prefs, binding->fileKey, chirpPacked)) {
                 PA_LOG_WARN(TAG, "[AUDIO] %s: which file it was bound to not saved (NVS refused)",
                             key);
             }

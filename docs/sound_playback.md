@@ -363,7 +363,9 @@ beside its `chr_*` binding (`include/chirp_binding_keys.h`). Each `chirp_binding
 entry then says `file`: `same`, `changed` or `unchecked`, compared against the catalog
 as it was last refreshed (`include/audio_named_track_file.h`). A changed file is the
 builder's to resolve, by binding the same address again or another one. Nothing
-re-points it.
+re-points it. A bind with no name to read (no catalog read since boot, a refresh in
+progress, a sound the card names only by index) removes the record, so the binding
+reads `unchecked` rather than carrying a stale file forward.
 
 **Source:** https://github.com/joymonkey/CHIRP
 

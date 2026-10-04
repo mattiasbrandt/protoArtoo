@@ -1207,14 +1207,17 @@ Each binding says whether the card still has the file it was bound to (#447):
   bindings recorded their file, or made with no catalog to read.
 - Nothing re-points a binding whose file changed. The builder answers through
   `POST /api/audio/tracks`: the same `bank`, `page` and index keeps the address,
-  another re-points it. Either records the file the card lists there now.
+  another re-points it. Either records the file the catalog lists there now; with
+  no catalog read since boot, or a name the card gives only by index, the binding
+  keeps no record and reads `unchecked`.
 - `happy`, the `$H` Named Track, is a key of this route and a Setting since #447,
   and can be bound to a bank, page and index like the others. The key is
-  additive: a backup without it restores, and leaves Happy at its default (3).
+  additive: a backup without it restores, and leaves Happy as it is.
 - `file` is new with #447. A backup restores through `bank`, `page` and index only
   (`data/maintenance.js`, `restoreAudioTracks`), so a backup from before it and one
-  from after it restore the same way. A restore with a catalog read records the
-  files the card lists now.
+  from after it restore the same way. A restore records the files the catalog
+  lists now, or none where it has no name to read: a pending `changed` never
+  survives a restore.
 
 ### POST /api/audio/tracks
 
