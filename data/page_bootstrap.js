@@ -1046,9 +1046,11 @@
 
     // No Tab handler. This view used to contain Tab inside the panel and wrap
     // it at both ends; containment now lives on the surface, as `inert`, for
-    // the reason holdSurfacesInert() gives. Tab out of the panel reaches the
-    // topbar's STOP and the Status Plate's ESTOP cell and nothing in between,
-    // which is the containment #115 asked for and the reach #359 asked for.
+    // the reason holdSurfacesInert() gives. Tab out of the panel walks the
+    // chrome and never the failed surface: forward, the Status Plate's eight
+    // cells (its ESTOP cell first), one stop on the page body, the brand link,
+    // Sleep and Reboot, then the topbar's STOP on the 13th press, then the nav.
+    // That is the containment #115 asked for and the reach #359 asked for.
 
     return backdrop;
   };
@@ -1077,7 +1079,9 @@
   };
 
   // Signature kept stable across renders so the countdown can repaint without
-  // rebuilding the panel and stealing focus from the Retry now button.
+  // rebuilding the panel. A change here rebuilds it (a retry's new attempt
+  // number among them); render() decides separately whether the rebuild may
+  // move focus.
   const signatureOf = (view) =>
     view.visible
       ? `${view.mode}|${view.kind}|${view.stepName}|${view.attempt ?? 0}|${view.longRunning ? 1 : 0}`
@@ -1111,7 +1115,8 @@
     // Transitioning from hidden to visible: save focus and make visible first.
     // Elements with display:none cannot receive focus, so the backdrop must be
     // visible before any focus move attempts.
-    if (!overlayIsVisible) {
+    const entering = !overlayIsVisible;
+    if (entering) {
       overlayIsVisible = true;
       focusedBeforeOverlay = document.activeElement;
       backdrop.classList.add("active");
@@ -1125,15 +1130,22 @@
 
     const signature = signatureOf(view);
     if (signature !== lastSignature) {
-      // New panel content: rebuild it, keeping the announcer if it exists
+      // New panel content: rebuild it, keeping the announcer if it exists.
+      // Read before replaceChildren: if focus was in the panel, the rebuild
+      // detaches the focused node and focus afterwards reads as the body, which
+      // says nothing about where it was.
+      const focusWasInside = backdrop.contains(document.activeElement);
       const announcer = backdrop.querySelector(".recovery-countdown-announcer");
       backdrop.replaceChildren(buildPanel(view, onRetryNow));
       if (announcer) {
         backdrop.appendChild(announcer);
       }
       lastSignature = signature;
-      // Focus moved into the overlay for new content
-      setFocus(backdrop);
+      // Focus enters the panel when it appears, or follows the content it was
+      // in. Focus the operator put outside it -- STOP, the Status Plate's ESTOP
+      // cell -- stays there: a retry rebuilds the panel every few seconds, and
+      // pulling focus off STOP each time undoes the reach #359 asked for.
+      if (entering || focusWasInside) setFocus(backdrop);
     } else {
       // Only countdown changed: update both the display and the announcement
       const value = backdrop.querySelector(".recovery-countdown-value");
