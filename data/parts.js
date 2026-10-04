@@ -473,8 +473,10 @@
     rebuildHolding(slot, part ? part.id : "", () => {
       slot.textContent = "";
       if (dome) {
+        // The plain .why voice: the panel's own why line, under the acts,
+        // stays the one reason an act is refused.
         const line = document.createElement("p");
-        line.className = "bodyview-panel-why";
+        line.className = "why";
         line.textContent = P.domeMovesText(marker.label);
         slot.appendChild(line);
       } else if (part) {
