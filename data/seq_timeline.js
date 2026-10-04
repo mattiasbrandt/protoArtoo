@@ -1444,7 +1444,9 @@
           if (item.of !== undefined && moving.has(steps[item.of])) return;
           const label = item.label || lane.name;
           targets.push({ t: item.t0, label });
-          if (item.kind !== "tick" && item.kind !== "left" && item.t1 !== null && item.t1 !== undefined) targets.push({ t: item.t1, label });
+          // What runs on to the right edge ends nowhere: a Part left open, a
+          // Background Track playing on past the end.
+          if (item.kind !== "tick" && item.kind !== "left" && !item.past && item.t1 !== null && item.t1 !== undefined) targets.push({ t: item.t1, label });
         }));
       return targets;
     };
