@@ -1205,8 +1205,11 @@
 
   // The picker's inside: the search row and the action rows. A search draws
   // only this again, inside a picker node that stays (refreshActionPicker()).
+  // The box shows the query as typed and the rows match it trimmed: a box
+  // drawn back trimmed ate every space as it was typed.
   const actionPickerBodyHtml = (selectedToken, queryText = '') => {
-    const query = String(queryText || '').trim();
+    const typed = String(queryText || '');
+    const query = typed.trim();
     const groups = groupedActionTargets()
       .map(({ name, items }) => ({
         name,
@@ -1227,8 +1230,8 @@
       : '';
 
     return `<div class="rc-action-search-row">
-        <input class="rc-action-search-input" data-action-search type="search" placeholder="Search actions..." value="${window.PAUtils.escapeHtml(query)}" autocomplete="off">
-        <button type="button" class="rc-action-search-clear icon-act" data-action-search-clear${query ? '' : ' disabled'}>${window.PAUi.actFace('eraser', 'Clear')}</button>
+        <input class="rc-action-search-input" data-action-search type="search" placeholder="Search actions..." value="${window.PAUtils.escapeHtml(typed)}" autocomplete="off">
+        <button type="button" class="rc-action-search-clear icon-act" data-action-search-clear${typed ? '' : ' disabled'}>${window.PAUi.actFace('eraser', 'Clear')}</button>
       </div>
       ${recentBlock}
       ${groups.map(({ name, items }) => {
@@ -1555,7 +1558,7 @@
         event.preventDefault();
 
         const selectable = actionTargets
-          .filter((item) => !item.disabled && actionAllowedOnSelected(item) && actionMatchesQuery(item, actionPickerQuery))
+          .filter((item) => !item.disabled && actionAllowedOnSelected(item) && actionMatchesQuery(item, actionPickerQuery.trim()))
           .map((item) => item.token);
         if (!selectable.length) return;
 
