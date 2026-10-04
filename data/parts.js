@@ -3,12 +3,13 @@
 //
 // Parts (ADR 0050, #347, #362): the droid's parts - the droid picture at the
 // head of the surface, and the Parts no Output claims under it. Which Output a
-// Part is on is chosen on Wiring, in the part-first picker (data/parts_mapping.js
-// picker()), and on Servos from the Output's end (CONTEXT.md "Servos";
-// operator, 2026-09-28 on #411: the mapping "is weird to have in a page called
-// 'parts'"). Every act here that would put a Part on an Output routes there
-// instead of carrying a picker of its own (PAParts.routeToOutput()), so there
-// is one picker, one move question and one request.
+// Part is on is picked here too, with the bar Wiring's parts table picks it
+// with (operator, 2026-10-04 on #463: "Also pick it on Parts", overturning
+// 2026-09-28 on #411's Wiring-only rule): the picture's panel and each Unused
+// row carry data/parts_mapping.js outputChooser(), the same bar, the same
+// refusals, the same move question and the same request, so Parts and Wiring
+// cannot disagree. Wiring stays the full view, with what is on each wire,
+// the links and Find by Moving.
 //
 // No row is ever hidden. The Unused list is every Part this image could move
 // that no Output claims, and the Parts it could never move are counted beside
@@ -31,6 +32,8 @@
   const unusedRegion = document.getElementById("parts-unused");
   const unusedSummary = document.getElementById("parts-unused-summary");
   const feedback = document.getElementById("parts-feedback");
+  const unusedFeedback = document.getElementById("parts-unused-feedback");
+  const moveDialog = document.getElementById("parts-move-dialog");
   if (!unusedRegion || !unusedSummary) return;
 
   if (!partById.size) {
@@ -46,26 +49,79 @@
   const showFeedback = (text, level) => window.PAUtils.showFeedback(feedback, text, level);
   const plural = (count, [one, many]) => `${count} ${count === 1 ? one : many}`;
 
-  // The act that puts a Part on an Output, named once: the droid picture's
-  // panel offers it and every Unused row offers it, and both are the same
-  // route (giveItAnOutput() below).
-  const GIVE_IT_AN_OUTPUT = "Give it an output";
-
   // Until the Outputs answer, the summary says so in the one word for it
   // (data/outputs.js live()), which a slot shows as the waiting dots.
   unusedSummary.classList.add("waiting");
   unusedSummary.textContent = window.PALiveReading.slotText(OUTPUTS.live(null).word);
 
   // ---------------------------------------------------------------------------
-  // The route to the picker
+  // The Output bar
   //
-  // A route, not a write: the picker on the Part's own row on Wiring is where
-  // an Output is chosen or taken off. `off` is a Part off the droid that still
-  // has an Output, where the question is whether its wire came off too.
+  // One chooser for the page (data/parts_mapping.js outputChooser()), so one
+  // move is on its way at a time whichever card it was pressed in. It answers
+  // on the feedback line of the card the builder last pressed in, which is
+  // where they are looking.
+  //
+  // Every bar here is rebuilt only when what it shows changes - the Outputs'
+  // rows as a bar draws them, and the move on its way - and never on a frame
+  // of the once-a-second bench feed: a rebuilt button moves out from under a
+  // finger. The focus goes back to the same choice in the new bar, or waits
+  // for it while it takes no press (a move on its way).
   // ---------------------------------------------------------------------------
-  const giveItAnOutput = (partId, off = false) => {
-    if (!partById.has(partId)) return;
-    P.routeToOutput(partId, { off });
+  let sayOn = feedback;
+  const chooser = moveDialog
+    ? P.outputChooser({
+      dialog: moveDialog,
+      say: (text, level) => window.PAUtils.showFeedback(sayOn || feedback, text, level),
+      repaint: () => paint(),
+    })
+    : null;
+  if (!chooser) console.error("[parts] #parts-move-dialog is missing; no Output bar is offered on Parts");
+
+  const barState = (outputs) =>
+    outputs.map((output) => [output.address, output.name, output.parts.join("+"), output.canLight, output.suggestedPart].join(":")).join(";") +
+    `|${chooser ? chooser.pending() : ""}`;
+
+  // A choice in words that survive a rebuild of its bar.
+  const choiceKey = (node) => (node?.dataset?.value ? `output:${node.dataset.value}` : node?.dataset?.use ? "use" : null);
+  const owed = new Map();
+  const rebuildHolding = (host, where, build) => {
+    const active = document.activeElement;
+    const inside = Boolean(active && host.contains(active));
+    const key = inside ? `${where}|${choiceKey(active)}` : (!active || active === document.body) ? owed.get(host) ?? null : null;
+    build();
+    owed.delete(host);
+    if (key === null) return;
+    const [at, choice] = [key.slice(0, key.lastIndexOf("|")), key.slice(key.lastIndexOf("|") + 1)];
+    if (at !== where) return;
+    const buttons = Array.from(host.querySelectorAll("button"));
+    const again = buttons.find((each) => choiceKey(each) === choice);
+    if (again && again.disabled) {
+      owed.set(host, key);
+      return;
+    }
+    (again || buttons.find((each) => each.classList.contains("active")))?.focus?.();
+  };
+
+  // A Part's bar, and under it, while the Part is on no Output, the words
+  // that say a pick is waiting and the board's suggestion as one press.
+  const barFor = (part, outputs, { prompt = true } = {}) => {
+    const holder = document.createDocumentFragment();
+    holder.appendChild(chooser.bar(part, outputs));
+    if (window.PAOutputs.forPart(part.id, outputs)) return holder;
+    const use = chooser.suggestion(part, outputs);
+    if (!prompt && !use) return holder;
+    const line = document.createElement("span");
+    line.className = "parts-pick";
+    if (prompt) {
+      const word = document.createElement("span");
+      word.className = "parts-pick-word";
+      word.textContent = "Pick an output";
+      line.appendChild(word);
+    }
+    if (use) line.appendChild(use);
+    holder.appendChild(line);
+    return holder;
   };
 
   // ---------------------------------------------------------------------------
@@ -74,7 +130,8 @@
   // Moved here from Wiring (operator, 2026-09-28 on #411: "the 'unused'
   // section there makes more sense to have in the parts page"), with its
   // Availability Reason on each row so a reader does not re-derive it. Each
-  // row acts rather than pointing: its next move is the route above.
+  // row acts rather than pointing: its Output is picked on the row, with the
+  // bar above.
   // ---------------------------------------------------------------------------
   // A part's design name, and the three things that field can say. `cadName`
   // absent is a name nobody has read out of the design files yet; `cadName`
@@ -107,11 +164,11 @@
     return `${esc(part.name)}${shorthand}${kind}`;
   };
 
-  // A part, its design name, where it sits on the droid, and the act. No
-  // Output column - every row in it has none.
+  // A part, its design name, where it sits on the droid, and the Output bar
+  // it is given one with (filled by fillUnusedBars()).
   const unusedTableHtml = (parts) =>
     '<table class="parts-unused-table"><thead><tr>' +
-    '<th scope="col">Part</th><th scope="col">Design name</th><th scope="col">Where</th><th scope="col"></th>' +
+    '<th scope="col">Part</th><th scope="col">Design name</th><th scope="col">Where</th><th scope="col">Output</th>' +
     "</tr></thead><tbody>" +
     parts
       .map(
@@ -120,8 +177,7 @@
           `<th scope="row">${partNameHtml(part)}</th>` +
           `<td>${designNameHtml(part)}</td>` +
           `<td>${whereHtml(part)}</td>` +
-          `<td class="parts-unused-act"><button class="btn btn-sm btn-quiet icon-act" type="button" data-wire="${escAttr(part.id)}">` +
-          `${window.PAUi.actFace("link-variant", GIVE_IT_AN_OUTPUT)}</button></td></tr>`
+          `<td class="parts-unused-output"><span class="parts-bar" data-bar-for="${escAttr(part.id)}"></span></td></tr>`
       )
       .join("") +
     "</tbody></table>";
@@ -155,26 +211,52 @@
     return `<ul class="parts-unused-footnote">${lines.join("")}</ul>`;
   };
 
-  // Rebuilt only when the list itself changes. The Outputs are read once a
-  // second here (the bench feed below), and a list rebuilt on every read
-  // would take the act out from under a builder's pointer and focus.
-  let unusedKey = null;
-  const paintUnused = () => {
-    const unused = P.unclaimed(catalog.parts, OUTPUTS.list());
-    unusedSummary.textContent = plural(unused.length, ["part", "parts"]);
-    const key = unused.map((part) => part.id).join(",");
-    if (key === unusedKey) return;
-    unusedKey = key;
-    unusedRegion.innerHTML =
-      (unused.length ? unusedTableHtml(unused) : '<p class="hint">Every part is on an output.</p>') +
-      boundHtml() +
-      footnoteHtml(unused);
+  // Each row's bar, written into the cell the row left for it. No pick
+  // prompt on these rows: every one of them is waiting for an Output, and
+  // the column says so once. A dome Part is offered no body Output
+  // (PAParts.isDomePart()): its cell says what moves it instead.
+  const fillUnusedBars = (outputs) => {
+    if (!chooser) return;
+    unusedRegion.querySelectorAll("[data-bar-for]").forEach((cell) => {
+      const part = partById.get(cell.dataset.barFor);
+      if (!part) return;
+      if (P.isDomePart(part)) {
+        if (!cell.childNodes.length) cell.innerHTML = '<span class="parts-word">the Dome Controller moves it</span>';
+        return;
+      }
+      rebuildHolding(cell, part.id, () => cell.replaceChildren(barFor(part, outputs, { prompt: false })));
+    });
   };
 
-  unusedRegion.addEventListener("click", (event) => {
-    const id = event.target?.closest?.("[data-wire]")?.dataset.wire;
-    if (id) giveItAnOutput(id);
-  });
+  // Rebuilt only when the list itself changes, and its bars only when what
+  // they show does. The Outputs are read once a second here (the bench feed
+  // below), and a list rebuilt on every read would take the bar out from
+  // under a builder's pointer and focus.
+  let unusedKey = null;
+  let unusedBars = null;
+  const paintUnused = () => {
+    const outputs = OUTPUTS.list();
+    const unused = P.unclaimed(catalog.parts, outputs);
+    unusedSummary.textContent = plural(unused.length, ["part", "parts"]);
+    const key = unused.map((part) => part.id).join(",");
+    if (key !== unusedKey) {
+      unusedKey = key;
+      unusedBars = null;
+      unusedRegion.innerHTML =
+        (unused.length ? unusedTableHtml(unused) : '<p class="hint">Every part is on an output.</p>') +
+        boundHtml() +
+        footnoteHtml(unused);
+    }
+    const bars = barState(outputs);
+    if (bars === unusedBars) return;
+    unusedBars = bars;
+    fillUnusedBars(outputs);
+  };
+
+  // Captured, so the line is chosen before the press itself answers on it.
+  unusedRegion.addEventListener("click", () => {
+    sayOn = unusedFeedback || feedback;
+  }, true);
 
   const paint = () => {
     if (!answered()) return;
@@ -247,15 +329,18 @@
   //                       and routes to its picker rather than unmapping it.
   //                       A Common Addition comes off as the group the Parts
   //                       list fits it as: an arm takes its claw or tool.
-  //   Give it an output   routes to this Part's row in the part-first picker
-  //                       on Wiring and puts the cursor in it
-  //                       (giveItAnOutput()). Deliberately NOT a picker of its
-  //                       own: the mapping has two projections of one table,
-  //                       Wiring's and Servos', and a third would be a surface
-  //                       that can disagree with them (operator, 2026-09-28 on
-  //                       #411). Offered where nothing is mapped yet, and as
-  //                       Change its output on a Part off the droid that still
-  //                       has an Output mapped.
+  //   The Output bar      not an act but the panel's slot: a body Part's
+  //                       Output, picked, moved or given the board's
+  //                       suggestion in one press, with the bar Wiring's
+  //                       table carries (outputChooser(); operator,
+  //                       2026-10-04 on #463: "Also pick it on Parts"). One
+  //                       bar, one question and one request on both surfaces,
+  //                       so neither can disagree with the other. A dome
+  //                       Part's slot says the Dome Controller moves it.
+  //   Take it off on      a Part off the droid that still has an Output
+  //   Wiring              mapped: whether its wire came off too is asked on
+  //                       its row on Wiring, which the route marks
+  //                       (PAParts.routeToOutput()).
   //
   // No Non-RC Control consent is asked for any of them - that flag has never
   // reached POST /api/servo (ADR 0064).
@@ -269,7 +354,7 @@
     // press does, so its words stay in view (#460).
     { id: "toggle", label: "Open it", icon: "arrow-expand-horizontal", keepsWords: true },
     { id: "fit", label: "Drop from build", icon: "delete-outline" },
-    { id: "wire", label: GIVE_IT_AN_OUTPUT, icon: "link-variant" },
+    { id: "wire", label: "Take it off on Wiring", icon: "link-variant-off" },
   ];
 
   let drawing = null;
@@ -321,18 +406,53 @@
           enabled: fitted !== null,
         },
         wire: {
-          shown: offButMapped || (!marker.panTilt && !marker.target && unwired.length > 0),
-          label: offButMapped ? "Change its output" : GIVE_IT_AN_OUTPUT,
-          enabled: parts.some((id) => partById.has(id)),
+          shown: offButMapped,
+          enabled: offButMapped && partById.has(decision.wiredPart),
         },
       },
     };
   };
 
+  // The panel's slot: the picked Part's Output bar, or, for a Part the Dome
+  // Controller moves, the sentence that says so. Empty until the droid has
+  // answered with its Outputs, and with nothing picked.
+  let slotKey = null;
+  const paintSlot = (pick) => {
+    const slot = panel.slot;
+    const marker = pick ? pick.marker : null;
+    const ids = marker ? marker.parts.filter((id) => partById.has(id)) : [];
+    const dome = ids.length > 0 && ids.every((id) => P.isDomePart(partById.get(id)));
+    const part = !dome && ids.length && answered() && chooser ? partById.get(ids[0]) : null;
+    const outputs = OUTPUTS.list();
+    const key = `${marker ? marker.id : ""}|${dome}|${part ? part.id : ""}|${part ? barState(outputs) : ""}`;
+    if (key === slotKey) return;
+    slotKey = key;
+    rebuildHolding(slot, part ? part.id : "", () => {
+      slot.textContent = "";
+      if (dome) {
+        const line = document.createElement("p");
+        line.className = "bodyview-panel-why";
+        line.textContent = P.domeMovesText(marker.label);
+        slot.appendChild(line);
+      } else if (part && P.thisImageMoves(part)) {
+        const host = document.createElement("div");
+        host.className = "parts-bar";
+        host.appendChild(barFor(part, outputs));
+        slot.appendChild(host);
+      }
+    });
+  };
+
   const paintPanel = () => {
     const markerId = drawing.selected();
-    if (markerId === null) panel.clear();
-    else panel.show(describePick(markerId));
+    if (markerId === null) {
+      panel.clear();
+      paintSlot(null);
+      return;
+    }
+    const pick = describePick(markerId);
+    panel.show(pick);
+    paintSlot(pick);
   };
 
   const paintBody = () => {
@@ -419,7 +539,7 @@
         const off = `${names} ${leaving.length === 1 ? "is" : "are"} off your droid now.`;
         showFeedback(
           mapped.length
-            ? `${off} Still mapped to ${mapped.join(", ")}. Change its output on Wiring if the wire came off too.`
+            ? `${off} Still mapped to ${mapped.join(", ")}. Take it off on Wiring if the wire came off too.`
             : off,
           mapped.length ? "warning" : "success"
         );
@@ -450,7 +570,7 @@
       return;
     }
     if (actId === "wire") {
-      giveItAnOutput(pick.offButMapped ? pick.wiredPart : pick.unwired[0] || pick.marker.parts[0], pick.offButMapped);
+      if (pick.offButMapped && partById.has(pick.wiredPart)) P.routeToOutput(pick.wiredPart, { off: true });
       return;
     }
     if (actId !== "toggle" || !pick.acts.toggle.enabled) return;
@@ -464,6 +584,9 @@
 
   if (view && drawingHost && railHost) {
     panel = view.mountPanel(railHost, { acts: ACTS, onAct: runAct });
+    panel.slot.addEventListener("click", () => {
+      sayOn = feedback;
+    }, true);
     drawing = view.mountDrawing(drawingHost, {
       parts: catalog.parts,
       art: window.BodyArt,

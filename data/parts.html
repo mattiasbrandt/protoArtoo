@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/dome_bearing.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/dome_panel_model.js,/body_art.js,/body_view.js,/outputs.js,/parts_mapping.js,/droid_picture.js,/parts.js">
+<html lang="en" data-scripts="/web_api.js,/overlay.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/dome_bearing.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/dome_panel_model.js,/body_art.js,/body_view.js,/outputs.js,/parts_mapping.js,/droid_picture.js,/parts.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,11 +16,12 @@
     <div class="title">
       <div>
         <h1>Parts</h1>
-        <!-- A moved thing leaves a forwarding address. Calibration, Find by
-             moving and back to centre went to Servos with the output table
-             (operator, 2026-09-19 on #412), and the part-first picker went to
-             Wiring (operator, 2026-09-28 on #411). -->
-        <p class="forward">Put a part on an output on <a href="#wiring">Wiring</a>. Calibrate an output and find which one moves a part on <a href="#servo">Servos</a>.</p>
+        <!-- A moved thing leaves a forwarding address. Calibration and back to
+             centre went to Servos with the output table (operator, 2026-09-19
+             on #412); the parts wiring table and Find by Moving are on Wiring
+             (#411, #463). A Part's output is picked here too, in the panel
+             and on each Unused row (operator, 2026-10-04 on #463). -->
+        <p class="forward">Every wire and Find by Moving on <a href="#wiring">Wiring</a>. Calibrate an output on <a href="#servo">Servos</a>.</p>
       </div>
     </div>
 
@@ -40,16 +41,30 @@
     </div>
 
     <!-- Unused: the Parts no Output claims, moved here from Wiring (operator,
-         2026-09-28 on #411). Each row's act routes to the Part's row in the
-         picker on Wiring, the same route as the picture's "Give it an
-         output". Written by data/parts.js. -->
+         2026-09-28 on #411). Each row carries the Output bar the picture's
+         panel and Wiring's table carry (data/parts_mapping.js
+         outputChooser(); operator, 2026-10-04 on #463). Written by
+         data/parts.js. -->
     <div class="card">
       <div class="sect">
         <h2>Unused</h2>
         <span class="sub waiting" id="parts-unused-summary" role="status" aria-live="polite"></span>
       </div>
       <div id="parts-unused"></div>
+      <p class="feedback" id="parts-unused-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
     </div>
+
+    <!-- The move question, asked before a Part is taken off another Output
+         (#347): the same question Wiring and Servos ask, worded by
+         data/parts_mapping.js announcement(). -->
+    <dialog class="question-dialog" id="parts-move-dialog" role="alertdialog" aria-labelledby="parts-move-title" aria-describedby="parts-move-body">
+      <h4 class="move-title" id="parts-move-title"></h4>
+      <p class="move-body" id="parts-move-body"></p>
+      <div class="button-row">
+        <button class="btn move-cancel icon-act act-keeps-words" type="button" id="parts-move-cancel"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-close"/></svg><span class="act-label"></span></button>
+        <button class="btn accent move-confirm icon-act act-keeps-words" type="button" id="parts-move-confirm"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-transfer"/></svg><span class="act-label"></span></button>
+      </div>
+    </dialog>
 
   </body>
 </html>
