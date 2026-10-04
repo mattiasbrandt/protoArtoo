@@ -262,6 +262,8 @@
   const trackNumberNote = document.getElementById("track-number-note");
   const chirpCatalogCard = document.getElementById("chirp-catalog-card");
   const catalogSub = document.getElementById("catalog-sub");
+  const catalogRepointBar = document.getElementById("catalog-repoint");
+  const catalogRepointText = document.getElementById("catalog-repoint-text");
   const catalogRows = document.getElementById("catalog-rows");
   const catalogStatus = document.getElementById("catalog-status");
   const catalogLimits = document.getElementById("catalog-limits");
@@ -315,7 +317,9 @@
   // The Named Track the builder is re-pointing from its row, whose key every
   // catalog row's target then starts on; null when none is.
   let catalogRepointKey = null;
-  let catalogRepointLine = "";
+  // The bank tab that was showing before a re-point chose its own, which
+  // Cancel puts back.
+  let catalogRepointPriorFilter = "";
   let chirpCategoryBindings = {};
   const catalogSelectedKeys = new Set();
   let catalogCategoryRanges = [];
@@ -346,9 +350,8 @@
     setModeButtonState(soundModeCompactBtn, normalizedMode === SOUND_VIEW_MODE_COMPACT);
 
     if (soundModeFeedback) {
-      soundModeFeedback.textContent = normalizedMode === SOUND_VIEW_MODE_COMPACT
-        ? "Advanced tuning hidden."
-        : "";
+      // The lit Compact button says which workspace this is; nothing to add.
+      soundModeFeedback.textContent = "";
     }
 
     if (!persist) return;
@@ -463,9 +466,12 @@
       catalogSelectedKeys.clear();
       chirpCategoryBindings = {};
       catalogSuggestedCategoryMappings = [];
-      if (catalogRows) catalogRows.innerHTML = "";
-      if (catalogBankTabs) catalogBankTabs.innerHTML = "";
+      // No wipe of the rows or the tabs here: this runs on every status read,
+      // and the table is redrawn only when the answer changes, so a wipe took
+      // the "cannot list" line away on the second read. The render functions
+      // clear before they draw.
       if (catalogBulkTarget) catalogBulkTarget.value = "";
+      endNamedTrackRepoint();
       if (catalogStatus) {
         delete catalogStatus.dataset.baseText;
         catalogStatus.textContent = "";
@@ -851,15 +857,30 @@
       return;
     }
     const binding = getSlotBinding(key);
+    if (!catalogRepointKey) catalogRepointPriorFilter = catalogBankFilter;
     catalogRepointKey = key;
     const pageKey = binding ? catalogBankPageKey(binding.bank, binding.page) : "";
     catalogBankFilter = catalogBanks.some((bankRow) =>
       catalogBankPageKey(bankRow?.bank, bankRow?.page) === pageKey) ? pageKey : "";
+    // A typed filter could hide every row of that bank under the instruction.
+    if (catalogFilterInput) catalogFilterInput.value = "";
+    if (catalogRepointText) catalogRepointText.textContent = `Pick the sound for ${label}, then Map.`;
+    setElementVisible(catalogRepointBar, true);
     renderCatalogBankTabs();
     renderCatalogRows();
-    catalogRepointLine = `Pick the sound for ${label}, then Map.`;
-    showFeedback(catalogFeedback, catalogRepointLine, null, 0);
     chirpCatalogCard?.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+
+  // Ends a re-point: by Cancel, which puts back the bank tab it changed, or by
+  // the track being resolved, which leaves the builder where they are.
+  const endNamedTrackRepoint = ({ restoreFilter = false } = {}) => {
+    if (!catalogRepointKey) return;
+    catalogRepointKey = null;
+    if (restoreFilter) catalogBankFilter = catalogRepointPriorFilter;
+    catalogRepointPriorFilter = "";
+    setElementVisible(catalogRepointBar, false);
+    renderCatalogBankTabs();
+    renderCatalogRows();
   };
 
   const catalogEntryKey = (entry) => {
@@ -942,7 +963,7 @@
       }
       const key = target.slice(SLOT_TARGET_PREFIX.length);
       const ok = await postTrack(key, index, feedbackEl || catalogFeedback, { bank, page });
-      if (ok && key === catalogRepointKey) catalogRepointKey = null;
+      if (ok && key === catalogRepointKey) endNamedTrackRepoint();
       return ok;
     }
 
@@ -1684,8 +1705,12 @@
             const bank1PageCount = catalogBanks.filter((bankRow) =>
               Number.parseInt(String(bankRow?.bank ?? "0"), 10) === 1
             ).length;
+            // A bank's pages are rows of their own here (B2A, B2B); the count
+            // is of banks.
+            const bankCount = new Set(catalogBanks.map((bankRow) =>
+              Number.parseInt(String(bankRow?.bank ?? "0"), 10))).size;
             let statusText = `${countOf(catalogEntries.length, "sound", "sounds")} in ` +
-              `${countOf(catalogBanks.length, "bank", "banks")}.`;
+              `${countOf(bankCount, "bank", "banks")}.`;
             if (bank1PageCount === 1) {
               statusText += " CHIRP reports one active Bank 1 page per refresh.";
             }
@@ -1787,9 +1812,13 @@
       catalogRefreshInFlight = false;
       setCatalogActionLock(false);
       if (!catalogReady && catalogStatus) {
+        delete catalogStatus.dataset.baseText;
         catalogStatus.textContent = "";
       }
-      renderCatalogRows();
+      // Whether each Named Track's file changed is worked out against the
+      // catalog as it stands when the tracks are read, so a walk that may have
+      // found a different card is followed by a fresh read of them.
+      await loadTracks();
     }
   };
 
@@ -2297,11 +2326,7 @@
       // that came about: Keep, a Map from any row, a restore. Left standing, the
       // preset target would bind the next Map pressed to the wrong track.
       if (catalogRepointKey && getSlotBinding(catalogRepointKey)?.file !== "changed") {
-        catalogRepointKey = null;
-        if (catalogFeedback?.textContent === catalogRepointLine) {
-          showFeedback(catalogFeedback, "", null, 0);
-        }
-        catalogRepointLine = "";
+        endNamedTrackRepoint();
       }
       NAMED_SOUNDS.forEach((sound) => {
         if (!sound.editable || !sound.key) return;
@@ -2452,6 +2477,10 @@
 
   catalogFilterInput?.addEventListener("input", () => {
     renderCatalogRows();
+  });
+
+  document.getElementById("btn-catalog-repoint-cancel")?.addEventListener("click", () => {
+    endNamedTrackRepoint({ restoreFilter: true });
   });
 
   catalogRefreshBtn?.addEventListener("click", async () => {

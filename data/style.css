@@ -3928,9 +3928,11 @@ label.sound-search-field {
 }
 
 /* A row's answer takes room only while it says something: the reserved line
-   sat under every row's acts and lifted them off the row's centre. */
+   sat under every row's acts and lifted them off the row's centre. Collapsed,
+   never display:none - it is a live region, and one that is not rendered when
+   its text lands is often not announced. */
 .sound-feedback-inline:empty {
-  display: none;
+  margin-top: 0;
 }
 
 .sound-category-hint {
@@ -4027,6 +4029,15 @@ label.sound-search-field {
 
 #catalog-status:empty {
   display: none;
+}
+
+/* A re-point under way: the instruction and its way out, on one line. */
+.catalog-repoint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-dim);
+  font-size: var(--fs-cell);
 }
 
   .catalog-bulk-bar {
