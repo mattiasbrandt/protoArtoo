@@ -20,7 +20,7 @@ const assert = require('assert');
 
 const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
 const FIXTURE = process.env.FIXTURE === '1';
-const HEADLESS = process.env.HEADLESS === 'true';
+const HEADLESS = process.env.HEADLESS !== 'false';
 const SETTLE_MS = Number(process.env.SETTLE_MS || 3000);
 
 /**
