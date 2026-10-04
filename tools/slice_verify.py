@@ -53,7 +53,7 @@ fail the native suite, the build budget or the task stack chains, so those
 rows print SKIP (web-only diff). The firmware compile stays: it is also the
 staging check, because tools/gzip_fsdata.py runs on every `pio run`, minifies
 every data/ JS and CSS file through esbuild and resolves the HTML includes -
-the only syntax check some data/ files get (no web test opens diagnostics.js).
+the only syntax check a data/ file that no web test opens gets.
 Web-only is derived from the diff and printed in the block; there is no flag
 for it.
 
@@ -1327,9 +1327,8 @@ def main() -> int:
     # The firmware compile is also the staging check: tools/gzip_fsdata.py is a
     # pre: extra script that runs on every `pio run`, minifying every data/ JS
     # and CSS file through esbuild (a syntax error fails the build) and
-    # resolving the HTML includes. Some data/ files are opened by no web test
-    # at all - diagnostics.js, dome_layout_render.js - and this is their only
-    # check, so a web-only diff keeps this row.
+    # resolving the HTML includes. A data/ file that no web test opens has no
+    # other check, so a web-only diff keeps this row.
     #
     # Not `-t buildfs`, which #405 specified for web-only diffs: measured
     # 2026-09-18 in a fresh worktree, buildfs entered the framework reinstall
