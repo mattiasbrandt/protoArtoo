@@ -366,7 +366,7 @@ class ContinuityModels(unittest.TestCase):
 
 
 class VerdictComposition(unittest.TestCase):
-    """The Run Verdict, in the words its Soak Drivers use (CONTEXT.md).
+    """The Run Verdict, in the words its Soak Drivers use (GLOSSARY.md).
 
     The strings are asserted as literals rather than through soak.VERDICT_*:
     a test that compared the constant with itself would pass whatever it was

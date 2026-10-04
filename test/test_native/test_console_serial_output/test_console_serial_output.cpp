@@ -815,7 +815,7 @@ void test_sustained_log_traffic_stays_bounded_per_line(void) {
 // 8. #276 - sustained Serial Backpressure is reported, never refused
 // =============================================================================
 //
-// The state (CONTEXT.md): a host is present on the wire but its transmit path
+// The state (GLOSSARY.md): a host is present on the wire but its transmit path
 // is not draining, so frames are dropped whole after their room-wait. The
 // sink counts consecutive such drops; the third owes one WARN to the Log
 // Ring naming it, and the next frame that reaches the wire after a room-wait

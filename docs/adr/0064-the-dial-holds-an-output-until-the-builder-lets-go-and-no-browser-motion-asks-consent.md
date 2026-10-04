@@ -63,7 +63,7 @@ keeps a bound from becoming an obstacle.
 **No browser-initiated servo motion asks for `Non-RC Control` consent** — the
 dial, **Find by Moving**, the timeline's pose press (ADR 0062) and the press on a
 **Body View** (ADR 0063) alike. One rule for all four, and it is the one the
-firmware already implements. ADR 0050, ADR 0062, ADR 0063 and `CONTEXT.md`'s
+firmware already implements. ADR 0050, ADR 0062, ADR 0063 and `GLOSSARY.md`'s
 **Find by Moving** are corrected with this ADR.
 
 ## Considered options
@@ -105,7 +105,7 @@ firmware already implements. ADR 0050, ADR 0062, ADR 0063 and `CONTEXT.md`'s
   the Part until it looks right, and hear whether a servo is fighting its linkage
   — because the Part keeps being driven while they look and listen, instead of
   going limp the moment it arrives.
-- **`Output Release` is no longer absolute.** Its `CONTEXT.md` entry said the hold
+- **`Output Release` is no longer absolute.** Its `GLOSSARY.md` entry said the hold
   after arrival is bounded so a jammed part cannot grind; the dial suppresses
   exactly that, and the two firmware bounds above replace it. Recorded there with
   this ADR.
@@ -114,7 +114,7 @@ firmware already implements. ADR 0050, ADR 0062, ADR 0063 and `CONTEXT.md`'s
 - **Estop and Sleep Mode are unchanged** and still release every Output at once.
   The suppression is a carve-out inside normal operation, never inside a stop.
 - **ADR 0050's Find by Moving clause, ADR 0062's pose-press consequence and ADR
-  0063's press decision are corrected in place**, along with `CONTEXT.md`'s **Find
+  0063's press decision are corrected in place**, along with `GLOSSARY.md`'s **Find
   by Moving**. All four said browser motion takes a consent that the firmware has
   never applied to `POST /api/servo`.
 - **#292's recorded gap is now a decision rather than a gap.** The reach of
@@ -129,4 +129,4 @@ firmware already implements. ADR 0050, ADR 0062, ADR 0063 and `CONTEXT.md`'s
 
 ## Amendment 2026-09-19: it lives on Servos
 
-The calibration dial moves from **Parts** to **Servos**, with the rest of Parts' Outputs section (the output-first table, *centre all*, the calibration dial and Find by Moving). Operator, #412: *"move bascially all of the "Outputs" section pieces to the "Servos" page. They all seem related to servo calibration"*. The behaviour this ADR decides is unchanged; only the page it sits on moves. See `CONTEXT.md` **Servos** and **Parts**.
+The calibration dial moves from **Parts** to **Servos**, with the rest of Parts' Outputs section (the output-first table, *centre all*, the calibration dial and Find by Moving). Operator, #412: *"move bascially all of the "Outputs" section pieces to the "Servos" page. They all seem related to servo calibration"*. The behaviour this ADR decides is unchanged; only the page it sits on moves. See `GLOSSARY.md` **Servos** and **Parts**.

@@ -163,10 +163,10 @@ of colour on this surface.
   panel names the next move and offers it, so a dimmed part on this surface never
   stops at *no*. ADR 0062 needed the exemption because the timeline has no such
   panel; this one does.
-- **`CONTEXT.md` **Part Kind** said it *"colours a surface"*, which #327's palette
+- **`GLOSSARY.md` **Part Kind** said it *"colours a surface"*, which #327's palette
   rule contradicts.** Corrected to treatment with this ADR; #320 wrote it three
   hours before #327 landed and it was never revised.
-- **`CONTEXT.md` **Fitted Parts** said *"clicking an unfitted Part adds it"*.**
+- **`GLOSSARY.md` **Fitted Parts** said *"clicking an unfitted Part adds it"*.**
   Adding stays; it becomes a named action in the selection panel rather than a
   meaning attached to the click. Corrected with this ADR.
 - **Rotation is dome-only.** ADR 0051's amendment already settled it — *"a body

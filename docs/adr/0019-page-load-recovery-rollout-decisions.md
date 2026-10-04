@@ -15,7 +15,7 @@ logic and left "1 or 2 for real" open. Decision: **narrow to one**. #54's own ev
 showed that even 2-3 concurrent requests is exactly the load that trips the heap-floor
 and inflight-cap admission checks on this board -- the two-request concurrency was
 contributing to the pressure this epic exists to reduce, for payloads too small for
-parallelism to meaningfully help. Matches CONTEXT.md's existing Bounded Page Attempt
+parallelism to meaningfully help. Matches GLOSSARY.md's existing Bounded Page Attempt
 wording ("a visible tab has at most one active attempt"). `/api/events` stays outside
 this accounting; it is long-lived, not part of the per-request slot machinery.
 

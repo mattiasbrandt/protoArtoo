@@ -38,7 +38,7 @@ relevant to the module you were about to touch.
 
 1. A dated operator decision: an issue comment, an ADR, `AGENTS.md`.
 2. `tasks/research-r2d2-*`, the design source.
-3. `CONTEXT.md` and `docs/adr/`, the model as it stands. These record decisions
+3. `GLOSSARY.md` and `docs/adr/`, the model as it stands. These record decisions
    already taken; they do not fence off decisions not yet taken.
 4. The implementation.
 
@@ -130,7 +130,7 @@ arrives with the decision.
 
 The operator is choosing the **structure**, not the words. A name that appears
 only in a label or a description has never been put to them, and treating a
-selection as agreement to it is how invented vocabulary reaches `CONTEXT.md`.
+selection as agreement to it is how invented vocabulary reaches `GLOSSARY.md`.
 
 Write options in words that already exist - the ledger's terms, and the labels
 the shipped surface already uses. If a decision genuinely needs a new name, that
@@ -140,7 +140,7 @@ copy tweak.*
 
 ## Documentation
 
-`domain-modeling`'s rules stand: update `CONTEXT.md` inline as terms resolve,
+`domain-modeling`'s rules stand: update `GLOSSARY.md` inline as terms resolve,
 keep it a glossary and nothing else, and offer an ADR only when the decision is
 hard to reverse, surprising without context, and the result of a real trade-off.
 

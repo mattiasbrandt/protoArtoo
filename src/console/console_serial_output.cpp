@@ -69,7 +69,7 @@ static const char* const TAG = "ConsoleTask";
 static bool s_cdcDropProbeArmed = true;
 #endif
 
-// Serial Backpressure (CONTEXT.md, #276): the run of consecutive frames
+// Serial Backpressure (GLOSSARY.md, #276): the run of consecutive frames
 // dropped after their room-wait while `Serial` read a host present -- a host
 // that is attached but whose transmit path is not draining. Kept beside the
 // probe above because it is the same drop event told differently: the probe
@@ -444,7 +444,7 @@ static bool writeFrameCounted(const char* bytes, size_t len, bool waitForRoom,
         }
         // Read once, so the drop below is classified by the same answer that
         // decided it: a host present whose room never cleared is Serial
-        // Backpressure; no host at all is the detached state (CONTEXT.md).
+        // Backpressure; no host at all is the detached state (GLOSSARY.md).
         const bool hostPresent = static_cast<bool>(Serial);
         if (!hostPresent || Serial.availableForWrite() < (int)reserve) {
             // Room never cleared (or the host was never connected to begin

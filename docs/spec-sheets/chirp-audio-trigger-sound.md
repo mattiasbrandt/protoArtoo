@@ -41,7 +41,7 @@ test that would settle them.
 > This is not a hypothetical collision. Both live in the same repository:
 > upstream `origin/main` carries `CHIRP_Audio_Trigger/` and
 > `CHIRP_Droid_Control/` side by side, and the repository README gives each its
-> own heading. CONTEXT.md's Flagged Ambiguities records the resolution
+> own heading. GLOSSARY.md's Flagged Ambiguities records the resolution
 > (operator, 2026-09-08): **always qualify the audio module in operator copy and
 > in any lineup, never bare.** Internal identifiers (`chirpVol`, `audio_chirp`,
 > `make ota-chirp`, the `chr_*` NVS keys) keep the short form -- they are
@@ -1425,7 +1425,7 @@ and dependent work stops.
 - `include/config.h`, `docs/pin_map.md`
 - `data/sound.js`, `src/web/api_audio.cpp`
 - `docs/sound_playback.md` Section 2.2, `docs/action-registry.yaml`
-- `CONTEXT.md` Flagged Ambiguities (2026-09-08) -- the naming resolution
+- `GLOSSARY.md` Flagged Ambiguities (2026-09-08) -- the naming resolution
 - `CHANGELOG.md` -- the shared-UART and heap-exhaustion history
 - ADR 0042 (runtime Component Member selection), ADR 0054 (a second sound lane)
 - `~/Dropbox/R2-CHIRP/CHIRP-SD.zip` and its `CHIRP.INI` -- the deployed card

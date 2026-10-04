@@ -39,7 +39,7 @@ struct WiFiConnectivityFields {
 //
 // uptimeMs/resetReason (#225): read by the Survival Path - the serial
 // Console, the one operator surface that answers when HTTP admission refuses
-// everything (CONTEXT.md). They are ALSO served here over /api/health, which
+// everything (GLOSSARY.md). They are ALSO served here over /api/health, which
 // is an ordinary endpoint behind the ordinary admission floor and is shed
 // before /api/status: webPathIsDiagnostic() (src/web/web_admission.cpp) names
 // the paths that get the lower Diagnostic Floor, and /api/health is not one of

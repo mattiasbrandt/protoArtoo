@@ -19,7 +19,7 @@ meaningful physical label for a subsystem (e.g., artoo_esp32's "S1"
 silkscreen), that label is declared once per board in a new
 `include/component_labels.inc` manifest and shown to the operator as
 supplementary detail (a tooltip), never as the toggle's canonical name —
-this per-board label is the new **Board Component Label** term (CONTEXT.md).
+this per-board label is the new **Board Component Label** term (GLOSSARY.md).
 
 ## Renames
 
@@ -27,7 +27,7 @@ this per-board label is the new **Board Component Label** term (CONTEXT.md).
 |---|---|---|---|
 | `enable_s1_hoverboard` / `en_s1` / `system.config.enable_s1_hoverboard` | `enable_drive` / `en_drive` / `system.config.enable_drive` | Drive | Not "Hoverboard Drive": matches `docs/goal.md`'s stated direction toward protocol-contract compatibility over vendor lock, and the wider R2-builder convention of naming this function by role. |
 | `enable_s2_sound` / `en_s2` / `system.config.enable_s2_sound` | `enable_audio` / `en_audio` / `system.config.enable_audio` | Audio | Matches the project's existing Audio Config Map / Audio Step Core vocabulary. |
-| `enable_s3_dome_ctrl` / `en_s3` / `system.config.enable_s3_dome_ctrl` | `enable_protor2link` / `en_r2link` / `system.config.enable_protor2link` | protoR2link | The toggle gates the entire `domeLinkTask` (`src/tasks/dome_link.cpp:761`) — both transports die together when it's off. CONTEXT.md already lists "dome link" under `_Avoid_` in favor of this exact term. |
+| `enable_s3_dome_ctrl` / `en_s3` / `system.config.enable_s3_dome_ctrl` | `enable_protor2link` / `en_r2link` / `system.config.enable_protor2link` | protoR2link | The toggle gates the entire `domeLinkTask` (`src/tasks/dome_link.cpp:761`) — both transports die together when it's off. GLOSSARY.md already lists "dome link" under `_Avoid_` in favor of this exact term. |
 | `enable_dome` / `en_dome` / `system.config.enable_dome` | `enable_dome_esc` / `en_dome_esc` / `system.config.enable_dome_esc` | Dome ESC | Grouped separately from protoR2link — the two are unrelated (one is a body-side motor actuator, the other a communications link) — to stop "dome" doing overloaded duty across rotation, the body-dome link, and dome panels/sequences. |
 | `rc_sound` / `rc_pwm_sound` / `rc_sbus_sound` (NVS `rc_sound` / `rcp_snd` / `rcs_snd`) | `rc_audio` / `rc_pwm_audio` / `rc_sbus_audio` (NVS `rc_aud` / `rcp_aud` / `rcs_aud`) | — | Follows the Audio rename in lockstep; the RC-trigger-binding struct mirrors the same component identity one layer down. |
 
@@ -68,7 +68,7 @@ Channels.
 
 ## Consequences
 
-- CONTEXT.md gains **Board Component Label**.
+- GLOSSARY.md gains **Board Component Label**.
 - `include/component_labels.inc` is a new manifest, following the X-macro
   precedent `board_capabilities.inc`/`build_flags.inc` set in #186;
   firebeetle2 entries may be absent where no established label exists.
@@ -84,7 +84,7 @@ firmware spoke the new vocabulary internally while `/api/config` and
 `/api/status` still answered `s1Hoverboard`, `s2Sound`, `s3DomeCtrl`.
 
 **The API surface is part of component identity, not plumbing behind it.**
-`CONTEXT.md` defines the concept itself in terms of the API path — *"a runtime
+`GLOSSARY.md` defines the concept itself in terms of the API path — *"a runtime
 `components.*` setting"* — so the JSON key is the concept's operator-facing
 name. Leaving it unchanged would not decouple identity from the artoo.uk
 silkscreen; it would move the silkscreen one layer outward, onto the most-read
@@ -141,7 +141,7 @@ and the link's own setting sits under the link's own name.
 - **Freezing the API names as a compatibility surface** — rejected: there is no
   released API version and no versioning or deprecation convention in this
   project, and no consumer outside this repository. It would also make
-  CONTEXT.md's definition of **Component Toggle** inaccurate, since that
+  GLOSSARY.md's definition of **Component Toggle** inaccurate, since that
   definition is stated in terms of `components.*`.
 - **Emitting both old and new keys for a release** — rejected on the same
   reasoning this ticket already rejected a permanent dual-read for the NVS
@@ -158,7 +158,7 @@ and the link's own setting sits under the link's own name.
 - This is a **breaking API change**, taken deliberately and without a
   compatibility window. A browser tab open across the upgrade reads the old
   keys and renders components as absent until reloaded.
-- `CONTEXT.md`'s list of surfaces that are generic project vocabulary gains
+- `GLOSSARY.md`'s list of surfaces that are generic project vocabulary gains
   **JSON API key**.
 - Blast radius: 2 firmware files emitting (`src/web/api_config.cpp`,
   `src/web/web_server.cpp`), 4 UI files consuming (`data/app.js`,

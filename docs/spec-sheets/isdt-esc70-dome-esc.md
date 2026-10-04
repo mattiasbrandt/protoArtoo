@@ -74,7 +74,7 @@ driven by a serial protocol that needs a UART artoo-esp32 does not have spare.
 an ISDT ESC70 over LEDC. A SyRen in R/C mode plugs into that pin with no new code
 at all."*
 
-It is a **Dome ESC** in `CONTEXT.md`'s vocabulary -- the thing that turns the dome
+It is a **Dome ESC** in `GLOSSARY.md`'s vocabulary -- the thing that turns the dome
 -- and not a **Dome Controller**, which is the dome's own board that protoArtoo
 talks to over the slip ring.
 
@@ -1236,7 +1236,7 @@ id `isdt_esc70`, name *"ISDT ESC70 (RC ESC)"*, category
 
 All correct, and two of them deliberately so:
 
-- **`ledc` is a real Component Protocol under `CONTEXT.md`'s own test** -- *"whether
+- **`ledc` is a real Component Protocol under `GLOSSARY.md`'s own test** -- *"whether
   it changes the driver"*. An RC-PWM ESC and a packet-serial motor driver are
   different drivers, and the SyRen row's `de_packet_serial` is the proof.
 - **Capabilities `0` is the honest word here**, and it means *"nothing to ask"*
@@ -1319,7 +1319,7 @@ All correct, and two of them deliberately so:
   `src/tasks/rc_input.cpp`, `include/console_direct_action_dome.h`
 - `data/dome.html`
 - `test/test_native/test_dome_math/` (14 tests)
-- `docs/pin_map.md`, `docs/failsafe.md`, `CONTEXT.md`, `CHANGELOG.md`
+- `docs/pin_map.md`, `docs/failsafe.md`, `GLOSSARY.md`, `CHANGELOG.md`
 - `tasks/lessons.md` (two dome entries), `tasks/phase3-tasks.md`,
   `tasks/phase4-tasks.md`, `tasks/phase4_hardware_validation_deferral.md`
 - [`sabertooth-syren-packet-serial.md`](sabertooth-syren-packet-serial.md),

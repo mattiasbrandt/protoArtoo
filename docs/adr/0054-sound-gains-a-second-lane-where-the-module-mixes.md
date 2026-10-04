@@ -7,7 +7,7 @@ Sound page shows Named Tracks over the module's address, a changed file for the
 builder to resolve, and the catalog card kept on a module that cannot list.
 
 **Renamed 2026-10-03 (operator, #447):** the **Sound Bed** of this record is now
-the **Background Track** (`CONTEXT.md`). The text below keeps the word it was
+the **Background Track** (`GLOSSARY.md`). The text below keeps the word it was
 decided in.
 
 ## Context

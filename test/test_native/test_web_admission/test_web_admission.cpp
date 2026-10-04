@@ -499,7 +499,7 @@ void test_busy_response_is_a_self_contained_page() {
 }
 
 void test_busy_response_tells_the_operator_it_is_busy_and_offers_a_retry() {
-    // CONTEXT.md reserves "Controller busy" for an explicit refusal, which is
+    // GLOSSARY.md reserves "Controller busy" for an explicit refusal, which is
     // exactly what this response is; and Page Recovery View requires a working
     // Retry now action that does not depend on the failed resources.
     TEST_ASSERT_NOT_NULL(strstr(kBusyRecoveryResponse, "Controller busy"));

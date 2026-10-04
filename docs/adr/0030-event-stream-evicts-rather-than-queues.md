@@ -49,7 +49,7 @@ excuse that lets a slow reader hold the stream open indefinitely.
   than prevents the blackout for the single operator who is the one stalling.
   Rejected on the operator profile, not on cost.
 - **Rapid polling instead of a long-lived connection** — explicitly ruled out
-  by the `Live Page Updates` term in `CONTEXT.md`. Rejected.
+  by the `Live Page Updates` term in `GLOSSARY.md`. Rejected.
 
 ## Consequences
 

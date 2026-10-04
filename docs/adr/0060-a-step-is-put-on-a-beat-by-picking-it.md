@@ -117,7 +117,7 @@ is a time and not a pixel count.**
   a time, and the beat expression resolves to one. Raising the tempo can produce a
   Rehearsal Warning on a move that was fine before, which is correct and needs
   saying in the copy.
-- A **Gesture** gains a repeat interval and an extent. `CONTEXT.md`'s entry moves.
+- A **Gesture** gains a repeat interval and an extent. `GLOSSARY.md`'s entry moves.
 - No snap-mode setting exists, so nothing needs persisting or explaining. The
   reference persists `PREFS.seqSnap` and has four labels for three behaviours, one
   of which ("Off / manual") still quantises to 10 ms.

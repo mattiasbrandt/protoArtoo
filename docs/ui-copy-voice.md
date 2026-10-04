@@ -56,7 +56,7 @@ knowledge get this on first read?** If not, rewrite it before shipping.
    confusion** — not in separate paragraphs a reader must assemble.
    `Saving keeps the sequence in your library. Put on the droid is what
    decides which sequences it can actually fire.`
-   *(`CONTEXT.md`'s Flagged Ambiguities ledger exists because this recurs.)*
+   *(`GLOSSARY.md`'s Flagged Ambiguities ledger exists because this recurs.)*
 
 10. **A warning opens with the fact, and the consequence is physical and
     specific** — never "may cause damage". This sharpens rules 1 and 5.
@@ -104,7 +104,7 @@ endpoint-typed versus endpoint-measured, saved-but-not-yet-applied.
 - One name per concept, everywhere: UI, docs, API descriptions, and release
   notes agree. Renames are a real change, not a copy tweak.
 - This file carries the *rules*, not the word list. Operator terms and any
-  collision between two meanings of a word are written in `CONTEXT.md`
+  collision between two meanings of a word are written in `GLOSSARY.md`
   (Language, and the Flagged Ambiguities ledger) - whichever audience the
   word started in. Do not start a second glossary here.
 - Part names follow `docs/droid-parts.yaml`: design part names as the base,
@@ -126,7 +126,7 @@ reviewed (ADR 0059):
   populated by convention;
 - a raw identifier reaches a surface only through a **mapping table**, so the
   code cannot print the identifier;
-- the backticked entries in `CONTEXT.md`'s `_Avoid_` lines are **greppable**,
+- the backticked entries in `GLOSSARY.md`'s `_Avoid_` lines are **greppable**,
   and a vocabulary checker reports them.
 
 What remains for the gate is what no grep can judge: whether a sentence names

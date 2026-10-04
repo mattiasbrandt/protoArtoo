@@ -10,7 +10,7 @@ watchdog never touch WiFi, so *the worst hosted-WiFi failure is a web UI
 outage*. Both could not stand.
 
 We decided the premise is binding, and stated it as **Network-Optional
-Operation** (CONTEXT.md):
+Operation** (GLOSSARY.md):
 
 - **A network fault never restarts the controller and never degrades a droid
   function.** Network-backend recovery is bounded and stays at the backend

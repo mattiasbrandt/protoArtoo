@@ -295,7 +295,7 @@ is the same thing that makes it undocumented.
   `34`/`36` rows on FireBeetle 2.
 - **[`docs/api.md`](../api.md)** -- `GET /api/audio`, whose worked example is a
   DY-SV5W response.
-- **`CONTEXT.md`** -- **Component Protocol**, **Component Member**, **Component
+- **`GLOSSARY.md`** -- **Component Protocol**, **Component Member**, **Component
   Registry**, **Audio Step Core**, **Background Track**.
 - **[ADR 0042](../adr/0042-component-families-are-selected-at-runtime-where-the-board-offers-a-choice.md)**
   -- the Component Member rule that made this module a runtime choice rather than
@@ -1175,7 +1175,7 @@ on a slider, and the module's own step commands report nothing back.
 
 The one genuinely interesting omission is **`0x16` interlude**: play a sound *over*
 the current one, then return to it. That is the shape of the **Background Track**
-(`CONTEXT.md`), and `CONTEXT.md` currently records the DY-SV5W as one of *"the
+(`GLOSSARY.md`), and `GLOSSARY.md` currently records the DY-SV5W as one of *"the
 single-track modules"* a Background Track contrasts itself with. The vendor's own note, quoted
 through `dyplayer`, says *"'Music interlude' only has level 1"* -- one interlude,
 covering the previous one -- so it is not mixing and it would not give a Background Track its
@@ -1634,7 +1634,7 @@ the comment would have been wrong. The other two worked examples in that header
 
 ### 17.3 REPORTED -- the registry's protocol token names a transport, and one board contradicts it
 
-Row 18 declares the Component Protocol `soft_uart_binary`. `CONTEXT.md`'s own
+Row 18 declares the Component Protocol `soft_uart_binary`. `GLOSSARY.md`'s own
 definition of the term rejects that shape explicitly:
 
 > **Component Protocol**: *"The wire contract firmware speaks to a Component
@@ -1761,7 +1761,7 @@ discharged. Corrected to point at this sheet.
 | 9 | **exFAT** | Format a 32 GB card exFAT and see whether `0x09` reports a device. Expected: no. Worth one test because "no card" and "module missing" look the same to an operator |
 | 10 | **Compare `0x0C` against the configuration at boot** (Section 10.4 rule 5) | Firmware change, not a measurement: log or surface a mismatch between the module's track count and the highest configured track. Cheapest possible detection of a card rebuilt wrong |
 | 11 | **Play-by-path (`0x08`) as an escape from enumeration order** (Section 10.5) | Prototype against a card with 8.3 names; measure whether name-stable addressing is worth the frame and naming cost |
-| 12 | **Interlude (`0x16`) versus the Background Track** (Section 11.5) | Read the vendor's "level 1 only" note against `CONTEXT.md`'s Background Track before anyone proposes this module can mix. Expected answer: it cannot |
+| 12 | **Interlude (`0x16`) versus the Background Track** (Section 11.5) | Read the vendor's "level 1 only" note against `GLOSSARY.md`'s Background Track before anyone proposes this module can mix. Expected answer: it cannot |
 | 13 | **FireBeetle 2 / ESP32-P4 hardware run** (Section 14.4) | Everything in Section 12.1 about that board is read from code. The module has never been run on it |
 | 14 | **Phase 5 audio edge cases HW1.5-HW1.14** | Already scoped in `tasks/phase5_hardware_validation_deferral.md`; the module was not installed during that bench session |
 
@@ -1810,7 +1810,7 @@ discharged. Corrected to point at this sheet.
 - `test/test_native/test_audio_frames/`, `test_audio_io_seam/`,
   `test_component_registry/`, `test_audio_sound_member/`
 - `docs/sound_playback.md`, `docs/pin_map.md`, `docs/api.md`, `docs/goal.md`,
-  `docs/status.md`, `CONTEXT.md`, `CHANGELOG.md`, ADR 0042
+  `docs/status.md`, `GLOSSARY.md`, `CHANGELOG.md`, ADR 0042
 - `tasks/lessons.md` (three DY-SV5W entries),
   `tasks/phase4_hardware_validation_deferral.md`,
   `tasks/phase5_hardware_validation_deferral.md`,

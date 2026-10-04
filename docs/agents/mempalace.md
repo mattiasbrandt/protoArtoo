@@ -19,7 +19,7 @@ palace's single writer lease, which is palace-wide and therefore binds every
 worktree. It is expected, not a fault of yours: reads and the logstream tools
 still work, and hook auto-save still works because it routes through the
 daemon's queue. Do not retry, do not shell out to the CLI, do not work around
-it. Put what must survive on the sub-issue, in `CONTEXT.md` or in `docs/adr/`.
+it. Put what must survive on the sub-issue, in `GLOSSARY.md` or in `docs/adr/`.
 
 ## Session start
 
@@ -52,7 +52,7 @@ it. Put what must survive on the sub-issue, in `CONTEXT.md` or in `docs/adr/`.
 > **Expect this to be refused.** While the daemon runs, every mutating tool
 > returns `-32001` (see above). The advice below is what to save *when a write
 > succeeds* - it is not a step to retry until it does, and a refusal is not a
-> reason to keep the finding out of the issue, `CONTEXT.md` or `docs/adr/`.
+> reason to keep the finding out of the issue, `GLOSSARY.md` or `docs/adr/`.
 
 - Use `mempalace_add_drawer` to persist significant findings, decisions, or
   constraints discovered during a session.

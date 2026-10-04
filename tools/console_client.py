@@ -2,7 +2,7 @@
 # =============================================================================
 # tools/console_client.py  (formerly tools/serial_monitor.py)
 #
-# The Console Client (CONTEXT.md) for protoArtoo ESP32 bench verification: the
+# The Console Client (GLOSSARY.md) for protoArtoo ESP32 bench verification: the
 # boot-log capture every epic uses, the interactive serial terminal an operator
 # sits at, and the scripted mode a bench day and its agents drive -- on either
 # Console Adapter (docs/console-protocol.md), one host program, no shim.

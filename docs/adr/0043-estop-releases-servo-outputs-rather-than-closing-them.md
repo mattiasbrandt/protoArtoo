@@ -100,7 +100,7 @@ member for a board with no expander fitted (ADR 0042).
   choose a position, so `getOpenClosePositions()` is not consulted.
 - The sequence-only early-return goes: a release iterates every output.
 - Sleep Mode and estop share the release path, as they already share the park
-  path, but they remain distinct states — see CONTEXT.md's "sleep" ambiguity entry.
+  path, but they remain distinct states — see GLOSSARY.md's "sleep" ambiguity entry.
 - A released panel's resting position is whatever gravity and friction decide.
   Operator-facing copy must say so plainly rather than implying the droid parks
   itself; that wording is #298's.

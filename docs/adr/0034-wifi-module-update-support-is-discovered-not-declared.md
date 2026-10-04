@@ -11,7 +11,7 @@ wrapper. This departs from two documented rules, and both departures are deliber
 
 ## Why it is discovered rather than declared
 
-`CONTEXT.md`'s **Feature Availability** is explicit that availability is *"declared by the
+`GLOSSARY.md`'s **Feature Availability** is explicit that availability is *"declared by the
 image and reported to the browser once; it is never discovered by probing endpoints"*, and
 its `_Avoid_` list names *"endpoint probing, feature detection"*. That rule exists to stop
 us probing **our own** features, which we compile and can therefore simply declare. It has

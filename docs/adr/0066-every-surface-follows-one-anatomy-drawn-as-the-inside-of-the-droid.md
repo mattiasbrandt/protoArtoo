@@ -37,7 +37,7 @@ of those patterns; nothing had adopted the layout half.
 
 ## Decision
 
-**Every surface follows one Surface Anatomy** (`CONTEXT.md`): title with the
+**Every surface follows one Surface Anatomy** (`GLOSSARY.md`): title with the
 question it answers, sections whose heading carries a count, a state, a
 provenance or a purpose, the work area, the acts named beside what they act on,
 a feedback line. The structure is the reference project's, adapted to a live
@@ -81,7 +81,7 @@ Plate first and then for health generally:
 > correct" - and, confirming the reading: *"green representing good and working
 > makes much more sense than the blue color"*.
 
-So **#327's two-colour rule is superseded for health**, and `CONTEXT.md` gains
+So **#327's two-colour rule is superseded for health**, and `GLOSSARY.md` gains
 **Health Signal** beside a rewritten **Status Colour**: green nominal, amber
 degraded and actionable, red stopped or refused, grey not reporting. A chosen
 posture - a speed preset, a sleep state, a control mode - still takes no colour,
@@ -141,8 +141,8 @@ thing `health_signals.js` does not currently distinguish - it folds unknown into
 
 ## Consequences
 
-- `CONTEXT.md` gains **Surface Anatomy**; `AGENTS.md`'s emoji rule is retired.
-- Per the 2026-09-16 amendment, `CONTEXT.md` also gains **Health Signal** and a
+- `GLOSSARY.md` gains **Surface Anatomy**; `AGENTS.md`'s emoji rule is retired.
+- Per the 2026-09-16 amendment, `GLOSSARY.md` also gains **Health Signal** and a
   rewritten **Status Colour**; the sweep ticket (#399) owns landing the tokens
   in `data/style.css`, and every brief that describes a status indicator in
   blue is repaired at its next refresh.

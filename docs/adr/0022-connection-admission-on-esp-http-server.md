@@ -52,7 +52,7 @@ there because building a 503 response allocates a header-list node on a path
 that was the proven abort site of the burst crashes. Answering costs heap at
 the exact moment the policy exists because there is none.
 
-The consequence is operator-visible and is now named in `CONTEXT.md`: a
+The consequence is operator-visible and is now named in `GLOSSARY.md`: a
 connection refused before HTTP carries no response, no reason and no
 `Retry-After`, so a browser cannot distinguish it from an unreachable
 controller and must report "No response from controller" rather than

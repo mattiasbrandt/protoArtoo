@@ -70,7 +70,7 @@ failure this clause exists to prevent. AGENTS.md "Small Finds Ride Along" is
 canonical.
 
 The verification tail is **one** sub-issue, the Closing Ticket (AGENTS.md
-"Verification Scale"; CONTEXT.md "Closing Ticket"): bench rows, soak, audit and
+"Verification Scale"; GLOSSARY.md "Closing Ticket"): bench rows, soak, audit and
 closure PR together. Do not create runbook, audit, integration-readiness or
 gathering tickets. Before writing any acceptance criterion that names an
 instrument, a counter or a number, check it exists on this bench and in this
@@ -397,7 +397,7 @@ Verified 2026-09-17 - this is the steady state, not an incident.
 
 - **Never budget on a worker persisting anything.** What must survive the epic
   goes where AGENTS.md already puts the durable record - the sub-issue, its
-  pinned comment, `CONTEXT.md`, `docs/adr/` - and that is your job at
+  pinned comment, `GLOSSARY.md`, `docs/adr/` - and that is your job at
   acceptance.
 - **A refused write is the AGENTS.md "skip it and say so once" clause**,
   extended from a failing `mempalace_status` to a refused write. A worker that

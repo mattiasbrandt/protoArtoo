@@ -13,7 +13,7 @@ This document covers:
 
 For project-specific terms and abbreviations (for example `RobotState`, NVS,
 Marcduino, SBUS, AP/STA), see `docs/terminology.md`. For resolved project
-language decisions and status wording, see `CONTEXT.md`.
+language decisions and status wording, see `GLOSSARY.md`.
 
 Issue labels live in `.github/labels.yml` and are split into domain labels and
 work-type labels. Keep new issues and PR notes in that same vocabulary.
