@@ -13,8 +13,9 @@
 //     every Part a row of GET /api/servo/outputs carries - against the droid's
 //     own answer - each row offers its Output there (history: #463, operator
 //     2026-10-04: "Also pick it on Parts"): the Output bar on a body Part's
-//     row, and "the Dome Controller moves it" on a dome Part's
-//     (PAParts.isDomePart()) - and the summary counts the rows.
+//     row, and on a dome Part's (PAParts.isDomePart()) the one sentence that
+//     says the Dome Controller moves it (PAParts.domeMovesText()) - and the
+//     summary counts the rows.
 //   - "No row is hidden, in any state" (history: #347): every Unused row is
 //     rendered visible (Element.checkVisibility with opacity and visibility,
 //     and a box with height) once the Outputs have answered, while the
@@ -197,7 +198,7 @@ const hiddenRows = (page) =>
         const part = window.PAParts.partById.get(row.dataset.part);
         const cell = row.querySelector('[data-bar-for]');
         const offers = part && window.PAParts.isDomePart(part)
-          ? cell?.textContent.trim() === 'the Dome Controller moves it'
+          ? cell?.textContent.trim() === window.PAParts.domeMovesText(window.PAParts.partLabel(part.id))
           : Boolean(cell?.querySelector('.output-seg[role="radiogroup"] button'));
         return { id: row.dataset.part, offers };
       }),
