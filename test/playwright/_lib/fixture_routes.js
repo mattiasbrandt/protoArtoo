@@ -367,6 +367,13 @@ const install = async (context, options = {}) => {
     writes: [],
     accepted: [],
     outputsReads: 0,
+    // The Sequence run the droid last recorded, as the status frame carries
+    // it: null until a run is recorded, else {name, running, startMs}. Every
+    // frame has the key (src/web/status_json.cpp, #451). Nothing here starts a
+    // run; a script's own droid that does sets it and pushes a status, as the
+    // firmware asks for one when a run begins and when it ends
+    // (src/sequence_run_evidence.cpp).
+    seqRun: null,
     config: withFitted(initialConfig(droid), initialOutputs(droid), process.env.FIXTURE_FITTED),
   };
 
@@ -386,6 +393,7 @@ const install = async (context, options = {}) => {
         rcCh1: { state: 'not_seen' },
         stationary: false,
         uptimeMs: Date.now() % 100000000,
+        seqRun: state.seqRun,
       };
     }
     const frame = {
@@ -416,6 +424,7 @@ const install = async (context, options = {}) => {
       littleFsReady: true,
       dome_link: { state: 'disabled' },
       lights: {},
+      seqRun: state.seqRun,
     };
     // An enabled Output is a key of its own (src/web/status_json.cpp), and a
     // lit wire reports under its id in `lights`.
