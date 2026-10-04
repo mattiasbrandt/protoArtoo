@@ -3855,8 +3855,10 @@ label.sound-search-field {
 }
 
 /* An edit the droid has not been told about yet. Amber earns its place: it is
-   something the builder can and should do something about, namely press Save. */
-.sound-dirty-pill {
+   something the builder can and should do something about, namely press Save -
+   or, for a file changed under a Named Track, Keep or Re-point. */
+.sound-dirty-pill,
+.chirp-file-chip {
   display: inline-block;
   margin-top: 2px;
   padding: 1px var(--space-sm);
@@ -3975,6 +3977,31 @@ label.sound-search-field {
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+/* A track's number, the address it is bound to, and when the file there
+   changed, the two answers on a line of their own under them. */
+.sound-track-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2xs) var(--space-sm);
+}
+
+.sound-track-cell .chirp-binding-badge {
+  margin-top: 0;
+}
+
+.chirp-file-changed {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: var(--space-2xs);
+}
+
+.chirp-file-chip {
+  margin-top: 0;
+  margin-right: var(--space-2xs);
 }
 
 #catalog-bank-tabs {

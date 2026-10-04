@@ -260,6 +260,7 @@
   const btnPoll = document.getElementById("btn-poll-status");
   const modStatusFb = document.getElementById("mod-status-feedback");
   const trackNumberNote = document.getElementById("track-number-note");
+  const chirpCatalogCard = document.getElementById("chirp-catalog-card");
   const catalogSub = document.getElementById("catalog-sub");
   const catalogRows = document.getElementById("catalog-rows");
   const catalogStatus = document.getElementById("catalog-status");
@@ -311,6 +312,9 @@
   let catalogAutoLoadAttempted = false;
   let catalogBulkMode = false;
   let chirpBindings = {};
+  // The Named Track the builder is re-pointing from its row, whose key every
+  // catalog row's target then starts on; null when none is.
+  let catalogRepointKey = null;
   let chirpCategoryBindings = {};
   const catalogSelectedKeys = new Set();
   let catalogCategoryRanges = [];
@@ -567,6 +571,8 @@
     }
   };
 
+  // ok is true (success), false (error), or null for a plain line that is
+  // neither: an instruction rather than an outcome.
   const showFeedback = (el, msg, ok, timeoutMs = 2500) => {
     if (!el) return;
     const priorTimer = feedbackTimers.get(el);
@@ -578,7 +584,7 @@
       el.dataset.baseClass = el.className || "feedback";
     }
     el.textContent = msg;
-    el.className = `${el.dataset.baseClass} ${ok ? "success" : "error"}`;
+    el.className = ok === null ? el.dataset.baseClass : `${el.dataset.baseClass} ${ok ? "success" : "error"}`;
     if (timeoutMs <= 0) {
       return;
     }
@@ -795,7 +801,10 @@
     if (!Number.isFinite(bank) || !Number.isFinite(index) || bank < 1 || index < 1 || page.length !== 1) {
       return null;
     }
-    return { bank, page, index };
+    // Whether the card still holds the file this was bound to: same, changed,
+    // or unchecked when there was nothing to compare (docs/api.md).
+    const file = String(raw.file ?? "unchecked");
+    return { bank, page, index, file };
   };
 
   const formatBindingLabel = (binding) => `CHIRP B${binding.bank}${binding.page} #${binding.index}`;
@@ -814,14 +823,39 @@
       const badge = document.getElementById(`chirp-binding-${key}`);
       if (!badge) return;
       const binding = getSlotBinding(key);
-      if (!catalogSupported || !binding) {
-        badge.textContent = "";
-        badge.classList.add("hidden");
-        return;
-      }
-      badge.textContent = formatBindingLabel(binding);
-      badge.classList.remove("hidden");
+      const shown = catalogSupported && binding !== null;
+      badge.textContent = shown ? formatBindingLabel(binding) : "";
+      badge.classList.toggle("hidden", !shown);
+      // A file changed under the address is the builder's to resolve (ADR
+      // 0054): the row says so and offers both answers. Same and unchecked
+      // say nothing more than the badge does.
+      setElementVisible(document.getElementById(`chirp-file-${key}`), shown && binding.file === "changed");
     });
+  };
+
+  // Keep: bind the same address again, which records the file the card holds
+  // there now. Re-point is the catalog's own map flow, opened on this track.
+  const keepNamedTrackFile = async (key, feedbackEl) => {
+    const binding = getSlotBinding(key);
+    if (!binding) return;
+    const ok = await postTrack(key, binding.index, feedbackEl, binding);
+    if (ok) await loadTracks();
+  };
+
+  const startNamedTrackRepoint = (key, label, feedbackEl) => {
+    if (!catalogReady) {
+      showFeedback(feedbackEl, "Refresh the catalog first.", false);
+      return;
+    }
+    const binding = getSlotBinding(key);
+    catalogRepointKey = key;
+    const pageKey = binding ? catalogBankPageKey(binding.bank, binding.page) : "";
+    catalogBankFilter = catalogBanks.some((bankRow) =>
+      catalogBankPageKey(bankRow?.bank, bankRow?.page) === pageKey) ? pageKey : "";
+    renderCatalogBankTabs();
+    renderCatalogRows();
+    showFeedback(catalogFeedback, `Pick the sound for ${label}, then Map.`, null, 0);
+    chirpCatalogCard?.scrollIntoView({ block: "start", behavior: "smooth" });
   };
 
   const catalogEntryKey = (entry) => {
@@ -903,7 +937,9 @@
         return false;
       }
       const key = target.slice(SLOT_TARGET_PREFIX.length);
-      return postTrack(key, index, feedbackEl || catalogFeedback, { bank, page });
+      const ok = await postTrack(key, index, feedbackEl || catalogFeedback, { bank, page });
+      if (ok && key === catalogRepointKey) catalogRepointKey = null;
+      return ok;
     }
 
     if (target.startsWith(CATEGORY_TARGET_PREFIX)) {
@@ -1369,6 +1405,7 @@
     select.className = "sound-track-input-md catalog-map-select";
     select.setAttribute("aria-label", "Select mapping target");
     populateCatalogTargetSelect(select, "Choose target…");
+    if (catalogRepointKey) select.value = `${SLOT_TARGET_PREFIX}${catalogRepointKey}`;
     return select;
   };
 
@@ -1886,6 +1923,43 @@
     return input;
   };
 
+  // A bound track's cell: its number, the address it is bound to on the card,
+  // and - when the file there changed - the two answers. Shared by the Named
+  // Track and system sound rows, which bind the same way.
+  const buildTrackCell = (tdTrack, input, key, label, feedbackEl) => {
+    const cell = document.createElement("div");
+    cell.className = "sound-track-cell";
+    cell.appendChild(input);
+
+    const bindingBadge = document.createElement("span");
+    bindingBadge.id = `chirp-binding-${key}`;
+    bindingBadge.className = "chirp-binding-badge hidden";
+    cell.appendChild(bindingBadge);
+
+    const fileChanged = document.createElement("div");
+    fileChanged.id = `chirp-file-${key}`;
+    fileChanged.className = "chirp-file-changed hidden";
+    const chip = document.createElement("span");
+    chip.className = "chirp-file-chip";
+    chip.textContent = "File changed";
+    const keepButton = document.createElement("button");
+    keepButton.type = "button";
+    keepButton.className = "btn btn-sm btn-quiet";
+    keepButton.textContent = "Keep";
+    keepButton.setAttribute("aria-label", `Keep the new file for ${label}`);
+    keepButton.addEventListener("click", () => keepNamedTrackFile(key, feedbackEl));
+    const repointButton = document.createElement("button");
+    repointButton.type = "button";
+    repointButton.className = "btn btn-sm btn-quiet";
+    repointButton.textContent = "Re-point";
+    repointButton.setAttribute("aria-label", `Pick another sound for ${label}`);
+    repointButton.addEventListener("click", () => startNamedTrackRepoint(key, label, feedbackEl));
+    fileChanged.append(chip, keepButton, repointButton);
+    cell.appendChild(fileChanged);
+
+    tdTrack.appendChild(cell);
+  };
+
   const buildNamedSoundRows = () => {
     if (!tbody) return;
     tbody.innerHTML = "";
@@ -1924,13 +1998,8 @@
           ariaLabel: `${sound.label} track number`,
           datasetKey: sound.key,
         });
-        tdTrack.appendChild(rowInput);
-        const bindingBadge = document.createElement("span");
-        bindingBadge.id = `chirp-binding-${sound.key}`;
-        bindingBadge.className = "chirp-binding-badge hidden";
-        tdTrack.appendChild(bindingBadge);
-
         rowFeedback = createInlineFeedback();
+        buildTrackCell(tdTrack, rowInput, sound.key, sound.label, rowFeedback);
         dirtyMarker = createDirtyMarker();
         dirtyTracker = createRowDirtyTracker({ row: tr, inputs: [rowInput], marker: dirtyMarker });
         namedDirtyTrackers.set(sound.key, dirtyTracker);
@@ -2160,14 +2229,9 @@
         datasetKey: sound.key,
         placeholder: "(silent / not set)",
       });
-      tdTrack.appendChild(input);
-      const bindingBadge = document.createElement("span");
-      bindingBadge.id = `chirp-binding-${sound.key}`;
-      bindingBadge.className = "chirp-binding-badge hidden";
-      tdTrack.appendChild(bindingBadge);
-
       const { tdActions, actionsWrap } = createActionCell();
       const rowFeedback = createInlineFeedback();
+      buildTrackCell(tdTrack, input, sound.key, sound.label, rowFeedback);
       const dirtyMarker = createDirtyMarker();
       const dirtyTracker = createRowDirtyTracker({ row: tr, inputs: [input], marker: dirtyMarker });
       systemDirtyTrackers.set(sound.key, dirtyTracker);
