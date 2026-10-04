@@ -1387,11 +1387,6 @@
         actionPickerQuery = nextQuery;
         actionPickerScrollTop = 0;
         refreshActionPicker();
-        const nextInput = picker.querySelector('[data-action-search]');
-        if (nextInput) {
-          nextInput.focus();
-          nextInput.setSelectionRange(actionPickerQuery.length, actionPickerQuery.length);
-        }
       });
     }
 
@@ -1439,13 +1434,25 @@
   // for either: renderEditor() builds every field from the saved binding, so
   // it would throw away the pick, a payload, the Command text, a threshold and
   // the quiet time while the editor still said "Unsaved changes" (#355).
+  // The search box is drawn again too, so a builder typing in it - when the
+  // action list arrives mid-word as much as on their own keystroke - gets the
+  // focus and the caret back at the end of what they typed.
   const refreshActionPicker = () => {
     const picker = rcEditorContent?.querySelector('.rc-action-picker');
     if (!picker) return;
+    const searchHadFocus = Boolean(document.activeElement?.matches('[data-action-search]')
+      && picker.contains(document.activeElement));
     picker.innerHTML = actionPickerBodyHtml(draftActionToken(), actionPickerQuery);
     wireActionPickerBody(picker);
     refreshActionPickerSelectionUi();
     syncActionTestUi();
+    if (searchHadFocus) {
+      const searchInput = picker.querySelector('[data-action-search]');
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.setSelectionRange(actionPickerQuery.length, actionPickerQuery.length);
+      }
+    }
   };
 
   const renderEditor = () => {
