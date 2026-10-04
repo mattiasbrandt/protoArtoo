@@ -485,16 +485,22 @@ static void motionStateAllocate() {
     }
     motion = new (storage) SeqMotionState();  // value-initialised, as the static was
 }
-#else
-static SeqMotionState motionStorage;
-static constexpr SeqMotionState* motion = &motionStorage;
-#endif
 
-// True when the state above exists: always where it is static, so the tests
-// below fold away there; on the P4, when the boot allocation succeeded.
+// True when the boot allocation above succeeded.
 static inline bool motionReady() {
     return motion != nullptr;
 }
+#else
+static SeqMotionState motionStorage;
+static constexpr SeqMotionState* motion = &motionStorage;
+
+// Always: the state is static. A constant rather than `motion != nullptr`,
+// which -Werror=address rejects for a pointer that can never be null; every
+// test below folds away.
+static constexpr bool motionReady() {
+    return true;
+}
+#endif
 
 // Whether a Gesture, or a flutter, is being performed: never, with no state.
 static inline bool gesturesActive() {
