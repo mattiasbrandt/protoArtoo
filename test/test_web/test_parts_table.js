@@ -12,8 +12,9 @@
 // outputs.js, parts_mapping.js and wiring.js, which mounts the picker --
 // against a fake droid that answers GET /api/servo/outputs and applies a POST
 // /api/config move the way the firmware does. What is asserted is what a
-// builder sees and what the page asked the droid for. The last test holds the
-// other half of the move: Parts carries no picker of its own.
+// builder sees and what the page asked the droid for. One test holds the
+// other half of the move: Parts carries no parts table of its own, and picks a
+// Part's Output with this table's bar (operator, 2026-10-04 on #463).
 // =============================================================================
 
 import { test } from "node:test";
@@ -546,7 +547,9 @@ test("a light Part cannot be put on an Output a light cannot go on, and a board'
   assert.deepEqual(suggested("utilUp"), ["ledc:0"]);
   assert.deepEqual(suggested("utilLo"), ["ledc:1"]);
   assert.deepEqual(suggested("doorFL"), [], "a Part no Output is suggested for sees no mark");
-  assert.match(env.row("utilUp").textContent, /ARM1: suggested/, "and the row says which one in words");
+  const use = env.row("utilUp").querySelector("[data-use]");
+  assert.equal(use?.dataset.use, "ledc:0", "and the row offers it as one press");
+  assert.equal(use.textContent, "Use ARM1");
 });
 
 // Each wire is its own answer (#413, ADR 0067): a droid may have several lit
@@ -629,20 +632,25 @@ test("Parts carries none of the Output pieces that moved to Servos", async () =>
   );
 });
 
-// The parts table and its question moved to Wiring, and were deleted from
-// Parts rather than hidden (operator, 2026-09-28 on #411): one table, one
-// question, one request. With Parts on screen - and Wiring never visited -
-// nothing in the document picks an Output for a Part, and no move is sent.
-test("Parts carries no parts table and no move question of its own", async () => {
+// The parts table moved to Wiring and was deleted from Parts rather than
+// hidden (operator, 2026-09-28 on #411): one table. A Part's Output is picked
+// on Parts too, with the same bar and the same question (operator,
+// 2026-10-04 on #463), so Parts builds no table of its own, its bars are the
+// chooser's (data/parts_mapping.js outputChooser()), it carries one move
+// question, and a visit sends no move.
+test("Parts carries no parts table of its own, and picks an Output with the table's bar", async () => {
   const env = await bootPartsSurface();
   await env.frame();
   await wait(20);
 
   assert.equal(env.window.location.hash, "#parts");
-  assert.equal(env.document.querySelectorAll("select").length, 0, "no Output picker on Parts");
-  assert.equal(env.document.querySelectorAll("[data-bar]").length, 0, "and no bar of Outputs");
-  assert.equal(env.document.querySelectorAll("dialog").length, 0, "and no move question");
-  assert.deepStrictEqual(env.moves().filter((post) => "movePart" in post.form), [], "and no move leaves it");
+  assert.equal(env.document.querySelectorAll(".parts-table").length, 0, "no parts table on Parts");
+  assert.equal(env.document.querySelectorAll("select").length, 0, "and no Output dropdown");
+  assert.deepEqual(env.document.querySelectorAll("dialog").map((dialog) => dialog.id), ["parts-move-dialog"], "one move question");
+  const smallDoor = env.unusedBar("smallDoor");
+  assert.ok(smallDoor.length > 0, "an Unused row carries an Output bar");
+  assert.equal(smallDoor[0].parentNode.getAttribute("aria-label"), "Output for Small long door", "the table's bar, named as it names it");
+  assert.deepStrictEqual(env.moves().filter((post) => "movePart" in post.form), [], "and no move leaves it on a visit");
 });
 
 // Find by Moving starts where a Part with no Output is listed (#411): its row

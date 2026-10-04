@@ -7379,15 +7379,18 @@ body.shell-performing .show-list {
 
 /* The Output a Part is on, and what is on its wire: the one segmented control
    (data/parts_mapping.js segmented()) at row scale, as wide as its choices
-   and no wider. A bar with more Outputs than the row has room for wraps
-   rather than pushing the table sideways. */
-.parts-row .output-seg {
+   and no wider, on Wiring's rows and wherever Parts carries the same bar (its
+   panel and its Unused rows, #463). A bar with more Outputs than the row has
+   room for wraps rather than pushing the table sideways. */
+.parts-row .output-seg,
+.parts-bar .output-seg {
   display: inline-flex;
   flex-wrap: wrap;
   width: auto;
 }
 
-.parts-row .output-seg > button {
+.parts-row .output-seg > button,
+.parts-bar .output-seg > button {
   flex: 0 0 auto;
   min-height: 26px;
   padding-inline: var(--space-sm);
@@ -7425,8 +7428,9 @@ body.shell-performing .show-list {
   background: var(--text-faint);
 }
 
-/* The Output the board usually carries this Part on, in the brighter ink. The
-   row says which one in words while the Part still has no Output. */
+/* The Output the board usually carries this Part on, in the brighter ink.
+   While the Part has no Output, the Use act beside the bar names it and puts
+   the Part on it in one press. */
 .parts-bar .output-seg > button.is-suggested {
   color: var(--text);
 }
@@ -7444,6 +7448,68 @@ body.shell-performing .show-list {
   color: var(--text-faint);
   opacity: 0.5;
   text-decoration: line-through;
+}
+
+/* A bar with nothing lit is a choice still to make, not a list of labels
+   (operator, 2026-10-04 on #463): each Output a raised key in the recess,
+   which lights when pressed. A refused one stays flat. */
+.parts-bar .output-seg.is-unpicked > button:not(.is-refused) {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  color: var(--text);
+}
+
+.parts-bar .output-seg.is-unpicked > button:not(.is-refused):hover:not(:disabled) {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* The words under a bar with nothing lit, and the board's suggestion beside
+   them as one press: a pick is waiting, said in the row. */
+.parts-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2xs) var(--space-sm);
+  margin-top: var(--space-2xs);
+  white-space: normal;
+}
+
+.parts-pick-word {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.btn.parts-use {
+  min-width: 0;
+  min-height: 24px;
+  padding: 0 var(--space-xs);
+  border-color: transparent;
+  color: var(--accent-bright);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 500;
+}
+
+.btn.parts-use:hover,
+.btn.parts-use:focus-visible {
+  border-color: transparent;
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+/* The row a builder arrived on Wiring for from another surface: marked in the
+   interaction accent until the pick it came for is made. The sticky name
+   cell carries the mark too, over its own ground. */
+.parts-row.is-marked th,
+.parts-row.is-marked td {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.parts-row.is-marked th[scope="row"] {
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 /* A row's acts: quiet words at row scale, at the row's end. */
@@ -7620,7 +7686,8 @@ body.shell-performing .show-list {
    Parts: Unused, the Parts no Output claims
 
    Moved here from Wiring with the list (operator, 2026-09-28 on #411). Each
-   row ends in its act, a route to the picker on Wiring.
+   row ends in its Output bar, the one Wiring's table carries (#463; its
+   rules are under the parts wiring table, .parts-bar).
    --------------------------------------------------------------------------- */
 .parts-unused-table {
   width: 100%;
@@ -7703,24 +7770,10 @@ body.shell-performing .show-list {
   line-height: 1.7;
 }
 
-.parts-unused-act {
-  text-align: right;
-  white-space: nowrap;
-}
-
-/* The row's one act is a word, not a box (operator's control style,
-   2026-09-28): no frame, the accent in its ink, as Servos' Calibrate is. It
-   leaves for Wiring, so it is the only thing on the row that looks pressable. */
-.parts-unused-act .btn {
-  padding: 0 var(--space-sm);
-  border-color: transparent;
-  color: var(--accent-bright);
-}
-
-.parts-unused-act .btn:hover {
-  border-color: transparent;
-  background: var(--surface-alt);
-  color: var(--text);
+/* The Output column holds the bar, and a bar with more Outputs than the
+   column has room for wraps inside it. */
+.parts-unused-output {
+  padding-block: var(--space-xs);
 }
 
 /* A narrow window has no room for a four-column table, so the table scrolls
@@ -9380,6 +9433,10 @@ body[data-page="wiring"] .card > .outputs-find:empty {
   color: var(--text-dim);
 }
 
+.bodyview-panel-slot:not(:empty) {
+  margin-bottom: var(--space-md);
+}
+
 .bodyview-panel-acts {
   display: flex;
   flex-wrap: wrap;
@@ -11002,7 +11059,7 @@ button.droid-build-card:disabled {
   color: var(--danger);
 }
 
-:root:not(.act-words) :is(.outputs-acts, .outputs-apply-picks, .parts-unused-act, .parts-carries) .btn.icon-act:disabled:is(:hover, :active),
+:root:not(.act-words) :is(.outputs-acts, .outputs-apply-picks, .parts-carries) .btn.icon-act:disabled:is(:hover, :active),
 :root:not(.act-words) .btn.parts-act.icon-act:disabled:is(:hover, :active) {
   background: transparent;
   border-color: transparent;
@@ -11010,10 +11067,6 @@ button.droid-build-card:disabled {
 
 :root:not(.act-words) :is(.outputs-acts, .outputs-apply-picks) .btn.icon-act:disabled:is(:hover, :active) {
   color: var(--text-dim);
-}
-
-:root:not(.act-words) .parts-unused-act .btn.icon-act:disabled:is(:hover, :active) {
-  color: var(--accent-bright);
 }
 
 :root:not(.act-words) .btn.parts-act.icon-act:disabled:is(:hover, :active),

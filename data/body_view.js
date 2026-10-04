@@ -953,7 +953,11 @@
   //           each is an act that shows its icon alone (#460, data/shell.js
   //           "The act"), or its icon and its words with keepsWords: true
   //   onAct - called with the act id when a builder presses one
-  // @returns {{show, clear, root}}
+  // @returns {{show, clear, root, slot}} - `slot` sits between the facts and
+  //   the acts, empty, for a control the caller writes and repaints itself
+  //   (Parts' Output bar, data/parts.js); show() and clear() never touch it
+  //   and have the same rule as the acts for it: the caller decides what it
+  //   holds.
   // ---------------------------------------------------------------------------
   const mountPanel = (host, options) => {
     const opts = options || {};
@@ -974,6 +978,10 @@
     const facts = document.createElement("dl");
     facts.className = "bodyview-panel-facts";
     root.appendChild(facts);
+
+    const slot = document.createElement("div");
+    slot.className = "bodyview-panel-slot";
+    root.appendChild(slot);
 
     const actRow = document.createElement("div");
     actRow.className = "bodyview-panel-acts";
@@ -1057,7 +1065,7 @@
     };
 
     clear();
-    return { show, clear, root };
+    return { show, clear, root, slot };
   };
 
   const api = Object.freeze({
