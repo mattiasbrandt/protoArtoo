@@ -1131,8 +1131,9 @@
     const signature = signatureOf(view);
     if (signature !== lastSignature) {
       // New panel content: rebuild it, keeping the announcer if it exists.
-      // Read before replaceChildren: the rebuild detaches the focused node, and
-      // afterwards focus reads as the body whether it was in the panel or not.
+      // Read before replaceChildren: if focus was in the panel, the rebuild
+      // detaches the focused node and focus afterwards reads as the body, which
+      // says nothing about where it was.
       const focusWasInside = backdrop.contains(document.activeElement);
       const announcer = backdrop.querySelector(".recovery-countdown-announcer");
       backdrop.replaceChildren(buildPanel(view, onRetryNow));
