@@ -9,8 +9,10 @@ page. Each run gets FIXTURE=1, BASE_URL and TARGET_URL at that page, and
 HEADLESS=true. A route override installed after the page has loaded does not
 reach loadRehearsalFacts(); install it before goto, or page.reload() after.
 
-The server is stopped when the folder finishes. Exit status is the first
-script that did not exit 0.
+Every script runs, whatever the one before it did, so a hand run shows every
+red: each FAIL is printed as it happens and the last line names every script
+that failed. The server is stopped when the folder finishes. Exit status is 1
+when any script did not exit 0, and 0 when all of them did.
 """
 
 from __future__ import annotations
@@ -94,16 +96,18 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("fixture server did not listen", file=sys.stderr)
             return 1
-        failed = 0
+        failed: list[str] = []
         for script, page in scripts:
-            print(f"== {script.relative_to(ROOT)}  {page}")
+            print(f"== {script.relative_to(ROOT)}  {page}", flush=True)
             r = subprocess.run(["node", str(script)], cwd=ROOT, env=_node_env(base, page))
             if r.returncode != 0:
-                failed += 1
-                print(f"FAIL {script.name} exit {r.returncode}", file=sys.stderr)
-                return r.returncode
+                failed.append(script.name)
+                print(f"FAIL {script.name} exit {r.returncode}", file=sys.stderr, flush=True)
+        if failed:
+            print(f"FAIL {len(failed)} of {len(scripts)} {args.dir}: {', '.join(failed)}", file=sys.stderr)
+            return 1
         print(f"ok {len(scripts)} {args.dir}")
-        return 0 if failed == 0 else 1
+        return 0
     finally:
         server.terminate()
         try:

@@ -657,10 +657,13 @@ http GET /api/seq?name=DM%3ABENCH > seq-bench.json
 send dome.api.list-sequences
 
 # #441 slice 2 - a duplicate is saved under an id of its own (a shipped defect:
-# Duplicate copied the original's id, and the firmware resolves a nested
-# reference by the first id it finds, src/seq_store.cpp:154). Duplicate
-# DM:BENCH, Save the copy as DM:BENCH_COPY. In the list read, the two rows carry
-# different ids.
+# Duplicate copied the original's id, and the firmware accepts that). A save
+# never refuses an id another row carries, and a nested reference by id goes
+# through nestResolve() in src/seq_store.cpp, which takes the first index slot
+# holding that id (seqStoreIndexFindRef()). With two rows sharing one, a phrase
+# plays whichever the index holds first, and a delete reorders the index.
+# Duplicate DM:BENCH, Save the copy as DM:BENCH_COPY. In the list read, the two
+# rows carry different ids.
 @row 441 a-duplicate-has-its-own-id
 pause Duplicate DM:BENCH, save DM:BENCH_COPY, then press Enter
 http GET /api/seq/list > seq-list-after-duplicate.json

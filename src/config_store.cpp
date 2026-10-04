@@ -394,11 +394,12 @@ uint8_t configCacheServoOutputPartCountAt(ServoOutputDriver driver, uint8_t chan
 // All live here rather than as one find-me-the-row accessor because their
 // caller is ServoTask, whose worst-case static chain is a measured constant
 // (SERVO_TASK_MEASURED_CHAIN_BYTES, include/config.h) that ADR 0040's checker
-// re-derives from the linked image on every slice. A ServoOutputRow is 72 B,
-// so handing one out puts 70 B on a Core 1 real-time frame to answer a question
-// whose answer is two numbers or one. A caller that only wants an endpoint pair
-// should not pay for a Part list, a Motion Profile and a boot behaviour it will
-// not read.
+// re-derives from the linked image on every slice. A ServoOutputRow is 72 B on
+// both chips (it holds nothing wider than a uint16_t, so it is 2-byte aligned
+// on the classic ESP32 and the P4 alike), so handing one out puts 72 B on a
+// Core 1 real-time frame to answer a question whose answer is two numbers or
+// one. A caller that only wants an endpoint pair should not pay for a Part
+// list, a Motion Profile and a boot behaviour it will not read.
 //
 // None of them copies a row inside this file either: the clamp takes its row by
 // reference and the pair and the Motion Profile are read field by field, all
