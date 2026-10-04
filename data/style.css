@@ -7428,8 +7428,9 @@ body.shell-performing .show-list {
   background: var(--text-faint);
 }
 
-/* The Output the board usually carries this Part on, in the brighter ink. The
-   row says which one in words while the Part still has no Output. */
+/* The Output the board usually carries this Part on, in the brighter ink.
+   While the Part has no Output, the Use act beside the bar names it and puts
+   the Part on it in one press. */
 .parts-bar .output-seg > button.is-suggested {
   color: var(--text);
 }
