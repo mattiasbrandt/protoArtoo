@@ -268,8 +268,9 @@
   // field in the frame before this word can be its. "No answer" is red for the
   // same reason: the hoverboard declares that it reports back
   // (DRIVE_CAP_REPORTS_FEEDBACK), so its silence is a fault. A backend that
-  // declares no feedback would read grey instead, as Wiring's Foot Drive row
-  // does from GET /api/identity/components, which this page does not read.
+  // declares no feedback must read grey instead, as Wiring's Foot Drive row
+  // does from GET /api/identity/components; this reader does not ask, so
+  // such a backend needs that question added here.
   const FOOT_DRIVE_WORDS = Object.freeze({
     off: linkAnswer("off", "Off"),
     hoverboard: linkAnswer("ok", "Hoverboard"),
