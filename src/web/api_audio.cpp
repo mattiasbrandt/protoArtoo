@@ -54,6 +54,7 @@
 #include "api_helpers.h"
 #include "api_json_response.h"
 #include "audio_catalog_gate.h"
+#include "audio_named_track_file.h"
 #include "audio_sound_member.h"
 #include "audio_task.h"
 #include "chirp_binding_keys.h"
@@ -149,6 +150,41 @@ bool saveSoundListBaseline(Preferences& prefs) {
     return true;
 }
 
+// Record which file a Named Track was just bound to (include/audio_named_track_file.h):
+// the card's name for its new address, as the catalog lists it now. This is
+// both of the builder's answers to a changed file - binding the same address
+// again keeps it, binding another re-points it - and an ordinary bind.
+//
+// With no name to read (no catalog since boot, a refresh holding the gate, or
+// the card naming the sound only by index), the same address keeps the file it
+// was recorded against, which still describes it; a new address, or an
+// unbound one, keeps none, so it reads unchecked rather than compared against
+// another address's file. False on a refused NVS write: the binding itself is
+// saved either way.
+bool recordNamedTrackFile(Preferences& prefs, const char* fileKey, uint32_t previousPacked,
+                          uint32_t packed) {
+    uint8_t bank = 0;
+    char page = 'A';
+    uint16_t index = 0;
+    uint32_t file = AUDIO_NAMED_TRACK_FILE_UNRECORDED;
+    const bool bound = unpackChirpBinding(packed, &bank, &page, &index);
+    if (bound && audioCatalogReaderAcquire()) {
+        if (audioIsCatalogReady()) {
+            uint16_t count = 0;
+            const AudioCatalogEntry* entries = audioGetCatalogEntries(&count);
+            file = audioCatalogFingerprintAt(entries, count, bank, page, index);
+        }
+        audioCatalogReaderRelease();
+    }
+    if (file != AUDIO_NAMED_TRACK_FILE_UNRECORDED) {
+        return prefs.putUInt(fileKey, file) > 0;
+    }
+    if (bound && packed == previousPacked) {
+        return true;
+    }
+    return !prefs.isKey(fileKey) || prefs.remove(fileKey);
+}
+
 uint32_t packChirpCategoryBinding(uint8_t bank, char page) {
     const uint8_t pageByte = (uint8_t)toupper((unsigned char)page);
     return ((uint32_t)bank << 8) | (uint32_t)pageByte;
@@ -207,6 +243,13 @@ AudioConfig s_tracksAudio = {};
 bool s_tracksIncludeBindings = false;
 uint32_t s_tracksBindings[kChirpBindingCount] = {};
 uint32_t s_tracksCategoryBindings[kChirpCategoryBindingCount] = {};
+// Each binding's file against the card as the catalog lists it now
+// (include/audio_named_track_file.h), one bit per CHIRP_BINDING_KEYS row:
+// checked = the comparison could be made, changed = it found another file.
+// Two words rather than a byte per row, for the BSS note above.
+static_assert(kChirpBindingCount <= 32, "one bit per CHIRP binding");
+uint32_t s_tracksFileChecked = 0;
+uint32_t s_tracksFileChanged = 0;
 
 struct AudioTrackField {
     const char* name;
@@ -312,6 +355,13 @@ size_t fillTracksResponse(uint8_t* out, size_t capacity, size_t offset) {
             writer.append(page);
             writer.append("\",\"index\":");
             writer.appendUint(index);
+            const uint32_t bit = 1u << i;
+            const AudioNamedTrackFile file =
+                (s_tracksFileChecked & bit) == 0   ? AudioNamedTrackFile::Unchecked
+                : (s_tracksFileChanged & bit) != 0 ? AudioNamedTrackFile::Changed
+                                                   : AudioNamedTrackFile::Same;
+            writer.append(",\"file\":");
+            writer.appendJsonString(audioNamedTrackFileToken(file));
             writer.append('}');
         }
 
@@ -558,7 +608,26 @@ void handleAudioTracksGet(WebRequest& req) {
     s_tracksIncludeBindings = audioCatalogSupported();
     memset(s_tracksBindings, 0, sizeof(s_tracksBindings));
     memset(s_tracksCategoryBindings, 0, sizeof(s_tracksCategoryBindings));
+    s_tracksFileChecked = 0;
+    s_tracksFileChanged = 0;
     if (s_tracksIncludeBindings) {
+        // Each binding's file is compared against the catalog as it stands, so
+        // the answer follows the last refresh with nothing held between
+        // requests. A refresh holding the gate, or no catalog read since boot,
+        // leaves every binding unchecked: not having looked is not having found
+        // the file unchanged.
+        const bool leased = audioCatalogReaderAcquire();
+        uint16_t entryCount = 0;
+        const AudioCatalogEntry* entries = nullptr;
+        bool catalogWhole = false;
+        if (leased && audioIsCatalogReady()) {
+            entries = audioGetCatalogEntries(&entryCount);
+            AudioCatalogObservation observation{};
+            audioCatalogObservationRead(&observation);
+            catalogWhole = observation.completeness.manifestComplete &&
+                           !observation.completeness.entryCapReached;
+        }
+
         Preferences prefs;
         // Read every packed word up front. The producer runs once per chunk, so
         // reading NVS from inside it would re-open and re-scan the namespace for
@@ -568,12 +637,31 @@ void handleAudioTracksGet(WebRequest& req) {
         if (prefs.begin(NVS_NAMESPACE, true)) {
             for (size_t i = 0; i < kChirpBindingCount; ++i) {
                 s_tracksBindings[i] = prefs.getUInt(CHIRP_BINDING_KEYS[i].nvsKey, 0);
+                uint8_t bank = 0;
+                char page = 'A';
+                uint16_t index = 0;
+                if (entries == nullptr ||
+                    !unpackChirpBinding(s_tracksBindings[i], &bank, &page, &index)) {
+                    continue;
+                }
+                const AudioNamedTrackFile file = audioNamedTrackFileCompare(
+                    prefs.getUInt(CHIRP_BINDING_KEYS[i].fileKey, AUDIO_NAMED_TRACK_FILE_UNRECORDED),
+                    entries, entryCount, catalogWhole, bank, page, index);
+                if (file != AudioNamedTrackFile::Unchecked) {
+                    s_tracksFileChecked |= 1u << i;
+                }
+                if (file == AudioNamedTrackFile::Changed) {
+                    s_tracksFileChanged |= 1u << i;
+                }
             }
             for (size_t i = 0; i < kChirpCategoryBindingCount; ++i) {
                 s_tracksCategoryBindings[i] =
                     prefs.getUInt(CHIRP_CATEGORY_BINDING_KEYS[i].nvsKey, 0);
             }
             prefs.end();
+        }
+        if (leased) {
+            audioCatalogReaderRelease();
         }
     }
 
@@ -614,7 +702,14 @@ AudioTracksCommitOutcome audioTracksCommitApplied(ConfigSnapshot* snap,
 
         if (wroteTrack && chirpBindingKey != nullptr) {
             uint32_t chirpPacked = useBanked ? packChirpBinding(t, bank, page) : 0;
+            const uint32_t previousPacked = prefs.getUInt(chirpBindingKey, 0);
             wroteChirp = prefs.putUInt(chirpBindingKey, chirpPacked) > 0;
+            const ChirpBindingKeyMapEntry* binding = chirpBindingEntry(key);
+            if (wroteChirp && binding != nullptr &&
+                !recordNamedTrackFile(prefs, binding->fileKey, previousPacked, chirpPacked)) {
+                PA_LOG_WARN(TAG, "[AUDIO] %s: which file it was bound to not saved (NVS refused)",
+                            key);
+            }
             if (wroteChirp && !saveSoundListBaseline(prefs)) {
                 PA_LOG_DEBUG(TAG,
                              "[AUDIO] sound-list baseline not saved (nothing observed, or NVS refused)");

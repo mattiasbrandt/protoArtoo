@@ -1183,6 +1183,27 @@ curl -s http://artoo.local/api/audio/tracks
 {"scream":12,"faint":15,"snd_cat_hum_lo":1,"snd_cat_hum_hi":120,"snd_int_mid":30,"audioVolume":18}
 ```
 
+On a module with a catalog (CHIRP), the answer also carries `chirp_bindings`, one
+object per Named Track bound to a bank, page and index, and `chirp_category_bindings`.
+Each binding says whether the card still has the file it was bound to (#447):
+
+```json
+"chirp_bindings":{"scream":{"bank":2,"page":"B","index":4,"file":"changed"}}
+```
+
+- `file`: `"same"` - the catalog lists the file the binding was made against at
+  that address; `"changed"` - it lists another file there, or none on a card it read
+  whole; `"unchecked"` - nothing to compare: no catalog read since boot, a refresh
+  in progress, the card naming that sound only by index, or a binding made before
+  bindings recorded their file, or made with no catalog to read.
+- Nothing re-points a binding whose file changed. The builder answers through
+  `POST /api/audio/tracks`: the same `bank`, `page` and index keeps the address,
+  another re-points it. Either records the file the card lists there now.
+- `file` is new with #447. A backup restores through `bank`, `page` and index only
+  (`data/maintenance.js`, `restoreAudioTracks`), so a backup from before it and one
+  from after it restore the same way. A restore with a catalog read records the
+  files the card lists now.
+
 ### POST /api/audio/tracks
 
 Updates one persisted key.

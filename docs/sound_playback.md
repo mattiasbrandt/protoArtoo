@@ -357,6 +357,14 @@ When CHIRP catalog capability is present, the Sound page adds a CHIRP workspace 
 `chirp_category_bindings` (category bank/page mappings) when catalog support is active.
 Entries are omitted when no valid binding is saved.
 
+A Named Track bound to a bank, page and index records which file the card listed
+there when it was bound: a 32-bit fingerprint of the name, under a `chf_*` NVS key
+beside its `chr_*` binding (`include/chirp_binding_keys.h`). Each `chirp_bindings`
+entry then says `file`: `same`, `changed` or `unchecked`, compared against the catalog
+as it was last refreshed (`include/audio_named_track_file.h`). A changed file is the
+builder's to resolve, by binding the same address again or another one. Nothing
+re-points it.
+
 **Source:** https://github.com/joymonkey/CHIRP
 
 ---
