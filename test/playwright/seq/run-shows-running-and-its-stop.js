@@ -1,24 +1,26 @@
 // bench-auto: fixture seq.html
 // A run started on Sequences shows Running and its own Stop, on the sequence's
 // row and on the workspace's strip, until the droid's run record says it
-// ended; Stop sends POST /api/seq/stop; and the run record
-// (GET /api/seq/last-run, a multi-KB document the droid builds per request) is
-// asked for only while a run started here is under way. Introduced by #441.
+// ended; Stop sends POST /api/seq/stop; and the run record document
+// (GET /api/seq/last-run, multi-KB, built per request) is never asked for:
+// what is running is the status frame's `seqRun`, which the droid sends when
+// a run begins and when it ends (#451). Introduced by #441.
 //
 // PRECONDITION: FIXTURE=1. The droid is a stand-in (./_lib/sequences_droid.js)
 // holding one saved sequence, DM:GREET, whose LAST RUN ENDED before the page
-// opened - so the first answers after the press still carry this run's name
-// and say "completed", which is the record that must not end Running.
+// opened - so the frame the page holds when Test is pressed still carries this
+// run's name and says it is not under way, which is the record that must not
+// end Running. Only another start time is the press's own run.
 //
 // WRITES IT ALLOWS, and nothing else: POST /api/seq/test and POST
 // /api/seq/stop, to the stand-in.
 //
 // WHAT IT PROVES:
-//   1  with nothing started here, the run record is not read at all;
+//   1  with nothing started here, the run record document is not read;
 //   2  Test on the row, pressed twice in a row: one run is sent, the row
 //      says Running, with the lamp, offers Stop DM:GREET in place of Test,
 //      and its own line under it is clear;
-//   3  it still does after the droid has answered with the earlier run's
+//   3  it still does while the frame the page holds is the earlier run's
 //      record, and once the run's own record is there;
 //   4  the run's Stop is not the estop's red;
 //   5  the workspace's strip shows the same run: Running DM:GREET and
@@ -28,7 +30,7 @@
 //      again, and the row Test;
 //   8  Play on the droid, on the tap row, starts the same kind of run: the
 //      strip says Running DM:GREET, with its Stop;
-//   9  once that run has ended too, the run record is not read again;
+//   9  with both runs ended, the run record document was never read;
 //   10 a run the droid accepts and never starts stops reading as running, and
 //      the row says "The droid did not start DM:GREET.";
 //   11 a run the estop ends: the row says "The estop stopped DM:GREET.";
@@ -43,8 +45,8 @@
 //   NODE_PATH=$HOME/.npm/_npx/e41f203b7505f1fb/node_modules \
 //     FIXTURE=1 HEADLESS=true BASE_URL=http://127.0.0.1:<port> \
 //     node test/playwright/seq/run-shows-running-and-its-stop.js
-// Self-test: SELFTEST=peek reads the run record from the page before the
-// press and again after the runs have ended; rows 1 and 9 must FAIL.
+// Self-test: SELFTEST=peek reads the run record document from the page before
+// the press and again after the runs have ended; rows 1, 3 and 9 must FAIL.
 const lib = require('../_lib/checks.js');
 const seq = require('./_lib/sequences_droid.js');
 
@@ -93,40 +95,50 @@ const stripState = (page) =>
   });
 
 lib.runCheck({
-  rule: 'Sequences: a run started here shows Running and its Stop, and its record is read only while it is under way',
+  rule: 'Sequences: a run started here shows Running and its Stop, read off the status frame, and the run record document is never read',
   artifactDir: ARTIFACTS,
   allow: isRunWrite,
   selftests: ['peek'],
   precondition: seq.fixtureOnly,
-  run: async ({ page, writes, report, selftest }) => {
+  run: async ({ page, writes, fixture, report, selftest }) => {
+    const EARLIER_START_MS = 40000;
     const droid = await seq.install(page, {
       sequences: [GREET],
-      lastRun: { valid: true, name: NAME, source: 'web', outcome: 'completed', running: false, startMs: 40000, endMs: 41500 },
+      lastRun: { valid: true, name: NAME, source: 'web', outcome: 'completed', running: false, startMs: EARLIER_START_MS, endMs: 41500 },
+      fixture,
     });
+    // The run record in the frame the page holds now.
+    const heldRun = () => page.evaluate(() => window.PALiveReading.current().status?.seqRun ?? null);
     const peek = () => page.evaluate((target) => fetch(target, { cache: 'no-store' }).then((response) => response.text()), RECORD);
 
     await seq.openSequences(page, NAME);
     if (selftest === 'peek') await peek();
     await page.waitForTimeout(QUIET_MS);
-    report.add('1', 'Nothing started here: the run record is not read', lib.verdict(droid.reads(RECORD).length === 0),
+    report.add('1', 'Nothing started here: the run record document is not read', lib.verdict(droid.reads(RECORD).length === 0),
       `${droid.reads(RECORD).length} read(s) of ${RECORD} in the first ${QUIET_MS} ms`);
 
     // The row's Test, pressed twice as a hurried hand does.
     await page.dblclick(`${ROW} [data-action="test"]`);
     await page.waitForSelector(`${ROW}.is-running`, { timeout: 5000 });
     let row = await rowState(page);
+    const heldAtPress = await heldRun();
     const sent = writes.filter((entry) => entry.path === '/api/seq/test').length;
     report.add('2', `Test on the row, pressed twice: one run sent; it says Running, with the lamp, offers Stop ${NAME}, and its own line is clear`,
       lib.verdict(sent === 1 && row.running && row.stop === `Stop ${NAME}` && !row.test && row.said === ''), `${sent} run(s) sent; ${JSON.stringify(row)}`);
 
-    // The earlier run's record has been answered at least once by now, and
-    // the run's own arrives after the stand-in's start delay.
-    const earlier = droid.reads(RECORD).length;
-    await page.waitForTimeout(3000);
+    // Row 2 was read while the frame the page held was still the earlier
+    // run's record: the same name, not under way. The run's own arrives on
+    // the stream after the stand-in's start delay, under another start time.
+    const earlierHeld = heldAtPress !== null && heldAtPress.name === NAME && heldAtPress.running === false && heldAtPress.startMs === EARLIER_START_MS;
+    await page.waitForFunction((earlier) => {
+      const run = window.PALiveReading.current().status?.seqRun;
+      return Boolean(run) && run.running === true && run.startMs !== earlier;
+    }, EARLIER_START_MS, { timeout: 5000 }).catch(() => {});
+    const heldOwn = await heldRun();
     row = await rowState(page);
-    report.add('3', "It still does after the earlier run's record was answered, and with the run's own",
-      lib.verdict(row.running && earlier >= 2 && droid.lastRun.running === true),
-      `${earlier} read(s) while the record was still the earlier run's; record now ${droid.lastRun.outcome}; row ${JSON.stringify(row)}`);
+    report.add('3', "It still does while the page held the earlier run's record, and with the run's own",
+      lib.verdict(earlierHeld && heldOwn?.running === true && heldOwn.startMs !== EARLIER_START_MS && row.running && droid.reads(RECORD).length === 0),
+      `at the press the page held ${JSON.stringify(heldAtPress)}; now ${JSON.stringify(heldOwn)}; row ${JSON.stringify(row)}; ${droid.reads(RECORD).length} read(s) of ${RECORD}`);
 
     const colours = await page.evaluate((selector) => {
       const stop = document.querySelector(`${selector} [data-action="stop"]`);
@@ -184,8 +196,9 @@ lib.runCheck({
     const readsAtEnd = droid.reads(RECORD).length;
     if (selftest === 'peek') await peek();
     await page.waitForTimeout(QUIET_MS);
-    report.add('9', 'With both runs ended, the run record is not read', lib.verdict(droid.lastRun.running === false && droid.reads(RECORD).length === readsAtEnd),
-      `record ${droid.lastRun.outcome}; ${droid.reads(RECORD).length - readsAtEnd} read(s) of ${RECORD} in the ${QUIET_MS} ms after`);
+    report.add('9', 'With both runs ended, the run record document was never read',
+      lib.verdict(droid.lastRun.running === false && droid.reads(RECORD).length === 0),
+      `record ${droid.lastRun.outcome}; ${droid.reads(RECORD).length} read(s) of ${RECORD} in the whole run, ${droid.reads(RECORD).length - readsAtEnd} of them in the ${QUIET_MS} ms after`);
 
     // The droid says ok and never starts the run.
     droid.starts = false;
@@ -206,14 +219,20 @@ lib.runCheck({
     };
     const ended = () => page.waitForSelector(`${ROW}:not(.is-running)`, { timeout: 15000 }).catch(() => {});
 
+    // The estop latches, and the droid ends the run in that pass: the one
+    // status the run's end asks for carries both (src/tasks/sequence_dispatcher.cpp).
     await startRun();
-    droid.lastRun = { ...droid.lastRun, outcome: 'estop', running: false, endMs: droid.lastRun.startMs + 300 };
+    fixture.state.estop = true;
+    droid.record({ ...droid.lastRun, outcome: 'estop', running: false, endMs: droid.lastRun.startMs + 300 });
     await ended();
     row = await rowState(page);
     report.add('11', 'A run the estop ends: the row says so', lib.verdict(!row.running && row.said === `The estop stopped ${NAME}.`), JSON.stringify(row));
+    // Released as another window's STOP would, so the next run is the droid's
+    // to take up.
+    fixture.clearEstop();
 
     await startRun();
-    droid.silent = true;
+    await droid.dropOff();
     await ended();
     row = await rowState(page);
     report.add('12', 'A droid that stops answering mid-run: the row stops saying Running, and says it lost touch',

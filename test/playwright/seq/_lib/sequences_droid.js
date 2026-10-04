@@ -8,22 +8,36 @@
 // route (../../_lib/checks.js installGuard): every write the page attempts is
 // still recorded and still refused unless the script allows it.
 //
-// What it models, from the firmware (read at 162d4472):
+// What it models, from the firmware (read at 162d4472; the status frame's
+// run at a67570cf):
 //   POST /api/seq/test   answers ok at once; the run's record is written
 //                        `startDelayMs` later, when the dispatcher would take
 //                        the run up (src/tasks/sequence_dispatcher.cpp). With
 //                        `starts: false` it never is - the refused run.
 //   GET /api/seq/last-run  the record (src/seq_last_run_json.cpp), the fields
-//                        the page reads. With `silent` set on the droid it is
-//                        a droid that has dropped off the network: the read
-//                        gets no answer.
+//                        the page reads.
 //   POST /api/seq/stop   ends a running record as `aborted`; ok either way.
+//   the status frame     carries the record as `seqRun` - its name, whether
+//                        it is under way, and when it began
+//                        (src/web/status_json.cpp) - and the droid sends a
+//                        status when a run begins and when it ends
+//                        (src/sequence_run_evidence.cpp, #451). So every
+//                        record() pushes one on the fixture's stream. Pass
+//                        the fixture (runCheck's ctx.fixture) for this; a
+//                        script that starts no run need not.
+//   dropOff()            a droid that has dropped off the network: the open
+//                        status stream ends, and every read of the status, of
+//                        the stream and of the record goes unanswered.
 //
 // Not a bench-auto script: tools/bench_auto.py reads test/playwright/*/*.js,
 // and this sits one folder deeper.
 const lib = require('../../_lib/checks.js');
 
-const install = async (page, { sequences, lastRun = { valid: false, note: 'no sequence run recorded since boot' }, startDelayMs = 1500, starts = true }) => {
+// The record as the status frame carries it (src/web/status_json.cpp).
+const seqRunOf = (record) =>
+  (record.valid ? { name: record.name, running: record.running === true, startMs: record.startMs } : null);
+
+const install = async (page, { sequences, lastRun = { valid: false, note: 'no sequence run recorded since boot' }, startDelayMs = 1500, starts = true, fixture = null }) => {
   const droid = {
     sequences: new Map(sequences.map((seq) => [seq.name, JSON.parse(JSON.stringify(seq))])),
     lastRun,
@@ -34,6 +48,31 @@ const install = async (page, { sequences, lastRun = { valid: false, note: 'no se
     uptimeMs: 100000,
   };
   droid.reads = (apiPath) => droid.requests.filter((entry) => entry.method === 'GET' && entry.path === apiPath);
+  // Writes the run record, and says so on the status stream as the droid
+  // does at a run's begin and end. Only those edges write it here.
+  droid.record = (next) => {
+    droid.lastRun = next;
+    if (!fixture) return;
+    fixture.state.seqRun = seqRunOf(next);
+    fixture.push();
+  };
+  droid.dropOff = async () => {
+    if (!fixture) throw new Error('sequences_droid: dropOff() needs the fixture (runCheck ctx.fixture)');
+    droid.silent = true;
+    // Ends the fixture's stream server, and with it the stream the page holds
+    // open: page.route only sees new requests, so cutting the one long-lived
+    // stream has to happen at its server. The routes below refuse the
+    // reconnect and the status reads that follow.
+    await fixture.close();
+  };
+  // The page reads what the frame says before it sends: the record the droid
+  // already holds is in its first status.
+  if (fixture) fixture.state.seqRun = seqRunOf(lastRun);
+
+  // Registered after the fixture's own routes, so asked before them.
+  const deafWhenSilent = (route) => (droid.silent ? route.abort('internetdisconnected') : route.fallback());
+  await page.context().route('**/api/status*', deafWhenSilent);
+  await page.context().route('**/api/events*', deafWhenSilent);
 
   await page.context().route('**/api/seq**', async (route) => {
     const request = route.request();
@@ -71,14 +110,14 @@ const install = async (page, { sequences, lastRun = { valid: false, note: 'no se
       if (droid.starts) {
         setTimeout(() => {
           droid.uptimeMs += 60000;
-          droid.lastRun = { valid: true, name: run, source: 'web', outcome: 'running', running: true, startMs: droid.uptimeMs };
+          droid.record({ valid: true, name: run, source: 'web', outcome: 'running', running: true, startMs: droid.uptimeMs });
         }, startDelayMs);
       }
       return json({ ok: true });
     }
     if (method === 'POST' && apiPath === '/api/seq/stop') {
       if (droid.lastRun.running) {
-        droid.lastRun = { ...droid.lastRun, outcome: 'aborted', running: false, endMs: droid.lastRun.startMs + 900 };
+        droid.record({ ...droid.lastRun, outcome: 'aborted', running: false, endMs: droid.lastRun.startMs + 900 });
       }
       return json({ ok: true });
     }
