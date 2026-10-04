@@ -11,16 +11,19 @@
 //     other" (history: #411, moved here from Wiring): the list's rows are the
 //     catalog Parts whose control path is neither the dome link nor none, less
 //     every Part a row of GET /api/servo/outputs carries - against the droid's
-//     own answer - each row offers "Give it an output", and the summary counts
-//     the rows.
+//     own answer - each row offers its Output there (history: #463, operator
+//     2026-10-04: "Also pick it on Parts"): the Output bar on a body Part's
+//     row, and "the Dome Controller moves it" on a dome Part's
+//     (PAParts.isDomePart()) - and the summary counts the rows.
 //   - "No row is hidden, in any state" (history: #347): every Unused row is
 //     rendered visible (Element.checkVisibility with opacity and visibility,
 //     and a box with height) once the Outputs have answered, while the
 //     Outputs read is failing, and with a Part picked on the droid picture.
 //   - "Per-frame updates touch only values; no full re-render occurs while a
 //     control is under the pointer" (history: #347): the pointer rests on a
-//     droid-picture marker, on an act button in the picture's panel and on an
-//     Unused row's act in turn, while at least three once-a-second Outputs
+//     droid-picture marker, on the picture panel's Output bar (an act button
+//     where the pick has no bar) and on an Unused row's Output bar in turn,
+//     while at least three once-a-second Outputs
 //     reads land; each hovered element must still be the same node, still
 //     connected, still under the pointer, and no marker, act button or Unused
 //     row may be removed from the document meanwhile. The Outputs read is
@@ -44,8 +47,8 @@
 //     Output (POST /api/servo, /api/dome/cmd) or writes the Droid Build (POST
 //     /api/config). The act buttons are hovered, never pressed. Picking a
 //     marker on the picture is pressed: it only selects (data/parts.js, "THE
-//     VIEW NEVER WRITES"). Give it an output leaves the surface for Wiring, and
-//     the web suite holds where it lands (test_body_view_on_parts.js).
+//     VIEW NEVER WRITES"). An Output bar is hovered and never pressed: a press
+//     is a move (POST /api/config), the same one Wiring's row sends.
 //   - A fresh droid's Unused list: true only of a droid nobody has wired, and
 //     the bench droid's mapping is whatever it holds. The script checks the
 //     list against the droid's own answer instead, which holds on any droid.
@@ -65,7 +68,7 @@
 // python3 tools/serve_editor_fixture.py (routes in ../_lib/fixture_routes.js,
 // its 'bench' droid).
 // Self-tests, each must FAIL its check: SELFTEST_REBUILD=1 swaps the hovered
-// Unused act for a copy mid-frame; SELFTEST_HIDE=1 hides one Unused row once
+// Unused bar button for a copy mid-frame; SELFTEST_HIDE=1 hides one Unused row once
 // answered; SELFTEST_UNUSED=1 takes one row out of the Unused list;
 // SELFTEST_DESELECT=1 picks the picked marker again (which lets it go) after
 // the first Outputs read lands.
@@ -190,17 +193,21 @@ const hiddenRows = (page) =>
       expected: window.DroidParts.parts
         .filter((part) => part.control !== null && part.control !== undefined && part.control !== 'dome-link')
         .map((part) => part.id),
-      rows: [...document.querySelectorAll(selector)].map((row) => ({
-        id: row.dataset.part,
-        act: row.querySelector('[data-wire]')?.textContent.trim() || '',
-      })),
+      rows: [...document.querySelectorAll(selector)].map((row) => {
+        const part = window.PAParts.partById.get(row.dataset.part);
+        const cell = row.querySelector('[data-bar-for]');
+        const offers = part && window.PAParts.isDomePart(part)
+          ? cell?.textContent.trim() === 'the Dome Controller moves it'
+          : Boolean(cell?.querySelector('.output-seg[role="radiogroup"] button'));
+        return { id: row.dataset.part, offers };
+      }),
       summary: document.getElementById('parts-unused-summary').textContent,
     }), ROWS);
     const expected = unusedNow.expected.filter((id) => !claimed.has(id));
     const shownIds = unusedNow.rows.map((row) => row.id);
     const missingUnused = expected.filter((id) => !shownIds.includes(id));
     const strayUnused = shownIds.filter((id) => !expected.includes(id));
-    const noAct = unusedNow.rows.filter((row) => row.act !== 'Give it an output').map((row) => row.id);
+    const noAct = unusedNow.rows.filter((row) => !row.offers).map((row) => row.id);
     const countOk = unusedNow.summary === `${shownIds.length} ${shownIds.length === 1 ? 'part' : 'parts'}`;
     check(
       'Unused lists every Part this image moves that no Output claims, and no other',
@@ -210,7 +217,7 @@ const hiddenRows = (page) =>
         : `${shownIds.length} rows, summary "${unusedNow.summary}"` +
             (missingUnused.length ? `; missing ${missingUnused.join(', ')}` : '') +
             (strayUnused.length ? `; claimed but listed ${strayUnused.join(', ')}` : '') +
-            (noAct.length ? `; no "Give it an output" on ${noAct.join(', ')}` : ''),
+            (noAct.length ? `; no Output offered on ${noAct.join(', ')}` : ''),
     );
 
     const state2 = await hiddenRows(page);
@@ -223,7 +230,7 @@ const hiddenRows = (page) =>
     // Anything the pointer can rest on, watched for removal from the document.
     await page.evaluate(() => {
       window.__removed = [];
-      const watched = 'tr[data-part], [data-wire], [data-marker], [data-act], tbody, table';
+      const watched = 'tr[data-part], [data-bar-for] button, .bodyview-panel-slot button, [data-marker], [data-act], tbody, table';
       const observer = new MutationObserver((records) => {
         records.forEach((record) =>
           record.removedNodes.forEach((node) => {
@@ -311,13 +318,14 @@ const hiddenRows = (page) =>
       );
     };
 
-    // An Unused row's act, where the list has one. Hovered, never pressed.
-    const unusedAct = await page.$(`${ROWS} [data-wire]`);
-    if (unusedAct) {
-      const actPart = await unusedAct.getAttribute('data-wire');
+    // An Unused row's Output bar, where the list has one. Hovered, never
+    // pressed.
+    const unusedBar = await page.$(`${ROWS} [data-bar-for] .output-seg`);
+    if (unusedBar) {
+      const barPart = await unusedBar.evaluate((node) => node.closest('[data-bar-for]').dataset.barFor);
       await underPointer(
-        'an Unused row\'s "Give it an output"',
-        `#parts-unused [data-wire="${actPart}"]`,
+        'an Unused row\'s Output bar',
+        `#parts-unused [data-bar-for="${barPart}"] .output-seg button`,
         SELFTEST_REBUILD
           ? (sel) => {
               const button = document.querySelector(sel);
@@ -326,7 +334,7 @@ const hiddenRows = (page) =>
           : null,
       );
     } else {
-      report.add(report.rows.length + 1, 'an Unused row\'s "Give it an output" stays the same node under the pointer', lib.NOT_ASSESSED, 'every Part is on an output');
+      report.add(report.rows.length + 1, 'an Unused row\'s Output bar stays the same node under the pointer', lib.NOT_ASSESSED, 'no body Part is off an output');
     }
 
     // The droid picture: pick a marker (selection only), then rest on it and
@@ -375,6 +383,11 @@ const hiddenRows = (page) =>
           `list row selected=${stillPicked.listRow === null ? 'no list row' : stillPicked.listRow}, panel "${stillPicked.title}"`,
       );
       await underPointer('a droid-picture marker', `#bodyview-drawing [data-marker="${markerId}"]`, null);
+      // The panel's Output bar, where the pick has one (#463), else an act.
+      const panelBar = page.locator('#bodyview-panel .bodyview-panel-slot .output-seg button').first();
+      if (await panelBar.count()) {
+        await underPointer('the panel\'s Output bar', '#bodyview-panel .bodyview-panel-slot .output-seg button', null);
+      }
       // An act the Part can take, if it has one. A refused act button takes no
       // pointer by design (data/style.css, .btn:disabled pointer-events: none),
       // so with none offered the pointer rests on the act row that holds them.
