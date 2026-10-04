@@ -14,9 +14,11 @@
 // moved there from Parts with its question, rather than being copied. It is
 // the one place on Wiring that says which Output is wired and which is free
 // (operator, 2026-10-01 on #463: "it makes most sense to also define this
-// also in the wiring table"). Parts keeps the Parts no Output claims
-// (unclaimed()) and sends a builder to the table with routeToOutput() - one
-// route, taken from the droid picture's act and from each Unused row alike.
+// also in the wiring table"). A Part's Output is picked on Parts too, with
+// the same bar (operator, 2026-10-04 on #463: "Also pick it on Parts"):
+// outputChooser() is that bar, its one-press suggestion, take off and the one
+// request behind them, and Wiring's table and Parts' panel and Unused rows
+// each make one, so the two surfaces cannot come to pick differently.
 //
 // A move is announced before it happens, on every surface that can make one
 // (#347). Taking a Part off the Output it is on names the Part, the Output it
@@ -382,18 +384,22 @@
     return said.length ? said.join(" · ") : "No command yet";
   };
 
+  // What a surface says instead of an Output bar for a dome Part: the Dome
+  // Controller moves it, and no body Output does (isDomePart()).
+  const domeMovesText = (name) => `The Dome Controller moves ${name}, not an output.`;
+
   // ---------------------------------------------------------------------------
-  // The route to the picker
+  // The route to the table
   //
-  // Giving a Part an Output, or changing it, is done in the picker on Wiring
-  // and nowhere else (operator, 2026-09-28 on #411). A surface that offers it -
-  // the droid picture's "Give it an output", an Unused row on Parts - hands
-  // over the Part and goes there. The shell's address is a bare surface name
-  // (data/shell.js surfaceFromHash()), so the Part rides here instead, in the
-  // one module both surfaces load, and the picker takes it once it is on
-  // screen with the droid's answer painted. `off`: the Part is off the droid
-  // but still on an Output, so the builder is asked about the wire, not told
-  // to choose one.
+  // A Part's Output is picked where the builder is, on Wiring's table or on
+  // Parts with the same bar (outputChooser() below; operator, 2026-10-04 on
+  // #463, overturning 2026-09-28 on #411's Wiring-only rule). What still sends
+  // a builder to Wiring is a question only its table answers in full - a Part
+  // off the droid whose wire may still be on an Output (`off`). The shell's
+  // address is a bare surface name (data/shell.js surfaceFromHash()), so the
+  // Part rides here instead, in the one module both surfaces load, and the
+  // table takes it once it is on screen with the droid's answer painted: its
+  // row scrolled into view and marked, with the prompt in the row.
   // ---------------------------------------------------------------------------
   const PICKER_SURFACE = "wiring";
   let wanted = null;
@@ -463,6 +469,100 @@
   };
 
   /**
+   * The one way a surface puts a Part on an Output, moves it or takes it off:
+   * the Output bar, the board's suggestion as one press, and the request
+   * behind both, asked first where it takes the Part off another Output
+   * (mover()). Wiring's table and Parts' panel and Unused rows each make one,
+   * so a Part is picked with the same control, refused the same Outputs and
+   * saved by the same request on either surface (operator, 2026-10-04 on
+   * #463: "Also pick it on Parts").
+   *
+   * @param {object} hosts - as mover() takes them, less `reload`: a move is
+   *   followed by a read of the Outputs (data/outputs.js refresh()), which
+   *   publishes to every surface that paints from it
+   * @returns {{bar: function, suggestion: function, put: function, pending: function}}
+   */
+  const outputChooser = ({ dialog, say, repaint, onSending = repaint }) => {
+    const OUTPUTS = window.PAOutputs;
+    const move = mover({ dialog, say, reload: () => OUTPUTS.refresh(), repaint, onSending });
+
+    // `control` is the one the builder chose with: focus goes back to it if
+    // they leave the Part where it is.
+    const put = (partId, address, control = null) => move.request(moveFor(OUTPUTS.list(), partId, address), control);
+
+    // The Output a Part is on, as a bar of every Output by what its board
+    // prints, the one it is on lit. An Output another Part is on carries a
+    // mark, in ink and never a Status Color: two Parts on one wire move
+    // together, which is a choice and not a fault. An Output a light cannot go
+    // on stays on a light Part's bar, refused and marked so, with the reason
+    // under the bar. A bar whose move is on its way takes no press either, and
+    // is not marked: it is waiting, and nothing on it is refused. A bar with
+    // nothing lit is a choice still to make, and says so in its class
+    // (`is-unpicked`), which the surface draws as one.
+    const bar = (part, outputs) => {
+      const here = OUTPUTS.forPart(part.id, outputs);
+      const refused = refusedFor(part, outputs, here);
+      const sending = move.pending() === part.id;
+      const control = segmented(
+        `Output for ${part.name}`,
+        outputs.map((output) => {
+          const others = output.parts.filter((id) => id !== part.id);
+          const usual = output.suggestedPart === part.id;
+          const state = others.length ? `, wired: ${listParts(others)}` : output === here ? "" : `, ${FREE}`;
+          return {
+            id: output.address,
+            label: output.name,
+            disabled: sending || refused.includes(output),
+            className: [
+              others.length ? "is-taken" : "",
+              usual ? "is-suggested" : "",
+              refused.includes(output) ? "is-refused" : "",
+            ].filter(Boolean).join(" "),
+            name: `${output.name}${state}${usual ? `, ${SUGGESTED}` : ""}`,
+          };
+        }),
+        here ? here.address : null,
+        (address) => {
+          const pressed = Array.from(control.querySelectorAll("button")).find((each) => each.dataset.value === address);
+          put(part.id, address, pressed || null);
+        }
+      );
+      if (!here) control.classList.add("is-unpicked");
+      return control;
+    };
+
+    // The Output the board usually carries this Part on, while the Part is on
+    // none: offered only where it is free and a light may go on it. A Part on
+    // no Output takes another one with no question asked (moveFor()
+    // `announce`), so a suggestion onto an Output another Part is on would
+    // gang the two in one press; the bar still marks it, and putting two
+    // Parts on one wire stays a choice made on the bar.
+    const suggested = (part, outputs) => {
+      if (OUTPUTS.forPart(part.id, outputs)) return null;
+      const refused = refusedFor(part, outputs, null);
+      return outputs.find((output) =>
+        output.suggestedPart === part.id && output.parts.length === 0 && !refused.includes(output)) || null;
+    };
+
+    // The suggestion as one press, "Use GPIO 49", or null where there is
+    // none. Nothing is picked without it.
+    const suggestion = (part, outputs) => {
+      const output = suggested(part, outputs);
+      if (!output) return null;
+      const act = document.createElement("button");
+      act.type = "button";
+      act.className = "btn btn-sm btn-quiet parts-use";
+      act.dataset.use = output.address;
+      act.textContent = `Use ${output.name}`;
+      act.disabled = move.pending() === part.id;
+      act.addEventListener("click", () => put(part.id, output.address, act));
+      return act;
+    };
+
+    return Object.freeze({ bar, suggestion, put, pending: () => move.pending() });
+  };
+
+  /**
    * The parts wiring table: Wiring's one table of what is on which wire
    * (operator, 2026-10-01 on #463, the pick of three drawn options). Each row
    * is a Part, the Output it is on, and on the same row what is on that wire -
@@ -487,7 +587,8 @@
    * Output and a pill while it is not, so a fresh droid shows every one as a
    * pill; hiding one is how an operator loses an output (#296). A pill pressed
    * becomes a row with no Output lit, which is kept on this page only: nothing
-   * is sent until an Output is picked.
+   * is sent until an Output is picked. Such a row says it waits for a pick, in
+   * the row, and offers the board's suggestion as one press.
    *
    * A dome Part gets no Output to choose (isDomePart()). One a builder recorded
    * on a body Output anyway is a row of the board's group all the same, naming
@@ -546,11 +647,16 @@
     const dome = catalog.parts.filter(isDomePart);
 
     // What this page holds and the droid does not: the Parts a builder added
-    // to the table and has not yet put on an Output, which cards are open and
-    // whether the dome's group is. All three are gone on a reload.
+    // to the table and has not yet put on an Output, which cards are open,
+    // whether the dome's group is, and the row a builder arrived for from
+    // another surface (claimWanted()). All four are gone on a reload.
     const added = [];
     const cardsOpen = new Set();
     let domeOpen = false;
+    // { part, off, at }: `at` is the Output the Part was on when it was
+    // marked, and the mark goes once that changes - the pick it asked for has
+    // been made, or the Part taken off.
+    let marked = null;
 
     // A row's act is a quiet word at row scale, never a box on every row.
     const actHtml = (act, word, attrs = "") =>
@@ -592,19 +698,22 @@
       ...added.map((id) => partById.get(id)).filter((part) => part && outputOf(part.id) === null),
     ];
 
-    // Why a choice is off or marked, as text on the row and never a title: a
-    // bench tablet has no hover (docs/ui-copy-voice.md rule 12). The board's
-    // suggestion is said while the Part still has no Output, which is when it
-    // is of use.
+    // Why a choice is off, as text on the row and never a title: a bench
+    // tablet has no hover (docs/ui-copy-voice.md rule 12).
     const whyHtml = (part, output, outputs) => {
-      const lines = [];
       const refused = refusedFor(part, outputs, output);
-      if (refused.length) lines.push(`${refused.map((each) => each.name).join(", ")}: no light`);
-      if (!output) {
-        const usual = outputs.filter((each) => each.suggestedPart === part.id);
-        if (usual.length) lines.push(`${usual.map((each) => each.name).join(", ")}: ${SUGGESTED}`);
-      }
-      return lines.length ? `<span class="why">${esc(lines.join(" · "))}</span>` : "";
+      return refused.length ? `<span class="why">${esc(`${refused.map((each) => each.name).join(", ")}: no light`)}</span>` : "";
+    };
+
+    // The row's own prompt: a Part on no Output waits for a pick, and the
+    // board's suggestion is one press beside the words (filled by
+    // fillRows()); a Part a builder arrived for because it is off the droid
+    // asks about its wire. In the row, where the builder is looking.
+    const PICK = "Pick an output";
+    const promptHtml = (part, output) => {
+      const off = marked !== null && marked.part === part.id && marked.off && output;
+      if (!off && output) return "";
+      return `<span class="parts-pick" data-pick><span class="parts-pick-word">${off ? "Take it off if the wire came off too" : PICK}</span></span>`;
     };
 
     const partRowHtml = (part, outputs) => {
@@ -614,9 +723,10 @@
       // with its Output and can be taken off, and is offered no other Output.
       const chosen = isDomePart(part) && output
         ? `<span class="parts-out">${esc(output.name)}</span>`
-        : `<span class="parts-bar" data-bar="output"></span>${whyHtml(part, output, outputs)}`;
+        : `<span class="parts-bar" data-bar="output"></span>${promptHtml(part, output)}${whyHtml(part, output, outputs)}`;
+      const mark = marked !== null && marked.part === part.id ? " is-marked" : "";
       return (
-        `<tr class="parts-row${output ? " is-wired" : ""}${kindClass(part)}" data-part="${esc(part.id)}">` +
+        `<tr class="parts-row${output ? " is-wired" : " is-unpicked"}${mark}${kindClass(part)}" data-part="${esc(part.id)}">` +
         `<th scope="row">${nameHtml(part)}` +
         (gang.length ? `<span class="parts-gang">moves with ${esc(listParts(gang))}</span>` : "") +
         `</th>` +
@@ -720,17 +830,13 @@
       `<th scope="col"></th></tr></thead>` +
       boardHtml(outputs) + linksHtml(links()) + domeHtml() + `</table>`;
 
-    // Declared before the mover and the finder, which are handed a way to
+    // Declared before the chooser and the finder, which are handed a way to
     // repaint.
     let paint = () => {};
-    const move = mover({
-      dialog,
-      say,
-      reload: () => OUTPUTS.refresh(),
-      repaint: () => paint(),
-      // The row's bar takes no second press while its move is on its way.
-      onSending: () => paint(),
-    });
+    // The bar, the suggestion and the request, the same ones Parts makes
+    // (outputChooser()). A row's bar takes no second press while its move is
+    // on its way, so a move on its way repaints.
+    const chooser = outputChooser({ dialog, say, repaint: () => paint() });
 
     // Find by Moving, run from a Part's row (data/find_by_moving.js). Its That
     // one is the same move this row's bar makes, question and all. Absent
@@ -739,52 +845,12 @@
       ? window.PAFindByMoving.runner({
         panel: find,
         say,
-        move: (partId, address) => move.request(moveFor(OUTPUTS.list(), partId, address), null),
-        pending: () => move.pending(),
+        move: (partId, address) => chooser.put(partId, address),
+        pending: () => chooser.pending(),
         changed: () => paint(),
         surface: "Wiring",
       })
       : null;
-
-    // The Output a Part is on, as a bar of every Output by what its board
-    // prints, the one it is on lit. An Output another Part is on carries a
-    // mark, in ink and never a Status Color: two Parts on one wire move
-    // together, which is a choice and not a fault. An Output a light cannot go
-    // on stays on a light Part's bar, refused and marked so, with the reason
-    // under the bar. A bar whose move is on its way takes no press either, and
-    // is not marked: it is waiting, and nothing on it is refused.
-    const outputBar = (part, outputs) => {
-      const here = outputOf(part.id);
-      const refused = refusedFor(part, outputs, here);
-      const sending = move.pending() === part.id;
-      const bar = segmented(
-        `Output for ${part.name}`,
-        outputs.map((output) => {
-          const others = output.parts.filter((id) => id !== part.id);
-          const usual = output.suggestedPart === part.id;
-          const state = others.length ? `, wired: ${listParts(others)}` : output === here ? "" : `, ${FREE}`;
-          return {
-            id: output.address,
-            label: output.name,
-            disabled: sending || refused.includes(output),
-            className: [
-              others.length ? "is-taken" : "",
-              usual ? "is-suggested" : "",
-              refused.includes(output) ? "is-refused" : "",
-            ].filter(Boolean).join(" "),
-            name: `${output.name}${state}${usual ? `, ${SUGGESTED}` : ""}`,
-          };
-        }),
-        here ? here.address : null,
-        (address) => {
-          // The control the builder chose with, which is where focus goes back
-          // to if they leave the Part where it is.
-          const control = Array.from(bar.querySelectorAll("button")).find((each) => each.dataset.value === address);
-          move.request(moveFor(OUTPUTS.list(), part.id, address), control || null);
-        }
-      );
-      return bar;
-    };
 
     // A Part on no Output has no wire yet, and its row offers to find the one
     // it is on by moving the free Outputs (data/find_by_moving.js; operator,
@@ -822,7 +888,9 @@
         if (!node.classList.contains("parts-row")) return;
         const part = partById.get(node.dataset.part);
         const output = outputOf(part.id);
-        node.querySelector("[data-bar]")?.replaceChildren(outputBar(part, outputs));
+        node.querySelector("[data-bar]")?.replaceChildren(chooser.bar(part, outputs));
+        const use = output ? null : chooser.suggestion(part, outputs);
+        if (use) node.querySelector("[data-pick]")?.appendChild(use);
         const carries = node.querySelector(".parts-carries");
         // A dome Part on a body Output is offered take off and nothing else:
         // what is on that wire is not this board's to say either.
@@ -837,20 +905,24 @@
       if (!node || !node.closest?.(".parts-table")) return null;
       const row = node.closest("tr");
       const where = row?.dataset.part || row?.dataset.link || node.closest("tbody")?.dataset.group || "";
-      const kind = node.dataset.act || (node.dataset.find ? "find" : node.closest("[data-bar]") ? "output" : "wire");
+      const kind = node.dataset.act || (node.dataset.find ? "find" : node.dataset.use ? "use" : node.closest("[data-bar]") ? "output" : "wire");
       return `${where}|${kind}|${node.dataset.value || node.dataset.product || ""}`;
     };
     // Hands the focus back to the control a rebuild took it from. `true` only
     // where that control is still there and cannot take it yet. A control
-    // that is gone was on a row that is gone - its Part was taken off, or
-    // removed - and the Part is a pill again: the focus goes to that pill, so
-    // it never falls off the table.
+    // that is gone either went with its row - its Part was taken off, or
+    // removed, and the Part is a pill again - or went from a row that stays:
+    // a suggestion pressed, whose Part is now on that Output. The focus goes
+    // to the pill, else to the Output the row has lit, so it never falls off
+    // the table.
     const focusControl = (key) => {
       const buttons = Array.from(table.querySelectorAll("button"));
       const control = buttons.find((each) => controlKey(each) === key);
       if (control && control.disabled) return true;
       const partId = key.split("|")[0];
-      (control || buttons.find((each) => each.dataset.act === "add" && each.dataset.part === partId))?.focus?.();
+      (control ||
+        buttons.find((each) => each.dataset.act === "add" && each.dataset.part === partId) ||
+        rowOf(partId)?.querySelector("[data-bar] button.active"))?.focus?.();
       return false;
     };
 
@@ -860,7 +932,7 @@
     const stateOf = (outputs) =>
       outputs.map((output) =>
         [output.address, output.name, output.parts.join("+"), output.canLight, output.suggestedPart, output.type].join(":")).join(";") +
-      `|${move.pending()}|${finder === null ? "" : `${finder.live()}:${finder.running() !== null}`}`;
+      `|${chooser.pending()}|${finder === null ? "" : `${finder.live()}:${finder.running() !== null}`}`;
 
     let drawn = null;
     // The control a rebuild took the focus from and could not hand it back
@@ -873,6 +945,7 @@
       // A Part that has landed on an Output is the droid's now; taken off
       // again, it goes back among the pills.
       added.splice(0, added.length, ...added.filter((id) => outputOf(id) === null));
+      if (marked !== null && (outputOf(marked.part)?.address ?? null) !== marked.at) marked = null;
       const html = tableHtml(outputs);
       const state = `${html}|${stateOf(outputs)}`;
       if (state === drawn) return;
@@ -916,7 +989,7 @@
         // Off an Output is a move to none, sent as one; off this page's own
         // list sends nothing, since the droid never held it.
         if (outputOf(partId)) {
-          move.request(moveFor(OUTPUTS.list(), partId, NO_OUTPUT), act);
+          chooser.put(partId, NO_OUTPUT, act);
         } else if (added.includes(partId)) {
           added.splice(added.indexOf(partId), 1);
           paint();
@@ -963,7 +1036,9 @@
     // A Part handed over by routeToOutput(), taken once the table is on
     // screen with the droid's answer in it: before then there is no Output to
     // choose, and a focus on a control that is not showing lands nowhere. A
-    // Part on no Output is added as a row, so there is a bar to choose on.
+    // Part on no Output is added as a row, so there is a bar to choose on. The
+    // row is marked and scrolled into view, and its prompt is in the row
+    // (promptHtml()), not on the feedback line under the table.
     const claimWanted = (outputs) => {
       if (wanted === null || !answered() || document.body?.dataset?.page !== PICKER_SURFACE) return;
       const { part, off } = wanted;
@@ -971,19 +1046,13 @@
       const entry = partById.get(part);
       if (!entry) return;
       if (isDomePart(entry) && outputOf(part) === null) {
-        say(`The Dome Controller moves ${partLabel(part)}, not an output.`);
+        say(domeMovesText(partLabel(part)));
         return;
       }
-      if (outputOf(part) === null && !added.includes(part)) {
-        added.push(part);
-        draw(outputs);
-      }
+      if (outputOf(part) === null && !added.includes(part)) added.push(part);
+      marked = { part, off, at: outputOf(part)?.address ?? null };
+      draw(outputs);
       focusRow(part);
-      say(
-        off
-          ? `Press take off in ${partLabel(part)}'s row if the wire came off too.`
-          : `Choose the output that moves ${partLabel(part)} in its row.`
-      );
     };
 
     paint = () => {
@@ -1031,11 +1100,13 @@
     unclaimed,
     offButMapped,
     routeToOutput,
+    domeMovesText,
     TABLE,
     FREE,
     wiredCounts,
     wiredSummary,
     segmented,
+    outputChooser,
     picker,
   });
 })();
