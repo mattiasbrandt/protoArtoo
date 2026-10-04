@@ -281,7 +281,8 @@ the patch releases, whose notes live on their own GitHub Release.
 - **Green means the droid heard it.** The Dome ESC, the Foot Drive and the RC
   receiver light green only on what comes back from them, never on what the
   droid sent. The Dome ESC has no wire back, so it reads Idle or Spinning in
-  grey, and a PWM receiver reads Unmeasured until something measures it.
+  grey. A PWM receiver reads Unmeasured in grey: the droid knows it is on,
+  not whether pulses arrive.
 - **STOP releases what it latched.** While the droid reports the estop
   latched, the red STOP says Press to release beside it, and a press releases
   it. The ESTOP cell on the Status Plate does the same.
