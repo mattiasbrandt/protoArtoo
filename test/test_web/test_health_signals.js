@@ -56,20 +56,22 @@ const HEALTHY_PAYLOAD = Object.freeze({
 // RC receiver
 // -----------------------------------------------------------------------------
 
+// The channel states as the firmware sends them (src/web/status_json.cpp),
+// read from the one RC link table the Status Plate reads too (#399).
 test("RC receiver reads OFF with no channels, OK on frames, FAIL on signal loss", () => {
   const absent = toSignalMap({});
   assert.equal(absent["h-sbus"].state, "off");
   assert.equal(absent["h-sbus"].reason, "No RC input");
 
-  const framing = toSignalMap({ rcCh1: 1500, sbusSignalLost: false, sbusHwFailsafe: false });
+  const framing = toSignalMap({ rcCh1: { state: "active" }, sbusSignalLost: false, sbusHwFailsafe: false });
   assert.equal(framing["h-sbus"].state, "ok");
   assert.equal(framing["h-sbus"].reason, "Frames ok");
 
-  const lost = toSignalMap({ rcCh1: 1500, sbusSignalLost: true });
+  const lost = toSignalMap({ rcCh1: { state: "signal_lost" }, sbusSignalLost: true });
   assert.equal(lost["h-sbus"].state, "fail");
   assert.equal(lost["h-sbus"].reason, "Signal lost");
 
-  const failsafe = toSignalMap({ rcCh1: 1500, sbusHwFailsafe: true });
+  const failsafe = toSignalMap({ rcCh1: { state: "active" }, sbusHwFailsafe: true });
   assert.equal(failsafe["h-sbus"].state, "fail");
   assert.equal(failsafe["h-sbus"].reason, "HW failsafe");
 });

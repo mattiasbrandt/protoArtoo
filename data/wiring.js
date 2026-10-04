@@ -1058,14 +1058,19 @@
   const receiverRow = ({ status, words, rcName }) => {
     const base = { key: "rc", subject: "RC receiver", declared: rcName || "Fitted" };
     if (status === null) return row({ ...base, observed: words.waiting, light: "off", state: STATES.notProbed });
-    const signals = window.PAHealthSignals.deriveHealthSignals(status, { unknown: words.unknown });
-    const sbus = signals.find((signal) => signal.id === "h-sbus");
-    const answer = { state: sbus.state, word: sbus.reason };
-    if (answer.state === "off") {
+    // Keyed on the table's word, never on a grey light: Unmeasured (PWM) and
+    // Standby are grey too, and neither means the input is switched off. No
+    // frames is the droid asking and nobody answering (#399).
+    const { RC_LINK_WORDS, readRcLink } = window.PAHealthSignals;
+    const answer = readRcLink(status);
+    if (answer.word === RC_LINK_WORDS.noInput.word) {
       return row({ ...base, observed: answer.word, light: "off", state: STATES.notProbed,
         why: "Its input is switched off, so the droid is not listening.", move: MOVES.configuration });
     }
-    return signalRow(base, answer, { silent: "Asked, and no answer. Check the receiver and the radio." });
+    return signalRow(base, answer, {
+      askedWithNoAnswer: [RC_LINK_WORDS.noFrames.word],
+      silent: "Asked, and no answer. Check the receiver and the radio.",
+    });
   };
 
   // The dome's panels against the stated Dome Design, from the one function

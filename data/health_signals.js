@@ -61,12 +61,8 @@
   const healthSignal = (state, reason = "") => ({ state, reason });
 
   const evaluateSbus = (payload) => {
-    // No rcCh1-rcCh6 key at all: the RC receiver is switched off.
-    const anyRcEnabled = RC_CHANNEL_KEYS.some((key) => hasOwnKey(payload, key));
-    if (!anyRcEnabled) return healthSignal("off", "No RC input");
-    if (payload.sbusHwFailsafe === true) return healthSignal("fail", "HW failsafe");
-    if (payload.sbusSignalLost === true) return healthSignal("fail", "Signal lost");
-    return healthSignal("ok", "Frames ok");
+    const { state, word } = readRcLink(payload);
+    return healthSignal(state, word);
   };
 
   // An AP-only droid is a normal droid, so "not joined" is not "degraded" -
@@ -291,6 +287,56 @@
     return commanded(FOOT_DRIVE_WORDS.noAnswer, entry);
   };
 
+  // ---------------------------------------------------------------------------
+  // The RC receiver's link: one word table, read by Health, the Status Plate's
+  // RC LINK chip (`short`) and Wiring's receiver row (#399)
+  //
+  // Every receiver input is read, rcCh1..rcCh6. rcCh1 is the drive receiver
+  // except in single_sbus + useCh2, where the firmware routes it to rcCh2 and
+  // omits rcCh1 entirely (src/web/web_server.cpp, the enableRcCh1 guard), so
+  // reading rcCh1 alone would say "no RC" on a working droid. rcCh3..rcCh6
+  // only ever report `ready` or `standby`, so they never outrank a link state;
+  // with no rcCh1/rcCh2 on they say a spare wire is on, not that nothing is.
+  //
+  // The worst state across every receiver input that reports one, plus the
+  // hardware failsafe bit - the half that would otherwise be missed: a radio
+  // switched off makes the receiver assert failsafe while it keeps sending
+  // frames, so the channel still reads `active` and only `sbusHwFailsafe` says
+  // the link is dead. The channel states are the firmware's
+  // (src/web/status_json.cpp). `sbusSignalLost` is not read: the boot arms
+  // the SBUS watchdog before any frame (src/main.cpp), so it is true while a
+  // receiver has simply not been heard yet, which `not_seen` already says.
+  //
+  // Standard PWM inputs say `ready`: the firmware publishes that they are
+  // enabled and nothing whatever about whether pulses arrive (PWM loss submits
+  // a zero frame and raises no failsafe, src/tasks/rc_input.cpp
+  // dispatchStandardPwmInputs). So they read Unmeasured, grey - nothing is
+  // wrong, nothing was measured. The plate said "PWM" until the operator
+  // settled that word on 2026-09-17: a mode reads like a thing that is fine.
+  // ---------------------------------------------------------------------------
+  const RC_LINK_WORDS = Object.freeze({
+    failsafe: linkAnswer("fail", "HW failsafe", "Failsafe"),
+    lost: linkAnswer("fail", "Signal lost", "Lost"),
+    noFrames: linkAnswer("off", "No frames"),
+    framesOk: linkAnswer("ok", "Frames ok", "OK"),
+    unmeasured: linkAnswer("off", "Unmeasured"),
+    standby: linkAnswer("off", "Standby"),
+    // No receiver input switched on at all.
+    noInput: linkAnswer("off", "No RC input", "Off"),
+  });
+
+  const readRcLink = (status) => {
+    if (isObject(status) && status.sbusHwFailsafe === true) return RC_LINK_WORDS.failsafe;
+    const states = RC_CHANNEL_KEYS.filter((key) => isObject(status) && hasOwnKey(status, key))
+      .map((key) => (isObject(status[key]) ? status[key].state : undefined));
+    if (states.length === 0) return RC_LINK_WORDS.noInput;
+    if (states.includes("signal_lost")) return RC_LINK_WORDS.lost;
+    if (states.includes("not_seen")) return RC_LINK_WORDS.noFrames;
+    if (states.includes("active")) return RC_LINK_WORDS.framesOk;
+    if (states.includes("ready")) return RC_LINK_WORDS.unmeasured;
+    return RC_LINK_WORDS.standby;
+  };
+
   const evaluateDomeLink = (payload, unknown) => {
     const { state, word } = readProtoR2link(payload, { unknown });
     return healthSignal(state, word);
@@ -348,6 +394,8 @@
     readSoundLink,
     readDomeEsc,
     readFootDrive,
+    readRcLink,
+    RC_LINK_WORDS,
   });
 
   if (typeof window !== "undefined") {

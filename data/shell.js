@@ -664,14 +664,6 @@
   // showing the value it last had rather than inventing one.
   const feetAreHeld = (status) => LIVE.latchedIn(status) || feetHeldBesidesEstop(status);
 
-  // The two RC receivers. rcCh3..rcCh6 are further channels of the same
-  // receiver and only ever report "ready" or "standby", so they carry no link
-  // state at all; rcCh1 is the drive receiver except in single_sbus + useCh2,
-  // where the firmware routes the drive receiver to rcCh2 and omits rcCh1
-  // entirely (src/web/web_server.cpp, the enableRcCh1 guard). Reading rcCh1
-  // alone would therefore report "no RC" on a working single-SBUS droid.
-  const RC_LINK_CHANNELS = ["rcCh1", "rcCh2"];
-
   // A chip's state class: "" is the quiet default, "live" is the thing doing
   // its job, "stopped" is something stopped or refused. A posture the
   // operator chose -- Non-RC Control, Sleep Mode -- and a component nobody
@@ -726,31 +718,10 @@
       id: "rclink",
       label: "RC LINK",
       page: "rc",
-      // The worst state across every receiver that reports one, plus the
-      // hardware failsafe bit -- which is the half that would otherwise be
-      // missed. A transmitter switched off makes the receiver assert failsafe
-      // while it keeps sending frames, so the channel still reads "active"
-      // and only `sbusHwFailsafe` says the link is dead.
-      read: (status) => {
-        if (status.sbusHwFailsafe === true) return chipState("stopped", "FAILSAFE");
-        const states = RC_LINK_CHANNELS.filter((key) => hasKey(status, key)).map((key) => {
-          const channel = status[key];
-          return channel !== null && typeof channel === "object" ? channel.state : undefined;
-        });
-        if (states.includes("signal_lost")) return chipState("stopped", "LOST");
-        if (states.includes("not_seen")) return chipState("", "NO FRAMES");
-        if (states.includes("active")) return chipState("live", "OK");
-        // Standard PWM inputs: the firmware publishes whether they are enabled
-        // and nothing whatever about whether pulses are arriving -- PWM loss
-        // submits a zero frame and triggers no failsafe layer and no key
-        // (src/tasks/rc_input.cpp, dispatchStandardPwmInputs). So the chip says
-        // it is not measuring, because a chip may only print what something
-        // measured. It said "PWM" until the operator settled the wording on
-        // 2026-09-17: that named a mode, and a mode reads like a thing that is
-        // fine. Uncolored either way -- nothing is wrong, we just do not know.
-        if (states.includes("ready")) return chipState("", "UNMEASURED");
-        return chipState("", states.length > 0 ? "STANDBY" : "OFF");
-      },
+      // The health-signal model's RC link, the same word table Health and
+      // Wiring read (data/health_signals.js readRcLink, #399): its short
+      // form in the plate's caps, under the light the model gave.
+      read: (status) => linkChip(LINKS.readRcLink(status)),
     },
     {
       id: "control",
