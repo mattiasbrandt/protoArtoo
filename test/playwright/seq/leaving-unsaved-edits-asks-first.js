@@ -67,7 +67,10 @@ const seen = (page) =>
   });
 
 // Everything the page holds in browser storage, as one string. Opening the
-// workspace caches the dome's layout there; the edit must add nothing to it.
+// workspace caches the dome's layout there, once its read of the layout lands
+// (data/seq.js renderEditorView() -> DomeLayout.load(); the cache entry is
+// written before DomeLayout's onChange listeners are told). The edit must add
+// nothing to it, so the snapshot is taken after that read has landed.
 const stored = (page) =>
   page.evaluate(() => JSON.stringify([window.localStorage, window.sessionStorage].map((store) =>
     Object.keys(store).sort().map((key) => [key, store.getItem(key)]))));
@@ -80,7 +83,12 @@ lib.runCheck({
   run: async ({ page, writes, report, selftest }) => {
     await seq.install(page, { sequences: [SEQUENCE] });
     await seq.openSequences(page, NAME);
+    await page.evaluate(() => {
+      window.__layoutLanded = 0;
+      window.DomeLayout.onChange(() => { window.__layoutLanded += 1; });
+    });
     await seq.openInWorkspace(page, NAME);
+    await page.waitForFunction(() => window.__layoutLanded > 0, null, { timeout: 10000 });
     const storedBefore = await stored(page);
 
     if (selftest !== 'clean') {

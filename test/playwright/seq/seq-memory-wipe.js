@@ -26,7 +26,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     }
   };
 
-  const browser = await chromium.launch({ headless: process.env.HEADLESS === 'true' });
+  const browser = await chromium.launch({ headless: process.env.HEADLESS !== 'false' });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
 
@@ -57,41 +57,41 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
     });
 
-    await test('Confirm button disabled until name is typed', async () => {
-      const confirmBtn = page.locator('#seq-modal-wipe-confirm');
+    await test('Wipe it stays disabled until the name is typed', async () => {
+      const wipeBtn = page.locator('#seq-modal-wipe-confirm');
       const confirmInput = page.locator('#seq-wipe-confirm-input');
       const placeholder = await confirmInput.getAttribute('placeholder');
 
       // Button should be disabled initially
-      let isDisabled = await confirmBtn.isDisabled();
+      let isDisabled = await wipeBtn.isDisabled();
       if (!isDisabled) {
-        throw new Error('Confirm button should be disabled initially');
+        throw new Error('Wipe it should be disabled initially');
       }
 
       // Type wrong text
       await confirmInput.fill('WrongName');
-      isDisabled = await confirmBtn.isDisabled();
+      isDisabled = await wipeBtn.isDisabled();
       if (!isDisabled) {
-        throw new Error('Confirm button should still be disabled with wrong name');
+        throw new Error('Wipe it should still be disabled with wrong name');
       }
 
       // Type correct text (using placeholder as the expected name)
       await confirmInput.fill(placeholder);
-      isDisabled = await confirmBtn.isDisabled();
+      isDisabled = await wipeBtn.isDisabled();
       if (isDisabled) {
-        throw new Error('Confirm button should be enabled with correct name');
+        throw new Error('Wipe it should be enabled with correct name');
       }
     });
 
-    await test('Cancel closes modal without deleting', async () => {
-      const cancelBtn = page.locator('#seq-modal-wipe-cancel');
-      await cancelBtn.click();
+    await test('Keep it closes the dialog without wiping', async () => {
+      const keepBtn = page.locator('#seq-modal-wipe-cancel');
+      await keepBtn.click();
       await page.waitForTimeout(100);
 
       const modal = page.locator('#seq-modal-memory-wipe');
       const isHidden = await modal.evaluate((el) => el.classList.contains('hidden'));
       if (!isHidden) {
-        throw new Error('Modal should be hidden after cancel');
+        throw new Error('The dialog should be hidden after Keep it');
       }
     });
 

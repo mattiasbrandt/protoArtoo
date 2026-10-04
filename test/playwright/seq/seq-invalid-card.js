@@ -3,7 +3,7 @@ const { chromium } = require('playwright');
 const assert = require('assert');
 
 const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
-const HEADLESS = process.env.HEADLESS === 'true';
+const HEADLESS = process.env.HEADLESS !== 'false';
 
 async function runTest() {
   const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 50 });
@@ -124,10 +124,14 @@ async function runTest() {
       'Invalid badge should have explanatory title'
     );
     assert.strictEqual(invalidSeqState.testBtnDisabled, true, 'Invalid sequence Test button should be disabled');
+    // Why Test is off is said by the row's Invalid badge. An act carries no
+    // native title (#460: its one tooltip names the act), so the Test button
+    // does not repeat it.
     assert.ok(
-      invalidSeqState.testBtnTitle.includes('cannot be run'),
-      'Test button should have disabled title explaining why'
+      invalidSeqState.invalidBadgeTitle.includes('cannot be run'),
+      'Invalid badge should say the sequence cannot be run'
     );
+    assert.strictEqual(invalidSeqState.testBtnTitle, '', 'Test button should carry no native title (#460)');
     assert.strictEqual(invalidSeqState.editBtnDisabled, false, 'Invalid sequence Edit button should be enabled');
     assert.strictEqual(invalidSeqState.duplicateBtnDisabled, false, 'Invalid sequence Duplicate button should be enabled');
     assert.strictEqual(invalidSeqState.memoryWipeBtnDisabled, false, 'Invalid sequence Memory Wipe button should be enabled');

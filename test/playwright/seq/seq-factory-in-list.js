@@ -20,7 +20,7 @@ const { chromium } = require("playwright");
 const assert = require("assert");
 
 const TARGET_URL = process.env.TARGET_URL || "http://127.0.0.1:4173/seq.html";
-const HEADLESS = process.env.HEADLESS === "true";
+const HEADLESS = process.env.HEADLESS !== "false";
 
 async function test() {
   const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 50 });

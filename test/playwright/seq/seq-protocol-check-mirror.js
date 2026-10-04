@@ -26,7 +26,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     }
   };
 
-  const browser = await chromium.launch({ headless: process.env.HEADLESS === 'true' });
+  const browser = await chromium.launch({ headless: process.env.HEADLESS !== 'false' });
   const context = await browser.newContext();
   const page = await context.newPage();
 
@@ -52,8 +52,6 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
     }, testSeq);
     await page.waitForSelector('#seq-editor-view:not(.hidden)', { timeout: 5000 });
-    // The workspace opens on the timeline; the step cards are in the step list.
-    await page.click('#seq-editor-show-steps');
     // The name is in the drawer's Sequence pane.
     await page.click('#seq-editor-tab-sequence');
 
@@ -118,25 +116,31 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Test suppressMs vs end time constraint
     await test('suppressMs vs end time: shows error if suppressMs < end-t', async () => {
-      // Move the sequence's own end step to t=10000. Add Step inserts before
-      // the end step, so a new step cannot become the end the check reads.
-      const steps = page.locator('.step-card');
-      const endStep = steps.nth((await steps.count()) - 1);
-      const header = endStep.locator('.step-card-header');
-      if ((await header.getAttribute('aria-expanded')) !== 'true') {
-        await header.click();
-        await page.waitForTimeout(100);
-      }
+      // Move the sequence's own end step to t=10000. The timeline draws the
+      // end as a line, not a block (data/seq_timeline.js, .tl-end): a press on
+      // it picks the end step, and the drawer's Picked block pane offers its
+      // Starts at. The inspector writes itself again after every edit, so the
+      // field is found afresh each time it is used.
       const endType = await page.evaluate(() => {
         const list = window.__seqEditorForTesting.editorState.current.steps;
         return list[list.length - 1].type;
       });
       if (endType !== 'end') throw new Error(`Expected the last step to be the end step, got ${endType}`);
 
-      const tInput = endStep.locator('.step-t');
-      await tInput.fill('10000');
-      await tInput.blur();
-      await page.waitForTimeout(100);
+      await page.locator('#seq-editor-timeline .tl-end').click();
+      const startsAt = () => page.locator('#seq-picked input[data-picked="start"]');
+      const setEnd = async (ms) => {
+        await startsAt().fill(String(ms));
+        await startsAt().press('Enter');
+        await page.waitForTimeout(100);
+      };
+      const endAt = () => page.evaluate(() => {
+        const list = window.__seqEditorForTesting.editorState.current.steps;
+        return list[list.length - 1].t;
+      });
+
+      await setEnd(10000);
+      if ((await endAt()) !== 10000) throw new Error(`Expected the end step at 10000 ms, got ${await endAt()}`);
 
       // suppressMs stays 8000, less than the 10000 ms the sequence now runs.
       const v = await verdict();
@@ -145,9 +149,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
 
       // Clean up: put the end step back.
-      await tInput.fill('1000');
-      await tInput.blur();
-      await page.waitForTimeout(100);
+      await setEnd(1000);
       const after = await verdict();
       if (!after.valid) throw new Error(`Expected the sequence to be valid again, got: ${after.text}`);
     });

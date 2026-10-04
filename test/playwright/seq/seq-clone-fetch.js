@@ -110,13 +110,33 @@ const TARGET_URL = process.env.TARGET_URL || "http://127.0.0.1:4173/seq.html";
   await test("Tune fetches the one factory sequence per-name and opens the editor with its steps", async () => {
     await page.click(tuneHello);
     await page.waitForSelector("#seq-editor-view:not(.hidden)", { timeout: 5000 });
-    const stepCards = await page.$$eval("#seq-editor-step-table .step-card", (els) => els.length);
+    await page.waitForSelector("#seq-editor-timeline .tl-item", { timeout: 5000 });
     assert(fullCalls === 1, `expected exactly one per-name fetch, got ${fullCalls}`);
     assert(lastFullName === "DM:HELLO", `fetched wrong sequence: ${lastFullName}`);
-    assert(
-      stepCards === FULL_HELLO.steps.length,
-      `editor shows ${stepCards} steps, expected ${FULL_HELLO.steps.length}`
+    // Every step is on the timeline, drawn the way data/seq_timeline.js draws
+    // its kind. A block a written step draws carries data-item; what the
+    // droid does after the end (its ring closes) is derived and carries none,
+    // so only data-item blocks are counted.
+    //   $H     one block on the Sound row
+    //   :OP00  opens every panel, so a block on each panel's lane - how many
+    //          is the dome catalog's, not this script's, so at least one
+    //   end    no block: the end line, which a press picks as step 3 at 500 ms
+    const written = await page.$$eval("#seq-editor-timeline .tl-row[data-lane]", (rows) =>
+      rows.map((row) => ({ lane: row.dataset.lane, blocks: row.querySelectorAll(".tl-item[data-item]").length }))
     );
+    const sound = written.filter((row) => row.lane === "sound").reduce((sum, row) => sum + row.blocks, 0);
+    const panels = written.filter((row) => row.lane !== "sound" && row.blocks > 0).length;
+    assert(sound === 1, `the Sound row shows ${sound} blocks for the one sound step, expected 1`);
+    assert(panels > 0, "no panel lane shows a block for the :OP00 step");
+    assert(
+      written.every((row) => row.lane === "sound" || row.blocks === 0 || /^(pie|panel)\d+$/.test(row.lane)),
+      `a block on a lane no step of DM:HELLO names: ${JSON.stringify(written.filter((row) => row.blocks > 0))}`
+    );
+    await page.locator("#seq-editor-timeline .tl-end[data-edit]").click();
+    const endSays = (await page.textContent("#seq-picked .seq-picked-head .sub")).trim();
+    const endAt = await page.inputValue('#seq-picked input[data-picked="start"]');
+    assert(/ · step 3$/.test(endSays), `the end line picks "${endSays}", expected the end as step 3`);
+    assert(endAt === "500", `the end line starts at ${endAt} ms, expected 500`);
     const nameValue = await page.$eval("#seq-editor-name", (el) => el.value);
     assert(nameValue === "DM:HELLO", `editor name is ${nameValue}, expected DM:HELLO`);
   });
