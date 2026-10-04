@@ -538,6 +538,7 @@
     imp_march: { label: "Imperial March", applies: "immediate", word: "Imperial March track" },
     cantina_l: { label: "Long Cantina", applies: "immediate", word: "Long Cantina track" },
     startup: { label: "Boot Sound", applies: "immediate", word: "boot sound track" },
+    happy: { label: "Happy", applies: "immediate", word: "Happy track" },
     doodoo: { label: "Doo-doo", applies: "immediate", word: "Doo-doo track" },
     failure: { label: "Failure", applies: "immediate", word: "Failure track" },
     disco: { label: "Disco", applies: "immediate", word: "Disco track" },

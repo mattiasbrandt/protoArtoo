@@ -423,11 +423,11 @@ model -- no `fx` field (inferred), no manual cleanup steps (automatic).
   writes `from` and `to` (ms into the take; `t` is then where `from` plays), and never
   opened step by step. Perform again, on a picked take, performs a new one in its place.
 
-### Named tracks vs `$NNN`
+### Named Tracks vs `$NNN`
 
-Prefer a named sound role over a raw track number so the sequence follows the operator's
+Prefer a Named Track over a raw track number so the sequence follows the operator's
 configured tracks. The Marcduino `$NNN`/`$`-letter dialect stays valid at boundaries for
-interoperability. `audioCat` plays a random track from a sound category with a named-slot
+interoperability. `audioCat` plays a random track from a sound category with a Named Track
 fallback.
 
 ## Protocol Check (the save gate)

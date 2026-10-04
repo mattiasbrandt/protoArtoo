@@ -57,6 +57,8 @@ const ActionEntry ACTION_REGISTRY[] = {
     { DROID_SEQ_WIGGLE,               "dome.action.droid-sequence-wiggle", "Panel Wiggle",        "dome",   "SE16. A body wave, and the dome joins in.", false },
     { DRIVE_ACTION_SPEED_PRESET_CYCLE,   "drive.action.speed-preset-cycle", "Speed Preset Cycle",  "drive",  "Step the speed preset: Slow, Normal, Turbo, and round again.",      false },
     { SERVO_ACTION_PUPPET_PART,       "servo.action.puppet-part",         "Perform a Part",      "servo",  "Move one Part with a stick: push to open it that far. Let go and it closes.", false },
+    { SOUND_ACTION_NEXT,              "sound.action.play-next",           "Next Sound",          "sound",  "Play the sound after the last one played.", false },
+    { SOUND_ACTION_PREVIOUS,          "sound.action.play-previous",       "Previous Sound",      "sound",  "Play the sound before the last one played.", false },
 };
 // clang-format on
 

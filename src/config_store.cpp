@@ -91,9 +91,6 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snprintf(snap->system.droid_name, sizeof(snap->system.droid_name), "%s", DROID_NAME_DEFAULT);
     snap->system.mdns_use_name = false;
     snap->drive.speedPresetActive = SpeedPresetId::Normal;
-    // The one audio track that is not a Setting: nothing writes it after its
-    // default, so it has no declaration (include/config_settings.h).
-    snap->audio.snd_happy = AUDIO_TRACK_HAPPY;
 
     // No servo endpoints or component types here: a defaulted Servo Output row
     // carries both, and servoOutputTableDefaults() is where they are stated

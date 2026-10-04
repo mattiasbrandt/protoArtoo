@@ -362,6 +362,24 @@ bool audioQueueBackgroundTrackStop(CommandSource src) {
     return true;
 }
 
+bool audioQueueStepSound(int8_t step, CommandSource src) {
+    if (step == 0) {
+        return false;
+    }
+    if (audioOutputInactive()) {
+        return true;
+    }
+    AudioCommand msg{};
+    msg.type = AUDIO_CMD_STEP_SOUND;
+    msg.source = src;
+    msg.step = step > 0 ? 1 : -1;
+    if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        logQueueDrop(QUEUE_AUDIO_CMD, step > 0 ? "next sound" : "previous sound");
+        return false;
+    }
+    return true;
+}
+
 bool audioQueueSetVolume(uint8_t vol, CommandSource src) {
     if (audioOutputInactive()) {
         return true;
@@ -821,6 +839,7 @@ static const char* playCommandName(AudioCommandType type) {
         case AUDIO_CMD_REFRESH_CATALOG:   return "catalog refresh";
         case AUDIO_CMD_REFRESH_BINDINGS:  return "binding cache refresh";
         case AUDIO_CMD_BACKGROUND_TRACK_START: return "Background Track start";
+        case AUDIO_CMD_STEP_SOUND:        return "next/previous sound";
         default:                          return "command";
     }
 }
@@ -965,6 +984,11 @@ void audioTask(void* pvParameters) {
             cmdIn.randomValue = esp_random();
             audioCatalogBankPage(driver()->getCatalogBanks(), driver()->getCatalogBankCount(),
                                  AUDIO_DOLLAR_BANK, &cmdIn.dollarBankPage);
+            if (cmd.type == AUDIO_CMD_STEP_SOUND) {
+                cmdIn.currentPageCount = audioCatalogPageCount(
+                    driver()->getCatalogBanks(), driver()->getCatalogBankCount(),
+                    step.currentBank, step.currentPage);
+            }
             const AudioStepCommandActions ca = audioStepCommand(step, cmdIn, cmd);
 
             if (ca.ignored == AUDIO_STEP_IGNORE_SLEEP) {

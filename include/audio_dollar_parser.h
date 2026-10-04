@@ -25,6 +25,7 @@
 //   $M     --  play Imperial March
 //   $B     --  play startup / boot sound
 //   $D     --  play disco (NVS key snd_disco, disabled when 0)
+//   $H     --  play the happy / greeting clip
 //   $R     --  enable random playback mode
 //   $O     --  disable random mode (does not stop current sound)
 //   $s     --  stop playback and disable random mode

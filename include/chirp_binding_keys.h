@@ -16,39 +16,61 @@
 struct ChirpBindingKeyMapEntry {
     const char* key;
     const char* nvsKey;
+    // The file the binding was made against: a fingerprint of the name the card
+    // reported for that bank/page/index when the builder bound it
+    // (include/audio_named_track_file.h). "chf_" + the binding key's tail, so
+    // it fits the same 15-character ceiling the binding key does.
+    const char* fileKey;
 };
 
 constexpr ChirpBindingKeyMapEntry CHIRP_BINDING_KEYS[] = {
-    {"scream", "chr_scream"},       {"faint", "chr_faint"},
-    {"leia", "chr_leia"},           {"cantina_s", "chr_cantina_s"},
-    {"sw_theme", "chr_sw_theme"},   {"imp_march", "chr_imp_march"},
-    {"cantina_l", "chr_cantina_l"}, {"startup", "chr_startup"},
-    {"doodoo", "chr_doodoo"},       {"failure", "chr_failure"},
-    {"disco", "chr_disco"},         {"mahna", "chr_mahna"},
-    {"inlove", "chr_inlove"},       {"macho", "chr_macho"},
-    {"gangnam", "chr_gangnam"},     {"uptown", "chr_uptown"},
-    {"celebr", "chr_celebr"},       {"stayin", "chr_stayin"},
-    {"harlem", "chr_harlem"},       {"pbjtime", "chr_pbjtime"},
-    {"sys_boot", "chr_sys_boot"},   {"sys_mode_n", "chr_sys_mode_n"},
-    {"sys_mode_s", "chr_sys_mode_s"},
-    {"sys_mode_t", "chr_sys_mode_t"},
-    {"sys_drv_on", "chr_sys_drv_on"},
-    {"sys_dome_on", "chr_sys_dome_on"},
+    {"scream", "chr_scream", "chf_scream"},
+    {"faint", "chr_faint", "chf_faint"},
+    {"leia", "chr_leia", "chf_leia"},
+    {"cantina_s", "chr_cantina_s", "chf_cantina_s"},
+    {"sw_theme", "chr_sw_theme", "chf_sw_theme"},
+    {"imp_march", "chr_imp_march", "chf_imp_march"},
+    {"cantina_l", "chr_cantina_l", "chf_cantina_l"},
+    {"startup", "chr_startup", "chf_startup"},
+    {"happy", "chr_happy", "chf_happy"},
+    {"doodoo", "chr_doodoo", "chf_doodoo"},
+    {"failure", "chr_failure", "chf_failure"},
+    {"disco", "chr_disco", "chf_disco"},
+    {"mahna", "chr_mahna", "chf_mahna"},
+    {"inlove", "chr_inlove", "chf_inlove"},
+    {"macho", "chr_macho", "chf_macho"},
+    {"gangnam", "chr_gangnam", "chf_gangnam"},
+    {"uptown", "chr_uptown", "chf_uptown"},
+    {"celebr", "chr_celebr", "chf_celebr"},
+    {"stayin", "chr_stayin", "chf_stayin"},
+    {"harlem", "chr_harlem", "chf_harlem"},
+    {"pbjtime", "chr_pbjtime", "chf_pbjtime"},
+    {"sys_boot", "chr_sys_boot", "chf_sys_boot"},
+    {"sys_mode_n", "chr_sys_mode_n", "chf_sys_mode_n"},
+    {"sys_mode_s", "chr_sys_mode_s", "chf_sys_mode_s"},
+    {"sys_mode_t", "chr_sys_mode_t", "chf_sys_mode_t"},
+    {"sys_drv_on", "chr_sys_drv_on", "chf_sys_drv_on"},
+    {"sys_dome_on", "chr_sys_dome_on", "chf_sys_dome_on"},
     // "chr_sys_netdown" (no underscore before "down"): 15 chars, the ESP-IDF
     // Preferences key length ceiling (#189).
-    {"sys_net_down", "chr_sys_netdown"},
+    {"sys_net_down", "chr_sys_netdown", "chf_sys_netdown"},
 };
 
-inline const char* chirpBindingNvsKey(const char* key) {
+inline const ChirpBindingKeyMapEntry* chirpBindingEntry(const char* key) {
     if (key == nullptr) {
         return nullptr;
     }
     for (size_t i = 0; i < (sizeof(CHIRP_BINDING_KEYS) / sizeof(CHIRP_BINDING_KEYS[0])); ++i) {
         if (strcmp(CHIRP_BINDING_KEYS[i].key, key) == 0) {
-            return CHIRP_BINDING_KEYS[i].nvsKey;
+            return &CHIRP_BINDING_KEYS[i];
         }
     }
     return nullptr;
+}
+
+inline const char* chirpBindingNvsKey(const char* key) {
+    const ChirpBindingKeyMapEntry* entry = chirpBindingEntry(key);
+    return entry != nullptr ? entry->nvsKey : nullptr;
 }
 
 // The sound-list checksum saved beside the bindings: the module's own MSUM at

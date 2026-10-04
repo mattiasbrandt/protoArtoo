@@ -78,6 +78,7 @@ const KeyPin kStoredKeys[] = {
     {"volume", "aud_vol", SettingStorage::U8}, {"scream", "snd_scream", SettingStorage::U16}, {"faint", "snd_faint", SettingStorage::U16},
     {"leia", "snd_leia", SettingStorage::U16}, {"cantina_s", "snd_cantina_s", SettingStorage::U16}, {"sw_theme", "snd_sw", SettingStorage::U16},
     {"imp_march", "snd_march", SettingStorage::U16}, {"cantina_l", "snd_cantina_l", SettingStorage::U16}, {"startup", "snd_startup", SettingStorage::U16},
+    {"happy", "snd_happy", SettingStorage::U16},
     {"doodoo", "snd_doodoo", SettingStorage::U16}, {"failure", "snd_failure", SettingStorage::U16}, {"disco", "snd_disco", SettingStorage::U16},
     {"mahna", "snd_mahna", SettingStorage::U16}, {"inlove", "snd_inlove", SettingStorage::U16}, {"macho", "snd_macho", SettingStorage::U16},
     {"gangnam", "snd_gangnam", SettingStorage::U16}, {"uptown", "snd_uptown", SettingStorage::U16}, {"celebr", "snd_celebr", SettingStorage::U16},

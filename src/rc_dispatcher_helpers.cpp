@@ -131,6 +131,13 @@ RcDispatchOutcome rcDispatchSingleAction(const RcActionResult& res, CommandSourc
         }
     }
 
+    if (res.audioStep != 0) {
+        if (!audioQueueStepSound(res.audioStep, src)) {
+            PA_LOG_WARN(TAG, "%s sound dropped: queue full", res.audioStep > 0 ? "next" : "previous");
+            queueFull = true;
+        }
+    }
+
     if (res.servoIndex >= 0) {
         if (res.servoIsSequence) {
             if (!startBodyRoutine(res.servoSequenceId, src)) {
@@ -223,6 +230,13 @@ void rcDispatchTriggerResults(const RcProcessorOutput& output,
             PA_LOG_INFO(TAG, "[RC] sound %s CH%u %s -> seq %s",
                         rcBindingSourceToLabel(b.source), (unsigned)b.channel,
                         robotActionIdToString(b.target), res.audioDollarCmd);
+        }
+
+        if (res.audioStep != 0) {
+            const RcTriggerBinding& b = triggers[i];
+            PA_LOG_INFO(TAG, "[RC] sound %s CH%u %s -> %s", rcBindingSourceToLabel(b.source),
+                        (unsigned)b.channel, robotActionIdToString(b.target),
+                        res.audioStep > 0 ? "next" : "previous");
         }
 
         // Dispatch audio, servo, dome, marcduino commands. This loop is the

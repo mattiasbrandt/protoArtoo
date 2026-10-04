@@ -260,7 +260,7 @@ static void consoleExecuteSoundDollarShortcut(uint32_t requestId, const char* op
     }
 }
 
-// The nine named-track $-letter shortcuts (docs/action-registry.yaml's own
+// The ten named-track $-letter shortcuts (docs/action-registry.yaml's own
 // $ command reference, include/audio_dollar_parser.h): each is a thin
 // wrapper over consoleExecuteSoundDollarShortcut() above with its literal
 // two-character command baked in, matching what dome_link.cpp's own direct
@@ -319,6 +319,11 @@ static void consoleExecuteSoundPlayTrackDisco(uint32_t requestId, const char* op
                                               const ConsoleArgs& args, ConsoleCommandSource source,
                                               const ConsoleRecordSink* sink) {
     consoleExecuteSoundDollarShortcut(requestId, operationName, args, source, sink, "$D");
+}
+static void consoleExecuteSoundPlayTrackHappy(uint32_t requestId, const char* operationName,
+                                              const ConsoleArgs& args, ConsoleCommandSource source,
+                                              const ConsoleRecordSink* sink) {
+    consoleExecuteSoundDollarShortcut(requestId, operationName, args, source, sink, "$H");
 }
 
 // sound.action.quiet ($s): stop playback and disable random/idle mood until
@@ -798,6 +803,7 @@ static const ConsoleDirectActionExecutorEntry g_soundDirectActionExecutors[] = {
     {"sound.action.play-track-imperial-march", consoleExecuteSoundPlayTrackImperialMarch},
     {"sound.action.play-track-startup", consoleExecuteSoundPlayTrackStartup},
     {"sound.action.play-track-disco", consoleExecuteSoundPlayTrackDisco},
+    {"sound.action.play-track-happy", consoleExecuteSoundPlayTrackHappy},
     {"sound.action.quiet", consoleExecuteSoundQuiet},
     {"sound.action.random-on", consoleExecuteSoundRandomOn},
     {"sound.action.random-off", consoleExecuteSoundRandomOff},

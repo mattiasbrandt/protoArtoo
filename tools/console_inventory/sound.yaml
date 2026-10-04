@@ -24,7 +24,7 @@
 base_commit: f0b0dbc
 ticket: 209
 domains: [sound]
-row_count: 55
+row_count: 58
 rows:
 - name: sound.action.dollar-command
   type: action
@@ -48,6 +48,50 @@ rows:
   missing_metadata:
   - dollar command syntax/grammar not in registry
   notes: raw $ command pass-through; dollar string parsed in AudioTask via parseAudioDollar()
+- name: sound.action.play-next
+  type: action
+  registry_api_path: null
+  registry_cpp_enum: SOUND_ACTION_NEXT
+  registry_cpp_file: include/rc_mapping.h
+  registry_rc_token: sound_next
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - sbus
+  registry_marcduino_cmd: null
+  anchor_kind: rc_internal
+  evidence:
+  - src/rc_action_dispatcher.cpp - `case SOUND_ACTION_NEXT:` dispatcher case
+  - src/rc_action_types.cpp - `return "sound_next";` token
+  - src/rc_dispatcher_helpers.cpp - `if (!audioQueueStepSound(res.audioStep, src))` queues it
+  - include/audio_task.h - `bool audioQueueStepSound(int8_t step, CommandSource src)` core
+  executor_or_core: audioQueueStepSound
+  missing_metadata:
+  - executor reference not in registry
+  notes: SBUS-only; the next sound from the one last played, resolved in AudioTask (soundStepRequest())
+- name: sound.action.play-previous
+  type: action
+  registry_api_path: null
+  registry_cpp_enum: SOUND_ACTION_PREVIOUS
+  registry_cpp_file: include/rc_mapping.h
+  registry_rc_token: sound_previous
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - sbus
+  registry_marcduino_cmd: null
+  anchor_kind: rc_internal
+  evidence:
+  - src/rc_action_dispatcher.cpp - `case SOUND_ACTION_PREVIOUS:` dispatcher case
+  - src/rc_action_types.cpp - `return "sound_previous";` token
+  - src/rc_dispatcher_helpers.cpp - `if (!audioQueueStepSound(res.audioStep, src))` queues it
+  - include/audio_task.h - `bool audioQueueStepSound(int8_t step, CommandSource src)` core
+  executor_or_core: audioQueueStepSound
+  missing_metadata:
+  - executor reference not in registry
+  notes: SBUS-only; the previous sound from the one last played, resolved in AudioTask (soundStepRequest())
 - name: sound.action.play-track
   type: action
   registry_api_path: /api/audio
@@ -161,6 +205,27 @@ rows:
   missing_metadata:
   - executor reference not in registry
   notes: dome-rx only; named track snd_faint
+- name: sound.action.play-track-happy
+  type: action
+  registry_api_path: null
+  registry_cpp_enum: null
+  registry_cpp_file: include/audio_task.h
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - dome_rx
+  registry_marcduino_cmd: $H
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/audio", WebMethod::kPost, handleAudioPost)`
+  - include/api_audio.h - `void handleAudioPost(WebRequest& req)`
+  - src/web/api_audio.cpp - `if (strcmp(action, "play") == 0)`
+  - include/audio_dollar_parser.h - `constexpr uint16_t AUDIO_TRACK_HAPPY`, the track this action plays
+  executor_or_core: audioQueuePlayTrackBanked
+  missing_metadata:
+  - executor reference not in registry
+  notes: dome-rx only; named track snd_happy
 - name: sound.action.play-track-imperial-march
   type: action
   registry_api_path: null
@@ -1290,6 +1355,7 @@ rows:
   - snd_march
   - snd_cantina_l
   - snd_startup
+  - snd_happy
   - snd_doodoo
   - snd_failure
   - snd_disco
@@ -1314,7 +1380,7 @@ rows:
   executor_or_core: audioTracksApply
   missing_metadata:
   - executor reference not in registry
-  notes: aggregates 20 named tracks (scream, faint, leia, cantina_s/l, sw_theme, march, startup, doodoo, failure, disco, mahna, inlove, macho, gangnam, uptown, celebr, stayin, harlem, pbjtime)
+  notes: aggregates 21 named tracks (scream, faint, leia, cantina_s/l, sw_theme, march, startup, happy, doodoo, failure, disco, mahna, inlove, macho, gangnam, uptown, celebr, stayin, harlem, pbjtime)
 - name: sound.config.volume
   type: config
   registry_api_path: /api/config

@@ -279,7 +279,7 @@ line below is verbatim from an `artoo_esp32` build.
   {"id":"sound","name":"Sound","selectable":3,"member_key":"snd_member","active_member":"dy_sv5w"}
 ],"parts":[
   {"id":"hoverboard","value":15,"name":"Hoverboard, hacked firmware","category":"foot_drive","protocol":"hoverboard_gen2_uart","status":"supported","confirmed_on_droid":false,"capabilities":1,"included":true,"board_capability":"PA_CAP_DRIVE_BACKEND_HOVERBOARD"},
-  {"id":"chirp","value":20,"name":"CHIRP Audio Trigger","category":"sound","protocol":"chirp_ascii_uart","status":"supported","confirmed_on_droid":true,"capabilities":63,"included":true,"board_capability":null},
+  {"id":"chirp","value":20,"name":"CHIRP Audio Trigger","category":"sound","protocol":"chirp_ascii_uart","status":"supported","confirmed_on_droid":true,"capabilities":127,"included":true,"board_capability":null},
   {"id":"dfplayer_mini","value":21,"name":"DFPlayer Mini","category":"sound","protocol":"dfplayer_serial","status":"roadmap","confirmed_on_droid":false,"capabilities":0,"included":false,"board_capability":null}
 ]}
 ```
@@ -1044,6 +1044,10 @@ Returns live audio module status.
     `409` (#370).
   - `capabilities`: the `AUDIO_CAP_*` bitmask declared on that module's
     Component Registry row. Clients branch on a bit, never on `driver`.
+    `0x01` status query, `0x02` device type, `0x04` track count, `0x08` current
+    track, `0x10` safe to query while playing, `0x20` catalog (banks, pages and
+    names), `0x40` mixes: plays a Background Track under vocals (ADR 0054). CHIRP
+    declares all seven, `127`.
   - `play_state`: `stop`, `playing`, `paused`, or `unknown`. On the MP3 Trigger
     this follows unsolicited finish/cancel/missing-track bytes (`'X'`/`'x'`/`'E'`),
     not a query; it is `unknown` until the first such byte after boot.
@@ -1074,9 +1078,14 @@ Action endpoint.
 - sleep mode blocked (`423`)
 - `action=stop`
 - no extra field
+- a Track Stop (ADR 0010): stops what the droid is saying. A Background Track
+  playing under it plays on (ADR 0054); Quiet (`action=dollar&cmd=$s`) stops
+  every stream, the Background Track's included
 - `action=volume`
 - requires `level` in `0..30`; a refused level carries `"field":"volume"`,
   `reason` and `accepts` (see "Refusals from a settings write")
+- sets every stream, a Background Track's included: its own level holds only
+  until the volume is next set
 - persists to NVS
 - `action=dollar`
 - requires `cmd` starting with `$`, max length 9 chars
@@ -1182,6 +1191,33 @@ curl -s http://artoo.local/api/audio/tracks
 ```json
 {"scream":12,"faint":15,"snd_cat_hum_lo":1,"snd_cat_hum_hi":120,"snd_int_mid":30,"audioVolume":18}
 ```
+
+On a module with a catalog (CHIRP), the answer also carries `chirp_bindings`, one
+object per Named Track bound to a bank, page and index, and `chirp_category_bindings`.
+Each binding says whether the card still has the file it was bound to (#447):
+
+```json
+"chirp_bindings":{"scream":{"bank":2,"page":"B","index":4,"file":"changed"}}
+```
+
+- `file`: `"same"` - the catalog lists the file the binding was made against at
+  that address; `"changed"` - it lists another file there, or none on a card it read
+  whole; `"unchecked"` - nothing to compare: no catalog read since boot, a refresh
+  in progress, the card naming that sound only by index, or a binding made before
+  bindings recorded their file, or made with no catalog to read.
+- Nothing re-points a binding whose file changed. The builder answers through
+  `POST /api/audio/tracks`: the same `bank`, `page` and index keeps the address,
+  another re-points it. Either records the file the catalog lists there now; with
+  no catalog read since boot, or a name the card gives only by index, the binding
+  keeps no record and reads `unchecked`.
+- `happy`, the `$H` Named Track, is a key of this route and a Setting since #447,
+  and can be bound to a bank, page and index like the others. The key is
+  additive: a backup without it restores, and leaves Happy as it is.
+- `file` is new with #447. A backup restores through `bank`, `page` and index only
+  (`data/maintenance.js`, `restoreAudioTracks`), so a backup from before it and one
+  from after it restore the same way. A restore records the files the catalog
+  lists now, or none where it has no name to read: a pending `changed` never
+  survives a restore.
 
 ### POST /api/audio/tracks
 

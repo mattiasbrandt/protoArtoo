@@ -17,6 +17,7 @@
 //     Track.
 //   - AUDIO_CMD_BACKGROUND_TRACK_START / AUDIO_CMD_BACKGROUND_TRACK_STOP: the
 //     Background Track (ADR 0054).
+//   - AUDIO_CMD_STEP_SOUND  : next / previous sound, from the one last played.
 //
 // Queue sends from real-time tasks MUST use the audioQueue* helpers which
 // use timeout 0 (non-blocking). Never call xQueueSend directly on audioCmdQueue
@@ -53,6 +54,7 @@ enum AudioCommandType : uint8_t {
     AUDIO_CMD_BACKGROUND_TRACK_START,  // start a Background Track (ADR 0054): a '$'
                                        // sound at its own volume, resolved in AudioTask
     AUDIO_CMD_BACKGROUND_TRACK_STOP,   // stop the Background Track and nothing else
+    AUDIO_CMD_STEP_SOUND,  // play the next (+1) or previous (-1) sound
 };
 
 // -----------------------------------------------------------------------------
@@ -66,6 +68,7 @@ struct AudioCommand {
         char dollar[10];  // AUDIO_CMD_DOLLAR: '$'-prefixed, null-terminated
         uint16_t track;   // AUDIO_CMD_PLAY_TRACK
         uint8_t volume;   // AUDIO_CMD_SET_VOLUME
+        int8_t step;      // AUDIO_CMD_STEP_SOUND: +1 next, -1 previous
         AudioPlaybackSlot slot;  // AUDIO_CMD_PLAY_SLOT
         struct {          // AUDIO_CMD_PLAY_CATEGORY
             AudioPlaybackCategory category;
@@ -172,6 +175,18 @@ bool audioQueueTrackStop(CommandSource src);
 // -----------------------------------------------------------------------------
 bool audioQueueBackgroundTrackStart(const char* dollar, uint8_t vol, CommandSource src);
 bool audioQueueBackgroundTrackStop(CommandSource src);
+
+// Enqueue next (step > 0) or previous (step < 0) sound (#447, ADR 0054
+// specific 4): the sound after, or before, the one the droid last played.
+// Within its bank and page on a module with a catalog, wrapping at the count
+// the catalog lists for that page, or not wrapping with no catalog read yet;
+// within its category range on a flat module, wrapping at the range's ends,
+// or stepping by one, never below 1, outside every range. With nothing played
+// since boot, both play sound 1 (Bank 1, Page A on a module with a catalog).
+// A Background Track is never the sound stepped from. Ignored in Sleep Mode
+// and inside the anti-spam window like any play. step 0 enqueues nothing and
+// answers false.
+bool audioQueueStepSound(int8_t step, CommandSource src);
 
 // Enqueue an absolute volume set (clamped to 0-30 before enqueue).
 bool audioQueueSetVolume(uint8_t vol, CommandSource src);

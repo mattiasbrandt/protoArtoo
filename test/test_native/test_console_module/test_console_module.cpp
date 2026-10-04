@@ -4059,11 +4059,11 @@ void test_sound_set_volume_reports_a_full_queue() {
 // consoleExecuteAction() a second time, not this file's own new code.
 // =============================================================================
 
-// The nine named-track shortcuts each send one specific two-character
+// The ten named-track shortcuts each send one specific two-character
 // dollar command - the assertion that actually distinguishes "scream plays"
 // from "the wrong track plays". Table-driven over
 // consoleExecuteSoundDollarShortcut()'s one shared body so a copy/paste slip
-// in any one of the nine thin wrappers (include/console_direct_action_
+// in any one of the ten thin wrappers (include/console_direct_action_
 // sound.h) fails here.
 void test_sound_named_track_shortcuts_send_the_right_dollar_command() {
     struct Case {
@@ -4080,6 +4080,7 @@ void test_sound_named_track_shortcuts_send_the_right_dollar_command() {
         {"sound.action.play-track-imperial-march", "$M"},
         {"sound.action.play-track-startup", "$B"},
         {"sound.action.play-track-disco", "$D"},
+        {"sound.action.play-track-happy", "$H"},
     };
     for (const Case& c : kCases) {
         g_test_audio_dollar_calls = 0;
@@ -4722,6 +4723,7 @@ void test_257_every_direct_action_row_still_dispatches() {
         "sound.action.play-track-imperial-march",
         "sound.action.play-track-startup",
         "sound.action.play-track-disco",
+        "sound.action.play-track-happy",
         "sound.action.quiet",
         "sound.action.random-on",
         "sound.action.random-off",
@@ -5401,7 +5403,7 @@ void test_sound_config_track_assignments_reads_every_named_track() {
     runQuery("sound.config.track-assignments");
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(20, g_cap.fieldCount,
+    TEST_ASSERT_EQUAL_INT_MESSAGE(21, g_cap.fieldCount,
                                   "the row's read must list its whole key set");
     TEST_ASSERT_EQUAL_STRING("21", capturedValue("scream"));
     TEST_ASSERT_EQUAL_STRING("34", capturedValue("pbjtime"));

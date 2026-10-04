@@ -357,6 +357,16 @@ When CHIRP catalog capability is present, the Sound page adds a CHIRP workspace 
 `chirp_category_bindings` (category bank/page mappings) when catalog support is active.
 Entries are omitted when no valid binding is saved.
 
+A Named Track bound to a bank, page and index records which file the card listed
+there when it was bound: a 32-bit fingerprint of the name, under a `chf_*` NVS key
+beside its `chr_*` binding (`include/chirp_binding_keys.h`). Each `chirp_bindings`
+entry then says `file`: `same`, `changed` or `unchecked`, compared against the catalog
+as it was last refreshed (`include/audio_named_track_file.h`). A changed file is the
+builder's to resolve, by binding the same address again or another one. Nothing
+re-points it. A bind with no name to read (no catalog read since boot, a refresh in
+progress, a sound the card names only by index) removes the record, so the binding
+reads `unchecked` rather than carrying a stale file forward.
+
 **Source:** https://github.com/joymonkey/CHIRP
 
 ---
@@ -482,6 +492,7 @@ the wire.
 | `$M` | Play Imperial March | `playTrack(cfg_snd_imp_march)` |
 | `$B` | Play startup sound | `playTrack(cfg_snd_startup)` |
 | `$D` | Disco | `playTrack(cfg_snd_disco)` when configured |
+| `$H` | Happy / greeting clip | `playTrack(cfg_snd_happy)` |
 | `$R` | Enable random playback mode | AudioTask state — no driver call |
 | `$O` | Disable random playback mode | AudioTask state — no driver call |
 | `$s` | Stop + disable random mode | `stop()` |
@@ -507,6 +518,23 @@ otherwise it falls back to numeric playback from `snd_cat_*`/`snd_rand_*`.
 - `$D` is parsed and supported.
 - Playback uses the configurable `snd_disco` slot.
 - If `snd_disco` is `0`, `$D` resolves to no playback by design.
+
+### Next and previous sound
+
+`sound.action.play-next` and `sound.action.play-previous` are RC-bindable registry
+actions (`sound_next`, `sound_previous`), so the Controller Console runs them too
+(#326 specific 4, #447). Each plays the sound after, or before, the one the droid
+last played: the last vocal AudioTask sent to the module, from any source. A
+Background Track is never that sound.
+
+| Module | Steps within | At the ends |
+|---|---|---|
+| With a catalog (CHIRP) | the current sound's bank and page | wraps at the count the catalog lists for that page; with no catalog read yet, next goes up by one and previous stops at 1 |
+| Flat (DY-SV5W, MP3 Trigger) | the first category range (`snd_cat_*_lo..hi`) that holds the current track | wraps at the range's ends; a track no range holds steps by one, never below 1 |
+
+With nothing played since boot, both play sound 1: Bank 1, Page A, sound 1 on CHIRP.
+They are plays like any other: ignored in Sleep Mode and inside the 300 ms anti-spam
+window. The resolution is `soundStepRequest()` in `src/tasks/audio_task_step.cpp`.
 
 ---
 

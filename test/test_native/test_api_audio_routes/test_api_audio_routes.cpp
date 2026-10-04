@@ -370,7 +370,7 @@ void test_tracks_get_matches_the_pre_port_payload_byte_for_byte() {
     TEST_ASSERT_EQUAL_STRING(
         "{\"scream\":0,\"faint\":0,\"leia\":0,"
         "\"cantina_s\":0,\"sw_theme\":0,\"imp_march\":0,"
-        "\"cantina_l\":0,\"startup\":0,"
+        "\"cantina_l\":0,\"startup\":0,\"happy\":0,"
         "\"doodoo\":0,\"failure\":0,\"disco\":0,\"mahna\":0,"
         "\"inlove\":0,\"macho\":0,\"gangnam\":0,\"uptown\":0,"
         "\"celebr\":0,\"stayin\":0,\"harlem\":0,\"pbjtime\":0,"

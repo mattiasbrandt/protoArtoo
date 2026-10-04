@@ -238,13 +238,12 @@
   // the client validator set in seq_protocol_check.js. A slot that is a sound
   // action's track is named by that track's label in the one words table
   // (data/web_api.js), so this editor and the Sound page call it one thing;
-  // "none" and the Happy category are no track.
+  // "none" is no track.
   const trackSlot = (value) => ({ value, label: window.PAApi.labelOf(value) });
   const AUDIO_FALLBACK_SLOTS = [
     { value: "none", label: "None" },
-    ...["scream", "faint", "leia", "cantina_s", "sw_theme", "imp_march", "cantina_l", "startup", "disco"]
+    ...["scream", "faint", "leia", "cantina_s", "sw_theme", "imp_march", "cantina_l", "startup", "disco", "happy"]
       .map(trackSlot),
-    { value: "happy", label: "Happy" },
   ];
   const audioFallbackLabel = (value) =>
     (AUDIO_FALLBACK_SLOTS.find((s) => s.value === value) || {}).label || value || "None";

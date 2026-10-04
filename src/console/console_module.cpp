@@ -2672,16 +2672,16 @@ static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogE
 // digit decimal values nowhere near its 2048-byte value arena.
 // =============================================================================
 
-// GET /api/audio/tracks' field order for the 20 named tracks, the 7 system
+// GET /api/audio/tracks' field order for the 21 named tracks, the 7 system
 // tracks and the 12 category lo/hi pairs (src/web/api_audio.cpp's
 // fillTracksResponse()), split into the three sets the registry splits these
 // rows into. Spellings are that response's keys, which are also the audio
 // Settings' names - note snd_cat_snrk_* , whose wire name is the short form
 // even though the config member is snd_cat_snarky_* .
 static const char* const kSoundNamedTrackKeys[] = {
-    "scream",  "faint",  "leia",   "cantina_s", "sw_theme", "imp_march", "cantina_l",
-    "startup", "doodoo", "failure", "disco",    "mahna",    "inlove",    "macho",
-    "gangnam", "uptown", "celebr", "stayin",    "harlem",   "pbjtime",
+    "scream",  "faint",  "leia",    "cantina_s", "sw_theme", "imp_march", "cantina_l",
+    "startup", "happy",  "doodoo",  "failure",   "disco",    "mahna",     "inlove",
+    "macho",   "gangnam", "uptown", "celebr",    "stayin",   "harlem",    "pbjtime",
 };
 static const size_t kSoundNamedTrackKeyCount =
     sizeof(kSoundNamedTrackKeys) / sizeof(kSoundNamedTrackKeys[0]);

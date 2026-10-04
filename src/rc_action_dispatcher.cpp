@@ -172,6 +172,13 @@ RcActionResult rcDispatchAction(const RcActionPayload& input) {
             }
             break;
 
+        case SOUND_ACTION_NEXT:
+        case SOUND_ACTION_PREVIOUS:
+            if (input.pressed) {
+                res.audioStep = (input.target == SOUND_ACTION_NEXT) ? 1 : -1;
+            }
+            break;
+
         case DOME_ACTION_SEQ:
             if (input.pressed && input.bindingPayload != nullptr &&
                 input.bindingPayload[0] != '\0') {
@@ -188,7 +195,8 @@ RcActionResult rcDispatchAction(const RcActionPayload& input) {
 }
 
 bool rcActionResultHasEffect(const RcActionResult& result) {
-    return result.audioTrack != 0 || result.audioDollarCmd[0] != '\0' || result.servoIndex >= 0 ||
+    return result.audioTrack != 0 || result.audioDollarCmd[0] != '\0' || result.audioStep != 0 ||
+           result.servoIndex >= 0 ||
            result.domeTxCmd[0] != '\0' || result.marcduinoCmd[0] != '\0' || result.triggerEstop ||
            result.setSleep || result.setStationary || result.setSpeedPreset;
 }

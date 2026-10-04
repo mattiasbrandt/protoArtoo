@@ -1305,6 +1305,21 @@ entries:
   safety_critical: false
   requires_web_control: false
   executor: audioQueuePlayTrackBanked
+- name: sound.action.play-track-happy
+  display_name: Play Happy
+  description: Play the happy greeting.
+  domain: sound
+  type: action
+  marcduino_cmd: $H
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources:
+  - dome_rx
+  safety_critical: false
+  requires_web_control: false
+  executor: audioQueuePlayTrackBanked
 - name: sound.api.get-catalog
   display_name: Get Catalog
   description: Every clip the CHIRP knows, by bank.
@@ -1880,6 +1895,38 @@ entries:
   safety_critical: false
   requires_web_control: false
   executor: audioQueuePlayTrack
+- name: sound.action.play-next
+  display_name: Next Sound
+  description: Play the sound after the last one played.
+  domain: sound
+  type: action
+  marcduino_cmd: null
+  api_path: null
+  sse_event: null
+  cpp_enum: SOUND_ACTION_NEXT
+  cpp_file: include/rc_mapping.h
+  rc_token: sound_next
+  sources:
+  - sbus
+  safety_critical: false
+  requires_web_control: false
+  executor: audioQueueStepSound
+- name: sound.action.play-previous
+  display_name: Previous Sound
+  description: Play the sound before the last one played.
+  domain: sound
+  type: action
+  marcduino_cmd: null
+  api_path: null
+  sse_event: null
+  cpp_enum: SOUND_ACTION_PREVIOUS
+  cpp_file: include/rc_mapping.h
+  rc_token: sound_previous
+  sources:
+  - sbus
+  safety_critical: false
+  requires_web_control: false
+  executor: audioQueueStepSound
 - name: sound.status.current
   display_name: Sound Status
   description: 'What the sound module is doing: playing, volume and health.'
@@ -2119,6 +2166,7 @@ entries:
     - imp_march
     - cantina_l
     - startup
+    - happy
     - doodoo
     - failure
     - disco
