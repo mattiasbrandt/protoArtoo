@@ -4025,8 +4025,8 @@ label.sound-search-field {
   display: none;
 }
 
-#catalog-status {
-  min-height: 1.2em;
+#catalog-status:empty {
+  display: none;
 }
 
   .catalog-bulk-bar {

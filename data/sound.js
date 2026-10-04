@@ -315,6 +315,7 @@
   // The Named Track the builder is re-pointing from its row, whose key every
   // catalog row's target then starts on; null when none is.
   let catalogRepointKey = null;
+  let catalogRepointLine = "";
   let chirpCategoryBindings = {};
   const catalogSelectedKeys = new Set();
   let catalogCategoryRanges = [];
@@ -856,7 +857,8 @@
       catalogBankPageKey(bankRow?.bank, bankRow?.page) === pageKey) ? pageKey : "";
     renderCatalogBankTabs();
     renderCatalogRows();
-    showFeedback(catalogFeedback, `Pick the sound for ${label}, then Map.`, null, 0);
+    catalogRepointLine = `Pick the sound for ${label}, then Map.`;
+    showFeedback(catalogFeedback, catalogRepointLine, null, 0);
     chirpCatalogCard?.scrollIntoView({ block: "start", behavior: "smooth" });
   };
 
@@ -2291,6 +2293,16 @@
       chirpCategoryBindings = (data && typeof data.chirp_category_bindings === "object" && data.chirp_category_bindings)
         ? data.chirp_category_bindings
         : {};
+      // A re-point ends when its track no longer says its file changed, however
+      // that came about: Keep, a Map from any row, a restore. Left standing, the
+      // preset target would bind the next Map pressed to the wrong track.
+      if (catalogRepointKey && getSlotBinding(catalogRepointKey)?.file !== "changed") {
+        catalogRepointKey = null;
+        if (catalogFeedback?.textContent === catalogRepointLine) {
+          showFeedback(catalogFeedback, "", null, 0);
+        }
+        catalogRepointLine = "";
+      }
       NAMED_SOUNDS.forEach((sound) => {
         if (!sound.editable || !sound.key) return;
         const input = document.getElementById(`track-input-${sound.key}`);
