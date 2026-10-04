@@ -6,7 +6,7 @@ This file is the model-agnostic canonical instruction source for mixed-agent
 workflows. It outranks the Claude adapter (`.claude/CLAUDE.md`), the agent
 definitions under `.claude/agents/`, and any orchestration text pasted into an
 epic issue. Material an agent needs only on some paths lives under
-`docs/agents/` and is reached from "Disclosed references" at the end.
+`docs/agents/` and is reached from "Agent skills" and "Disclosed references" at the end.
 
 ## Project Context
 
