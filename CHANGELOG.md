@@ -128,6 +128,10 @@ the patch releases, whose notes live on their own GitHub Release.
   part's output is a bar of every output on its row; press a part under "add
   a part" to give it a row. Print the page or save the wiring sheet and you
   get the same table as plain text, with a box to tick for each wire.
+- **Pick a part's output on Parts too.** The part you pick on the drawing, and
+  every part under Unused, carries the same bar of outputs as its row on
+  Wiring. Where the board suggests an output, one press on "Use" puts the part
+  on it; nothing is picked until you press.
 - **One move across many parts.** A Gesture says "the ring, clockwise, from
   the front, a wave, one panel per beat" once: the order comes from where the
   parts sit, and the droid works out the parts when it runs, so a panel fitted
@@ -257,7 +261,7 @@ the patch releases, whose notes live on their own GitHub Release.
   see its servo and to open or close it. The arms are off until you add them
   from that list. The dome on the Dashboard and in Sequences is drawn the same
   way. Under the drawing, Unused lists the parts no output claims yet, each
-  with Give it an output.
+  with its outputs to pick from.
 - **Open a door from the Dashboard.** Your droid's body and dome are drawn
   side by side under the Dashboard's controls. Click a door, panel or arm to
   open or close it. With the estop latched nothing moves, and the Dashboard
