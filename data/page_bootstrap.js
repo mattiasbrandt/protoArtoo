@@ -1077,7 +1077,9 @@
   };
 
   // Signature kept stable across renders so the countdown can repaint without
-  // rebuilding the panel and stealing focus from the Retry now button.
+  // rebuilding the panel. A change here rebuilds it (a retry's new attempt
+  // number among them); render() decides separately whether the rebuild may
+  // move focus.
   const signatureOf = (view) =>
     view.visible
       ? `${view.mode}|${view.kind}|${view.stepName}|${view.attempt ?? 0}|${view.longRunning ? 1 : 0}`
@@ -1111,7 +1113,8 @@
     // Transitioning from hidden to visible: save focus and make visible first.
     // Elements with display:none cannot receive focus, so the backdrop must be
     // visible before any focus move attempts.
-    if (!overlayIsVisible) {
+    const entering = !overlayIsVisible;
+    if (entering) {
       overlayIsVisible = true;
       focusedBeforeOverlay = document.activeElement;
       backdrop.classList.add("active");
@@ -1125,15 +1128,21 @@
 
     const signature = signatureOf(view);
     if (signature !== lastSignature) {
-      // New panel content: rebuild it, keeping the announcer if it exists
+      // New panel content: rebuild it, keeping the announcer if it exists.
+      // Read before replaceChildren: the rebuild detaches the focused node, and
+      // afterwards focus reads as the body whether it was in the panel or not.
+      const focusWasInside = backdrop.contains(document.activeElement);
       const announcer = backdrop.querySelector(".recovery-countdown-announcer");
       backdrop.replaceChildren(buildPanel(view, onRetryNow));
       if (announcer) {
         backdrop.appendChild(announcer);
       }
       lastSignature = signature;
-      // Focus moved into the overlay for new content
-      setFocus(backdrop);
+      // Focus enters the panel when it appears, or follows the content it was
+      // in. Focus the operator put outside it -- STOP, the Status Plate's ESTOP
+      // cell -- stays there: a retry rebuilds the panel every few seconds, and
+      // pulling focus off STOP each time undoes the reach #359 asked for.
+      if (entering || focusWasInside) setFocus(backdrop);
     } else {
       // Only countdown changed: update both the display and the announcement
       const value = backdrop.querySelector(".recovery-countdown-value");
