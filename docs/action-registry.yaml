@@ -2166,6 +2166,7 @@ entries:
     - imp_march
     - cantina_l
     - startup
+    - happy
     - doodoo
     - failure
     - disco

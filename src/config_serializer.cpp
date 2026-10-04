@@ -232,8 +232,6 @@ void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig
     // read as stored, since a track can hold a CHIRP catalog index past 999
     // (repairOnLoad, include/config_settings.h).
     configSettingsRead(SettingSection::Audio, r, out);
-    // Not a Setting: nothing writes it after its default (config_settings.h).
-    out->snd_happy = r.readU16("snd_happy", def.snd_happy);
 }
 
 void deserializeDome(const ConfigReader& r, DomeConfig* out, const DomeConfig& def) {
@@ -423,8 +421,6 @@ bool configSerializeDrive(const DriveConfig& cfg, ConfigWriter& w) {
 }
 
 bool configSerializeAudio(const AudioConfig& cfg, ConfigWriter& w) {
-    // snd_happy is read and never written, as it has always been: it is not a
-    // Setting, and a write would add a key no controller stores today.
     return configSettingsWrite(SettingSection::Audio, &cfg, w);
 }
 

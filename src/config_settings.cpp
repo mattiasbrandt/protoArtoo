@@ -277,6 +277,7 @@ const ConfigSetting kAudioSettings[] = {
     PA_TRACK("imp_march", "snd_march", Immediate, snd_imp_march, AUDIO_TRACK_IMP_MARCH),
     PA_TRACK("cantina_l", "snd_cantina_l", Immediate, snd_cantina_l, AUDIO_TRACK_CANTINA_L),
     PA_TRACK("startup", "snd_startup", Immediate, snd_startup, AUDIO_TRACK_STARTUP),
+    PA_TRACK("happy", "snd_happy", Immediate, snd_happy, AUDIO_TRACK_HAPPY),
     PA_OPTIONAL_TRACK("doodoo", "snd_doodoo", Immediate, snd_doodoo),
     PA_OPTIONAL_TRACK("failure", "snd_failure", Immediate, snd_failure),
     PA_OPTIONAL_TRACK("disco", "snd_disco", Immediate, snd_disco),

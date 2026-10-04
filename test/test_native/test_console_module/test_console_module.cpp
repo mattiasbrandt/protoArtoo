@@ -5403,7 +5403,7 @@ void test_sound_config_track_assignments_reads_every_named_track() {
     runQuery("sound.config.track-assignments");
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(20, g_cap.fieldCount,
+    TEST_ASSERT_EQUAL_INT_MESSAGE(21, g_cap.fieldCount,
                                   "the row's read must list its whole key set");
     TEST_ASSERT_EQUAL_STRING("21", capturedValue("scream"));
     TEST_ASSERT_EQUAL_STRING("34", capturedValue("pbjtime"));

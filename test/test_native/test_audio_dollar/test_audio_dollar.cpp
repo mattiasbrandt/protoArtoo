@@ -398,7 +398,7 @@ void test_nvs_keys_are_15_chars_or_less() {
     // NVS key length limit is 15 chars (ESP-IDF constraint)
     const char* keys[] = {
         "scream","faint","leia","cantina_s","sw_theme",
-        "imp_march","cantina_l","startup","doodoo","failure",
+        "imp_march","cantina_l","startup","happy","doodoo","failure",
         "disco","mahna","inlove","macho","gangnam","uptown",
         "celebr","stayin","harlem","pbjtime",
         "sys_boot","sys_mode_n","sys_mode_s","sys_mode_t","sys_drv_on","sys_dome_on","sys_net_down",

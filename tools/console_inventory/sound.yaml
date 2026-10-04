@@ -1355,6 +1355,7 @@ rows:
   - snd_march
   - snd_cantina_l
   - snd_startup
+  - snd_happy
   - snd_doodoo
   - snd_failure
   - snd_disco
@@ -1379,7 +1380,7 @@ rows:
   executor_or_core: audioTracksApply
   missing_metadata:
   - executor reference not in registry
-  notes: aggregates 20 named tracks (scream, faint, leia, cantina_s/l, sw_theme, march, startup, doodoo, failure, disco, mahna, inlove, macho, gangnam, uptown, celebr, stayin, harlem, pbjtime)
+  notes: aggregates 21 named tracks (scream, faint, leia, cantina_s/l, sw_theme, march, startup, happy, doodoo, failure, disco, mahna, inlove, macho, gangnam, uptown, celebr, stayin, harlem, pbjtime)
 - name: sound.config.volume
   type: config
   registry_api_path: /api/config

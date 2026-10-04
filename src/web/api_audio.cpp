@@ -272,6 +272,7 @@ size_t fillTracksResponse(uint8_t* out, size_t capacity, size_t offset) {
         {"imp_march", a.snd_imp_march},
         {"cantina_l", a.snd_cantina_l},
         {"startup", a.snd_startup},
+        {"happy", a.snd_happy},
         {"doodoo", a.snd_doodoo},
         {"failure", a.snd_failure},
         {"disco", a.snd_disco},

@@ -32,6 +32,7 @@ constexpr ChirpBindingKeyMapEntry CHIRP_BINDING_KEYS[] = {
     {"imp_march", "chr_imp_march", "chf_imp_march"},
     {"cantina_l", "chr_cantina_l", "chf_cantina_l"},
     {"startup", "chr_startup", "chf_startup"},
+    {"happy", "chr_happy", "chf_happy"},
     {"doodoo", "chr_doodoo", "chf_doodoo"},
     {"failure", "chr_failure", "chf_failure"},
     {"disco", "chr_disco", "chf_disco"},
