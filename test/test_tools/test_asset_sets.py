@@ -308,7 +308,9 @@ class Minification(_StagingCase):
         self._build()
         staged = self._staged("a.js")
         self.assertNotIn("comment", staged)
-        self.assertIn("` ${cls}`", staged)
+        # The parameter is a local, so staging shortens its name (#381); the
+        # space before it is what rjsmin dropped.
+        self.assertRegex(staged, r"` \$\{[A-Za-z_$][\w$]*\}`")
         self.assertIn('<tr class="parts-row${', staged)
 
     def test_css_is_minified(self):
