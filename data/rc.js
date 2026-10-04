@@ -2,6 +2,10 @@
   let selectedChannel = null;
   let rcSnapshot = null;
   let channelMap = {};
+  // Whether channelMap is a map the droid answered with. A save posts the
+  // whole map, so one posted before it ever loaded would erase every other
+  // binding on the droid (#355).
+  let channelMapLoaded = false;
   let triggerPulseState = {};
   
   // ── Learning mode state ───────────────────────────────────────────────────
@@ -1203,8 +1207,13 @@
     </div>`;
   };
 
-  const renderActionPicker = (selectedToken, queryText = '') => {
-    const query = String(queryText || '').trim();
+  // The picker's inside: the search row and the action rows. A search draws
+  // only this again, inside a picker node that stays (refreshActionPicker()).
+  // The box shows the query as typed and the rows match it trimmed: a box
+  // drawn back trimmed ate every space as it was typed.
+  const actionPickerBodyHtml = (selectedToken, queryText = '') => {
+    const typed = String(queryText || '');
+    const query = typed.trim();
     const groups = groupedActionTargets()
       .map(({ name, items }) => ({
         name,
@@ -1224,10 +1233,9 @@
         </details>`
       : '';
 
-    return `<div class="rc-action-picker" role="listbox" aria-label="Select action" tabindex="0">
-      <div class="rc-action-search-row">
-        <input class="rc-action-search-input" data-action-search type="search" placeholder="Search actions..." value="${window.PAUtils.escapeHtml(query)}" autocomplete="off">
-        <button type="button" class="rc-action-search-clear icon-act" data-action-search-clear${query ? '' : ' disabled'}>${window.PAUi.actFace('eraser', 'Clear')}</button>
+    return `<div class="rc-action-search-row">
+        <input class="rc-action-search-input" data-action-search type="search" placeholder="Search actions..." value="${window.PAUtils.escapeHtml(typed)}" autocomplete="off">
+        <button type="button" class="rc-action-search-clear icon-act" data-action-search-clear${typed ? '' : ' disabled'}>${window.PAUi.actFace('eraser', 'Clear')}</button>
       </div>
       ${recentBlock}
       ${groups.map(({ name, items }) => {
@@ -1237,9 +1245,13 @@
           <div class="rc-action-group-rows">${items.map((item) => renderActionRow(item, selectedToken)).join('')}</div>
         </details>`;
       }).join('')}
-      ${hasMatches ? '' : `<div class="rc-action-empty">No actions match "${window.PAUtils.escapeHtml(query)}".</div>`}
-    </div>`;
+      ${hasMatches ? '' : `<div class="rc-action-empty">No actions match "${window.PAUtils.escapeHtml(query)}".</div>`}`;
   };
+
+  const renderActionPicker = (selectedToken, queryText = '') =>
+    `<div class="rc-action-picker" role="listbox" aria-label="Select action" tabindex="0">
+      ${actionPickerBodyHtml(selectedToken, queryText)}
+    </div>`;
 
   const collapseExpandedActionGroups = () => {
     rcEditorContent.querySelectorAll('[data-action-group]').forEach((groupNode) => {
@@ -1265,6 +1277,184 @@
     collapseExpandedActionGroups
   );
 
+  // The draft's action: the open editor's hidden target field, which a pick
+  // writes and Apply and save reads.
+  const draftActionToken = () => rcEditorContent?.querySelector('[data-field="target"]')?.value || '';
+
+  const updateConditionalFields = () => {
+    const target = draftActionToken();
+    const seq = rcEditorContent.querySelector('[data-cond="seq"]');
+    const domeSeq = rcEditorContent.querySelector('[data-cond="dome_seq"]');
+    const cmd = rcEditorContent.querySelector('[data-cond="cmd"]');
+    const puppet = rcEditorContent.querySelector('[data-cond="puppet_part"]');
+    const estop = rcEditorContent.querySelector('[data-cond="estop"]');
+    if (seq) seq.className = `rc-editor-cond ${target === 'seq' ? 'block' : 'hidden'}`;
+    if (domeSeq) domeSeq.className = `rc-editor-cond ${target === 'dome_seq' ? 'block' : 'hidden'}`;
+    if (cmd) cmd.className = `rc-editor-cond ${target === 'cmd' ? 'block' : 'hidden'}`;
+    if (puppet) puppet.className = `rc-editor-cond ${target === 'puppet_part' ? 'block' : 'hidden'}`;
+    if (estop) estop.className = `rc-editor-cond ${target === 'estop' ? 'block' : 'hidden'}`;
+  };
+
+  const refreshActionPickerSelectionUi = () => {
+    const selectedToken = draftActionToken();
+    rcEditorContent.querySelectorAll('[data-action-token]').forEach((row) => {
+      const rowToken = row.dataset.actionToken;
+      const selected = rowToken === selectedToken;
+      row.classList.toggle('selected', selected);
+      row.setAttribute('aria-selected', selected ? 'true' : 'false');
+      // The radio is drawn by the stylesheet off the row's own .selected
+      // class, so there is nothing to write here any more.
+    });
+
+    const picker = rcEditorContent.querySelector('.rc-action-picker');
+    if (picker) picker.scrollTop = actionPickerScrollTop;
+  };
+
+  const syncActionTestUi = () => {
+    const inFlight = actionPickerInFlightToken !== null;
+    rcEditorContent.querySelectorAll('[data-action-test]').forEach((btn) => {
+      btn.disabled = inFlight;
+    });
+    rcEditorContent.querySelectorAll('[data-action-feedback]').forEach((node) => {
+      const token = node.dataset.actionFeedback;
+      const feedback = token && actionPickerFeedback && actionPickerFeedback.token === token
+        ? actionPickerFeedback
+        : null;
+      // The refusal's route, where the droid's answer carried one (#348): a
+      // "no" that names the builder's next move takes them to it, so the
+      // destination is a link rather than a sentence they have to go and find.
+      node.textContent = feedback ? feedback.text : '';
+      node.className = `rc-action-test-feedback${feedback ? ` ${feedback.kind || ''}` : ''}`;
+      if (feedback?.route) {
+        node.textContent = `${node.textContent} `;
+        const link = document.createElement('a');
+        link.className = 'setup-link';
+        link.setAttribute('href', feedback.route.href);
+        link.textContent = `${feedback.route.label}.`;
+        node.appendChild(link);
+      }
+    });
+  };
+
+  const setActionToken = (token, keepFocus = false) => {
+    const targetEl = rcEditorContent.querySelector('[data-field="target"]');
+    if (!targetEl || targetEl.value === token) return;
+    targetEl.value = token;
+    rememberRecentActionToken(token);
+    actionPickerFeedback = null;
+    updateConditionalFields();
+    refreshActionPickerSelectionUi();
+    syncActionTestUi();
+    markEditorDirty();
+    if (keepFocus) {
+      rcEditorContent.querySelector('.rc-action-picker')?.focus();
+    }
+  };
+
+  const runActionTest = async (token) => {
+    if (actionPickerInFlightToken) return;
+    const channelAtStart = selectedChannel;
+    actionPickerInFlightToken = token;
+    actionPickerFeedback = { token, kind: 'info', text: 'Testing...' };
+    syncActionTestUi();
+    try {
+      const result = await window.PAApi.postForm('/api/actions/test', { token }, { timeoutMs: 5000 });
+      if (selectedChannel !== channelAtStart) return;
+      actionPickerFeedback = { token, ...actionTestFeedbackForOutcome(result?.data?.outcome) };
+    } catch (error) {
+      if (selectedChannel !== channelAtStart) return;
+      // A refusal the droid named in its own vocabulary comes back as a
+      // sentence and, where there is one, the route to the next move
+      // (data/web_api.js). Everything else is the ordinary transport message.
+      const refusal = window.PAApi.refusalFor(error);
+      actionPickerFeedback = refusal
+        ? { token, kind: 'error', text: refusal.text, route: refusal.route }
+        : { token, kind: 'error', text: window.PAApi.messageFor(error) };
+    } finally {
+      if (actionPickerInFlightToken === token) actionPickerInFlightToken = null;
+      if (selectedChannel === channelAtStart) syncActionTestUi();
+    }
+  };
+
+  // The listeners on the picker's inside, wired again every time it is drawn:
+  // by renderEditor() and by refreshActionPicker().
+  const wireActionPickerBody = (picker) => {
+    const searchInput = picker.querySelector('[data-action-search]');
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        const nextQuery = searchInput.value || '';
+        if (nextQuery === actionPickerQuery) return;
+        actionPickerQuery = nextQuery;
+        actionPickerScrollTop = 0;
+        refreshActionPicker();
+      });
+    }
+
+    const clearSearchBtn = picker.querySelector('[data-action-search-clear]');
+    if (clearSearchBtn) {
+      clearSearchBtn.addEventListener('click', () => {
+        if (!actionPickerQuery) return;
+        actionPickerQuery = '';
+        actionPickerScrollTop = 0;
+        refreshActionPicker();
+        picker.querySelector('[data-action-search]')?.focus();
+      });
+    }
+
+    // A search draws every matching group open, and a group drawn open fires
+    // its own toggle: only a fold made with no search running is the
+    // builder's, so only that one is kept for when the search is cleared.
+    picker.querySelectorAll('[data-action-group]').forEach((groupNode) => {
+      groupNode.addEventListener('toggle', () => {
+        if (actionPickerQuery.trim()) return;
+        actionPickerGroupOpen[groupNode.dataset.actionGroup] = groupNode.open;
+      });
+    });
+
+    picker.querySelectorAll('[data-action-select]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const token = btn.dataset.actionSelect;
+        if (!token) return;
+        setActionToken(token);
+      });
+    });
+
+    picker.querySelectorAll('[data-action-test]').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const token = btn.dataset.actionTest;
+        if (!token) return;
+        runActionTest(token);
+      });
+    });
+  };
+
+  // A search, and the firmware's action list arriving, draw only the picker's
+  // inside again, around the draft's action. The editor is never drawn again
+  // for either: renderEditor() builds every field from the saved binding, so
+  // it would throw away the pick, a payload, the Command text, a threshold and
+  // the quiet time while the editor still said "Unsaved changes" (#355).
+  // The search box is drawn again too, so a builder typing in it - when the
+  // action list arrives mid-word as much as on their own keystroke - gets the
+  // focus and the caret back at the end of what they typed.
+  const refreshActionPicker = () => {
+    const picker = rcEditorContent?.querySelector('.rc-action-picker');
+    if (!picker) return;
+    const searchHadFocus = Boolean(document.activeElement?.matches('[data-action-search]')
+      && picker.contains(document.activeElement));
+    picker.innerHTML = actionPickerBodyHtml(draftActionToken(), actionPickerQuery);
+    wireActionPickerBody(picker);
+    refreshActionPickerSelectionUi();
+    syncActionTestUi();
+    if (searchHadFocus) {
+      const searchInput = picker.querySelector('[data-action-search]');
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.setSelectionRange(actionPickerQuery.length, actionPickerQuery.length);
+      }
+    }
+  };
+
   const renderEditor = () => {
     if (!rcEditorContent) return;
     if (!selectedChannel) {
@@ -1279,6 +1469,9 @@
       return;
     }
 
+    // Which groups are open is kept by the groups' own toggle listener
+    // (wireActionPickerBody()), so it is not read back off the old picker
+    // here: under a search every group is drawn open.
     if (actionPickerLastChannel !== selectedChannel) {
       actionPickerFeedback = null;
       actionPickerInFlightToken = null;
@@ -1288,12 +1481,7 @@
       actionPickerLastChannel = selectedChannel;
     } else {
       const previousPicker = rcEditorContent.querySelector('.rc-action-picker');
-      if (previousPicker) {
-        actionPickerScrollTop = previousPicker.scrollTop;
-        previousPicker.querySelectorAll('[data-action-group]').forEach((groupNode) => {
-          actionPickerGroupOpen[groupNode.dataset.actionGroup] = groupNode.open;
-        });
-      }
+      if (previousPicker) actionPickerScrollTop = previousPicker.scrollTop;
     }
 
     const { source, channel } = parseChannelKey(selectedChannel);
@@ -1347,78 +1535,6 @@
       </div>
       <div class="rc-editor-unmap"><button type="button" class="btn btn-sm btn-quiet icon-act" data-action-unmap>${window.PAUi.actFace('link-variant-off', 'Unmap')}</button></div>`;
 
-    const updateConditionalFields = () => {
-      const targetEl = rcEditorContent.querySelector('[data-field="target"]');
-      const target = targetEl ? targetEl.value : displayToken;
-      const seq = rcEditorContent.querySelector('[data-cond="seq"]');
-      const domeSeq = rcEditorContent.querySelector('[data-cond="dome_seq"]');
-      const cmd = rcEditorContent.querySelector('[data-cond="cmd"]');
-      const puppet = rcEditorContent.querySelector('[data-cond="puppet_part"]');
-      const estop = rcEditorContent.querySelector('[data-cond="estop"]');
-      if (seq) seq.className = `rc-editor-cond ${target === 'seq' ? 'block' : 'hidden'}`;
-      if (domeSeq) domeSeq.className = `rc-editor-cond ${target === 'dome_seq' ? 'block' : 'hidden'}`;
-      if (cmd) cmd.className = `rc-editor-cond ${target === 'cmd' ? 'block' : 'hidden'}`;
-      if (puppet) puppet.className = `rc-editor-cond ${target === 'puppet_part' ? 'block' : 'hidden'}`;
-      if (estop) estop.className = `rc-editor-cond ${target === 'estop' ? 'block' : 'hidden'}`;
-    };
-
-    const refreshActionPickerSelectionUi = () => {
-      const targetEl = rcEditorContent.querySelector('[data-field="target"]');
-      const selectedToken = targetEl ? targetEl.value : '';
-      rcEditorContent.querySelectorAll('[data-action-token]').forEach((row) => {
-        const rowToken = row.dataset.actionToken;
-        const selected = rowToken === selectedToken;
-        row.classList.toggle('selected', selected);
-        row.setAttribute('aria-selected', selected ? 'true' : 'false');
-        // The radio is drawn by the stylesheet off the row's own .selected
-        // class, so there is nothing to write here any more.
-      });
-
-      const picker = rcEditorContent.querySelector('.rc-action-picker');
-      if (picker) picker.scrollTop = actionPickerScrollTop;
-    };
-
-    const syncActionTestUi = () => {
-      const inFlight = actionPickerInFlightToken !== null;
-      rcEditorContent.querySelectorAll('[data-action-test]').forEach((btn) => {
-        btn.disabled = inFlight;
-      });
-      rcEditorContent.querySelectorAll('[data-action-feedback]').forEach((node) => {
-        const token = node.dataset.actionFeedback;
-        const feedback = token && actionPickerFeedback && actionPickerFeedback.token === token
-          ? actionPickerFeedback
-          : null;
-        // The refusal's route, where the droid's answer carried one (#348): a
-        // "no" that names the builder's next move takes them to it, so the
-        // destination is a link rather than a sentence they have to go and find.
-        node.textContent = feedback ? feedback.text : '';
-        node.className = `rc-action-test-feedback${feedback ? ` ${feedback.kind || ''}` : ''}`;
-        if (feedback?.route) {
-          node.textContent = `${node.textContent} `;
-          const link = document.createElement('a');
-          link.className = 'setup-link';
-          link.setAttribute('href', feedback.route.href);
-          link.textContent = `${feedback.route.label}.`;
-          node.appendChild(link);
-        }
-      });
-    };
-
-    const setActionToken = (token, keepFocus = false) => {
-      const targetEl = rcEditorContent.querySelector('[data-field="target"]');
-      if (!targetEl || targetEl.value === token) return;
-      targetEl.value = token;
-      rememberRecentActionToken(token);
-      actionPickerFeedback = null;
-      updateConditionalFields();
-      refreshActionPickerSelectionUi();
-      syncActionTestUi();
-      markEditorDirty();
-      if (keepFocus) {
-        rcEditorContent.querySelector('.rc-action-picker')?.focus();
-      }
-    };
-
     wirePayloadPills(rcEditorContent);
 
     rcEditorContent.querySelectorAll('[data-field]').forEach((field) => {
@@ -1431,66 +1547,20 @@
       });
     });
 
+    const unmapBtn = rcEditorContent.querySelector('[data-action-unmap]');
+    if (unmapBtn) {
+      unmapBtn.addEventListener('click', () => setActionToken(''));
+    }
+
+    // The picker node lives as long as this editor; a search draws only its
+    // inside again, so its own listeners are wired once here.
     const picker = rcEditorContent.querySelector('.rc-action-picker');
     if (picker) {
       picker.addEventListener('scroll', () => {
         actionPickerScrollTop = picker.scrollTop;
       });
 
-      const searchInput = picker.querySelector('[data-action-search]');
-      if (searchInput) {
-        searchInput.addEventListener('input', () => {
-          const nextQuery = searchInput.value || '';
-          if (nextQuery === actionPickerQuery) return;
-          actionPickerQuery = nextQuery;
-          actionPickerScrollTop = 0;
-          renderEditor();
-          const nextInput = rcEditorContent.querySelector('[data-action-search]');
-          if (nextInput) {
-            nextInput.focus();
-            nextInput.setSelectionRange(actionPickerQuery.length, actionPickerQuery.length);
-          }
-        });
-      }
-
-      const clearSearchBtn = picker.querySelector('[data-action-search-clear]');
-      if (clearSearchBtn) {
-        clearSearchBtn.addEventListener('click', () => {
-          if (!actionPickerQuery) return;
-          actionPickerQuery = '';
-          actionPickerScrollTop = 0;
-          renderEditor();
-          rcEditorContent.querySelector('[data-action-search]')?.focus();
-        });
-      }
-
-      picker.querySelectorAll('[data-action-group]').forEach((groupNode) => {
-        groupNode.addEventListener('toggle', () => {
-          actionPickerGroupOpen[groupNode.dataset.actionGroup] = groupNode.open;
-        });
-      });
-
-      picker.querySelectorAll('[data-action-select]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const token = btn.dataset.actionSelect;
-          if (!token) return;
-          setActionToken(token);
-        });
-      });
-
-      const unmapBtn = rcEditorContent.querySelector('[data-action-unmap]');
-      if (unmapBtn) {
-        unmapBtn.addEventListener('click', () => setActionToken(''));
-      }
-
-      picker.querySelectorAll('[data-action-test]').forEach((btn) => {
-        btn.addEventListener('click', (event) => {
-          event.stopPropagation();
-          const token = btn.dataset.actionTest;
-          if (!token) return;
-          runActionTest(token);
-        });
-      });
+      wireActionPickerBody(picker);
 
       picker.addEventListener('keydown', (event) => {
         if (event.target instanceof Element && event.target.closest('.rc-action-test-btn')) return;
@@ -1499,7 +1569,7 @@
         event.preventDefault();
 
         const selectable = actionTargets
-          .filter((item) => !item.disabled && actionAllowedOnSelected(item) && actionMatchesQuery(item, actionPickerQuery))
+          .filter((item) => !item.disabled && actionAllowedOnSelected(item) && actionMatchesQuery(item, actionPickerQuery.trim()))
           .map((item) => item.token);
         if (!selectable.length) return;
 
@@ -1622,6 +1692,7 @@
       const payload = result.data || {};
       const mode = typeof payload.mode === 'string' ? payload.mode : getEditorMode();
       channelMap = modeMapFromArray(payload.map);
+      channelMapLoaded = true;
       triggerPulseState = {};
       if (rcInputModeHidden?.value !== mode) switchRcMode(mode);
       if (selectedChannel && !sourceAllowedInMode(parseChannelKey(selectedChannel).source, mode)) {
@@ -1632,7 +1703,8 @@
       renderLivePreview();
       renderEditor();
     } catch (error) {
-      channelMap = {};
+      // The last map the droid answered with is kept: an empty one here was
+      // what the next Apply posted as the whole map (#355).
       triggerPulseState = {};
       renderSummaryTable();
       renderChannelList();
@@ -1801,10 +1873,12 @@
     renderSourceHealth();
     renderSummaryTable();
     renderChannelList();
-    if (selectedChannel) {
-      renderLivePreview();
-      renderEditor();
-    }
+    // The editor is not drawn again here. It reads one thing the diagnostics
+    // carry, the receiver mode (getEditorMode()), for which actions the picker
+    // offers (actionAllowedOnSelected()); a new mode reaches the picker at its
+    // next draw. Drawing the editor here rebuilt it from the saved binding and
+    // threw a draft away on every poll and every return to the tab (#355).
+    if (selectedChannel) renderLivePreview();
   };
 
   const loadRcDiagnostics = async ({ handle = null } = {}) => {
@@ -1850,6 +1924,10 @@
 
   const saveMapping = async () => {
     if (!selectedChannel || !rcEditorContent) return;
+    if (!channelMapLoaded) {
+      setEditorFeedback('Not saved: the droid\'s map has not loaded yet.', 'error');
+      return;
+    }
 
     const { source, channel } = parseChannelKey(selectedChannel);
     const mode = getEditorMode();
@@ -1974,8 +2052,15 @@
     }
   };
 
+  // loadMappings() rethrows for the bootstrap's section retry. A Revert has no
+  // retry to hand it to, and the failure is already in the editor feedback, so
+  // the rejection stops here and the editor stays dirty.
   const revertMapping = async () => {
-    await loadMappings();
+    try {
+      await loadMappings();
+    } catch (_error) {
+      return;
+    }
     setEditorFeedback('Reverted to last saved mapping.');
     markEditorClean();
   };
@@ -1995,6 +2080,7 @@
     try {
       await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify({ map: [] }) }, { timeoutMs: 5000 });
       channelMap = {};
+      channelMapLoaded = true;
       const savedAt = new Date().toLocaleTimeString();
       setEditorFeedback('Cleared all mappings', 'success');
       markEditorClean(savedAt);
@@ -2102,12 +2188,13 @@
   // Every view that names an action is drawn again once the firmware's list
   // arrives. The fallback carries no action about one Output - its name is the
   // running board's (ADR 0033 Amendment 2026-09-19) - so a binding to one read
-  // as its bare token until this redraw, whichever section finished first.
+  // as its bare token until this redraw, whichever section finished first. An
+  // open editor has only its picker drawn again, so it keeps its draft.
   const redrawActionNames = () => {
     renderSummaryTable();
     renderChannelList();
     renderLivePreview();
-    if (selectedChannel) renderEditor();
+    refreshActionPicker();
   };
 
   // The droid's own sequences arrived: what names one is drawn again, and an
