@@ -66,8 +66,8 @@
         <div class="seq-modal-body">
           <p class="prose">Choose the JSON file you exported, or paste it straight in. Nothing reaches the droid until you save it.</p>
           <div class="seq-import-file-picker">
-            <input id="seq-import-file-input" type="file" accept=".json" aria-label="Choose JSON file">
-            <label for="seq-import-file-input" class="btn btn-sm icon-act"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Choose file</span></label>
+            <button id="seq-import-file-trigger" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Choose file</span></button>
+            <input id="seq-import-file-input" type="file" accept=".json" hidden aria-label="Choose JSON file">
           </div>
           <p class="seq-import-divider">or paste the JSON here:</p>
           <textarea

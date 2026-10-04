@@ -5925,14 +5925,6 @@ body.shell-performing .show-list {
   margin: var(--space-md) 0 var(--space-lg);
 }
 
-#seq-import-file-input {
-  display: none;
-}
-
-.seq-import-file-picker label {
-  display: inline-block;
-}
-
 .seq-import-divider {
   text-align: center;
   margin: var(--space-lg) 0 var(--space-md);
@@ -10837,15 +10829,6 @@ button.droid-build-card:disabled {
   font-family: inherit;
   font-size: var(--fs-cell);
   white-space: nowrap;
-  cursor: pointer;
-}
-
-/* A <label> that is an act (the file picker's) keeps the act's look over the
-   editor's form-label rule. */
-label.seq-act {
-  color: var(--text-dim);
-  font-size: var(--fs-cell);
-  font-weight: 400;
   cursor: pointer;
 }
 

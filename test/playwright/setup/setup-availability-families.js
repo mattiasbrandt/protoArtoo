@@ -85,9 +85,9 @@ const READ = `(row) => {
     }
     if (path === '/api/identity') {
       if (identityMode === 'slow') {
-        // Held long enough to read "checking", and not so long that the Page
-        // Recovery View takes over - that backdrop dims the whole body to 0.4
-        // and would be read as this rule's opacity.
+        // Held long enough to read "checking". The Page Recovery View is up
+        // while it is held (READ records recoveryActive), so the checking
+        // opacity is the backdrop's and is not asserted.
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
       if (identityMode === 'error') {
@@ -124,6 +124,14 @@ const READ = `(row) => {
       identityMode = mode;
       await page.goto(target === 'panel' ? MAINTENANCE_URL : CONFIGURATION_URL, { waitUntil: 'domcontentloaded' });
       await page.waitForFunction(() => Boolean(window.PAFeatureAvailability), null, { timeout: 10000 });
+      if (target === 'panel') {
+        // The panel's state is written by maintenance.js, which loads several
+        // scripts after feature_availability.js; on the droid that is longer
+        // than the read's 400 ms. The shell asks for /api/identity only once
+        // the surface's scripts have run, so waiting for the page's own first
+        // render still leaves the held manifest's checking window to read.
+        await page.waitForSelector('#profiler-card[data-feature-state]', { state: 'attached', timeout: 10000 });
+      }
       if (target === 'row') {
         // Let /api/config land first: it sets the toggle, and arriving after the
         // driven change it would quietly undo it.
