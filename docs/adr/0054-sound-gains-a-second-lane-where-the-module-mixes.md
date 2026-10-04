@@ -1,7 +1,10 @@
 # Sound gains a second lane, where the module mixes
 
-Status: accepted (2026-09-08, issue #326). Describes the **target** model.
-Nothing in it ships today.
+Status: accepted (2026-09-08, issue #326). Built in #447: the Background Track
+plays under vocals on the CHIRP Audio Trigger, with a scoped stop and volume and
+its own Sequence step, and a Rehearsal Warning where the module cannot mix. The
+Sound page shows Named Tracks over the module's address, a changed file for the
+builder to resolve, and the catalog card kept on a module that cannot list.
 
 **Renamed 2026-10-03 (operator, #447):** the **Sound Bed** of this record is now
 the **Background Track** (`CONTEXT.md`). The text below keeps the word it was
