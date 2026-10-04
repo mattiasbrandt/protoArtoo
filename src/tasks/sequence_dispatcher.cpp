@@ -409,7 +409,7 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
 // cursor where it is, so the same command comes round on the next tick. A Part
 // nothing can move is reported, passed over and costs no time.
 // -----------------------------------------------------------------------------
-// The plan is held in SeqMotionState, below.
+// The plan it reads is motion->posePlan (SeqMotionState, below).
 
 static bool dispatchAction(const SeqAction& act);  // defined with the task adapter below
 
@@ -780,7 +780,8 @@ static void generatedEnd(const char* why) {
 }
 
 // The move a flutter's Part is planned with: the Part, by its catalog id, and
-// the swing's far end as an open that far. Built in the static scratch action.
+// the swing's far end as an open that far. Built in the scratch action,
+// motion->flutterMove.
 static void flutterPlanMove(const char* partId, uint8_t howFar) {
     memset(&motion->flutterMove, 0, sizeof(motion->flutterMove));
     motion->flutterMove.kind = SEQ_ACT_BODY_MOVE;
@@ -1427,8 +1428,8 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
     centreRun = SeqBulkCentreRun{};
     centreRun.awaitOutput = SERVO_OUTPUT_NONE;
 
-    // The pose press's run (#440), over the static posePlan. Static for the
-    // same reason as the sweep's.
+    // The pose press's run (#440), over motion->posePlan. Static for the same
+    // reason as the sweep's.
     static SeqPoseRun poseRun;
     poseRun = SeqPoseRun{};
     poseRun.awaitOutput = SERVO_OUTPUT_NONE;
