@@ -2,6 +2,10 @@
   let selectedChannel = null;
   let rcSnapshot = null;
   let channelMap = {};
+  // Whether channelMap is a map the droid answered with. A save posts the
+  // whole map, so one posted before it ever loaded would erase every other
+  // binding on the droid (#355).
+  let channelMapLoaded = false;
   let triggerPulseState = {};
   
   // ── Learning mode state ───────────────────────────────────────────────────
@@ -1681,6 +1685,7 @@
       const payload = result.data || {};
       const mode = typeof payload.mode === 'string' ? payload.mode : getEditorMode();
       channelMap = modeMapFromArray(payload.map);
+      channelMapLoaded = true;
       triggerPulseState = {};
       if (rcInputModeHidden?.value !== mode) switchRcMode(mode);
       if (selectedChannel && !sourceAllowedInMode(parseChannelKey(selectedChannel).source, mode)) {
@@ -1691,7 +1696,8 @@
       renderLivePreview();
       renderEditor();
     } catch (error) {
-      channelMap = {};
+      // The last map the droid answered with is kept: an empty one here was
+      // what the next Apply posted as the whole map (#355).
       triggerPulseState = {};
       renderSummaryTable();
       renderChannelList();
@@ -1909,6 +1915,10 @@
 
   const saveMapping = async () => {
     if (!selectedChannel || !rcEditorContent) return;
+    if (!channelMapLoaded) {
+      setEditorFeedback('Not saved: the droid\'s map has not loaded yet.', 'error');
+      return;
+    }
 
     const { source, channel } = parseChannelKey(selectedChannel);
     const mode = getEditorMode();
@@ -2054,6 +2064,7 @@
     try {
       await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify({ map: [] }) }, { timeoutMs: 5000 });
       channelMap = {};
+      channelMapLoaded = true;
       const savedAt = new Date().toLocaleTimeString();
       setEditorFeedback('Cleared all mappings', 'success');
       markEditorClean(savedAt);
