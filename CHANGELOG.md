@@ -265,10 +265,26 @@ the patch releases, whose notes live on their own GitHub Release.
 - **Open a door from the Dashboard.** Your droid's body and dome are drawn
   side by side under the Dashboard's controls. Click a door, panel or arm to
   open or close it. With the estop latched nothing moves, and the Dashboard
-  says so. Play a sequence from Sequences.
+  says so.
 - **Sleep from the Dashboard's switch.** The Sleep switch under Controls now
   puts the droid to sleep, the same as Sleep in the top bar. The Console sits
   open under Controls, and Build folds away at the foot of the page.
+- **Run a show from the Dashboard.** Under the drawings, every sequence on the
+  droid is a tile with a round Play, yours first. The one running reads
+  Running and offers Stop, whoever started it, here or on the RC Radio. A
+  sequence on an RC Channel names it, and one the RC Radio fires that is no
+  longer on the droid says it does nothing. Rest runs your Stand Down
+  Sequence, and its tile carries the Rest mark: pick it on Sequences with the
+  Use as Stand Down pin beside each one. Until you do it is `DM:RESET`, which
+  leaves the pies open. Full screen clears the page to the drawings, the
+  sequences and STOP.
+- **Green means the droid heard it.** The Dome ESC, the Foot Drive and the RC
+  receiver light green only on what comes back from them, never on what the
+  droid sent. The Dome ESC has no wire back, so it reads Idle or Spinning in
+  grey, and a PWM receiver reads Unmeasured until something measures it.
+- **STOP releases what it latched.** While the droid reports the estop
+  latched, the red STOP says Press to release beside it, and a press releases
+  it. The ESTOP cell on the Status Plate does the same.
 - **Every answer says when it takes effect.** Each Setup question and each
   Configuration setting carries one line beside it: used at once, used from the
   droid's next start, or saved and needing a restart. Once you change something
@@ -386,12 +402,10 @@ the patch releases, whose notes live on their own GitHub Release.
   Rehearsal tab, which says when it holds a warning, and a folded summary
   follows a test run. It also says how many steps it could check and why the rest could not be. It
   never stops a save or a run.
-- **See what drives every part on your droid.** The new Parts page lists every
-  part, grouped the way you walk the droid, with the output that drives it, and
-  `– not wired –` where nothing does yet. Pick an output to wire a part. A part
-  is only ever on one output, so picking another moves it, and the page asks
-  first: it names the part, the output it leaves and what that output keeps.
-  Two parts on one wire, like a pair of doors, both read as driven.
+- **A part is on one output, and the page asks before it moves it.** Pick
+  another output for a part, on Wiring or on Parts, and the page asks first:
+  it names the part, the output it leaves and what that output keeps. Two
+  parts on one wire, like a pair of doors, are both on it.
 - **See what every output drives, and where it is told to be.** Servos has
   one row for every output with a part on it, in the order the wires plug in,
   named by its parts and the pin the board prints, so a wire split to two
@@ -473,10 +487,10 @@ the patch releases, whose notes live on their own GitHub Release.
   sound module, and there is no special build to flash for CHIRP Audio Trigger
   or MP3 Trigger. Pick the module on Configuration (Hardware components ->
   Sound); it takes effect at the next start.
-- **You put a part on an output in Wiring now.** The list of every part with
-  the output it is on moved from Parts to Wiring, under the outputs it chooses
-  between, and moving a part off one output still asks first. On Parts, Give it
-  an output takes you straight to that part's row there.
+- **The list of parts and their outputs is on Wiring now.** The list of every
+  part with the output it is on moved from Parts to Wiring, under the outputs
+  it chooses between, and moving a part off one output still asks first.
+  Parts picks a part's output too, with the same bar.
 - **A value the droid will not take is said in your words.** Save a setting
   it refuses - on Foot Drive, Dome, Servos, Sound or a restored backup - and the page
   says which setting, and what it takes: "Neutral pulse must be 1000 to 2000
