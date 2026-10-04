@@ -42,7 +42,6 @@
               <button class="opmode-btn drive active" id="opmode-drive" type="button" title="Feet on. The sticks drive the droid." aria-label="Set operation mode to Driving" aria-pressed="true">Driving</button>
               <button class="opmode-btn stationary" id="opmode-stationary" type="button" title="Feet locked. Dome and sound still work." aria-label="Set operation mode to Stationary" aria-pressed="false">Stationary</button>
             </div>
-            <p class="hint">Stationary locks the feet. Dome and sound still work.</p>
             <div id="opmode-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
           </div>
 
@@ -57,7 +56,6 @@
               <button class="mood-btn full" id="mood-full" type="button" data-cmd=":SE11" title="Resume sound chatter. Holo projectors moving." aria-label="Set mood to Full-Awake" aria-pressed="false">Full-Awake</button>
               <button class="mood-btn awakeplus" id="mood-awakeplus" type="button" data-cmd=":SE14" title="Resume sound chatter. Holo projectors moving with LEDs on." aria-label="Set mood to Awake Plus" aria-pressed="false">Awake+</button>
             </div>
-            <p class="hint">Each step up adds chatter, then holo movement, then holo lights.</p>
             <div id="mood-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
           </div>
 
@@ -65,9 +63,8 @@
             <h3>Sleep <span class="now waiting" id="sleep-now"></span></h3>
             <!-- The Sleep act's home is the topbar, with the other two that act
                  on the droid, so its explanation belongs at that entrance and
-                 not here (ADR 0059). What survives the cut is the half a
-                 builder has to know - a sleeping droid can still be driven and
-                 can still be stopped. -->
+                 not here (ADR 0059). None of the three controls carries a note
+                 under it (operator, 2026-10-04, #399). -->
             <!-- The switch takes a press as well (operator, 2026-09-29, #399:
                  it looked like a control and did not act like one). It is the
                  same act as the topbar button - app.js toggleSleepWake(), with
@@ -76,7 +73,6 @@
                  press moves it only when the droid says it slept. Asleep, the
                  sleep overlay covers it and Wake is the overlay's. -->
             <button class="sleep-switch" id="sleep-switch" type="button" role="switch" aria-checked="false" aria-label="Sleep"><span class="sleep-switch-knob"></span></button>
-            <p class="hint">Lights, panels and chatter rest. Drive and the estop stay awake.</p>
           </div>
         </div>
 

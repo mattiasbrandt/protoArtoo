@@ -5072,10 +5072,6 @@ body[data-page="maintenance"] .status-item .hint {
   font-weight: 400;
 }
 
-.ctl .hint {
-  margin-top: var(--space-sm);
-}
-
 /* Moving parts: the drawings under the three controls, in the same bay and
    divided from them by a seam rather than by a card of their own. The label
    takes the controls' own heading voice. */
