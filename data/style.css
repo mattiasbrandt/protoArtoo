@@ -5140,8 +5140,7 @@ body[data-page="maintenance"] .status-item .hint {
   font-weight: 400;
 }
 
-.show-head .btn .i,
-.show-other .btn .i {
+.show-head .btn .i {
   width: 14px;
   height: 14px;
 }
@@ -5189,7 +5188,7 @@ body[data-page="maintenance"] .status-item .hint {
   transition: background-color 0.15s;
 }
 
-.show-item:hover {
+.show-item:not(.is-inert):hover {
   background: color-mix(in srgb, var(--text) 4%, var(--surface-alt));
 }
 

@@ -1626,7 +1626,7 @@
       showOther.classList.toggle("hidden", other === null);
       showOther.innerHTML = other === null ? ""
         : `<span class="seq-row-run"><span class="indicator ok seq-live" aria-hidden="true"></span>Running ${esc(other)}</span>
-           <button type="button" class="btn btn-sm seq-stop icon-act" data-act="stop">${actFace("stop", "Stop")}</button>`;
+           <span class="show-item-act"><button type="button" class="btn seq-stop icon-act" data-act="stop">${actFace("stop", `Stop ${other}`)}</button></span>`;
     }
     if (showNow) {
       const record = runWatch.record();
