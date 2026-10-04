@@ -235,6 +235,14 @@
   //            read is a mark on the Takes row where it starts.
   //   overrun  where a later take covers the same Part, drawn over the
   //            earlier take's block: there the later one moves it
+  //   background
+  //            a Background Track (ADR 0054), on the Sound row under the
+  //            sounds fired over it: from the step that starts it to the
+  //            step that stops it, or to the end, or on past it where it
+  //            is not bounded. `sound` is the address it plays; `ends` says
+  //            what ends it - "stop", "end", "on" (past the end) or "cut",
+  //            by a later start or Quiet - and `mute` marks one the droid's
+  //            sound module cannot play, because it plays one sound at a time
   //   tick     one command at its instant: every step draws at least this
   // `ghost` marks an item from a loop's second pass or later, which the
   // as-written reading draws faintly.
@@ -393,6 +401,29 @@
       light.delete(id);
     };
     const domeVisual = { item: null };
+    // The Background Track playing, and whether a start before the end was
+    // bounded: the droid stops one still playing at the end when any was
+    // (FX_BACKGROUND_TRACK_BOUNDED, beginFinish(), src/tasks/sequence_engine.cpp).
+    // Whether this droid's module can play one at all is what it reported
+    // (GET /api/config `components.audio.activeMixes`), read as the Rehearsal
+    // reads it (data/seq_rehearsal.js): nothing is said where it did not say.
+    //
+    // A sequence inside this one is spliced in when the droid runs it, so a
+    // start, a stop or a Quiet in it acts on this Background Track; the span
+    // is drawn straight through the phrase's block all the same, because what
+    // a phrase does is not drawn inside it.
+    //
+    // `stopped` is the last span its own stop ended, until the next thing
+    // that would have cut it short: a later start or a Quiet marks it
+    // `cutAfter`, because without its stop it would be cut there.
+    const background = { item: null, stopped: null, bounded: false };
+    const mute = context.config?.components?.audio?.activeMixes === false;
+    const backgroundEnds = (t, ends) => {
+      if (ends === "cut" && background.stopped) background.stopped.cutAfter = true;
+      background.stopped = null;
+      if (background.item) Object.assign(background.item, { t1: t, ends });
+      background.item = null;
+    };
 
     events.forEach((event) => {
       const def = event.def || {};
@@ -513,8 +544,44 @@
         }
         case "audio":
         case "audioCat":
+          // Quiet ($s) stops every stream, a Background Track with them
+          // (AUDIO_PLAYBACK_INTENT_STOP, src/tasks/audio_task.cpp).
+          if (def.type === "audio" && def.cmd === "$s") backgroundEnds(t, "cut");
           add(rowLane("sound", "Sound"), { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
           return;
+        case "backgroundTrack": {
+          // One block, under the sounds fired over it. The droid plays one
+          // Background Track at a time, so a start ends the one before it
+          // (playBackgroundTrack(), src/drivers/audio_chirp.cpp). Its left
+          // edge is its start; it has a right edge once a stop step ends it.
+          // `held`: a start before this one was bounded, so the droid stops
+          // this one at the end whatever it says itself.
+          backgroundEnds(t, "cut");
+          const held = background.bounded;
+          if (def.boundAudio !== false) background.bounded = true;
+          background.item = add(rowLane("sound", "Sound"), {
+            kind: "background", t0: t, t1: null, sent: t, label, ghost, mute, held, sound: def.cmd,
+            ...(step === null ? {} : { steps: [step], l: { step, field: "t" } }),
+          });
+          return;
+        }
+        case "backgroundTrackStop": {
+          // A stop ends the span it stops, which then runs from its start to
+          // here and is moved and stretched as one block. One that cannot be
+          // that block's edge - nothing is playing, or what plays is a loop's
+          // later pass, which nobody wrote - is a mark of its own, so every
+          // written stop can still be taken hold of.
+          const playing = background.item;
+          backgroundEnds(t, "stop");
+          if (playing && playing.l && step !== null) {
+            playing.steps = [playing.l.step, step];
+            playing.r = { step, field: "t" };
+            background.stopped = playing;
+            return;
+          }
+          add(rowLane("sound", "Sound"), { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
+          return;
+        }
         case "domeRotate": {
           const durationMs = Number(def.durationMs) || 0;
           add(rowLane("spin", "Dome turn"), durationMs > 0
@@ -650,6 +717,9 @@
       if (item.kind === "light" && item.t1 > endMs) item.t1 = endMs;
     }));
     if (domeVisual.item && domeVisual.item.t1 === null) domeVisual.item.t1 = endMs;
+    // A Background Track still playing stops at the end where the droid stops
+    // it, and plays on to the right edge where it does not (below).
+    if (background.bounded) backgroundEnds(endMs, "end");
     // A sequence inside this one stops at this routine's end step too: the
     // droid cuts what it splices in past the end (seqStoreSplicePhrase(),
     // include/seq_store_util.h).
@@ -675,6 +745,8 @@
         lane.state.open = false;
       }
     });
+    if (background.item) background.item.past = true;
+    backgroundEnds(windowMs, "on");
 
     // Loops, as written: the header and how many passes it makes. The passes
     // are the same steps, drawn again, never stored (ADR 0057).
@@ -703,7 +775,8 @@
   // ---------------------------------------------------------------------------
   // poseAt() -- what the routine has commanded by instant t: every Part it has
   // moved, where the last step before t left it; every light mode running;
-  // and the sound started last. A Part not yet moved by t is not in it.
+  // the sound started last; and the Background Track playing under it. A Part
+  // not yet moved by t is not in it.
   // ---------------------------------------------------------------------------
   const poseAt = (model, t) => {
     const at = {};
@@ -716,10 +789,12 @@
       const on = lane.items.find((item) => item.kind === "light" && item.t0 <= t && t < item.t1);
       if (on) lights.push({ part: lane.part, name: lane.name, label: on.label });
     });
-    const sound = (model.rows.find((row) => row.key === "sound")?.items || [])
-      .filter((item) => item.t0 <= t && t <= model.endMs)
+    const soundRow = model.rows.find((row) => row.key === "sound")?.items || [];
+    const sound = soundRow
+      .filter((item) => item.kind !== "background" && item.t0 <= t && t <= model.endMs)
       .pop() || null;
-    return { at, lights, sound };
+    const background = soundRow.find((item) => item.kind === "background" && item.t0 <= t && t < item.t1) || null;
+    return { at, lights, sound, background };
   };
 
   // ---------------------------------------------------------------------------
@@ -775,13 +850,18 @@
   const itemHtml = (item, windowMs, authored, handle = "") => {
     const t1 = item.t1 === null || item.t1 === undefined ? item.t0 : item.t1;
     const ghost = authored && item.ghost ? " is-ghost" : "";
-    const title = item.label ? `${item.label}, ${seconds(item.t0)}` : seconds(item.t0);
+    // A Background Track the module cannot play is drawn as the Rehearsal
+    // warns of it; one that plays on past the end runs out as `left` does.
+    const state = `${item.mute ? " is-mute" : ""}${item.past ? " is-past" : ""}`;
+    const said = item.label ? `${item.label}, ${seconds(item.t0)}` : seconds(item.t0);
+    const mute = item.mute ? window.SeqRehearsal?.CANNOT_MIX_WORDS : "";
+    const title = mute ? `${said}. ${mute}` : said;
     const width = item.kind === "tick" ? "" : `;width:${pct(Math.max(0, t1 - item.t0), windowMs)}`;
     // A Gesture's block holds the moves it becomes, each with its own words,
     // so its own are in its title and not written over theirs.
     // An overrun lies over a take's block, whose words are not written over.
     const text = item.kind !== "tick" && item.kind !== "gesture" && item.kind !== "overrun" && item.label ? `<span class="tl-label">${esc(item.label)}</span>` : "";
-    return `<span class="tl-item tl-${item.kind}${ghost}"${handle} style="left:${pct(item.t0, windowMs)}${width}" title="${esc(title)}">${text}</span>`;
+    return `<span class="tl-item tl-${item.kind}${ghost}${state}"${handle} style="left:${pct(item.t0, windowMs)}${width}" title="${esc(title)}">${text}</span>`;
   };
 
   const loopItems = (model, authored) => {
@@ -843,8 +923,11 @@
   // under, and the blocks over it in the order they were listed. The order is
   // the whole of it: a block given a layer of its own would bury the marks
   // drawn inside it.
+  // A Background Track goes under too: the sounds fired over it are drawn
+  // over it, as they play over it.
   const isStanding = (item) => item.kind === "open" || item.kind === "left";
-  const stacked = (items) => [...items.filter(isStanding), ...items.filter((item) => !isStanding(item))];
+  const isUnder = (item) => isStanding(item) || item.kind === "background";
+  const stacked = (items) => [...items.filter(isUnder), ...items.filter((item) => !isUnder(item))];
 
   const laneHtml = (lane, windowMs, authored, dim, handleOf = () => "") =>
     `<div class="tl-row${dim ? " is-unwired" : ""}${lane.part ? "" : " is-kind"}" data-lane="${esc(lane.key)}">` +
@@ -897,7 +980,8 @@
   // Returns {refresh(context), at(), dragging(), cancel(), picked(),
   // pick(indices), movePickedTo(ms, landed), pickedRange(), removePicked(),
   // aim(point, isEnd),
-  // beatAt(ms), standing(index), sizeStanding(index, ms), say(answer),
+  // beatAt(ms), standing(index), background(index), sizeStanding(index, ms),
+  // say(answer),
   // destroy()}.
   // ---------------------------------------------------------------------------
   const mount = (hosts, source, options = {}) => {
@@ -1092,6 +1176,8 @@
         ["Open", open.length ? open.join(", ") : "none"],
         ...pose.lights.map((lit) => [lit.name, lit.label]),
         ...(pose.sound ? [["Sound", `${pose.sound.label}, from ${seconds(pose.sound.t0)}`]] : []),
+        ...(pose.background
+          ? [["Background Track", [pose.background.sound, `from ${seconds(pose.background.t0)}`].filter(Boolean).join(", ")]] : []),
       ];
       readout.innerHTML = rowsHtml.map(([term, value]) => `<dt>${esc(term)}</dt><dd>${esc(value)}</dd>`).join("");
       if (drawing) {
@@ -1370,7 +1456,9 @@
           if (item.of !== undefined && moving.has(steps[item.of])) return;
           const label = item.label || lane.name;
           targets.push({ t: item.t0, label });
-          if (item.kind !== "tick" && item.kind !== "left" && item.t1 !== null && item.t1 !== undefined) targets.push({ t: item.t1, label });
+          // What runs on to the right edge ends nowhere: a Part left open, a
+          // Background Track playing on past the end.
+          if (item.kind !== "tick" && item.kind !== "left" && !item.past && item.t1 !== null && item.t1 !== undefined) targets.push({ t: item.t1, label });
         }));
       return targets;
     };
@@ -1581,10 +1669,12 @@
     // opens it: the step that closes it and how long the block runs, from the
     // step that opens it to the step that closes it - a body Part's travel
     // included - or null when no written step closes it. A flutter opens no
-    // such block: it ends closed.
+    // such block: it ends closed. A Background Track with a stop step is one
+    // such block too, from its start to its stop.
     const standingItem = (index) => {
-      for (const lane of model.parts) {
-        const item = lane.items.find((each) => each.kind === "open" && each.l && each.l.step === index && each.r);
+      for (const lane of [...model.parts, ...model.rows]) {
+        const item = lane.items.find((each) => (each.kind === "open" || each.kind === "background") &&
+          each.l && each.l.step === index && each.r);
         if (item) return item;
       }
       return null;
@@ -1593,6 +1683,21 @@
       const item = standingItem(index);
       return item ? { close: item.r.step, ms: item.t1 - item.sent } : null;
     };
+    // The Background Track the start at `index` begins, as drawn: what ends
+    // it (the item's `ends`); whether an earlier bounded start has the droid
+    // stop it at the end whatever it says (`held`); whether, ended by its
+    // stop, it would be cut short without it (`cutAfter`); and when it was
+    // cut short by a later start or a Quiet, how long it plays first - the
+    // room a stop has. Null for a step that starts none on the routine as
+    // written.
+    const background = (index) => {
+      const item = (model.rows.find((row) => row.key === "sound")?.items || [])
+        .find((each) => each.kind === "background" && each.l && each.l.step === index);
+      return item ? {
+        ends: item.ends, held: item.held, cutAfter: Boolean(item.cutAfter), room: item.ends === "cut" ? item.t1 - item.t0 : Infinity,
+      } : null;
+    };
+
     // Typed rather than dragged: the block the step at `index` opens runs
     // for `ms`, its close moved as far as its limits allow, and it is one
     // edit. The close comes no earlier than the step that opens the Part; one
@@ -1763,6 +1868,7 @@
       aim,
       beatAt,
       standing,
+      background,
       sizeStanding,
       say,
       destroy() {

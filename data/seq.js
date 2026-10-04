@@ -1167,6 +1167,10 @@
   // A sequence inside this one has one row, which sequence it is, and one
   // act: Split into steps, which writes the phrase's steps out in its place
   // (splitPhrase()). Its length is the phrase's own, so there is no Runs for.
+  //
+  // A Background Track (ADR 0054) has its sound, its volume and how it ends:
+  // with the sequence, at a stop step - then it is one block with the stop,
+  // and has a Runs for - or playing on after the sequence ends.
   // ---------------------------------------------------------------------------
   const BRICK_SENTENCE = "These settings belong to this brick. The same part dropped somewhere else keeps its own.";
 
@@ -1194,8 +1198,9 @@
   const lengthCells = (step, msCell) => (tempoOf() && spansBeats(step)
     ? `<span class="seq-row-ctl">${msCell}${numberCell("spanBeats", step.spanBeats ?? "", SeqProtocolCheck.SPAN_BEATS, "Runs for, in beats", "beats", true)}</span>`
     : msCell);
-  const faderOf = (field, value, bounds, label) =>
-    `<input class="fader" type="range" ${limits(bounds)} step="1" value="${value}" data-picked="${field}" aria-label="${label}">`;
+  // `unit` follows the number beside the fader as it moves (faderMoved()).
+  const faderOf = (field, value, bounds, label, unit = "%") =>
+    `<input class="fader" type="range" ${limits(bounds)} step="1" value="${value}" data-picked="${field}" data-unit="${unit}" aria-label="${label}">`;
   const capital = (word) => word[0].toUpperCase() + word.slice(1);
 
   // A color is picked as the color itself, in Lights' own swatch (the
@@ -1521,6 +1526,20 @@
       case "audio":
         return settingRow("Plays",
           `<input class="number-cell text-cell" type="text" value="${esc(step.cmd ?? "")}" placeholder="$H, $N, $D, $A..." data-picked="cmd" aria-label="Sound command">`);
+      case "backgroundTrack": {
+        // Its sound is picked as a sound step's is. Ends is how it stops,
+        // pressed as the timeline draws it, and a choice that would not hold
+        // there is not offered (trackEnds()).
+        const pair = sessionTimeline?.standing(at) || null;
+        const vol = fieldOf(step, "vol");
+        const { pressed, open } = trackEnds(step);
+        return settingRow("Plays",
+          `<input class="number-cell text-cell" type="text" value="${esc(step.cmd ?? "")}" placeholder="$W, $212..." data-picked="cmd" aria-label="Sound command">`)
+          + settingRow("Volume", faderOf("vol", vol, STEP_LIMITS.vol, "Volume, 0 to 30", ""), `${vol}`)
+          + settingRow("Ends", segOf("ends", [["end", "With the sequence"], ["stop", "At its stop"], ["on", "Keeps playing"]]
+            .map(([value, words]) => [value, words, !open.includes(value)]), pressed, "When it stops"))
+          + (pair ? settingRow("Runs for", numberCell("runs", Math.round(pair.ms), STEP_LIMITS.t, "Runs for, in milliseconds")) : "");
+      }
       case "audioCat":
         return settingRow("Plays", pillsOf("category", AUDIO_CATEGORIES.map((name) => [name, capital(name)]), fieldOf(step, "category"), "Sound category"))
           + settingRow("Fallback", pillsOf("fallback", AUDIO_FALLBACK_SLOTS.map((slot) => [slot.value, esc(slot.label)]), fieldOf(step, "fallback"), "Fallback sound"));
@@ -1717,14 +1736,15 @@
   // The step that closes what `step` moves, and nothing else: a Body Step
   // that closes the same Part, or the same panel command with close for its
   // word. A group close (:CL00) over a single panel's open is not that - it
-  // closes other panels too.
-  const closeFor = (step) => (step.type === "body"
-    ? { type: "body", part: step.part, shape: "close" }
-    : { type: "dome", cmd: step.cmd.replace(/^:(OP|OF)/, ":CL") });
+  // closes other panels too. A Background Track's is its stop step.
+  const closeFor = (step) => (step.type === "body" ? { type: "body", part: step.part, shape: "close" }
+    : step.type === "backgroundTrack" ? { type: "backgroundTrackStop" }
+      : { type: "dome", cmd: step.cmd.replace(/^:(OP|OF)/, ":CL") });
   const closesOnly = (step, other) => {
     const close = closeFor(step);
     return Boolean(other) && other.type === close.type
-      && (close.type === "body" ? other.part === close.part && other.shape === "close" : other.cmd === close.cmd);
+      && (close.type === "body" ? other.part === close.part && other.shape === "close"
+        : close.type === "backgroundTrackStop" || other.cmd === close.cmd);
   };
 
   // Turned into a flutter, an open's pair loses its close, inside the edit
@@ -1732,6 +1752,32 @@
   // than this Part stays.
   const dropPairClose = (step, pair) => {
     if (closesOnly(step, stageSteps()[pair.close])) removeSteps([pair.close], true);
+  };
+
+  // How a Background Track's start ends, read off the span the timeline draws
+  // for it (SeqTimeline background()), so the Ends bar never says what the
+  // routine does not do:
+  //   stop  at its stop step - the block's right edge;
+  //   end   with the sequence: the droid stops it at the end, because this
+  //         start or an earlier one is bounded (the engine's rule, which the
+  //         timeline draws);
+  //   on    playing on after the sequence ends (boundAudio false here and on
+  //         every start before it);
+  //   cut   cut short by a later start or a Quiet ($s): none of the three is
+  //         what happens, so none is pressed.
+  // `open` is the choices that would hold if pressed. A cut start can only be
+  // given a stop, and only where one fits before what cuts it (`room`, the
+  // ms it plays first). Keeps playing does not hold where an earlier bounded
+  // start has the droid stop it at the end anyway (`held`). A stop whose
+  // removal would leave it cut short (`cutAfter`) is the only choice that
+  // holds there.
+  const trackEnds = (step) => {
+    const drawn = sessionTimeline?.background(stageSteps().indexOf(step)) || { ends: "end", held: false, room: Infinity };
+    const { t, last } = reachOf(step);
+    const room = Math.min(drawn.room - 1, last - t);
+    const stop = drawn.ends === "stop" || room > 0;
+    const open = drawn.ends === "cut" || drawn.cutAfter ? ["stop"] : drawn.held ? ["end", "stop"] : ["end", "stop", "on"];
+    return { pressed: drawn.ends === "cut" ? "" : drawn.ends, open: open.filter((value) => value !== "stop" || stop), room };
   };
 
   // Where `step` runs and how late what it starts may still be going: `t`,
@@ -1750,14 +1796,20 @@
     return { t: Number(run[at].t) || 0, last, loop, outer, endAt };
   };
 
-  // Turned back into an open, a flutter is a pair again: a close of the same
-  // Part `ms` after the open, never past the end step - or, among the steps a
-  // loop repeats, past the loop's pass. It lands before the end step, or
-  // beside its open where a loop repeats that, which then repeats both.
+  // Turned back into an open, a flutter is a pair again - and a Background
+  // Track given a stop is one (writePicked()'s Ends): a close of the same
+  // Part, or the stop, `ms` after the open, never past the end step - or,
+  // among the steps a loop repeats, past the loop's pass. It lands before the
+  // end step, or among the steps the loop repeats where a loop repeats its
+  // open - in time order there, since the droid runs a pass's steps in the
+  // order written and nothing reorders them - and the loop then repeats both.
   //
   // Where the next step to move the Part already is that close, none is
   // added: a sequence saved while a flutter still owed a close has one after
-  // every flutter, and the open takes it for its pair.
+  // every flutter, and the open takes it for its pair. A Background Track
+  // adopts none: the timeline pairs a start with the first stop before
+  // anything else ends it, so a start it found no pair for has no stop that
+  // would end it. The caller keeps `ms` short of what does (trackEnds()).
   //
   // `reopen(step)` is what turns the step itself back into an open. The two
   // are one change, tried on a copy first (triedOnCopy()): the close is one
@@ -1771,14 +1823,19 @@
     const moves = (other) => Boolean(other) && (step.type === "body"
       ? other.type === "body" && other.part === step.part
       : panelIntent(other)?.[2] === panelIntent(step)[2]);
-    const hasClose = closesOnly(step, steps.slice(at + 1).find(moves));
+    const hasClose = step.type !== "backgroundTrack" && closesOnly(step, steps.slice(at + 1).find(moves));
     const { t, last, loop, outer, endAt } = reachOf(step);
     const close = { t: Math.min(t + ms, last), ...closeFor(step) };
+    // Inside a loop: before the first step the pass runs after the close.
+    const run = stageRun();
+    const bodyEnd = loop ? loop.at + loop.size : at + 1;
+    const later = loop ? run.findIndex((each, i) => i > at && i < bodyEnd && (Number(each.t) || 0) > close.t) : -1;
+    const into = outer ? endAt : later === -1 ? bodyEnd : later;
     const place = (list) => {
       reopen(list[at]);
       if (hasClose) return;
       if (loop) list[loop.at].body += 1;
-      list.splice(outer ? endAt : at + 1, 0, { ...close });
+      list.splice(into, 0, { ...close });
     };
     const { refused } = triedOnCopy(place);
     if (refused) sayOnStage(refused.error, "error");
@@ -1868,6 +1925,30 @@
           opened.cmd = opened.cmd.replace(/^:OF/, ":OP");
         });
       }
+    } else if (field === "vol") {
+      // A Background Track's volume, within the interface's 0-30.
+      if (!Number.isInteger(number)) return;
+      step.vol = Math.max(STEP_LIMITS.vol[0], Math.min(STEP_LIMITS.vol[1], number));
+    } else if (field === "ends" && step.type === "backgroundTrack") {
+      // How it stops, and only by a choice the Ends bar offers (trackEnds()).
+      // A stop lands half way to whatever comes first of the end, the loop
+      // pass's end and what would cut the Background Track short, so its
+      // edge is there to drag. Taken away, the stop goes in the same edit.
+      // Bounded is absence; Keeps playing is the one word stored, boundAudio
+      // false.
+      const pair = pairOf(step);
+      const { open, room } = trackEnds(step);
+      if (!open.includes(raw)) return;
+      if (raw === "stop") {
+        if (pair) return;
+        reopenAsPair(step, Math.round(room / 2), (start) => {
+          delete start.boundAudio;
+        });
+        return;
+      }
+      if (pair) removeSteps([pair.close], true);
+      if (raw === "on") step.boundAudio = false;
+      else delete step.boundAudio;
     } else if (field === "target" && step.type === "domeBearing") {
       // Only what the picker offers: front, or a dome Part Protocol Check
       // accepts.
@@ -1979,15 +2060,18 @@
       const before = historyBegin();
       writePicked(step, field, raw);
       // A Move Shape changed can add a close or take one away, and the close
-      // it adds goes in time order with the rest.
-      if (field === "motion") orderSteps();
+      // it adds goes in time order with the rest. So can how a Background
+      // Track ends.
+      const paired = field === "motion" || field === "ends";
+      if (paired) orderSteps();
       historyCommit(before);
       edited();
       // The blocks a step draws change with its Move Shape: a flutter is its
-      // own block, and an open is one block with the close after it.
-      if (field === "motion") {
+      // own block, and an open is one block with the close after it. A
+      // Background Track given a stop is one block with it.
+      if (paired) {
         const now = stageSteps().indexOf(step);
-        const pair = raw === "open" ? sessionTimeline.standing(now) : null;
+        const pair = raw === "open" || raw === "stop" ? sessionTimeline.standing(now) : null;
         sessionTimeline.pick(pair ? [now, pair.close] : [now]);
       }
     }
@@ -2013,7 +2097,7 @@
     }
     writePicked(picked.step, input.dataset.picked, input.value, faderRun.way);
     const valueEl = input.closest(".setting-row")?.querySelector(".setting-value");
-    if (valueEl) valueEl.textContent = `${input.value}%`;
+    if (valueEl) valueEl.textContent = `${input.value}${input.dataset.unit ?? "%"}`;
     edited();
   };
 
@@ -2066,7 +2150,7 @@
   // Turn Dome To sits beside Spin Dome: one turns for a time, the other until
   // front, or a dome Part, faces front (ADR 0051).
   const DOME_COMMAND_KIND = "domeCommand";
-  const LIBRARY_KINDS = ["audio", "audioCat", "domeRotate", "domeBearing", "DV", "DH", DOME_COMMAND_KIND, "random", "loop", "end"];
+  const LIBRARY_KINDS = ["audio", "audioCat", "backgroundTrack", "domeRotate", "domeBearing", "DV", "DH", DOME_COMMAND_KIND, "random", "loop", "end"];
   const librarySets = () => window.DroidParts?.sets || [];
   // A kind that is a dome step, as its name and the command a dropped one
   // holds; null for a kind that is a step type of its own.
@@ -2812,6 +2896,12 @@
         const howFar = step.howFar ? `, ${step.howFar}%` : "";
         return `${words[shape] || shape} ${part ? part.name : step.part || "a part"}${howFar}`;
       }
+      case "backgroundTrack": {
+        const cmd = fieldOf(step, "cmd");
+        return cmd ? `Background Track (${cmd})` : "Background Track";
+      }
+      case "backgroundTrackStop":
+        return "Stop Background Track";
       case "end":
         return "End of sequence";
       default:
@@ -2834,6 +2924,10 @@
     loop: { body: 2, periodMs: 1846, durationMs: 14000 },
     random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
     audioCat: { category: "alert", fallback: "scream" },
+    // The Star Wars theme, under the routine at a level a vocal is heard
+    // over. Bounded, as a sound step is: it says no boundAudio.
+    backgroundTrack: { cmd: "$W", vol: 12 },
+    backgroundTrackStop: {},
     gesture: { set: "ring", spread: "wave" },
     sequence: {},
     end: {},
@@ -2853,6 +2947,9 @@
     // times a holo wags or nods: Protocol Check holds each to 0..99.
     lightCount: [0, 99],
     scroll: [0, 9],
+    // A Background Track's volume, the interface's 0-30 (Protocol Check's
+    // BACKGROUND_TRACK_VOL_MAX).
+    vol: [0, 30],
   };
   // How many characters a logic text holds, a line break among them. The box
   // counts characters and the droid counts bytes (Protocol Check, the 32-byte
@@ -3037,6 +3134,8 @@
     loop: "Servo Loop",
     random: "Random Flutter",
     audioCat: "Sound Category",
+    backgroundTrack: "Background Track",
+    backgroundTrackStop: "Stop Background Track",
     gesture: "Gesture",
     sequence: "Sequence",
     body: "Body Step",
