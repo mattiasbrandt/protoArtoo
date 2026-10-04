@@ -600,5 +600,31 @@ class ExternCheckReadsCode(unittest.TestCase):
         self.assertFalse(self.fails('extern "C" void f();'))
 
 
+class OldGlossaryNameCheckReadsProse(unittest.TestCase):
+    """The glossary's pre-50c74203 name fails wherever it is added, comments too."""
+
+    # Spelled in pieces so this file never carries the name the CI grep refuses.
+    OLD = "CONTEXT" + ".md"
+    OLD_MAP = "CONTEXT" + "-MAP"
+
+    def fails(self, line):
+        return slice_verify.text_matches(slice_verify.OLD_GLOSSARY_RE, line)
+
+    def test_old_name_in_prose_fails(self):
+        self.assertTrue(self.fails(f'the term is in {self.OLD} "Wiring"'))
+
+    def test_old_name_in_a_comment_fails(self):
+        self.assertTrue(self.fails(f'// ({self.OLD} "Dome Bearing")'))
+
+    def test_old_map_name_fails(self):
+        self.assertTrue(self.fails(f"see {self.OLD_MAP}.md"))
+
+    def test_new_name_passes(self):
+        self.assertFalse(self.fails('the term is in GLOSSARY.md "Wiring"'))
+
+    def test_unrelated_context_identifier_passes(self):
+        self.assertFalse(self.fails("CONTEXT_HANDOFF_RE = re.compile("))
+
+
 if __name__ == "__main__":
     unittest.main()
