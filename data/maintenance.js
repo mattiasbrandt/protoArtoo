@@ -109,18 +109,17 @@
   };
 
   const renderSerialStatus = (d, receivedAt) => {
-    // The light carries the color and the words carry the reading. "off" for
-    // a lane that is switched off is the grey CONTEXT.md "Health Signal" asks
-    // for - a thing never asked reads grey, never green.
+    // The Foot Drive, Sound and protoR2link are the health-signal model's word
+    // and light, the same ones every other page shows (data/health_signals.js,
+    // #422, #399). The Foot Drive lights green only on its wheel controller's
+    // readings, never on the saved toggle: the toggle is a command, not a
+    // report. The heartbeat counts and the last-seen time beside protoR2link's
+    // word are numbers, not a verdict, and stay this row's own.
     if (serialS1) {
-      serialS1.textContent = !d.drive ? "Disabled"
-        : d.drive.state === "commanding" ? "Active" : "Enabled / Idle";
-      setLight(serialS1Light, d.drive ? "ok" : "off");
+      const drive = window.PAHealthSignals.readFootDrive(d);
+      serialS1.textContent = drive.word;
+      setLight(serialS1Light, drive.state);
     }
-    // Sound and protoR2link are the health-signal model's word and light, the
-    // same ones every other page shows (data/health_signals.js, #422). The
-    // heartbeat counts and the last-seen time beside protoR2link's word are
-    // numbers, not a verdict, and stay this row's own.
     const words = { unknown: window.PALiveReading.UNKNOWN };
     if (serialS2) {
       const sound = window.PAHealthSignals.readSoundLink(d, words);

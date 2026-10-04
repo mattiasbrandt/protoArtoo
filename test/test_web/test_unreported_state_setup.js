@@ -42,7 +42,7 @@ test("a lane nobody asked about reads grey, never green", () => {
   env.status({ ...HEAP_GOOD });
 
   assert.equal(env.element("serial-s1-light").className, "indicator off", "no drive in the frame at all");
-  assert.equal(env.element("serial-s1-state").textContent, "Disabled");
+  assert.equal(env.element("serial-s1-state").textContent, "Off");
   assert.equal(env.element("serial-s2-light").className, "indicator off");
   assert.equal(env.element("serial-s3-light").className, "indicator off");
 });
