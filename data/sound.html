@@ -49,6 +49,10 @@
           <dt>Module link</dt>
           <dd><span id="mod-link" class="sound-state-badge" data-state="disabled">—</span></dd>
         </div>
+        <div class="status-item">
+          <dt>Background Track</dt>
+          <dd><span id="mod-background-track">—</span></dd>
+        </div>
       </dl>
       <details class="disclose">
         <summary>
@@ -141,9 +145,11 @@
     </div>
 
 
-    <!-- CHIRP catalog (visible only when the fitted module can be asked for one) -->
-    <div id="chirp-catalog-card" class="card hidden">
-      <div class="sect"><h2>CHIRP catalog</h2><span class="sub">from the module's card</span></div>
+    <!-- The module's catalog. The card stays on every module: one that cannot
+         list its contents keeps it in place and says so, so the page does not
+         change shape with the hardware (ADR 0054). -->
+    <div id="chirp-catalog-card" class="card">
+      <div class="sect"><h2>Catalog</h2><span class="sub hidden" id="catalog-sub">from the module's card</span></div>
       <div class="button-row button-row-compact">
         <button id="btn-catalog-refresh" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg><span class="act-label">Refresh catalog</span></button>
         <button id="btn-catalog-apply-suggestions" class="btn btn-sm icon-act act-keeps-words" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-auto-fix"/></svg><span class="act-label">Apply suggestions</span></button>

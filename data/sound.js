@@ -133,6 +133,10 @@
   const AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
 
   const AUDIO_CAP_CATALOG = 0x20;
+  // The module plays a Background Track under its vocals (ADR 0054). Read for
+  // the module card's Background Track reading; a Sequence that asks for one on
+  // a module without it is the Rehearsal's warning, not this page's.
+  const AUDIO_CAP_MIXES = 0x40;
   const tbody = document.getElementById("named-sound-rows");
   const systemTbody = document.getElementById("system-sound-rows");
   const categoryTbody = document.getElementById("category-sound-rows");
@@ -178,6 +182,7 @@
   const SOUND_LIST_UNCHECKED_NOTE =
     "The sound list could not be checked against these assignments.";
   const CATALOG_STALE_NOTE = "This listing is from an earlier refresh.";
+  const CATALOG_NOT_LOADED_LINE = "Not read yet. Refresh the catalog.";
   const CATALOG_PARTIAL_SUGGESTION_NOTE =
     "Suggestions need the whole listing, and part of it is missing. Refresh the catalog first.";
   // A full walk is 300 sounds and can wait 450 ms on each one, so a refresh
@@ -245,6 +250,7 @@
   const modPlayState = document.getElementById("mod-play-state");
   const modTotalTracks = document.getElementById("mod-total-tracks");
   const modCurrentTrack = document.getElementById("mod-current-track");
+  const modBackgroundTrack = document.getElementById("mod-background-track");
   const modDeviceRow = document.getElementById("mod-device-row");
   const modCurrentTrackRow = document.getElementById("mod-current-track-row");
   const modTotalTracksRow = document.getElementById("mod-total-tracks-row");
@@ -254,7 +260,7 @@
   const btnPoll = document.getElementById("btn-poll-status");
   const modStatusFb = document.getElementById("mod-status-feedback");
   const trackNumberNote = document.getElementById("track-number-note");
-  const chirpCatalogCard = document.getElementById("chirp-catalog-card");
+  const catalogSub = document.getElementById("catalog-sub");
   const catalogRows = document.getElementById("catalog-rows");
   const catalogStatus = document.getElementById("catalog-status");
   const catalogLimits = document.getElementById("catalog-limits");
@@ -274,7 +280,12 @@
   const catalogSelectAll = document.getElementById("catalog-select-all");
   const catalogSelectCol = document.getElementById("catalog-col-select");
   let lastCapabilities = null; // null = not yet received
+  // The fitted module's registry name, as GET /api/audio reports it: what the
+  // catalog card names when the module cannot list its contents.
+  let lastDriverName = "";
   let catalogSupported = false;
+  // Whether the module has said yet whether it can list its contents.
+  let catalogCapabilityKnown = false;
   let catalogReady = false;
   let catalogBanks = [];
   let catalogEntries = [];
@@ -417,10 +428,20 @@
     const supportsCurrentTrack = (caps & AUDIO_CAP_CURRENT_TRACK) !== 0;
     const supportsSafePlayingQuery = (caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0;
     const supportsCatalog = (caps & AUDIO_CAP_CATALOG) !== 0;
+    const supportsMixes = (caps & AUDIO_CAP_MIXES) !== 0;
     const showManualPoll = supportsStatusQuery && !supportsSafePlayingQuery;
 
+    if (modBackgroundTrack) {
+      modBackgroundTrack.textContent = supportsMixes ? "Plays under vocals" : "Not on this module";
+    }
+
+    // The card keeps its shape on every module; only what is in it changes.
+    // Its controls and rows are redrawn when the answer changes, not on every
+    // poll, so a target picked in a row survives the two-second status read.
+    const catalogAnswerChanged = !catalogCapabilityKnown || catalogSupported !== supportsCatalog;
+    catalogCapabilityKnown = true;
     catalogSupported = supportsCatalog;
-    setElementVisible(chirpCatalogCard, supportsCatalog);
+    setElementVisible(catalogSub, supportsCatalog);
     if (!supportsCatalog) {
       catalogReady = false;
       catalogBanks = [];
@@ -440,16 +461,20 @@
       if (catalogRows) catalogRows.innerHTML = "";
       if (catalogBankTabs) catalogBankTabs.innerHTML = "";
       if (catalogBulkTarget) catalogBulkTarget.value = "";
-      if (catalogStatus) catalogStatus.textContent = "Catalog unavailable for this backend.";
+      if (catalogStatus) {
+        delete catalogStatus.dataset.baseText;
+        catalogStatus.textContent = "";
+      }
       renderCatalogLimits();
     } else if (!catalogReady && catalogEntries.length === 0 && !catalogAutoLoadAttempted) {
       catalogAutoLoadAttempted = true;
-      if (catalogStatus && !catalogStatus.textContent) {
-        catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
-      }
       loadCatalog().catch(() => {});
     }
-    syncCatalogBulkUi();
+    if (catalogAnswerChanged) {
+      setCatalogActionLock(catalogRefreshInFlight);
+    } else {
+      syncCatalogBulkUi();
+    }
     applyChirpBindingBadges();
     renderSoundListWarning();
 
@@ -479,6 +504,7 @@
       const result = await api.get("/api/audio");
       const d = result.data;
 
+      lastDriverName = typeof d.driver === "string" ? d.driver : "";
       if (d.capabilities !== undefined && d.capabilities !== null) {
         const caps = Number(d.capabilities) & 0xFF;
         const capabilitiesChanged = lastCapabilities !== caps;
@@ -619,11 +645,17 @@
   };
 
   const setSoundHardwareEnabled = (enabled) => {
+    const changed = soundHardwareEnabled !== enabled;
     soundHardwareEnabled = enabled;
     soundDisabledCard?.classList.toggle("hidden", enabled);
 
+    // The catalog card is left out: its controls also wait on the module being
+    // able to list and on a refresh in flight, and its own sync below says so.
+    // Enabling them here on every status frame woke Refresh on a module that
+    // cannot list, and every row in the middle of a refresh.
+    const cardControls = ".card:not(#sound-disabled-card):not(#chirp-catalog-card)";
     const controls = document.querySelectorAll(
-      '.card:not(#sound-disabled-card) button, .card:not(#sound-disabled-card) input, .card:not(#sound-disabled-card) select, .card:not(#sound-disabled-card) textarea'
+      ["button", "input", "select", "textarea"].map((tag) => `${cardControls} ${tag}`).join(", ")
     );
     controls.forEach((control) => {
       if (SOUND_UI_ALWAYS_ENABLED_IDS.has(control.id)) return;
@@ -636,7 +668,13 @@
       refreshCategoryTestButtons();
     }
     syncMoodMapControlState();
-    syncCatalogBulkUi();
+    syncCatalogControls();
+    if (changed) {
+      renderCatalogBankTabs();
+      renderCatalogRows();
+    } else {
+      syncCatalogBulkUi();
+    }
   };
 
   // What a sound control says when Sound is switched off. Eight controls said
@@ -1302,15 +1340,22 @@
     syncCatalogBulkUi();
   };
 
-  const setCatalogActionLock = (locked) => {
-    const refreshRunning = Boolean(locked);
+  // Refresh and the filter: usable only with a catalog to read, Sound on, and
+  // no refresh already walking the card.
+  const syncCatalogControls = () => {
+    const usable = catalogSupported && soundHardwareEnabled && !catalogRefreshInFlight;
     if (catalogRefreshBtn) {
-      catalogRefreshBtn.disabled = refreshRunning || !soundHardwareEnabled || !catalogSupported;
-      catalogRefreshBtn.setAttribute("aria-disabled", catalogRefreshBtn.disabled ? "true" : "false");
+      catalogRefreshBtn.disabled = !usable;
+      catalogRefreshBtn.setAttribute("aria-disabled", usable ? "false" : "true");
     }
     if (catalogFilterInput) {
-      catalogFilterInput.disabled = refreshRunning || !catalogSupported || !soundHardwareEnabled;
+      catalogFilterInput.disabled = !usable;
     }
+  };
+
+  const setCatalogActionLock = (locked) => {
+    const refreshRunning = Boolean(locked);
+    syncCatalogControls();
     if (catalogStatus && refreshRunning) {
       catalogStatus.textContent = "Refreshing catalog... this can take around 1 minute for 100+ entries.";
     }
@@ -1384,36 +1429,39 @@
     if (!catalogRows) return;
     catalogRows.innerHTML = "";
 
-    const columnCount = catalogBulkMode ? 6 : 5;
-    if (!catalogSupported) {
+    // The table's one line when it has no rows to show: why it has none.
+    const showCatalogLine = (text) => {
+      const tr = document.createElement("tr");
+      tr.className = "sound-row-divider";
+      const td = document.createElement("td");
+      td.colSpan = catalogBulkMode ? 6 : 5;
+      td.className = "desc";
+      td.textContent = text;
+      tr.appendChild(td);
+      catalogRows.appendChild(tr);
       syncCatalogBulkUi([]);
+    };
+
+    if (!catalogCapabilityKnown) {
+      showCatalogLine("Waiting for the module.");
+      return;
+    }
+
+    if (!catalogSupported) {
+      showCatalogLine(lastDriverName
+        ? `The ${lastDriverName} cannot list its contents.`
+        : "This module cannot list its contents.");
       return;
     }
 
     if (!catalogReady) {
-      const tr = document.createElement("tr");
-      tr.className = "sound-row-divider";
-      const td = document.createElement("td");
-      td.colSpan = columnCount;
-      td.className = "desc";
-      td.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
-      tr.appendChild(td);
-      catalogRows.appendChild(tr);
-      syncCatalogBulkUi([]);
+      showCatalogLine(CATALOG_NOT_LOADED_LINE);
       return;
     }
 
     const visibleEntries = getVisibleCatalogEntries();
     if (!visibleEntries.length) {
-      const tr = document.createElement("tr");
-      tr.className = "sound-row-divider";
-      const td = document.createElement("td");
-      td.colSpan = columnCount;
-      td.className = "desc";
-      td.textContent = "No catalog entries match the current filter.";
-      tr.appendChild(td);
-      catalogRows.appendChild(tr);
-      syncCatalogBulkUi([]);
+      showCatalogLine("No sound matches the filter.");
       return;
     }
 
@@ -1588,7 +1636,8 @@
 
         if (catalogStatus) {
           if (!catalogReady) {
-            catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
+            delete catalogStatus.dataset.baseText;
+            catalogStatus.textContent = "";
           } else {
             const bank1PageCount = catalogBanks.filter((bankRow) =>
               Number.parseInt(String(bankRow?.bank ?? "0"), 10) === 1
@@ -1695,7 +1744,7 @@
       catalogRefreshInFlight = false;
       setCatalogActionLock(false);
       if (!catalogReady && catalogStatus) {
-        catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
+        catalogStatus.textContent = "";
       }
       renderCatalogRows();
     }
@@ -2301,8 +2350,8 @@
   buildCategorySoundRows();
   buildMoodMapRows();
   buildSystemSoundRows();
-  if (catalogStatus) catalogStatus.textContent = "Catalog unavailable for this backend.";
   populateCatalogTargetSelect(catalogBulkTarget, "Map checked to target…");
+  syncCatalogControls();
   renderCatalogBankTabs();
   renderCatalogRows();
   syncCatalogBulkUi([]);
