@@ -225,7 +225,7 @@ rows:
   executor_or_core: audioQueuePlayTrackBanked
   missing_metadata:
   - executor reference not in registry
-  notes: dome-rx only; named track snd_happy (read, never written)
+  notes: dome-rx only; named track snd_happy
 - name: sound.action.play-track-imperial-march
   type: action
   registry_api_path: null
