@@ -17,6 +17,9 @@
 //   field name is not something a builder reads (#298, #422)
 // - protoR2link and the sound link are answered from one word table, which
 //   every page that shows either link reads (readProtoR2link, readSoundLink)
+// - The Dome ESC and the Foot Drive are answered the same way (readDomeEsc,
+//   readFootDrive): green only for something heard back, and what the droid
+//   commands is the detail, never the light (#399)
 // - Memory is judged against one table of heap floors (HEAP_FLOORS), which
 //   Maintenance's memory rows read too
 // =============================================================================
@@ -58,12 +61,8 @@
   const healthSignal = (state, reason = "") => ({ state, reason });
 
   const evaluateSbus = (payload) => {
-    // No rcCh1-rcCh6 key at all: the RC receiver is switched off.
-    const anyRcEnabled = RC_CHANNEL_KEYS.some((key) => hasOwnKey(payload, key));
-    if (!anyRcEnabled) return healthSignal("off", "No RC input");
-    if (payload.sbusHwFailsafe === true) return healthSignal("fail", "HW failsafe");
-    if (payload.sbusSignalLost === true) return healthSignal("fail", "Signal lost");
-    return healthSignal("ok", "Frames ok");
+    const { state, word } = readRcLink(payload);
+    return healthSignal(state, word);
   };
 
   // An AP-only droid is a normal droid, so "not joined" is not "degraded" -
@@ -219,6 +218,125 @@
     return readSoundBlock(isObject(status) ? status.audio : undefined, checked);
   };
 
+  // ---------------------------------------------------------------------------
+  // The Dome ESC and the Foot Drive: one word table each, the shape Sound's is
+  //
+  // Both rows used to light green on what the droid COMMANDS - a target speed,
+  // a drive command - which is not a report (CONTEXT.md "Status Color": green
+  // is nominal and reporting). Each answer is linkAnswer()'s { state, word,
+  // short } plus `detail`, the firmware's own line for what is commanded
+  // (src/web/status_json.cpp: "Target 0%", "Command 120/0"), which a page may
+  // print under the word and never lights.
+  // ---------------------------------------------------------------------------
+  const commanded = (answer, entry) =>
+    ({ ...answer, detail: isObject(entry) && typeof entry.detail === "string" ? entry.detail : "" });
+
+  // A PWM ESC has no return wire, so nothing is ever heard from it: fitted, it
+  // is grey and its word says what is commanded. Never green, never red.
+  const DOME_ESC_DISABLED = linkAnswer("off", "Disabled");
+  const DOME_ESC_WORDS = Object.freeze({
+    idle: linkAnswer("off", "Idle"),
+    spinning: linkAnswer("off", "Spinning"),
+  });
+
+  const readDomeEsc = (status, { unknown }) => {
+    if (!isObject(status) || status.domeEnabled !== true) return { ...DOME_ESC_DISABLED, detail: "" };
+    const entry = isObject(status.domeEsc) ? status.domeEsc : null;
+    const domeState = entry ? entry.state : null;
+    if (Object.hasOwn(DOME_ESC_WORDS, domeState)) return commanded(DOME_ESC_WORDS[domeState], entry);
+    // A state we have no branch for is one we do not understand, which is not
+    // reporting rather than degraded. The state string stays in the word so
+    // the row still says what arrived.
+    if (typeof domeState === "string" && domeState.length > 0) {
+      return commanded(linkAnswer("off", `${unknown} (${domeState})`), entry);
+    }
+    return { ...linkAnswer("off", unknown), detail: "" };
+  };
+
+  // The Foot Drive is heard only through its backend's feedback: the frame
+  // carries the `hoverboard` block while those readings are valid, and drops it
+  // once they go stale (src/web/status_json.cpp, src/tasks/drive.cpp).
+  //
+  // The `drive` key follows the SAVED Foot Drive toggle, not what this boot
+  // started: the frame reads it from the live config cache
+  // (src/web/web_server.cpp captureStatusJsonInputs), while DriveTask reads it
+  // once at boot (enableDrive applies at reboot). So no key is "switched off
+  // in Configuration", and a toggle saved on and not yet restarted carries the
+  // key with no drive running behind it - which reads "No answer" here until
+  // the restart. Telling those apart needs a boot-state field in the frame.
+  //
+  // The word for a drive heard is keyed off that block's own name: the frame
+  // carries no name for the backend, and the hoverboard is the only one the
+  // firmware builds (include/drive_backend.h). A second backend needs a name
+  // field in the frame before this word can be its. "No answer" is red for the
+  // same reason: the hoverboard declares that it reports back
+  // (DRIVE_CAP_REPORTS_FEEDBACK), so its silence is a fault. A backend that
+  // declares no feedback must read grey instead, as Wiring's Foot Drive row
+  // does from GET /api/identity/components; this reader does not ask, so
+  // such a backend needs that question added here.
+  const FOOT_DRIVE_WORDS = Object.freeze({
+    off: linkAnswer("off", "Off"),
+    hoverboard: linkAnswer("ok", "Hoverboard"),
+    noAnswer: linkAnswer("fail", "No answer"),
+  });
+
+  const readFootDrive = (status) => {
+    const entry = isObject(status) ? status.drive : undefined;
+    if (entry === undefined) return { ...FOOT_DRIVE_WORDS.off, detail: "" };
+    if (isObject(status.hoverboard)) return commanded(FOOT_DRIVE_WORDS.hoverboard, entry);
+    return commanded(FOOT_DRIVE_WORDS.noAnswer, entry);
+  };
+
+  // ---------------------------------------------------------------------------
+  // The RC receiver's link: one word table, read by Health, the Status Plate's
+  // RC LINK chip (`short`) and Wiring's receiver row (#399)
+  //
+  // Every receiver input is read, rcCh1..rcCh6. rcCh1 is the drive receiver
+  // except in single_sbus + useCh2, where the firmware routes it to rcCh2 and
+  // omits rcCh1 entirely (src/web/web_server.cpp, the enableRcCh1 guard), so
+  // reading rcCh1 alone would say "no RC" on a working droid. rcCh3..rcCh6
+  // only ever report `ready` or `standby`, so they never outrank a link state;
+  // with no rcCh1/rcCh2 on they say a spare wire is on, not that nothing is.
+  //
+  // The worst state across every receiver input that reports one, plus the
+  // hardware failsafe bit - the half that would otherwise be missed: a radio
+  // switched off makes the receiver assert failsafe while it keeps sending
+  // frames, so the channel still reads `active` and only `sbusHwFailsafe` says
+  // the link is dead. The channel states are the firmware's
+  // (src/web/status_json.cpp). `sbusSignalLost` is not read: the boot arms
+  // the SBUS watchdog before any frame (src/main.cpp), so it is true while a
+  // receiver has simply not been heard yet, which `not_seen` already says.
+  //
+  // Standard PWM inputs say `ready`: the firmware publishes that they are
+  // enabled and nothing whatever about whether pulses arrive (PWM loss submits
+  // a zero frame and raises no failsafe, src/tasks/rc_input.cpp
+  // dispatchStandardPwmInputs). So they read Unmeasured, grey - nothing is
+  // wrong, nothing was measured. The plate said "PWM" until the operator
+  // settled that word on 2026-09-17: a mode reads like a thing that is fine.
+  // ---------------------------------------------------------------------------
+  const RC_LINK_WORDS = Object.freeze({
+    failsafe: linkAnswer("fail", "HW failsafe", "Failsafe"),
+    lost: linkAnswer("fail", "Signal lost", "Lost"),
+    noFrames: linkAnswer("off", "No frames"),
+    framesOk: linkAnswer("ok", "Frames ok", "OK"),
+    unmeasured: linkAnswer("off", "Unmeasured"),
+    standby: linkAnswer("off", "Standby"),
+    // No receiver input switched on at all.
+    noInput: linkAnswer("off", "No RC input", "Off"),
+  });
+
+  const readRcLink = (status) => {
+    if (isObject(status) && status.sbusHwFailsafe === true) return RC_LINK_WORDS.failsafe;
+    const states = RC_CHANNEL_KEYS.filter((key) => isObject(status) && hasOwnKey(status, key))
+      .map((key) => (isObject(status[key]) ? status[key].state : undefined));
+    if (states.length === 0) return RC_LINK_WORDS.noInput;
+    if (states.includes("signal_lost")) return RC_LINK_WORDS.lost;
+    if (states.includes("not_seen")) return RC_LINK_WORDS.noFrames;
+    if (states.includes("active")) return RC_LINK_WORDS.framesOk;
+    if (states.includes("ready")) return RC_LINK_WORDS.unmeasured;
+    return RC_LINK_WORDS.standby;
+  };
+
   const evaluateDomeLink = (payload, unknown) => {
     const { state, word } = readProtoR2link(payload, { unknown });
     return healthSignal(state, word);
@@ -229,21 +347,11 @@
     return healthSignal(state, word);
   };
 
+  // Health's row is one line, so the commanded detail rides after the word
+  // ("Idle, Target 0%"): it says what the grey is about.
   const evaluateDomeEsc = (payload, unknown) => {
-    if (payload.domeEnabled !== true) return healthSignal("off", "Disabled");
-
-    const domeData = payload.domeEsc && typeof payload.domeEsc === "object" ? payload.domeEsc : null;
-    const domeState = domeData ? domeData.state : null;
-
-    if (domeState === "spinning") return healthSignal("ok", "Spinning");
-    if (domeState === "idle") return healthSignal("ok", "Idle");
-    // A state we have no branch for is one we do not understand, which is not
-    // reporting rather than degraded. The state string stays in the word so
-    // the row still says what arrived.
-    if (typeof domeState === "string" && domeState.length > 0) {
-      return healthSignal("off", `${unknown} (${domeState})`);
-    }
-    return healthSignal("off", unknown);
+    const { state, word, detail } = readDomeEsc(payload, { unknown });
+    return healthSignal(state, detail ? `${word}, ${detail}` : word);
   };
 
   const HEALTH_EVALUATORS = Object.freeze({
@@ -284,6 +392,10 @@
     deriveHealthSignals,
     readProtoR2link,
     readSoundLink,
+    readDomeEsc,
+    readFootDrive,
+    readRcLink,
+    RC_LINK_WORDS,
   });
 
   if (typeof window !== "undefined") {

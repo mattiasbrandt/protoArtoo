@@ -996,9 +996,14 @@
     if (status === null || reportsFeedback === null) {
       return row({ ...base, observed: words.waiting, light: "off", state: STATES.notProbed });
     }
-    // The frame carries no `drive` key at all while the feet are not running
-    // this boot (data/drive.js renderReading()): saved on, and started off.
-    // Nobody is asking, so the silence below would be a lie.
+    // The frame's `drive` key follows the SAVED toggle, read from the live
+    // config cache (src/web/web_server.cpp captureStatusJsonInputs), not what
+    // this boot started: DriveTask reads it once at boot. This lane is drawn
+    // from the same saved toggle, so a frame without the key is one that
+    // has not caught up with the config this page read - not "started off",
+    // which the frame cannot say. A toggle saved on and not yet restarted
+    // carries the key and lands below, as silence. Nobody is asking here, so
+    // the silence below would be a lie.
     if (!Object.prototype.hasOwnProperty.call(status, "drive")) {
       return row({ ...base, observed: "Off", light: "off", state: STATES.notProbed,
         why: "The droid started with it off. Restart the droid to use it.", move: restart });
@@ -1053,14 +1058,19 @@
   const receiverRow = ({ status, words, rcName }) => {
     const base = { key: "rc", subject: "RC receiver", declared: rcName || "Fitted" };
     if (status === null) return row({ ...base, observed: words.waiting, light: "off", state: STATES.notProbed });
-    const signals = window.PAHealthSignals.deriveHealthSignals(status, { unknown: words.unknown });
-    const sbus = signals.find((signal) => signal.id === "h-sbus");
-    const answer = { state: sbus.state, word: sbus.reason };
-    if (answer.state === "off") {
+    // Keyed on the table's word, never on a grey light: Unmeasured (PWM) and
+    // Standby are grey too, and neither means the input is switched off. No
+    // frames is the droid asking and nobody answering (#399).
+    const { RC_LINK_WORDS, readRcLink } = window.PAHealthSignals;
+    const answer = readRcLink(status);
+    if (answer.word === RC_LINK_WORDS.noInput.word) {
       return row({ ...base, observed: answer.word, light: "off", state: STATES.notProbed,
         why: "Its input is switched off, so the droid is not listening.", move: MOVES.configuration });
     }
-    return signalRow(base, answer, { silent: "Asked, and no answer. Check the receiver and the radio." });
+    return signalRow(base, answer, {
+      askedWithNoAnswer: [RC_LINK_WORDS.noFrames.word],
+      silent: "Asked, and no answer. Check the receiver and the radio.",
+    });
   };
 
   // The dome's panels against the stated Dome Design, from the one function

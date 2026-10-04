@@ -56,20 +56,22 @@ const HEALTHY_PAYLOAD = Object.freeze({
 // RC receiver
 // -----------------------------------------------------------------------------
 
+// The channel states as the firmware sends them (src/web/status_json.cpp),
+// read from the one RC link table the Status Plate reads too (#399).
 test("RC receiver reads OFF with no channels, OK on frames, FAIL on signal loss", () => {
   const absent = toSignalMap({});
   assert.equal(absent["h-sbus"].state, "off");
   assert.equal(absent["h-sbus"].reason, "No RC input");
 
-  const framing = toSignalMap({ rcCh1: 1500, sbusSignalLost: false, sbusHwFailsafe: false });
+  const framing = toSignalMap({ rcCh1: { state: "active" }, sbusSignalLost: false, sbusHwFailsafe: false });
   assert.equal(framing["h-sbus"].state, "ok");
   assert.equal(framing["h-sbus"].reason, "Frames ok");
 
-  const lost = toSignalMap({ rcCh1: 1500, sbusSignalLost: true });
+  const lost = toSignalMap({ rcCh1: { state: "signal_lost" }, sbusSignalLost: true });
   assert.equal(lost["h-sbus"].state, "fail");
   assert.equal(lost["h-sbus"].reason, "Signal lost");
 
-  const failsafe = toSignalMap({ rcCh1: 1500, sbusHwFailsafe: true });
+  const failsafe = toSignalMap({ rcCh1: { state: "active" }, sbusHwFailsafe: true });
   assert.equal(failsafe["h-sbus"].state, "fail");
   assert.equal(failsafe["h-sbus"].reason, "HW failsafe");
 });
@@ -227,13 +229,15 @@ test("dome esc reports OFF when disabled or missing", () => {
   assert.equal(disabled["h-dome-esc"].reason, "Disabled");
 });
 
-test("dome esc reports OK for idle and spinning states", () => {
-  const idle = toSignalMap({ domeEnabled: true, domeEsc: { state: "idle" } });
-  assert.equal(idle["h-dome-esc"].state, "ok");
-  assert.equal(idle["h-dome-esc"].reason, "Idle");
+// Idle and spinning are what the droid commands; a PWM ESC answers nothing
+// back, so the row is grey and its word carries the command (#399).
+test("dome esc reads OFF for idle and spinning, saying what is commanded", () => {
+  const idle = toSignalMap({ domeEnabled: true, domeEsc: { state: "idle", detail: "Target 0%" } });
+  assert.equal(idle["h-dome-esc"].state, "off");
+  assert.equal(idle["h-dome-esc"].reason, "Idle, Target 0%");
 
   const spinning = toSignalMap({ domeEnabled: true, domeEsc: { state: "spinning" } });
-  assert.equal(spinning["h-dome-esc"].state, "ok");
+  assert.equal(spinning["h-dome-esc"].state, "off");
   assert.equal(spinning["h-dome-esc"].reason, "Spinning");
 });
 
@@ -259,7 +263,7 @@ test("with the stream down a row keeps the state the controller last reported", 
   const streamDown = toSignalMap(HEALTHY_PAYLOAD, { stale: true });
 
   assert.deepEqual(streamDown, live);
-  ["h-sbus", "h-wifi", "h-fs", "h-heap", "h-dome-link", "h-sound", "h-dome-esc"].forEach((id) => {
+  ["h-sbus", "h-wifi", "h-fs", "h-heap", "h-dome-link", "h-sound"].forEach((id) => {
     assert.equal(streamDown[id].state, "ok", `${id} must keep the state it reported`);
   });
 });

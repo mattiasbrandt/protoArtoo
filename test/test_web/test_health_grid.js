@@ -35,9 +35,12 @@ const require = createRequire(import.meta.url);
 const healthSignals = require("../../data/health_signals.js");
 
 const ROW_IDS = ["h-sbus", "h-wifi", "h-fs", "h-heap", "h-dome-link", "h-sound", "h-dome-esc"];
+// The rows a healthy frame lights green. The Dome ESC is never one: a PWM ESC
+// answers nothing back, so its commanded state reads grey (#399).
+const NOMINAL_IDS = ROW_IDS.filter((id) => id !== "h-dome-esc");
 
 const HEALTHY_FRAME = Object.freeze({
-  rcCh1: 1500,
+  rcCh1: { state: "active" },
   sbusSignalLost: false,
   sbusHwFailsafe: false,
   wifiConnected: true,
@@ -110,8 +113,8 @@ test("a lost link leaves every row on the state the controller reported", async 
   dash.plantDecoy();
 
   dash.send(HEALTHY_FRAME);
-  ROW_IDS.forEach((id) => assert.equal(dash.stateOf(id), "ok", `${id} should start nominal`));
-  assert.equal(dash.summary(), "7 signals · 7 ok");
+  NOMINAL_IDS.forEach((id) => assert.equal(dash.stateOf(id), "ok", `${id} should start nominal`));
+  assert.equal(dash.summary(), "7 signals · 6 ok · 1 not reporting");
   assert.ok(dash.decoyIntact(), "a good frame wrote to the retired stale banner");
 
   await dash.loseContact();
@@ -123,11 +126,11 @@ test("a lost link leaves every row on the state the controller reported", async 
     dash.decoyIntact(),
     "this surface wrote its own freshness claim; the plate already carries the one for the screen",
   );
-  ROW_IDS.forEach((id) => {
+  NOMINAL_IDS.forEach((id) => {
     assert.equal(dash.stateOf(id), "ok", `${id} must keep the state the controller reported`);
     assert.doesNotMatch(dash.textOf(id), /stale/i, `${id} must not tell the operator about staleness`);
   });
-  assert.equal(dash.summary(), "7 signals · 7 ok");
+  assert.equal(dash.summary(), "7 signals · 6 ok · 1 not reporting");
 });
 
 test("a fallback poll that keeps failing writes no freshness claim either", async () => {
@@ -178,7 +181,7 @@ test("a degraded reading the controller did send still lights amber", () => {
 
   assert.equal(dash.stateOf("h-heap"), "warn");
   assert.equal(dash.textOf("h-heap"), "Low");
-  assert.equal(dash.summary(), "7 signals · 6 ok · 1 degraded");
+  assert.equal(dash.summary(), "7 signals · 5 ok · 1 degraded · 1 not reporting");
   // The readout beside the light shows the very number the light judged, so a
   // builder can see why it is amber.
   assert.match(String(dash.env.element("readout-heap-detail").textContent), /\b13 kB\b/);

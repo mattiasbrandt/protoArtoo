@@ -459,7 +459,9 @@
   const moreOpen = new Set();
 
   // The droid's Stand Down Sequence (CONTEXT.md, #451): one name, chosen here
-  // with the mark beside each row and run by the Dashboard's Stand Down. The
+  // with the mark beside each row and run by the Dashboard's Rest act. Only
+  // that act says Rest (operator, 2026-10-04); this page says Stand Down
+  // (CONTEXT.md "Stand Down Sequence"). The
   // Setting stores an empty name until one is chosen, and the words table says
   // what stands in for it (data/web_api.js, standDownSequence `unset`). Null
   // until GET /api/config has answered with it, and no row is marked or offers
