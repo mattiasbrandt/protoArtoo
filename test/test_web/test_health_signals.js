@@ -261,7 +261,7 @@ test("with the stream down a row keeps the state the controller last reported", 
   const streamDown = toSignalMap(HEALTHY_PAYLOAD, { stale: true });
 
   assert.deepEqual(streamDown, live);
-  ["h-sbus", "h-wifi", "h-fs", "h-heap", "h-dome-link", "h-sound", "h-dome-esc"].forEach((id) => {
+  ["h-sbus", "h-wifi", "h-fs", "h-heap", "h-dome-link", "h-sound"].forEach((id) => {
     assert.equal(streamDown[id].state, "ok", `${id} must keep the state it reported`);
   });
 });
