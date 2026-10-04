@@ -651,7 +651,14 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
             };
           });
         const walk = async (key) => {
-          await page.evaluate(() => document.querySelector('#seq-modal-import button, #seq-modal-import input').focus());
+          // The dialog's first control a builder can actually focus: a hidden
+          // file input or a disabled button takes no focus, and the walk would
+          // then start outside the dialog.
+          await page.evaluate(() => {
+            const first = [...document.querySelectorAll('#seq-modal-import :is(button, input, textarea, select, a[href], [tabindex]:not([tabindex="-1"]))')]
+              .find((el) => !el.disabled && el.getClientRects().length > 0);
+            if (first) first.focus();
+          });
           const start = await focused();
           if (!start.inDialog) return { start: start.name, presses: null };
           for (let presses = 1; presses <= 60; presses += 1) {
