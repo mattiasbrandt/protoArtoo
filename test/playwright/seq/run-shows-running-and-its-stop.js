@@ -219,8 +219,9 @@ lib.runCheck({
     };
     const ended = () => page.waitForSelector(`${ROW}:not(.is-running)`, { timeout: 15000 }).catch(() => {});
 
-    // The estop latches, and the droid ends the run in that pass: the one
-    // status the run's end asks for carries both (src/tasks/sequence_dispatcher.cpp).
+    // The estop latches and the run ends. Both are set before the one push,
+    // so the frame that ends the run is a latched one: a run that ends while
+    // the reading is latched is the estop's (data/live_reading.js RUN_ENDINGS).
     await startRun();
     fixture.state.estop = true;
     droid.record({ ...droid.lastRun, outcome: 'estop', running: false, endMs: droid.lastRun.startMs + 300 });
