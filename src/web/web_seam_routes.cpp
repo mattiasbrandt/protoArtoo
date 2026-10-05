@@ -153,6 +153,8 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/seq/stop", WebMethod::kPost, handleSeqStopPost);
     webRegisterRoute("/api/seq/pose", WebMethod::kPost, handleSeqPosePost);
     webRegisterRoute("/api/seq/last-run", WebMethod::kGet, handleSeqLastRunGet);
+    webRegisterRoute("/api/seq/pins", WebMethod::kGet, handleSeqPinsGet);
+    webRegisterRoute("/api/seq/pins", WebMethod::kPost, handleSeqPinsPost);
     webRegisterRoute("/api/seq", WebMethod::kGet, handleSeqGet);
     webRegisterRoute("/api/seq", WebMethod::kPost, handleSeqPost, SEQ_FILE_MAX_BYTES);
     webRegisterRoute("/api/seq", WebMethod::kDelete, handleSeqDelete);

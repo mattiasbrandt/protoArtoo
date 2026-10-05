@@ -647,6 +647,53 @@ rows:
     executor_or_core: "seqEvidenceSnapshot"
     missing_metadata: []
     notes: ""
+  - name: dome.api.get-sequence-pins
+    type: action
+    registry_api_path: /api/seq/pins
+    registry_cpp_enum: null
+    registry_cpp_file: src/web/api_seq.cpp
+    registry_sse_event: null
+    registry_nvs_key: null
+    registry_requires_web_control: false
+    registry_sources:
+      - web_api
+    registry_marcduino_cmd: null
+    anchor_kind: "api"
+    evidence:
+      - "src/web/web_seam_routes.cpp - `webRegisterRoute(\"/api/seq/pins\", WebMethod::kGet, handleSeqPinsGet)`"
+      - "include/api_seq.h - `void handleSeqPinsGet(WebRequest& req)`"
+      - "src/web/api_seq.cpp - `void handleSeqPinsGet(WebRequest& req)`"
+      - "src/web/api_seq.cpp - `seqPinsRead(pins)`"
+    executor_or_core: "seqPinsRead"
+    missing_metadata: []
+    notes: "Out of scope for the Console: the pins only order the Dashboard's Sequences line (#472)."
+  - name: dome.action.pin-sequence
+    type: action
+    registry_api_path: /api/seq/pins
+    registry_cpp_enum: null
+    registry_cpp_file: src/web/api_seq.cpp
+    registry_sse_event: null
+    registry_nvs_key: null
+    registry_params:
+      - name: name
+        type: string
+        required: true
+      - name: pinned
+        type: bool
+        required: true
+    registry_requires_web_control: false
+    registry_sources:
+      - web_api
+    registry_marcduino_cmd: null
+    anchor_kind: "api"
+    evidence:
+      - "src/web/web_seam_routes.cpp - `webRegisterRoute(\"/api/seq/pins\", WebMethod::kPost, handleSeqPinsPost)`"
+      - "include/api_seq.h - `void handleSeqPinsPost(WebRequest& req)`"
+      - "src/web/api_seq.cpp - `void handleSeqPinsPost(WebRequest& req)`"
+      - "src/web/api_seq.cpp - `seqPinsWrite(pins)`"
+    executor_or_core: "seqPinsWrite"
+    missing_metadata: []
+    notes: "Out of scope for the Console: a pin orders the Dashboard's Sequences line (#472)."
   - name: dome.api.list-builtin-sequences
     type: status
     registry_api_path: /api/seq/builtins

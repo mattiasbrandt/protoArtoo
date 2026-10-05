@@ -198,7 +198,8 @@ void tearDown() {}
 // slice dome.action.arm-take, -keep-take, -restore-take-file and
 // dome.api.get-take-file, taking it to 133; #447 added
 // sound.action.play-track-happy ($H), taking it to 134, and
-// sound.action.play-next and -play-previous, taking it to 136.
+// sound.action.play-next and -play-previous, taking it to 136; #472 added
+// dome.api.get-sequence-pins and dome.action.pin-sequence, taking it to 138.
 // -----------------------------------------------------------------------------
 
 void test_operations_type_action_filters_through_the_real_adapter_path() {
@@ -207,8 +208,8 @@ void test_operations_type_action_filters_through_the_real_adapter_path() {
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(136, g_itemCount,
-        "operations type=action must list exactly the 136 action entries when "
+    TEST_ASSERT_EQUAL_INT_MESSAGE(138, g_itemCount,
+        "operations type=action must list exactly the 138 action entries when "
         "typed as one line through the real embedded-cli parser and "
         "consoleBuildCommandLine() - not when the module is called directly "
         "with a hand-built \"operations type=action\" string");
@@ -245,7 +246,7 @@ void test_bare_operations_still_lists_everything_through_the_real_adapter_path()
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT(215, g_itemCount);  // #347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home, #442 servo.action.puppet-part and the five take rows, #451 dome.config.stand-down, #447 sound.action.play-track-happy, -play-next and -play-previous, #471 system.status.hosted-link; #413 retired aux.config.led-pin
+    TEST_ASSERT_EQUAL_INT(217, g_itemCount);  // #347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home, #442 servo.action.puppet-part and the five take rows, #451 dome.config.stand-down, #447 sound.action.play-track-happy, -play-next and -play-previous, #471 system.status.hosted-link, #472 dome.api.get-sequence-pins and dome.action.pin-sequence; #413 retired aux.config.led-pin
 }
 
 // help <op> must still work through the same real path (the reconstruction

@@ -505,9 +505,15 @@ test("a replayed frame does not restamp the age", async () => {
   // a hidden tab comes back. Counting that as a new measurement is the plate
   // claiming a reading nobody took, at exactly the moment an operator is most
   // likely to be looking at it.
+  //
+  // The age is read under a lost link, the only time the plate says it: while
+  // the droid is heard the line is hidden (#472). A replay keeps the link
+  // lost, since it proves only that the browser still has a copy
+  // (data/live_reading.js), so the line stays up across it.
   const env = await boot({ status: { ...HEALTHY } });
   env.pushStatus({});
   await sleep(2600);
+  env.breakStream();
 
   // Read the seconds rather than the whole line: the line ticks once a second
   // on its own, so comparing the text across a second boundary would fail for
@@ -529,6 +535,7 @@ test("a replayed frame does not restamp the age", async () => {
 
   env.pushStatus({});
   await sleep(5);
+  env.breakStream();
   assert.match(env.freshness(), /just now/, "while a frame the droid actually sent does");
 });
 

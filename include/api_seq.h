@@ -13,6 +13,8 @@
 //   POST   /api/seq/pose       - send the droid to one instant of a sequence
 //   GET    /api/seq/builtins   - factory catalog serialized to JSON v1
 //   GET    /api/seq/last-run   - machine-readable evidence of the last run
+//   GET    /api/seq/pins       - the pinned Sequences, in pin order (#472)
+//   POST   /api/seq/pins       - pin or unpin one Sequence, at most eight
 // =============================================================================
 #pragma once
 
@@ -27,3 +29,5 @@ void handleSeqTestPost(WebRequest& req);
 void handleSeqStopPost(WebRequest& req);
 void handleSeqPosePost(WebRequest& req);
 void handleSeqLastRunGet(WebRequest& req);
+void handleSeqPinsGet(WebRequest& req);
+void handleSeqPinsPost(WebRequest& req);

@@ -107,21 +107,24 @@
             </div>
           </div>
 
-          <!-- Sequences: where a droid is performed (#330, #451). Every
-               Sequence on the droid, Yours then Factory as Sequences groups
-               them, each a tile with its Play, and Stop on the one that is
-               running, whoever started it. One mapped to an RC Channel says
-               which, read from the RC Map, so the RC Radio and this list are
-               one list read from two ends. Rest runs the droid's Stand Down
-               Sequence, chosen on Sequences; its tile carries the Rest mark.
+          <!-- Sequences: where a droid is performed (#330, #451), on one line
+               (#472, mock A): the heading and what is running, every Sequence
+               on the droid as a chip - its Play, or its Stop while it runs, and
+               a small pin - then +N for the ones the line has no room for, and
+               Rest. Running first, then pinned, then the ones on an RC Channel,
+               then Yours then Factory. Rest runs the droid's Stand Down
+               Sequence, chosen on Sequences; its chip carries the Rest mark.
                Filled by data/app.js. -->
           <div class="show-bay" id="show-bay">
-            <div class="show-head">
-              <h3>Sequences <span class="now waiting" id="show-now" role="status"></span></h3>
+            <div class="show-line" id="show-line">
+              <h3 class="show-head">Sequences <span class="now waiting" id="show-now" role="status"></span></h3>
+              <ul class="show-rail" id="show-rail" aria-label="Sequences"></ul>
+              <details class="show-more is-empty" id="show-more">
+                <summary class="show-chip show-more-btn" aria-label="More Sequences"><span class="show-more-n">+0</span><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></summary>
+                <ul class="show-overflow" id="show-overflow" aria-label="More Sequences"></ul>
+              </details>
               <button class="btn btn-sm icon-act" id="standdown-btn" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-human-handsdown"/></svg><span class="act-label">Rest</span></button>
             </div>
-            <div class="show-other hidden" id="show-other"></div>
-            <div class="show-list" id="show-list"><p class="hint waiting" role="status"></p></div>
             <div id="show-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
           </div>
         </div>

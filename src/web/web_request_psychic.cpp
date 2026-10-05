@@ -565,7 +565,7 @@ struct SeamRoute {
     WebMethod method;
 };
 
-// Sized to the table: web_seam_routes.cpp registers 73 rows with every build
+// Sized to the table: web_seam_routes.cpp registers 75 rows with every build
 // flag on (PA_ADMISSION_TRACE, PA_HEAP_PROFILE, PA_HEAP_TRACING), and 80 leaves
 // room for a few more. A row past it is refused at boot with an error naming
 // its path -- raise this then, not before.

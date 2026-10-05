@@ -44,7 +44,7 @@ void test_catalog_lookup_by_name() {
 void test_catalog_count_and_iteration() {
     size_t count = consoleCatalogGetCount();
     TEST_ASSERT_GREATER_THAN(0, count);
-    TEST_ASSERT_EQUAL_INT(215, count);  // Registry has 215 entries (#347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home, #442 servo.action.puppet-part and the five take rows, #451 dome.config.stand-down, #447 sound.action.play-track-happy, -play-next and -play-previous, #471 system.status.hosted-link; #413 retired aux.config.led-pin)
+    TEST_ASSERT_EQUAL_INT(217, count);  // Registry has 217 entries (#347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home, #442 servo.action.puppet-part and the five take rows, #451 dome.config.stand-down, #447 sound.action.play-track-happy, -play-next and -play-previous, #471 system.status.hosted-link, #472 dome.api.get-sequence-pins and dome.action.pin-sequence; #413 retired aux.config.led-pin)
 
     // Verify we can iterate all entries
     size_t count_via_api = 0;

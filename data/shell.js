@@ -135,13 +135,17 @@
     // "a magnifying glass to the \"find by moving\" button"): not among the
     // #398 twenty-two, so read from @mdi/svg 7.4.47 svg/magnify.svg.
     "magnify": "M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z",
-    // The Dashboard's Sequences (#451): Play and Stop on a Sequence's row, and
+    // The Dashboard's Sequences (#451): Play and Stop on a Sequence's chip, and
     // the full-screen posture's way in and out. Read from @mdi/svg 7.4.47
     // svg/play.svg, svg/stop.svg, svg/fullscreen.svg, svg/fullscreen-exit.svg.
     "play": "M8,5.14V19.14L19,12.14L8,5.14Z",
     "stop": "M18,18H6V6H18V18Z",
     "fullscreen": "M5,5H10V7H7V10H5V5M14,5H19V10H17V7H14V5M17,14H19V19H14V17H17V14M10,17V19H5V14H7V17H10Z",
     "fullscreen-exit": "M14,14H19V16H16V19H14V14M5,14H10V19H8V16H5V14M8,5H10V10H5V8H8V5M19,8V10H14V5H16V8H19Z",
+    // The small pin in a Sequence's chip on the Dashboard (#472): filled when
+    // it is pinned, and the outline below, already here for Use as Stand
+    // Down, when it is not. Read from @mdi/svg 7.4.47 svg/pin.svg.
+    "pin": "M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z",
     // Every action button's act (#460): one act wears one icon on every
     // surface, and the act -> icon map is docs/icon-set-provenance.md's. Read
     // from @mdi/svg 7.4.47 svg/<name>.svg, path data unmodified.
@@ -1036,7 +1040,6 @@
              same seam, so the plate reads as one instrument. -->
         <div class="status-plate-fresh">
           <p class="status-plate-freshness" id="status-plate-freshness" role="status" aria-live="polite">Waiting for the droid.</p>
-          <p class="status-plate-affordance">Press a chip to go where it is changed. ESTOP stops or releases right here.</p>
         </div>
       </div>
     `;
@@ -1081,20 +1084,32 @@
     if (!plateRegion || !plateFreshness) return;
     if (reading.status === null) {
       plateRegion.dataset.freshness = "waiting";
+      plateFreshness.hidden = false;
       plateFreshness.textContent = "Waiting for the droid.";
       return;
     }
-    const heard = `Last heard from the droid ${plateAgeText(Date.now() - reading.receivedAt)}.`;
     // Never amber, and the values are never blanked: the operator cannot act
     // on a reconnect that is already running, and a blank plate would be the
     // presentation they meet most often (#324, #327).
     plateRegion.dataset.freshness = reading.notHearing === null ? "live" : "waiting";
+    // Said only when the droid is not being heard (#472). The board sends a
+    // status frame only when something changes (s_broadcastRequested,
+    // src/web/web_server.cpp), so on a quiet healthy droid the age grows and
+    // reads like a fault. Hiding it masks nothing: a lost link is raised from
+    // the stream's error (stream_error -> loseContact(), data/live_reading.js),
+    // never from this age. The compartment stays, so the cells do not move
+    // when the line comes back.
+    plateFreshness.hidden = reading.notHearing === null;
+    if (reading.notHearing === null) {
+      plateFreshness.textContent = "";
+      return;
+    }
+    const heard = `Last heard from the droid ${plateAgeText(Date.now() - reading.receivedAt)}.`;
     if (reading.notHearing === "frame") {
       plateFreshness.textContent = `${heard} The droid could not report its status - these are the values it last sent.`;
       return;
     }
-    plateFreshness.textContent =
-      reading.notHearing === "link" ? `${heard} Reconnecting - these are the values it last sent.` : heard;
+    plateFreshness.textContent = `${heard} Reconnecting - these are the values it last sent.`;
   };
 
   applyIdentityName(identityName);

@@ -26,7 +26,8 @@
 // Exposes window.DomeLayout with:
 //   - load() / refresh(): fetch and resolve the model
 //   - getModel(): current normalized model
-//   - onChange(cb): register callback fired after each resolve
+//   - onChange(cb): register callback fired after each resolve; returns
+//     the function that releases it
 //   - getSource(): 'live' | 'cached' | 'vendored' | 'stated-design' | 'unsupported'
 //     'vendored' and 'stated-design' are both tier 3: the first says the
 //     built-in drawing is this builder's dome, the second that it is not.
@@ -521,11 +522,14 @@
    * Register a change listener.
    * Fired after each resolveLayout() completes (on load/refresh/dome-reconnect).
    * @param {Function} cb - callback(normalizedModel)
+   * @returns {Function} releases the callback
    */
   function onChange(cb) {
-    if (typeof cb === 'function') {
-      listeners.add(cb);
-    }
+    if (typeof cb !== 'function') return () => {};
+    listeners.add(cb);
+    // The release: a caller that subscribes again drops the old callback with
+    // it, or every resolve runs both (#472, the Dashboard's dome drawing).
+    return () => listeners.delete(cb);
   }
 
   /**
