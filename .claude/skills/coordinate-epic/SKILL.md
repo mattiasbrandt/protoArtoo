@@ -86,8 +86,10 @@ from the epic's coordination section rather than from memory.
 
 - **Make the branch and worktree with the tool, not by hand:**
   `python3 tools/epic_worktree.py <n> --base <base> --name <type>/<slug> --path ../wt-<n>`.
-  It creates the linked branch, adds `../wt-<n>`, puts it on the local
-  `<base>` tip, verifies that it landed there (exit 1 if not), pushes the
+  It fetches first and fast-forwards the local `<base>` when another
+  session pushed it ahead (refusing, with the command, on a dirty checkout or
+  a divergence), creates the linked branch, adds `../wt-<n>`, puts it on the
+  local `<base>` tip, verifies that it landed there (exit 1 if not), pushes the
   branch so the issue's Development section names the real base, and prints
   how far `origin/<base>` is behind. `--check <path> --base <base>` re-verifies
   an existing worktree before a re-dispatch; `--dry-run` reports and creates
@@ -132,9 +134,14 @@ from the epic's coordination section rather than from memory.
   reject. This repo has lost work to exactly that.
 - **One command each, so the next session does not re-read `--help`.**
   `herdr tab create --workspace <name> --cwd <path> --label <label> --focus`.
-  `python3 tools/herdr_capped_agent.py --pane <id> --name <agent> [-- --resume <session-id>]`.
+  `python3 tools/herdr_capped_agent.py --pane <id> --name <agent> --brief <brief-file> [-- --resume <session-id>]`
+  (exit 0 means Herdr saw the agent go `working` on the brief; on a stall it prints the pane and
+  does not re-send - read it first, the prompt may have landed).
+  A worker's own transcript, when it is idle: `herdr agent read <agent> --source recent-unwrapped --lines 200`
+  (Herdr scrolls a full-screen agent's history for that read; `pane read` without `--lines` shows one screen).
   `python3 tools/make_brief.py --issue <n> --slug <s> --worktree <path> --base <base>`.
-  `tools/gate_in_pane.sh /tmp/gate.log -- python3 tools/slice_verify.py --base <base> --json /tmp/slice-<s>.json`.
+  `python3 tools/pane_run.py /tmp/gate-<s>.log --cwd <path> -- python3 tools/slice_verify.py --base <base> --json /tmp/slice-<s>.json`
+  (a pane, `tools/gate_in_pane.sh`, the wait for `GATE_EXIT=` and the tail, in one call).
   `python3 tools/accept_slice.py --json /tmp/slice-<s>.json --worktree <path> --base <base> [--allow-gate-edit]`.
   The JSON field is `ok`. During the pause do not pass `--mutations`. Do not pipe the gate through `tee`.
 - **Start every worker memory-capped** with the `herdr_capped_agent.py` line above, never a bare
@@ -529,10 +536,12 @@ would pass that, post the current body as a new history comment and reset the
 evolving one to the frontier. History comments are append-only.
 
 A worker is done when the last line of its status comment is `WORKER_DONE: ok`
-or `WORKER_DONE: blocked` (a trailing `//` signature does not count), or
-`/tmp/slice-<s>.json` is `{"ok": true}` or
-`{"ok": false}`. Wait with
-`python3 tools/wait_worker.py --issue <n> --marker '<!-- worker-status-<n>-<s> -->'`.
+or `WORKER_DONE: blocked` (a trailing `//` signature does not count). The gate
+JSON alone is not that signal: a gate run made mid-slice writes
+`{"ok": true}` while the worker is still writing its report, and a `--file`
+watcher fired on exactly that on 2026-10-05. Wait on the comment, adding the
+file when the brief names one - with both, ok needs both:
+`python3 tools/wait_worker.py --issue <n> --marker '<!-- worker-status-<n>-<s> -->' [--file /tmp/slice-<s>.json]`.
 An idle pane is not that signal: the gate runs in a sibling pane.
 
 **Record first, escalate second, and escalate only the residue.** A finding is

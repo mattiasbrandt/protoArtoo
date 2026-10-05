@@ -87,7 +87,7 @@ def build_environment(env_name, budgets):
         # The framework pool is shared by every worktree and rebuilt in place,
         # so a build outside the machine-wide lock can strand it (AGENTS.md
         # "The build lock"). Waiting for the lock is not part of the timeout.
-        with pio_lock.build_lock(cmd):
+        with pio_lock.build_lock(cmd, env=env):
             result = subprocess.run(
                 cmd,
                 cwd=ROOT,
@@ -141,7 +141,7 @@ def filesystem_image_bytes(env_name, budgets):
 
     cmd = ["pio", "run", "-e", env_name, "-t", "buildfs"]
     try:
-        with pio_lock.build_lock(cmd):
+        with pio_lock.build_lock(cmd, env=env):
             result = subprocess.run(
                 cmd,
                 cwd=ROOT,

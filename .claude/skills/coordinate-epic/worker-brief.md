@@ -256,6 +256,10 @@ VERIFICATION (software-verified cap)
 - One PlatformIO build runs on this machine at a time, and the tooling takes
   the lock for you: run `make build` plainly. `make test` is paused (#464)
   and returns without running; do not follow it with `pio test`.
+  A build that exits 5 is the toolchain, not your code: the lock found a
+  PlatformIO penv past 6.1.19 and printed one fix line
+  (`<core>/penv/bin/python -m pip install platformio==6.1.19`). Run that
+  line and nothing else, re-run the build, and say so in your report.
   Do NOT put `flock` in front - that nests two locks on one file and is
   refused (AGENTS.md "The build lock"). Other agents are building here at the
   same time; the lock serialises you, so do not wait for a window. Keep this
@@ -292,10 +296,14 @@ red-run block during the pause. Keep the comment to the frontier, under about
 20 KB. When it would pass that, post the current text as a new history comment
 and reset the marked one.
 
-The done signal is the last line of that comment, `WORKER_DONE: ok` or
+Finish in this order: write the final status comment without the done line;
+run the gate, when your brief has one, as the last step; then add the done
+line (editing the status comment is not a commit, so it may follow the
+gate). The done signal is the last line of that comment, `WORKER_DONE: ok` or
 `WORKER_DONE: blocked`. A trailing `//` signature is not that line, and a
-later line that is not the token means the worker is not done. The same fact
-may also be `{GATE_JSON}` with
-`{"ok": true}` or `{"ok": false}`. The coordinator waits with
-`python3 tools/wait_worker.py --issue {ISSUE} --marker '{STATUS_MARKER}'`.
-An idle pane is not the signal.
+later line that is not the token means the worker is not done. `{GATE_JSON}`
+alone is not the signal: it is written the moment the gate ends, report or
+not. The coordinator waits with
+`python3 tools/wait_worker.py --issue {ISSUE} --marker '{STATUS_MARKER}'`,
+adding `--file {GATE_JSON}` when your brief has a gate run; with both, ok
+needs both. An idle pane is not the signal.

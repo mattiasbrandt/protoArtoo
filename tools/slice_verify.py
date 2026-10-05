@@ -282,7 +282,7 @@ def run(
     `env` carries the per-chip PLATFORMIO_CORE_DIR so a pio phase does not
     inherit whichever toolchain pool the caller's shell happened to point at.
     """
-    with pio_lock.build_lock(cmd) if lock else contextlib.nullcontext():
+    with pio_lock.build_lock(cmd, env=env) if lock else contextlib.nullcontext():
         try:
             return subprocess.run(
                 cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout,
@@ -1183,9 +1183,14 @@ def env_fingerprint() -> str:
         text = (proc.stdout or proc.stderr).strip()
         return text.splitlines()[0] if proc.returncode == 0 and text else "unknown"
 
+    # The `pio` on PATH is not what builds: pioarduino runs the build inside
+    # the core dir's penv, which can upgrade itself while PATH's stays put
+    # (2026-10-05). Both versions, so a provenance line shows the drift.
+    penv_core = pio_lock.core_dir_for("artoo_esp32")
     return " | ".join(
         (
             first_line(["pio", "--version"]),
+            f"penv PlatformIO Core {pio_lock.penv_version(penv_core)}",
             first_line(["python3", "--version"]),
             first_line(["node", "--version"]),
         )

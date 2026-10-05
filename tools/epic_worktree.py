@@ -25,6 +25,20 @@ Development section describes a base the work is not on. Pushing the branch
 fast-forwards it onto the true base (no force: the stale base is an ancestor),
 and AGENTS.md prices that push at "Free - no approval" for a branch you own.
 
+THE OTHER DIRECTION: ORIGIN AHEAD
+---------------------------------
+Since #175 granted a standing approval to push the integration branch, other
+sessions push it too, so origin/<base> can also be AHEAD of the local <base>.
+Branching from the local tip then puts the slice on a stale base, and its first
+push is rejected. That is the same defect in the other direction, so the script
+fetches first and brings the local <base> level before it creates anything:
+
+  * origin only ahead, <base> checked out nowhere: move the ref (fast-forward).
+  * origin only ahead, <base> checked out in a worktree with a clean tracked
+    tree: `git merge --ff-only origin/<base>` there.
+  * that worktree is dirty, or the two have diverged: refuse, and print the
+    exact command, rather than merge into someone's work in progress.
+
 WHAT IT DOES NOT DO
 -------------------
 It does not push `<base>` itself. That is the one act that would remove the
@@ -81,6 +95,80 @@ def count_ahead(base: str, remote_ref: str, cwd: Path | None = None) -> int | No
     return int(out)
 
 
+def left_right(base: str, remote_ref: str, cwd: Path | None = None) -> tuple[int, int] | None:
+    """(commits only <base> has, commits only <remote_ref> has), or None without the ref."""
+    try:
+        out = run(["git", "rev-list", "--left-right", "--count", f"{base}...{remote_ref}"], cwd=cwd)
+    except StepFailed:
+        return None
+    local_only, remote_only = (int(n) for n in out.split())
+    return local_only, remote_only
+
+
+def checked_out_in(base: str, cwd: Path | None = None) -> Path | None:
+    """The worktree that has <base> checked out, if any."""
+    current: Path | None = None
+    for line in run(["git", "worktree", "list", "--porcelain"], cwd=cwd).splitlines():
+        if line.startswith("worktree "):
+            current = Path(line[len("worktree "):])
+        elif line == f"branch refs/heads/{base}":
+            return current
+    return None
+
+
+def sync_base(base: str, cwd: Path | None = None, dry_run: bool = False) -> tuple[bool, str]:
+    """Fetch origin/<base> and fast-forward the local <base> onto it when it is ahead.
+
+    Returns (ok, the line that says what happened). Not ok means the worktree
+    must not be created: the base it would start from is not the epic's tip.
+    """
+    remote_ref = f"origin/{base}"
+    fetch = subprocess.run(
+        ["git", "fetch", "-q", "origin", base],
+        cwd=str(cwd) if cwd else None, capture_output=True, text=True,
+    )
+    if fetch.returncode != 0:
+        # A base never pushed is ordinary; anything else is worth reading, but
+        # the local tip is still a base the script can stand on.
+        detail = (fetch.stdout + fetch.stderr).strip().splitlines()
+        return True, f"fetch origin {base} failed ({detail[-1] if detail else 'no output'}); using the local tip"
+    counts = left_right(base, remote_ref, cwd=cwd)
+    if counts is None:
+        return True, f"origin has no {base}; using the local tip"
+    local_only, remote_only = counts
+    if remote_only == 0:
+        return True, f"origin/{base} has nothing {base} lacks"
+    if local_only:
+        return False, (
+            f"{base} and origin/{base} have diverged ({local_only} local-only, "
+            f"{remote_only} remote-only commits). Merge origin/{base} into {base} "
+            f"where it is checked out, then re-run"
+        )
+    commits = "commit" if remote_only == 1 else "commits"
+    where = checked_out_in(base, cwd=cwd)
+    if where is None:
+        if dry_run:
+            return True, f"dry run: would fast-forward {base} by {remote_only} {commits} to origin/{base}"
+        old, new = rev_parse(base, cwd=cwd), rev_parse(remote_ref, cwd=cwd)
+        run(["git", "update-ref", f"refs/heads/{base}", new, old], cwd=cwd)
+        return True, f"fast-forwarded {base} by {remote_only} {commits} to origin/{base} (checked out nowhere)"
+    command = f"git -C {where} merge --ff-only origin/{base}"
+    # Re-read, not trusted from the listing: a session switched the primary
+    # checkout's branch mid-epic once (2026-10-02).
+    if run(["git", "branch", "--show-current"], cwd=where) != base:
+        return False, f"{where} no longer has {base} checked out; fast-forward it by hand: {command}"
+    dirty = run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=where)
+    if dirty:
+        return False, (
+            f"origin/{base} is {remote_only} {commits} ahead of {base}, and {where} has "
+            f"uncommitted tracked changes, so it was not touched. Clean it, then: {command}"
+        )
+    if dry_run:
+        return True, f"dry run: would run {command} ({remote_only} {commits})"
+    run(["git", "merge", "-q", "--ff-only", remote_ref], cwd=where)
+    return True, f"fast-forwarded {base} by {remote_only} {commits} in {where}"
+
+
 def divergence_note(base: str, ahead: int | None) -> str:
     """The line that keeps the unpushed gap visible on every single run."""
     if ahead is None:
@@ -107,6 +195,11 @@ def default_path(issue: int) -> str:
 
 def create(args: argparse.Namespace) -> int:
     root = Path(run(["git", "rev-parse", "--show-toplevel"]))
+    synced, sync_line = sync_base(args.base, dry_run=args.dry_run)
+    print(f"[epic-worktree] {sync_line}")
+    if not synced:
+        print("[epic-worktree] nothing created", file=sys.stderr)
+        return 1
     base_sha = rev_parse(args.base)
     ahead = count_ahead(args.base, f"origin/{args.base}")
     path = Path(args.path or default_path(args.issue))

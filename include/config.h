@@ -106,6 +106,9 @@
 // Keep invalid images from compiling even if an environment is configured by hand.
 // Every checked-in PlatformIO environment leaves this at 0 deliberately.
 #if PA_HEAP_TRACING
+  // The guard below reads CONFIG_HEAP_TRACING, which only sdkconfig.h defines.
+  // Without it the macro reads as 0 and the build #errors with tracing ON (#467).
+  #include <sdkconfig.h>
   #if !PA_HEAP_PROFILE
     #error "PA_HEAP_TRACING=1 requires PA_HEAP_PROFILE=1"
   #endif

@@ -19,18 +19,31 @@
 // them: main.cpp's bootstrap ring and boot-time sizing, the SSE batch buffers in
 // web_server.cpp and the native test storage all read them from here.
 // -----------------------------------------------------------------------------
-// LOG_LINE_MAX: max chars per stored line (including null terminator space).
-// 128 chars covers all normal log lines; longer lines are truncated at source.
+// LOG_LINE_MAX: max chars per stored slot (including null terminator space).
+// 128 chars covers all normal log lines; a longer one continues into further
+// slots (LOG_LINE_CONTINUATION below) rather than being clipped.
 //
 // Deliberately NOT chip-target specific. Emission is bounded separately at
-// PA_LOG_SERIAL_LINE_MAX (256, logging.h), so a retained line is clipped at
-// half of what was printed -- but the rationale above is "covers all normal log
+// PA_LOG_SERIAL_LINE_MAX (256, logging.h), about two slots' worth -- but the
+// rationale above is "covers all normal log
 // lines", not a heap argument, so widening it is not the inherited-scarcity fix
 // this file makes. It would also widen what the SSE log batch is sized off it
 // (s_sseLogLines and kSseLogBatchBytes, web_server.cpp - the batch must fit the
 // WebEvents event body whole), spending permanent DRAM on a dimension that is
 // not what limits retained history.
 static constexpr size_t LOG_LINE_MAX = 128;
+
+// A line longer than one slot continues into the next slots instead of losing
+// its tail. The tail is usually the verdict: #471's ladder lines
+// ("heartbeatConfig=-1(ESP_F...") were cut exactly there, in /api/logs and on
+// the wire, which the Console drains from this ring. Widening LOG_LINE_MAX
+// would buy that with permanent DRAM on every slot (see above); continuing
+// spends ring depth only on the rare long line. A continuation slot starts
+// with LOG_LINE_CONTINUATION so a reader can tell it from a new line, and
+// carries no level tag of its own. The emitted line is bounded at
+// PA_LOG_SERIAL_LINE_MAX - 1 = 255 chars, which is 127 + 125 + 3: three slots.
+static constexpr const char LOG_LINE_CONTINUATION[] = "... ";
+static constexpr size_t LOG_LINE_MAX_SLOTS = 3;
 
 // Ring depth follows the operator's saved log level. The ring is sized ONCE at
 // boot from NVS (see paLogRingApplyBootDepth in main.cpp): changing the level
@@ -153,7 +166,10 @@ void logBufferInit(LogBuffer* buf, char (*storage)[LOG_LINE_MAX], size_t capacit
 // logBufferAppend()
 // Append a null-terminated line to the ring buffer.
 // If the buffer is full the oldest entry is overwritten.
-// The line is truncated to LOG_LINE_MAX-1 characters.
+// A line longer than LOG_LINE_MAX-1 characters continues into further slots,
+// each prefixed with LOG_LINE_CONTINUATION, up to LOG_LINE_MAX_SLOTS slots in
+// all; only what would not fit in those is dropped. Every slot counts as one
+// entry in `count` and `totalWritten`.
 // params: buf   --  ring buffer to write into (must not be null)
 //         line  --  null-terminated string to append (must not be null)
 // thread-safe: NO  --  caller must hold any required lock

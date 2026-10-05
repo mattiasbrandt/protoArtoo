@@ -135,10 +135,14 @@ The shell is zsh. Quote a glob (`--include='*.cpp'`). An unquoted `$var` does no
 
 - **Run device and build work in a Herdr pane, not headless** — the mechanics for
   AGENTS.md "Flashing and Monitoring", which carries the rule and the *why*. You are
-  inside Herdr when `HERDR_ENV=1`; `$HERDR_PANE_ID` is your own pane. Split a sibling
-  with `herdr pane split --current --direction right --cwd "$PWD" --no-focus` (down
-  from a tall pane), read the new id from `.result.pane.pane_id`, then
-  `herdr pane run <id> "tools/gate_in_pane.sh /tmp/<name>.log -- <cmd>"`.
+  inside Herdr when `HERDR_ENV=1`; `$HERDR_PANE_ID` is your own pane. One call does
+  the whole sequence: `python3 tools/pane_run.py /tmp/<name>.log [--grep <re>] -- <cmd>`
+  splits a sibling pane, runs `<cmd>` there under `tools/gate_in_pane.sh`, waits for
+  `GATE_EXIT=`, prints the log's tail, closes the pane it made and exits with the
+  command's status. An upload goes in a file (the upload guard matches its text in a
+  Bash command): `--script /tmp/<name>.sh`. By hand, the steps it replaces are
+  `herdr pane split --current --direction right --cwd "$PWD" --no-focus` (id at
+  `.result.pane.pane_id`), then `herdr pane run <id> "tools/gate_in_pane.sh /tmp/<name>.log -- <cmd>"`.
   The log's last line is `GATE_EXIT=<n>`, the command's own status, and the script
   restores `data/fw-version.json` and `data/fs-version.json`. A pipe through `tee`
   records tee's status instead. Two things measured 2026-09-06: `herdr pane read` can return nothing while a command
