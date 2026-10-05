@@ -2862,7 +2862,7 @@ entries:
   executor: requestSystemRestart
 - name: system.action.reboot-wifi-module
   display_name: Reboot WiFi Module
-  description: Restart the WiFi module; the link is back in a few seconds and nothing else pauses. Run it over serial, since WiFi drops with it.
+  description: Restart the WiFi module; the link can take up to about half a minute to come back, and nothing else pauses. Run it over serial, since WiFi drops with it.
   domain: system
   type: action
   # The first registry row to carry board_capability (#243). It is what
