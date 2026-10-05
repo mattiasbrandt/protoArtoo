@@ -531,10 +531,12 @@ would pass that, post the current body as a new history comment and reset the
 evolving one to the frontier. History comments are append-only.
 
 A worker is done when the last line of its status comment is `WORKER_DONE: ok`
-or `WORKER_DONE: blocked` (a trailing `//` signature does not count), or
-`/tmp/slice-<s>.json` is `{"ok": true}` or
-`{"ok": false}`. Wait with
-`python3 tools/wait_worker.py --issue <n> --marker '<!-- worker-status-<n>-<s> -->'`.
+or `WORKER_DONE: blocked` (a trailing `//` signature does not count). The gate
+JSON alone is not that signal: a gate run made mid-slice writes
+`{"ok": true}` while the worker is still writing its report, and a `--file`
+watcher fired on exactly that on 2026-10-05. Wait on the comment, adding the
+file when the brief names one - with both, ok needs both:
+`python3 tools/wait_worker.py --issue <n> --marker '<!-- worker-status-<n>-<s> -->' [--file /tmp/slice-<s>.json]`.
 An idle pane is not that signal: the gate runs in a sibling pane.
 
 **Record first, escalate second, and escalate only the residue.** A finding is

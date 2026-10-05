@@ -74,6 +74,17 @@ class WaitWorker(unittest.TestCase):
         spec.loader.exec_module(mod)
         return mod._verdict_from_text(body)
 
+    def test_with_both_signals_ok_needs_both_and_blocked_needs_either(self):
+        spec = importlib.util.spec_from_file_location("wait_worker", WAIT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        # The mid-slice gate run: the file says ok, the comment is not done yet.
+        self.assertIsNone(mod._combined([None, "ok"]))
+        self.assertEqual(mod._combined(["ok", "ok"]), "ok")
+        self.assertEqual(mod._combined(["blocked", None]), "blocked")
+        self.assertEqual(mod._combined([None, "blocked"]), "blocked")
+        self.assertEqual(mod._combined(["ok"]), "ok")
+
     def test_token_is_the_last_line_and_a_signature_does_not_count(self):
         self.assertEqual(self.verdict("WORKER_DONE: ok\n//Grok Build Grok 4.7\n"), "ok")
         self.assertEqual(self.verdict("WORKER_DONE: blocked\n"), "blocked")

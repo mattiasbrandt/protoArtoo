@@ -292,10 +292,12 @@ red-run block during the pause. Keep the comment to the frontier, under about
 20 KB. When it would pass that, post the current text as a new history comment
 and reset the marked one.
 
-The done signal is the last line of that comment, `WORKER_DONE: ok` or
+Finish in this order: write the final status comment without the done line;
+run the gate, when your brief has one, as the last step; then add the done
+line. The done signal is the last line of that comment, `WORKER_DONE: ok` or
 `WORKER_DONE: blocked`. A trailing `//` signature is not that line, and a
-later line that is not the token means the worker is not done. The same fact
-may also be `{GATE_JSON}` with
-`{"ok": true}` or `{"ok": false}`. The coordinator waits with
-`python3 tools/wait_worker.py --issue {ISSUE} --marker '{STATUS_MARKER}'`.
-An idle pane is not the signal.
+later line that is not the token means the worker is not done. `{GATE_JSON}`
+alone is not the signal: it is written the moment the gate ends, report or
+not. The coordinator waits with
+`python3 tools/wait_worker.py --issue {ISSUE} --marker '{STATUS_MARKER}' --file {GATE_JSON}`,
+which needs both to say ok. An idle pane is not the signal.
