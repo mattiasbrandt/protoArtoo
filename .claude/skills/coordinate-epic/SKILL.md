@@ -113,7 +113,11 @@ from the epic's coordination section (it changes at Phase 5 closure).
   any out-of-tree edit, checkout, stash, restore, or clean is an automatic
   reject. This repo has lost work to exactly that.
 - **Start every worker memory-capped:** `python3 tools/herdr_capped_agent.py
-  --pane <id> --name <agent> [-- --resume <session-id>]`, never a bare
+  --pane <id> --name <agent> --brief <brief-file> [-- --resume <session-id>]`
+  (exit 0 means Herdr saw the agent go `working` on the brief; on a stall it
+  prints the pane and does not re-send - read it first, the prompt may have
+  landed). An idle worker's history: `herdr agent read <agent> --source
+  recent-unwrapped --lines 200`. Never a bare
   `herdr agent start`. It puts the pane's shell in its own systemd scope
   (MemoryMax 10G, no swap, OOMPolicy=continue) and refuses to start the agent
   if the cap is not in place. **Why:** on 2026-09-29 one worker's test grew
