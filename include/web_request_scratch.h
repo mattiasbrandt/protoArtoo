@@ -53,6 +53,7 @@
 #include "api_audio_tracks_apply.h"
 #include "api_config_apply.h"
 #include "api_console.h"
+#include "api_status.h"
 #include "api_rc_map_apply.h"
 #include "api_wifi_apply.h"
 #include "sequence_run_evidence.h"
@@ -77,6 +78,7 @@ union WebRequestScratchLayout {
     ConsoleWebScratch console;                                 // POST /api/console
     ConfigApplyResult configApply;                             // POST /api/config
     WebScratchText<STATUS_JSON_BUFFER_BYTES> statusBody;       // GET /api/status
+    WebScratchText<HEALTH_JSON_BUFFER_BYTES> healthBody;       // GET /api/health
     SeqRunEvidence seqLastRun;                                 // GET /api/seq/last-run
     WebScratchText<RC_MAP_JSON_BODY_BYTES> rcMapBody;          // GET /api/rc/map
     RcMapApplyResult rcMapApply;                               // POST /api/rc/map

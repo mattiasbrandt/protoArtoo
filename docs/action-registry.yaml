@@ -3331,6 +3331,9 @@ entries:
   - heapMin
   - heapLargestBlock
   - heapLargest8bit
+  - allocBlocks
+  - httpSocketsOpen
+  - sseClients
   - wifiRssi
   - uptimeMs
   - resetReason
