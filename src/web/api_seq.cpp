@@ -233,16 +233,24 @@ struct SeqPins {
 };
 
 // Reads the key into `pins`. A droid that never pinned has no key, which is
-// an empty list. So is a namespace the read-only open cannot find: it does not
-// exist until something is first saved, and Preferences::begin() logs any
-// other reason it failed itself.
-void seqPinsRead(SeqPins& pins) {
+// an empty list. False when the list could not be read, which is never taken
+// for an empty one: the POST that follows would write back one name over the
+// rest.
+//
+// Opened read-write on purpose. A read-only open of a namespace not yet
+// created fails exactly as a broken one does, and Preferences hides which; a
+// read-write open creates it, so a failure here is a real one. Nothing is
+// written by opening. An empty list is never stored (seqPinsWrite() removes
+// the key), so a key that reads back empty is a failed read.
+bool seqPinsRead(SeqPins& pins) {
     pins.stored[0] = '\0';
     pins.count = 0;
     Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, true)) return;
-    const String value = prefs.isKey(kSeqPinsKey) ? prefs.getString(kSeqPinsKey, String()) : String();
+    if (!prefs.begin(NVS_NAMESPACE, false)) return false;
+    const bool has = prefs.isKey(kSeqPinsKey);
+    const String value = has ? prefs.getString(kSeqPinsKey, String()) : String();
     prefs.end();
+    if (has && value.length() == 0) return false;
     // Only this file writes the key, and never past kSeqPinsMax names; a
     // value that is longer anyway is cut at the last whole name that fits.
     snprintf(pins.stored, sizeof(pins.stored), "%s", value.c_str());
@@ -250,9 +258,10 @@ void seqPinsRead(SeqPins& pins) {
         char* cut = strrchr(pins.stored, ',');
         if (cut != nullptr) *cut = '\0';
     }
-    if (pins.stored[0] == '\0') return;
+    if (pins.stored[0] == '\0') return true;
     pins.count = 1;
     for (const char* at = pins.stored; (at = strchr(at, ',')) != nullptr; ++at) ++pins.count;
+    return true;
 }
 
 // Whether `name` is one of the stored names, as a whole name.
@@ -290,7 +299,8 @@ void seqPinsDrop(SeqPins& pins, const char* name) {
 }
 
 // Writes the list back; an empty one removes the key. False when NVS refused
-// the write - putString() answers 0 for a full namespace.
+// it: the namespace would not open, or putString() answered 0, which a full
+// namespace does. The caller cannot tell which, so its answer names neither.
 bool seqPinsWrite(const SeqPins& pins) {
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false)) return false;
@@ -639,7 +649,10 @@ void handleSeqStopPost(WebRequest& req) {
 // empty list.
 void handleSeqPinsGet(WebRequest& req) {
     SeqPins pins;
-    seqPinsRead(pins);
+    if (!seqPinsRead(pins)) {
+        sendJsonError(req, 500, "pins not read");
+        return;
+    }
     sendSeqPins(req, pins);
 }
 
@@ -671,7 +684,11 @@ void handleSeqPinsPost(WebRequest& req) {
     }
 
     SeqPins pins;
-    seqPinsRead(pins);
+    if (!seqPinsRead(pins)) {
+        // Never written over: a list that could not be read is not an empty one.
+        sendJsonError(req, 500, "pins not read; nothing changed");
+        return;
+    }
     const bool has = seqPinsHas(pins, name);
     if (pinned.as<bool>() == has) {
         sendSeqPins(req, pins);
@@ -690,7 +707,7 @@ void handleSeqPinsPost(WebRequest& req) {
     }
     if (!seqPinsWrite(pins)) {
         PA_LOG_WARN(TAG, "pins not written: NVS refused %s", kSeqPinsKey);
-        sendJsonError(req, 500, "pins not saved: settings storage full");
+        sendJsonError(req, 500, "pins not saved");
         return;
     }
     PA_LOG_INFO(TAG, "[WEB] %s %s", has ? "unpin" : "pin", name);

@@ -1710,6 +1710,7 @@ The pinned Sequences, in the order they were pinned (#472). The Dashboard's Sequ
 They live in their own NVS key (`seq_pins`), not in the configuration: `GET /api/config` does not carry them and `POST /api/config` does not change them. Nothing is pinned on a fresh droid.
 
 - Success: `200` `{"ok":true,"max":8,"pins":["DM:VADER","DM:CANTINA"]}`. `max` is how many may be pinned. An empty `pins` means none are.
+- Error: `500` `{"ok":false,"error":"pins not read"}`: NVS would not give the list back.
 - A pin naming a Sequence deleted since stays pinned; the Dashboard skips it. Only its form is checked, as the Stand Down Sequence's is.
 
 #### Example request
@@ -1728,7 +1729,8 @@ Pins or unpins one Sequence, and answers the list as it now stands. One name per
   - `400` `{"ok":false,"error":"missing or invalid DM:* name"}`: not `DM:` and 1 to 18 of `A-Z`, `0-9`, `_`
   - `400` `{"ok":false,"error":"pinned must be true or false"}`
   - `409` `{"ok":false,"error":"8 are pinned. Unpin one first."}`: a ninth pin
-  - `500` `{"ok":false,"error":"pins not saved: settings storage full"}`: NVS refused the write. Nothing changed.
+  - `500` `{"ok":false,"error":"pins not read; nothing changed"}`: NVS would not give the list back, so it is not written over.
+  - `500` `{"ok":false,"error":"pins not saved"}`: NVS refused the write - most often a full namespace. Nothing changed.
 
 #### Example request
 
