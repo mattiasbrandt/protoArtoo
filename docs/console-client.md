@@ -17,14 +17,6 @@ other halves and are not repeated here:
 - [console-protocol.md](console-protocol.md) - the wire format the records below
   are printed in.
 
-> [!WARNING]
-> **`system.config.log-level value=<x>` over serial panics the controller today.**
-> That is a live firmware defect tracked on #226, not something this client
-> causes, and it is in `tools/bench_rows/`'s `scalar-config-and-commanded-modes`
-> row - so a replay of a whole sheet will meet it. Reading the value
-> (`system.config.log-level` with no argument) is fine; writing one over serial
-> is not, until #226 closes.
-
 ---
 
 ## Which mode you want

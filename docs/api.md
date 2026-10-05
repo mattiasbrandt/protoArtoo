@@ -2608,6 +2608,31 @@ Returns controller status snapshot.
 - `acceptRejectLargestBlock`, `acceptMinLargestBlockSeen` — Buffer Readings,
   like `heapLargest8bit`: the sample behind the accept guard's last heap-floor
   rejection, and the smallest sample it has taken since boot (`-1` if none)
+- Connection lifetime. Counts are cumulative since boot; `httpSocketsOpen`,
+  `responseLastMs` and `responseDeadlineAgeMs` are current values; the peaks
+  and maxima (`httpSocketsOpenPeak`, `responseMaxMs`, `sendRetryMaxMs`) are
+  this boot's highest:
+  - `httpSocketsAccepted` — connections admitted
+  - `httpSocketsOpen`, `httpSocketsOpenPeak` — admitted sockets open now, and
+    the most open at once. Keeping connections alive is only affordable while
+    the peak stays inside the server's 10 sockets
+  - `httpSocketsUntracked` — admitted sockets the census had no slot to name;
+    non-zero means `httpSocketsOpen` is an undercount
+  - `httpRequestsServed` — requests admitted. Against `httpSocketsAccepted` it
+    is requests per connection: how much the stack reuses a connection
+    (ADR 0023)
+  - `responseDeadlineClosures`, `responseDeadlineAgeMs` — responses dropped by
+    the response-phase deadline, and milliseconds since the last one (`-1` if
+    none since boot)
+  - `responseLastMs`, `responseMaxMs` — the most recent completed response
+    phase and the longest this boot, in milliseconds. The deadline is
+    calibrated against the maximum, so it is published on every run (ADR 0024)
+  - `sendRetriesWindow`, `sendRetriesMemory`, `sendRetryMaxMs` — writes retried
+    because the client's receive window was full, writes retried because the
+    stack could not allocate a segment, and the longest one write waited, in
+    milliseconds. `sendRetriesMemory` is the one to watch: it is a response
+    that ran out of contiguous heap mid-body, retried rather than truncated,
+    and this counter is the only place that pressure still shows
 - `wifiRssi`, `wifiConnected`, `wifiClientConnected`, `littleFsReady`
 - `sleepMode`, `sleepSinceMs`, `activeMood`
 - `seqRun` — the Sequence run the droid last recorded, whoever started it
