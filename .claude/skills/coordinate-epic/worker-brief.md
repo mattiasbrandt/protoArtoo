@@ -294,10 +294,12 @@ and reset the marked one.
 
 Finish in this order: write the final status comment without the done line;
 run the gate, when your brief has one, as the last step; then add the done
-line. The done signal is the last line of that comment, `WORKER_DONE: ok` or
+line (editing the status comment is not a commit, so it may follow the
+gate). The done signal is the last line of that comment, `WORKER_DONE: ok` or
 `WORKER_DONE: blocked`. A trailing `//` signature is not that line, and a
 later line that is not the token means the worker is not done. `{GATE_JSON}`
 alone is not the signal: it is written the moment the gate ends, report or
 not. The coordinator waits with
-`python3 tools/wait_worker.py --issue {ISSUE} --marker '{STATUS_MARKER}' --file {GATE_JSON}`,
-which needs both to say ok. An idle pane is not the signal.
+`python3 tools/wait_worker.py --issue {ISSUE} --marker '{STATUS_MARKER}'`,
+adding `--file {GATE_JSON}` when your brief has a gate run; with both, ok
+needs both. An idle pane is not the signal.
