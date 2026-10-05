@@ -662,9 +662,9 @@
             "hostedRecoveryTaskFn"
           ],
           "frames": [],
-          "chain_bytes": 4624,
+          "chain_bytes": 4640,
           "stack_bytes": 6144,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: hostedRecoveryTaskFn -> hostedRunRecoveryLadder() -> hostedInitWiFi -> hostedInit -> esp_hosted_init -> esp_hosted_add_channel -> transport_drv_add_channel -> ...; widest frames _svfprintf_r 1152 B, hostedRunRecoveryLadder() 928 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B. It grew 64 B when the C6 liveness watch (#471) moved the ladder run out of the task function into hostedRunRecoveryLadder(): the run's frame grew 32 B for the attempt's liveness evidence, and the task function now keeps a frame of its own above it.",
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: hostedRecoveryTaskFn -> hostedRunRecoveryLadder() -> hostedInitWiFi -> hostedInit -> esp_hosted_init -> esp_hosted_add_channel -> transport_drv_add_channel -> ...; widest frames _svfprintf_r 1152 B, hostedRunRecoveryLadder() 928 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B. It grew 80 B when the C6 liveness watch (#471) moved the ladder run out of the task function into hostedRunRecoveryLadder(): the run's frame grew 32 B for the attempt's liveness evidence, and the task function now keeps a 48 B frame of its own above it.",
           "created": "always"
         }
       },
