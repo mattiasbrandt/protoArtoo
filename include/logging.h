@@ -59,7 +59,7 @@ inline uint8_t paCurrentLogLevel() {
 #define _PA_LOG_FORMAT(level, tag, fmt, ...)                                      \
     do {                                                                          \
         char _pa_log_buf[PA_LOG_SERIAL_LINE_MAX];                                 \
-        /* Serial lines are bounded here; the retained SSE ring truncates to LOG_LINE_MAX. */ \
+        /* Lines are bounded here; the ring continues a longer one across slots. */ \
         _Pragma("GCC diagnostic push")                                            \
         _Pragma("GCC diagnostic ignored \"-Wformat-truncation\"")                 \
         snprintf(_pa_log_buf, sizeof(_pa_log_buf), "[%lu][" level "][%s] " fmt,               \

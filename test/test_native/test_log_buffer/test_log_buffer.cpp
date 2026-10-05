@@ -2,7 +2,7 @@
 // test/test_native/test_log_buffer/test_log_buffer.cpp
 //
 // Native unit tests for log ring-buffer helpers.
-// Tests: logBufferAppend ordering, wrap-around, truncation, logBufferCopy.
+// Tests: logBufferAppend ordering, wrap-around, continuation, logBufferCopy.
 // =============================================================================
 #include <stdio.h>
 #include <string.h>
@@ -111,15 +111,67 @@ void test_wrap_around_order_preserved() {
     TEST_ASSERT_LESS_THAN(p_newest - out, p_oldest - out);
 }
 
-void test_long_line_truncated_to_max() {
-    char long_line[LOG_LINE_MAX + 32];
-    memset(long_line, 'A', sizeof(long_line) - 1);
-    long_line[sizeof(long_line) - 1] = '\0';
+void test_a_line_that_fits_takes_one_slot() {
+    char line[LOG_LINE_MAX];
+    memset(line, 'A', sizeof(line) - 1);
+    line[sizeof(line) - 1] = '\0';
 
-    logBufferAppend(&buf, long_line);
+    logBufferAppend(&buf, line);
 
-    size_t stored_len = strlen(buf.lines[0]);
-    TEST_ASSERT_LESS_OR_EQUAL(LOG_LINE_MAX - 1, stored_len);
+    TEST_ASSERT_EQUAL_UINT32(1, buf.totalWritten);
+    TEST_ASSERT_EQUAL_STRING(line, buf.lines[0]);
+}
+
+// The tail of a long line is the part that was lost (#471's ladder verdicts):
+// it continues into the next slot, marked, and nothing in between is dropped.
+void test_a_long_line_continues_into_the_next_slot() {
+    char line[LOG_LINE_MAX + 32];
+    for (size_t i = 0; i < sizeof(line) - 1; i++) {
+        line[i] = (char)('a' + (i % 26));
+    }
+    line[sizeof(line) - 1] = '\0';
+
+    logBufferAppend(&buf, line);
+
+    TEST_ASSERT_EQUAL_UINT32(2, buf.totalWritten);
+    TEST_ASSERT_EQUAL_size_t(LOG_LINE_MAX - 1, strlen(buf.lines[0]));
+    TEST_ASSERT_EQUAL_INT(0, strncmp(buf.lines[1], LOG_LINE_CONTINUATION, strlen(LOG_LINE_CONTINUATION)));
+    char rejoined[sizeof(line)];
+    snprintf(rejoined, sizeof(rejoined), "%s%s", buf.lines[0],
+             buf.lines[1] + strlen(LOG_LINE_CONTINUATION));
+    TEST_ASSERT_EQUAL_STRING(line, rejoined);
+}
+
+// The longest line a log macro emits (PA_LOG_SERIAL_LINE_MAX - 1 = 255 chars)
+// fits whole in LOG_LINE_MAX_SLOTS slots; past that the rest is dropped.
+void test_the_longest_emitted_line_fits_and_longer_is_capped() {
+    const size_t cont = strlen(LOG_LINE_CONTINUATION);
+    const size_t whole = (LOG_LINE_MAX - 1) + (LOG_LINE_MAX_SLOTS - 1) * (LOG_LINE_MAX - 1 - cont);
+    TEST_ASSERT_GREATER_OR_EQUAL(255, whole);
+
+    char line[1024];
+    memset(line, 'Z', sizeof(line) - 1);
+    line[sizeof(line) - 1] = '\0';
+    logBufferAppend(&buf, line);
+
+    TEST_ASSERT_EQUAL_UINT32(LOG_LINE_MAX_SLOTS, buf.totalWritten);
+    size_t kept = strlen(buf.lines[0]);
+    for (size_t i = 1; i < LOG_LINE_MAX_SLOTS; i++) {
+        kept += strlen(buf.lines[i]) - cont;
+    }
+    TEST_ASSERT_EQUAL_size_t(whole, kept);
+}
+
+// A continuation is ordinary ring content: it ages out like any other slot.
+void test_continuations_wrap_with_the_ring() {
+    char line[LOG_LINE_MAX + 10];
+    memset(line, 'L', sizeof(line) - 1);
+    line[sizeof(line) - 1] = '\0';
+    for (size_t i = 0; i < kTestLines; i++) {
+        logBufferAppend(&buf, line);
+    }
+    TEST_ASSERT_EQUAL_size_t(kTestLines, buf.count);
+    TEST_ASSERT_EQUAL_UINT32(2 * kTestLines, buf.totalWritten);
 }
 
 void test_copy_output_null_terminated() {
@@ -262,7 +314,10 @@ int main() {
     RUN_TEST(test_count_does_not_exceed_capacity);
     RUN_TEST(test_wrap_around_oldest_overwritten);
     RUN_TEST(test_wrap_around_order_preserved);
-    RUN_TEST(test_long_line_truncated_to_max);
+    RUN_TEST(test_a_line_that_fits_takes_one_slot);
+    RUN_TEST(test_a_long_line_continues_into_the_next_slot);
+    RUN_TEST(test_the_longest_emitted_line_fits_and_longer_is_capped);
+    RUN_TEST(test_continuations_wrap_with_the_ring);
     RUN_TEST(test_copy_output_null_terminated);
     RUN_TEST(test_copy_zero_size_returns_zero);
     RUN_TEST(test_copy_small_buffer_truncates);
