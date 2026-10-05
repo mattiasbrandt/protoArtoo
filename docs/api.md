@@ -2608,7 +2608,10 @@ Returns controller status snapshot.
 - `acceptRejectLargestBlock`, `acceptMinLargestBlockSeen` — Buffer Readings,
   like `heapLargest8bit`: the sample behind the accept guard's last heap-floor
   rejection, and the smallest sample it has taken since boot (`-1` if none)
-- Connection lifetime, all cumulative since boot except the open count:
+- Connection lifetime. Counts are cumulative since boot; `httpSocketsOpen`,
+  `responseLastMs` and `responseDeadlineAgeMs` are current values; the peaks
+  and maxima (`httpSocketsOpenPeak`, `responseMaxMs`, `sendRetryMaxMs`) are
+  this boot's highest:
   - `httpSocketsAccepted` — connections admitted
   - `httpSocketsOpen`, `httpSocketsOpenPeak` — admitted sockets open now, and
     the most open at once. Keeping connections alive is only affordable while
