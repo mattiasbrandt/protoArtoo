@@ -604,9 +604,9 @@
             "eventStreamTask"
           ],
           "frames": [],
-          "chain_bytes": 7344,
+          "chain_bytes": 7328,
           "stack_bytes": 9216,
-          "note": "The status build: buildStatusJson captures and formatStatusJson serialises on this task, and the serializer's number formatting reaches newlib. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: eventStreamTask -> buildStatusJson() [clone .part.0] -> networkManagerQueryConnectivity() -> wifiNetworkManagerQueryConnectivityCommon() -> IPAddress::toString() const -> _Unwind_Resume -> ...; widest frames buildStatusJson() [clone .part.0] 1568 B, _svfprintf_r 1152 B, eventStreamTask 912 B, _Unwind_Resume 912 B. buildStatusJson grew 64 B with #451: the Sequence run it captures for the seqRun key and the ConfigSnapshot it captures from, 944 B with the Stand Down Sequence.",
+          "note": "The status build: buildStatusJson captures and formatStatusJson serialises on this task, and the serializer's number formatting reaches newlib. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: eventStreamTask -> buildStatusJson() [clone .part.0] -> networkManagerQueryConnectivity() -> wifiNetworkManagerQueryConnectivityCommon() -> IPAddress::toString() const -> _Unwind_Resume -> ...; widest frames buildStatusJson() [clone .part.0] 1552 B, _svfprintf_r 1152 B, eventStreamTask 912 B, _Unwind_Resume 912 B. buildStatusJson grew 64 B with #451: the Sequence run it captures for the seqRun key and the ConfigSnapshot it captures from, 944 B with the Stand Down Sequence. It shrank 16 B with #471, which grew the hostedLink snapshot it captures (36 -> 68 B) but fills it in place through hostedLinkQueryStatus(&in->hostedLink) instead of copying a returned temporary.",
           "created": "always"
         }
       }

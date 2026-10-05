@@ -40,26 +40,34 @@ inline const char* hostedLinkInitOutcomeName(HostedLinkInitOutcome outcome) {
 // its attempt-result log line has rotated out of the log ring. The whole
 // record is replaced on every attempt, so a refused attempt never carries an
 // earlier attempt's liveness results.
+//
+// Members are ordered small-first here and in the snapshot below so neither
+// carries padding: the snapshot is a member of StatusJsonInputs, which
+// buildStatusJson() holds on the WebEvents task's stack, a chain sized
+// by the rule (tools/task_stack_recipes.json).
 struct HostedLinkLastAttempt {
     HostedLinkInitOutcome init = HostedLinkInitOutcome::None;
+    // false when the host was not initialised after the re-init, so the C6
+    // was not asked; heartbeatSeen and the two results are then meaningless.
+    bool livenessAsked = false;
+    bool heartbeatSeen = false;  // a heartbeat newer than the re-init arrived
     // Refused only: the probe allocation that failed ("channel pool", "small
     // allocations", "SDIO pool"), or "free total short" when the free total
     // was already below the need and no probe ran. A string literal.
     const char* refusal = nullptr;
-    // false when the host was not initialised after the re-init, so the C6
-    // was not asked; the three liveness fields below are then meaningless.
-    bool livenessAsked = false;
     // esp_err_t values, carried as plain integers: this header stays free of
     // ESP-IDF types like the step core it extends, and the number is the
     // lossless form -- esp_err_to_name() has no name for the host-side
     // RPC_ERR_* codes and answers "UNKNOWN ERROR" for them.
     int32_t heartbeatConfigResult = 0;
     int32_t wifiGetModeResult = 0;
-    bool heartbeatSeen = false;  // a heartbeat newer than the re-init arrived
 };
 
 struct HostedLinkStatusSnapshot {
     HostedLinkPhase phase = HostedLinkPhase::Idle;
+    // The liveness watch (#471), copied from HostedLinkSupervisorState: its
+    // source here beside phase, its counters below.
+    HostedLinkLivenessSource livenessSource = HostedLinkLivenessSource::None;
     unsigned int transportFailureEventCount = 0;
     unsigned int transportUpEventCount = 0;
     unsigned int attemptCount = 0;
@@ -69,8 +77,6 @@ struct HostedLinkStatusSnapshot {
     uint32_t lastAttemptAtMs = 0;
     uint32_t degradedAtMs = 0;
 
-    // Liveness watch (#471), copied from HostedLinkSupervisorState.
-    HostedLinkLivenessSource livenessSource = HostedLinkLivenessSource::None;
     unsigned int livenessMissCount = 0;
     unsigned int heartbeatCount = 0;
     uint32_t lastHeartbeatNumber = 0;
@@ -85,5 +91,8 @@ struct HostedLinkStatusSnapshot {
 };
 
 // Thread-safe: copies the supervisor state under its own critical section.
-// Defined in web_network_manager_hosted.cpp.
-HostedLinkStatusSnapshot hostedLinkQueryStatus();
+// Defined in web_network_manager_hosted.cpp. Fills *out rather than
+// returning the snapshot, like captureWifiStatusSnapshot(): a returned struct
+// assigned into StatusJsonInputs costs buildStatusJson() a second copy of it
+// on the WebEvents task's stack.
+void hostedLinkQueryStatus(HostedLinkStatusSnapshot* out);

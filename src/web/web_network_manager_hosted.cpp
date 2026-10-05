@@ -993,8 +993,8 @@ static void hostedRegisterLinkSupervision() {
 
 // Read-only snapshot for /api/status (#189) and the Console's
 // system.status.hosted-link (#471).
-HostedLinkStatusSnapshot hostedLinkQueryStatus() {
-    HostedLinkStatusSnapshot snap;
+void hostedLinkQueryStatus(HostedLinkStatusSnapshot* out) {
+    HostedLinkStatusSnapshot& snap = *out;
     portENTER_CRITICAL(&g_hostedLinkMux);
     snap.phase = g_hostedLinkState.phase;
     snap.transportFailureEventCount = g_hostedLinkState.transportFailureEventCount;
@@ -1019,10 +1019,11 @@ HostedLinkStatusSnapshot hostedLinkQueryStatus() {
         snap.livenessAgeMs = ageMs > static_cast<uint32_t>(INT32_MAX)
                                  ? INT32_MAX
                                  : static_cast<int32_t>(ageMs);
+    } else {
+        snap.livenessAgeMs = -1;
     }
     snap.lastAttempt = g_hostedLastAttempt;
     portEXIT_CRITICAL(&g_hostedLinkMux);
-    return snap;
 }
 
 // ============================================================================

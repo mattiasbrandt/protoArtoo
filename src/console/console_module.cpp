@@ -767,7 +767,8 @@ static void consoleExecuteSystemStatusWifi(uint32_t requestId, const ConsoleReco
 // the way domeBearingDeg reads here.
 static void consoleExecuteSystemStatusHostedLink(uint32_t requestId,
                                                  const ConsoleRecordSink* sink) {
-    const HostedLinkStatusSnapshot snap = hostedLinkQueryStatus();
+    HostedLinkStatusSnapshot snap;
+    hostedLinkQueryStatus(&snap);
     const HostedLinkLastAttempt& la = snap.lastAttempt;
     const bool attempted = la.init != HostedLinkInitOutcome::None;
     const bool asked = attempted && la.livenessAsked;
