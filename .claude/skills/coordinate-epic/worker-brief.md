@@ -5,8 +5,9 @@ Render the worker prompt from this template, never by hand:
     python3 tools/make_brief.py --issue <n> --slug <s> --worktree <path> --base <branch>
 
 It fills {ISSUE}, {WORKTREE}, {BASE} (the epic's integration branch),
-{PIN_MARKER} (`<!-- coordinator-pin-<s> -->`) and {STATUS_MARKER}
-(`<!-- worker-status-<n>-<s> -->`), writes everything below the rule, and
+{PIN_MARKER} (`<!-- coordinator-pin-<s> -->`), {STATUS_MARKER}
+(`<!-- worker-status-<n>-<s> -->`) and {GATE_JSON} (`/tmp/slice-<s>.json`,
+the gate block `tools/accept_slice.py` reads), writes everything below the rule, and
 refuses to write a brief that still holds a `{...}` placeholder. `{owner}` and
 `{repo}` are not template placeholders: gh fills them when the worker runs the
 command. Everything ticket-specific stays in the ticket.
@@ -231,11 +232,16 @@ VERIFICATION (software-verified cap)
   after every commit. It diffs merge-base..HEAD, so one run at the end covers
   every commit in the slice; running it four times to land four commits buys
   nothing and costs four full suites and four builds. Run
-  `python3 tools/slice_verify.py --base {BASE}` (plus the --fenced pathspecs
-  below, if any, and --mutations with your mutation patches when your diff
-  touches web production JS) and paste its FULL block verbatim into your
-  status comment, provenance lines included (AGENTS.md "Worker slice gate" -
-  commit first; the gate diffs merge-base..HEAD). The gate runs the native
+  `python3 tools/slice_verify.py --base {BASE} --json {GATE_JSON}` (plus the
+  --fenced pathspecs below, if any, and --mutations with your mutation patches
+  when your diff touches web production JS) and paste its FULL block verbatim
+  into your status comment, provenance lines included (AGENTS.md "Worker slice
+  gate" - commit first; the gate diffs merge-base..HEAD). The coordinator
+  accepts the slice by checking {GATE_JSON} against your worktree with
+  `tools/accept_slice.py`, so: write the JSON to exactly that path; commit
+  everything before the run and nothing after it (a later commit makes the
+  block stale and sends the slice back); leave the tree clean but for
+  `data/fs-version.json` and `data/fw-version.json`. The gate runs the native
   suite, the web suite, the mutation stage, the build, and the diff checks;
   it fails on deleted test files, a shrinking test total, a flat test total
   over production changes, a changed web production JS file no mutation

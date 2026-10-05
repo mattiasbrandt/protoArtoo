@@ -31,6 +31,7 @@ class RenderTemplate(unittest.TestCase):
         self.assertEqual(make_brief.leftover_placeholders(brief), [])
         self.assertIn("<!-- coordinator-pin-355rr -->", brief)
         self.assertIn("<!-- worker-status-355-355rr -->", brief)
+        self.assertIn("--json /tmp/slice-355rr.json", brief)
         # The coordinator's header above the rule is not part of the prompt.
         self.assertNotIn("make_brief.py", brief)
 

@@ -6,7 +6,8 @@ is the contract: what the block must contain, who may waive what, and what
 counts as evidence.
 
 **Worker slice gate:** after committing a slice, workers must run
-`python3 tools/slice_verify.py --base <base-ref>` (plus any `--fenced` pathspecs
+`python3 tools/slice_verify.py --base <base-ref> --json /tmp/slice-<s>.json`
+(the path the brief names; plus any `--fenced` pathspecs
 and the `--mutations` patches the coordinator's brief specifies) and paste its
 full block verbatim into the issue status comment — including the opening
 provenance lines (blob hashes of both verifier scripts, HEAD sha, DIRTY
@@ -15,14 +16,17 @@ gate behind every slice. Per slice it checks the block's **provenance against
 the branch** - HEAD sha against the tip, **the block's merge-base against the
 base's current tip** (`git rev-parse <base>`, never `git merge-base <base>
 HEAD`: a slice whose base moved under it is internally consistent and would
-otherwise pass, verified against a tree that no longer exists), diff size, both
-script blob hashes against the files on disk, the DIRTY marker against a clean
-tree,
-every changed web production JS file present in the mutation table, and no
-waiver ACK it did not grant - which takes seconds and catches a block that is
-not of this branch. The gate itself is run **once per wave, on the merged
-tree**, with the union of the wave's fences: that run is the anti-fabrication
-net, and it has to happen anyway because line numbers and stragglers move on
+otherwise pass, verified against a tree that no longer exists), the verifier
+blob hashes against those files at the base tip, the DIRTY marker against a
+clean tree - all of which is one command on the block's JSON,
+`python3 tools/accept_slice.py --json /tmp/slice-<s>.json --worktree <path> --base <base>`
+(add `--allow-gate-edit` only for a slice granted `--expect-gate-edit`) -
+then every changed web production JS file present in the mutation table, and
+no waiver ACK it did not grant - which takes seconds and catches a block that
+is not of this branch. So a worker commits before the gate run and not after
+it, and leaves the tree clean but for the two version stamps. The gate itself
+is run **once per wave, on the merged tree**, with the union of the wave's
+fences: that run is the anti-fabrication net, and it has to happen anyway because line numbers and stragglers move on
 merge. Divergence at either point marks the slice unverified, and a failed
 provenance check is the trigger to re-run the full gate on that one slice. The
 merge-base check is the exception that is judged rather than failed: when the

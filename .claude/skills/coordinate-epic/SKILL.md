@@ -163,14 +163,18 @@ reporting passes that never ran. In the worker's worktree, personally:
    block's JSON:
 
    ```
-   python3 tools/accept_slice.py --json /tmp/slice-<n>.json --worktree <path> --base <base>
+   python3 tools/accept_slice.py --json /tmp/slice-<s>.json --worktree <path> --base <base>
    ```
 
    It prints a PASS/FAIL row each, and a FAIL row says what to do next: `ok`
    true and not dirty; the block's head is the worktree's `HEAD`; the block's
    merge-base is `git rev-parse <base>`; the verifier hashes equal those files
    at the base tip; the worktree is clean but for `data/fs-version.json` and
-   `data/fw-version.json`. Exit 0 only when every row passes.
+   `data/fw-version.json`. Exit 0 only when every row passes. The brief told
+   the worker to write the block to `/tmp/slice-<s>.json` (`<s>` is the
+   dispatch slug). For a slice you granted `--expect-gate-edit`, add
+   `--allow-gate-edit` so the verifiers it edits are held to its HEAD; you
+   pass it, never the worker, and the block's own waiver flag is not the grant.
 
    **The merge-base row compares to `rev-parse <base>`, not `merge-base <base>
    HEAD`, and the difference is the whole check.** A slice whose base moved
