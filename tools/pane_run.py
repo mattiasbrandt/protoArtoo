@@ -30,13 +30,23 @@ nothing while a command is running, and `pane wait-output` matches the command
 text itself when a sentinel appears in it - so the log is polled, never the
 pane.
 
-Exit codes: the command's own; 2 for usage; 3 when Herdr is not available; 124
-when --timeout passes (the pane is left running and named).
+One log, one run. Two invocations naming the same log would otherwise read
+each other's GATE_EXIT and close their own pane on someone else's verdict -
+mid-build or mid-upload. So a run holds an exclusive lock on <log>.pane-run.lock
+for its whole wait, refuses a log some other run is still writing (one with no
+GATE_EXIT yet), and stamps its own PANE_RUN_ID=<id> as the log's first line:
+a GATE_EXIT under any other first line is not this run's. Prefer a log name
+that says whose run it is (/tmp/gate-<slug>.log) over a shared /tmp/gate.log.
+
+Exit codes: the command's own; 2 for usage or a log another run owns; 3 when
+Herdr is not available; 124 when --timeout passes (the pane is left running
+and named).
 """
 
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import re
@@ -44,10 +54,13 @@ import shlex
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
 GATE_IN_PANE = Path(__file__).resolve().parent / "gate_in_pane.sh"
 EXIT_RE = re.compile(r"^GATE_EXIT=(\d+)$")
+RUN_ID_PREFIX = "PANE_RUN_ID="
+EXIT_USAGE = 2
 EXIT_NO_HERDR = 3
 EXIT_TIMEOUT = 124
 
@@ -64,11 +77,17 @@ def herdr(*args: str) -> dict:
     return json.loads(proc.stdout) if proc.stdout.strip() else {}
 
 
-def gate_exit(log: Path) -> int | None:
-    """The GATE_EXIT code once gate_in_pane.sh has written its last line, else None."""
+def gate_exit(log: Path, run_id: str | None = None) -> int | None:
+    """The GATE_EXIT code once gate_in_pane.sh has written its last line, else None.
+
+    With `run_id`, only a log whose first line is this run's stamp counts: a
+    finished log some other run wrote at the same path is not this one ending.
+    """
     try:
         lines = log.read_text(errors="replace").splitlines()
     except OSError:
+        return None
+    if run_id is not None and (not lines or lines[0].strip() != f"{RUN_ID_PREFIX}{run_id}"):
         return None
     for line in reversed(lines):
         if line.strip():
@@ -79,15 +98,32 @@ def gate_exit(log: Path) -> int | None:
 
 def summary(log: Path, tail: int, pattern: str | None) -> list[str]:
     """The last `tail` lines of the log, or of the lines matching `pattern`."""
-    lines = [l for l in log.read_text(errors="replace").splitlines() if not EXIT_RE.match(l.strip())]
+    lines = [l for l in log.read_text(errors="replace").splitlines()
+             if not EXIT_RE.match(l.strip()) and not l.startswith(RUN_ID_PREFIX)]
     if pattern:
         rx = re.compile(pattern)
         lines = [l for l in lines if rx.search(l)]
     return lines[-tail:] if tail > 0 else []
 
 
-def pane_command(log: Path, command: list[str]) -> str:
-    return shlex.join([str(GATE_IN_PANE), str(log), "--", *command])
+def pane_command(log: Path, command: list[str], run_id: str) -> str:
+    """gate_in_pane.sh running `command`, after stamping the log with this run's id."""
+    stamped = ["sh", "-c", f'echo "{RUN_ID_PREFIX}$0"; exec "$@"', run_id, *command]
+    return shlex.join([str(GATE_IN_PANE), str(log), "--", *stamped])
+
+
+def claim_log(log: Path) -> int | None:
+    """An fd holding <log>.pane-run.lock exclusively, or None when another run holds it.
+
+    Held until this process exits; the kernel drops it if the process dies.
+    """
+    fd = os.open(f"{log}.pane-run.lock", os.O_RDWR | os.O_CREAT, 0o666)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        return None
+    return fd
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -128,10 +164,17 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_NO_HERDR
 
     log = args.log.resolve()
+    if claim_log(log) is None:
+        note(f"another pane_run is waiting on {log}; name a log of your own")
+        return EXIT_USAGE
     if log.exists():
-        # Its old GATE_EXIT line would end the wait before the command starts.
-        note(f"replacing the existing log {log}")
+        if gate_exit(log) is None:
+            note(f"{log} has no GATE_EXIT yet: another run may still be writing it.")
+            note("Name a log of your own, or delete this one if that run is gone.")
+            return EXIT_USAGE
+        note(f"replacing the finished log {log}")
         log.unlink()
+    run_id = uuid.uuid4().hex
 
     try:
         # Herdr sets HERDR_PANE_ID in every pane it starts: next to the pane
@@ -141,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
         split = herdr("pane", "split", *target, "--direction", args.direction,
                       "--cwd", str(args.cwd.resolve()), "--no-focus")
         pane = split["result"]["pane"]["pane_id"]
-        herdr("pane", "run", pane, pane_command(log, command))
+        herdr("pane", "run", pane, pane_command(log, command, run_id))
     except (RuntimeError, KeyError, ValueError) as err:
         note(f"could not start the pane: {err}")
         return EXIT_NO_HERDR
@@ -149,13 +192,13 @@ def main(argv: list[str] | None = None) -> int:
     note(f"log {log}")
 
     deadline = time.monotonic() + args.timeout
-    code = gate_exit(log)
+    code = gate_exit(log, run_id)
     while code is None:
         if time.monotonic() >= deadline:
             note(f"no GATE_EXIT after {args.timeout:.0f}s; pane {pane} left running")
             return EXIT_TIMEOUT
         time.sleep(args.interval)
-        code = gate_exit(log)
+        code = gate_exit(log, run_id)
 
     for line in summary(log, args.tail, args.grep):
         print(line)
