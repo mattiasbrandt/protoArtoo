@@ -330,6 +330,11 @@ static constexpr size_t kSseLogBatchBytes = 8 * (LOG_LINE_MAX + 8) + 1;
 static char s_sseBody[STATUS_JSON_BUFFER_BYTES];
 static_assert(kSseLogBatchBytes <= sizeof(s_sseBody),
               "a whole log batch must fit the WebEvents event body");
+// The rc event's document. Static so the WebEvents frame does not carry the
+// JsonDocument object (a local one would deepen the recorded chain,
+// tools/task_stack_recipes.json); empty between ticks, because the rc build
+// clears it, which frees its pools and strings, as soon as its bytes are in
+// s_sseBody (#467).
 static JsonDocument s_sseRcDoc;
 static bool s_rcSseBuildWarned = false;
 static bool s_rcSseSizeWarned = false;
@@ -403,7 +408,6 @@ void eventStreamTask(void*) {
 
             RcDiagnosticsSnapshot rcSnap;
             captureRcDiagnosticsSnapshot(&rcSnap);
-            s_sseRcDoc.clear();
             if (!populateRcDiagnosticsJson(s_sseRcDoc, rcSnap) ||
                 !appendRcReactionsJson(s_sseRcDoc)) {
                 if (!s_rcSseBuildWarned) {
@@ -426,6 +430,11 @@ void eventStreamTask(void*) {
                     webEventStreamBroadcast("rc", s_sseBody, nowMs);
                 }
             }
+            // Every path above (build failed, too large, sent) ends here, and
+            // the event is already on the wire: release the pools and strings
+            // now. Held until the next tick instead, the last document outlived
+            // the last stream, since no tick with a client follows it (#467).
+            s_sseRcDoc.clear();
             if (!hwmUnderLoadLogged) {
                 PA_LOG_DEBUG("WebEvents", "stack HWM under SSE load: %u bytes free",
                              (unsigned)uxTaskGetStackHighWaterMark(NULL));
