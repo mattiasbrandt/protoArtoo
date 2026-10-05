@@ -196,40 +196,39 @@ The suite pause has ended. Steps 1 and 2 below are the acceptance again. Until t
 
 1. **Check the block's provenance against the branch - do not re-run the gate
    behind every slice.** Read the worker's pasted block and verify, in its
-   worktree, that it is a block *of this branch*:
+   worktree, that it is a block *of this branch*, with one command on the
+   block's JSON:
 
    ```
-   git rev-parse HEAD                      # == the block's HEAD sha
-   git rev-parse <base>                    # == the block's merge-base TOO
-   git diff --shortstat <base>...HEAD      # == the block's diff size
-   git hash-object tools/slice_verify.py tools/mutation_verify.py \
-                   tools/web_load_trace.cjs
-                                           # == the block's gate, mut and trace hashes
-   git status --porcelain                  # clean but for data/*version.json
+   python3 tools/accept_slice.py --json /tmp/slice-<n>.json --worktree <path> --base <base>
    ```
 
-   **The second line is `rev-parse <base>`, not `merge-base <base> HEAD`, and
-   the difference is the whole check.** A slice whose base moved under it still
-   has an internally consistent block: its own `merge-base` and the one you
-   compute both name the OLD tip, so they agree and the slice passes while
-   being verified against a tree that no longer exists. Compare the block's
-   merge-base to the base's CURRENT tip. This is not hypothetical - it happened
-   three times on #175 in one evening, and one of those slices was repairing a
-   defect introduced by the very merge it did not have.
+   It prints a PASS/FAIL row each, and a FAIL row says what to do next: `ok`
+   true and not dirty; the block's head is the worktree's `HEAD`; the block's
+   merge-base is `git rev-parse <base>`; the verifier hashes equal those files
+   at the base tip; the worktree is clean but for `data/fs-version.json` and
+   `data/fw-version.json`. Exit 0 only when every row passes.
+
+   **The merge-base row compares to `rev-parse <base>`, not `merge-base <base>
+   HEAD`, and the difference is the whole check.** A slice whose base moved
+   under it still has an internally consistent block: its own `merge-base` and
+   the one you compute both name the OLD tip, so they agree and the slice
+   passes while being verified against a tree that no longer exists. Compare
+   the block's merge-base to the base's CURRENT tip. This is not hypothetical -
+   it happened three times on #175 in one evening, and one of those slices was
+   repairing a defect introduced by the very merge it did not have.
 
    When they differ, **what it costs depends on what landed in between**, and
-   you decide that rather than reflexively sending the slice back:
+   you decide that rather than reflexively sending the slice back. The command
+   lists the files changed both on `<base>` since the block's merge-base and on
+   the branch:
 
-   ```
-   comm -12 <(git diff --name-only <block merge-base>..<base> | sort) \
-            <(git -C <worktree> diff --name-only <block merge-base>...HEAD | sort)
-   ```
-
-   - **No overlap** - merge it, and let the per-wave gate run on the merged tree
-     be its proof. The slice's own block is honest about the tree it was built
-     on, and its test-total arithmetic against the older base still shows the
-     tests it added.
-   - **Overlap, or the merged work is the subject of this slice** - the worker
+   - **No overlap** (the row passes with a note) - merge it, and let the
+     per-wave gate run on the merged tree be its proof. The slice's own block
+     is honest about the tree it was built on, and its test-total arithmetic
+     against the older base still shows the tests it added.
+   - **Overlap (the row fails), or the merged work is the subject of this
+     slice** (the command cannot see that; you judge it) - the worker
      merges `<base>` and re-runs the gate, and that block is the one you accept.
      #346's reopen is the case in point: it branched before a merge whose change
      *was* its own third finding, so no file-level overlap would have saved it.
