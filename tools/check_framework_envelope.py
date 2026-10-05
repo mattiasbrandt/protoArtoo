@@ -85,9 +85,34 @@ def expand(ini: str, lines: list[str], _depth: int = 0) -> list[str]:
     return out
 
 
+def inherited_custom_sdkconfig_lines(ini: str, section: str, _depth: int = 0) -> list[str]:
+    """A section's custom_sdkconfig block, or the one it inherits through `extends`.
+
+    PlatformIO resolves an option from the section itself first, then from each
+    section `extends` names, in order; the first one that defines the option
+    wins whole - it is replaced, not merged. artoo_esp32_profiler declares no
+    custom_sdkconfig of its own and builds with artoo_esp32's 19 overrides, and
+    reading only its own section reported "no overrides declared" for it.
+    """
+    if _depth > 5:  # a malformed ini should fail loudly, not hang
+        raise RuntimeError(f"extends chain from [{section}] nested more than 5 deep")
+    body = section_body(ini, section)
+    lines = custom_sdkconfig_lines(body)
+    if lines:
+        return lines
+    parents = re.search(r"^extends\s*=\s*(.+)$", body, re.M)
+    if not parents:
+        return []
+    for parent in (name.strip() for name in parents.group(1).split(",")):
+        lines = inherited_custom_sdkconfig_lines(ini, parent, _depth + 1)
+        if lines:
+            return lines
+    return []
+
+
 def declared_overrides(ini: str, env: str) -> dict[str, str]:
-    """Every CONFIG_* override the env declares, envelope references expanded."""
-    lines = expand(ini, custom_sdkconfig_lines(section_body(ini, f"env:{env}")))
+    """Every CONFIG_* override the env declares or inherits, envelope references expanded."""
+    lines = expand(ini, inherited_custom_sdkconfig_lines(ini, f"env:{env}"))
     overrides: dict[str, str] = {}
     for line in lines:
         stripped = line.strip()
