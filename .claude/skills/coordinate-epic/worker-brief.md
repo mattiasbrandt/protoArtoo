@@ -5,8 +5,9 @@ Render the worker prompt from this template, never by hand:
     python3 tools/make_brief.py --issue <n> --slug <s> --worktree <path> --base <branch>
 
 It fills {ISSUE}, {WORKTREE}, {BASE} (the epic's integration branch),
-{PIN_MARKER} (`<!-- coordinator-pin-<s> -->`) and {STATUS_MARKER}
-(`<!-- worker-status-<n>-<s> -->`), writes everything below the rule, and
+{PIN_MARKER} (`<!-- coordinator-pin-<s> -->`), {STATUS_MARKER}
+(`<!-- worker-status-<n>-<s> -->`) and {GATE_JSON} (`/tmp/slice-<s>.json`,
+the gate block `tools/accept_slice.py` reads), writes everything below the rule, and
 refuses to write a brief that still holds a `{...}` placeholder. `{owner}` and
 `{repo}` are not template placeholders: gh fills them when the worker runs the
 command. Everything ticket-specific stays in the ticket.
@@ -269,9 +270,15 @@ VERIFICATION (software-verified cap)
 - Per-commit verification during the pause is the build, when you changed
   something that compiles. Do not run the existing tests "to be sure".
 - Do not run `tools/slice_verify.py` in order to execute the suites. If a
-  pinned comment still names that command, run it once: the native, web, and
-  mutation rows skip themselves through 2026-10-31 and that skip is a pass
-  of the gate, not of the suite. Do not pass `--mutations`. Do not author
+  pinned comment still names that command, run it once, as
+  `python3 tools/slice_verify.py --base {BASE} --json {GATE_JSON}`: the native,
+  web, and mutation rows skip themselves through 2026-10-31 and that skip is a
+  pass of the gate, not of the suite. The coordinator accepts the slice by
+  checking {GATE_JSON} against your worktree with `tools/accept_slice.py`,
+  so: write the JSON to exactly that path; commit everything before the run
+  and nothing after it (a later commit makes the block stale and sends the
+  slice back); leave the tree clean but for `data/fs-version.json` and
+  `data/fw-version.json`. Do not pass `--mutations`. Do not author
   patches. The coordinator does not re-run it for the suites.
 - NEVER flash, never run make ota.
 - If the ticket's pinned comment provides a verification harness that is a
@@ -288,7 +295,7 @@ and reset the marked one.
 The done signal is the last line of that comment, `WORKER_DONE: ok` or
 `WORKER_DONE: blocked`. A trailing `//` signature is not that line, and a
 later line that is not the token means the worker is not done. The same fact
-may also be `/tmp/slice-<n>.json` with
+may also be `{GATE_JSON}` with
 `{"ok": true}` or `{"ok": false}`. The coordinator waits with
 `python3 tools/wait_worker.py --issue {ISSUE} --marker '{STATUS_MARKER}'`.
 An idle pane is not the signal.

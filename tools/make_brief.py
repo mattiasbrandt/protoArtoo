@@ -3,8 +3,9 @@
 
     python3 tools/make_brief.py --issue <n> --slug <s> --worktree <path> --base <branch> [--out FILE]
 
-Fills {ISSUE}, {WORKTREE}, {BASE}, {PIN_MARKER} (`<!-- coordinator-pin-<s> -->`)
-and {STATUS_MARKER} (`<!-- worker-status-<n>-<s> -->`) in the part of
+Fills {ISSUE}, {WORKTREE}, {BASE}, {PIN_MARKER} (`<!-- coordinator-pin-<s> -->`),
+{STATUS_MARKER} (`<!-- worker-status-<n>-<s> -->`) and {GATE_JSON}
+(`/tmp/slice-<s>.json`, the gate block tools/accept_slice.py reads) in the part of
 .claude/skills/coordinate-epic/worker-brief.md below its first `---` rule, and
 writes the result to --out (default /tmp/brief-<s>.md).
 
@@ -47,6 +48,10 @@ def leftover_placeholders(text: str) -> list[str]:
     return sorted({m for m in PLACEHOLDER_RE.findall(text) if m not in GH_PLACEHOLDERS})
 
 
+def gate_json(slug: str) -> str:
+    return f"/tmp/slice-{slug}.json"
+
+
 def render(template: str, *, issue: int, slug: str, worktree: str, base: str) -> str:
     """Return the brief: the template body below its first rule, filled."""
     if RULE not in template:
@@ -58,6 +63,7 @@ def render(template: str, *, issue: int, slug: str, worktree: str, base: str) ->
         "{BASE}": base,
         "{PIN_MARKER}": pin_marker(slug),
         "{STATUS_MARKER}": status_marker(issue, slug),
+        "{GATE_JSON}": gate_json(slug),
     }
     for key, value in values.items():
         body = body.replace(key, value)

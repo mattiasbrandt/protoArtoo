@@ -134,7 +134,8 @@ from the epic's coordination section rather than from memory.
   `herdr tab create --workspace <name> --cwd <path> --label <label> --focus`.
   `python3 tools/herdr_capped_agent.py --pane <id> --name <agent> [-- --resume <session-id>]`.
   `python3 tools/make_brief.py --issue <n> --slug <s> --worktree <path> --base <base>`.
-  `tools/gate_in_pane.sh /tmp/gate.log -- python3 tools/slice_verify.py --base <base> --json /tmp/gate.json`.
+  `tools/gate_in_pane.sh /tmp/gate.log -- python3 tools/slice_verify.py --base <base> --json /tmp/slice-<s>.json`.
+  `python3 tools/accept_slice.py --json /tmp/slice-<s>.json --worktree <path> --base <base> [--allow-gate-edit]`.
   The JSON field is `ok`. During the pause do not pass `--mutations`. Do not pipe the gate through `tee`.
 - **Start every worker memory-capped** with the `herdr_capped_agent.py` line above, never a bare
   `herdr agent start`. It puts the pane's shell in its own systemd scope
@@ -196,40 +197,43 @@ The suite pause has ended. Steps 1 and 2 below are the acceptance again. Until t
 
 1. **Check the block's provenance against the branch - do not re-run the gate
    behind every slice.** Read the worker's pasted block and verify, in its
-   worktree, that it is a block *of this branch*:
+   worktree, that it is a block *of this branch*, with one command on the
+   block's JSON:
 
    ```
-   git rev-parse HEAD                      # == the block's HEAD sha
-   git rev-parse <base>                    # == the block's merge-base TOO
-   git diff --shortstat <base>...HEAD      # == the block's diff size
-   git hash-object tools/slice_verify.py tools/mutation_verify.py \
-                   tools/web_load_trace.cjs
-                                           # == the block's gate, mut and trace hashes
-   git status --porcelain                  # clean but for data/*version.json
+   python3 tools/accept_slice.py --json /tmp/slice-<s>.json --worktree <path> --base <base>
    ```
 
-   **The second line is `rev-parse <base>`, not `merge-base <base> HEAD`, and
-   the difference is the whole check.** A slice whose base moved under it still
-   has an internally consistent block: its own `merge-base` and the one you
-   compute both name the OLD tip, so they agree and the slice passes while
-   being verified against a tree that no longer exists. Compare the block's
-   merge-base to the base's CURRENT tip. This is not hypothetical - it happened
-   three times on #175 in one evening, and one of those slices was repairing a
-   defect introduced by the very merge it did not have.
+   It prints a PASS/FAIL row each, and a FAIL row says what to do next: `ok`
+   true and not dirty; the block's head is the worktree's `HEAD`; the block's
+   merge-base is `git rev-parse <base>`; the verifier hashes equal those files
+   at the base tip; the worktree is clean but for `data/fs-version.json` and
+   `data/fw-version.json`. Exit 0 only when every row passes. The brief told
+   the worker to write the block to `/tmp/slice-<s>.json` (`<s>` is the
+   dispatch slug). For a slice you granted `--expect-gate-edit`, add
+   `--allow-gate-edit` so the verifiers it edits are held to its HEAD; you
+   pass it, never the worker, and the block's own waiver flag is not the grant.
+
+   **The merge-base row compares to `rev-parse <base>`, not `merge-base <base>
+   HEAD`, and the difference is the whole check.** A slice whose base moved
+   under it still has an internally consistent block: its own `merge-base` and
+   the one you compute both name the OLD tip, so they agree and the slice
+   passes while being verified against a tree that no longer exists. Compare
+   the block's merge-base to the base's CURRENT tip. This is not hypothetical -
+   it happened three times on #175 in one evening, and one of those slices was
+   repairing a defect introduced by the very merge it did not have.
 
    When they differ, **what it costs depends on what landed in between**, and
-   you decide that rather than reflexively sending the slice back:
+   you decide that rather than reflexively sending the slice back. The command
+   lists the files changed both on `<base>` since the block's merge-base and on
+   the branch:
 
-   ```
-   comm -12 <(git diff --name-only <block merge-base>..<base> | sort) \
-            <(git -C <worktree> diff --name-only <block merge-base>...HEAD | sort)
-   ```
-
-   - **No overlap** - merge it, and let the per-wave gate run on the merged tree
-     be its proof. The slice's own block is honest about the tree it was built
-     on, and its test-total arithmetic against the older base still shows the
-     tests it added.
-   - **Overlap, or the merged work is the subject of this slice** - the worker
+   - **No overlap** (the row passes with a note) - merge it, and let the
+     per-wave gate run on the merged tree be its proof. The slice's own block
+     is honest about the tree it was built on, and its test-total arithmetic
+     against the older base still shows the tests it added.
+   - **Overlap (the row fails), or the merged work is the subject of this
+     slice** (the command cannot see that; you judge it) - the worker
      merges `<base>` and re-runs the gate, and that block is the one you accept.
      #346's reopen is the case in point: it branched before a merge whose change
      *was* its own third finding, so no file-level overlap would have saved it.
@@ -524,9 +528,9 @@ evolving one to the frontier. History comments are append-only.
 
 A worker is done when the last line of its status comment is `WORKER_DONE: ok`
 or `WORKER_DONE: blocked` (a trailing `//` signature does not count), or
-`/tmp/slice-<n>.json` is `{"ok": true}` or
+`/tmp/slice-<s>.json` is `{"ok": true}` or
 `{"ok": false}`. Wait with
-`python3 tools/wait_worker.py --issue <n> --marker '<!-- worker-status-<n>-<slug> -->'`.
+`python3 tools/wait_worker.py --issue <n> --marker '<!-- worker-status-<n>-<s> -->'`.
 An idle pane is not that signal: the gate runs in a sibling pane.
 
 **Record first, escalate second, and escalate only the residue.** A finding is
