@@ -41,6 +41,24 @@ class DeclaredOverridesTest(unittest.TestCase):
         # ...alongside the env's own board-specific overrides.
         self.assertIn("CONFIG_LWIP_TCP_MSL", overrides)
 
+    def test_an_env_without_its_own_block_inherits_through_extends(self):
+        # artoo_esp32_profiler declares no custom_sdkconfig and builds with
+        # artoo_esp32's; the checker used to report "nothing to check" for it.
+        ini = cfe.read_ini()
+        self.assertNotIn("custom_sdkconfig", cfe.section_body(ini, "env:artoo_esp32_profiler"))
+        self.assertEqual(
+            cfe.declared_overrides(ini, "artoo_esp32_profiler"),
+            cfe.declared_overrides(ini, "artoo_esp32"),
+        )
+
+    def test_the_first_section_defining_the_block_wins_whole(self):
+        ini = (
+            "[base]\ncustom_sdkconfig =\n\tCONFIG_A=y\n\tCONFIG_B=y\n\n"
+            "[env:child]\nextends = base\ncustom_sdkconfig =\n\tCONFIG_C=n\n\n"
+            "[env:grandchild]\nextends = env:child\n"
+        )
+        self.assertEqual(cfe.declared_overrides(ini, "grandchild"), {"CONFIG_C": "n"})
+
     def test_comments_are_not_parsed_as_overrides(self):
         overrides = cfe.declared_overrides(cfe.read_ini(), "artoo_esp32")
         self.assertTrue(all(k.startswith("CONFIG_") for k in overrides))

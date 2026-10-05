@@ -33,17 +33,37 @@ void logBufferInit(LogBuffer* buf, char (*storage)[LOG_LINE_MAX], size_t capacit
     buf->totalWritten = 0;
 }
 
-void logBufferAppend(LogBuffer* buf, const char* line) {
-    if (buf->lines == nullptr || buf->capacity == 0) {
-        return;
-    }
-    strncpy(buf->lines[buf->head], line, LOG_LINE_MAX - 1);
-    buf->lines[buf->head][LOG_LINE_MAX - 1] = '\0';
+// One slot: `prefix` (may be empty) then up to the rest of the slot from `text`.
+// Returns how many chars of `text` it took.
+static size_t logBufferAppendSlot(LogBuffer* buf, const char* prefix, const char* text,
+                                  size_t textLen) {
+    char* slot = buf->lines[buf->head];
+    const size_t prefixLen = strlen(prefix);
+    const size_t room = LOG_LINE_MAX - 1 - prefixLen;
+    const size_t take = textLen < room ? textLen : room;
+    memcpy(slot, prefix, prefixLen);
+    memcpy(slot + prefixLen, text, take);
+    slot[prefixLen + take] = '\0';
     buf->head = (buf->head + 1) % buf->capacity;
     if (buf->count < buf->capacity) {
         buf->count++;
     }
     buf->totalWritten++;
+    return take;
+}
+
+void logBufferAppend(LogBuffer* buf, const char* line) {
+    if (buf->lines == nullptr || buf->capacity == 0) {
+        return;
+    }
+    size_t remaining = strlen(line);
+    size_t taken = logBufferAppendSlot(buf, "", line, remaining);
+    remaining -= taken;
+    for (size_t slot = 1; slot < LOG_LINE_MAX_SLOTS && remaining > 0; slot++) {
+        line += taken;
+        taken = logBufferAppendSlot(buf, LOG_LINE_CONTINUATION, line, remaining);
+        remaining -= taken;
+    }
 }
 
 size_t logBufferCopy(const LogBuffer* buf, char* out, size_t outSize) {

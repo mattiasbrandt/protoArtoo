@@ -55,8 +55,29 @@ remembering to set it is wrong exactly when it matters. The record is what a
 waiter is shown when it gives up, so "I am blocked" becomes "I am blocked by
 this worktree building this target".
 
+The penv is checked before the lock is taken
+--------------------------------------------
+pioarduino runs every build inside `<core dir>/penv`, a second PlatformIO
+install that is not the one on PATH and that the system package hold does not
+cover. On 2026-10-05 that penv upgraded itself to Core 6.2.0 and every build
+failed with "No module named 'SCons.Tool.FortranCommon'" while `pio --version`
+still printed 6.1.19. A worker lost its slice to the traceback. So the pio lock
+reads the penv's own version before it builds, and refuses with the one-line
+fix instead of handing the build a broken toolchain. A core dir with no penv
+yet is not a fault: the first build creates it.
+
+The lock file also says what happened to the shared framework pool
+------------------------------------------------------------------
+A build whose env declares custom_sdkconfig, in a worktree with no
+sdkconfig.defaults stamp, makes pioarduino rebuild the framework libs under
+the core dir - the libs every other worktree on that core links. Nothing used
+to say so. The record now names the pool and its sdkconfig's mtime, says when
+this build is expected to rebuild it, and the next holder reports when the
+pool changed since the previous record was written.
+
 Exit codes for the CLI form: the command's own, or 3 for a refused nest, 4 for
-a lock-wait timeout, 127 when the command cannot be executed.
+a lock-wait timeout, 5 for a penv on the wrong PlatformIO Core, 127 when the
+command cannot be executed.
 
 Environment:
   PROTOARTOO_PIO_LOCK       lock file path (default /tmp/protoartoo-pio.lock)
@@ -69,7 +90,9 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -92,7 +115,19 @@ POLL_SECONDS = 0.25
 
 EXIT_NESTED = 3
 EXIT_TIMEOUT = 4
+EXIT_PENV = 5
 EXIT_CANNOT_EXEC = 127
+
+# The PlatformIO Core this tree is verified with. .github/workflows/verification.yml
+# pins the same version and says why: 6.2.0's tool-scons 4.11 fails every env at
+# the link step. Bump both together, deliberately, with a green run.
+PINNED_PIO_VERSION = (6, 1, 19)
+# tool-scons 4.8.1, in either form a 6.1.19 penv spells it: PlatformIO's own
+# "~4.40801.0", or the pioarduino URL ending in scons-local-4.8.1.tar.gz.
+PINNED_SCONS_MARKERS = ("40801", "4.8.1")
+TOOLS_DIR = Path(__file__).resolve().parent
+BUDGETS = TOOLS_DIR / "build_budgets.json"
+DEFAULT_CORE_DIR = "~/.platformio"
 
 
 def note(message: str) -> None:
@@ -165,7 +200,9 @@ def build_target(command: list[str] | None) -> str:
     return os.environ.get("BUILD_ENV") or "-"
 
 
-def ownership_record(command: list[str] | None) -> str:
+def ownership_record(
+    command: list[str] | None, extra: list[tuple[str, str]] | None = None
+) -> str:
     """The holder's identity, derived — never passed in, never remembered."""
     fields = [
         ("pid", str(os.getpid())),
@@ -178,17 +215,20 @@ def ownership_record(command: list[str] | None) -> str:
     owner = os.environ.get(OWNER_ENV)
     if owner:
         fields.append(("owner", owner))
+    fields.extend(extra or [])
     return "".join(f"{name}: {value}\n" for name, value in fields)
 
 
-def write_record(path: Path, command: list[str] | None) -> None:
+def write_record(
+    path: Path, command: list[str] | None, extra: list[tuple[str, str]] | None = None
+) -> None:
     """Stamp the lock file with who holds it, as soon as it is held.
 
     Never cleared on release: the stale record is the useful part, because it
     tells the next agent which chip target last touched the shared framework
     pools. Do not "tidy" this into a cleanup path.
     """
-    payload = ownership_record(command).encode()
+    payload = ownership_record(command, extra).encode()
     try:
         # Write first and trim afterwards rather than opening with O_TRUNC:
         # a waiter reads this file without any lock, and truncate-then-write
@@ -218,6 +258,179 @@ def report_record(path: Path) -> None:
     note("lock record — the last holder, whose pid may already be gone:")
     for line in read_record(path).splitlines():
         note(f"  {line}")
+
+
+def core_dir_for(target: str, env: dict[str, str] | None = None) -> Path:
+    """The PlatformIO core dir a build of `target` runs in.
+
+    `env` is the environment the build will actually get. The in-process
+    callers (tools/slice_verify.py, tools/check_build_budgets.py) hand the core
+    dir to the child that way, not through ours, so a different core exported
+    in the caller's shell must not decide which penv is checked. With no `env`
+    it is ours: the Makefile sets PLATFORMIO_CORE_DIR in front of every pio
+    command, so for the CLI form that is the truth. Neither set: the platforms
+    registry in build_budgets.json, where the Makefile gets it from.
+    """
+    exported = (os.environ if env is None else env).get("PLATFORMIO_CORE_DIR")
+    if exported:
+        return Path(os.path.expanduser(exported))
+    core = DEFAULT_CORE_DIR
+    try:
+        platforms = json.loads(BUDGETS.read_text()).get("platforms", {})
+    except (OSError, ValueError):
+        platforms = {}
+    for spec in platforms.values():
+        if target in spec.get("envs", []):
+            core = spec.get("core_dir", core)
+            break
+    return Path(os.path.expanduser(core))
+
+
+def _penv_site_packages(penv: Path) -> list[Path]:
+    """The penv's site-packages, by the Python version its pyvenv.cfg names.
+
+    A penv that outlived a Python upgrade keeps the old lib/python3.N beside
+    the live one, and the old one's PlatformIO is not what builds.
+    """
+    try:
+        cfg = (penv / "pyvenv.cfg").read_text()
+    except OSError:
+        cfg = ""
+    match = re.search(r"^version(?:_info)?\s*=\s*(\d+)\.(\d+)", cfg, re.M)
+    if match:
+        live = penv / "lib" / f"python{match.group(1)}.{match.group(2)}" / "site-packages"
+        return [live] if live.is_dir() else []
+    return sorted(penv.glob("lib/python3*/site-packages"))
+
+
+def penv_version(core: Path) -> str:
+    """The PlatformIO Core version the penv under `core` builds with, or "none"."""
+    for site in _penv_site_packages(core / "penv"):
+        try:
+            text = (site / "platformio" / "__init__.py").read_text()
+        except OSError:
+            continue
+        match = re.search(r"^VERSION\s*=\s*\(([^)]*)\)", text, re.M)
+        if match:
+            return ".".join(part.strip() for part in match.group(1).split(",") if part.strip())
+    return "none"
+
+
+def penv_problem(core: Path) -> str | None:
+    """Why the penv under `core` would break a build, or None when it will not."""
+    penv = core / "penv"
+    for site in _penv_site_packages(penv):
+        init = site / "platformio" / "__init__.py"
+        try:
+            text = init.read_text()
+        except OSError:
+            continue
+        match = re.search(r"^VERSION\s*=\s*\(([^)]*)\)", text, re.M)
+        if not match:
+            return f"{init} has no VERSION tuple; cannot tell which PlatformIO Core builds here"
+        try:
+            version = tuple(int(part) for part in match.group(1).replace(" ", "").split(",") if part)
+        except ValueError:
+            return f"{init} has VERSION = ({match.group(1)}), not a version this check can read"
+        want = ".".join(map(str, PINNED_PIO_VERSION))
+        if version != PINNED_PIO_VERSION:
+            return f"{penv} holds PlatformIO Core {'.'.join(map(str, version))}; this tree builds with {want}"
+        try:
+            deps = (site / "platformio" / "dependencies.py").read_text()
+        except OSError:
+            return None
+        scons = re.search(r'"tool-scons"\s*:\s*(\(.*?\)|"[^"]*")', deps, re.S)
+        if scons and not any(marker in scons.group(1) for marker in PINNED_SCONS_MARKERS):
+            spec = " ".join(scons.group(1).split())
+            return f"{penv} is Core {want} but pins tool-scons {spec}, not 4.8.1"
+    return None
+
+
+def refuse_bad_penv(core: Path, problem: str) -> None:
+    note(f"refusing to build: {problem}.")
+    note("The build runs inside that penv, not the `pio` on PATH, so `pio --version`")
+    note("does not show this. Left alone, every env fails at the link step with")
+    note("\"No module named 'SCons.Tool.FortranCommon'\". The fix:")
+    pin = ".".join(map(str, PINNED_PIO_VERSION))
+    note(f"  {core / 'penv' / 'bin' / 'python'} -m pip install platformio=={pin}")
+    raise SystemExit(EXIT_PENV)
+
+
+def check_penv(command: list[str] | None, env: dict[str, str] | None = None) -> None:
+    core = core_dir_for(build_target(command), env)
+    problem = penv_problem(core)
+    if problem:
+        refuse_bad_penv(core, problem)
+
+
+def pool_fields(command: list[str] | None) -> list[tuple[str, str]]:
+    """The shared framework pool this build links, for the record.
+
+    Empty for a target that declares no custom_sdkconfig (native, a typo, a
+    command with no -e): pioarduino only rebuilds the pool for one that does.
+    Never raises - a record field is not worth failing a build over.
+    """
+    target = build_target(command)
+    if target == "-":
+        return []
+    try:
+        import check_framework_envelope as envelope
+
+        if not envelope.declared_overrides(envelope.read_ini(), target):
+            return []
+        sdkconfig = envelope.resolved_sdkconfig_path(target)
+    except Exception as err:  # noqa: BLE001 - see docstring; the note says what broke
+        note(f"could not resolve the framework pool for {target}: {err}")
+        return []
+    try:
+        mtime = f"{sdkconfig.stat().st_mtime:.6f}"
+    except OSError:
+        mtime = "absent"
+    fields = [("pool", str(sdkconfig.parent)), ("pool_mtime", mtime)]
+    worktree = Path(_git(["rev-parse", "--show-toplevel"]) or os.getcwd())
+    if not (worktree / "sdkconfig.defaults").exists():
+        message = (
+            "expected - this worktree has no sdkconfig.defaults stamp, so pioarduino"
+            " rebuilds the shared libs every other worktree on this core links"
+        )
+        note(f"this build will rebuild the shared framework pool {sdkconfig.parent}:")
+        note(f"  {message}")
+        fields.append(("pool_rebuild", message))
+    return fields
+
+
+def _record_fields(text: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for line in text.splitlines():
+        name, sep, value = line.partition(": ")
+        if sep:
+            fields[name.strip()] = value.strip()
+    return fields
+
+
+def pool_change_since(previous: str) -> tuple[str, str] | None:
+    """A field saying the previous holder's pool moved under it, or None.
+
+    The CLI form execs the build, so nothing of ours runs after it to look.
+    The next holder does: the previous record names the pool and its mtime,
+    and a different mtime now means that build - or an unlocked one after
+    it - rebuilt the libs every worktree on that core links.
+    """
+    fields = _record_fields(previous)
+    pool, then = fields.get("pool"), fields.get("pool_mtime")
+    if not pool or not then:
+        return None
+    try:
+        now = f"{(Path(pool) / 'sdkconfig').stat().st_mtime:.6f}"
+    except OSError:
+        now = "absent"
+    if now == then:
+        return None
+    who = f"{fields.get('worktree', '?')} building {fields.get('target', '?')}"
+    note(f"the shared framework pool {pool} changed since the last holder took the")
+    note(f"lock ({who}, {fields.get('acquired', '?')}): that build, or an unlocked")
+    note("build after it, rebuilt it. Every worktree on that core now links its libs.")
+    return ("previous_build_rebuilt_pool", f"{pool} ({who})")
 
 
 def inherited_lock_fd(path: Path) -> int | None:
@@ -257,7 +470,24 @@ def refuse_nested(path: Path) -> None:
     raise SystemExit(EXIT_NESTED)
 
 
-def acquire(path: Path, timeout: float, command: list[str] | None = None) -> int:
+def held_pool_fields(path: Path, command: list[str] | None) -> list[tuple[str, str]]:
+    """Pool fields for a record about to replace the one at `path`.
+
+    Only for the pio lock: the web-test lock never builds firmware.
+    """
+    fields = []
+    changed = pool_change_since(read_record(path))
+    if changed:
+        fields.append(changed)
+    return fields + pool_fields(command)
+
+
+def acquire(
+    path: Path,
+    timeout: float,
+    command: list[str] | None = None,
+    pool: bool = False,
+) -> int:
     """Take the lock, waiting up to `timeout` seconds; return the held fd.
 
     A poll loop rather than a blocking flock(2) so the wait can be both
@@ -295,12 +525,16 @@ def acquire(path: Path, timeout: float, command: list[str] | None = None) -> int
             continue
         # Immediately after acquiring, so the window in which the file is
         # blank or still names the previous holder is as small as it can be.
-        write_record(path, command)
+        write_record(path, command, held_pool_fields(path, command) if pool else None)
         return fd
 
 
 @contextlib.contextmanager
-def build_lock(command: list[str] | None = None, lock_path: Path | None = None):
+def build_lock(
+    command: list[str] | None = None,
+    lock_path: Path | None = None,
+    env: dict[str, str] | None = None,
+):
     """Hold the machine-wide PlatformIO build lock for the duration of the block.
 
     `command` is what the caller is about to run; it is recorded in the lock
@@ -309,22 +543,30 @@ def build_lock(command: list[str] | None = None, lock_path: Path | None = None):
     failure when it detects that an outer `flock(1)` holds it without having
     said so.
 
+    `env` is the environment the command will run with, when it is not ours:
+    the penv check reads the core dir from it.
+
     `lock_path` takes a different lock file with the same mechanism; the
     default is the pio lock. It is a separate lock, not a nested one: its held
     marker is held_env_for(lock_path), never PROTOARTOO_PIO_LOCK_HELD.
     """
     path = lock_path if lock_path is not None else _pio_lock_path()
+    is_pio_lock = path == _pio_lock_path()
+    if is_pio_lock:
+        # Before the lock: a broken penv fails in a second either way, and
+        # refusing here does not make the agents queued behind us wait for it.
+        check_penv(command, env)
     held_env = held_env_for(path)
     if os.environ.get(held_env) == "1":
         # The outer holder is usually a hand-typed `flock(1)`, which cannot
         # write a record of its own; ours names the worktree and target that
         # are actually building inside its window.
-        write_record(path, command)
+        write_record(path, command, held_pool_fields(path, command) if is_pio_lock else None)
         yield
         return
     if inherited_lock_fd(path) is not None:
         refuse_nested(path)
-    fd = acquire(path, wait_seconds(), command)
+    fd = acquire(path, wait_seconds(), command, pool=is_pio_lock)
     previous = os.environ.get(held_env)
     # Everything spawned under us is inside the lock; saying so keeps a nested
     # `make` or gate run from queueing behind the lock we are already holding.

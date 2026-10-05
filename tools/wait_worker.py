@@ -13,7 +13,14 @@ starts with --marker). A trailing "//" signature is not that line. A later
 line that is not the token means the worker is not done. Or a JSON file
 --file with a boolean "ok".
 
+Given both, both must agree: ok only when the comment AND the file say ok,
+blocked as soon as either says blocked. The file alone is the gate's output,
+and a gate run made mid-slice writes it while the worker is still writing its
+report - on 2026-10-05 a --file watcher fired WORKER_DONE: ok on exactly
+that. The comment's token never misfired. Pass both when you have both.
+
     python3 tools/wait_worker.py --issue 441 --marker '<!-- worker-status-441-slug -->'
+    python3 tools/wait_worker.py --issue 441 --marker '<!-- ... -->' --file /tmp/slice-441.json
     python3 tools/wait_worker.py --file /tmp/slice-441.json
 
 Exit 0 when the worker says ok, 1 when it says blocked or the wait ends.
@@ -87,6 +94,15 @@ def _verdict_from_file(path: Path) -> str | None:
     return "ok" if data["ok"] is True else "blocked" if data["ok"] is False else None
 
 
+def _combined(verdicts: list[str | None]) -> str | None:
+    """Blocked if any signal says blocked, ok only if every signal says ok."""
+    if "blocked" in verdicts:
+        return "blocked"
+    if verdicts and all(v == "ok" for v in verdicts):
+        return "ok"
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--issue", type=int)
@@ -95,14 +111,19 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--timeout", type=float, default=7200, help="seconds (default 7200)")
     p.add_argument("--interval", type=float, default=15)
     args = p.parse_args(argv)
-    if args.file is None and (args.issue is None or not args.marker):
-        p.error("pass --file, or both --issue and --marker")
+    use_comment = args.issue is not None or bool(args.marker)
+    if use_comment and (args.issue is None or not args.marker):
+        p.error("--issue and --marker go together")
+    if args.file is None and not use_comment:
+        p.error("pass --issue and --marker, --file, or all three")
     deadline = time.monotonic() + args.timeout
     while True:
+        verdicts = []
+        if use_comment:
+            verdicts.append(_verdict_from_comment(args.issue, args.marker))
         if args.file is not None:
-            verdict = _verdict_from_file(args.file)
-        else:
-            verdict = _verdict_from_comment(args.issue, args.marker)
+            verdicts.append(_verdict_from_file(args.file))
+        verdict = _combined(verdicts)
         if verdict == "ok":
             print("WORKER_DONE: ok")
             return 0

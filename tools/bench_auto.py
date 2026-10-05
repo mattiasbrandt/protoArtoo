@@ -88,6 +88,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import soak  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def primary_checkout() -> Path:
+    """The repository's main working tree, whichever worktree this runs from.
+
+    Runs used to land in the output/ of whichever worktree (or, for a relative
+    --run-dir, whichever pane cwd) the command happened to start in, and a
+    later reader picked up the previous run. One home for every run is the fix.
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        print(f"[bench-auto] no git common dir ({proc.stderr.strip()}); runs go under {REPO_ROOT}",
+              file=sys.stderr)
+        return REPO_ROOT
+    return Path(proc.stdout.strip()).parent
+
+
+def resolve_run_dir(requested: str | None, default_name: str) -> Path:
+    """An absolute run dir under the primary checkout's output/bench-auto/.
+
+    An absolute --run-dir is taken as given; a relative one, or none, is placed
+    under that one root rather than under the current directory.
+    """
+    root = primary_checkout() / "output" / "bench-auto"
+    if requested and Path(requested).is_absolute():
+        return Path(requested)
+    return root / (requested or default_name)
 PLAYWRIGHT_DIR = REPO_ROOT / "test" / "playwright"
 SWEEP_SCRIPT = PLAYWRIGHT_DIR / "console-sweep.js"
 CONSOLE_CLIENT = REPO_ROOT / "tools" / "console_client.py"
@@ -867,7 +897,8 @@ def build_parser() -> argparse.ArgumentParser:
                                 "(--offline: defaults to this run's fixture server)")
     parser.add_argument("--rows", default=None, help="a bounded subset of the sheet's rows, in this order")
     parser.add_argument("--run-dir", default=None,
-                        help="where the logs, samples and report go (default output/bench-auto/<image>-<time>)")
+                        help="where the logs, samples and report go; relative paths and the default "
+                             "(<image>-<time>) land under the primary checkout's output/bench-auto/")
     parser.add_argument("--idle-s", type=float, default=20.0, help="baseline seconds before the sheet")
     parser.add_argument("--poll-interval-s", type=float, default=1.0)
     parser.add_argument("--poll-timeout-s", type=float, default=5.0)
@@ -968,7 +999,7 @@ def main(argv: list[str]) -> int:
         started_clear = not latched
 
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = Path(args.run_dir or REPO_ROOT / "output" / "bench-auto" / f"{args.image}-{stamp}")
+    run_dir = resolve_run_dir(args.run_dir, f"{args.image}-{stamp}")
     if run_dir.exists() and any(run_dir.iterdir()):
         return refuse(f"{run_dir} already holds a run; name a new --run-dir")
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -1133,6 +1164,8 @@ def main(argv: list[str]) -> int:
         "interrupted": interrupted,
     }, indent=2) + "\n", encoding="utf-8")
     print("\n" + report, flush=True)
+    # Last, so the one line a caller tails is where the evidence is.
+    print(f"run dir: {run_dir}", flush=True)
 
     if interrupted:
         return EXIT_INTERRUPTED
