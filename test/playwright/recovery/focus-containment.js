@@ -72,8 +72,9 @@ const state = (page, fn) => page.evaluate(fn);
     // the work area's children, which the view marks inert.
     const host = bd.parentElement;
     const inSurface = !!(a && host && host !== document.body && host.contains(a) && !bd.contains(a));
-    // Which attempt the blocking resource is on: a retry rebuilds the panel,
-    // and the rebuild moves focus into it (see stays-on-stop below).
+    // Which attempt the blocking resource is on. A retry rebuilds the panel;
+    // focus that was in the panel follows the rebuild, and focus outside it
+    // stays where it is (data/page_bootstrap.js render(); stays-on-stop below).
     const st = window.PABootstrap?.getState?.();
     const step = st && !st.resourcesReady ? st.resources[st.resourceCursor] : null;
     return {
@@ -106,10 +107,12 @@ const state = (page, fn) => page.evaluate(fn);
   // focus is back in it. The chrome is long (Plate cells, topbar, nav), so the
   // cycle is bounded generously; one that never comes back is a failure too.
   const CYCLE_LIMIT = 80;
-  // A retry landing mid-cycle rebuilds the panel and pulls focus into it,
-  // which would read as the cycle coming home. Such a cycle is walked again
-  // (the retry interval grows, so a second walk fits); landing in the surface
-  // fails it whether or not a retry landed.
+  // A retry landing mid-cycle rebuilds the panel, but a walk is out on the
+  // chrome then, and a rebuild leaves focus outside the panel where it is: it
+  // cannot end a walk early. The re-walk below dates from when a rebuild
+  // pulled focus into the panel, which read as the cycle coming home; now it
+  // only sets aside a walk a retry landed in and walks again.
+  // Landing in the surface fails a cycle whether or not a retry landed.
   const cycle = async (key) => {
     let walk;
     for (let tries = 0; tries < 4; tries++) {
