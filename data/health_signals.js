@@ -20,8 +20,8 @@
 // - The Dome ESC and the Foot Drive are answered the same way (readDomeEsc,
 //   readFootDrive): green only for something heard back, and what the droid
 //   commands is the detail, never the light (#399)
-// - Memory is judged against one table of heap floors (HEAP_FLOORS), which
-//   Maintenance's memory rows read too
+// - Memory is judged against one table of heap floors (HEAP_FLOORS) by one
+//   judge (heapState), which Maintenance's memory rows read too
 // =============================================================================
 (() => {
   const INDICATOR_STATE_LABELS = Object.freeze({
@@ -40,22 +40,49 @@
     "rcCh6",
   ]);
 
-  // The heap floors, in bytes: the one table the health grid here and
-  // Maintenance's memory rows both judge by. On the grid a reading at or below
-  // a warn floor is Low, at or below a fail floor Critical.
+  // The heap floors, in bytes: the one table, for both chips, that the health
+  // grid here and Maintenance's memory rows both judge by (heapState below). A
+  // reading at or below a warn floor is Low, at or below a fail floor Critical.
   //
-  // largest* judges the Internal Data Heap's largest free block. Its floors are
-  // the admission ones until the bench day (#355) measures this reading's own.
-  // free* and min* are the earlier runtime floors (heapMin held >= 40 KB with
-  // the stream open), kept as they were.
+  // free* judges heapFree, the Internal Data Heap (no IRAM since ccf72dd3).
+  // Set from the four artoo bench-auto runs of 2026-10-05
+  // (output/bench-auto/artoo-20261005-*/samples.jsonl, 1 Hz /api/status) at
+  // the samples where failedAllocs advanced: heapFree read 19,084 to 29,404,
+  // the highest at artoo-20261005-141337 line 322 (29,404). Critical sits just
+  // above that. A normal idle reads Good on both chips: artoo 41,236-41,472
+  // (artoo-20261005-151007 idle, 0 failures) and 36,808 at its lowest across
+  // the runs that failed few (-141337, 6), the ESP32-P4 76,228
+  // (shipping-20261006-002741). The run that failed most (-144651, 18) idled
+  // at 33,396-35,480 and reads Low.
+  //
+  // largest* judges heapLargestBlock. The same evidence does not move it: the
+  // failed requests were 1,552-1,696 B (GET /api/profiler lastFail,
+  // artoo-20261005-144651) while the sampled largest block read 8,692 to
+  // 21,492 at those samples, so (inferred) the block ran short between
+  // samples; the runs with no failure bottomed at 12,276
+  // (artoo-20261005-112400) and 12,788 (-151007).
+  //
+  // heapMin has no floor: it is the lowest since the last restart, so after
+  // any page load it reads low until a reboot with nothing failing. It is
+  // history, shown as a number and never coloured (#355 grilling Q2).
   const HEAP_FLOORS = Object.freeze({
-    freeCritical: 40000,
-    freeWarn: 65000,
-    minCritical: 36864,
-    minWarn: 53248,
+    freeCritical: 30000,
+    freeWarn: 36000,
     largestCritical: 12000,
     largestWarn: 16000,
   });
+
+  // A heap reading in bytes, judged against one pair of floors: "ok" above
+  // the warn floor, "warn" at or below it, "fail" at or below the critical.
+  // `kind` is "free" or "largest". Every surface judges through this, so a
+  // reading on a floor reads the same on each.
+  const heapState = (kind, bytes) => {
+    if (bytes > HEAP_FLOORS[`${kind}Warn`]) return "ok";
+    if (bytes > HEAP_FLOORS[`${kind}Critical`]) return "warn";
+    return "fail";
+  };
+
+  const HEAP_WORDS = Object.freeze({ ok: "Normal", warn: "Low", fail: "Critical" });
 
   const hasOwnKey = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
   const healthSignal = (state, reason = "") => ({ state, reason });
@@ -100,18 +127,16 @@
     // internal heap runs out.
     const largest = Number(payload.heapLargestBlock);
     if (Number.isFinite(largest) && largest >= 0) {
-      if (largest > HEAP_FLOORS.largestWarn) return healthSignal("ok", "Normal");
-      if (largest > HEAP_FLOORS.largestCritical) return healthSignal("warn", "Low");
-      return healthSignal("fail", "Critical");
+      const state = heapState("largest", largest);
+      return healthSignal(state, HEAP_WORDS[state]);
     }
 
     // A payload without heapLargestBlock: fall back to total free heap.
     // Neither number present is a reading we do not have, not a low one.
     if (!Number.isFinite(heapBytes) || heapBytes < 0) return healthSignal("off", unknown);
 
-    if (heapBytes > HEAP_FLOORS.freeWarn) return healthSignal("ok", "Normal");
-    if (heapBytes > HEAP_FLOORS.freeCritical) return healthSignal("warn", "Low");
-    return healthSignal("fail", "Critical");
+    const state = heapState("free", heapBytes);
+    return healthSignal(state, HEAP_WORDS[state]);
   };
 
   // ---------------------------------------------------------------------------
@@ -389,6 +414,7 @@
   const api = Object.freeze({
     INDICATOR_STATE_LABELS,
     HEAP_FLOORS,
+    heapState,
     deriveHealthSignals,
     readProtoR2link,
     readSoundLink,

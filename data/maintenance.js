@@ -88,7 +88,6 @@
   const diagHeapMin = document.getElementById("diag-heap-min");
   const diagHeapLargest = document.getElementById("diag-heap-largest");
   const diagHeapFreeLight = document.getElementById("diag-heap-free-light");
-  const diagHeapMinLight = document.getElementById("diag-heap-min-light");
   const diagHeapLargestLight = document.getElementById("diag-heap-largest-light");
 
   // A health signal reads as a droid LED and the COLOR IS THE READING: the
@@ -143,40 +142,37 @@
       diagUptime.textContent = formatUptime(d.uptimeMs);
     }
 
-    const heapFreeKb = Math.round((d.heapFree || 0) / 1024);
-    const heapMinKb = Math.round((d.heapMin || 0) / 1024);
+    const heapFree = d.heapFree || 0;
     const hasLargest = d.heapLargestBlock !== undefined && d.heapLargestBlock !== null;
-    const heapLargestKb = hasLargest ? Math.round(d.heapLargestBlock / 1024) : null;
+    const kb = (bytes) => Math.round(bytes / 1024);
 
-    // The floors are the health grid's (data/health_signals.js HEAP_FLOORS).
-    const t = window.PAHealthSignals.HEAP_FLOORS;
-    const heapFreeState = heapFreeKb < Math.round(t.freeCritical / 1024) ? "critical" : heapFreeKb < Math.round(t.freeWarn / 1024) ? "watch" : "good";
-    const heapMinState = heapMinKb < Math.round(t.minCritical / 1024) ? "critical" : heapMinKb < Math.round(t.minWarn / 1024) ? "watch" : "good";
-    const heapLargestState = !hasLargest ? "na" : heapLargestKb < Math.round(t.largestCritical / 1024) ? "critical" : heapLargestKb < Math.round(t.largestWarn / 1024) ? "watch" : "good";
-
-    // Four states, each to a lamp. "na" is the firmware that reports no
-    // largest block at all - never asked, so grey.
-    const lampForState = (state) =>
-      state === "critical" ? "fail" : state === "watch" ? "warn" : state === "na" ? "off" : "ok";
+    // Judged in bytes by the health grid's one judge and table
+    // (data/health_signals.js heapState, HEAP_FLOORS), so a reading on a floor
+    // reads the same here as on the Dashboard. "na" is the firmware that
+    // reports no largest block at all - never asked, so grey.
+    const heapState = window.PAHealthSignals.heapState;
+    const heapFreeState = heapState("free", heapFree);
+    const heapLargestState = hasLargest ? heapState("largest", d.heapLargestBlock) : "na";
 
     if (diagHeapFree) {
-      const word = heapFreeState === "critical" ? "Critical" : heapFreeState === "watch" ? "Watch" : "Good";
-      diagHeapFree.textContent = `${heapFreeKb} KB ${word}`;
-      setLight(diagHeapFreeLight, lampForState(heapFreeState));
+      const word = heapFreeState === "fail" ? "Critical" : heapFreeState === "warn" ? "Watch" : "Good";
+      diagHeapFree.textContent = `${kb(heapFree)} KB ${word}`;
+      setLight(diagHeapFreeLight, heapFreeState);
     }
+    // The lowest since the last restart is history, not a state: after any
+    // page load it stays low until a reboot with nothing failing, so it carries
+    // no light and no word, as Uptime carries none (#355 grilling Q2).
     if (diagHeapMin) {
-      const word = heapMinState === "critical" ? "Critical" : heapMinState === "watch" ? "Watch" : "Good";
-      diagHeapMin.textContent = `${heapMinKb} KB ${word}`;
-      setLight(diagHeapMinLight, lampForState(heapMinState));
+      diagHeapMin.textContent = `${kb(d.heapMin || 0)} KB`;
     }
     if (diagHeapLargest) {
       if (!hasLargest) {
         diagHeapLargest.textContent = window.PALiveReading.UNKNOWN;
       } else {
-        const word = heapLargestState === "critical" ? "Fragmented" : heapLargestState === "watch" ? "Watch" : "Good";
-        diagHeapLargest.textContent = `${heapLargestKb} KB ${word}`;
+        const word = heapLargestState === "fail" ? "Fragmented" : heapLargestState === "warn" ? "Watch" : "Good";
+        diagHeapLargest.textContent = `${kb(d.heapLargestBlock)} KB ${word}`;
       }
-      setLight(diagHeapLargestLight, lampForState(heapLargestState));
+      setLight(diagHeapLargestLight, heapLargestState === "na" ? "off" : heapLargestState);
     }
     // When the droid sent it, not when it was painted: a lost link repaints
     // the same frame, and "Updated" must not move with it.
