@@ -338,7 +338,7 @@
           "chain_bytes": 3088,
           "stack_bytes": 4608,
           "note": "The deepest route is a log line at start: safetyMonitorTask -> failedAllocTrackerInit() -> paLogLine() -> the framed Console write down to uart_write_bytes. The widest frames are emitFramedLineCounted 432 B, safetyMonitorTask 368 B and paLogIdfVprintf 320 B. The restart's shutdown handlers stitched under esp_restart() are shallower than this route.",
-          "reason": "Kept one step above the rule (4608 against 4096) by operator decision on 2026-09-27. The stack was raised for the profiler image's walk, which ADR 0040's 2026-09-27 amendment stopped recording, and #381 row 12's bench high-water mark for this task, the tightest measured, is still open. It is revisited on bench day (#355) rather than cut on the product walk alone.",
+          "reason": "Kept one step above the rule (4608 against 4096) as a standing operator decision of 2026-10-06 (#355 grilling Q1). Measured on artoo: 2,696 B free with 3 event streams open (profiler, 2026-09-28) and 2,908 B free idle (1c158e3e). The 512 B is 1.2% of artoo's 43,008 B idle heap, and no restart has been run on 4096.",
           "created": "always"
         },
         "esp32p4": {
