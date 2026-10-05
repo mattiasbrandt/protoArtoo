@@ -1458,28 +1458,40 @@
 
 
   // -------------------------------------------------------------------------
-  // Sequences: a show run from the Dashboard (#330, #451)
+  // Sequences: a show run from the Dashboard (#330, #451, #472)
   //
-  // Every Sequence on the droid, in the two groups Sequences lists them in:
-  // Yours, then the Factory ones yours do not shadow - a Learned name shadows
-  // a Factory one, the rule the droid resolves a name by (the removed
-  // quick-sequence row, 76d9735c^:data/dome_control.js). Each is a tile: its
-  // Play, its name, how long a run is and what it does, as the droid lists it.
-  // The one running has Stop instead of Play, whoever started it. A Sequence
-  // mapped to an RC Channel says which, from GET /api/rc/map: the RC Map is the
-  // running order, so the RC Radio and this list are one list read from two
-  // ends, never stored twice.
+  // One line: the heading and what is running, then every Sequence on the
+  // droid as a chip, then +N for the ones the line has no room for, then
+  // Rest (#472, the operator's mock A, 2026-10-05). A chip is its Play - its
+  // icon and its name - and the one running is its Stop instead. Each chip
+  // also carries a very small pin: a pinned Sequence comes to the front, on
+  // every browser, because the pins are kept on the droid (GET/POST
+  // /api/seq/pins, docs/api.md).
+  //
+  // The order: the running Sequence, then the pinned ones in the order they
+  // were pinned, then the ones mapped to an RC Channel, then the rest in the
+  // two groups Sequences lists them in - Yours, then the Factory ones yours do
+  // not shadow (a Learned name shadows a Factory one, the rule the droid
+  // resolves a name by; 76d9735c^:data/dome_control.js). A pin naming a
+  // Sequence no longer on the droid is skipped, not an error: only a pin's
+  // form is checked, as the Stand Down Sequence's is. A mapped one says
+  // which RC Channel, from GET /api/rc/map: the RC Map is the running order,
+  // so the RC Radio and this line are one list read from two ends, never
+  // stored twice. A chip has no line of its own: how long a run is and what it
+  // does are its hover title and its accessible description.
   //
   // Rest runs the droid's Stand Down Sequence, which is chosen on Sequences;
-  // the tile of the one it runs carries the Rest mark, so Rest needs no words
+  // the chip of the one it runs carries the Rest mark, so Rest needs no words
   // of its own beside it (operator, 2026-10-04). The Factory DM:RESET default
-  // says on its tile that it leaves the pies open (GLOSSARY.md "Stand Down
+  // says in its title that it leaves the pies open (GLOSSARY.md "Stand Down
   // Sequence").
   //
   // What is running is the Live Reading's run watch (data/live_reading.js,
   // "The run watch"), the one the Sequences page reads too. It starts and
   // stops runs, judges a press by the run's start time, and says when a run -
-  // from here, an RC Channel or anywhere - begins and ends.
+  // from here, an RC Channel or anywhere - begins and ends. A run of a name
+  // with no chip - not on the droid - gets a chip of its own, first, so it
+  // can still be stopped.
   //
   // A name the RC Map fires that has no Sequence behind it - a Learned one
   // deleted since - is listed and says it will do nothing. POST /api/seq/test
@@ -1487,9 +1499,12 @@
   // (src/tasks/sequence_dispatcher.cpp): the page knows from the library, sends
   // nothing, and a press raises the Ignored Input Notice (data/shell.js).
   // -------------------------------------------------------------------------
+  const showBay = document.getElementById("show-bay");
   const showNow = document.getElementById("show-now");
-  const showList = document.getElementById("show-list");
-  const showOther = document.getElementById("show-other");
+  const showLine = document.getElementById("show-line");
+  const showRail = document.getElementById("show-rail");
+  const showMore = document.getElementById("show-more");
+  const showOverflow = document.getElementById("show-overflow");
   const showFeedbackEl = document.getElementById("show-feedback");
   const standDownBtn = document.getElementById("standdown-btn");
   const postureBtn = document.getElementById("show-posture");
@@ -1506,18 +1521,22 @@
   let showFactory = null;
   let showMapped = null; // [{ name, channel }] - the RC Map's Sequence bindings
   let standDownChoice = null; // "" when never chosen; null while not known
+  // The pinned names in the order they were pinned, [] when none. False on a
+  // droid whose firmware keeps no pins - it answers GET /api/seq/pins with a
+  // 404, since the web image and the firmware are uploaded apart - and its
+  // chips then carry no pin.
+  let showPins = null;
 
   const esc = (text) => window.PAUtils.escapeHtml(text);
   const escAttr = (text) => window.PAUtils.escapeAttr(text);
   const icon = (name) => `<svg class="i" aria-hidden="true" focusable="false"><use href="#i-${name}"/></svg>`;
-  const actFace = (name, words) => window.PAUi.actFace(name, words);
 
   const libraryEntry = (name) =>
     showLearned?.find((seq) => seq.name === name) || showFactory?.find((seq) => seq.name === name) || null;
   const libraryAnswered = () => showLearned !== null && showFactory !== null;
   const standDownEffective = () => (standDownChoice === null ? null : standDownChoice || STAND_DOWN_UNSET);
 
-  // Why a name cannot run, as the row says it and as the notice says it, and
+  // Why a name cannot run, as the chip says it and as the notice says it, and
   // where it is changed; null when it can run. A name only the RC Map holds is
   // changed on RC; one that needs repair, or the Stand Down Sequence whatever
   // is wrong with it, on Sequences, where it is chosen.
@@ -1546,54 +1565,46 @@
     (!Number.isInteger(entry?.lengthMs) || (entry.lengthMs === 0 && entry.valid === false)
       ? "" : `${Number((entry.lengthMs / 1000).toFixed(2))} s`);
 
-  // A tile: its act first, a round Play that shows its icon alone and says
-  // Play <name> as its tooltip and accessible name (operator, 2026-10-04);
-  // then the name, the RC Channels that fire it and the Rest mark - Rest's
-  // own icon, its word for a screen reader only, because Rest is the button's
-  // word alone (operator, 2026-10-04); then one
-  // quiet line - why it does nothing, or how long it runs and what it does,
-  // cut to the tile's width (the whole purpose is on Sequences).
-  const tileHtml = (name) => {
+  // What a chip says on hover and to a screen reader as its description: why
+  // it does nothing, or how long a run is and what it does. The Factory
+  // DM:RESET default says it leaves the pies open instead of its purpose.
+  const aboutOf = (name) => {
     const refusal = refusalOf(name);
+    if (refusal) return refusal.says;
     const entry = libraryEntry(name);
-    const channels = (showMapped || []).filter((mapped) => mapped.name === name).map((mapped) => mapped.channel);
-    const isRest = name === standDownEffective();
-    const factoryDefault = isRest && name === STAND_DOWN_UNSET && !showLearned.some((seq) => seq.name === name);
+    const factoryDefault = name === standDownEffective() && name === STAND_DOWN_UNSET
+      && !showLearned.some((seq) => seq.name === name);
     const purpose = entry?.purpose ? `${entry.purpose}${entry.purposeCut ? "..." : ""}` : "";
-    const about = factoryDefault ? LEAVES_PIES_OPEN : purpose;
-    const line = refusal ? `<span class="why">${refusal.says}</span>`
-      : [lengthWords(entry), about].filter(Boolean).map(esc).join(" &middot; ");
-    return `
-      <li class="show-item${refusal ? " is-inert" : ""}" data-name="${escAttr(name)}">
-        <span class="show-item-act">
-          <button type="button" class="btn show-play icon-act" data-act="play"${refusedAttrs(refusal)}>${actFace("play", `Play ${name}`)}</button>
-          <button type="button" class="btn seq-stop icon-act hidden" data-act="stop">${actFace("stop", `Stop ${name}`)}</button>
-        </span>
-        <span class="show-item-says">
-          <span class="show-item-name">
-            <span class="show-name">${esc(name)}</span>
-            ${isRest ? `<span class="seq-badge show-rest-mark">${icon("human-handsdown")}<span class="show-said">Rest</span></span>` : ""}
-            ${channels.map((channel) => `<span class="show-rc"><span class="show-said">RC Channel </span>${esc(channel)}</span>`).join("")}
-          </span>
-          <span class="show-item-line">
-            <span class="seq-row-run hidden"><span class="indicator ok seq-live" aria-hidden="true"></span>Running</span>
-            <span class="show-item-about">${line}</span>
-          </span>
-        </span>
-      </li>`;
+    return [lengthWords(entry), factoryDefault ? LEAVES_PIES_OPEN : purpose].filter(Boolean).join(" - ");
   };
 
-  const groupHtml = (label, names) => (names.length === 0 ? "" : `
-      <section class="show-group">
-        <h4 class="show-group-head">${label} <span class="show-group-count">${names.length}</span></h4>
-        <ul class="show-items">${names.map(tileHtml).join("")}</ul>
-      </section>`);
+  // A chip: one Play - its icon and the name, then the Rest mark and the RC
+  // Channels that fire it, each said in words to a screen reader only - and a
+  // small pin beside it, its own button, never one inside the other. The
+  // running chip's act is its Stop, with the running lamp.
+  const chipHtml = (name, running) => {
+    const refusal = running ? null : refusalOf(name);
+    const about = aboutOf(name);
+    const act = running ? "stop" : "play";
+    const channels = (showMapped || []).filter((mapped) => mapped.name === name).map((mapped) => mapped.channel);
+    const pinned = Array.isArray(showPins) && showPins.includes(name);
+    const pin = Array.isArray(showPins)
+      ? `<button type="button" class="show-pin" data-act="pin" aria-pressed="${pinned}" aria-label="Pin ${escAttr(name)}" title="${pinned ? "Unpin" : "Pin"}">${icon(pinned ? "pin" : "pin-outline")}</button>`
+      : "";
+    return `<li class="show-chip${running ? " is-running" : ""}${pinned ? " is-pinned" : ""}${refusal ? " is-inert" : ""}" data-name="${escAttr(name)}">`
+      + `<button type="button" class="show-act" data-act="${act}"${about ? ` title="${escAttr(about)}"` : ""}${refusedAttrs(refusal)}>`
+      + `${icon(act)}<span class="show-said">${running ? "Stop" : "Play"} </span><span class="show-name">${esc(name)}</span>`
+      + (name === standDownEffective() ? `<span class="show-rest-mark">${icon("human-handsdown")}<span class="show-said">Rest</span></span>` : "")
+      + channels.map((channel) => `<span class="show-rc"><span class="show-said">RC Channel </span>${esc(channel)}</span>`).join("")
+      + (running ? `<span class="indicator ok seq-live" aria-hidden="true"></span>` : "")
+      + `</button>${pin}</li>`;
+  };
 
-  // Yours holds the builder's own and every name the droid would fire that
-  // it does not hold - one the RC Map binds, or the Stand Down Sequence -
-  // which can only ever have been theirs: a Factory name is never missing.
-  const renderShowList = () => {
-    if (!showList || !libraryAnswered()) return;
+  // Every name the line lists, Yours then Factory. Yours holds the builder's
+  // own and every name the droid would fire that it does not hold - one the RC
+  // Map binds, or the Stand Down Sequence - which can only ever have been
+  // theirs: a Factory name is never missing.
+  const listedNames = () => {
     const factoryNames = new Set(showFactory.map(({ name }) => name));
     const yours = [];
     const factory = [];
@@ -1604,48 +1615,95 @@
         const learned = showLearned.some((seq) => seq.name === name);
         (learned || !factoryNames.has(name) ? yours : factory).push(name);
       });
-    showList.innerHTML = groupHtml("Yours", yours) + groupHtml("Factory", factory);
-    paintShowRun();
+    return [...yours, ...factory];
+  };
+
+  // The line's order: running, pinned, on an RC Channel, then the rest. A pin
+  // naming a Sequence not listed is skipped. A run of a name not listed still
+  // gets the first chip, so it can be stopped.
+  const railOrder = (listed, running) => {
+    const pinned = Array.isArray(showPins) ? showPins.filter((name) => listed.includes(name)) : [];
+    const mapped = listed.filter((name) => (showMapped || []).some((entry) => entry.name === name));
+    return [...new Set([...(running !== null ? [running] : []), ...pinned, ...mapped, ...listed])];
+  };
+
+  // The chips the line has no room for go behind +N, measured again whenever
+  // the line changes width or its chips change. +N first takes the width of
+  // the widest count it could say, so writing the real count cannot shrink the
+  // rail and clip its last chip - mock A's first cut did. In the full-screen
+  // posture the rail wraps instead and nothing goes behind +N: the posture is
+  // there to put every trigger on one screen (operator, 2026-10-04).
+  const showMoreCount = showMore?.querySelector(".show-more-n");
+  const fitRail = () => {
+    if (!showRail || !showMore || !showOverflow || !showMoreCount) return;
+    const all = [...showRail.children, ...showOverflow.children];
+    all.forEach((chip) => showRail.appendChild(chip));
+    showRail.style.flex = "";
+    showMore.classList.remove("is-empty");
+    showMoreCount.textContent = `+${all.length}`;
+    const box = showRail.getBoundingClientRect();
+    // Off screen - another surface is showing (ADR 0048) - there is nothing to
+    // measure; the line's observer measures again when it comes back.
+    if (box.width === 0) return;
+    const wraps = window.getComputedStyle(showRail).flexWrap === "wrap";
+    const spill = wraps ? [] : all.filter((chip) => chip.getBoundingClientRect().right > box.right + 0.5);
+    spill.forEach((chip) => showOverflow.appendChild(chip));
+    showMoreCount.textContent = `+${spill.length}`;
+    showMore.querySelector("summary")?.setAttribute("aria-label", `${spill.length} more Sequences`);
+    showMore.classList.toggle("is-empty", spill.length === 0);
+    if (spill.length === 0) showMore.open = false;
+    // +N sits right after the last chip that fits, and Rest at the far end.
+    if (!wraps) showRail.style.flex = "0 1 auto";
+  };
+  // The heading is watched as well as the line: "DM:CANTINA running" is wider
+  // than a count, and the rail gives up what the heading takes.
+  if (showLine && typeof window.ResizeObserver === "function") {
+    const watch = new window.ResizeObserver(() => fitRail());
+    watch.observe(showLine);
+    if (showNow?.parentElement) watch.observe(showNow.parentElement);
+  }
+
+  // The run the line was last ordered for: it is ordered again only when that
+  // changes, so a status frame landing mid-press never replaces the Stop being
+  // pressed.
+  let railRunning = null;
+  const renderShowList = () => {
+    if (!showRail || !showOverflow || !libraryAnswered()) return;
+    const focused = document.activeElement?.closest?.(".show-chip button");
+    const refocus = focused ? { name: focused.closest(".show-chip").dataset.name, act: focused.dataset.act } : null;
+    railRunning = runWatch.running();
+    showOverflow.replaceChildren();
+    showRail.innerHTML = railOrder(listedNames(), railRunning)
+      .map((name) => chipHtml(name, name === railRunning)).join("");
+    paintShowNow();
+    fitRail();
+    // The chip pressed keeps the focus through the redraw its press caused.
+    if (refocus) {
+      const chip = [...showBay.querySelectorAll(".show-chip")].find((node) => node.dataset.name === refocus.name);
+      (chip?.querySelector(`[data-act="${refocus.act}"]`) || chip?.querySelector("button"))?.focus();
+    }
     paintStandDown();
   };
 
-  // What is running, painted in place: the row of the running Sequence trades
-  // its Play for Stop, and a run of a name with no row here still gets a Stop.
-  // The line for that run is written only when the run it names changes, so a
-  // status frame landing mid-press does not replace the Stop being pressed.
-  let otherShown = null;
   const paintShowRun = () => {
-    const name = runWatch.running();
-    let shown = false;
-    showList?.querySelectorAll(".show-item").forEach((item) => {
-      const running = name !== null && item.dataset.name === name;
-      shown = shown || running;
-      item.classList.toggle("is-running", running);
-      item.querySelector(".seq-row-run")?.classList.toggle("hidden", !running);
-      item.querySelector('[data-act="play"]')?.classList.toggle("hidden", running);
-      item.querySelector('[data-act="stop"]')?.classList.toggle("hidden", !running);
-    });
-    const other = name !== null && !shown ? name : null;
-    if (showOther && other !== otherShown) {
-      otherShown = other;
-      showOther.classList.toggle("hidden", other === null);
-      showOther.innerHTML = other === null ? ""
-        : `<span class="seq-row-run"><span class="indicator ok seq-live" aria-hidden="true"></span>Running ${esc(other)}</span>
-           <span class="show-item-act"><button type="button" class="btn seq-stop icon-act" data-act="stop">${actFace("stop", `Stop ${other}`)}</button></span>`;
-    }
-    if (showNow) {
-      const record = runWatch.record();
-      const answered = libraryAnswered();
-      showNow.classList.toggle("waiting", !answered && name === null && !record);
-      // "ended" only when the record says so: out of touch, the last record
-      // can still say running, and the run watch then says neither.
-      showNow.textContent = name !== null ? `${name} running`
-        : record && record.running !== true ? `${record.name} ended`
-        : answered ? String(showList?.querySelectorAll(".show-item").length || 0) : "";
-    }
+    if (runWatch.running() !== railRunning) renderShowList();
+    paintShowNow();
   };
 
-  // Rest's own state. The tile of the Sequence it runs says which that is and
+  const paintShowNow = () => {
+    if (!showNow) return;
+    const name = runWatch.running();
+    const record = runWatch.record();
+    const answered = libraryAnswered();
+    showNow.classList.toggle("waiting", !answered && name === null && !record);
+    // "ended" only when the record says so: out of touch, the last record
+    // can still say running, and the run watch then says neither.
+    showNow.textContent = name !== null ? `${name} running`
+      : record && record.running !== true ? `${record.name} ended`
+      : answered ? String(listedNames().length) : "";
+  };
+
+  // Rest's own state. The chip of the Sequence it runs says which that is and
   // why it does nothing, if it does nothing; the button itself says Rest.
   const paintStandDown = () => {
     if (!standDownBtn) return;
@@ -1669,7 +1727,7 @@
 
   // The run whose ending the feedback line holds, so the run being heard
   // again - after a reconnect, say - takes back "Lost touch" rather than leave
-  // it under a row that reads Running.
+  // it under a chip that reads Running.
   let endingOf = null;
   const sayShow = (message, level = "") => {
     endingOf = null;
@@ -1715,11 +1773,43 @@
     }
   };
 
-  document.getElementById("show-bay")?.addEventListener("click", (event) => {
+  // The droid's answer to a pin read or a pin press is the whole list as it
+  // now stands, in pin order.
+  const adoptPins = (answer) => {
+    if (!Array.isArray(answer?.pins)) throw new Error("the droid sent no pins list");
+    showPins = answer.pins.filter((name) => typeof name === "string");
+    renderShowList();
+  };
+
+  // A press pins or unpins one name; the droid refuses a ninth and says so.
+  const pinSequence = async (name, button) => {
+    const pinned = button.getAttribute("aria-pressed") !== "true";
+    button.disabled = true;
+    sayShow("");
+    try {
+      adoptPins((await window.PAApi.postJson("/api/seq/pins", { name, pinned }))?.data);
+    } catch (error) {
+      sayShow(`${name} ${pinned ? "not pinned" : "still pinned"}: ${window.PAApi.messageFor(error)}`, "error");
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  showBay?.addEventListener("click", (event) => {
     const button = event.target.closest?.("button[data-act]");
     if (!button || button.disabled) return;
+    const name = button.closest(".show-chip")?.dataset.name;
     if (button.dataset.act === "stop") stopSequence(button);
-    else playSequence(button.closest(".show-item").dataset.name, button);
+    else if (button.dataset.act === "pin") pinSequence(name, button);
+    else playSequence(name, button);
+  });
+
+  // The +N popover closes on a press outside it and on Escape.
+  document.addEventListener("click", (event) => {
+    if (showMore?.open && !showMore.contains(event.target)) showMore.open = false;
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && showMore?.open) showMore.open = false;
   });
 
   standDownBtn?.addEventListener("click", () => {
@@ -1761,6 +1851,21 @@
     renderShowList();
   };
 
+  // A 404 is a droid whose firmware keeps no pins: its chips carry none. Any
+  // other failure is the section's, retried like the rest.
+  const loadShowPins = async ({ handle = null } = {}) => {
+    let answer = null;
+    try {
+      answer = await (handle ?? window.PAApi).get("/api/seq/pins");
+    } catch (error) {
+      if (error?.kind !== "http" || error.status !== 404) throw error;
+      showPins = false;
+      renderShowList();
+      return;
+    }
+    adoptPins(answer?.data);
+  };
+
   // The Stand Down choice rides the /api/config payload the log level reads.
   // Only an answer that carries the key is one: a droid whose firmware does
   // not know the Setting has not said "never chosen", so Stand Down waits.
@@ -1773,11 +1878,12 @@
     paintStandDown();
   };
 
-  // Back on the Dashboard after Sequences or RC, the library, the RC Map and
-  // the Stand Down choice may have moved: read again each time the Dashboard
-  // returns (PASurface starts its polls again then, ADR 0048). The Factory
-  // catalog is the firmware's and does not change. The first start is the
-  // mount, whose own sections read all of it.
+  // Back on the Dashboard after Sequences or RC, the library, the RC Map, the
+  // pins and the Stand Down choice may have moved - the pins from another
+  // browser, too: read again each time the Dashboard returns (PASurface
+  // starts its polls again then, ADR 0048). The Factory catalog is the
+  // firmware's and does not change. The first start is the mount, whose own
+  // sections read all of it.
   let showMounted = false;
   window.PASurface.poll(async () => {
     if (!showMounted) {
@@ -1786,6 +1892,7 @@
     }
     await loadShowLearned();
     await loadShowMap();
+    if (showPins !== false) await loadShowPins();
     adoptStandDown((await window.PAApi.get("/api/config"))?.data);
   }, { runOnStart: true }).start();
 
@@ -1805,6 +1912,7 @@
     ["app-seq-learned", loadShowLearned, "your sequences"],
     ["app-seq-factory", loadShowFactory, "factory sequences"],
     ["app-rc-map", loadShowMap, "RC Map"],
+    ["app-seq-pins", loadShowPins, "pinned sequences"],
   ];
 
   const startPageLoad = () => {
@@ -1816,6 +1924,7 @@
       loadShowLearned().catch(() => {});
       loadShowFactory().catch(() => {});
       loadShowMap().catch(() => {});
+      loadShowPins().catch(() => {});
       return;
     }
     window.PABootstrap.setResourceLabels?.({

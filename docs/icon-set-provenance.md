@@ -71,8 +71,9 @@ no symbol, which is the failure this list would otherwise hide.
 | `printer-outline` | Wiring's printable wiring sheet act (#411; read from `@mdi/svg` 7.4.47 `svg/printer-outline.svg`, not one of the #398 twenty-two) |
 | `lightbulb-outline` | Lights, in the nav rail (#410; read from `@mdi/svg` 7.4.47 `svg/lightbulb-outline.svg`, not one of the #398 twenty-two) |
 | `magnify` | Find by Moving, on a Part's row on Wiring (#411; read from `@mdi/svg` 7.4.47 `svg/magnify.svg`, not one of the #398 twenty-two) |
-| `play`, `stop` | Play and Stop on a Sequence's row on the Dashboard (#451; read from `@mdi/svg` 7.4.47 `svg/play.svg` and `svg/stop.svg`, not among the #398 twenty-two) |
+| `play`, `stop` | Play and Stop on a Sequence's chip on the Dashboard (#451; read from `@mdi/svg` 7.4.47 `svg/play.svg` and `svg/stop.svg`, not among the #398 twenty-two) |
 | `fullscreen`, `fullscreen-exit` | the Dashboard's full-screen posture, in and out (#451; read from `@mdi/svg` 7.4.47 `svg/fullscreen.svg` and `svg/fullscreen-exit.svg`) |
+| `pin`, `pin-outline` | the small pin in a Sequence's chip on the Dashboard, filled when it is pinned and outlined when it is not (#472; `pin` read from `@mdi/svg` 7.4.47 `svg/pin.svg`; `pin-outline` was already in the sprite as Use as Stand Down's act, below). The pin is a toggle, not an act, so it is not a row of the act table |
 | every act's icon in [One act, one icon](#one-act-one-icon) below | the act's row there names each surface it is drawn on (#460; read from `@mdi/svg` 7.4.47 `svg/<name>.svg`, path data unmodified) |
 
 The #398 prototype (`git show 83acf0db:prototypes/395-surface-anatomy/chrome.js`;
@@ -119,8 +120,7 @@ any of these holds (coordinator, 2026-10-04):
 - it moves something on the droid and no line on the page explains it
   without hover (ADR 0059): Dome's Go home; Sequences' Move the droid to this
   moment, Test, Test on the droid, Play on the droid, Perform, Perform again;
-  Wiring's find by moving; the Dashboard's Play and Stand Down; Parts' Open
-  it / Close it; RC Control's Try it; Servos' move, open, close, stop, back to
+  Wiring's find by moving; Parts' Open it / Close it; RC Control's Try it; Servos' move, open, close, stop, back to
   centre and Set on ticked outputs. The servo dial's nudges, reverse, test
   sweep and take it again are not here: the dial's own line explains them;
 - its words carry a count, a name or a warning: Set on all N ticked outputs,
@@ -132,6 +132,11 @@ any of these holds (coordinator, 2026-10-04):
 - its words are the only place a state in progress is said: Sound's Poll
   status while it reads Polling. RC Control's Detecting has its own banner,
   so Detect channel stays icon-only.
+
+The Dashboard's Play and Rest left this list on #451 (`ef443b76`,
+`1e3dd904`): the operator made both icon-only, Rest with its word kept as the
+button's accessible name. A Sequence's chip (#472) is not an icon-only act at
+all: its name is on it, beside the Play or Stop icon.
 
 Not acts, so not here: the nav rail, the Latching Estop, Foot Drive's pad,
 toggles (Sleep, Full screen, Bulk, safe range, use these ends), segmented
