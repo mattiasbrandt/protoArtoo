@@ -256,6 +256,10 @@ VERIFICATION (software-verified cap)
 - One PlatformIO build runs on this machine at a time, and the tooling takes
   the lock for you: run `make build` plainly. `make test` is paused (#464)
   and returns without running; do not follow it with `pio test`.
+  A build that exits 5 is the toolchain, not your code: the lock found a
+  PlatformIO penv past 6.1.19 and printed one fix line
+  (`<core>/penv/bin/python -m pip install platformio==6.1.19`). Run that
+  line and nothing else, re-run the build, and say so in your report.
   Do NOT put `flock` in front - that nests two locks on one file and is
   refused (AGENTS.md "The build lock"). Other agents are building here at the
   same time; the lock serialises you, so do not wait for a window. Keep this
