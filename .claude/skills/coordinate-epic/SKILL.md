@@ -134,7 +134,11 @@ from the epic's coordination section rather than from memory.
   reject. This repo has lost work to exactly that.
 - **One command each, so the next session does not re-read `--help`.**
   `herdr tab create --workspace <name> --cwd <path> --label <label> --focus`.
-  `python3 tools/herdr_capped_agent.py --pane <id> --name <agent> [-- --resume <session-id>]`.
+  `python3 tools/herdr_capped_agent.py --pane <id> --name <agent> --brief <brief-file> [-- --resume <session-id>]`
+  (exit 0 means Herdr saw the agent go `working` on the brief; on a stall it prints the pane and
+  does not re-send - read it first, the prompt may have landed).
+  A worker's own transcript, when it is idle: `herdr agent read <agent> --source recent-unwrapped --lines 200`
+  (Herdr scrolls a full-screen agent's history for that read; `pane read` without `--lines` shows one screen).
   `python3 tools/make_brief.py --issue <n> --slug <s> --worktree <path> --base <base>`.
   `python3 tools/pane_run.py /tmp/gate-<s>.log --cwd <path> -- python3 tools/slice_verify.py --base <base> --json /tmp/slice-<s>.json`
   (a pane, `tools/gate_in_pane.sh`, the wait for `GATE_EXIT=` and the tail, in one call).
