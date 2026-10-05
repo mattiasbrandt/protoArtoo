@@ -245,9 +245,11 @@ The suite pause has ended. Steps 1 and 2 below are the acceptance again. Until t
    Then read the block itself: every changed web production JS file appears in
    the mutation table, every row KILLED, and **no waiver ACK you did not grant**
    (`--expect-gate-edit`, `--expect-no-new-tests`, `--expect-no-mutations`,
-   `--expect-test-shrink` - an unsanctioned ACK is an automatic reject; under a
-   granted `--expect-test-shrink`, read the deleted files the ACK names against
-   the list you granted). Any of those disagreeing is the
+   `--expect-test-shrink`, `--expect-heap-growth` - an unsanctioned ACK is an
+   automatic reject; under a granted `--expect-test-shrink`, read the deleted
+   files the ACK names against the list you granted, and under a granted
+   `--expect-heap-growth`, the bytes the ACK names against the spend the ticket
+   decided). Any of those disagreeing is the
    trigger to re-run the full gate on that one slice, with the worker's exact
    invocation, and compare character for character.
 

@@ -67,13 +67,32 @@ better evidence (`test/test_web/README.md`, #406). Editing
 `tools/slice_verify.py`, `tools/mutation_verify.py` or
 `tools/web_load_trace.cjs` inside a slice fails the gate; `--expect-gate-edit` is for coordinator-sanctioned
 gate work only. The waiver flags — `--expect-gate-edit`,
-`--expect-no-new-tests`, `--expect-no-mutations`, `--expect-test-shrink` — are
-granted by the coordinator in the brief, never self-granted by a worker, and
-every ACK is visible in the block. `--expect-test-shrink` (#406) passes a
+`--expect-no-new-tests`, `--expect-no-mutations`, `--expect-test-shrink`,
+`--expect-heap-growth <bytes>` — are granted by the coordinator in the brief,
+never self-granted by a worker, and every ACK is visible in the block. `--expect-test-shrink` (#406) passes a
 shrinking native or web total and deleted test files; the ACK lines carry how
 many tests went and the path of every deleted file, so the coordinator reads
 the deletion list in the block against the list it granted. It is for thinning
 ticket receipts out of a suite, never for making room for a failing test.
+
+**The boot heap figure (#468).** The `build budget` row prints `Boot heap N (+G
+vs B)` beside flash and RAM: static `.data` + `.bss` plus the stack and TCB of
+every task each boot creates - the `tools/task_stack_recipes.json` arms whose
+`created` is `always`, TCB size from that file's metadata. The row fails when
+the figure is more than `boot_heap_threshold_bytes` (512 B) past
+`boot_heap_baseline_bytes` in `tools/build_budgets.json`, unless the run carries
+`--expect-heap-growth <bytes>` naming at least the growth; the ACK prints both
+numbers. A coordinator grants it for a spend the ticket decided; the baseline
+itself moves only by an operator-approved edit. It exists because a slice that
+took internal heap passed every gate and was found on hardware at the end of an
+epic (~21 KB on artoo, #467): 13 KB of it static, the rest a task stack created
+at every boot, which no static-RAM figure can see. **It is not runtime heap.**
+WiFi and lwIP buffers, the HTTP server and its sockets, conditionally created
+tasks (an RC input, the dome, audio, the aux LEDs, the PCA9685 sender, the OTA
+task), request bodies and every transient allocation are outside it, and so is
+the allocator's per-block overhead; `make bench-auto`'s memory log stays the
+runtime truth. `make check-build-budgets` checks the same figure for every env,
+the ESP32-P4 included, with no ACK.
 
 **The mutation stage (#405).** `tools/mutation_verify.py` owns its node
 processes: one `node --test` per test file, concurrency 1, 60 s each. Per patch

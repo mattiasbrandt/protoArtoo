@@ -336,5 +336,72 @@ class BudgetCheckFunction(unittest.TestCase):
                     f.write(original_elf)
 
 
+
+class BootHeapFigure(unittest.TestCase):
+    """The boot heap figure and its verdict (#468), without a build."""
+
+    RECIPES = {
+        "metadata": {"tcb_bytes": {"esp32": 352, "esp32p4": 352}},
+        "tasks": [
+            {"task": "A", "chips": {"esp32": {"stack_bytes": 4096, "created": "always"},
+                                    "esp32p4": {"stack_bytes": 5120, "created": "always"}}},
+            {"task": "B", "chips": {"esp32": {"stack_bytes": 2048, "created": "only when x"}}},
+            {"task": "C", "chips": {"esp32p4": {"stack_bytes": 1024, "created": "always"}}},
+        ],
+    }
+    BUDGET = {"boot_heap_baseline_bytes": 10000, "boot_heap_threshold_bytes": 512}
+
+    def test_the_figure_is_static_ram_plus_every_always_created_stack_and_tcb(self):
+        self.assertEqual(slice_verify.boot_heap_bytes(1000, "esp32", self.RECIPES), 1000 + 4096 + 352)
+        self.assertEqual(slice_verify.boot_heap_bytes(1000, "esp32p4", self.RECIPES),
+                         1000 + 5120 + 352 + 1024 + 352)
+
+    def test_the_real_recipes_count_reaction_task_and_not_the_conditional_ones(self):
+        recipes = json.loads(slice_verify.TASK_RECIPES.read_text())
+        names = {task for task, _ in slice_verify.always_created_tasks("esp32", recipes)}
+        self.assertIn("ReactionTask", names)
+        for conditional in ("RCInputTask", "DomeTask", "AudioTask", "AuxLedTask",
+                            "Pca9685Task", "ArduinoOTA", "HostedRecovery"):
+            self.assertNotIn(conditional, names)
+
+    def test_growth_within_the_threshold_passes(self):
+        passed, detail, notes = slice_verify.boot_heap_verdict(10512, self.BUDGET, None)
+        self.assertTrue(passed)
+        self.assertEqual(notes, [])
+        self.assertIn("Boot heap 10512 (+512 vs 10000)", detail)
+
+    def test_growth_past_the_threshold_fails_and_names_the_bytes(self):
+        passed, _detail, notes = slice_verify.boot_heap_verdict(10513, self.BUDGET, None)
+        self.assertFalse(passed)
+        self.assertIn("grew 513 B over the 10000 B baseline", notes[0])
+        self.assertIn("--expect-heap-growth", notes[0])
+
+    def test_an_ack_naming_at_least_the_growth_passes_visibly(self):
+        passed, _detail, notes = slice_verify.boot_heap_verdict(16000, self.BUDGET, 6000)
+        self.assertTrue(passed)
+        self.assertIn("ACK (--expect-heap-growth 6000)", notes[0])
+        self.assertIn("grew 6000 B", notes[0])
+
+    def test_an_ack_naming_fewer_bytes_than_the_growth_fails(self):
+        passed, _detail, notes = slice_verify.boot_heap_verdict(16000, self.BUDGET, 5999)
+        self.assertFalse(passed)
+        self.assertIn("names fewer bytes", notes[0])
+
+    def test_a_missing_baseline_fails_loudly(self):
+        passed, detail, _notes = slice_verify.boot_heap_verdict(16000, {}, 99999)
+        self.assertFalse(passed)
+        self.assertIn("no baseline", detail)
+
+    def test_every_env_with_a_ram_budget_records_a_boot_heap_baseline(self):
+        budgets = json.loads((Path(slice_verify.ROOT) / "tools" / "build_budgets.json").read_text())
+        for env, spec in budgets["envs"].items():
+            if "ram_budget_bytes" not in spec:
+                continue
+            with self.subTest(env=env):
+                self.assertIsInstance(spec.get("boot_heap_baseline_bytes"), int)
+                self.assertIsInstance(spec.get("boot_heap_threshold_bytes"), int)
+                self.assertTrue(spec.get("boot_heap_baseline_measured_at"))
+
+
 if __name__ == "__main__":
     unittest.main()

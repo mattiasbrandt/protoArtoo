@@ -41,7 +41,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from task_create_sites import created_task_sites
+from task_create_sites import created_task_contexts, created_task_sites, is_once_guard
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INCLUDE_DIR = REPO_ROOT / "include"
@@ -205,6 +205,44 @@ class TaskStackRecipes(unittest.TestCase):
             with self.subTest(task=name):
                 self.assertIn(name, self.by_task)
                 self.assertNotEqual(self.by_task[name]["created_in"], "src/main.cpp")
+
+    # -- 1b. which tasks every boot creates (the boot heap figure, #468) -------
+
+    def test_each_recipe_records_the_function_and_guard_around_its_call(self):
+        """A call moved, or wrapped in a new if, changes what every boot creates."""
+        contexts = created_task_contexts()
+        for name, entry in self.by_task.items():
+            with self.subTest(task=name):
+                self.assertEqual(entry["create_site"], contexts[name])
+
+    def test_every_arm_says_whether_every_boot_creates_its_task(self):
+        for name, _entry, chip, arm in self._arms():
+            with self.subTest(task=name, chip=chip):
+                self.assertIsInstance(arm.get("created"), str)
+                self.assertTrue(arm["created"].strip())
+
+    def test_a_task_under_a_real_guard_is_not_always_created(self):
+        """`if (x) xTaskCreate...` is created only when x; the arm must say so.
+
+        A `!flag` guard whose flag is set to true beside the call only stops a
+        second creation, so it is no evidence either way.
+        """
+        for name, entry, chip, arm in self._arms():
+            guard = entry["create_site"]["guard"]
+            if guard is None or is_once_guard(guard, REPO_ROOT / entry["created_in"]):
+                continue
+            with self.subTest(task=name, chip=chip):
+                self.assertNotEqual(arm["created"], "always")
+                self.assertIn(guard, arm["created"])
+
+    def test_the_tcb_figure_covers_every_chip_an_arm_names(self):
+        tcb = self.recipes["metadata"]["tcb_bytes"]
+        chips = {chip for _n, _e, chip, _a in self._arms()}
+        self.assertEqual(sorted(tcb), sorted(chips))
+        for chip, size in tcb.items():
+            with self.subTest(chip=chip):
+                self.assertIsInstance(size, int)
+                self.assertGreater(size, 0)
 
     # -- 2. properties of the one source ---------------------------------------
 
