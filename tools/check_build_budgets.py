@@ -10,6 +10,15 @@ measured, so the LittleFS image is budgeted the same way flash is. That check
 exists because the filesystem had none: its size was hand-measured in tickets,
 and both in-tree size comments had drifted years out of date without anything
 noticing (#382, ADR 0065).
+
+Every environment that records boot_heap_baseline_bytes also has its boot heap
+figure checked: static .data + .bss plus the stack and TCB of every task each
+boot on that chip creates, against the baseline plus boot_heap_threshold_bytes.
+The arithmetic is tools/slice_verify.py's, imported, so the gate (which builds
+artoo_esp32 only) and this script (which builds every env, the ESP32-P4 too)
+cannot disagree. The figure is not runtime heap; see slice_verify.boot_heap_bytes.
+There is no ACK here: growth past the threshold is either given back or a
+deliberate, operator-approved re-stamp of the baseline (#468).
 """
 
 import json
@@ -19,6 +28,7 @@ import sys
 from pathlib import Path
 
 import pio_lock  # tools/, beside this script
+import slice_verify  # tools/, beside this script: the boot heap arithmetic
 
 ROOT = Path(__file__).resolve().parents[1]
 BUDGETS_FILE = ROOT / "tools" / "build_budgets.json"
@@ -209,6 +219,38 @@ def check_one(kind, env_name, actual, budget, ceiling, results):
     return ok
 
 
+def boot_heap_figure(env_name, budgets):
+    """The env's boot heap figure from the ELF the build just linked, or None."""
+    elf = ROOT / ".pio" / "build" / env_name / "firmware.elf"
+    try:
+        chip, spec = slice_verify.platform_for_env(env_name, budgets)
+        static_ram = slice_verify.measure_static_ram(elf, spec)
+        recipes = json.loads(slice_verify.TASK_RECIPES.read_text(encoding="utf-8"))
+        return slice_verify.boot_heap_bytes(static_ram, chip, recipes)
+    except Exception as e:
+        print(f"  FAILED: boot heap figure for {env_name}: {e}", file=sys.stderr)
+        return None
+
+
+def check_boot_heap(env_name, env_budget, figure, results):
+    """Report the boot heap figure against its baseline. Returns True if ok."""
+    label = f"{env_name} boot heap"
+    if figure is None:
+        print(f"\u2717 {label}: NOT MEASURED", file=sys.stderr)
+        results.append((label, None, None, False))
+        return False
+    ok, detail, notes = slice_verify.boot_heap_verdict(figure, env_budget, None)
+    results.append((label, figure, env_budget.get("boot_heap_baseline_bytes"), ok))
+    status = "\u2713" if ok else "\u2717"
+    print(f"{status} {label}: {detail}", file=sys.stderr)
+    for note in notes:
+        print(f"    {note}", file=sys.stderr)
+    if not ok and notes:
+        print("    (this script takes no ACK: the slice gate does; here the bytes come back, or the"
+              " operator re-stamps boot_heap_baseline_bytes)", file=sys.stderr)
+    return ok
+
+
 def main():
     budgets = load_budgets()
     envs = budgets.get("envs", {})
@@ -239,6 +281,11 @@ def main():
         if not check_one("flash", env_name, actual_size, flash_budget_bytes,
                          flash_ceiling_bytes, results):
             all_ok = False
+
+        if "boot_heap_baseline_bytes" in env_budget:
+            figure = boot_heap_figure(env_name, budgets) if actual_size is not None else None
+            if not check_boot_heap(env_name, env_budget, figure, results):
+                all_ok = False
 
         fs_budget_bytes = env_budget.get("fs_budget_bytes")
         fs_ceiling_bytes = env_budget.get("fs_ceiling_bytes")

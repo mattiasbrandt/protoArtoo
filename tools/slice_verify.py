@@ -49,6 +49,16 @@ files are never reported. Checks:
     tests) passes — the evidence producer is not exempt from prove-it-works
 13. no added line, in any file, names the glossary by the name it had before
     50c74203 (OLD_GLOSSARY_RE); it is GLOSSARY.md
+14. build budget (artoo_esp32, tools/build_budgets.json): flash and static RAM
+    under their budgets, and the BOOT HEAP FIGURE - static .data + .bss plus
+    the stack and TCB of every task each boot creates (the recipe arms whose
+    "created" is "always", tools/task_stack_recipes.json) - no more than
+    boot_heap_threshold_bytes past boot_heap_baseline_bytes, unless the run
+    carries a coordinator-sanctioned --expect-heap-growth <bytes> naming at
+    least the growth (the ACK is visible, with both numbers). The figure is
+    not runtime heap: WiFi and lwIP buffers, the HTTP server, conditionally
+    created tasks and transient allocations are outside it, and `make
+    bench-auto`'s memory log stays the runtime truth (#468)
 
 A web-only diff - every path in merge-base..HEAD matches WEB_ONLY_RES - cannot
 fail the native suite, the build budget or the task stack chains, so those
@@ -208,6 +218,11 @@ WEB_ONLY_RES = (
 WEB_ONLY_SKIP = "SKIP (web-only diff)"
 
 DRAM_PREFIXES = (".dram0.", ".dram1.")
+
+# Each task's stack per chip, and whether every boot on that chip creates it
+# (the arm's "created"), live in the stack recipes; the TCB size per chip is in
+# their metadata, measured from the ELF (#468).
+TASK_RECIPES = ROOT / "tools" / "task_stack_recipes.json"
 
 
 @dataclass
@@ -917,7 +932,69 @@ def check_command_exit(
     return CheckResult(label, f"exit {proc.returncode}", proc.returncode == 0, notes)
 
 
-def check_build_budget(env_name: str = "artoo_esp32") -> CheckResult:
+def always_created_tasks(chip: str, recipes: dict) -> list[tuple[str, int]]:
+    """(task, stack bytes) of every task each boot on `chip` creates."""
+    return [
+        (entry["task"], entry["chips"][chip]["stack_bytes"])
+        for entry in recipes["tasks"]
+        if chip in entry["chips"] and entry["chips"][chip]["created"] == "always"
+    ]
+
+
+def boot_heap_bytes(static_ram: int, chip: str, recipes: dict) -> int:
+    """The boot heap figure: static .data + .bss, plus the stack and TCB of
+    every task each boot on `chip` creates.
+
+    It is what a boot takes from internal RAM before anything runs, and it can
+    be read from a build. It is NOT runtime heap: WiFi and lwIP buffers, the
+    HTTP server's task and sockets, request bodies, a conditionally created
+    task (an RC input, the dome, audio, the aux LEDs, the PCA9685 sender, the
+    OTA task) and every transient allocation are outside it, and so is the
+    allocator's per-block overhead. `make bench-auto`'s memory log is the
+    runtime truth; this figure exists so a slice that grows the part a build
+    CAN see is caught at that slice (#468).
+    """
+    tcb = recipes["metadata"]["tcb_bytes"][chip]
+    return static_ram + sum(stack + tcb for _, stack in always_created_tasks(chip, recipes))
+
+
+def boot_heap_verdict(
+    figure: int, env_budget: dict, expect_heap_growth: int | None
+) -> tuple[bool, str, list[str]]:
+    """(passed, detail, notes) for the boot heap figure against its baseline.
+
+    Growth past the baseline by more than the threshold fails, unless the run
+    names at least that many bytes with --expect-heap-growth, which a
+    coordinator grants like the other waivers; the ACK is then printed with
+    both numbers. The baseline moves only by an operator-approved edit of
+    tools/build_budgets.json, never by the gate.
+    """
+    baseline = env_budget.get("boot_heap_baseline_bytes")
+    threshold = env_budget.get("boot_heap_threshold_bytes")
+    if baseline is None or threshold is None:
+        return False, f"Boot heap {figure} (no baseline)", [
+            "No boot_heap_baseline_bytes / boot_heap_threshold_bytes in build_budgets.json"
+        ]
+    growth = figure - baseline
+    detail = f"Boot heap {figure} ({growth:+d} vs {baseline})"
+    if growth <= threshold:
+        return True, detail, []
+    grew = f"boot heap grew {growth} B over the {baseline} B baseline (threshold {threshold} B)"
+    if expect_heap_growth is not None and expect_heap_growth >= growth:
+        return True, detail, [
+            f"{grew}; ACK (--expect-heap-growth {expect_heap_growth}); needs coordinator sanction"
+        ]
+    short = (f"; --expect-heap-growth {expect_heap_growth} names fewer bytes than that"
+             if expect_heap_growth is not None else "")
+    return False, detail, [
+        f"{grew}{short}; give the bytes back, or name them with a coordinator-sanctioned"
+        " --expect-heap-growth <bytes>"
+    ]
+
+
+def check_build_budget(
+    env_name: str = "artoo_esp32", expect_heap_growth: int | None = None
+) -> CheckResult:
     """Check if built firmware exceeds the budget for flash/RAM.
 
     Only the slice gate checks artoo_esp32 budget. CI wiring is separate.
@@ -972,6 +1049,18 @@ def check_build_budget(env_name: str = "artoo_esp32") -> CheckResult:
             [f"No ram_budget_bytes for {env_name}"]
         )
 
+    try:
+        chip, _ = platform_for_env(env_name, budgets)
+        recipes = json.loads(TASK_RECIPES.read_text(encoding="utf-8"))
+        boot_heap = boot_heap_bytes(ram_bytes, chip, recipes)
+        info(f"boot heap {env_name}: static {ram_bytes} + "
+             f"{', '.join(task for task, _ in always_created_tasks(chip, recipes))}")
+    except Exception as e:
+        return CheckResult(
+            "build budget", "no boot heap figure", False,
+            [f"Could not compute the boot heap figure for {env_name}: {e}"]
+        )
+
     # Check budgets
     flash_over_budget = flash_bytes > flash_ceiling
     ram_over_budget = ram_bytes > ram_ceiling
@@ -996,8 +1085,14 @@ def check_build_budget(env_name: str = "artoo_esp32") -> CheckResult:
         pct_used = (ram_bytes / ram_ceiling) * 100
         detail_parts.append(f"RAM {ram_bytes} < {ram_ceiling} ({pct_used:.1f}%)")
 
+    boot_passed, boot_detail, boot_notes = boot_heap_verdict(
+        boot_heap, env_budget, expect_heap_growth
+    )
+    detail_parts.append(boot_detail)
+    notes.extend(boot_notes)
+
     detail = " | ".join(detail_parts)
-    passed = not (flash_over_budget or ram_over_budget)
+    passed = not (flash_over_budget or ram_over_budget) and boot_passed
     return CheckResult("build budget", detail, passed, notes)
 
 
@@ -1201,6 +1296,14 @@ def main() -> int:
         " visible in the printed block",
     )
     parser.add_argument(
+        "--expect-heap-growth",
+        type=int,
+        metavar="BYTES",
+        help="acknowledge, with coordinator sanction, that this slice grows the"
+        " boot heap figure past its baseline by up to BYTES; the ACK and both"
+        " numbers are visible in the printed block",
+    )
+    parser.add_argument(
         "--mutations",
         action="append",
         default=[],
@@ -1358,7 +1461,8 @@ def main() -> int:
         results.extend([skipped("build budget"), skipped("task stack chains")])
     else:
         results.extend([
-            stage("build budget", lambda: check_build_budget("artoo_esp32")),
+            stage("build budget", lambda: check_build_budget(
+                "artoo_esp32", args.expect_heap_growth)),
             # Re-walk every task's recorded chain against the image the row above
             # just linked, and fail when a chain has outgrown its
             # *_MEASURED_CHAIN_BYTES constant (ADR 0040, #271). The static_assert
@@ -1451,6 +1555,7 @@ def main() -> int:
                 "expect_no_new_tests": args.expect_no_new_tests,
                 "expect_test_shrink": args.expect_test_shrink,
                 "expect_no_mutations": args.expect_no_mutations,
+                "expect_heap_growth": args.expect_heap_growth,
                 "mutations": mutations,
                 "production_files": production,
                 "stage_seconds": stage_seconds,
