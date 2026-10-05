@@ -109,10 +109,8 @@ bool hostedLinkSupervisorLivenessDue(const HostedLinkSupervisorState& state, uin
     return false;
 }
 
-HostedLinkFailureActions hostedLinkSupervisorOnLivenessMissed(HostedLinkSupervisorState& state,
-                                                              uint32_t nowMs) {
+HostedLinkFailureActions hostedLinkSupervisorOnLivenessMissed(HostedLinkSupervisorState& state) {
     state.livenessMissCount++;
-    state.lastLivenessMissAtMs = nowMs;
 
     return armFromIdle(state);
 }

@@ -59,8 +59,10 @@ constexpr unsigned int kHostedLinkLivenessMissLimit = 3;
 
 enum class HostedLinkPhase : uint8_t {
     Idle,        // no failure outstanding
-    Armed,       // a failure was observed; the recovery task has been
-                 // notified but has not started its first attempt yet
+    Armed,       // a transport failure or a liveness miss was observed and a
+                 // ladder run is owed, but its first attempt has not started
+                 // yet (the recovery task was notified, or, for a liveness
+                 // miss it found itself, is about to run it)
     Attempting,  // a deinit/re-init cycle is in flight -- the device shell
                  // must not touch WiFi/Hosted independently while this holds
     Degraded,    // the ladder exhausted kHostedLinkRecoveryMaxAttempts;
@@ -106,7 +108,6 @@ struct HostedLinkSupervisorState {
     uint32_t lastHeartbeatNumber = 0;           // the C6's own beat number from the latest event
     unsigned int consecutiveProbeFailures = 0;  // Probe source only
     unsigned int livenessMissCount = 0;         // lifetime liveness misses (each one tried to arm a run)
-    uint32_t lastLivenessMissAtMs = 0;
 };
 
 // -----------------------------------------------------------------------
@@ -114,11 +115,12 @@ struct HostedLinkSupervisorState {
 // -----------------------------------------------------------------------
 
 struct HostedLinkFailureActions {
-    // true only when this event should notify the recovery task to start a
-    // fresh ladder run (i.e. the ladder was Idle). A failure that arrives
-    // while Armed/Attempting folds into the run already in flight; a
-    // failure that arrives while Degraded stays terminal by design --
-    // neither notifies.
+    // true only when this trigger armed a fresh ladder run (i.e. the ladder
+    // was Idle). From the transport-failure event handler that means notify
+    // the recovery task; from a liveness miss, which the recovery task finds
+    // itself, it means run the ladder there and then. A trigger that arrives
+    // while Armed/Attempting folds into the run already in flight; one that
+    // arrives while Degraded stays terminal by design -- neither starts a run.
     bool shouldNotifyRecoveryTask = false;
 };
 
@@ -157,13 +159,14 @@ void hostedLinkSupervisorOnHeartbeat(HostedLinkSupervisorState& state, uint32_t 
                                      uint32_t beatNumber);
 
 // Called by the device shell after each probe while the watch reads Probe.
-// `answered` is the probe's own success, never a host-side flag.
+// `answered` is whether the C6 replied at all (the device shell decides which
+// replies count), never a host-side flag.
 void hostedLinkSupervisorRecordProbe(HostedLinkSupervisorState& state, uint32_t nowMs,
                                      bool answered);
 
 // true when the watch has gone quiet long enough to arm a ladder run:
 // Heartbeat -- no beat for kHostedLinkLivenessMissLimit intervals;
-// Probe -- kHostedLinkLivenessMissLimit consecutive failed probes.
+// Probe -- kHostedLinkLivenessMissLimit consecutive unanswered probes.
 // Only ever true from Idle with a watch running: Armed/Attempting already
 // have a run in flight, Degraded is terminal, and arming clears the source.
 bool hostedLinkSupervisorLivenessDue(const HostedLinkSupervisorState& state, uint32_t nowMs);
@@ -172,15 +175,15 @@ bool hostedLinkSupervisorLivenessDue(const HostedLinkSupervisorState& state, uin
 // Arms through the same Idle->Armed transition a transport failure takes, so
 // Idle stays the only way in and Degraded stays terminal; counts the miss
 // in livenessMissCount, not transportFailureEventCount.
-HostedLinkFailureActions hostedLinkSupervisorOnLivenessMissed(HostedLinkSupervisorState& state,
-                                                              uint32_t nowMs);
+HostedLinkFailureActions hostedLinkSupervisorOnLivenessMissed(HostedLinkSupervisorState& state);
 
 // -----------------------------------------------------------------------
 // Recovery task lifecycle
 // -----------------------------------------------------------------------
 
-// Called once by the recovery task after it wakes from the notification
-// that armed it, before its attempt loop starts.
+// Called once by the recovery task at the start of each ladder run -- after
+// the notification a transport failure sent, or after the liveness miss it
+// found itself -- before its attempt loop starts.
 void hostedLinkSupervisorBeginAttemptRun(HostedLinkSupervisorState& state);
 
 struct HostedLinkAttemptOutcome {
