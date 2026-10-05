@@ -672,8 +672,11 @@ void initPsychicWebServer() {
 
     // What the route table costs the Internal Data Heap (#467): each
     // webRegisterRoute() makes PsychicHttp allocate a handler, an endpoint, a
-    // list node and a copy of the path. A heap reading on either side counts
-    // the copies and the allocator's per-block overhead that sizeof() misses.
+    // list node and a copy of any path longer than the small-string buffer
+    // (PsychicEndpoint::_uri is a std::string, so a path of up to 15
+    // characters lives inside the endpoint). A heap reading on either side
+    // counts the copies and the allocator's per-block overhead that sizeof()
+    // misses.
     // The figure also holds the upload routes and the not-found handler
     // registered in the same table, which a single route dispatcher would
     // keep, so it is the ceiling of what one could give back; the same line

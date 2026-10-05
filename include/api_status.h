@@ -85,9 +85,13 @@ struct HealthSnapshot {
 };
 
 // Capture the health snapshot: estop/SBUS diagnostics under robotStateMux,
-// WiFi connectivity through the network manager seam, and the Internal Data
-// Heap through include/heap_reading.h (stubbed on native builds).
-// thread-safe: yes (owns its own short critical section)
+// WiFi connectivity through the network manager seam, the Internal Data Heap
+// and its allocated block count through include/heap_reading.h (stubbed on
+// native builds), the admission census's open-socket count (g_webSocketsOpen,
+// include/web_admission.h) and the open event streams
+// (webEventStreamClientCount(), include/web_event_stream.h).
+// thread-safe: yes (two short sequential critical sections: robotStateMux,
+// then s_streamMux inside webEventStreamClientCount(); never nested)
 void captureHealthSnapshot(HealthSnapshot* out);
 
 // GET /api/wifi's fields, verbatim (formatWifiJson's JSON keys).
