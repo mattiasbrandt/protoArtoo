@@ -633,7 +633,8 @@ Two things worth knowing:
 - **`outcome=applied` means the controller drove the line, not that the
   module rebooted.** If the module were unplugged or dead, this command
   would still report success. What tells you it really happened is the log
-  that follows it, and `hostedLink` in `/api/status`.
+  that follows it, and `system.status.hosted-link`: the same answer as
+  `hostedLink` in `/api/status`, readable here while WiFi is down.
 
 On the artoo-esp32, which has no separate WiFi module, the command is still
 listed and answers `unavailable reason=not-on-this-board`.

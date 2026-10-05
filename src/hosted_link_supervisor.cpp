@@ -22,6 +22,18 @@ const char* hostedLinkPhaseName(HostedLinkPhase phase) {
     return "unknown";
 }
 
+const char* hostedLinkLivenessSourceName(HostedLinkLivenessSource source) {
+    switch (source) {
+        case HostedLinkLivenessSource::None:
+            return "none";
+        case HostedLinkLivenessSource::Heartbeat:
+            return "heartbeat";
+        case HostedLinkLivenessSource::Probe:
+            return "probe";
+    }
+    return "unknown";
+}
+
 // The one Idle->Armed transition. Both a transport failure and a liveness
 // miss come through here, so neither can open a second way into a ladder run.
 // Armed/Attempting: a run is already in flight and the trigger folds into it.

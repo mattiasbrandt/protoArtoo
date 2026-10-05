@@ -121,6 +121,12 @@ static HostedLinkSupervisorState g_hostedLinkState;
 static portMUX_TYPE g_hostedLinkMux = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t g_hostedRecoveryTaskHandle = nullptr;
 
+// The last ladder attempt's verdict inputs, for hostedLinkQueryStatus()
+// (#471). Under g_hostedLinkMux, written in the same critical section as
+// hostedLinkSupervisorRecordAttempt(), so a reader never sees attemptCount
+// advanced beside the previous attempt's inputs.
+static HostedLinkLastAttempt g_hostedLastAttempt;
+
 // Post-recovery WiFi rejoin diagnostics, one field per esp_wifi_* call
 // (2026-08-29 #184 device review: a collapsed bool made a real hardware
 // failure undiagnosable because Arduino's log_e() is compiled out at this
@@ -724,10 +730,24 @@ static void hostedRunRecoveryLadder() {
                         deinitText, initText, verdict);
         }
 
+        HostedLinkLastAttempt lastAttempt;
+        lastAttempt.init = !initTried ? HostedLinkInitOutcome::Refused
+                                      : (initOk ? HostedLinkInitOutcome::Ok
+                                                : HostedLinkInitOutcome::Failed);
+        if (!initTried) {
+            lastAttempt.refusal =
+                fit.failedProbe != nullptr ? fit.failedProbe : "free total short";
+        }
+        lastAttempt.livenessAsked = liveness.tried;
+        lastAttempt.heartbeatConfigResult = liveness.heartbeatConfigResult;
+        lastAttempt.wifiGetModeResult = liveness.wifiGetModeResult;
+        lastAttempt.heartbeatSeen = liveness.heartbeatSeen;
+
         HostedLinkAttemptOutcome outcome;
         portENTER_CRITICAL(&g_hostedLinkMux);
         outcome = hostedLinkSupervisorRecordAttempt(g_hostedLinkState, nowMs, transportUp);
         attemptsThisRun = g_hostedLinkState.attemptCount;
+        g_hostedLastAttempt = lastAttempt;
         portEXIT_CRITICAL(&g_hostedLinkMux);
 
         if (outcome.recovered) {
@@ -971,9 +991,10 @@ static void hostedRegisterLinkSupervision() {
     }
 }
 
-// Read-only snapshot for /api/status (#189).
-HostedLinkStatusSnapshot hostedLinkQueryStatus() {
-    HostedLinkStatusSnapshot snap;
+// Read-only snapshot for /api/status (#189) and the Console's
+// system.status.hosted-link (#471).
+void hostedLinkQueryStatus(HostedLinkStatusSnapshot* out) {
+    HostedLinkStatusSnapshot& snap = *out;
     portENTER_CRITICAL(&g_hostedLinkMux);
     snap.phase = g_hostedLinkState.phase;
     snap.transportFailureEventCount = g_hostedLinkState.transportFailureEventCount;
@@ -984,8 +1005,25 @@ HostedLinkStatusSnapshot hostedLinkQueryStatus() {
     snap.lastFailureAtMs = g_hostedLinkState.lastFailureAtMs;
     snap.lastAttemptAtMs = g_hostedLinkState.lastAttemptAtMs;
     snap.degradedAtMs = g_hostedLinkState.degradedAtMs;
+    snap.livenessSource = g_hostedLinkState.livenessSource;
+    snap.livenessMissCount = g_hostedLinkState.livenessMissCount;
+    snap.heartbeatCount = g_hostedLinkState.heartbeatCount;
+    snap.lastHeartbeatNumber = g_hostedLinkState.lastHeartbeatNumber;
+    if (g_hostedLinkState.livenessSource != HostedLinkLivenessSource::None) {
+        // Read against millis() inside the section, as hostedLivenessTick()
+        // does, so the age and the source belong to one moment. A running
+        // watch arms within kHostedLinkLivenessMissLimit intervals and then
+        // stops, so the age stays seconds; the clamp only keeps the
+        // conversion defined.
+        const uint32_t ageMs = millis() - g_hostedLinkState.lastLivenessAtMs;
+        snap.livenessAgeMs = ageMs > static_cast<uint32_t>(INT32_MAX)
+                                 ? INT32_MAX
+                                 : static_cast<int32_t>(ageMs);
+    } else {
+        snap.livenessAgeMs = -1;
+    }
+    snap.lastAttempt = g_hostedLastAttempt;
     portEXIT_CRITICAL(&g_hostedLinkMux);
-    return snap;
 }
 
 // ============================================================================

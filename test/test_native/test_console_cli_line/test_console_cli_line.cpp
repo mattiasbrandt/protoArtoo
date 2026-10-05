@@ -168,8 +168,9 @@ void tearDown() {}
 // The regression: "operations type=<t>" typed as one line, through the real
 // parser and the real reconstruction function, must actually filter.
 // Catalog totals (docs/action-registry.yaml, confirmed against
-// test_console_catalog.cpp's exact-214 count): action 136, config 37,
-// event 15, status 26. Config was 36 before #451 added
+// test_console_catalog.cpp's exact-215 count): action 136, config 37,
+// event 15, status 27. Status was 26 before #471 added
+// system.status.hosted-link. Config was 36 before #451 added
 // dome.config.stand-down, and 35 before #453 added
 // servo.config.cadence-floor: #225 (system.config.log-level) and #227
 // (wifi.config.settings) had taken it to 36, and #413 retired
@@ -244,7 +245,7 @@ void test_bare_operations_still_lists_everything_through_the_real_adapter_path()
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT(214, g_itemCount);  // #347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home, #442 servo.action.puppet-part and the five take rows, #451 dome.config.stand-down, #447 sound.action.play-track-happy, -play-next and -play-previous; #413 retired aux.config.led-pin
+    TEST_ASSERT_EQUAL_INT(215, g_itemCount);  // #347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home, #442 servo.action.puppet-part and the five take rows, #451 dome.config.stand-down, #447 sound.action.play-track-happy, -play-next and -play-previous, #471 system.status.hosted-link; #413 retired aux.config.led-pin
 }
 
 // help <op> must still work through the same real path (the reconstruction

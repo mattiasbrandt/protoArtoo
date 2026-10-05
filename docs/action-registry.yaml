@@ -3409,6 +3409,50 @@ entries:
   - staSsid
   - wifiRssi
   - networkRecovery
+- name: system.status.hosted-link
+  display_name: WiFi Module Link
+  description: 'The WiFi module link now: liveness and its recovery ladder. Works over serial when WiFi is down.'
+  domain: system
+  type: status
+  # The FireBeetle 2's WiFi module sits behind ESP-Hosted (#471). Off this
+  # board the row answers not-on-this-board from the catalog, the way
+  # system.action.reboot-wifi-module does.
+  board_capability: PA_CAP_HOSTED_WIFI
+  marcduino_cmd: null
+  # The same snapshot GET /api/status and its status event publish as the
+  # hostedLink object. The Console row exists because that route is
+  # unreachable exactly when this answer matters: the link is down.
+  api_path: /api/status
+  sse_event: status
+  cpp_enum: null
+  cpp_file: null
+  sources:
+  - internal
+  safety_critical: false
+  requires_web_control: false
+  executor: hostedLinkQueryStatus
+  # The hostedLink object's keys, verbatim (src/web/status_json.cpp).
+  fields:
+  - phase
+  - terminal
+  - transportFailureCount
+  - transportUpEventCount
+  - attemptCount
+  - totalAttemptCount
+  - recoveredCount
+  - lastFailureAtMs
+  - lastAttemptAtMs
+  - degradedAtMs
+  - livenessSource
+  - livenessMissCount
+  - heartbeatCount
+  - lastHeartbeatNumber
+  - livenessAgeMs
+  - lastAttemptInit
+  - lastAttemptRefusal
+  - lastAttemptHeartbeatConfig
+  - lastAttemptWifiGetMode
+  - lastAttemptHeartbeatSeen
 - name: wifi.config.settings
   display_name: WiFi Settings
   description: Join your network or host the droid's own, with a name for each. Saved together and applied at the next restart; set passwords on the WiFi page.

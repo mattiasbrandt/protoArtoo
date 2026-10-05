@@ -1146,6 +1146,28 @@ rows:
   executor_or_core: captureWifiStatusSnapshot
   missing_metadata: []
   notes: '#223: reclassified from aggregate-field to api. GET /api/wifi is its own standalone endpoint with its own JSON shape (buildWifiJson/formatWifiJson), not a field inside /api/status - the prior evidence citing api_status.cpp:104/handleStatusGet was wrong (that line is /api/status''s handler, not /api/wifi''s; /api/status carries overlapping but distinct scalar wifi* fields, not a nested "wifi" object). Promoted to a real console query; captureWifiStatusSnapshot() is the Zone Snapshot capture both handleWifiGet() and the Console module call (ADR 0036).'
+- name: system.status.hosted-link
+  type: status
+  registry_api_path: /api/status
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: status
+  registry_nvs_key: null
+  registry_board_capability: PA_CAP_HOSTED_WIFI
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/status", WebMethod::kGet, handleStatusGet)`
+  - include/hosted_link_status.h - `hostedLinkQueryStatus()` declaration
+  - src/web/web_network_manager_hosted.cpp - `hostedLinkQueryStatus()` definition, copies the supervisor state and `g_hostedLastAttempt` under `g_hostedLinkMux`
+  - src/web/web_server.cpp - `captureStatusJsonInputs()` calls `hostedLinkQueryStatus()` for the `hostedLink` object `buildStatusJson()` formats
+  - src/console/console_module.cpp - `consoleExecuteSystemStatusHostedLink` calls `hostedLinkQueryStatus()`
+  executor_or_core: hostedLinkQueryStatus
+  missing_metadata: []
+  notes: '#471: the hostedLink object of GET /api/status, also answered over serial because that route is unreachable while the WiFi module link is down. PA_CAP_HOSTED_WIFI only.'
 - name: wifi.config.settings
   type: config
   registry_api_path: /api/wifi

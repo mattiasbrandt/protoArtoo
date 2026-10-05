@@ -2648,6 +2648,43 @@ Returns controller status snapshot.
 - Additional component objects are conditionally present when enabled: each Output under its stored id (`arm1`..`aux3`, the `components{}` keys of `GET /api/config`, never shown - its name is that entry's `label`), and `domeEsc`, `rcCh1..rcCh6`, `drive`, `audio`, `protoR2link`
 - Includes top-level `dome_link` object (`state`, `transport`, counters, last_rx_ms)
 - Includes `hoverboard` object when feedback is valid
+- `hostedLink` object, on the FireBeetle 2 only (ESP-Hosted, the WiFi module
+  reached over SDIO; absent on the Artoo PCB): the WiFi module link's recovery
+  ladder (#189) and the liveness watch that can arm it (#471). The Console's
+  `system.status.hosted-link` answers the same keys over serial, for when this
+  route is unreachable because the link is down.
+  - `phase` - `idle`, `armed`, `attempting` or `degraded`; `terminal` is true
+    once `degraded`, which lasts until the controller restarts (ADR 0032)
+  - `transportFailureCount`, `transportUpEventCount` - transport-failure and
+    transport-up events from ESP-Hosted since boot. A run the liveness watch
+    armed leaves `transportFailureCount` unchanged; `livenessMissCount` counts it
+  - `attemptCount` (this run), `totalAttemptCount` (since boot),
+    `recoveredCount` (runs that ended back in `idle`)
+  - `lastFailureAtMs`, `lastAttemptAtMs`, `degradedAtMs` - uptime of the last
+    transport failure, the last attempt, and the move to `degraded` (`0` if
+    none)
+  - `livenessSource` - what the watch reads: `heartbeat` (the module's beat,
+    every 5 s), `probe` (one `esp_wifi_get_mode()` call every 5 s, where the
+    heartbeat could not be enabled), or `none` while no watch runs: before the
+    link first comes up, during a ladder run, and for good once `degraded`
+  - `livenessMissCount` - times the watch went quiet for 3 intervals and tried
+    to arm the ladder, since boot
+  - `heartbeatCount`, `lastHeartbeatNumber` - heartbeats received since boot,
+    and the module's own number on the latest
+  - `livenessAgeMs` - milliseconds since the watch's last evidence, or since
+    it started when none has arrived yet; the ladder arms near 15,000. `-1`
+    while `livenessSource` is `none`
+  - `lastAttemptInit` - the last attempt's re-init: `ok`, `failed`, or
+    `refused` when the heap would not hold it; `null` before the first attempt
+  - `lastAttemptRefusal` - on `refused`, what did not fit: `channel pool`,
+    `small allocations`, `SDIO pool`, or `free total short`; otherwise `null`
+  - `lastAttemptHeartbeatConfig`, `lastAttemptWifiGetMode` - the last attempt's
+    two liveness calls as `esp_err_t` numbers (`0` is `ESP_OK`, `12289` is
+    `ESP_ERR_WIFI_NOT_INIT`, which still counts as the module answering), and
+    `lastAttemptHeartbeatSeen` - whether a heartbeat arrived after the re-init.
+    The attempt recovered when a heartbeat arrived or the mode call was
+    answered. All three are `null` when the module was not asked (the host was
+    not initialised after the re-init) and before the first attempt
 
 #### Example request
 

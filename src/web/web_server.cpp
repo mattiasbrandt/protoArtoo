@@ -291,7 +291,7 @@ static void captureStatusJsonInputs(StatusJsonInputs* in) {
     in->littleFsReady = littleFsReady;
     in->sound = audioSoundStatusIdentity();
 #if PA_CAP_HOSTED_WIFI
-    in->hostedLink = hostedLinkQueryStatus();
+    hostedLinkQueryStatus(&in->hostedLink);
 #endif
 }
 

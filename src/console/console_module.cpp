@@ -38,6 +38,16 @@
                               // consoleExecuteSystemStatusLogs() below streams from (#239)
 #include "log_buffer.h"       // LOG_LINE_MAX - sizes that executor's per-line scratch buffer
 #include "web_network_manager.h"
+// #if, not #ifdef (ADR 0029), and config.h named here so the capability is
+// defined before the gate rather than through whichever header happens to
+// bring it in. hosted_link_status.h's accessor is defined only on a board
+// with the Hosted backend, so the include, consoleExecuteSystemStatusHostedLink()
+// and its dispatch-table row vanish together elsewhere; the catalog row then
+// answers not-on-this-board from consoleExecuteCommand()'s board guard.
+#include "config.h"
+#if PA_CAP_HOSTED_WIFI
+#include "hosted_link_status.h"  // hostedLinkQueryStatus() - system.status.hosted-link (#471)
+#endif
 #include "api_status.h"
 #include "api_audio.h"
 #include "audio_task.h"
@@ -748,6 +758,85 @@ static void consoleExecuteSystemStatusWifi(uint32_t requestId, const ConsoleReco
                          CONSOLE_REASON_NONE);
     }
 }
+
+#if PA_CAP_HOSTED_WIFI
+// system.status.hosted-link (#471): /api/status's hostedLink object as one
+// record, for a serial session once the link it describes, and HTTP with it,
+// is gone. Field names are its JSON keys and values read as formatStatusJson()
+// writes them (src/web/status_json.cpp), strings unquoted and null as "null",
+// the way domeBearingDeg reads here.
+static void consoleExecuteSystemStatusHostedLink(uint32_t requestId,
+                                                 const ConsoleRecordSink* sink) {
+    HostedLinkStatusSnapshot snap;
+    hostedLinkQueryStatus(&snap);
+    const HostedLinkLastAttempt& la = snap.lastAttempt;
+    const bool attempted = la.init != HostedLinkInitOutcome::None;
+    const bool asked = attempted && la.livenessAsked;
+
+    if (sink->onRecordField == nullptr) {
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                              CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    // Wide enough for a uint32_t and for an int32_t at its most negative.
+    char tempBuf[16] = {};
+    sink->onRecordField(requestId, "phase", hostedLinkPhaseName(snap.phase));
+    sink->onRecordField(requestId, "terminal",
+                        snap.phase == HostedLinkPhase::Degraded ? "true" : "false");
+
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.transportFailureEventCount);
+    sink->onRecordField(requestId, "transportFailureCount", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.transportUpEventCount);
+    sink->onRecordField(requestId, "transportUpEventCount", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.attemptCount);
+    sink->onRecordField(requestId, "attemptCount", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.totalAttemptCount);
+    sink->onRecordField(requestId, "totalAttemptCount", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.recoveredCount);
+    sink->onRecordField(requestId, "recoveredCount", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", (unsigned long)snap.lastFailureAtMs);
+    sink->onRecordField(requestId, "lastFailureAtMs", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", (unsigned long)snap.lastAttemptAtMs);
+    sink->onRecordField(requestId, "lastAttemptAtMs", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", (unsigned long)snap.degradedAtMs);
+    sink->onRecordField(requestId, "degradedAtMs", tempBuf);
+
+    sink->onRecordField(requestId, "livenessSource",
+                        hostedLinkLivenessSourceName(snap.livenessSource));
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.livenessMissCount);
+    sink->onRecordField(requestId, "livenessMissCount", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.heartbeatCount);
+    sink->onRecordField(requestId, "heartbeatCount", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", (unsigned long)snap.lastHeartbeatNumber);
+    sink->onRecordField(requestId, "lastHeartbeatNumber", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%ld", (long)snap.livenessAgeMs);
+    sink->onRecordField(requestId, "livenessAgeMs", tempBuf);
+
+    sink->onRecordField(requestId, "lastAttemptInit",
+                        attempted ? hostedLinkInitOutcomeName(la.init) : "null");
+    sink->onRecordField(requestId, "lastAttemptRefusal",
+                        attempted && la.refusal != nullptr ? la.refusal : "null");
+    if (asked) {
+        snprintf(tempBuf, sizeof(tempBuf), "%ld", (long)la.heartbeatConfigResult);
+        sink->onRecordField(requestId, "lastAttemptHeartbeatConfig", tempBuf);
+        snprintf(tempBuf, sizeof(tempBuf), "%ld", (long)la.wifiGetModeResult);
+        sink->onRecordField(requestId, "lastAttemptWifiGetMode", tempBuf);
+    } else {
+        sink->onRecordField(requestId, "lastAttemptHeartbeatConfig", "null");
+        sink->onRecordField(requestId, "lastAttemptWifiGetMode", "null");
+    }
+    sink->onRecordField(requestId, "lastAttemptHeartbeatSeen",
+                        !asked ? "null" : (la.heartbeatSeen ? "true" : "false"));
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                          CONSOLE_REASON_NONE);
+    }
+}
+#endif  // PA_CAP_HOSTED_WIFI
 
 static void consoleExecuteDomeStatusCurrent(uint32_t requestId, const ConsoleRecordSink* sink) {
     DomeStatusSnapshot snap = {};
@@ -1466,6 +1555,9 @@ struct ConsoleStatusExecutorEntry {
 static const ConsoleStatusExecutorEntry g_statusExecutors[] = {
     {"system.status.health", consoleExecuteSystemStatusHealth},
     {"system.status.wifi", consoleExecuteSystemStatusWifi},
+#if PA_CAP_HOSTED_WIFI
+    {"system.status.hosted-link", consoleExecuteSystemStatusHostedLink},
+#endif
     {"dome.status.current", consoleExecuteDomeStatusCurrent},
     {"sound.status.current", consoleExecuteSoundStatusCurrent},
     {"dome.status.serial-link", consoleExecuteDomeStatusSerialLink},
