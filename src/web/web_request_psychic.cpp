@@ -579,6 +579,11 @@ WebRequestHandler s_notFoundHandler = nullptr;
 constexpr char kSeamRoutePrefix[] = "/api/";
 constexpr size_t kSeamRoutePrefixLength = sizeof(kSeamRoutePrefix) - 1;
 
+// The dispatcher's endpoint URI: everything under kSeamRoutePrefix, matched by
+// the vendor's httpd_uri_match_wildcard(). A pattern rather than a route, so
+// the action registry has no row for it.
+constexpr char kSeamDispatchUri[] = "/api/*";
+
 // Runs on the server task for every /api/ request no upload endpoint claimed.
 // Allocates nothing: the path is compared in place inside uriCStr(), not
 // through request->path() or pathCStr(), which both build a string.
@@ -643,13 +648,15 @@ esp_err_t dispatchSeamRoute(PsychicRequest* vendorReq, PsychicResponse* vendorRe
 // closeCallback() runs for endpoint handlers only. A global PsychicWebHandler
 // would keep closed clients forever (WebpPictureHandler above).
 void registerSeamDispatcher() {
-    s_server.on("/api/*", HTTP_GET, [](PsychicRequest* vendorReq, PsychicResponse* vendorResp) {
-        return dispatchSeamRoute(vendorReq, vendorResp, WebMethod::kGet);
-    });
-    s_server.on("/api/*", HTTP_POST, [](PsychicRequest* vendorReq, PsychicResponse* vendorResp) {
-        return dispatchSeamRoute(vendorReq, vendorResp, WebMethod::kPost);
-    });
-    s_server.on("/api/*", HTTP_DELETE,
+    s_server.on(kSeamDispatchUri, HTTP_GET,
+                [](PsychicRequest* vendorReq, PsychicResponse* vendorResp) {
+                    return dispatchSeamRoute(vendorReq, vendorResp, WebMethod::kGet);
+                });
+    s_server.on(kSeamDispatchUri, HTTP_POST,
+                [](PsychicRequest* vendorReq, PsychicResponse* vendorResp) {
+                    return dispatchSeamRoute(vendorReq, vendorResp, WebMethod::kPost);
+                });
+    s_server.on(kSeamDispatchUri, HTTP_DELETE,
                 [](PsychicRequest* vendorReq, PsychicResponse* vendorResp) {
                     return dispatchSeamRoute(vendorReq, vendorResp, WebMethod::kDelete);
                 });
