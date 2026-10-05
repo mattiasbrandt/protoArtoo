@@ -36,10 +36,9 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/identity", WebMethod::kPost, handleIdentityPost);
     // The Component Registry lineup. Order does not decide between this and the
     // shorter /api/identity above it, nor between any other pair in this table:
-    // PsychicHttp matches with httpd_uri_match_wildcard(), which for a template
-    // carrying neither '*' nor '?' requires equal lengths -- so /api/identity
-    // cannot swallow /api/identity/components
-    // (framework-espidf esp_http_server/src/httpd_uri.c:57-64).
+    // the backend's route dispatcher matches a path exactly, equal length and
+    // equal bytes, so /api/identity cannot swallow /api/identity/components
+    // (dispatchSeamRoute() in web_request_psychic.cpp).
     webRegisterRoute("/api/identity/components", WebMethod::kGet, handleComponentsGet);
 
     // The routes data/app.js and data/shell.js fetch on every page load.
@@ -107,10 +106,8 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost);
     webRegisterRoute("/api/servo/outputs", WebMethod::kGet, handleServoOutputsGet);
     // Order does NOT decide between this and the shorter /api/servo above it.
-    // PsychicHttp matches with httpd_uri_match_wildcard(), and a template
-    // carrying neither `*` nor `?` takes the `len != exact_match_chars`
-    // branch -- an exact comparison, so a prefix cannot swallow a longer path
-    // (checked in the vendored esp_http_server's httpd_uri.c, 2026-09-17).
+    // The route dispatcher compares whole paths, so a prefix cannot swallow a
+    // longer path (dispatchSeamRoute() in web_request_psychic.cpp).
     webRegisterRoute("/api/servo/centre", WebMethod::kPost, handleServoCentrePost);
 
     webRegisterRoute("/api/aux-led/color", WebMethod::kPost, handleAuxLedColorPost);
