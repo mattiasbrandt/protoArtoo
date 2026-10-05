@@ -539,8 +539,140 @@ void webEventStreamBroadcast(const char* event, const char* data, uint32_t id) {
     }
 }
 
+// =============================================================================
+// Route dispatch (#467)
+//
+// Every webRegisterRoute() row lands in one fixed table, and three endpoints --
+// /api/* for GET, POST and DELETE -- look a request up in it. Before this, each
+// row was its own PsychicHttp endpoint: a PsychicWebHandler, a PsychicEndpoint,
+// a std::list node and, for a long path, a std::string copy, all allocated at
+// boot from artoo's one internal heap (~16 KB for the table, measured). A row
+// here is three words of static RAM.
+//
+// The rows hold no body bound: the server-wide ceiling is raised once at
+// registration and each handler answers its own 413 from contentLength(), so
+// nothing at dispatch would read one.
+// =============================================================================
+
+namespace {
+
+struct SeamRoute {
+    // The caller's string literal, never copied: every path in the seam table
+    // has static storage, which is what makes a row this small.
+    const char* path;
+    WebRequestHandler handler;
+    WebMethod method;
+};
+
+// Sized to the table: web_seam_routes.cpp registers 73 rows with every build
+// flag on (PA_ADMISSION_TRACE, PA_HEAP_PROFILE, PA_HEAP_TRACING), and 80 leaves
+// room for a few more. A row past it is refused at boot with an error naming
+// its path -- raise this then, not before.
+constexpr size_t kSeamRouteCapacity = 80;
+SeamRoute s_routes[kSeamRouteCapacity];
+size_t s_routeCount = 0;
+
+// The seam's not-found handler, kept for the dispatcher's misses as well as
+// handed to onNotFound() for everything outside /api/.
+WebRequestHandler s_notFoundHandler = nullptr;
+
+constexpr char kSeamRoutePrefix[] = "/api/";
+constexpr size_t kSeamRoutePrefixLength = sizeof(kSeamRoutePrefix) - 1;
+
+// Runs on the server task for every /api/ request no upload endpoint claimed.
+// Allocates nothing: the path is compared in place inside uriCStr(), not
+// through request->path() or pathCStr(), which both build a string.
+esp_err_t dispatchSeamRoute(PsychicRequest* vendorReq, PsychicResponse* vendorResp,
+                            WebMethod method) {
+    // The path is the URI up to its query string, as PsychicEndpoint::matches()
+    // cut it for the per-route endpoints this replaces.
+    const char* uri = vendorReq->uriCStr();
+    const char* query = strchr(uri, '?');
+    const size_t pathLength = query != nullptr ? (size_t)(query - uri) : strlen(uri);
+
+    WebRequestHandler handler = s_notFoundHandler;
+    for (size_t i = 0; i < s_routeCount; i++) {
+        const SeamRoute& route = s_routes[i];
+        // Exact match, as httpd_uri_match_wildcard() gave each endpoint for a
+        // template with no '*' or '?': equal length and equal bytes, so
+        // /api/identity never answers /api/identity/components. strncmp()
+        // returning 0 means route.path holds at least pathLength characters,
+        // so the terminator read after it stays inside the literal.
+        if (route.method == method && strncmp(route.path, uri, pathLength) == 0 &&
+            route.path[pathLength] == '\0') {
+            handler = route.handler;
+            break;
+        }
+    }
+
+    if (handler == nullptr) {
+        // No not-found handler registered: hand the miss back to the vendor,
+        // whose requestHandler() routes HTTPD_404_NOT_FOUND to its own
+        // default. Unreachable while web_seam_routes.cpp ends with
+        // webRegisterNotFoundRoute().
+        return HTTPD_404_NOT_FOUND;
+    }
+
+    // A miss -- an unknown /api/ path, or a known one with another method --
+    // answers through the seam's not-found handler here rather than returning
+    // HTTPD_404_NOT_FOUND. The answer is the one the fallthrough gave before
+    // (no static file lives under /api/), and once a handler has answered, a
+    // 404 return would make requestHandler() send a second response on top.
+    WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
+    WebRequest req(&ctx);
+    handler(req);
+    return ctx.result;
+}
+
+// The three endpoints every ordinary route is served through. Called once,
+// after webRegisterSeamRoutes() has filled the table.
+//
+// Order is load-bearing: PsychicHttpServer::_process() takes the first
+// endpoint that matches, in registration order. /api/take/file is a POST
+// upload endpoint (webRegisterUploadRoute()) under /api/, registered inside
+// webRegisterSeamRoutes(), so it has to precede /api/* POST here or every take
+// upload would reach the dispatcher instead of its PsychicUploadHandler.
+//
+// These calls are also what puts GET, POST and DELETE into the server's
+// supported_methods, from which start() registers one ESP-IDF wildcard
+// handler per method. serveStatic() and addHandler() never add a method, so
+// static files depend on the GET endpoint here for their GET handler.
+//
+// Each is a PsychicWebHandler, the vendor's on(uri, method, fn): it keeps the
+// maxRequestBodySize refusal, loadBody(), loadParams(), and the client cleanup
+// closeCallback() runs for endpoint handlers only. A global PsychicWebHandler
+// would keep closed clients forever (WebpPictureHandler above).
+void registerSeamDispatcher() {
+    s_server.on("/api/*", HTTP_GET, [](PsychicRequest* vendorReq, PsychicResponse* vendorResp) {
+        return dispatchSeamRoute(vendorReq, vendorResp, WebMethod::kGet);
+    });
+    s_server.on("/api/*", HTTP_POST, [](PsychicRequest* vendorReq, PsychicResponse* vendorResp) {
+        return dispatchSeamRoute(vendorReq, vendorResp, WebMethod::kPost);
+    });
+    s_server.on("/api/*", HTTP_DELETE,
+                [](PsychicRequest* vendorReq, PsychicResponse* vendorResp) {
+                    return dispatchSeamRoute(vendorReq, vendorResp, WebMethod::kDelete);
+                });
+}
+
+}  // namespace
+
 void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler handler,
                       size_t maxBodyBytes) {
+    // Refused before the body ceiling below, so a row that never serves
+    // cannot raise what every route buffers.
+    if (strncmp(path, kSeamRoutePrefix, kSeamRoutePrefixLength) != 0) {
+        // Only /api/ reaches the dispatcher; anywhere else this row would
+        // never be asked.
+        PA_LOG_ERROR(TAG, "route %s refused: seam routes live under %s", path, kSeamRoutePrefix);
+        return;
+    }
+    if (s_routeCount >= kSeamRouteCapacity) {
+        PA_LOG_ERROR(TAG, "route %s refused: route table full at %u rows", path,
+                     (unsigned)kSeamRouteCapacity);
+        return;
+    }
+
     // The library does the buffering and enforces one server-wide ceiling
     // (PsychicHttpServer::maxRequestBodySize), so the per-route value only has
     // to fit under it. initPsychicWebServer() starts that ceiling at
@@ -549,19 +681,8 @@ void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler hand
     // The matching 413 comes from the handler reading contentLength().
     webBodyCeilingAdmitRoute(s_server.maxRequestBodySize, maxBodyBytes);
 
-    http_method vendorMethod = HTTP_GET;
-    if (method == WebMethod::kPost) {
-        vendorMethod = HTTP_POST;
-    } else if (method == WebMethod::kDelete) {
-        vendorMethod = HTTP_DELETE;
-    }
-    s_server.on(path, vendorMethod,
-                [handler](PsychicRequest* vendorReq, PsychicResponse* vendorResp) -> esp_err_t {
-                    WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
-                    WebRequest req(&ctx);
-                    handler(req);
-                    return ctx.result;
-                });
+    s_routes[s_routeCount] = {path, handler, method};
+    s_routeCount++;
 }
 
 void webRegisterUploadRoute(const char* path, WebUploadChunkHandler onChunk,
@@ -609,6 +730,10 @@ void webRegisterNotFoundRoute(WebRequestHandler handler) {
     // onNotFound() replaces the handler on the library's defaultEndpoint, which
     // it consults for every method, not the HTTP_GET the endpoint was built
     // with. A POST to a mistyped path answers in the same shape as a GET.
+    //
+    // A miss under /api/ never gets this far: the route dispatcher calls the
+    // same handler itself (dispatchSeamRoute()).
+    s_notFoundHandler = handler;
     s_server.onNotFound(
         [handler](PsychicRequest* vendorReq, PsychicResponse* vendorResp) -> esp_err_t {
             WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
@@ -670,22 +795,20 @@ void initPsychicWebServer() {
     // webRegisterSeamRoutes(): every webRegisterRoute() raises from here.
     webBodyCeilingReset(s_server.maxRequestBodySize);
 
-    // What the route table costs the Internal Data Heap (#467): each
-    // webRegisterRoute() makes PsychicHttp allocate a handler, an endpoint, a
-    // list node and a copy of any path longer than the small-string buffer
-    // (PsychicEndpoint::_uri is a std::string, so a path of up to 15
-    // characters lives inside the endpoint). A heap reading on either side
-    // counts the copies and the allocator's per-block overhead that sizeof()
-    // misses.
-    // The figure also holds the upload routes and the not-found handler
-    // registered in the same table, which a single route dispatcher would
-    // keep, so it is the ceiling of what one could give back; the same line
-    // proves what one did.
+    // What the route table costs the Internal Data Heap (#467). An ordinary
+    // route is a row in a static table and costs no heap; what remains are
+    // the PsychicHttp endpoints -- the three upload routes and the
+    // dispatcher's three /api/* endpoints, each a handler, an endpoint and a
+    // list node -- and the not-found handler, which sits on the vendor's
+    // existing default endpoint. A heap reading on either side counts the
+    // allocator's per-block overhead that sizeof() misses. The table cost
+    // 16,044 B in 243 blocks on artoo when every route was its own endpoint.
     HeapInternalDataInfo routesBefore = {};
     heapReadInternalDataInfo(&routesBefore);
     const uint32_t routesFreeBefore = heapReadInternalDataFree();
 
     webRegisterSeamRoutes();
+    registerSeamDispatcher();
 
     HeapInternalDataInfo routesAfter = {};
     heapReadInternalDataInfo(&routesAfter);
