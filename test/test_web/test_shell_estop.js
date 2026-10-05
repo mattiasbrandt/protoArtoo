@@ -476,6 +476,9 @@ test("a status read that fails leaves the control saying it does not know, rathe
 // for this file, so the transport here is local and every call is recorded
 // with the method that carried it.
 const apiFor = (calls, status) => ({
+  // The shipped words table's lookups (helpers/shipped_words.cjs): app.js
+  // reads the Stand Down default from it (unsetOf).
+  ...shippedWords(),
   get: async (path) => {
     calls.push({ path, via: "get" });
     return { data: { ...status } };

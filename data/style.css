@@ -5451,10 +5451,11 @@ body.shell-performing .show-rail {
 
 /* ---- Readouts and Build: instrument tiles ----
    Both sections are rows of tiles on the card's plate: a soft face with no
-   frame of its own, told apart by the air between them. Inside a tile the
-   label is small and quiet, the value is the loudest thing, and the detail is
-   one quiet line under it (#399, operator review 2026-09-28: "make the
-   readouts look alot better"). Scoped to these two sections: the other
+   frame of its own, told apart by the air between them. Inside a Build tile
+   the label is small and quiet and the value is the loudest thing; a
+   Readouts tile is the other way up, its name the title and its state under
+   it (#472). Either takes one quiet detail line under that (#399, operator
+   review 2026-09-28: "make the readouts look alot better"). Scoped to these two sections: the other
    .status-grid pages (Maintenance, Sound, WiFi) keep their own rows. */
 .readouts,
 .build {
@@ -5487,7 +5488,7 @@ body.shell-performing .show-rail {
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lift) 5%, transparent);
 }
 
-.readout dt,
+/* Build: a small label over the value, which is the loudest thing. */
 .build dt {
   color: var(--text-faint);
   font-size: var(--fs-sect);
@@ -5496,13 +5497,33 @@ body.shell-performing .show-rail {
   letter-spacing: 0.02em;
 }
 
-.readout dd,
 .build dd {
   margin: 0;
   color: var(--text);
   font-size: var(--fs-h2);
   font-weight: 600;
   line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* Readouts: the other way up. The row's name - the Part on an Output, or the
+   link - is its title, and the state under it a step smaller and quieter
+   (operator, second look on board 2, 2026-10-05, #472: "the actual name ...
+   the main title and then a bit smaller the status"). */
+.readout dt {
+  color: var(--text);
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.readout dd {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
@@ -5514,7 +5535,6 @@ body.shell-performing .show-rail {
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
   font-weight: 400;
-  letter-spacing: 0;
 }
 
 /* The state is a component's reading, so it carries the lamp that says how
