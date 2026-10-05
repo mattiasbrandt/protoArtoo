@@ -29,6 +29,7 @@
 
 const { chromium } = require('playwright');
 const assert = require('assert');
+const fs = require('node:fs');
 
 const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
 const FIXTURE = process.env.FIXTURE === '1';
@@ -37,11 +38,13 @@ const SETTLE_MS = Number(process.env.SETTLE_MS || 3000);
 // The same bound the document load has: a surface that has not asked its
 // routes by then is not going to.
 const ROUTE_WAIT_MS = Number(process.env.ROUTE_WAIT_MS || 30000);
+const ARTIFACTS = 'output/playwright/seq';
 
 /**
- * `GET /api/profiler` is compiled out unless the firmware was built from the
- * `protoArtoo_profiler` environment, so a 404 from it is the correct answer on
- * a normal build rather than a missing route. Every other 404 is a failure.
+ * `GET /api/profiler` is compiled out unless the firmware was built from a
+ * profiler environment (`artoo_esp32_profiler`, `firebeetle2_profiler`:
+ * PA_HEAP_PROFILE=1), so a 404 from it is the correct answer on a normal
+ * build rather than a missing route. Every other 404 is a failure.
  */
 const EXPECTED_404 = [/\/api\/profiler(\?|$)/];
 
@@ -148,19 +151,19 @@ async function auditSeqPage(context) {
     assert.strictEqual(rendered.learnedCards, learned.length, 'seq.html must render a card per saved sequence');
     assert.strictEqual(rendered.factoryCards, untuned.length, 'seq.html must render a card per untuned factory sequence');
 
-    await page.screenshot({ path: '/tmp/issue90-seq.png', fullPage: true });
+    await page.screenshot({ path: `${ARTIFACTS}/page-load-audit-seq.png`, fullPage: true });
   } finally {
     await page.close();
   }
 }
 
-async function auditSetupPage(context) {
+async function auditMaintenancePage(context) {
   console.log('maintenance.html - profiler routes');
   const { page, responses, failures } = await loadPage(context, '/maintenance.html');
 
   try {
     reportPage('/maintenance.html', responses, failures);
-    await page.screenshot({ path: '/tmp/issue90-setup.png', fullPage: true });
+    await page.screenshot({ path: `${ARTIFACTS}/page-load-audit-maintenance.png`, fullPage: true });
   } finally {
     await page.close();
   }
@@ -192,7 +195,7 @@ async function auditIndexPage(context) {
       'the firmware/status payload must have been applied, not left at its placeholder',
     );
 
-    await page.screenshot({ path: '/tmp/issue90-index.png', fullPage: true });
+    await page.screenshot({ path: `${ARTIFACTS}/page-load-audit-index.png`, fullPage: true });
   } finally {
     await page.close();
   }
@@ -204,6 +207,7 @@ async function main() {
     process.exitCode = 2;
     return;
   }
+  fs.mkdirSync(ARTIFACTS, { recursive: true });
   const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 50 });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   // Offline, the controller routes the fixture server does not answer.
@@ -215,7 +219,7 @@ async function main() {
     await auditSeqPage(context);
     await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
 
-    await auditSetupPage(context);
+    await auditMaintenancePage(context);
     await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
 
     await auditIndexPage(context);
