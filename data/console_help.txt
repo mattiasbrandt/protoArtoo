@@ -172,6 +172,7 @@ system.status.health|Health|Health at a glance: estop, radio, WiFi, memory, stor
 system.status.dashboard-health|Dashboard Health Signals|The Dashboard's health lights, worked out in the browser.|buildStatusJson|
 system.status.logs|Logs|Recent log lines.|copyLogLineAt|
 system.status.wifi|WiFi|WiFi now: mode, addresses and signal.|captureWifiStatusSnapshot|
+system.status.hosted-link|WiFi Module Link|The WiFi module link now: liveness and its recovery ladder. Works over serial when WiFi is down.|hostedLinkQueryStatus|
 wifi.config.settings|WiFi Settings|Join your network or host the droid's own, with a name for each. Saved together and applied at the next restart; set passwords on the WiFi page.|wifiApply|mode:string:0|sta-ssid:string:0|ap-ssid:string:0|sta-password:string:0|ap-password:string:0
 dome.status.serial-link|Dome Serial Link|The dome serial link, and when it last heard a heartbeat.|captureDomeSerialLinkSnapshot|
 system.api.get-identity|Get Droid Identity|The droid's name, and whether it answers to it on the network.|sendIdentityResponse|

@@ -432,7 +432,7 @@ void test_operations_delivers_the_full_catalog_terminated_by_end() {
         "operations must reach the system.* domain, not just the first ~30 catalog entries");
 }
 
-// Registry has exactly 26 status-type entries (docs/action-registry.yaml) -
+// Registry has exactly 27 status-type entries (docs/action-registry.yaml) -
 // few enough to fit under the web response cap with room for begin/end, so
 // this filtered case can assert the exact, complete count. Was 14 before
 // #221's remainder reclassified dome.api.get-sequence-last-run/
@@ -444,14 +444,15 @@ void test_operations_delivers_the_full_catalog_terminated_by_end() {
 // and rc.api.get-bindable-actions across for the same reason again, 23
 // before #340 added system.api.get-components, the Component Registry lineup,
 // and 24 before #362 moved servo.api.get-outputs across when it gained a
-// Console record shape, and 25 before #442 added dome.api.get-take.
+// Console record shape, 25 before #442 added dome.api.get-take, and 26
+// before #471 added system.status.hosted-link.
 void test_operations_type_filter_lists_only_that_type() {
     WebRequestTestBackend backend;
     runCommand(backend, "operations type=status");
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "begin"));
     TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "end"));
-    TEST_ASSERT_EQUAL_UINT_MESSAGE(26, countRecordsOfType(backend.sentBody, "item"),
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(27, countRecordsOfType(backend.sentBody, "item"),
         "operations type=status must list every status entry, no more, no less");
 
     JsonDocument doc;
