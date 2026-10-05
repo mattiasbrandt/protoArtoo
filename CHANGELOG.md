@@ -270,11 +270,13 @@ the patch releases, whose notes live on their own GitHub Release.
   puts the droid to sleep, the same as Sleep in the top bar. The Console sits
   open under Controls, and Build folds away at the foot of the page.
 - **Run a show from the Dashboard.** Under the drawings, every sequence on the
-  droid is a tile with a round Play, yours first. The one running reads
-  Running and offers Stop, whoever started it, here or on the RC Radio. A
+  droid is a chip on one line, with the rest behind +N. Press a chip to play
+  it. The one running comes first and offers Stop, whoever started it, here or
+  on the RC Radio. Pin the ones you use with the small pin on the chip: they
+  come next, on every browser, and stay pinned after a restart. Up to eight. A
   sequence on an RC Channel names it, and one the RC Radio fires that is no
   longer on the droid says it does nothing. Rest runs your Stand Down
-  Sequence, and its tile carries the Rest mark: pick it on Sequences with the
+  Sequence, and its chip carries the Rest mark: pick it on Sequences with the
   Use as Stand Down pin beside each one. Until you do it is `DM:RESET`, which
   leaves the pies open. Full screen clears the page to the drawings, the
   sequences and STOP.
@@ -283,6 +285,11 @@ the patch releases, whose notes live on their own GitHub Release.
   droid sent. The Dome ESC has no wire back, so it reads Idle or Spinning in
   grey. A PWM receiver reads Unmeasured in grey: the droid knows it is on,
   not whether pulses arrive.
+- **Readouts name the part.** On the Dashboard, a servo output's readout is
+  called by the part on it, with its pin in small print, and says where the
+  part is. An output with no part on it is not listed.
+- **The Status Plate says less.** The note beside the chips is gone, and how
+  long ago the droid was heard shows only when it is not being heard.
 - **STOP releases what it latched.** While the droid reports the estop
   latched, the red STOP says Press to release beside it, and a press releases
   it. The ESTOP cell on the Status Plate does the same.
@@ -576,6 +583,16 @@ the patch releases, whose notes live on their own GitHub Release.
   load a little slower, about a tenth of a second each.
 
 ### Fixed
+- **The WiFi module comes back without a restart (ESP32-P4).** The droid
+  now notices a WiFi module that stops answering, restarts the module and
+  rejoins your network, and the controller keeps running. If the module
+  will not come back, the droid says so and stays up. Status and the Console
+  show the link's last check and last recovery.
+- **The Dashboard draws its dome once.** It could draw the dome twice, or
+  not at all if you left the page before it had loaded.
+- **Long log lines arrive whole.** A log line too long for one slot now
+  carries on in the next, on the serial port and in the web log, instead of
+  losing its end.
 - **Clearing the estop resets the holos.** Clearing an estop, or the dome
   coming back on the link, brought the logics and PSIs back and left the holos
   running. They reset too now.
