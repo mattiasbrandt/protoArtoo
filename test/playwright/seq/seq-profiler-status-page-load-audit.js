@@ -13,6 +13,18 @@
  *
  * Pace matters. An unpaced multi-page sweep measures the connection admission
  * guard rather than the routes, so each page load is separated by a settle gap.
+ *
+ * A page is held to a route only after the page has asked it. /seq.html and
+ * /maintenance.html hand the browser to the Operator Shell at their route
+ * (`location.replace("/#seq")`, ADR 0048), and the shell loads the surface's
+ * script chain one script at a time before the surface asks anything: on the
+ * Sequences surface the two list routes follow 26 documents and scripts, the
+ * last of them /bundle_seq_editor.js, whose seq.js asks them. A fixed settle
+ * after the document loads is then a guess at the droid's speed, and on
+ * artoo-esp32 it guessed short: 25 responses in 3 s, the chain one script from
+ * the end (#355). So a page waits for the routes it is held to, up to
+ * ROUTE_WAIT_MS, and then settles; a route the page never asks is still a
+ * failure, just a later one.
  */
 
 const { chromium } = require('playwright');
@@ -22,6 +34,9 @@ const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
 const FIXTURE = process.env.FIXTURE === '1';
 const HEADLESS = process.env.HEADLESS !== 'false';
 const SETTLE_MS = Number(process.env.SETTLE_MS || 3000);
+// The same bound the document load has: a surface that has not asked its
+// routes by then is not going to.
+const ROUTE_WAIT_MS = Number(process.env.ROUTE_WAIT_MS || 30000);
 
 /**
  * `GET /api/profiler` is compiled out unless the firmware was built from the
@@ -34,7 +49,8 @@ function isExpected404(url) {
   return EXPECTED_404.some((pattern) => pattern.test(url));
 }
 
-async function loadPage(context, path) {
+// `awaited` names the routes (pathnames) the caller will hold the page to.
+async function loadPage(context, path, awaited = []) {
   const page = await context.newPage();
   const responses = [];
   const failures = [];
@@ -52,10 +68,20 @@ async function loadPage(context, path) {
     failures.push({ url: request.url(), error: request.failure()?.errorText });
   });
 
+  // Waited on as responses, registered before the navigation: the hand-over to
+  // the shell replaces the document, which a wait inside the page would not
+  // survive. A route that never answers resolves this to nothing, and the
+  // caller's own assertion says which route the page did not ask.
+  const asked = Promise.all(awaited.map((route) =>
+    page.waitForResponse((response) => new URL(response.url()).pathname === route, { timeout: ROUTE_WAIT_MS })
+      .catch(() => null)));
+
   // Not `networkidle`: these pages hold an open SSE connection to /api/events,
   // so the network is never idle and the wait would always time out. Wait for
-  // the document instead, then settle for the deferred fetches the page makes.
+  // the document and the routes asked of it, then settle for the render and
+  // for any late fetch whose 404 the report must still see.
   await page.goto(`${BASE_URL}${path}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await asked;
   await page.waitForTimeout(SETTLE_MS);
 
   return { page, responses, failures, payloads };
@@ -79,7 +105,7 @@ function reportPage(path, responses, failures) {
 
 async function auditSeqPage(context) {
   console.log('seq.html - sequence routes');
-  const { page, responses, failures, payloads } = await loadPage(context, '/seq.html');
+  const { page, responses, failures, payloads } = await loadPage(context, '/seq.html', ['/api/seq/list', '/api/seq/builtins']);
 
   try {
     reportPage('/seq.html', responses, failures);
@@ -142,7 +168,7 @@ async function auditSetupPage(context) {
 
 async function auditIndexPage(context) {
   console.log('index.html - status and shared helper routes');
-  const { page, responses, failures } = await loadPage(context, '/index.html');
+  const { page, responses, failures } = await loadPage(context, '/index.html', ['/api/status']);
 
   try {
     reportPage('/index.html', responses, failures);
