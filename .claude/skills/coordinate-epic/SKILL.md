@@ -134,7 +134,8 @@ from the epic's coordination section rather than from memory.
   `herdr tab create --workspace <name> --cwd <path> --label <label> --focus`.
   `python3 tools/herdr_capped_agent.py --pane <id> --name <agent> [-- --resume <session-id>]`.
   `python3 tools/make_brief.py --issue <n> --slug <s> --worktree <path> --base <base>`.
-  `tools/gate_in_pane.sh /tmp/gate.log -- python3 tools/slice_verify.py --base <base> --json /tmp/gate.json`.
+  `tools/gate_in_pane.sh /tmp/gate.log -- python3 tools/slice_verify.py --base <base> --json /tmp/slice-<s>.json`.
+  `python3 tools/accept_slice.py --json /tmp/slice-<s>.json --worktree <path> --base <base> [--allow-gate-edit]`.
   The JSON field is `ok`. During the pause do not pass `--mutations`. Do not pipe the gate through `tee`.
 - **Start every worker memory-capped** with the `herdr_capped_agent.py` line above, never a bare
   `herdr agent start`. It puts the pane's shell in its own systemd scope
@@ -200,14 +201,18 @@ The suite pause has ended. Steps 1 and 2 below are the acceptance again. Until t
    block's JSON:
 
    ```
-   python3 tools/accept_slice.py --json /tmp/slice-<n>.json --worktree <path> --base <base>
+   python3 tools/accept_slice.py --json /tmp/slice-<s>.json --worktree <path> --base <base>
    ```
 
    It prints a PASS/FAIL row each, and a FAIL row says what to do next: `ok`
    true and not dirty; the block's head is the worktree's `HEAD`; the block's
    merge-base is `git rev-parse <base>`; the verifier hashes equal those files
    at the base tip; the worktree is clean but for `data/fs-version.json` and
-   `data/fw-version.json`. Exit 0 only when every row passes.
+   `data/fw-version.json`. Exit 0 only when every row passes. The brief told
+   the worker to write the block to `/tmp/slice-<s>.json` (`<s>` is the
+   dispatch slug). For a slice you granted `--expect-gate-edit`, add
+   `--allow-gate-edit` so the verifiers it edits are held to its HEAD; you
+   pass it, never the worker, and the block's own waiver flag is not the grant.
 
    **The merge-base row compares to `rev-parse <base>`, not `merge-base <base>
    HEAD`, and the difference is the whole check.** A slice whose base moved
@@ -523,9 +528,9 @@ evolving one to the frontier. History comments are append-only.
 
 A worker is done when the last line of its status comment is `WORKER_DONE: ok`
 or `WORKER_DONE: blocked` (a trailing `//` signature does not count), or
-`/tmp/slice-<n>.json` is `{"ok": true}` or
+`/tmp/slice-<s>.json` is `{"ok": true}` or
 `{"ok": false}`. Wait with
-`python3 tools/wait_worker.py --issue <n> --marker '<!-- worker-status-<n>-<slug> -->'`.
+`python3 tools/wait_worker.py --issue <n> --marker '<!-- worker-status-<n>-<s> -->'`.
 An idle pane is not that signal: the gate runs in a sibling pane.
 
 **Record first, escalate second, and escalate only the residue.** A finding is

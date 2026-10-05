@@ -2,7 +2,7 @@
 
 **Suites paused through 2026-10-31 (#464).** The native, web, and mutation stages of `tools/slice_verify.py` skip themselves and print `SKIP (suites paused until 2026-11-01, #464)`. That row is not a pass of the suite. A missing suite run is not a reject. The build, the diff checks, and the tooling self-tests still run. CI on a pull request into `main` still runs the native and web suites. Do not add tests or mutation patches during the pause. The date lives in `tools/suite_pause.py` and the skip ends on 2026-11-01 with no further edit. `PROTOARTOO_SUITES=1` runs the stages.
 
-**The gate in a pane.** A pipe through `tee` records tee's status. Run it as `tools/gate_in_pane.sh /tmp/gate.log -- python3 tools/slice_verify.py --base <ref> --json /tmp/gate.json`. The log's last line is `GATE_EXIT=<n>`, the command's own exit code. `--json` writes a boolean `ok` (true when the gate has no failures). After the command, the script restores `data/fw-version.json` and `data/fs-version.json`, which a firmware build rewrites and which are never committed.
+**The gate in a pane.** A pipe through `tee` records tee's status. Run it as `tools/gate_in_pane.sh /tmp/gate.log -- python3 tools/slice_verify.py --base <ref> --json /tmp/slice-<s>.json`. The log's last line is `GATE_EXIT=<n>`, the command's own exit code. `--json` writes a boolean `ok` (true when the gate has no failures). After the command, the script restores `data/fw-version.json` and `data/fs-version.json`, which a firmware build rewrites and which are never committed.
 
 `tools/slice_verify.py` is the mechanical PASS/FAIL floor for a branch against a
 base ref. `python3 tools/slice_verify.py --help` is the flag reference; this file
@@ -10,7 +10,8 @@ is the contract: what the block must contain, who may waive what, and what
 counts as evidence.
 
 **Worker slice gate:** after committing a slice, workers must run
-`python3 tools/slice_verify.py --base <base-ref>` (plus any `--fenced` pathspecs
+`python3 tools/slice_verify.py --base <base-ref> --json /tmp/slice-<s>.json`
+(the path the brief names; plus any `--fenced` pathspecs
 and the `--mutations` patches the coordinator's brief specifies) and paste its
 full block verbatim into the issue status comment — including the opening
 provenance lines (blob hashes of the three verifier scripts - `gate`,
@@ -20,15 +21,18 @@ gate behind every slice. Per slice it checks the block's **provenance against
 the branch** - HEAD sha against the tip, **the block's merge-base against the
 base's current tip** (`git rev-parse <base>`, never `git merge-base <base>
 HEAD`: a slice whose base moved under it is internally consistent and would
-otherwise pass, verified against a tree that no longer exists), diff size, all
-three script blob hashes against the files on disk, the DIRTY marker against a clean
-tree,
-every changed web production JS file present in the mutation table, and no
-waiver ACK it did not grant - which takes seconds and catches a block that is
-not of this branch. The gate itself is run **once per wave, on the merged
-tree**, with the union of the wave's fences: that run is the anti-fabrication
-net, and it has to happen anyway because line numbers and stragglers move on
-merge. Divergence at either point marks the slice unverified, and a failed
+otherwise pass, verified against a tree that no longer exists), the verifier
+blob hashes against those files at the base tip, the DIRTY marker against a
+clean tree - all of which is one command on the block's JSON,
+`python3 tools/accept_slice.py --json /tmp/slice-<s>.json --worktree <path> --base <base>`
+(add `--allow-gate-edit` only for a slice granted `--expect-gate-edit`) -
+then every changed web production JS file present in the mutation table, and
+no waiver ACK it did not grant - which takes seconds and catches a block that
+is not of this branch. So a worker commits before the gate run and not after
+it, and leaves the tree clean but for the two version stamps. The gate itself
+is run **once per wave, on the merged tree**, with the union of the wave's
+fences: that run is the anti-fabrication net, and it has to happen anyway
+because line numbers and stragglers move on merge. Divergence at either point marks the slice unverified, and a failed
 provenance check is the trigger to re-run the full gate on that one slice. The
 merge-base check is the exception that is judged rather than failed: when the
 base moved under a slice, the coordinator intersects what landed with what the
