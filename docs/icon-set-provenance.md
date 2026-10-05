@@ -120,8 +120,8 @@ any of these holds (coordinator, 2026-10-04):
 - it moves something on the droid and no line on the page explains it
   without hover (ADR 0059): Dome's Go home; Sequences' Move the droid to this
   moment, Test, Test on the droid, Play on the droid, Perform, Perform again;
-  Wiring's find by moving; Parts' Open it / Close it; RC Control's Try it; Servos' move, open, close, stop, back to
-  centre and Set on ticked outputs. The servo dial's nudges, reverse, test
+  Wiring's find by moving; Parts' Open it / Close it; RC Control's Try it;
+  Servos' move, open, close, stop, back to centre and Set on ticked outputs. The servo dial's nudges, reverse, test
   sweep and take it again are not here: the dial's own line explains them;
 - its words carry a count, a name or a warning: Set on all N ticked outputs,
   Restore N ticked parts, Apply suggestions (N), Remove N steps, Stop <name>;

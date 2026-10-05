@@ -3792,11 +3792,11 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             //    Console has no line of Sequences to order (#472):
             //      dome.api.get-sequence-pins / dome.action.pin-sequence
             //
-            // servo.api.get-outputs was a fourth group - a read with no Console
-            // record shape yet (#347) - until #362 gave it one: it is a status
-            // row now, answered by consoleExecuteServoApiGetOutputs() through
-            // g_statusExecutors[], because the bench side needs the rows where
-            // there is no WiFi.
+            // servo.api.get-outputs was once a group of its own - a read with
+            // no Console record shape yet (#347) - until #362 gave it one: it
+            // is a status row now, answered by consoleExecuteServoApiGetOutputs()
+            // through g_statusExecutors[], because the bench side needs the
+            // rows where there is no WiFi.
             RobotActionId target = ROBOT_ACTION_NONE;
             if (entry != nullptr && consoleFindRobotActionId(entry->name, &target)) {
                 // Tokenize the argument remainder ONCE here (#221 criterion

@@ -1687,9 +1687,10 @@
     paintStandDown();
   };
 
+  // A changed run reorders the line, which paints the heading as it goes.
   const paintShowRun = () => {
     if (runWatch.running() !== railRunning) renderShowList();
-    paintShowNow();
+    else paintShowNow();
   };
 
   const paintShowNow = () => {
