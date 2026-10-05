@@ -46,6 +46,22 @@ class RenderTemplate(unittest.TestCase):
             self.assertEqual(rc, 1)
             self.assertFalse(out.exists())
 
+    def test_refuses_a_numbered_placeholder_in_an_argument(self):
+        for flag, value in (("--worktree", "{WORKTREE_2}"), ("--base", "{BASE2}")):
+            args = {"--worktree": "../wt-1", "--base": "main", flag: value}
+            with self.subTest(flag=flag), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "brief.md"
+                with contextlib.redirect_stderr(io.StringIO()), \
+                        self.assertRaises(SystemExit) as raised:
+                    make_brief.main(["--issue", "1", "--slug", "a",
+                                     "--worktree", args["--worktree"],
+                                     "--base", args["--base"], "--out", str(out)])
+                self.assertEqual(raised.exception.code, 2)
+                self.assertFalse(out.exists())
+
+    def test_finds_a_numbered_placeholder_left_in_a_brief(self):
+        self.assertEqual(make_brief.leftover_placeholders("{BASE2} {owner}/{repo}"), ["{BASE2}"])
+
 
 if __name__ == "__main__":
     unittest.main()

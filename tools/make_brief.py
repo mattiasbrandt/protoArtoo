@@ -30,7 +30,7 @@ TEMPLATE = ROOT / ".claude" / "skills" / "coordinate-epic" / "worker-brief.md"
 # A slug lands inside an HTML comment and inside a --jq string literal, so
 # quotes, whitespace and "--" are refused rather than escaped.
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-PLACEHOLDER_RE = re.compile(r"\{[A-Za-z_]+\}")
+PLACEHOLDER_RE = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}")
 GH_PLACEHOLDERS = {"{owner}", "{repo}"}
 RULE = "\n---\n"
 
