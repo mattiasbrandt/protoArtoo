@@ -92,16 +92,24 @@ const state = (page, fn) => page.evaluate(fn);
     const bd = document.getElementById("page-recovery-backdrop");
     const host = bd.parentElement;
     const others = host && host !== document.body ? Array.from(host.children).filter((c) => c !== bd) : [];
-    return { count: others.length, inert: others.filter((c) => c.inert).length };
+    return { host: host ? host.id || host.tagName.toLowerCase() : null, count: others.length, inert: others.filter((c) => c.inert).length };
   });
 
   const f0 = await focusInfo();
   record("focus-moved-in", f0.inside ? "PASS" : "FAIL",
     `focus after panel appeared: ${f0.el} (inside=${f0.inside}, focusables=${f0.focusables})`);
 
-  const held = await surfaceInert();
+  // The panel can be up before the shell has attached the surface's node
+  // beside it, and the view marks a node inert on its next render, not as it
+  // arrives (holdSurfacesInert). Read until there is a surface and it is
+  // held, up to 5 s; a surface that never is still fails.
+  let held = await surfaceInert();
+  for (let i = 0; i < 20 && !(held.count > 0 && held.inert === held.count); i++) {
+    await page.waitForTimeout(250);
+    held = await surfaceInert();
+  }
   record("surface-inert", held.count > 0 && held.inert === held.count ? "PASS" : "FAIL",
-    `surface nodes beside the panel: ${held.count}, inert: ${held.inert}`);
+    `surface nodes beside the panel in #${held.host}: ${held.count}, inert: ${held.inert}`);
 
   // One whole Tab cycle each way, with REAL key presses, from the panel until
   // focus is back in it. The chrome is long (Plate cells, topbar, nav), so the
