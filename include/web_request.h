@@ -134,7 +134,9 @@ constexpr size_t kDefaultMaxBodyBytes = 4096;
 
 // Register a handler for path+method with the backend's server. Registration
 // has to happen inside the server bring-up (initPsychicWebServer()), which runs
-// on the WiFi event callback path.
+// on the WiFi event callback path. The path must start with /api/: the
+// PsychicHttp backend serves rows through one /api/* dispatcher and refuses
+// any other path, or a row past its table's capacity, at boot with an error.
 //
 // maxBodyBytes is the largest raw body this route takes. It is per-route
 // rather than global because one route legitimately carries far more than the

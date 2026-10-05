@@ -550,8 +550,9 @@ void webEventStreamBroadcast(const char* event, const char* data, uint32_t id) {
 // here is three words of static RAM.
 //
 // The rows hold no body bound: the server-wide ceiling is raised once at
-// registration and each handler answers its own 413 from contentLength(), so
-// nothing at dispatch would read one.
+// registration, and a handler that checks its own bound answers 413 from
+// contentLength() (include/web_body_ceiling.h), so nothing at dispatch would
+// read one.
 // =============================================================================
 
 namespace {
@@ -638,10 +639,11 @@ esp_err_t dispatchSeamRoute(PsychicRequest* vendorReq, PsychicResponse* vendorRe
 // webRegisterSeamRoutes(), so it has to precede /api/* POST here or every take
 // upload would reach the dispatcher instead of its PsychicUploadHandler.
 //
-// These calls are also what puts GET, POST and DELETE into the server's
-// supported_methods, from which start() registers one ESP-IDF wildcard
-// handler per method. serveStatic() and addHandler() never add a method, so
-// static files depend on the GET endpoint here for their GET handler.
+// These calls add no method to the server's supported_methods, from which
+// start() registers one ESP-IDF wildcard handler per method: the vendor
+// initialises that list to GET, POST, DELETE, HEAD, PUT and OPTIONS
+// (PsychicHttpServer.h:51-57), and on() only appends a method it lacks. Static
+// files never depended on an endpoint here for their GET handler.
 //
 // Each is a PsychicWebHandler, the vendor's on(uri, method, fn): it keeps the
 // maxRequestBodySize refusal, loadBody(), loadParams(), and the client cleanup
@@ -807,7 +809,10 @@ void initPsychicWebServer() {
     // the PsychicHttp endpoints -- the three upload routes and the
     // dispatcher's three /api/* endpoints, each a handler, an endpoint and a
     // list node -- and the not-found handler, which sits on the vendor's
-    // existing default endpoint. A heap reading on either side counts the
+    // existing default endpoint. The two /upload/ paths (16 and 18
+    // characters) are longer than std::string's 15-character small buffer, so
+    // each of those endpoints also holds a heap copy of its path
+    // (PsychicEndpoint::_uri). A heap reading on either side counts the
     // allocator's per-block overhead that sizeof() misses. The table cost
     // 16,044 B in 243 blocks on artoo when every route was its own endpoint.
     HeapInternalDataInfo routesBefore = {};
