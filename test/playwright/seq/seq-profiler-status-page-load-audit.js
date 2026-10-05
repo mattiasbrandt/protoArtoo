@@ -17,14 +17,17 @@
  * A page is held to a route only after the page has asked it. /seq.html and
  * /maintenance.html hand the browser to the Operator Shell at their route
  * (`location.replace("/#seq")`, ADR 0048), and the shell loads the surface's
- * script chain one script at a time before the surface asks anything: on the
- * Sequences surface the two list routes follow 26 documents and scripts, the
- * last of them /bundle_seq_editor.js, whose seq.js asks them. A fixed settle
- * after the document loads is then a guess at the droid's speed, and on
- * artoo-esp32 it guessed short: 25 responses in 3 s, the chain one script from
- * the end (#355). So a page waits for the routes it is held to, up to
- * ROUTE_WAIT_MS, and then settles; a route the page never asks is still a
- * failure, just a later one.
+ * script chain one script at a time before the surface asks anything: the
+ * Sequences surface asks its two list routes only once the last script of
+ * that chain has run. A fixed settle after the document loads is then a guess
+ * at the droid's speed, and on artoo-esp32 it guessed short: the settle ended
+ * with the chain one script from the end, before the list routes (#355). So a
+ * page waits for the routes it is held to, up to ROUTE_WAIT_MS, and then
+ * settles; a route the page never asks is still a failure, just a later one.
+ * Maintenance asks no route of its own on every build (GET /api/profiler only
+ * on a build that has the profiler, data/maintenance.js renderAvailability),
+ * so it is held to the last script of its chain, /maintenance.js: a 404 count
+ * taken before that proves nothing.
  */
 
 const { chromium } = require('playwright');
@@ -83,7 +86,7 @@ async function loadPage(context, path, awaited = []) {
   // so the network is never idle and the wait would always time out. Wait for
   // the document and the routes asked of it, then settle for the render and
   // for any late fetch whose 404 the report must still see.
-  await page.goto(`${BASE_URL}${path}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.goto(`${BASE_URL}${path}`, { waitUntil: 'domcontentloaded', timeout: ROUTE_WAIT_MS });
   await asked;
   await page.waitForTimeout(SETTLE_MS);
 
@@ -159,10 +162,12 @@ async function auditSeqPage(context) {
 
 async function auditMaintenancePage(context) {
   console.log('maintenance.html - profiler routes');
-  const { page, responses, failures } = await loadPage(context, '/maintenance.html');
+  const { page, responses, failures } = await loadPage(context, '/maintenance.html', ['/maintenance.js']);
 
   try {
     reportPage('/maintenance.html', responses, failures);
+    assert.ok(responses.some((r) => new URL(r.url).pathname === '/maintenance.js'),
+      'maintenance.html must load its surface script chain to the end (/maintenance.js)');
     await page.screenshot({ path: `${ARTIFACTS}/page-load-audit-maintenance.png`, fullPage: true });
   } finally {
     await page.close();
