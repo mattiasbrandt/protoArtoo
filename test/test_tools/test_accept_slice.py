@@ -85,18 +85,18 @@ class AcceptSlice(unittest.TestCase):
             "ok": True,
         }
 
-    def run_tool(self):
+    def run_tool(self, *extra):
         path = self.repo.parent / f"{self.repo.name}-block.json"
         path.write_text(json.dumps(self.block))
         self.addCleanup(path.unlink)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             rc = accept_slice.main(["--json", str(path), "--worktree", str(self.repo),
-                                    "--base", "base"])
+                                    "--base", "base", *extra])
         return rc, out.getvalue()
 
-    def assert_fails(self, label):
-        rc, out = self.run_tool()
+    def assert_fails(self, label, *extra):
+        rc, out = self.run_tool(*extra)
         self.assertEqual(rc, 1, out)
         # Exactly the one row under test fails: "FAIL  <label padded to 16><detail>".
         failed = [line[6:22].strip() for line in out.splitlines() if line.startswith("FAIL")]
@@ -135,6 +135,29 @@ class AcceptSlice(unittest.TestCase):
         del self.block["gate"]["trace_script_hash"]
         out = self.assert_fails("verifier hashes")
         self.assertIn("tools/web_load_trace.cjs: block none", out)
+
+    def edit_gate_on_the_slice(self):
+        self.write("tools/slice_verify.py", "sanctioned gate work\n")
+        self.commit("slice edits the gate")
+        self.block = self.gate_block()
+
+    def test_a_verifier_the_branch_edits_fails_without_the_grant(self):
+        self.edit_gate_on_the_slice()
+        out = self.assert_fails("verifier hashes")
+        self.assertIn("tools/slice_verify.py: edited on this branch", out)
+        self.assertIn("--allow-gate-edit", out)
+
+    def test_a_granted_verifier_edit_is_held_to_head(self):
+        self.edit_gate_on_the_slice()
+        rc, out = self.run_tool("--allow-gate-edit")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("held to HEAD", out)
+
+    def test_the_grant_does_not_cover_a_verifier_that_moved_on_the_base(self):
+        self.edit_gate_on_the_slice()
+        self.on_base("tools/mutation_verify.py", "a side session edited the mutation gate\n")
+        out = self.assert_fails("verifier hashes", "--allow-gate-edit")
+        self.assertIn("tools/mutation_verify.py: block", out)
 
     def test_dirty_tree_fails(self):
         self.write("src/b.cpp", "uncommitted\n")

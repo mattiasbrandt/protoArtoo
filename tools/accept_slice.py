@@ -2,6 +2,7 @@
 """Check a worker's gate block against the branch it claims to describe.
 
     python3 tools/accept_slice.py --json /tmp/slice-<n>.json --worktree <path> --base <branch>
+                                  [--allow-gate-edit]
 
 The coordinate-epic critic protocol, step 1, as one command. Each row prints
 PASS or FAIL, and a FAIL row says what to do next:
@@ -13,12 +14,18 @@ PASS or FAIL, and a FAIL row says what to do next:
                    base moved, the files changed on both sides are listed; no
                    overlap passes with a note, overlap fails
   verifier hashes  the block's gate, mutation and trace hashes equal those
-                   files' blobs at the base tip
+                   files' blobs at the base tip. A verifier this branch edits
+                   fails the row unless --allow-gate-edit is given; then that
+                   one is held to its blob at HEAD instead
   worktree clean   `git status --porcelain` is empty but for
                    data/fs-version.json and data/fw-version.json
 
 Exit 0 only when every row passes, 1 when a row fails, 2 when the block or
 the base cannot be read.
+
+--allow-gate-edit is the coordinator's, passed only after granting the worker
+--expect-gate-edit in the brief. It is not read from the block: the block's
+own waiver flag is the worker's claim, not the grant.
 
 Why: a block naming a head two commits behind the branch, and a gate script
 changed mid-session under a block, were both caught by hand and by luck on
@@ -112,23 +119,49 @@ def check_base_tip(worktree: Path, gate: dict, base: str, tip: str) -> Row:
                notes=[f"overlap: {path}" for path in overlap])
 
 
-def check_hashes(worktree: Path, gate: dict, tip: str) -> Row:
+def blob(worktree: Path, rev: str, path: str) -> str | None:
+    proc = git(worktree, "rev-parse", "--verify", "-q", f"{rev}:{path}", check=False)
+    return proc.stdout.strip()[:HASH_LEN] if proc.returncode == 0 else None
+
+
+def check_hashes(worktree: Path, gate: dict, tip: str, allow_gate_edit: bool) -> Row:
+    # Where this branch forked, to tell a verifier the branch edits from one
+    # that moved on the base. The block's merge-base when it is a commit here
+    # (the gate diffed from it); otherwise the base-tip row already fails and
+    # the fork is computed.
+    fork = str(gate.get("merge_base", ""))
+    if not fork or git(worktree, "cat-file", "-e", f"{fork}^{{commit}}", check=False).returncode:
+        fork = git(worktree, "merge-base", tip, "HEAD").stdout.strip()
     shown, notes, drift = [], [], []
+    unsanctioned = False
     for short, key, path in VERIFIERS:
-        proc = git(worktree, "rev-parse", "--verify", "-q", f"{tip}:{path}", check=False)
-        at_tip = proc.stdout.strip()[:HASH_LEN] if proc.returncode == 0 else None
         block = gate.get(key)
         block = None if block in (None, UNKNOWN) else str(block)
         shown.append(f"{short} {block or '-'}")
-        if at_tip == block:
-            if at_tip is None:
+        at_head = blob(worktree, "HEAD", path)
+        if at_head != blob(worktree, fork, path):
+            if not allow_gate_edit:
+                unsanctioned = True
+                drift.append(f"{path}: edited on this branch")
+                continue
+            expected, where = at_head, "HEAD"
+            notes.append(f"{path}: edited on this branch, held to HEAD (--allow-gate-edit)")
+        else:
+            expected, where = blob(worktree, tip, path), "base tip"
+        if expected == block:
+            if expected is None:
                 notes.append(f"{path}: not at the base tip and not in the block")
             continue
-        drift.append(f"{path}: block {block or 'none'}, base tip {at_tip or 'absent'}")
+        drift.append(f"{path}: block {block or 'none'}, {where} {expected or 'absent'}")
     passed = not drift
-    return Row("verifier hashes", passed, "  ".join(shown),
-               "" if passed else "the verifiers changed under the block: merge the base and re-run the gate",
-               notes + drift)
+    if passed:
+        next_step = ""
+    elif unsanctioned:
+        next_step = ("this branch edits a verifier: reject, or pass --allow-gate-edit if you"
+                     " granted --expect-gate-edit")
+    else:
+        next_step = "the verifiers changed under the block: merge the base and re-run the gate"
+    return Row("verifier hashes", passed, "  ".join(shown), next_step, notes + drift)
 
 
 def porcelain_paths(porcelain: str) -> list[str]:
@@ -160,7 +193,7 @@ def load_block(path: Path) -> dict:
     return block
 
 
-def evaluate(block: dict, worktree: Path, base: str) -> list[Row]:
+def evaluate(block: dict, worktree: Path, base: str, allow_gate_edit: bool = False) -> list[Row]:
     gate = block["gate"]
     proc = git(worktree, "rev-parse", "--verify", "-q", f"{base}^{{commit}}", check=False)
     if proc.returncode:
@@ -170,7 +203,7 @@ def evaluate(block: dict, worktree: Path, base: str) -> list[Row]:
         check_result(gate, block.get("ok")),
         check_head(worktree, gate),
         check_base_tip(worktree, gate, base, tip),
-        check_hashes(worktree, gate, tip),
+        check_hashes(worktree, gate, tip, allow_gate_edit),
         check_clean(worktree),
     ]
 
@@ -180,13 +213,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", type=Path, required=True, help="the gate's --json block")
     parser.add_argument("--worktree", type=Path, required=True, help="the worker's worktree")
     parser.add_argument("--base", required=True, help="the epic's integration branch")
+    parser.add_argument("--allow-gate-edit", action="store_true",
+                        help="you granted this slice --expect-gate-edit; hold the verifiers"
+                             " it edits to HEAD")
     args = parser.parse_args(argv)
 
     if not args.worktree.is_dir():
         print(f"accept_slice: no worktree at {args.worktree}", file=sys.stderr)
         return 2
     try:
-        rows = evaluate(load_block(args.json), args.worktree, args.base)
+        rows = evaluate(load_block(args.json), args.worktree, args.base, args.allow_gate_edit)
     except Unreadable as err:
         print(f"accept_slice: {err}", file=sys.stderr)
         return 2
