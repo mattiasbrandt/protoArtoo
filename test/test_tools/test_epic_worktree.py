@@ -83,6 +83,83 @@ class CountAheadAgainstRealGit(unittest.TestCase):
         )
 
 
+class SyncBaseAgainstRealGit(unittest.TestCase):
+    """origin ahead of the local base: a real remote, a real second pusher."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        top = Path(self.tmp.name)
+        self.origin, self.mine, self.theirs = top / "origin.git", top / "mine", top / "theirs"
+        self.git(top, "init", "-q", "--bare", "-b", "epic/x", str(self.origin))
+        self.git(top, "clone", "-q", str(self.origin), str(self.mine))
+        self.commit(self.mine, "one")
+        self.git(self.mine, "push", "-q", "origin", "epic/x")
+        self.git(top, "clone", "-q", str(self.origin), str(self.theirs))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def git(self, cwd, *args):
+        return subprocess.run(["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", *args],
+                              cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+    def commit(self, repo, name):
+        (repo / name).write_text(name)
+        self.git(repo, "add", name)
+        self.git(repo, "commit", "-qm", name)
+
+    def push_from_another_session(self):
+        self.commit(self.theirs, "theirs")
+        self.git(self.theirs, "push", "-q", "origin", "epic/x")
+        return self.git(self.theirs, "rev-parse", "HEAD")
+
+    def test_a_clean_checkout_is_fast_forwarded_to_the_remote_tip(self):
+        tip = self.push_from_another_session()
+        ok, line = epic_worktree.sync_base("epic/x", cwd=self.mine)
+        self.assertTrue(ok, line)
+        self.assertIn("fast-forwarded epic/x by 1 commit", line)
+        self.assertEqual(self.git(self.mine, "rev-parse", "epic/x"), tip)
+
+    def test_a_dirty_checkout_is_refused_with_the_command(self):
+        before = self.git(self.mine, "rev-parse", "epic/x")
+        self.push_from_another_session()
+        (self.mine / "one").write_text("edited")
+        ok, line = epic_worktree.sync_base("epic/x", cwd=self.mine)
+        self.assertFalse(ok)
+        self.assertIn("merge --ff-only origin/epic/x", line)
+        self.assertEqual(self.git(self.mine, "rev-parse", "epic/x"), before)
+
+    def test_a_base_checked_out_nowhere_moves_by_ref(self):
+        tip = self.push_from_another_session()
+        self.git(self.mine, "checkout", "-q", "--detach")
+        ok, line = epic_worktree.sync_base("epic/x", cwd=self.mine)
+        self.assertTrue(ok, line)
+        self.assertIn("checked out nowhere", line)
+        self.assertEqual(self.git(self.mine, "rev-parse", "epic/x"), tip)
+
+    def test_diverged_is_refused(self):
+        self.push_from_another_session()
+        self.commit(self.mine, "mine")
+        ok, line = epic_worktree.sync_base("epic/x", cwd=self.mine)
+        self.assertFalse(ok)
+        self.assertIn("diverged (1 local-only, 1 remote-only", line)
+
+    def test_level_or_local_ahead_changes_nothing(self):
+        self.commit(self.mine, "mine")
+        before = self.git(self.mine, "rev-parse", "epic/x")
+        ok, line = epic_worktree.sync_base("epic/x", cwd=self.mine)
+        self.assertTrue(ok, line)
+        self.assertEqual(self.git(self.mine, "rev-parse", "epic/x"), before)
+
+    def test_dry_run_moves_nothing(self):
+        before = self.git(self.mine, "rev-parse", "epic/x")
+        self.push_from_another_session()
+        ok, line = epic_worktree.sync_base("epic/x", cwd=self.mine, dry_run=True)
+        self.assertTrue(ok, line)
+        self.assertIn("dry run", line)
+        self.assertEqual(self.git(self.mine, "rev-parse", "epic/x"), before)
+
+
 class Cli(unittest.TestCase):
     def test_create_requires_a_branch_name(self):
         self.assertEqual(epic_worktree.main(["338", "--base", "epic/x"]), 1)

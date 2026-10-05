@@ -86,8 +86,10 @@ from the epic's coordination section rather than from memory.
 
 - **Make the branch and worktree with the tool, not by hand:**
   `python3 tools/epic_worktree.py <n> --base <base> --name <type>/<slug> --path ../wt-<n>`.
-  It creates the linked branch, adds `../wt-<n>`, puts it on the local
-  `<base>` tip, verifies that it landed there (exit 1 if not), pushes the
+  It fetches first and fast-forwards the local `<base>` when another
+  session pushed it ahead (refusing, with the command, on a dirty checkout or
+  a divergence), creates the linked branch, adds `../wt-<n>`, puts it on the
+  local `<base>` tip, verifies that it landed there (exit 1 if not), pushes the
   branch so the issue's Development section names the real base, and prints
   how far `origin/<base>` is behind. `--check <path> --base <base>` re-verifies
   an existing worktree before a re-dispatch; `--dry-run` reports and creates
