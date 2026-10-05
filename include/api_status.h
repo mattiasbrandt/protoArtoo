@@ -254,8 +254,9 @@ void formatSerialJson(char* buf, size_t bufSize, const char* driveLabel, const c
 //         sbusSignalLost    - true if SBUS signal is lost
 //         sbusHwFailsafe    - true if SBUS hardware failsafe is active
 //         webControlEnabled - true if web drive control is enabled
-//         wifiConnected     - true if control-surface WiFi is available (AP active or STA
-//         connected) wifiClientConnected - true if at least one station is attached to soft AP
+//         wifiConnected     - true if control-surface WiFi is available (AP active or
+//                             STA connected)
+//         wifiClientConnected - true if at least one station is attached to soft AP
 //         fsReady           - true if LittleFS is mounted
 //         heapFree          - Internal Data Heap free bytes (include/heap_reading.h)
 //         heapMin           - Internal Data Heap low-water mark since boot, bytes
