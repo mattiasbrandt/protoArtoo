@@ -210,21 +210,23 @@ static void hostedRejoinAfterRecovery() {
 static constexpr int kHostedLinkHeartbeatIntervalSec =
     static_cast<int>(kHostedLinkLivenessIntervalMs / 1000);
 
-// How long an attempt waits, after the re-init, for the C6 to prove it is
-// serving (#471). The slave creates its heartbeat timer with a period of one
-// full interval (slave_control.c start_heartbeat(): xTimerCreate(
-// duration*TIMEOUT_IN_SEC, pdTRUE, ...)), so the first beat after the
-// configure RPC lands kHostedLinkLivenessIntervalMs later; the 2 s on top is
-// for the SDIO hop and the esp_event loop delivering it. The configure RPC
-// and the esp_wifi_get_mode() probe run inside this window, each under the
-// vendor's own 5 s response timeout (rpc_slave_if.h DEFAULT_RPC_RSP_TIMEOUT),
-// so an attempt against a dead C6 spends at most about 10 s here.
+// How long an attempt waits, after the heartbeat configure RPC returns, for
+// the C6 to prove it is serving (#471). The slave creates its heartbeat timer
+// when it handles that RPC, with a period of one full interval
+// (slave_control.c start_heartbeat(): xTimerCreate(duration*TIMEOUT_IN_SEC,
+// pdTRUE, ...)), so the first beat lands kHostedLinkLivenessIntervalMs after
+// it; the 2 s on top is for the SDIO hop and the esp_event loop delivering
+// it. The window therefore starts when the configure call returns, not
+// before it. The configure RPC (ahead of the window) and the
+// esp_wifi_get_mode() probe (inside it) each run under the vendor's own 5 s
+// response timeout (rpc_slave_if.h DEFAULT_RPC_RSP_TIMEOUT), so an attempt
+// against a dead C6 spends at most about 12 s here.
 static constexpr uint32_t kHostedLinkLivenessConfirmMs = kHostedLinkLivenessIntervalMs + 2000;
 static constexpr uint32_t kHostedLinkLivenessPollMs = 100;
 
 // Set once hostedRegisterLinkSupervision() has the CP_HEARTBEAT handler in
-// place. Written before WiFi.begin() and before the recovery task first
-// reads it (the task's first wake is a full interval later), never after.
+// place. Written before the HostedRecovery task is created, never after, so
+// the task creation publishes it to the only task that reads it.
 static bool g_hostedHeartbeatHandlerRegistered = false;
 
 // Enables the C6 heartbeat, or says why it cannot be read. Without the
@@ -240,32 +242,44 @@ static esp_err_t hostedEnableHeartbeat() {
 
 // What an attempt saw after its re-init. Raw esp_err_t results, so kept here
 // rather than in the pure core, like g_hostedRejoinResult above.
+// Any reply from the C6 counts as answered (operator's decision on #471,
+// 2026-10-05). ESP_OK is the obvious one. ESP_ERR_WIFI_NOT_INIT can only come
+// from the slave: its GetWifiMode handler wraps esp_wifi_get_mode() in
+// RPC_RET_FAIL_IF (slave_wifi_std.c) and sends the error back in its
+// response, so it proves the round trip just as well -- and it is what a C6
+// the re-init has just reset answers, because its WiFi driver comes back only
+// with hostedRejoinAfterRecovery(). Host-side failures never reached the
+// slave and stay unanswered: check_transport_up()'s bare ESP_FAIL, a NULL
+// response, and every RPC_ERR_* (0x2f00 onwards, esp_hosted_rpc.h, so none
+// collides with 0x3001).
+static bool hostedWifiGetModeAnswered(esp_err_t result) {
+    return result == ESP_OK || result == ESP_ERR_WIFI_NOT_INIT;
+}
+
 struct HostedLivenessEvidence {
-    esp_err_t heartbeatConfigResult = ESP_ERR_INVALID_STATE;  // not tried
-    esp_err_t wifiGetModeResult = ESP_ERR_INVALID_STATE;      // not tried
+    bool tried = false;  // false when the host was not initialised, so nothing was asked
+    esp_err_t heartbeatConfigResult = ESP_OK;
+    esp_err_t wifiGetModeResult = ESP_OK;
     bool heartbeatSeen = false;
     uint32_t heartbeatNumber = 0;
 
-    bool answered() const { return heartbeatSeen || wifiGetModeResult == ESP_OK; }
+    bool answered() const {
+        return tried && (heartbeatSeen || hostedWifiGetModeAnswered(wifiGetModeResult));
+    }
 };
 
 // The liveness half of an attempt's verdict: a heartbeat newer than the
-// re-init, or esp_wifi_get_mode() returning ESP_OK, whichever comes first
-// (operator's decision on #471), within kHostedLinkLivenessConfirmMs.
+// re-init, or any reply to esp_wifi_get_mode() (hostedWifiGetModeAnswered()),
+// whichever comes first (operator's decision on #471), within
+// kHostedLinkLivenessConfirmMs of the heartbeat configure returning.
 //
-// The heartbeat is re-enabled first, and that is load-bearing, not tidiness.
-// hostedInitWiFi() resets the C6 on its way up (esp_hosted_connect_to_slave()
-// under CONFIG_ESP_HOSTED_SLAVE_RESET_ON_EVERY_HOST_BOOTUP), so the C6 has
-// forgotten its heartbeat. Its WiFi driver is not initialised again until
-// hostedRejoinAfterRecovery() runs after the verdict, and the slave's
-// GetWifiMode handler passes esp_wifi_get_mode()'s ESP_ERR_WIFI_NOT_INIT
-// straight back. On a freshly reset C6 the probe therefore answers, but not
-// with ESP_OK, and the heartbeat is what proves it is serving. The probe is
-// still tried before the wait: it is the answer when the C6 was not reset,
-// and the only one when the heartbeat cannot be enabled.
+// The heartbeat is re-enabled first, before the verdict: hostedInitWiFi()
+// resets the C6 on its way up (esp_hosted_connect_to_slave() under
+// CONFIG_ESP_HOSTED_SLAVE_RESET_ON_EVERY_HOST_BOOTUP), so the C6 has
+// forgotten it, and the watch that follows a recovered attempt reads it.
 static HostedLivenessEvidence hostedAwaitLivenessAfterReinit() {
     HostedLivenessEvidence evidence;
-    const uint32_t startMs = millis();
+    evidence.tried = true;
 
     unsigned int beatsBefore;
     portENTER_CRITICAL(&g_hostedLinkMux);
@@ -273,10 +287,13 @@ static HostedLivenessEvidence hostedAwaitLivenessAfterReinit() {
     portEXIT_CRITICAL(&g_hostedLinkMux);
 
     evidence.heartbeatConfigResult = hostedEnableHeartbeat();
+    // The slave starts its heartbeat timer when it handles the configure, so
+    // the window opens now, not before the RPC (kHostedLinkLivenessConfirmMs).
+    const uint32_t windowStartMs = millis();
 
     wifi_mode_t mode = WIFI_MODE_NULL;
     evidence.wifiGetModeResult = esp_wifi_get_mode(&mode);
-    if (evidence.wifiGetModeResult == ESP_OK) {
+    if (hostedWifiGetModeAnswered(evidence.wifiGetModeResult)) {
         return evidence;
     }
 
@@ -287,17 +304,27 @@ static HostedLivenessEvidence hostedAwaitLivenessAfterReinit() {
         portEXIT_CRITICAL(&g_hostedLinkMux);
 
         if (evidence.heartbeatSeen ||
-            static_cast<uint32_t>(millis() - startMs) >= kHostedLinkLivenessConfirmMs) {
+            static_cast<uint32_t>(millis() - windowStartMs) >= kHostedLinkLivenessConfirmMs) {
             return evidence;
         }
         vTaskDelay(pdMS_TO_TICKS(kHostedLinkLivenessPollMs));
     }
 }
 
+// How many later liveness ticks retry the heartbeat configure after it
+// failed, before the watch stays on the probe until the next recovery. One
+// transient timeout at boot must not leave the watch on the probe for good;
+// a slave that genuinely refuses the request costs this many extra RPCs.
+static constexpr unsigned int kHostedLinkHeartbeatEnableRetries = 3;
+
+// Retries left for the current Probe watch. Recovery-task only.
+static unsigned int g_hostedHeartbeatRetriesLeft = 0;
+
 // Starts the liveness watch on whichever evidence the C6 can give, from the
 // result of the hostedEnableHeartbeat() call just made.
 static void hostedStartLivenessWatch(esp_err_t heartbeatConfigResult, const char* when) {
     const bool heartbeat = heartbeatConfigResult == ESP_OK;
+    g_hostedHeartbeatRetriesLeft = heartbeat ? 0 : kHostedLinkHeartbeatEnableRetries;
 
     portENTER_CRITICAL(&g_hostedLinkMux);
     hostedLinkSupervisorStartLivenessWatch(
@@ -315,9 +342,10 @@ static void hostedStartLivenessWatch(esp_err_t heartbeatConfigResult, const char
         PA_LOG_WARN(TAG,
                     "Hosted link liveness watch (%s): C6 heartbeat unavailable: "
                     "%d (%s); falling back to one esp_wifi_get_mode() probe every %u ms, arming "
-                    "after %u consecutive failures",
+                    "after %u consecutive unanswered, and retrying the heartbeat on the next %u",
                     when, (int)heartbeatConfigResult, esp_err_to_name(heartbeatConfigResult),
-                    (unsigned)kHostedLinkLivenessIntervalMs, kHostedLinkLivenessMissLimit);
+                    (unsigned)kHostedLinkLivenessIntervalMs, kHostedLinkLivenessMissLimit,
+                    kHostedLinkHeartbeatEnableRetries);
     }
 }
 
@@ -354,25 +382,46 @@ static bool hostedStartBootLivenessWatch() {
     return true;
 }
 
-// One liveness check, on the recovery task's interval wake. Runs the probe
-// when the watch reads Probe, then asks the step core whether the watch has
-// gone quiet. Returns true when that miss armed a fresh ladder run.
+// One liveness check, on the recovery task's interval wake. On the Probe
+// source it first retries the heartbeat while retries are left, then runs
+// the probe; then it asks the step core whether the watch has gone quiet.
+// Returns true when that miss armed a fresh ladder run.
 static bool hostedLivenessTick() {
     HostedLinkLivenessSource source;
     portENTER_CRITICAL(&g_hostedLinkMux);
     source = g_hostedLinkState.livenessSource;
     portEXIT_CRITICAL(&g_hostedLinkMux);
 
+    if (source == HostedLinkLivenessSource::Probe && g_hostedHeartbeatRetriesLeft > 0) {
+        g_hostedHeartbeatRetriesLeft--;
+        const esp_err_t retryResult = hostedEnableHeartbeat();
+        if (retryResult == ESP_OK) {
+            // Switches the watch to the heartbeat with a fresh window.
+            hostedStartLivenessWatch(retryResult, "heartbeat retry");
+            return false;
+        }
+        if (g_hostedHeartbeatRetriesLeft == 0) {
+            PA_LOG_WARN(TAG,
+                        "Hosted link liveness watch: C6 heartbeat still unavailable after %u "
+                        "retries: %d (%s); staying on the esp_wifi_get_mode() probe until the "
+                        "next recovery",
+                        kHostedLinkHeartbeatEnableRetries, (int)retryResult,
+                        esp_err_to_name(retryResult));
+        }
+    }
+
     if (source == HostedLinkLivenessSource::Probe) {
         wifi_mode_t mode = WIFI_MODE_NULL;
         const esp_err_t probeResult = esp_wifi_get_mode(&mode);
+        const bool answered = hostedWifiGetModeAnswered(probeResult);
         unsigned int failures;
         portENTER_CRITICAL(&g_hostedLinkMux);
-        hostedLinkSupervisorRecordProbe(g_hostedLinkState, millis(), probeResult == ESP_OK);
+        hostedLinkSupervisorRecordProbe(g_hostedLinkState, millis(), answered);
         failures = g_hostedLinkState.consecutiveProbeFailures;
         portEXIT_CRITICAL(&g_hostedLinkMux);
-        if (probeResult != ESP_OK) {
-            PA_LOG_WARN(TAG, "Hosted link liveness probe: esp_wifi_get_mode failed: %d (%s), %u/%u",
+        if (!answered) {
+            PA_LOG_WARN(TAG,
+                        "Hosted link liveness probe: esp_wifi_get_mode unanswered: %d (%s), %u/%u",
                         (int)probeResult, esp_err_to_name(probeResult), failures,
                         kHostedLinkLivenessMissLimit);
         }
@@ -390,7 +439,7 @@ static bool hostedLivenessTick() {
         source = g_hostedLinkState.livenessSource;
         silentMs = nowMs - g_hostedLinkState.lastLivenessAtMs;
         failures = g_hostedLinkState.consecutiveProbeFailures;
-        actions = hostedLinkSupervisorOnLivenessMissed(g_hostedLinkState, nowMs);
+        actions = hostedLinkSupervisorOnLivenessMissed(g_hostedLinkState);
         missCount = g_hostedLinkState.livenessMissCount;
     }
     portEXIT_CRITICAL(&g_hostedLinkMux);
@@ -409,7 +458,7 @@ static bool hostedLivenessTick() {
     } else {
         PA_LOG_WARN(TAG,
                     "Hosted link liveness miss #%u: %u consecutive esp_wifi_get_mode() probes "
-                    "failed; %s",
+                    "unanswered; %s",
                     missCount, failures, outcome);
     }
     return actions.shouldNotifyRecoveryTask;
@@ -443,19 +492,29 @@ static void hostedRunRecoveryLadder() {
         const bool transportUp = initialised && liveness.answered();
         const uint32_t nowMs = millis();
 
-        // wifiGetMode reads ESP_ERR_WIFI_NOT_INIT on a C6 the re-init reset:
-        // its WiFi driver comes back with the rejoin, after this verdict.
-        PA_LOG_INFO(TAG,
-                    "Hosted link recovery attempt result: deinit=%s init=%s "
-                    "hostedIsInitialized=%s heartbeatConfig=%d(%s) wifiGetMode=%d(%s) "
-                    "heartbeat=%s%lu -> %s",
-                    deinitOk ? "ok" : "FAIL", initOk ? "ok" : "FAIL",
-                    initialised ? "true" : "false", (int)liveness.heartbeatConfigResult,
-                    esp_err_to_name(liveness.heartbeatConfigResult),
-                    (int)liveness.wifiGetModeResult, esp_err_to_name(liveness.wifiGetModeResult),
-                    liveness.heartbeatSeen ? "#" : "none",
-                    liveness.heartbeatSeen ? (unsigned long)liveness.heartbeatNumber : 0UL,
-                    transportUp ? "C6 answering, recovered" : "C6 not answering, attempt failed");
+        // wifiGetMode reads ESP_ERR_WIFI_NOT_INIT on a C6 the re-init reset
+        // (its WiFi driver comes back with the rejoin, after this verdict);
+        // that is a reply, so it counts (hostedWifiGetModeAnswered()).
+        const char* verdict =
+            transportUp ? "C6 answering, recovered" : "C6 not answering, attempt failed";
+        if (liveness.tried) {
+            PA_LOG_INFO(TAG,
+                        "Hosted link recovery attempt result: deinit=%s init=%s "
+                        "hostedIsInitialized=true heartbeatConfig=%d(%s) wifiGetMode=%d(%s) "
+                        "heartbeatSeen=%s heartbeatNumber=%lu -> %s",
+                        deinitOk ? "ok" : "FAIL", initOk ? "ok" : "FAIL",
+                        (int)liveness.heartbeatConfigResult,
+                        esp_err_to_name(liveness.heartbeatConfigResult),
+                        (int)liveness.wifiGetModeResult,
+                        esp_err_to_name(liveness.wifiGetModeResult),
+                        liveness.heartbeatSeen ? "yes" : "no",
+                        (unsigned long)liveness.heartbeatNumber, verdict);
+        } else {
+            PA_LOG_INFO(TAG,
+                        "Hosted link recovery attempt result: deinit=%s init=%s "
+                        "hostedIsInitialized=false, liveness not asked -> %s",
+                        deinitOk ? "ok" : "FAIL", initOk ? "ok" : "FAIL", verdict);
+        }
 
         HostedLinkAttemptOutcome outcome;
         portENTER_CRITICAL(&g_hostedLinkMux);
@@ -632,7 +691,36 @@ static void hostedHeartbeatHandler(void* arg, esp_event_base_t base, int32_t id,
 // before webNetworkBootstrap()'s call to networkManagerApplyBootPosture(),
 // which is what eventually calls WiFi.begin().
 static void hostedRegisterLinkSupervision() {
-    // Create the recovery task BEFORE registering the event handlers below.
+    const esp_err_t loopResult = esp_event_loop_create_default();
+    if (loopResult != ESP_OK && loopResult != ESP_ERR_INVALID_STATE) {
+        PA_LOG_ERROR(TAG, "esp_event_loop_create_default failed: %d (%s)", (int)loopResult,
+                     esp_err_to_name(loopResult));
+    }
+
+    static esp_event_handler_instance_t transportFailureInstance;
+    static esp_event_handler_instance_t transportUpInstance;
+    static esp_event_handler_instance_t heartbeatInstance;
+
+    // The heartbeat handler goes in BEFORE the recovery task is created, the
+    // opposite of the two below, and for the same kind of reason: the task
+    // reads g_hostedHeartbeatHandlerRegistered, and creating the task after
+    // the write is what publishes it to the task. A beat arriving before the
+    // task exists only records a time, so this order loses nothing. The C6
+    // sends none until the task enables the heartbeat once the transport is up.
+    esp_err_t err = esp_event_handler_instance_register(ESP_HOSTED_EVENT,
+                                                          ESP_HOSTED_EVENT_CP_HEARTBEAT,
+                                                          &hostedHeartbeatHandler, nullptr,
+                                                          &heartbeatInstance);
+    if (err == ESP_OK) {
+        g_hostedHeartbeatHandlerRegistered = true;
+    } else {
+        PA_LOG_ERROR(TAG,
+                     "Failed to register ESP_HOSTED_EVENT_CP_HEARTBEAT handler: %d (%s); the "
+                     "liveness watch will use the esp_wifi_get_mode() probe instead",
+                     (int)err, esp_err_to_name(err));
+    }
+
+    // Create the recovery task BEFORE registering the transport handlers below.
     // Order is load-bearing (#184 device review, mirrored from
     // bench/p4_hosted_bench.cpp:1085-1098): hostedTransportFailureHandler()
     // only notifies g_hostedRecoveryTaskHandle when it is non-null, and
@@ -657,20 +745,10 @@ static void hostedRegisterLinkSupervision() {
         g_hostedRecoveryTaskHandle = nullptr;
     }
 
-    const esp_err_t loopResult = esp_event_loop_create_default();
-    if (loopResult != ESP_OK && loopResult != ESP_ERR_INVALID_STATE) {
-        PA_LOG_ERROR(TAG, "esp_event_loop_create_default failed: %d (%s)", (int)loopResult,
-                     esp_err_to_name(loopResult));
-    }
-
-    static esp_event_handler_instance_t transportFailureInstance;
-    static esp_event_handler_instance_t transportUpInstance;
-    static esp_event_handler_instance_t heartbeatInstance;
-
-    esp_err_t err = esp_event_handler_instance_register(ESP_HOSTED_EVENT,
-                                                          ESP_HOSTED_EVENT_TRANSPORT_FAILURE,
-                                                          &hostedTransportFailureHandler, nullptr,
-                                                          &transportFailureInstance);
+    err = esp_event_handler_instance_register(ESP_HOSTED_EVENT,
+                                               ESP_HOSTED_EVENT_TRANSPORT_FAILURE,
+                                               &hostedTransportFailureHandler, nullptr,
+                                               &transportFailureInstance);
     if (err != ESP_OK) {
         PA_LOG_ERROR(TAG, "Failed to register ESP_HOSTED_EVENT_TRANSPORT_FAILURE handler: %d (%s)",
                      (int)err, esp_err_to_name(err));
@@ -681,20 +759,6 @@ static void hostedRegisterLinkSupervision() {
                                                &transportUpInstance);
     if (err != ESP_OK) {
         PA_LOG_ERROR(TAG, "Failed to register ESP_HOSTED_EVENT_TRANSPORT_UP handler: %d (%s)",
-                     (int)err, esp_err_to_name(err));
-    }
-
-    // Registered here, before WiFi.begin(), but the C6 sends nothing until
-    // the recovery task enables the heartbeat once the transport is up.
-    err = esp_event_handler_instance_register(ESP_HOSTED_EVENT, ESP_HOSTED_EVENT_CP_HEARTBEAT,
-                                               &hostedHeartbeatHandler, nullptr,
-                                               &heartbeatInstance);
-    if (err == ESP_OK) {
-        g_hostedHeartbeatHandlerRegistered = true;
-    } else {
-        PA_LOG_ERROR(TAG,
-                     "Failed to register ESP_HOSTED_EVENT_CP_HEARTBEAT handler: %d (%s); the "
-                     "liveness watch will use the esp_wifi_get_mode() probe instead",
                      (int)err, esp_err_to_name(err));
     }
 }
@@ -768,8 +832,8 @@ HostedLinkStatusSnapshot hostedLinkQueryStatus() {
 // ladder within kHostedLinkLivenessMissLimit intervals even when no
 // TRANSPORT_FAILURE is posted. Each attempt then counts as recovered only on
 // the same liveness evidence as any other run -- a heartbeat newer than the
-// re-init or esp_wifi_get_mode() returning ESP_OK -- never on hostedIsInitialized()
-// alone, which is what reported this action's ladder as recovered on board 2
+// re-init or any reply from the C6 to esp_wifi_get_mode() -- never on
+// hostedIsInitialized() alone, which is what reported this action's ladder as recovered on board 2
 // while every RPC still timed out. The Console record is unchanged: it says
 // both edges were driven, which it never claimed was liveness; the ladder's
 // attempt-result line is the outcome.
