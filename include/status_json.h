@@ -132,9 +132,8 @@ void captureStatusHeapReadings(StatusJsonInputs* in);
 // when it moved (#464), and the test above is what measures it again. The 3,072 B
 // it replaces held a fresh-boot droid with every component on (about 3,176 B)
 // only as an overflow answer (#381, #428). A board with ESP-Hosted also carries
-// the hostedLink block, which src/web/status_json.cpp formats into 256 B first,
-// so it adds at most 255; the native build cannot measure it, so it is added
-// rather than measured.
+// the hostedLink object, sized below; the native build cannot measure it, so
+// it is added rather than measured.
 //
 // #451 added the run's key, 96 B more: at its widest, a 31-character name
 // and the longest start time, it is
@@ -142,8 +141,17 @@ void captureStatusHeapReadings(StatusJsonInputs* in);
 // rounded up to keep the buffer a multiple of 32. Added, not measured, for the
 // same reason as the Dome Bearing's; the worst case in the test above now
 // includes it.
+//
+// The hostedLink object (#189, #471) is 620 B at its widest: every count and
+// time at 4294967295, livenessAgeMs at 2147483647, both esp_err_t results at
+// -2147483648, and the longest words ("attempting", "false", "heartbeat",
+// "refused", "small allocations"). src/web/status_json.cpp formats it in five
+// chunks of at most 207 + 84 + 148 + 69 + 112 B. 20 B of margin rounds it to
+// 640, which keeps the buffer a multiple of 32. The 255 it replaces was the
+// old single chunk's buffer, not its worst case: that chunk alone reached
+// 292 B with every count at its maximum.
 #if PA_CAP_HOSTED_WIFI
-constexpr size_t STATUS_JSON_HOSTED_LINK_MAX = 255;
+constexpr size_t STATUS_JSON_HOSTED_LINK_MAX = 640;
 #else
 constexpr size_t STATUS_JSON_HOSTED_LINK_MAX = 0;
 #endif

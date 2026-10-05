@@ -542,19 +542,69 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
         // ESP-Hosted C6 link supervisor state (#189). Board Capability
         // Gate, not runtime config -- absent entirely on boards with no
         // Hosted backend rather than emitted with placeholder values.
+        //
+        // Formatted in five chunks through one 256 B buffer, each chunk's
+        // worst case under it (the largest is 207 B; STATUS_JSON_HOSTED_LINK_MAX
+        // in include/status_json.h carries the arithmetic): this runs on the
+        // httpd task and the WebEvents task, and one buffer sized for the
+        // whole object would grow both stack frames. A chunk over the buffer
+        // would be cut short by snprintf and appended as broken JSON, so a
+        // key added here goes into a chunk with room for its widest value.
         {
             const HostedLinkStatusSnapshot& hl = in.hostedLink;
             char hlBuf[256];
             snprintf(hlBuf, sizeof(hlBuf),
                      ",\"hostedLink\":{\"phase\":\"%s\",\"terminal\":%s,"
                      "\"transportFailureCount\":%u,\"transportUpEventCount\":%u,"
-                     "\"attemptCount\":%u,\"totalAttemptCount\":%u,\"recoveredCount\":%u,"
-                     "\"lastFailureAtMs\":%lu,\"lastAttemptAtMs\":%lu,\"degradedAtMs\":%lu}",
+                     "\"attemptCount\":%u,\"totalAttemptCount\":%u,\"recoveredCount\":%u",
                      hostedLinkPhaseName(hl.phase),
                      hl.phase == HostedLinkPhase::Degraded ? "true" : "false",
                      hl.transportFailureEventCount, hl.transportUpEventCount, hl.attemptCount,
-                     hl.totalAttemptCount, hl.recoveredCount, (unsigned long)hl.lastFailureAtMs,
-                     (unsigned long)hl.lastAttemptAtMs, (unsigned long)hl.degradedAtMs);
+                     hl.totalAttemptCount, hl.recoveredCount);
+            ok = appendJsonChunk(pos, remaining, hlBuf) && ok;
+
+            snprintf(hlBuf, sizeof(hlBuf),
+                     ",\"lastFailureAtMs\":%lu,\"lastAttemptAtMs\":%lu,\"degradedAtMs\":%lu",
+                     (unsigned long)hl.lastFailureAtMs, (unsigned long)hl.lastAttemptAtMs,
+                     (unsigned long)hl.degradedAtMs);
+            ok = appendJsonChunk(pos, remaining, hlBuf) && ok;
+
+            // The liveness watch (#471).
+            snprintf(hlBuf, sizeof(hlBuf),
+                     ",\"livenessSource\":\"%s\",\"livenessMissCount\":%u,"
+                     "\"heartbeatCount\":%u,\"lastHeartbeatNumber\":%lu,\"livenessAgeMs\":%ld",
+                     hostedLinkLivenessSourceName(hl.livenessSource), hl.livenessMissCount,
+                     hl.heartbeatCount, (unsigned long)hl.lastHeartbeatNumber,
+                     (long)hl.livenessAgeMs);
+            ok = appendJsonChunk(pos, remaining, hlBuf) && ok;
+
+            // The last attempt's verdict inputs (#471), null where that
+            // attempt did not produce one: every key before the first
+            // attempt, the refusal unless the re-init was refused, and the
+            // three liveness results when the C6 was not asked. A string
+            // value is quoted and null is not, so the quote is an argument.
+            const HostedLinkLastAttempt& la = hl.lastAttempt;
+            const bool attempted = la.init != HostedLinkInitOutcome::None;
+            const bool refused = attempted && la.refusal != nullptr;
+            snprintf(hlBuf, sizeof(hlBuf),
+                     ",\"lastAttemptInit\":%s%s%s,\"lastAttemptRefusal\":%s%s%s",
+                     attempted ? "\"" : "",
+                     attempted ? hostedLinkInitOutcomeName(la.init) : "null",
+                     attempted ? "\"" : "", refused ? "\"" : "", refused ? la.refusal : "null",
+                     refused ? "\"" : "");
+            ok = appendJsonChunk(pos, remaining, hlBuf) && ok;
+
+            if (attempted && la.livenessAsked) {
+                snprintf(hlBuf, sizeof(hlBuf),
+                         ",\"lastAttemptHeartbeatConfig\":%ld,\"lastAttemptWifiGetMode\":%ld,"
+                         "\"lastAttemptHeartbeatSeen\":%s}",
+                         (long)la.heartbeatConfigResult, (long)la.wifiGetModeResult,
+                         la.heartbeatSeen ? "true" : "false");
+            } else {
+                snprintf(hlBuf, sizeof(hlBuf),
+                         ",\"lastAttemptHeartbeatConfig\":null,\"lastAttemptWifiGetMode\":null,"
+                         "\"lastAttemptHeartbeatSeen\":null}");
+            }
             ok = appendJsonChunk(pos, remaining, hlBuf) && ok;
         }
 #endif
