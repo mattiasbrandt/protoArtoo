@@ -571,9 +571,10 @@ comment. The coordinator checks that block's provenance against the branch -
 cheap, and per slice - and runs the gate itself **once per wave, on the merged
 tree**, rather than re-running it behind every slice. Divergence at either point
 marks the slice unverified. Waiver flags (`--expect-gate-edit`,
-`--expect-no-new-tests`, `--expect-no-mutations`, `--expect-test-shrink`) are
-coordinator-granted only; `--expect-test-shrink` is the one that lets a slice
-delete tests or test files, and its ACK names the count and every file. Contract,
+`--expect-no-new-tests`, `--expect-no-mutations`, `--expect-test-shrink`,
+`--expect-heap-growth <bytes>`) are coordinator-granted only;
+`--expect-test-shrink` is the one that lets a slice delete tests or test files,
+and its ACK names the count and every file. Contract,
 evidence rules and the mutation stage: `docs/agents/slice-gate.md`.
 
 **CI gate:** `verification` workflow runs on every PR to `main` — do not bypass it.
@@ -585,7 +586,12 @@ budget's rationale field — a conscious decision, never a silent bump — and a
 separate fixed hard ceiling below the partition size never moves. The artoo-esp32
 image sits within ~31 KB of its budget, so an ordinary artoo feature can trip it,
 not only spill from another target. The RAM budget moves by the same
-explicit-decision rule.
+explicit-decision rule. So does the **boot heap baseline**
+(`boot_heap_baseline_bytes`, #468): static RAM plus the stack and TCB of every
+task each boot creates. The gate fails a slice that grows it more than
+`boot_heap_threshold_bytes` past the baseline, unless the coordinator granted
+`--expect-heap-growth <bytes>`; only an operator-approved edit re-stamps the
+baseline. It is not runtime heap - `make bench-auto`'s memory log is.
 
 **The filesystem image is measured by the coordinator, not by a slice**
 (operator decision, 2026-09-17). `tools/check_build_budgets.py` images the
