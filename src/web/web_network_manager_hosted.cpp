@@ -260,8 +260,8 @@ struct HostedLivenessEvidence {
 // hostedRejoinAfterRecovery() runs after the verdict, and the slave's
 // GetWifiMode handler passes esp_wifi_get_mode()'s ESP_ERR_WIFI_NOT_INIT
 // straight back. On a freshly reset C6 the probe therefore answers, but not
-// with ESP_OK, and the heartbeat is what proves it is serving. The probe
-// still gets its chance first: it is the answer when the C6 was not reset,
+// with ESP_OK, and the heartbeat is what proves it is serving. The probe is
+// still tried before the wait: it is the answer when the C6 was not reset,
 // and the only one when the heartbeat cannot be enabled.
 static HostedLivenessEvidence hostedAwaitLivenessAfterReinit() {
     HostedLivenessEvidence evidence;
@@ -521,14 +521,20 @@ static void hostedRecoveryTaskFn(void* arg) {
     (void)arg;
 
     bool bootWatchPending = true;
+    uint32_t nextTickAtMs = millis() + kHostedLinkLivenessIntervalMs;
 
     for (;;) {
-        // Wakes on a transport-failure notification, or every liveness
-        // interval to run the watch (#471).
+        // Wakes on a transport-failure notification, or on the liveness
+        // interval to run the watch (#471). The wait runs to a deadline
+        // rather than a fixed delay: a probe against a silent C6 blocks for
+        // the vendor's 5 s RPC timeout, and a fixed 5 s on top would stretch
+        // the operator's 3 x 5 s window to about 30 s.
+        const int32_t remainingMs = static_cast<int32_t>(nextTickAtMs - millis());
         const uint32_t notified =
-            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(kHostedLinkLivenessIntervalMs));
+            ulTaskNotifyTake(pdTRUE, remainingMs > 0 ? pdMS_TO_TICKS(remainingMs) : 0);
 
         if (notified == 0) {
+            nextTickAtMs += kHostedLinkLivenessIntervalMs;
             if (bootWatchPending) {
                 bootWatchPending = !hostedStartBootLivenessWatch();
                 continue;
@@ -544,6 +550,7 @@ static void hostedRecoveryTaskFn(void* arg) {
         // A run that recovered started the watch itself; a Degraded one is
         // never watched again. Either way the boot step is done.
         bootWatchPending = false;
+        nextTickAtMs = millis() + kHostedLinkLivenessIntervalMs;
 
         // Back to the top. Degraded is terminal: the step core refuses to
         // re-arm from it (hostedLinkSupervisorOnTransportFailure() and
@@ -761,7 +768,7 @@ HostedLinkStatusSnapshot hostedLinkQueryStatus() {
 // ladder within kHostedLinkLivenessMissLimit intervals even when no
 // TRANSPORT_FAILURE is posted. Each attempt then counts as recovered only on
 // the same liveness evidence as any other run -- a heartbeat newer than the
-// re-init or an answered esp_wifi_get_mode() -- never on hostedIsInitialized()
+// re-init or esp_wifi_get_mode() returning ESP_OK -- never on hostedIsInitialized()
 // alone, which is what reported this action's ladder as recovered on board 2
 // while every RPC still timed out. The Console record is unchanged: it says
 // both edges were driven, which it never claimed was liveness; the ladder's
