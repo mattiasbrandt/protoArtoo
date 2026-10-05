@@ -1567,9 +1567,11 @@
 
   // What a chip says on hover and to a screen reader as its description: why
   // it does nothing, or how long a run is and what it does. The Factory
-  // DM:RESET default says it leaves the pies open instead of its purpose.
-  const aboutOf = (name) => {
-    const refusal = refusalOf(name);
+  // DM:RESET default says it leaves the pies open instead of its purpose. A
+  // running chip's act is Stop, which always does something, so it never says
+  // the name does nothing - a run of a name not on the droid included.
+  const aboutOf = (name, running) => {
+    const refusal = running ? null : refusalOf(name);
     if (refusal) return refusal.says;
     const entry = libraryEntry(name);
     const factoryDefault = name === standDownEffective() && name === STAND_DOWN_UNSET
@@ -1584,7 +1586,7 @@
   // running chip's act is its Stop, with the running lamp.
   const chipHtml = (name, running) => {
     const refusal = running ? null : refusalOf(name);
-    const about = aboutOf(name);
+    const about = aboutOf(name, running);
     const act = running ? "stop" : "play";
     const channels = (showMapped || []).filter((mapped) => mapped.name === name).map((mapped) => mapped.channel);
     const pinned = Array.isArray(showPins) && showPins.includes(name);
