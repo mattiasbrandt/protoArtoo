@@ -147,8 +147,12 @@ from the epic's coordination section rather than from memory.
   agent's last command first. The second kill that evening happened because
   the coordinator told the worker to "re-run the interrupted step" - which
   was the command that had blown up memory.
-- Compose the worker prompt from [worker-brief.md](worker-brief.md) plus the
-  sub-issue number. Ticket-specific knowledge lives in the ticket, not the
+- Render the worker prompt from [worker-brief.md](worker-brief.md), never by
+  copying an older brief:
+  `python3 tools/make_brief.py --issue <n> --slug <s> --worktree <path> --base <branch>`.
+  It fills the pin marker `<!-- coordinator-pin-<s> -->` and the status marker
+  `<!-- worker-status-<n>-<s> -->`, so start the slice's pinned comment with
+  that pin marker. Ticket-specific knowledge lives in the ticket, not the
   prompt - the brief's first step sends the worker to the issue body and the
   pinned coordinator comment.
 - Fence files mechanically, not just in prose: put `--fenced <pathspecs>` in

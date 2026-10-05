@@ -1,17 +1,26 @@
 # Worker brief template
 
-Compose the worker prompt from this template. Fill only {ISSUE}, {WORKTREE},
-and {BASE} (the epic's integration branch); everything ticket-specific stays
-in the ticket.
+Render the worker prompt from this template, never by hand:
+
+    python3 tools/make_brief.py --issue <n> --slug <s> --worktree <path> --base <branch>
+
+It fills {ISSUE}, {WORKTREE}, {BASE} (the epic's integration branch),
+{PIN_MARKER} (`<!-- coordinator-pin-<s> -->`) and {STATUS_MARKER}
+(`<!-- worker-status-<n>-<s> -->`), writes everything below the rule, and
+refuses to write a brief that still holds a `{...}` placeholder. `{owner}` and
+`{repo}` are not template placeholders: gh fills them when the worker runs the
+command. Everything ticket-specific stays in the ticket.
 
 ---
 
 You are implementing sub-issue #{ISSUE} in the worktree {WORKTREE}.
 
 READ FIRST: issue #{ISSUE} - body, acceptance criteria, and the pinned
-coordinator comment (attempt log, rejected approaches, verification
-harness). Rejected approaches are out of scope: do not attempt a variation of
-a rejected category.
+coordinator comment whose first line is {PIN_MARKER} (attempt log, rejected
+approaches, verification harness). That comment is this slice's; an issue can
+carry several slices, and another slice's pin is not yours. Rejected
+approaches are out of scope: do not attempt a variation of a rejected
+category.
 
 Then these sections of AGENTS.md, not the whole file: Architecture
 Guardrails, The build lock, Suite pause, Verification Scale, Web/UI Copy
@@ -213,19 +222,20 @@ SLICE WORKFLOW (AGENTS.md, binding)
   comment, updated in place as follows.
 - Status comment mechanics (all agents share one GitHub identity, so
   --edit-last can overwrite the coordinator's comments - never use it):
-  1. Before your first slice, create your status comment with a marker first
-     line, writing the body to a file and passing it with --body-file:
+  1. Before your first slice, create your status comment, writing the body to
+     a file and passing it with --body-file:
      gh issue comment {ISSUE} --body-file <file>
-     The marker MUST be unique to THIS dispatch, not just to the issue:
-     <!-- worker-status-{ISSUE}-<short-slug-of-your-branch> -->. A ticket
-     re-dispatched in a later wave otherwise gets two comments sharing one
-     marker, step 2 returns BOTH ids, and the step-3 `gh api .../<id>` then
-     fails on the embedded newline. That happened on #221.
+     Its first line is exactly this marker, assigned to THIS dispatch - do not
+     choose your own:
+     {STATUS_MARKER}
   2. Find its id once - and CHECK IT RETURNED EXACTLY ONE:
      gh api repos/{owner}/{repo}/issues/{ISSUE}/comments
-     --jq '.[] | select(.body | startswith("<!-- worker-status-{ISSUE}-<slug> -->")) | .id'
-     Two ids means your marker is not unique; pick a narrower one and re-post
-     rather than patching whichever came back first.
+     --jq '.[] | select(.body | startswith("{STATUS_MARKER}")) | .id'
+     Two ids means the marker is already in use on this issue (on #221 a
+     re-dispatch shared one, and the step-3 `gh api .../<id>` failed on the
+     embedded newline). Do not patch whichever came back first and do not
+     invent a marker: stop and report it, so the coordinator re-renders the
+     brief with a new slug.
   3. Update that id thereafter, from a file:
      python3 -c "import json,pathlib,sys; print(json.dumps({'body': pathlib.Path(sys.argv[1]).read_text()}))" <file> > /tmp/patch.json
      gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id> --input /tmp/patch.json
@@ -280,5 +290,5 @@ The done signal is the last line of that comment, `WORKER_DONE: ok` or
 later line that is not the token means the worker is not done. The same fact
 may also be `/tmp/slice-<n>.json` with
 `{"ok": true}` or `{"ok": false}`. The coordinator waits with
-`python3 tools/wait_worker.py --issue {ISSUE} --marker '<!-- worker-status-{ISSUE}-<slug> -->'`.
+`python3 tools/wait_worker.py --issue {ISSUE} --marker '{STATUS_MARKER}'`.
 An idle pane is not the signal.
