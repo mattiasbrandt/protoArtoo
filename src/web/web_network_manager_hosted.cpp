@@ -51,6 +51,12 @@
 // driver on a freshly-rebooted co-processor -- see hostedRejoinAfterRecovery().
 #include "esp_hosted.h"
 #include "esp_wifi.h"
+// The re-init fit check (#471): heap_caps_* to read the heap the vendor's
+// pools come from, sdkconfig.h for the Kconfig sizes they are built from, and
+// the vendor version the mirrored sizes were read against.
+#include "esp_heap_caps.h"
+#include "esp_hosted_host_fw_ver.h"
+#include "sdkconfig.h"
 // driver/gpio.h: gpio_set_level() for the operator-initiated enable-line
 // pulse (hostedLinkResetCoprocessor(), #243). The pin is owned and already
 // configured as an output by ESP-Hosted itself, so this file drives a level
@@ -103,6 +109,12 @@ static volatile bool g_staConnected = false;
 // esp_wifi_get_mode() probe per interval stands in for it. The same evidence
 // decides whether an attempt recovered: hostedIsInitialized() read true while
 // every RPC timed out, so it is no longer enough on its own.
+//
+// Re-init fit (#471): the vendor's re-init asserts every allocation it makes,
+// so a squeezed heap turned a ladder attempt into a controller restart on
+// board 2. Each attempt therefore checks that the heap can hold the re-init
+// before it calls hostedInitWiFi(), and counts the attempt failed when it
+// cannot -- see hostedMeasureReinitFit().
 // ============================================================================
 
 static HostedLinkSupervisorState g_hostedLinkState;
@@ -464,6 +476,124 @@ static bool hostedLivenessTick() {
     return actions.shouldNotifyRecoveryTask;
 }
 
+// ---------------------------------------------------------------------------
+// Re-init fit check (#471)
+//
+// hostedInitWiFi() -> esp_hosted_init() rebuilds everything the ladder's
+// deinit tore down, and asserts each allocation instead of failing: on board
+// 2 the SDIO pool did not fit and the controller restarted
+// (`assert failed: sdio_mempool_create sdio_drv.c:258 (buf_mp_g)`), which
+// ADR 0032 forbids. So no runtime hostedInitWiFi() runs unless the heap can
+// hold the re-init; an attempt that cannot is counted failed and the ladder's
+// bound decides. Boot is not checked: the heap is fresh there.
+//
+// What the re-init allocates, in order (ESP-Hosted 2.12.13):
+//   1. The channel mempool: add_esp_wifi_remote_channels() ->
+//      transport_drv_add_channel() -> transport_drv_common_mempool_create()
+//      (transport_drv.c:283-302, assert(mempool_common)).
+//   2. bus_init_internal() (sdio_drv.c:1466-1556): two counting semaphores
+//      and six priority queues, each asserted, then the SDIO mempool
+//      (sdio_mempool_create(), sdio_drv.c:242-260, assert(buf_mp_g)).
+//   3. After it: the SDMMC card and bus mutex, a semaphore, the four SDIO
+//      tasks, then rpc_init() under ESP_ERROR_CHECK (mutexes, semaphores,
+//      the serial interface, two queues and the two RPC tasks).
+// Both pools are one contiguous block each, allocated through
+// transport_util_malloc() with HOSTED_MEM_CAP_DMA -> hosted_malloc_align(),
+// which asks internal DMA-capable RAM (port_esp_hosted_host_os.c:128-143)
+// because CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM is off.
+//
+// Only the largest free block is knowable, not the second largest, so the
+// check is: the largest block holds steps 1 and 2 together, and the free
+// total also covers step 3. That is conservative -- two separate holes that
+// would each have fitted a pool are refused -- and it errs on the side of a
+// failed attempt rather than a vendor assert.
+// ---------------------------------------------------------------------------
+
+// The sizes below are mirrored from private vendor headers this file cannot
+// include (the component exports only host/ and host/api/include). A vendor
+// bump stops the build here until they are re-read.
+static_assert(ESP_HOSTED_VERSION_VAL(ESP_HOSTED_VERSION_MAJOR_1, ESP_HOSTED_VERSION_MINOR_1,
+                                     ESP_HOSTED_VERSION_PATCH_1) ==
+                  ESP_HOSTED_VERSION_VAL(2, 12, 13),
+              "ESP-Hosted changed: re-read the pool sizes in sdio_drv.c, transport_drv.c and "
+              "mempool_ll.h, then the re-init fit check below");
+// The pools exist only with the mempool on, and the check reads internal
+// DMA RAM because that is where hosted_malloc_align() puts them without the
+// PSRAM preference. Either setting changing needs the check re-derived.
+#if !CONFIG_ESP_HOSTED_USE_MEMPOOL || CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM
+#error "The hosted re-init fit check assumes ESP-Hosted mempools in internal DMA RAM; re-derive it"
+#endif
+
+// The heap hosted_malloc_align() falls back to, and with the PSRAM preference
+// off the only one it asks.
+static constexpr uint32_t kHostedReinitHeapCaps =
+    MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT;
+
+// Bytes hosted_mempool_create() asks for (mempool.c:76-80):
+// MEMPOOL_ALIGNED(OS_MEMPOOL_BYTES(blocks, blockSize), 64). OS_MEMPOOL_BYTES
+// rounds each block up to 4-byte words (mempool_ll.h:198-202, no
+// OS_MEMPOOL_GUARD defined), and MEMPOOL_ALIGNED adds a full 64 bytes even to
+// a size that is already aligned (mempool.c:17) -- that is the vendor's
+// arithmetic, mirrored as it is, not a slip here.
+static constexpr size_t hostedMempoolWordBytes(size_t blocks, size_t blockSize) {
+    return sizeof(uint32_t) * (((blockSize + 3) / 4) * blocks);
+}
+static constexpr size_t hostedMempoolBytes(size_t blocks, size_t blockSize) {
+    return hostedMempoolWordBytes(blocks, blockSize) + 64 -
+           (hostedMempoolWordBytes(blocks, blockSize) & 63);
+}
+
+// Step 1: (TX queue + MEMPOOL_PADDING 5, transport_drv.c:44) blocks of
+// ESP_TRANSPORT_MAX_BUF_SIZE 1600 (esp_hosted_transport.h:50); 40,064 B at
+// the TX queue depth of 20.
+static constexpr size_t kHostedChannelPoolBytes =
+    hostedMempoolBytes(CONFIG_ESP_HOSTED_SDIO_TX_Q_SIZE + 5, 1600);
+// Step 2's pool: (RX queue + MIN_MEMPOOL_REQ 11, sdio_drv.c:120-124) blocks
+// of MAX_SDIO_BUFFER_SIZE 1536 (esp_hosted_transport.h:44); 47,680 B at the
+// RX queue depth of 20.
+static constexpr size_t kHostedSdioPoolBytes =
+    hostedMempoolBytes(CONFIG_ESP_HOSTED_SDIO_RX_Q_SIZE + 11, 1536);
+
+// Step 2's small allocations, made before the SDIO pool and so counted in
+// the same block: six priority queues of the queue depth x 24 B
+// interface_buffer_handle_t (3 x 40 x 24 = 2,880 B at 20/20) plus their
+// control blocks, two semaphores, the two channel structs and pool headers,
+// and up to 64 B of alignment slack for each pool. 4 KB covers them.
+static constexpr size_t kHostedReinitBeforeSdioPoolBytes = 4096;
+
+// Step 3: the four SDIO tasks (sdio_rx_buf at CONFIG_ESP_HOSTED_DFLT_TASK_STACK,
+// the other three at the port's DFLT_TASK_STACK_SIZE 5 KB,
+// port_esp_hosted_host_os.h:65), the two RPC tasks (RPC_TASK_STACK_SIZE 5 KB,
+// port_esp_hosted_host_os.h:63), 512 B per task for its TCB and handle, and
+// 2 KB for the card, mutexes, semaphores, serial handles and RPC queues.
+static constexpr size_t kHostedReinitAfterSdioPoolBytes =
+    CONFIG_ESP_HOSTED_DFLT_TASK_STACK + 3 * 5120 + 2 * 5120 + 6 * 512 + 2048;
+
+static constexpr size_t kHostedReinitLargestBlockNeeded =
+    kHostedChannelPoolBytes + kHostedReinitBeforeSdioPoolBytes + kHostedSdioPoolBytes;
+static constexpr size_t kHostedReinitFreeNeeded =
+    kHostedReinitLargestBlockNeeded + kHostedReinitAfterSdioPoolBytes;
+
+struct HostedReinitFit {
+    size_t largestBlock = 0;
+    size_t freeBytes = 0;
+
+    bool fits() const {
+        return largestBlock >= kHostedReinitLargestBlockNeeded &&
+               freeBytes >= kHostedReinitFreeNeeded;
+    }
+};
+
+// Read after the deinit, never before it: the deinit is what frees the old
+// pools, tasks and queues, so only then does the heap show what the re-init
+// will find.
+static HostedReinitFit hostedMeasureReinitFit() {
+    HostedReinitFit fit;
+    fit.largestBlock = heap_caps_get_largest_free_block(kHostedReinitHeapCaps);
+    fit.freeBytes = heap_caps_get_free_size(kHostedReinitHeapCaps);
+    return fit;
+}
+
 // One ladder run, from Armed to Idle or Degraded.
 static void hostedRunRecoveryLadder() {
     portENTER_CRITICAL(&g_hostedLinkMux);
@@ -480,8 +610,30 @@ static void hostedRunRecoveryLadder() {
         PA_LOG_INFO(TAG, "Hosted link recovery attempt %u/%u: hostedDeinitWiFi + hostedInitWiFi",
                     attemptsThisRun + 1, kHostedLinkRecoveryMaxAttempts);
 
-        const bool deinitOk = hostedDeinitWiFi();
-        const bool initOk = hostedInitWiFi();
+        // Nothing to tear down after an attempt whose init was refused: its
+        // deinit already freed the stack. Arduino's hostedDeinit() would
+        // return false without touching the vendor here (esp32-hal-hosted.c,
+        // `if (!hosted_initialized)`), but the skip is explicit so the log
+        // does not read deinit=FAIL, and so a second esp_hosted_deinit() can
+        // never run -- it is unguarded, and teardown_transport() leaves its
+        // bus_handle pointing at the old card.
+        const bool deinitTried = hostedIsInitialized();
+        const bool deinitOk = deinitTried && hostedDeinitWiFi();
+
+        const HostedReinitFit fit = hostedMeasureReinitFit();
+        const bool initTried = fit.fits();
+        if (!initTried) {
+            PA_LOG_WARN(TAG,
+                        "Hosted link recovery attempt %u/%u: re-init refused, it would not fit "
+                        "the internal DMA heap: largest free block %u B, needs %u B (channel pool "
+                        "%u + %u + SDIO pool %u); free %u B, needs %u B. Attempt counted failed",
+                        attemptsThisRun + 1, kHostedLinkRecoveryMaxAttempts,
+                        (unsigned)fit.largestBlock, (unsigned)kHostedReinitLargestBlockNeeded,
+                        (unsigned)kHostedChannelPoolBytes,
+                        (unsigned)kHostedReinitBeforeSdioPoolBytes, (unsigned)kHostedSdioPoolBytes,
+                        (unsigned)fit.freeBytes, (unsigned)kHostedReinitFreeNeeded);
+        }
+        const bool initOk = initTried && hostedInitWiFi();
         // Device-truthful outcome, never WiFi.status() -- a dead transport
         // reads WL_CONNECTED forever (#184 bench finding). The same holds one
         // layer down: hostedIsInitialized() is a host-side flag, and it read
@@ -497,13 +649,14 @@ static void hostedRunRecoveryLadder() {
         // that is a reply, so it counts (hostedWifiGetModeAnswered()).
         const char* verdict =
             transportUp ? "C6 answering, recovered" : "C6 not answering, attempt failed";
+        const char* deinitText = !deinitTried ? "skipped" : (deinitOk ? "ok" : "FAIL");
+        const char* initText = !initTried ? "refused" : (initOk ? "ok" : "FAIL");
         if (liveness.tried) {
             PA_LOG_INFO(TAG,
                         "Hosted link recovery attempt result: deinit=%s init=%s "
                         "hostedIsInitialized=true heartbeatConfig=%d(%s) wifiGetMode=%d(%s) "
                         "heartbeatSeen=%s heartbeatNumber=%lu -> %s",
-                        deinitOk ? "ok" : "FAIL", initOk ? "ok" : "FAIL",
-                        (int)liveness.heartbeatConfigResult,
+                        deinitText, initText, (int)liveness.heartbeatConfigResult,
                         esp_err_to_name(liveness.heartbeatConfigResult),
                         (int)liveness.wifiGetModeResult,
                         esp_err_to_name(liveness.wifiGetModeResult),
@@ -513,7 +666,7 @@ static void hostedRunRecoveryLadder() {
             PA_LOG_INFO(TAG,
                         "Hosted link recovery attempt result: deinit=%s init=%s "
                         "hostedIsInitialized=false, liveness not asked -> %s",
-                        deinitOk ? "ok" : "FAIL", initOk ? "ok" : "FAIL", verdict);
+                        deinitText, initText, verdict);
         }
 
         HostedLinkAttemptOutcome outcome;
@@ -834,7 +987,9 @@ HostedLinkStatusSnapshot hostedLinkQueryStatus() {
 // the same liveness evidence as any other run -- a heartbeat newer than the
 // re-init or any reply from the C6 to esp_wifi_get_mode() -- never on
 // hostedIsInitialized() alone, which is what reported this action's ladder as recovered on board 2
-// while every RPC still timed out. The Console record is unchanged: it says
+// while every RPC still timed out. Its re-init passes the same fit check as any
+// other run's (hostedMeasureReinitFit()): this action never calls
+// hostedInitWiFi() itself. The Console record is unchanged: it says
 // both edges were driven, which it never claimed was liveness; the ladder's
 // attempt-result line is the outcome.
 // ============================================================================
