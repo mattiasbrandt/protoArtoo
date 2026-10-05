@@ -86,6 +86,8 @@ enum class HostedLinkLivenessSource : uint8_t {
                 // kHostedLinkLivenessIntervalMs instead
 };
 
+const char* hostedLinkLivenessSourceName(HostedLinkLivenessSource source);
+
 // Cross-call state, owned by the device shell (one instance per boot).
 // Default-construction is the boot state (Idle, all counters zero).
 struct HostedLinkSupervisorState {
