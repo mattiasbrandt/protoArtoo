@@ -5506,6 +5506,17 @@ body.shell-performing .show-rail {
   overflow-wrap: anywhere;
 }
 
+/* A row named by its Part carries the board's silk for its Output - GPIO 49,
+   ARM3 - as small print beside the name (#472). */
+.readout dt small {
+  margin-left: var(--space-xs);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
 /* The state is a component's reading, so it carries the lamp that says how
    that reading is doing (GLOSSARY.md "Status Color"): the same droid LED the
    Health rows light, set by app.js from COMPONENT_STATE_LIGHTS. Never blue:

@@ -100,7 +100,7 @@
   // on the FireBeetle 2 - is the firmware's answer, which data/outputs.js reads
   // from GET /api/config (#415), and this page knows no Output of its own (ADR
   // 0033 Amendment 2026-09-19). They wire the card, as the firmware lists
-  // them, once that answer has arrived.
+  // them, once that answer has arrived. Each is [key, label HTML, Part ids].
   let outputLabels = [];
   // The Component Toggles that are not an Output, by the key the status
   // reports each under, each named by its Setting's label in the one words
@@ -216,9 +216,28 @@
   let renderedComponentIds = null;
 
   // Keyed by the stored id the status frame reports each Output under, and
-  // named as data/outputs.js names it.
+  // named by the Part on it, with the board's silk beside it in small print
+  // (operator, 2026-10-05, #472: "simply listing GPIO XX says nothing about
+  // what it's about"). An Output with no Part on it is not listed. An Output
+  // may carry more than one Part, so all are named, in catalog order; a Part
+  // is on at most one Output.
+  const partNamesOn = (output) => {
+    const catalog = window.DroidParts && Array.isArray(window.DroidParts.parts) ? window.DroidParts.parts : [];
+    return catalog.filter((part) => output.parts.includes(part.id) && typeof part.name === "string")
+      .map((part) => part.name);
+  };
   const adoptOutputLabels = (outputs) => {
-    outputLabels = outputs.filter((output) => output.fromConfig).map((output) => [output.id, output.name]);
+    outputLabels = outputs
+      .filter((output) => output.fromConfig && output.parts.length > 0)
+      .map((output) => {
+        // A Part the catalog does not name is never named by its id, which is
+        // wire vocabulary: the row keeps the board's silk alone.
+        const names = partNamesOn(output);
+        const silk = window.PAUtils.escapeHtml(output.name);
+        return [output.id,
+          names.length > 0 ? `${window.PAUtils.escapeHtml(names.join(", "))} <small>${silk}</small>` : silk,
+          output.parts];
+      });
     // Whichever arrived first, the card is drawn again from the last status
     // this page applied, so the names follow on every delivery path - the
     // stream and the fallback poll alike.
@@ -231,8 +250,9 @@
   // and Sound: data/health_signals.js, #422, #399). The links carry no line of
   // their own beneath it: the firmware's detail there restated the state in
   // other words. The Dome ESC and the Foot Drive carry what the droid commands
-  // as their line ("Target 0%", "Command 120/0"). Every other row is the
-  // firmware's state and detail.
+  // as their line ("Target 0%", "Command 120/0"). An Output's row is its
+  // Part's, and says where that Part is (partReading() below). Every other row
+  // is the firmware's state and detail.
   const LINK_COMPONENT_READERS = {
     protoR2link: (payload) => HEALTH_SIGNAL_MODEL.readProtoR2link(payload, { unknown: window.PALiveReading.UNKNOWN }),
     audio: (payload) => HEALTH_SIGNAL_MODEL.readSoundLink(payload, { unknown: window.PALiveReading.UNKNOWN }),
@@ -254,23 +274,46 @@
     signal_lost: "fail",
   });
 
-  const componentReading = (key, payload) => {
-    const readLink = LINK_COMPONENT_READERS[key];
-    if (readLink && HEALTH_SIGNAL_MODEL) {
-      const { state, word, detail = "" } = readLink(payload);
-      return { state: word, detail, light: state };
-    }
-    const entry = payload[key];
+  // The firmware's state word and detail for one status entry. Its token as a
+  // word, capitalised like the readers' words above, so "Ready" and "No
+  // answer" sit side by side as one voice.
+  const firmwareReading = (entry) => {
     let state = entry ? "enabled" : "disabled";
     let detail = entry ? COMPONENT_ENABLED_TEXT : COMPONENT_DISABLED_TEXT;
     if (entry && typeof entry === "object") {
       state = entry.state || "enabled";
       detail = entry.detail || COMPONENT_ENABLED_TEXT;
     }
-    // The firmware's token as a word, capitalised like the readers' words
-    // above, so "Ready" and "No answer" sit side by side as one voice.
     const word = String(state).replace(/_/g, " ");
     return { state: word.charAt(0).toUpperCase() + word.slice(1), detail, light: COMPONENT_STATE_LIGHTS[state] || "off" };
+  };
+
+  // A row named by its Part says where that Part is, in the picture's one word
+  // (data/body_view.js LEGEND_TEXT: Open, Closed, Unmeasured, Limp), worked out
+  // by the picture's own rule (data/droid_picture.js partMark), never the
+  // firmware's commanded pulse: "Target 0 us" told a builder nothing. A limp
+  // Part says why in the one phrase Servos uses ("Limp - no pulse") rather
+  // than Limp twice. A Part the picture has no word for - a light - says what
+  // the picture says of it, or else the firmware's state. No row has a line.
+  const partReading = (parts, entry) => {
+    const view = window.BodyView;
+    const mark = window.PADroidPicture.partMark(parts[0]);
+    const word = view.LEGEND_TEXT[view.markClass(mark, true)];
+    if (mark.mark === view.MARKS.LIMP && mark.said) return { state: mark.said, detail: "", light: "off" };
+    if (word) return { state: word, detail: "", light: "off" };
+    if (mark.said) return { state: mark.said.charAt(0).toUpperCase() + mark.said.slice(1), detail: "", light: "off" };
+    return { ...firmwareReading(entry), detail: "" };
+  };
+
+  const componentReading = (key, payload) => {
+    const partRow = outputLabels.find(([id]) => id === key);
+    if (partRow) return partReading(partRow[2], payload[key]);
+    const readLink = LINK_COMPONENT_READERS[key];
+    if (readLink && HEALTH_SIGNAL_MODEL) {
+      const { state, word, detail = "" } = readLink(payload);
+      return { state: word, detail, light: state };
+    }
+    return firmwareReading(payload[key]);
   };
 
   const renderComponentStatus = (payload) => {
@@ -318,10 +361,23 @@
         const stateEl = document.getElementById(`state-${key}`);
         if (stateEl) stateEl.textContent = state;
 
-        const detailEl = document.getElementById(`detail-${key}`);
-        if (detailEl) {
-          detailEl.textContent = detail;
-          detailEl.title = detail;
+        // A line comes and goes with a row's reading (a Part's row has none,
+        // and a firmware detail can arrive late), so it is added or taken away
+        // here as well as rewritten.
+        let detailEl = document.getElementById(`detail-${key}`);
+        if (!detail) {
+          detailEl?.remove();
+        } else {
+          if (!detailEl && itemEl) {
+            detailEl = document.createElement("div");
+            detailEl.className = "readout-detail";
+            detailEl.id = `detail-${key}`;
+            itemEl.appendChild(detailEl);
+          }
+          if (detailEl) {
+            detailEl.textContent = detail;
+            detailEl.title = detail;
+          }
         }
       });
     }
