@@ -243,16 +243,18 @@ def report_record(path: Path) -> None:
         note(f"  {line}")
 
 
-def core_dir_for(target: str) -> Path:
+def core_dir_for(target: str, env: dict[str, str] | None = None) -> Path:
     """The PlatformIO core dir a build of `target` runs in.
 
-    PLATFORMIO_CORE_DIR when the caller exported it - the Makefile sets it in
-    front of every pio command, so for the CLI form it is the truth. Otherwise
-    the platforms registry in build_budgets.json, which is where the Makefile
-    and tools/slice_verify.py get it from: the in-process callers pass the core
-    dir in the child's env, not in ours.
+    `env` is the environment the build will actually get. The in-process
+    callers (tools/slice_verify.py, tools/check_build_budgets.py) hand the core
+    dir to the child that way, not through ours, so a different core exported
+    in the caller's shell must not decide which penv is checked. With no `env`
+    it is ours: the Makefile sets PLATFORMIO_CORE_DIR in front of every pio
+    command, so for the CLI form that is the truth. Neither set: the platforms
+    registry in build_budgets.json, where the Makefile gets it from.
     """
-    exported = os.environ.get("PLATFORMIO_CORE_DIR")
+    exported = (os.environ if env is None else env).get("PLATFORMIO_CORE_DIR")
     if exported:
         return Path(os.path.expanduser(exported))
     core = DEFAULT_CORE_DIR
@@ -337,8 +339,8 @@ def refuse_bad_penv(core: Path, problem: str) -> None:
     raise SystemExit(EXIT_PENV)
 
 
-def check_penv(command: list[str] | None) -> None:
-    core = core_dir_for(build_target(command))
+def check_penv(command: list[str] | None, env: dict[str, str] | None = None) -> None:
+    core = core_dir_for(build_target(command), env)
     problem = penv_problem(core)
     if problem:
         refuse_bad_penv(core, problem)
@@ -511,7 +513,7 @@ def acquire(
 
 
 @contextlib.contextmanager
-def build_lock(command: list[str] | None = None):
+def build_lock(command: list[str] | None = None, env: dict[str, str] | None = None):
     """Hold the machine-wide PlatformIO build lock for the duration of the block.
 
     `command` is what the caller is about to run; it is recorded in the lock
@@ -519,11 +521,14 @@ def build_lock(command: list[str] | None = None):
     caller already holds the lock (PROTOARTOO_PIO_LOCK_HELD), and a loud
     failure when it detects that an outer `flock(1)` holds it without having
     said so.
+
+    `env` is the environment the command will run with, when it is not ours:
+    the penv check reads the core dir from it.
     """
     path = lock_path()
     # Before the lock: a broken penv fails in a second either way, and
     # refusing here does not make the agents queued behind us wait for it.
-    check_penv(command)
+    check_penv(command, env)
     if os.environ.get(HELD_ENV) == "1":
         # The outer holder is usually a hand-typed `flock(1)`, which cannot
         # write a record of its own; ours names the worktree and target that

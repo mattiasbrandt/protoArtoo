@@ -221,6 +221,20 @@ class PenvPreflight(unittest.TestCase):
     def test_a_core_dir_with_no_penv_yet_is_not_a_fault(self):
         self.assertIsNone(pio_lock.penv_problem(self.tmp))
 
+    def test_the_build_env_decides_the_core_dir_not_the_callers_shell(self):
+        # slice_verify hands the core dir to the child only; a different one
+        # exported in the caller's shell must not pick which penv is checked.
+        fake_penv(self.tmp, "6, 2, 0", '"~4.41100.0"')
+        healthy = self.tmp / "healthy"
+        healthy.mkdir()
+        with mock.patch.dict(os.environ, child_env(self.lock, PLATFORMIO_CORE_DIR=str(healthy)),
+                             clear=True):
+            with self.assertRaises(SystemExit) as raised:
+                with pio_lock.build_lock(["pio", "run", "-e", "artoo_esp32"],
+                                         env={"PLATFORMIO_CORE_DIR": str(self.tmp)}):
+                    pass
+        self.assertEqual(raised.exception.code, pio_lock.EXIT_PENV)
+
     def test_the_core_dir_follows_the_registry_when_nothing_is_exported(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             p4 = pio_lock.core_dir_for("firebeetle2")
