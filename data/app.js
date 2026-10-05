@@ -1776,10 +1776,12 @@
   };
 
   // The droid's answer to a pin read or a pin press is the whole list as it
-  // now stands, in pin order.
+  // now stands, in pin order. An answer with no list is none pinned, as the
+  // library reads above take one with no array: a pin is kept by the droid,
+  // which adds or removes one name a press, so a list missed here is never
+  // written back over.
   const adoptPins = (answer) => {
-    if (!Array.isArray(answer?.pins)) throw new Error("the droid sent no pins list");
-    showPins = answer.pins.filter((name) => typeof name === "string");
+    showPins = Array.isArray(answer?.pins) ? answer.pins.filter((name) => typeof name === "string") : [];
     renderShowList();
   };
 
