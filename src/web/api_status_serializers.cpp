@@ -53,6 +53,8 @@ esp_reset_reason_t esp_reset_reason();
 #include "heap_reading.h"
 #include "reset_reason.h"
 #include "robot_state.h"
+#include "web_admission.h"
+#include "web_event_stream.h"
 #include "web_network_manager.h"
 #include "web_server.h"
 
@@ -113,18 +115,20 @@ void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost
                       bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
                       bool wifiClientConnected, bool fsReady, unsigned long heapFree,
                       unsigned long heapMin, unsigned long heapLargestBlock,
-                      unsigned long heapLargest8bit, long wifiRssi, unsigned long uptimeMs,
-                      const char* resetReason) {
+                      unsigned long heapLargest8bit, unsigned long allocBlocks,
+                      int httpSocketsOpen, unsigned sseClients, long wifiRssi,
+                      unsigned long uptimeMs, const char* resetReason) {
     snprintf(buf, bufSize,
              "{\"estop\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webControlEnabled\":%s,"
              "\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,"
              "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,"
+             "\"allocBlocks\":%lu,\"httpSocketsOpen\":%d,\"sseClients\":%u,"
              "\"wifiRssi\":%ld,\"uptimeMs\":%lu,\"resetReason\":\"%s\"}",
              estop ? "true" : "false", sbusSignalLost ? "true" : "false",
              sbusHwFailsafe ? "true" : "false", webControlEnabled ? "true" : "false",
              wifiConnected ? "true" : "false", wifiClientConnected ? "true" : "false",
              fsReady ? "true" : "false", heapFree, heapMin, heapLargestBlock, heapLargest8bit,
-             wifiRssi, uptimeMs, resetReason);
+             allocBlocks, httpSocketsOpen, sseClients, wifiRssi, uptimeMs, resetReason);
 }
 
 // =============================================================================
@@ -171,6 +175,19 @@ void captureHealthSnapshot(HealthSnapshot* out) {
     // The Buffer Reading beside it, so the serial record carries the figure
     // admission sheds requests by when HTTP cannot answer.
     out->heapLargest8bit = heapReadBufferLargest();
+    // The allocated block count, from the same mask. heap_caps_get_info()
+    // walks the heap like the largest-block reading above; both doors that
+    // call this run on core 0, and nothing on core 1 does.
+    HeapInternalDataInfo dataHeapInfo = {};
+    heapReadInternalDataInfo(&dataHeapInfo);
+    out->allocBlocks = dataHeapInfo.allocatedBlocks;
+
+    // The server's sockets and event streams, read here, outside the
+    // robotState section above: webEventStreamClientCount() takes its own
+    // s_streamMux and must not nest inside another critical section.
+    // g_webSocketsOpen is the admission census's published figure.
+    out->httpSocketsOpen = g_webSocketsOpen;
+    out->sseClients = (unsigned)webEventStreamClientCount();
 }
 
 void captureWifiStatusSnapshot(WifiStatusSnapshot* out) {

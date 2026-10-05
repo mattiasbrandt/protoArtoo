@@ -35,6 +35,13 @@ struct WiFiConnectivityFields {
 // are not rewritten").
 // =============================================================================
 
+// GET /api/health's body. formatHealthJson()'s worst case - every numeric
+// field at its widest, httpSocketsOpen and wifiRssi at INT_MIN, resetReason
+// "DEEPSLEEP" (resetReasonName()'s longest literal) - is 411 bytes plus the
+// NUL since allocBlocks, httpSocketsOpen and sseClients joined it (#467);
+// 512 keeps headroom above that.
+constexpr size_t HEALTH_JSON_BUFFER_BYTES = 512;
+
 // GET /api/health's fields, verbatim (formatHealthJson's JSON keys).
 //
 // uptimeMs/resetReason (#225): read by the Survival Path - the serial
@@ -64,15 +71,27 @@ struct HealthSnapshot {
     // The Buffer Reading admission judges requests by: what a serial session
     // needs when HTTP has gone dark under heap pressure (include/heap_reading.h).
     unsigned long heapLargest8bit;
+    // What tells the after-load stories apart when HTTP is dead and the
+    // Console is the only door (#467): the Internal Data Heap's allocated
+    // block count (the mask the heap* keys use), and the sockets and event
+    // streams the server still holds - the same figures /api/profiler
+    // (allocBlocks) and /api/status (httpSocketsOpen, sseClients) publish.
+    unsigned long allocBlocks;
+    int httpSocketsOpen;
+    unsigned sseClients;
     long wifiRssi;
     unsigned long uptimeMs;
     const char* resetReason;
 };
 
 // Capture the health snapshot: estop/SBUS diagnostics under robotStateMux,
-// WiFi connectivity through the network manager seam, and the Internal Data
-// Heap through include/heap_reading.h (stubbed on native builds).
-// thread-safe: yes (owns its own short critical section)
+// WiFi connectivity through the network manager seam, the Internal Data Heap
+// and its allocated block count through include/heap_reading.h (stubbed on
+// native builds), the admission census's open-socket count (g_webSocketsOpen,
+// include/web_admission.h) and the open event streams
+// (webEventStreamClientCount(), include/web_event_stream.h).
+// thread-safe: yes (two short sequential critical sections: robotStateMux,
+// then s_streamMux inside webEventStreamClientCount(); never nested)
 void captureHealthSnapshot(HealthSnapshot* out);
 
 // GET /api/wifi's fields, verbatim (formatWifiJson's JSON keys).
@@ -239,13 +258,17 @@ void formatSerialJson(char* buf, size_t bufSize, const char* driveLabel, const c
 //         sbusSignalLost    - true if SBUS signal is lost
 //         sbusHwFailsafe    - true if SBUS hardware failsafe is active
 //         webControlEnabled - true if web drive control is enabled
-//         wifiConnected     - true if control-surface WiFi is available (AP active or STA
-//         connected) wifiClientConnected - true if at least one station is attached to soft AP
+//         wifiConnected     - true if control-surface WiFi is available (AP active or
+//                             STA connected)
+//         wifiClientConnected - true if at least one station is attached to soft AP
 //         fsReady           - true if LittleFS is mounted
 //         heapFree          - Internal Data Heap free bytes (include/heap_reading.h)
 //         heapMin           - Internal Data Heap low-water mark since boot, bytes
 //         heapLargestBlock  - Internal Data Heap largest free block, bytes
 //         heapLargest8bit   - the Buffer Reading, the figure admission judges by, bytes
+//         allocBlocks       - Internal Data Heap allocated block count (#467)
+//         httpSocketsOpen   - sockets the HTTP server holds open now (#467)
+//         sseClients        - event streams open now (#467)
 //         wifiRssi          - STA RSSI in dBm (0 when STA disconnected)
 //         uptimeMs          - milliseconds since boot (#225, same key /api/status uses)
 //         resetReason       - resetReasonName()'s static string for the last reset (#225)
@@ -254,8 +277,9 @@ void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost
                       bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
                       bool wifiClientConnected, bool fsReady, unsigned long heapFree,
                       unsigned long heapMin, unsigned long heapLargestBlock,
-                      unsigned long heapLargest8bit, long wifiRssi, unsigned long uptimeMs,
-                      const char* resetReason);
+                      unsigned long heapLargest8bit, unsigned long allocBlocks,
+                      int httpSocketsOpen, unsigned sseClients, long wifiRssi,
+                      unsigned long uptimeMs, const char* resetReason);
 
 // Endpoint handlers
 void handleWifiGet(WebRequest& req);

@@ -28,6 +28,7 @@
 #include <string.h>
 
 #include "../../include/api_upload.h"
+#include "../../include/heap_reading.h"
 #include "../../include/logging.h"
 #include "../../include/web_admission.h"
 #include "../../include/web_body_ceiling.h"
@@ -669,7 +670,29 @@ void initPsychicWebServer() {
     // webRegisterSeamRoutes(): every webRegisterRoute() raises from here.
     webBodyCeilingReset(s_server.maxRequestBodySize);
 
+    // What the route table costs the Internal Data Heap (#467): each
+    // webRegisterRoute() makes PsychicHttp allocate a handler, an endpoint, a
+    // list node and a copy of any path longer than the small-string buffer
+    // (PsychicEndpoint::_uri is a std::string, so a path of up to 15
+    // characters lives inside the endpoint). A heap reading on either side
+    // counts the copies and the allocator's per-block overhead that sizeof()
+    // misses.
+    // The figure also holds the upload routes and the not-found handler
+    // registered in the same table, which a single route dispatcher would
+    // keep, so it is the ceiling of what one could give back; the same line
+    // proves what one did.
+    HeapInternalDataInfo routesBefore = {};
+    heapReadInternalDataInfo(&routesBefore);
+    const uint32_t routesFreeBefore = heapReadInternalDataFree();
+
     webRegisterSeamRoutes();
+
+    HeapInternalDataInfo routesAfter = {};
+    heapReadInternalDataInfo(&routesAfter);
+    const uint32_t routesFreeAfter = heapReadInternalDataFree();
+    PA_LOG_INFO(TAG, "Seam routes took %ld B of internal data heap in %ld blocks",
+                (long)routesFreeBefore - (long)routesFreeAfter,
+                (long)routesAfter.allocatedBlocks - (long)routesBefore.allocatedBlocks);
 
     // Endpoints registered above win: serveStatic() installs a global handler,
     // and the server only reaches global handlers after no endpoint matched.

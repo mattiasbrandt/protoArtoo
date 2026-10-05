@@ -53,7 +53,8 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
     formatHealthJson(buffer, bufferSize, snap.estop, snap.sbusSignalLost, snap.sbusHwFailsafe,
                      snap.webControlEnabled, snap.wifiConnected, snap.wifiClientConnected,
                      snap.littleFsReady, snap.heapFree, snap.heapMin, snap.heapLargestBlock,
-                     snap.heapLargest8bit, snap.wifiRssi, snap.uptimeMs, snap.resetReason);
+                     snap.heapLargest8bit, snap.allocBlocks, snap.httpSocketsOpen,
+                     snap.sseClients, snap.wifiRssi, snap.uptimeMs, snap.resetReason);
 }
 
 // GET /api/wifi - active connection diagnostics, read by the WiFi page
@@ -99,14 +100,18 @@ void handleSerialGet(WebRequest& req) {
 
 // GET /api/health - the small telemetry payload the shell polls, and (#225)
 // the survival set the Console's system.status.health answers below the HTTP
-// admission floor. Most fields are a bool or a fixed-width number, but
-// resetReason (#225) is a variable-length string - resetReasonName()'s
-// longest literal is "DEEPSLEEP" (9 chars) - so this is no longer the fixed
-// upper bound the prior comment claimed. Worst case (every numeric field
-// maxed, "DEEPSLEEP") is 332 bytes since heapLargest8bit joined it; 384 keeps
-// headroom above that.
+// admission floor. HEALTH_JSON_BUFFER_BYTES (include/api_status.h) carries
+// the worst-case sizing. The body lives in the web request scratch, not on
+// the server task's stack: at 512 bytes it outgrew the 384-byte frame it had,
+// and the scratch is the one store a handler's request-scoped buffer shares
+// (#428), as handleStatusGet() above does.
 void handleHealthGet(WebRequest& req) {
-    char body[384];
-    buildHealthJson(body, sizeof(body));
+    WebRequestScratch<WebScratchText<HEALTH_JSON_BUFFER_BYTES>> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
+    }
+    char* body = scratch->text;
+    buildHealthJson(body, sizeof(scratch->text));
     req.send(200, "application/json", body);
 }

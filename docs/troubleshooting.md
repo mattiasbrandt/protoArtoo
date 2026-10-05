@@ -118,6 +118,9 @@ make console
 < id=9 type=field name=heapFree value=...
 < id=9 type=field name=heapLargestBlock value=...
 < id=9 type=field name=heapLargest8bit value=1076
+< id=9 type=field name=allocBlocks value=...
+< id=9 type=field name=httpSocketsOpen value=...
+< id=9 type=field name=sseClients value=...
 < id=9 type=end status=ok outcome=completed
 ```
 
@@ -131,12 +134,24 @@ make console
 > RAM running out while admission still sees room. Records taken before
 > #381 had only `heapLargestBlock`, and it held the 8-bit pool.
 
-`system.status.health` answers with fourteen fields — estop, the two SBUS
+`system.status.health` answers with seventeen fields — estop, the two SBUS
 flags, web control, the WiFi and filesystem flags, `heapFree`, `heapMin`,
-`heapLargestBlock`, `heapLargest8bit`, `wifiRssi`, `uptimeMs` and
-`resetReason`. The admission
-and Core 1 counters below are **not** among them and have no Console operation
-today: read them from `/api/status` once HTTP answers again.
+`heapLargestBlock`, `heapLargest8bit`, `allocBlocks`, `httpSocketsOpen`,
+`sseClients`, `wifiRssi`, `uptimeMs` and `resetReason`.
+
+`allocBlocks`, `httpSocketsOpen` and `sseClients` tell apart what holds the
+heap after a load has ended (#467), read once idle, once under the load and
+once after the client has closed:
+
+- `httpSocketsOpen` still high after the close: sessions the server never saw
+  end are holding it.
+- Sockets back to idle but `allocBlocks` still raised: something other than
+  the sockets holds the memory.
+- Both back at their idle readings: the hold existed only under the load.
+
+The admission refusal and Core 1 counters below are **not** among them and
+have no Console operation today: read them from `/api/status` once HTTP
+answers again.
 
 Why HTTP goes dark while serial does not:
 
