@@ -65,9 +65,15 @@ const CONFIG = {
 // The Dashboard reads its config, and the Outputs' names with it, through the
 // shipped data/outputs.js its page loads first (#415). The Outputs are their
 // rows (ADR 0068).
+// The Readouts name an Output by its Part, and say where it is by the
+// picture's rule (data/droid_picture.js partMark, #472), so the picture's
+// modules load ahead of app.js as the Dashboard's document loads them.
+const PICTURE_CHAIN = ["body_view.js", "droid_part_kind.js", "parts_mapping.js", "droid_picture.js"];
+
 const dashboard = (status = {}, { config = CONFIG, rows = [] } = {}) => {
   let env = null;
   env = loadPageModule("app.js", {
+    chain: PICTURE_CHAIN,
     respond: (path) => {
       if (path === "/api/status") return { data: { ...HEALTHY, ...status } };
       if (path === "/api/config") return { data: config };
@@ -141,9 +147,10 @@ test("a mood the droid has not reported is not printed as mood zero", () => {
 // row's stored id and name, ADR 0068); the card names them from it, and a
 // status key it cannot place is not dressed up as an Output with a name this
 // page made up (ADR 0033 Amendment 2026-09-19). The fake droid's ids follow no
-// pattern, and `aux1` is the old protoArtoo word a page might still know.
+// pattern, and `aux1` is the old protoArtoo word a page might still know. The
+// row carries a Part: an Output with none is not on the card (#472).
 test("the component card names Outputs as the firmware reported them, and no others", async () => {
-  const rows = [servoRow("ledc:0", "GPIO 49")];
+  const rows = [servoRow("ledc:0", "GPIO 49", { parts: ["doorFL"] })];
   const { id } = rows[0];
   const env = dashboard(
     { [id]: { state: "ready", detail: "Target 1500 us" }, aux1: { state: "ready", detail: "Servo channel enabled" } },
@@ -154,7 +161,7 @@ test("the component card names Outputs as the firmware reported them, and no oth
   await env.settle();
 
   const card = env.element("component-status-grid").innerHTML;
-  assert.match(card, /GPIO 49/, "the Output is named as its board prints it");
+  assert.match(card, /GPIO 49/, "the Output's board silk is on its row");
   assert.doesNotMatch(card, /AUX|aux1/i, "and nothing the firmware did not report is listed");
 });
 
@@ -213,7 +220,7 @@ test("a Readouts lamp lights green only for a state that reports something heard
   const lampOf = (env, key) => env.element("component-status-grid").innerHTML
     .match(new RegExp(`id="comp-${key}" data-light="(\\w+)"`))?.[1];
 
-  const rows = [servoRow("ledc:0", "GPIO 49")];
+  const rows = [servoRow("ledc:0", "GPIO 49", { parts: ["doorFL"] })];
   const { id } = rows[0];
   const env = dashboard(
     {

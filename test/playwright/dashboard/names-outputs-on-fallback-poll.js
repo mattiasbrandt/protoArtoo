@@ -1,12 +1,13 @@
 // bench-auto: droid
-// The Dashboard's Components card names every Output the droid reports, by
-// the name its board prints, even when the browser has no event stream and
-// the status arrives on the fallback poll. Introduced by #412 (#415 moved the
-// names onto GET /api/servo/outputs).
+// The Dashboard's Components card names every Output the droid reports with a
+// Part on it, and carries the name its board prints beside the Part's (#472),
+// even when the browser has no event stream and the status arrives on the
+// fallback poll. Introduced by #412 (#415 moved the names onto GET
+// /api/servo/outputs).
 //
 // PRECONDITION: none beyond a droid that answers. NOT ASSESSED when the droid
-// reports no enabled Output in its status frame (there is then nothing to
-// name). Writes nothing.
+// reports no enabled Output with a Part on it in its status frame (there is
+// then nothing to name). Writes nothing.
 //
 // HOW THE STREAM IS TAKEN AWAY. window.EventSource is set to undefined before
 // any page script runs, so data/live_reading.js runs its one /api/status poll
@@ -16,9 +17,9 @@
 // WHAT IT PROVES.
 //   a  The poll is what is feeding the page: EventSource is gone and at least
 //      two GET /api/status went out (the boot read and a poll).
-//   b  Every Output GET /api/servo/outputs lists with a stored id that the
-//      last status frame carries is a <dt> on the Components card, under its
-//      name (data/app.js adoptOutputLabels, renderComponentStatus).
+//   b  Every Output GET /api/servo/outputs lists with a stored id and a Part
+//      that the last status frame carries is a <dt> on the Components card
+//      holding its name (data/app.js adoptOutputLabels, renderComponentStatus).
 //
 // WHY A REAL BROWSER. Real timers drive the poll, and the names arrive by a
 // different read than the status they are joined to.
@@ -64,16 +65,17 @@ lib.runCheck({
       `EventSource ${supported ? 'STILL THERE' : 'gone'}; ${statusReads.length} GET /api/status`);
 
     const expected = table
-      .filter((row) => typeof row.id === 'string' && row.id !== '' && lastStatus && Object.prototype.hasOwnProperty.call(lastStatus, row.id))
+      .filter((row) => typeof row.id === 'string' && row.id !== '' && Array.isArray(row.parts) && row.parts.length > 0
+        && lastStatus && Object.prototype.hasOwnProperty.call(lastStatus, row.id))
       .map((row) => row.name || row.address);
     if (selftest === 'blank') await page.evaluate(() => document.querySelectorAll('#component-status-grid dt').forEach((dt) => { dt.textContent = ''; }));
     const shown = await page.evaluate(() => [...document.querySelectorAll('#component-status-grid dt')].map((dt) => dt.textContent.trim()));
     await page.screenshot({ path: `${ARTIFACTS}/fallback-poll-components.png`, fullPage: true });
     if (expected.length === 0) {
-      report.add('b', 'Every reported Output is named on the Components card', lib.NOT_ASSESSED, 'the status frame carries no enabled Output');
+      report.add('b', 'Every reported Output is named on the Components card', lib.NOT_ASSESSED, 'the status frame carries no enabled Output with a Part');
       return;
     }
-    const missing = expected.filter((name) => !shown.includes(name));
+    const missing = expected.filter((name) => !shown.some((dt) => dt.includes(name)));
     report.add('b', 'Every reported Output is named on the Components card', lib.verdict(missing.length === 0),
       `expected ${expected.join(', ')}; the card: ${shown.join(', ') || 'empty'}${missing.length ? `; MISSING ${missing.join(', ')}` : ''}`);
   },

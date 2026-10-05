@@ -33,6 +33,37 @@
     return "Waiting to hear if the droid is stopped. Open waits for the answer.";
   };
 
+  // What one Part looks like on the picture, from the Output rows the droid
+  // last answered with. Commanded, all of it: `at` is the width the controller
+  // has put on the pin as a fraction of the travel the BUILDER recorded, so a
+  // reversed Endpoint Pair reads the same way round with no invert flag
+  // anywhere (ADR 0041), and an Output nobody has measured has no travel for a
+  // fraction to be of, which is its own mark rather than a made-up number.
+  //
+  // Whether there is a position at all, and the word when there is not, are
+  // data/outputs.js's answer, so a limp Part says why in the words Servos
+  // uses for the same Output.
+  //
+  // Needs no drawing, so it is the module's: the Dashboard's Readouts name a
+  // Part's position by it too (data/app.js, #472), in the picture's words.
+  const partMark = (partId) => {
+    const view = window.BodyView;
+    const OUTPUTS = window.PAOutputs;
+    const part = window.PAParts.partById.get(partId);
+    if (!OUTPUTS.known().table) return { mark: view.MARKS.UNKNOWN, said: OUTPUTS.live(null).word };
+    const output = OUTPUTS.forPart(partId);
+    if (!output) return { mark: view.MARKS.UNASSIGNED };
+    const live = OUTPUTS.live(output);
+    if (live.state === "unknown") return { mark: view.MARKS.UNKNOWN, said: live.word };
+    if (live.state === "limp") return { mark: view.MARKS.LIMP, said: live.word };
+    // A light has no travel, so it gets no position and no Open: the treatment
+    // removes what its Kind cannot promise (data/droid_part_kind.js).
+    if (window.DroidPartKind?.isLight(part)) return { mark: view.MARKS.UNKNOWN, said: `lit by ${output.name}` };
+    if (!output.calibrated) return { mark: view.MARKS.UNMEASURED };
+    const span = output.openUs - output.closeUs;
+    return { mark: view.MARKS.OPENABLE, at: span === 0 ? 0 : (output.commandedUs - output.closeUs) / span };
+  };
+
   // One caller per drawing. `drawing` is the handle BodyView.mountDrawing()
   // returned. The page's own state that the decision needs - what it has told
   // each dome piece - lives in here, one copy per drawing.
@@ -56,31 +87,7 @@
     // nobody said it (#417).
     const domeTold = new Map();
 
-    // What one Part looks like on the picture, from the Output rows the droid
-    // last answered with. Commanded, all of it: `at` is the width the controller
-    // has put on the pin as a fraction of the travel the BUILDER recorded, so a
-    // reversed Endpoint Pair reads the same way round with no invert flag
-    // anywhere (ADR 0041), and an Output nobody has measured has no travel for a
-    // fraction to be of, which is its own mark rather than a made-up number.
-    //
-    // Whether there is a position at all, and the word when there is not, are
-    // data/outputs.js's answer, so a limp Part says why in the words Servos
-    // uses for the same Output.
-    const markFor = (partId) => {
-      const part = partById.get(partId);
-      if (!answered()) return { mark: view.MARKS.UNKNOWN, said: OUTPUTS.live(null).word };
-      const output = outputOf(partId);
-      if (!output) return { mark: view.MARKS.UNASSIGNED };
-      const live = OUTPUTS.live(output);
-      if (live.state === "unknown") return { mark: view.MARKS.UNKNOWN, said: live.word };
-      if (live.state === "limp") return { mark: view.MARKS.LIMP, said: live.word };
-      // A light has no travel, so it gets no position and no Open: the treatment
-      // removes what its Kind cannot promise (data/droid_part_kind.js).
-      if (kinds?.isLight(part)) return { mark: view.MARKS.UNKNOWN, said: `lit by ${output.name}` };
-      if (!output.calibrated) return { mark: view.MARKS.UNMEASURED };
-      const span = output.openUs - output.closeUs;
-      return { mark: view.MARKS.OPENABLE, at: span === 0 ? 0 : (output.commandedUs - output.closeUs) / span };
-    };
+    const markFor = partMark;
 
     // A dome piece can stand for several Parts - a panel and the light on it -
     // and it is one shape, so it draws the state of the Part on it that
@@ -315,5 +322,5 @@
     return Object.freeze({ answered, outputOf, markFor, marks, fittedNow, designLabel, pictureFor, decide, openClose });
   };
 
-  window.PADroidPicture = Object.freeze({ estopRefusal, caller });
+  window.PADroidPicture = Object.freeze({ estopRefusal, partMark, caller });
 })();
