@@ -1703,6 +1703,47 @@ curl -s http://artoo.local/api/seq/last-run
 {"valid":true,"name":"DM:ROCKMARCH","source":1,"outcome":"aborted","running":false,"reason":"web stop","startMs":1234567890,"endMs":1234572890,"fxScopes":["panel"],"netOpenRingPanels":[],"touchedRingPanels":[1],"cleanup":{"count":0,"total":0,"truncated":false,"cmds":[]},"tx":{"total":3,"capacity":32,"omittedFromRecent":0,"truncated":false,"retained":3,"recent":[]},"warnings":{"bodyQueueFullDelta":0,"dispatchRetryCount":0,"remoteDomeQueue":{"sampled":false,"queueFullDelta":null}}}
 ```
 
+### GET /api/seq/pins
+
+The pinned Sequences, in the order they were pinned (#472). The Dashboard's Sequences line puts them first, after a running one. They are kept on the droid, so every browser shows the same pins, and they survive a reboot.
+
+They live in their own NVS key (`seq_pins`), not in the configuration: `GET /api/config` does not carry them and `POST /api/config` does not change them. Nothing is pinned on a fresh droid.
+
+- Success: `200` `{"ok":true,"max":8,"pins":["DM:VADER","DM:CANTINA"]}`. `max` is how many may be pinned. An empty `pins` means none are.
+- A pin naming a Sequence deleted since stays pinned; the Dashboard skips it. Only its form is checked, as the Stand Down Sequence's is.
+
+#### Example request
+
+```bash
+curl -s http://artoo.local/api/seq/pins
+```
+
+### POST /api/seq/pins
+
+Pins or unpins one Sequence, and answers the list as it now stands. One name per request rather than the whole list, so two browsers pinning at once each keep the other's pin. Pinning a pinned name, or unpinning one that is not pinned, changes nothing and answers `200`.
+
+- Body (JSON): `{"name":"DM:*","pinned":true|false}`
+- Success: `200`, the same object as `GET /api/seq/pins`
+- Errors:
+  - `400` `{"ok":false,"error":"missing or invalid DM:* name"}`: not `DM:` and 1 to 18 of `A-Z`, `0-9`, `_`
+  - `400` `{"ok":false,"error":"pinned must be true or false"}`
+  - `409` `{"ok":false,"error":"8 are pinned. Unpin one first."}`: a ninth pin
+  - `500` `{"ok":false,"error":"pins not saved: settings storage full"}`: NVS refused the write. Nothing changed.
+
+#### Example request
+
+```bash
+curl -s -X POST http://artoo.local/api/seq/pins \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"DM:VADER","pinned":true}'
+```
+
+#### Example response
+
+```json
+{"ok":true,"max":8,"pins":["DM:VADER"]}
+```
+
 ### GET /api/seq
 
 Fetches the raw JSON of a single Learned Sequence by name.

@@ -2397,9 +2397,9 @@ void test_scoped_non_motion_actions_are_not_executor_not_ready() {
 }
 
 // The closing guard for #221 (epic row #46): the action rows that still answer
-// executor-not-ready are exactly these thirteen, each carrying a true, specific
+// executor-not-ready are exactly these eighteen, each carrying a true, specific
 // reason on its own docs/action-registry.yaml entry and in the dispatch-site
-// comment (consoleExecuteCommand()'s CONSOLE_OP_ACTION case). A fourteenth row
+// comment (consoleExecuteCommand()'s CONSOLE_OP_ACTION case). A nineteenth row
 // joining the set fails here, so the next unwired operation cannot arrive
 // unexplained; a row leaving it fails here too, so the list cannot rot.
 //
@@ -2422,6 +2422,14 @@ void test_the_executor_not_ready_set_is_exactly_the_recorded_rows() {
         "system.api.get-admission-trace",
         // the browser Console Adapter itself, not an operation
         "system.console",
+        // a take belongs to the sequence open in the Sequences editor (#442)
+        "dome.action.arm-take",
+        "dome.action.keep-take",
+        "dome.api.get-take-file",
+        "dome.action.restore-take-file",
+        // the pins only order the Dashboard's Sequences line (#472)
+        "dome.api.get-sequence-pins",
+        "dome.action.pin-sequence",
         // servo.api.get-outputs left this set at #362, when it gained a record
         // shape: test_servo_api_get_outputs_streams_every_row_as_an_item
     };

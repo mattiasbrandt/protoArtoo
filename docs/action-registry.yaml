@@ -1041,6 +1041,50 @@ entries:
   - startMs
   - endMs
   executor: seqEvidenceSnapshot
+- name: dome.api.get-sequence-pins
+  display_name: Get Pinned Sequences
+  description: The Sequences pinned to the front of the Dashboard's Sequences line, in the order they were pinned.
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/seq/pins
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_seq.cpp
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  # Out of scope for the Console (#472): the pins only order the Dashboard's
+  # Sequences line, and the Console has no line of Sequences to order. Kept in
+  # their own NVS key, outside ConfigSnapshot, read by the web task alone.
+  executor: seqPinsRead
+- name: dome.action.pin-sequence
+  display_name: Pin Sequence
+  description: Pin a Sequence to the front of the Dashboard's Sequences line, or unpin it. At most eight are pinned.
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/seq/pins
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_seq.cpp
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  # Out of scope for the Console (#472), as dome.api.get-sequence-pins: a pin
+  # orders the Dashboard's Sequences line and moves nothing on the droid.
+  params:
+  - name: name
+    explanation: The Sequence to pin or unpin. Only its form is checked; a pin naming a Sequence deleted since stays pinned.
+    type: string
+    required: true
+  - name: pinned
+    explanation: true pins it, false unpins it. A ninth pin is refused.
+    type: bool
+    required: true
+  executor: seqPinsWrite
 - name: dome.api.get-take
   display_name: Get Take
   description: 'The take in hand: performing, stopped and why, how full. And how many takes the droid keeps, how big one may be, and the free space it leaves.'

@@ -3754,14 +3754,14 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // Resolve the (possibly aliased) operation name to its
             // RobotActionId via ACTION_REGISTRY[] (#220). Not found here
             // means this action has no RC-bindable target yet - a motion
-            // target #222 owns, or one of the twelve rows below.
+            // target #222 owns, or one of the eighteen rows below.
             //
             // EVERY action row that still answers EXECUTOR_NOT_READY lands
             // here on purpose, and each one has a recorded reason on its own
-            // docs/action-registry.yaml entry (#221). They are twelve, in
-            // three groups; test_the_executor_not_ready_set_is_exactly_the_
+            // docs/action-registry.yaml entry (#221). They are eighteen, in
+            // five groups; test_the_executor_not_ready_set_is_exactly_the_
             // recorded_rows (test/test_native/test_console_module) names them
-            // and fails if a thirteenth appears, so a new unwired row cannot
+            // and fails if a nineteenth appears, so a new unwired row cannot
             // join this set silently.
             //
             // 1. #206's document/bulk-transfer exclusion - the transfer IS the
@@ -3783,6 +3783,14 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // 3. Not an operation at all:
             //      system.console  is the browser Console Adapter itself
             //                      (POST /api/console, ADR 0036)
+            // 4. A take belongs to the sequence open in the Sequences editor,
+            //    whose receipt places its cue presses as steps (#442):
+            //      dome.action.arm-take / -keep-take
+            //      dome.api.get-take-file          a binary document transfer
+            //      dome.action.restore-take-file   a file upload route
+            // 5. The pins only order the Dashboard's Sequences line, and the
+            //    Console has no line of Sequences to order (#472):
+            //      dome.api.get-sequence-pins / dome.action.pin-sequence
             //
             // servo.api.get-outputs was a fourth group - a read with no Console
             // record shape yet (#347) - until #362 gave it one: it is a status

@@ -147,6 +147,12 @@ static const ConsoleParamDescriptor g_params_dome_action_pose_sequence[] = {
     {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
+static const ConsoleParamDescriptor g_params_dome_action_pin_sequence[] = {
+    {"name", "string", true, false, 0.0, 0.0, NULL, false, false},
+    {"pinned", "bool", true, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
+};
+
 static const ConsoleParamDescriptor g_params_dome_action_arm_take[] = {
     {"seq", "string", true, false, 0.0, 0.0, NULL, false, false},
     {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
@@ -1191,6 +1197,38 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // output
     },
     {
+        "dome.api.get-sequence-pins",
+        "action",
+        NULL,  // aliases
+        NULL,
+        1,  // available_on_board
+        1,  // available_in_build
+        false,  // requires_web_control
+        false,  // safety_critical
+        6657,  // help_offset
+        160,  // help_length
+        NULL,  // fields
+        true,  // is_query
+        false,  // read_only
+        NULL,  // output
+    },
+    {
+        "dome.action.pin-sequence",
+        "action",
+        NULL,  // aliases
+        g_params_dome_action_pin_sequence,
+        1,  // available_on_board
+        1,  // available_in_build
+        false,  // requires_web_control
+        false,  // safety_critical
+        6818,  // help_offset
+        180,  // help_length
+        NULL,  // fields
+        true,  // is_query
+        false,  // read_only
+        NULL,  // output
+    },
+    {
         "dome.api.get-take",
         "status",
         NULL,  // aliases
@@ -1199,7 +1237,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        6657,  // help_offset
+        6999,  // help_offset
         185,  // help_length
         NULL,  // fields
         false,  // is_query
@@ -1215,7 +1253,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        6843,  // help_offset
+        7185,  // help_offset
         258,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1231,7 +1269,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        7102,  // help_offset
+        7444,  // help_offset
         157,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1247,7 +1285,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        7260,  // help_offset
+        7602,  // help_offset
         164,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1263,7 +1301,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        7425,  // help_offset
+        7767,  // help_offset
         151,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1279,7 +1317,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        7577,  // help_offset
+        7919,  // help_offset
         103,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1295,7 +1333,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        7681,  // help_offset
+        8023,  // help_offset
         86,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1311,7 +1349,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        7768,  // help_offset
+        8110,  // help_offset
         99,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1327,7 +1365,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        7868,  // help_offset
+        8210,  // help_offset
         96,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1343,7 +1381,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        7965,  // help_offset
+        8307,  // help_offset
         107,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1359,7 +1397,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        8073,  // help_offset
+        8415,  // help_offset
         104,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1375,7 +1413,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        8178,  // help_offset
+        8520,  // help_offset
         106,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1391,7 +1429,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        8285,  // help_offset
+        8627,  // help_offset
         110,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1407,7 +1445,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        8396,  // help_offset
+        8738,  // help_offset
         101,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1423,7 +1461,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        8498,  // help_offset
+        8840,  // help_offset
         114,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1439,7 +1477,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        8613,  // help_offset
+        8955,  // help_offset
         92,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1455,7 +1493,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        8706,  // help_offset
+        9048,  // help_offset
         94,  // help_length
         g_fields_sound_api_get_catalog,  // fields
         true,  // is_query
@@ -1471,7 +1509,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        8801,  // help_offset
+        9143,  // help_offset
         123,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1487,7 +1525,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        8925,  // help_offset
+        9267,  // help_offset
         150,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1503,7 +1541,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        9076,  // help_offset
+        9418,  // help_offset
         109,  // help_length
         g_fields_sound_api_get_mood_map,  // fields
         true,  // is_query
@@ -1519,7 +1557,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        9186,  // help_offset
+        9528,  // help_offset
         202,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1535,7 +1573,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        9389,  // help_offset
+        9731,  // help_offset
         172,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1551,7 +1589,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        9562,  // help_offset
+        9904,  // help_offset
         133,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1567,7 +1605,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        9696,  // help_offset
+        10038,  // help_offset
         92,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1583,7 +1621,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        9789,  // help_offset
+        10131,  // help_offset
         106,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1599,7 +1637,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        9896,  // help_offset
+        10238,  // help_offset
         94,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1615,7 +1653,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        9991,  // help_offset
+        10333,  // help_offset
         77,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1631,7 +1669,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        10069,  // help_offset
+        10411,  // help_offset
         82,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1647,7 +1685,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        10152,  // help_offset
+        10494,  // help_offset
         93,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1663,7 +1701,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        10246,  // help_offset
+        10588,  // help_offset
         89,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1679,7 +1717,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        10336,  // help_offset
+        10678,  // help_offset
         90,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1695,7 +1733,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        10427,  // help_offset
+        10769,  // help_offset
         105,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1711,7 +1749,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        10533,  // help_offset
+        10875,  // help_offset
         93,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1727,7 +1765,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        10627,  // help_offset
+        10969,  // help_offset
         99,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1743,7 +1781,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        10727,  // help_offset
+        11069,  // help_offset
         92,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1759,7 +1797,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        10820,  // help_offset
+        11162,  // help_offset
         89,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1775,7 +1813,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        10910,  // help_offset
+        11252,  // help_offset
         86,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1791,7 +1829,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        10997,  // help_offset
+        11339,  // help_offset
         101,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1807,7 +1845,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        11099,  // help_offset
+        11441,  // help_offset
         80,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1823,7 +1861,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        11180,  // help_offset
+        11522,  // help_offset
         104,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1839,7 +1877,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        11285,  // help_offset
+        11627,  // help_offset
         92,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1855,7 +1893,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        11378,  // help_offset
+        11720,  // help_offset
         89,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1871,7 +1909,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        11468,  // help_offset
+        11810,  // help_offset
         98,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1887,7 +1925,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        11567,  // help_offset
+        11909,  // help_offset
         86,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1903,7 +1941,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        11654,  // help_offset
+        11996,  // help_offset
         89,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1919,7 +1957,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        11744,  // help_offset
+        12086,  // help_offset
         92,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1935,7 +1973,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        11837,  // help_offset
+        12179,  // help_offset
         96,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1951,7 +1989,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        11934,  // help_offset
+        12276,  // help_offset
         105,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1967,7 +2005,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        12040,  // help_offset
+        12382,  // help_offset
         121,  // help_length
         g_fields_sound_status_current,  // fields
         true,  // is_query
@@ -1983,7 +2021,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        12162,  // help_offset
+        12504,  // help_offset
         98,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -1999,7 +2037,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        12261,  // help_offset
+        12603,  // help_offset
         111,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2015,7 +2053,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        12373,  // help_offset
+        12715,  // help_offset
         112,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2031,7 +2069,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        12486,  // help_offset
+        12828,  // help_offset
         146,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2047,7 +2085,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        12633,  // help_offset
+        12975,  // help_offset
         147,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2063,7 +2101,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        12781,  // help_offset
+        13123,  // help_offset
         150,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2079,7 +2117,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        12932,  // help_offset
+        13274,  // help_offset
         148,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2095,7 +2133,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        13081,  // help_offset
+        13423,  // help_offset
         150,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2111,7 +2149,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        13232,  // help_offset
+        13574,  // help_offset
         160,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2127,7 +2165,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        13393,  // help_offset
+        13735,  // help_offset
         162,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2143,7 +2181,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        13556,  // help_offset
+        13898,  // help_offset
         142,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2159,7 +2197,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        13699,  // help_offset
+        14041,  // help_offset
         168,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2175,7 +2213,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        13868,  // help_offset
+        14210,  // help_offset
         172,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2191,7 +2229,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        14041,  // help_offset
+        14383,  // help_offset
         215,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2207,7 +2245,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        14257,  // help_offset
+        14599,  // help_offset
         90,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2223,7 +2261,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        14348,  // help_offset
+        14690,  // help_offset
         94,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2239,7 +2277,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        14443,  // help_offset
+        14785,  // help_offset
         138,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2255,7 +2293,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        14582,  // help_offset
+        14924,  // help_offset
         185,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2271,7 +2309,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        14768,  // help_offset
+        15110,  // help_offset
         170,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2287,7 +2325,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        14939,  // help_offset
+        15281,  // help_offset
         205,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2303,7 +2341,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        15145,  // help_offset
+        15487,  // help_offset
         142,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2319,7 +2357,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        15288,  // help_offset
+        15630,  // help_offset
         195,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2335,7 +2373,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        15484,  // help_offset
+        15826,  // help_offset
         237,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2351,7 +2389,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        15722,  // help_offset
+        16064,  // help_offset
         109,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2367,7 +2405,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        15832,  // help_offset
+        16174,  // help_offset
         91,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2383,7 +2421,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        15924,  // help_offset
+        16266,  // help_offset
         91,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2399,7 +2437,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16016,  // help_offset
+        16358,  // help_offset
         91,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2415,7 +2453,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16108,  // help_offset
+        16450,  // help_offset
         91,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2431,7 +2469,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16200,  // help_offset
+        16542,  // help_offset
         91,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2447,7 +2485,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16292,  // help_offset
+        16634,  // help_offset
         130,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2463,7 +2501,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16423,  // help_offset
+        16765,  // help_offset
         88,  // help_length
         NULL,  // fields
         false,  // is_query
@@ -2479,7 +2517,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16512,  // help_offset
+        16854,  // help_offset
         161,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2495,7 +2533,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16674,  // help_offset
+        17016,  // help_offset
         107,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2511,7 +2549,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16782,  // help_offset
+        17124,  // help_offset
         96,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2527,7 +2565,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16879,  // help_offset
+        17221,  // help_offset
         117,  // help_length
         NULL,  // fields
         false,  // is_query
@@ -2543,7 +2581,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16997,  // help_offset
+        17339,  // help_offset
         153,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2559,7 +2597,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        17151,  // help_offset
+        17493,  // help_offset
         121,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2575,7 +2613,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         true,  // safety_critical
-        17273,  // help_offset
+        17615,  // help_offset
         90,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2591,7 +2629,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         true,  // safety_critical
-        17364,  // help_offset
+        17706,  // help_offset
         110,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2607,7 +2645,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        17475,  // help_offset
+        17817,  // help_offset
         107,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2623,7 +2661,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        17583,  // help_offset
+        17925,  // help_offset
         125,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2639,7 +2677,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        17709,  // help_offset
+        18051,  // help_offset
         78,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2655,7 +2693,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        17788,  // help_offset
+        18130,  // help_offset
         233,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2671,7 +2709,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18022,  // help_offset
+        18364,  // help_offset
         127,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2687,7 +2725,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
-        18150,  // help_offset
+        18492,  // help_offset
         134,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2703,7 +2741,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
-        18285,  // help_offset
+        18627,  // help_offset
         104,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2719,7 +2757,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18390,  // help_offset
+        18732,  // help_offset
         110,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2735,7 +2773,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18501,  // help_offset
+        18843,  // help_offset
         79,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2751,7 +2789,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18581,  // help_offset
+        18923,  // help_offset
         68,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2767,7 +2805,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18650,  // help_offset
+        18992,  // help_offset
         107,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2783,7 +2821,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18758,  // help_offset
+        19100,  // help_offset
         106,  // help_length
         NULL,  // fields
         false,  // is_query
@@ -2799,7 +2837,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18865,  // help_offset
+        19207,  // help_offset
         104,  // help_length
         NULL,  // fields
         false,  // is_query
@@ -2815,7 +2853,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18970,  // help_offset
+        19312,  // help_offset
         71,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2831,7 +2869,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19042,  // help_offset
+        19384,  // help_offset
         132,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2847,7 +2885,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19175,  // help_offset
+        19517,  // help_offset
         132,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2863,7 +2901,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19308,  // help_offset
+        19650,  // help_offset
         132,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2879,7 +2917,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19441,  // help_offset
+        19783,  // help_offset
         132,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2895,7 +2933,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19574,  // help_offset
+        19916,  // help_offset
         132,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2911,7 +2949,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19707,  // help_offset
+        20049,  // help_offset
         82,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2927,7 +2965,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19790,  // help_offset
+        20132,  // help_offset
         97,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2943,7 +2981,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19888,  // help_offset
+        20230,  // help_offset
         97,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2959,7 +2997,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19986,  // help_offset
+        20328,  // help_offset
         97,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2975,7 +3013,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20084,  // help_offset
+        20426,  // help_offset
         97,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2991,7 +3029,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20182,  // help_offset
+        20524,  // help_offset
         97,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3007,7 +3045,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20280,  // help_offset
+        20622,  // help_offset
         97,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3023,7 +3061,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20378,  // help_offset
+        20720,  // help_offset
         93,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3039,7 +3077,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20472,  // help_offset
+        20814,  // help_offset
         67,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3055,7 +3093,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20540,  // help_offset
+        20882,  // help_offset
         83,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3071,7 +3109,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20624,  // help_offset
+        20966,  // help_offset
         106,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3087,7 +3125,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20731,  // help_offset
+        21073,  // help_offset
         130,  // help_length
         g_fields_system_status_health,  // fields
         true,  // is_query
@@ -3103,7 +3141,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20862,  // help_offset
+        21204,  // help_offset
         130,  // help_length
         NULL,  // fields
         false,  // is_query
@@ -3119,7 +3157,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20993,  // help_offset
+        21335,  // help_offset
         56,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3135,7 +3173,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        21050,  // help_offset
+        21392,  // help_offset
         88,  // help_length
         g_fields_system_status_wifi,  // fields
         true,  // is_query
@@ -3151,7 +3189,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        21139,  // help_offset
+        21481,  // help_offset
         162,  // help_length
         g_fields_system_status_hosted_link,  // fields
         true,  // is_query
@@ -3167,7 +3205,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        21302,  // help_offset
+        21644,  // help_offset
         281,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3183,7 +3221,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        21584,  // help_offset
+        21926,  // help_offset
         129,  // help_length
         g_fields_dome_status_serial_link,  // fields
         true,  // is_query
@@ -3199,7 +3237,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        21714,  // help_offset
+        22056,  // help_offset
         127,  // help_length
         g_fields_system_api_get_identity,  // fields
         true,  // is_query
@@ -3215,7 +3253,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        21842,  // help_offset
+        22184,  // help_offset
         158,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3231,7 +3269,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22001,  // help_offset
+        22343,  // help_offset
         216,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3247,7 +3285,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         PA_HEAP_PROFILE,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22218,  // help_offset
+        22560,  // help_offset
         118,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3263,7 +3301,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         PA_HEAP_TRACING,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22337,  // help_offset
+        22679,  // help_offset
         158,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3279,7 +3317,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         PA_HEAP_TRACING,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22496,  // help_offset
+        22838,  // help_offset
         120,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3295,7 +3333,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22617,  // help_offset
+        22959,  // help_offset
         102,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3311,7 +3349,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22720,  // help_offset
+        23062,  // help_offset
         79,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3327,7 +3365,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22800,  // help_offset
+        23142,  // help_offset
         99,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3343,7 +3381,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         PA_ADMISSION_TRACE,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22900,  // help_offset
+        23242,  // help_offset
         156,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3359,7 +3397,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        23057,  // help_offset
+        23399,  // help_offset
         110,  // help_length
         g_fields_system_api_get_validation,  // fields
         true,  // is_query
@@ -3375,7 +3413,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        23168,  // help_offset
+        23510,  // help_offset
         101,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3391,7 +3429,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        23270,  // help_offset
+        23612,  // help_offset
         118,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3407,7 +3445,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        23389,  // help_offset
+        23731,  // help_offset
         79,  // help_length
         NULL,  // fields
         false,  // is_query
@@ -3423,7 +3461,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        23469,  // help_offset
+        23811,  // help_offset
         109,  // help_length
         g_fields_rc_status_snapshot,  // fields
         true,  // is_query
@@ -3439,7 +3477,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        23579,  // help_offset
+        23921,  // help_offset
         90,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3455,7 +3493,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        23670,  // help_offset
+        24012,  // help_offset
         110,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3471,7 +3509,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        23781,  // help_offset
+        24123,  // help_offset
         69,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3487,7 +3525,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        23851,  // help_offset
+        24193,  // help_offset
         102,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3503,7 +3541,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
-        23954,  // help_offset
+        24296,  // help_offset
         141,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3519,7 +3557,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        24096,  // help_offset
+        24438,  // help_offset
         133,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3535,7 +3573,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        24230,  // help_offset
+        24572,  // help_offset
         112,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3551,7 +3589,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        24343,  // help_offset
+        24685,  // help_offset
         110,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3567,7 +3605,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        24454,  // help_offset
+        24796,  // help_offset
         117,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3583,7 +3621,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        24572,  // help_offset
+        24914,  // help_offset
         122,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3599,7 +3637,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        24695,  // help_offset
+        25037,  // help_offset
         118,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3615,7 +3653,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        24814,  // help_offset
+        25156,  // help_offset
         128,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3631,7 +3669,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        24943,  // help_offset
+        25285,  // help_offset
         112,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3647,7 +3685,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        25056,  // help_offset
+        25398,  // help_offset
         117,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3663,7 +3701,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        25174,  // help_offset
+        25516,  // help_offset
         134,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3679,7 +3717,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        25309,  // help_offset
+        25651,  // help_offset
         127,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3695,7 +3733,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        25437,  // help_offset
+        25779,  // help_offset
         132,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3711,7 +3749,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        25570,  // help_offset
+        25912,  // help_offset
         149,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3727,7 +3765,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        25720,  // help_offset
+        26062,  // help_offset
         140,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3743,7 +3781,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        25861,  // help_offset
+        26203,  // help_offset
         134,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3759,7 +3797,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        25996,  // help_offset
+        26338,  // help_offset
         114,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3775,7 +3813,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        26111,  // help_offset
+        26453,  // help_offset
         123,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3791,7 +3829,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        26235,  // help_offset
+        26577,  // help_offset
         133,  // help_length
         NULL,  // fields
         true,  // is_query

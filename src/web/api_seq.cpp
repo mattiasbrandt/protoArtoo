@@ -14,13 +14,16 @@
 #include "api_seq.h"
 
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "api_helpers.h"           // trimAsciiWhitespace
 #include "api_json_response.h"
+#include "config.h"                // NVS_NAMESPACE
 #include "config_cache.h"          // ConfigSnapshot, configCacheRead, rcTriggerSlotsCopy
 #include "logging.h"
+#include "protocol_check.h"        // PC_NAME_BODY_MAX, protocolCheckSeqNameValid
 #include "rc_action_types.h"       // RcTriggerBinding
 #include "rc_binding_types.h"      // rcBindingSourceToString
 #include "robot_state.h"           // CommandSource
@@ -188,6 +191,134 @@ char s_streamName[sizeof(((SeqIndexEntry*)nullptr)->name)] = {};
 
 size_t seqFileFiller(uint8_t* out, size_t capacity, size_t offset) {
     return seqStoreReadFileSlice(s_streamName, offset, out, capacity);
+}
+
+// -----------------------------------------------------------------------------
+// Pinned Sequences (#472): the ones the Dashboard's Sequences rail puts first.
+//
+// Kept on the droid so every browser shows the same pins and they survive a
+// reboot, in a key of their own and NOT in ConfigSnapshot: that struct is
+// pinned at 944 B by a static_assert (config_store.h) because it sits in the
+// Console task's stack chain. Read and written only here, by the web task,
+// with the list on this handler's stack for the length of one request.
+//
+// Stored as one string, the names joined by commas - a name is DM: and
+// [A-Z0-9_], so a comma can never be part of one. Only the form is checked,
+// the Stand Down Sequence's rule (config_settings.cpp, standDownSequence): a
+// pin naming a Sequence deleted since stays pinned, and the page skips it.
+//
+// NVS cost, against the artoo namespace that was full on 2026-10-05 (#381 row
+// 74): eight names at their longest are 175 chars and a terminator, one
+// header entry and six data entries of 32 B, seven; a rewrite holds the old
+// seven until the new ones are written, fourteen for a moment. The full dump
+// had sixteen entries to reclaim (fifteen erased, one empty) besides its
+// reserve page. An empty list removes the key and costs nothing.
+// -----------------------------------------------------------------------------
+constexpr char kSeqPinsKey[] = "seq_pins";
+constexpr uint8_t kSeqPinsMax = 8;
+// "DM:", the longest body Protocol Check accepts, and a comma or terminator.
+constexpr size_t kSeqPinSlot = 3u + PC_NAME_BODY_MAX + 1u;
+constexpr size_t kSeqPinsStoredSize = (size_t)kSeqPinsMax * kSeqPinSlot;
+constexpr size_t SEQ_PINS_BODY_MAX = 128;
+// {"ok":true,"max":8,"pins":[...]} with eight names, each quoted and
+// separated; a name is letters, digits and _ and never escapes.
+constexpr size_t kSeqPinsWorstCaseBytes = 40u + (size_t)kSeqPinsMax * (kSeqPinSlot + 3u);
+constexpr size_t kSeqPinsMaxBytes = 512;
+static_assert(kSeqPinsWorstCaseBytes < kSeqPinsMaxBytes,
+              "eight pins build a /api/seq/pins answer this route would refuse");
+
+struct SeqPins {
+    char stored[kSeqPinsStoredSize];  // the key's string, as NVS holds it
+    uint8_t count;
+};
+
+// Reads the key into `pins`. A droid that never pinned has no key, which is
+// an empty list. So is a namespace the read-only open cannot find: it does not
+// exist until something is first saved, and Preferences::begin() logs any
+// other reason it failed itself.
+void seqPinsRead(SeqPins& pins) {
+    pins.stored[0] = '\0';
+    pins.count = 0;
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, true)) return;
+    const String value = prefs.isKey(kSeqPinsKey) ? prefs.getString(kSeqPinsKey, String()) : String();
+    prefs.end();
+    // Only this file writes the key, and never past kSeqPinsMax names; a
+    // value that is longer anyway is cut at the last whole name that fits.
+    snprintf(pins.stored, sizeof(pins.stored), "%s", value.c_str());
+    if (value.length() >= sizeof(pins.stored)) {
+        char* cut = strrchr(pins.stored, ',');
+        if (cut != nullptr) *cut = '\0';
+    }
+    if (pins.stored[0] == '\0') return;
+    pins.count = 1;
+    for (const char* at = pins.stored; (at = strchr(at, ',')) != nullptr; ++at) ++pins.count;
+}
+
+// Whether `name` is one of the stored names, as a whole name.
+bool seqPinsHas(const SeqPins& pins, const char* name) {
+    const size_t len = strlen(name);
+    for (const char* at = pins.stored; *at != '\0';) {
+        const char* comma = strchr(at, ',');
+        const size_t here = comma != nullptr ? (size_t)(comma - at) : strlen(at);
+        if (here == len && strncmp(at, name, len) == 0) return true;
+        if (comma == nullptr) break;
+        at = comma + 1;
+    }
+    return false;
+}
+
+// Takes `name` out of the stored string, keeping the others in their order.
+void seqPinsDrop(SeqPins& pins, const char* name) {
+    char kept[kSeqPinsStoredSize] = {};
+    size_t used = 0;
+    uint8_t count = 0;
+    const size_t len = strlen(name);
+    for (const char* at = pins.stored; *at != '\0';) {
+        const char* comma = strchr(at, ',');
+        const size_t here = comma != nullptr ? (size_t)(comma - at) : strlen(at);
+        if (!(here == len && strncmp(at, name, len) == 0)) {
+            used += (size_t)snprintf(kept + used, sizeof(kept) - used, "%s%.*s", used > 0 ? "," : "",
+                                     (int)here, at);
+            ++count;
+        }
+        if (comma == nullptr) break;
+        at = comma + 1;
+    }
+    memcpy(pins.stored, kept, sizeof(kept));
+    pins.count = count;
+}
+
+// Writes the list back; an empty one removes the key. False when NVS refused
+// the write - putString() answers 0 for a full namespace.
+bool seqPinsWrite(const SeqPins& pins) {
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, false)) return false;
+    bool ok = false;
+    if (pins.stored[0] == '\0') {
+        ok = !prefs.isKey(kSeqPinsKey) || prefs.remove(kSeqPinsKey);
+    } else {
+        ok = prefs.putString(kSeqPinsKey, pins.stored) > 0;
+    }
+    prefs.end();
+    return ok;
+}
+
+void sendSeqPins(WebRequest& req, const SeqPins& pins) {
+    JsonDocument doc;
+    doc["ok"] = true;
+    doc["max"] = kSeqPinsMax;
+    JsonArray names = doc["pins"].to<JsonArray>();
+    char name[kSeqPinSlot] = {};
+    for (const char* at = pins.stored; *at != '\0';) {
+        const char* comma = strchr(at, ',');
+        const size_t here = comma != nullptr ? (size_t)(comma - at) : strlen(at);
+        snprintf(name, sizeof(name), "%.*s", (int)here, at);
+        names.add(name);  // copied: ArduinoJson duplicates a char* it is handed
+        if (comma == nullptr) break;
+        at = comma + 1;
+    }
+    webSendJsonDocument(req, doc, kSeqPinsMaxBytes, TAG);
 }
 
 }  // namespace
@@ -501,4 +632,67 @@ void handleSeqStopPost(WebRequest& req) {
 
     PA_LOG_INFO(TAG, "[WEB] stop requested");
     req.send(200, "application/json", "{\"ok\":true}");
+}
+
+// GET /api/seq/pins - the pinned Sequences, in the order they were pinned
+// (#472). {"ok":true,"max":8,"pins":["DM:VADER", ...]}; nothing pinned is an
+// empty list.
+void handleSeqPinsGet(WebRequest& req) {
+    SeqPins pins;
+    seqPinsRead(pins);
+    sendSeqPins(req, pins);
+}
+
+// POST /api/seq/pins  {name, pinned} - pin or unpin one Sequence, and answer
+// the list as it now stands. One name a press rather than the whole list, so
+// two browsers pinning at once each keep the other's pin. Pinning a pinned
+// name, or unpinning one that is not, changes nothing and answers 200.
+void handleSeqPinsPost(WebRequest& req) {
+    const char* body = requireBody(req, SEQ_PINS_BODY_MAX);
+    if (body == nullptr) {
+        return;
+    }
+    JsonDocument doc;
+    if (deserializeJson(doc, body)) {
+        sendJsonError(req, 400, "invalid json body");
+        return;
+    }
+    JsonVariantConst pinned = doc["pinned"];
+    if (!pinned.is<bool>()) {
+        sendJsonError(req, 400, "pinned must be true or false");
+        return;
+    }
+    char name[kSeqNameBufSize] = {};
+    snprintf(name, sizeof(name), "%s", (const char*)(doc["name"] | ""));
+    trimAsciiWhitespace(name);
+    if (!protocolCheckSeqNameValid(name)) {
+        sendJsonError(req, 400, "missing or invalid DM:* name");
+        return;
+    }
+
+    SeqPins pins;
+    seqPinsRead(pins);
+    const bool has = seqPinsHas(pins, name);
+    if (pinned.as<bool>() == has) {
+        sendSeqPins(req, pins);
+        return;
+    }
+    if (has) {
+        seqPinsDrop(pins, name);
+    } else {
+        if (pins.count >= kSeqPinsMax) {
+            sendJsonError(req, 409, "8 are pinned. Unpin one first.");
+            return;
+        }
+        const size_t used = strlen(pins.stored);
+        snprintf(pins.stored + used, sizeof(pins.stored) - used, "%s%s", used > 0 ? "," : "", name);
+        ++pins.count;
+    }
+    if (!seqPinsWrite(pins)) {
+        PA_LOG_WARN(TAG, "pins not written: NVS refused %s", kSeqPinsKey);
+        sendJsonError(req, 500, "pins not saved: settings storage full");
+        return;
+    }
+    PA_LOG_INFO(TAG, "[WEB] %s %s", has ? "unpin" : "pin", name);
+    sendSeqPins(req, pins);
 }

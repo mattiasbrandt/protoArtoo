@@ -50,6 +50,8 @@ dome.action.delete-sequence|Memory Wipe|Wipe a Learned Sequence off the droid. N
 dome.action.test-sequence|Test Sequence|Play a sequence by name, Learned or Factory.|sequenceStart|name:string:1
 dome.action.pose-sequence|Send To This Moment|Send the droid to one moment of a sequence, Learned or Factory. Each part goes where the routine had it then, one at a time; lights and the sound that was playing follow. Refused while the estop is latched or the droid is asleep.|sequencePoseRequest|name:string:1|t:int32:1
 dome.api.get-sequence-last-run|Get Last Sequence Run|What the last sequence run did: how it ended, and every command it sent.|seqEvidenceSnapshot|
+dome.api.get-sequence-pins|Get Pinned Sequences|The Sequences pinned to the front of the Dashboard's Sequences line, in the order they were pinned.|seqPinsRead|
+dome.action.pin-sequence|Pin Sequence|Pin a Sequence to the front of the Dashboard's Sequences line, or unpin it. At most eight are pinned.|seqPinsWrite|name:string:1|pinned:bool:1
 dome.api.get-take|Get Take|The take in hand: performing, stopped and why, how full. And how many takes the droid keeps, how big one may be, and the free space it leaves.|takeStatusRead|
 dome.action.arm-take|Arm Take|Start a take for a saved sequence. Perform on the sticks; the Parts with a stick set to Perform a Part are captured. Refused with no such stick, no radio frames, the estop latched, or a take already running.|takeArm|seq:string:1
 dome.action.keep-take|Keep Take|Stop the take and keep it. Answers with the take and every cue pressed during it, for the editor to place.|takeStoreWriteNew|
