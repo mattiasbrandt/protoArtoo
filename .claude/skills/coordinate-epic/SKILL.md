@@ -136,7 +136,8 @@ from the epic's coordination section rather than from memory.
   `herdr tab create --workspace <name> --cwd <path> --label <label> --focus`.
   `python3 tools/herdr_capped_agent.py --pane <id> --name <agent> [-- --resume <session-id>]`.
   `python3 tools/make_brief.py --issue <n> --slug <s> --worktree <path> --base <base>`.
-  `tools/gate_in_pane.sh /tmp/gate.log -- python3 tools/slice_verify.py --base <base> --json /tmp/slice-<s>.json`.
+  `python3 tools/pane_run.py /tmp/gate.log --cwd <path> -- python3 tools/slice_verify.py --base <base> --json /tmp/slice-<s>.json`
+  (a pane, `tools/gate_in_pane.sh`, the wait for `GATE_EXIT=` and the tail, in one call).
   `python3 tools/accept_slice.py --json /tmp/slice-<s>.json --worktree <path> --base <base> [--allow-gate-edit]`.
   The JSON field is `ok`. During the pause do not pass `--mutations`. Do not pipe the gate through `tee`.
 - **Start every worker memory-capped** with the `herdr_capped_agent.py` line above, never a bare

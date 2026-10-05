@@ -297,7 +297,9 @@ a clear-needing script meets, since the droid cannot say who set it). Its
 report ends with the estop state it left the board in. Each script's `// bench-auto:`
 line decides where it runs (`test/playwright/README.md`); never pick scripts by
 grepping their URLs. Run it in a Herdr pane; its report, samples and logs land
-in `output/bench-auto/<image>-<time>/`.
+in the PRIMARY checkout's `output/bench-auto/<image>-<time>/`, whichever worktree
+ran it (a relative `RUN_DIR` lands there too), and the report's last line is
+`run dir: <path>` - read that, never the newest directory you can find.
 
 **Headed is a window, not a wait.** An agent's own headed session never blocks
 on a key: no `STEP=1` (Enter between pages) and no `pause` only the operator can
