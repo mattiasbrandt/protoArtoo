@@ -1567,7 +1567,10 @@
 
   // What a never-chosen Stand Down runs: the words table's, one home for the
   // Dashboard and the Sequences page (data/web_api.js, standDownSequence).
-  const STAND_DOWN_UNSET = window.PAApi.unsetOf("standDownSequence");
+  // Asked when it is needed, not when this script runs: the page can execute
+  // before web_api.js has published PAApi, and its section loaders then say
+  // so rather than the whole script failing to load.
+  const standDownUnset = () => window.PAApi.unsetOf("standDownSequence");
   const NOT_ON_DROID = "Not on the droid. Does nothing.";
   const NEEDS_REPAIR = "Needs repair on Sequences.";
   const LEAVES_PIES_OPEN = "Leaves the pies open.";
@@ -1590,7 +1593,7 @@
   const libraryEntry = (name) =>
     showLearned?.find((seq) => seq.name === name) || showFactory?.find((seq) => seq.name === name) || null;
   const libraryAnswered = () => showLearned !== null && showFactory !== null;
-  const standDownEffective = () => (standDownChoice === null ? null : standDownChoice || STAND_DOWN_UNSET);
+  const standDownEffective = () => (standDownChoice === null ? null : standDownChoice || standDownUnset());
 
   // Why a name cannot run, as the chip says it and as the notice says it, and
   // where it is changed; null when it can run. A name only the RC Map holds is
@@ -1630,7 +1633,7 @@
     const refusal = running ? null : refusalOf(name);
     if (refusal) return refusal.says;
     const entry = libraryEntry(name);
-    const factoryDefault = name === standDownEffective() && name === STAND_DOWN_UNSET
+    const factoryDefault = name === standDownEffective() && name === standDownUnset()
       && !showLearned.some((seq) => seq.name === name);
     const purpose = entry?.purpose ? `${entry.purpose}${entry.purposeCut ? "..." : ""}` : "";
     return [lengthWords(entry), factoryDefault ? LEAVES_PIES_OPEN : purpose].filter(Boolean).join(" - ");
