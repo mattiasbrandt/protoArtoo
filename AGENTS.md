@@ -485,6 +485,14 @@ where a suspect image size is explained. `cat /tmp/protoartoo-pio.lock` reads it
 without taking the lock, and a build that gives up waiting prints it. The pid
 names the last holder, not necessarily a live process — check with `kill -0`.
 
+**Exit 5 is the toolchain, not your code.** Before it takes the lock,
+`tools/pio_lock.py` reads the PlatformIO Core version and the SCons pin in the
+build's own `<core>/penv` (the core dir comes from the build's env, not your
+shell). A penv that upgraded itself past 6.1.19 breaks every build with SCons
+errors, so the lock refuses it with exit 5 and prints the one fix line:
+`<core>/penv/bin/python -m pip install platformio==6.1.19`. Run that line and
+nothing else, then re-run the build. Never `pacman -S scons`.
+
 ## Verification and Reporting
 
 Use risk-based verification. Automated tests are evidence, not the goal. Prefer
