@@ -366,7 +366,7 @@ protocol.
   make bench-rows ...` does it in one call: a sibling pane, the run under
   `tools/gate_in_pane.sh`, the wait for `GATE_EXIT=`, the tail, and the pane
   closed after. Never pipe through `tee` (it records tee's status). Give a
-  row with `pause`s `--timeout` long enough for the operator, and `--keep` if he
+  row with `pause`s `--timeout` long enough for the operator, and `--keep` if the operator
   should read the pane after. The pane is for the operator to watch; the log
   is what you verify against. A command line that says `make flash`, `make ota`
   or an upload goes in a script: `pane_run.py <log> --script /tmp/<name>.sh`
