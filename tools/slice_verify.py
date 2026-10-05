@@ -282,7 +282,7 @@ def run(
     `env` carries the per-chip PLATFORMIO_CORE_DIR so a pio phase does not
     inherit whichever toolchain pool the caller's shell happened to point at.
     """
-    with pio_lock.build_lock(cmd) if lock else contextlib.nullcontext():
+    with pio_lock.build_lock(cmd, env=env) if lock else contextlib.nullcontext():
         try:
             return subprocess.run(
                 cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout,
