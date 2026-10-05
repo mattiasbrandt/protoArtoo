@@ -574,7 +574,9 @@ SeamRoute s_routes[kSeamRouteCapacity];
 size_t s_routeCount = 0;
 
 // The seam's not-found handler, called for the dispatcher's misses and, through
-// NotFoundHandler below, for everything outside /api/.
+// NotFoundHandler below, for everything no endpoint and no global handler
+// claimed: anything outside /api/, and under /api/ any method the dispatcher
+// has no endpoint for (HEAD, PUT, OPTIONS).
 WebRequestHandler s_notFoundHandler = nullptr;
 
 constexpr char kSeamRoutePrefix[] = "/api/";
@@ -630,12 +632,15 @@ esp_err_t dispatchSeamRoute(PsychicRequest* vendorReq, PsychicResponse* vendorRe
     return ctx.result;
 }
 
-// Answers every request outside /api/ that no endpoint and no global handler
-// claimed: favicon.ico, a missing static file, and HEAD/PUT/OPTIONS to any
-// path. It sits on the vendor's defaultEndpoint, which
-// PsychicHttpServer::notFoundHandler() asks through handler()->process() --
-// both for a requestHandler() pass that came back HTTPD_404_NOT_FOUND and for
-// IDF's own 404 error handler.
+// Answers every request no endpoint and no global handler claimed: anything
+// outside /api/ (favicon.ico, a missing static file), and under /api/ any
+// method the dispatcher has no endpoint for (HEAD, PUT, OPTIONS). It sits on
+// the vendor's defaultEndpoint, which PsychicHttpServer::notFoundHandler() asks
+// through handler()->process() when a requestHandler() pass came back
+// HTTPD_404_NOT_FOUND. notFoundHandler() is also registered as IDF's 404 error
+// handler, but that route cannot be reached while "*" is registered for every
+// supported method: an unsupported method such as PATCH matches "*" with the
+// wrong method and gets IDF's 405 first (httpd_find_uri_handler(), httpd_uri.c).
 //
 // A plain PsychicHandler, not the PsychicWebHandler onNotFound() would build,
 // for the reason WebpPictureHandler above gives: PsychicWebHandler records each
@@ -657,6 +662,16 @@ class NotFoundHandler : public PsychicHandler {
         WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
         WebRequest req(&ctx);
         s_notFoundHandler(req);
+
+        // Keeps the oversize behaviour of PsychicWebHandler::handleRequest(),
+        // which answered a body over maxRequestBodySize and returned ESP_FAIL.
+        // A non-404 return passes through notFoundHandler(), and ESP_FAIL makes
+        // IDF close the session instead of httpd_req_delete() draining the
+        // whole unread body on the server task -- up to the socket's receive
+        // timeout per read, with no bound on the total.
+        if (vendorReq->contentLength() > s_server.maxRequestBodySize) {
+            return ESP_FAIL;
+        }
         return ctx.result;
     }
 };
@@ -777,8 +792,8 @@ void webRegisterNotFoundRoute(WebRequestHandler handler) {
     // Heap-allocated once and never freed, like WebpPictureHandler: the
     // endpoint owns it for the life of the server.
     //
-    // A miss under /api/ never gets this far: the route dispatcher calls the
-    // same handler itself (dispatchSeamRoute()).
+    // A GET/POST/DELETE miss under /api/ never gets this far: the route
+    // dispatcher calls the same handler itself (dispatchSeamRoute()).
     s_notFoundHandler = handler;
     s_server.defaultEndpoint->setHandler(new NotFoundHandler());
 }
