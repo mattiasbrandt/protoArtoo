@@ -141,7 +141,7 @@ system.action.estop-clear|Clear E-Stop|Release the latched estop. The feet can m
 system.action.enable-web-control|Enable Web Control|Let the browser drive the feet.|commandedSetWebControl|
 system.action.disable-web-control|Disable Web Control|Take the feet back from the browser. They stop.|commandedSetWebControl|
 system.action.reboot|Reboot|Restart the Body Controller.|requestSystemRestart|
-system.action.reboot-wifi-module|Reboot WiFi Module|Restart the WiFi module; the link can take up to about half a minute to come back, and nothing else pauses. Run it over serial, since WiFi drops with it.|hostedLinkResetCoprocessor|
+system.action.reboot-wifi-module|Reboot WiFi Module|Restart the WiFi module; the link is back in a few seconds and nothing else pauses. Run it over serial, since WiFi drops with it.|hostedLinkResetCoprocessor|
 system.action.set-mood|Set Mood|Set the mood: how much the body chatters and how the dome lights behave.|applyMood|mood:uint8:1
 system.action.sleep|Sleep|Put the droid to sleep: chatter, dome and servo idle moves rest. Drive and RC stay awake.|commandedSetSleep|
 system.action.wake|Wake|Wake the droid: chatter, dome and servo idle moves come back.|commandedSetSleep|
