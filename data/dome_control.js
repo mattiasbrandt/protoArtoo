@@ -34,7 +34,9 @@
   const cardEl = document.getElementById('dome-control-card');
 
   // The one armed wait for the sections, so a second one replaces it instead
-  // of joining it: two waiting means two draws when the sections settle.
+  // of joining it: two waiting would mean two draws when the sections settle.
+  // Defensive: the shell mounts a surface once and keeps its nodes (data/
+  // shell.js detach()), so this script arms one wait a session today.
   let armedSettle = null;
 
   // Wait for assets to be loaded. Already loaded means the Operator Shell is
