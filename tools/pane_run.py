@@ -134,7 +134,11 @@ def main(argv: list[str] | None = None) -> int:
         log.unlink()
 
     try:
-        split = herdr("pane", "split", "--current", "--direction", args.direction,
+        # Herdr sets HERDR_PANE_ID in every pane it starts: next to the pane
+        # this runs in, not whichever pane has focus right now.
+        own = os.environ.get("HERDR_PANE_ID")
+        target = ["--pane", own] if own else ["--current"]
+        split = herdr("pane", "split", *target, "--direction", args.direction,
                       "--cwd", str(args.cwd.resolve()), "--no-focus")
         pane = split["result"]["pane"]["pane_id"]
         herdr("pane", "run", pane, pane_command(log, command))
