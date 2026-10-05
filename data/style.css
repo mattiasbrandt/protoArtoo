@@ -3552,13 +3552,14 @@ p.output-parts {
   box-shadow: 0 0 6px color-mix(in srgb, var(--danger) 60%, transparent);
 }
 
-/* The whole plate's one freshness state and the fixed line that says what a
-   press does, together in the plate's ninth cell. The freshness line is the
-   only thing that moves with the age of the readout: there is no per-chip
-   marker, because everything on the plate arrives on one stream and saying its
-   age eight times repeats one fact. */
-.status-plate-freshness,
-.status-plate-affordance {
+/* The whole plate's one freshness state, in the plate's ninth cell. The
+   freshness line is the only thing that moves with the age of the readout:
+   there is no per-chip marker, because everything on the plate arrives on one
+   stream and saying its age eight times repeats one fact. It is said only
+   while the droid is not being heard (data/shell.js renderPlateFreshness,
+   #472); the cell keeps its column while it is empty, so the eight chips never
+   change width when it comes back. */
+.status-plate-freshness {
   color: var(--text-faint);
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
@@ -3569,8 +3570,8 @@ p.output-parts {
   display: grid;
   align-content: center;
   gap: 2px;
-  /* 4 px top and bottom, as the cells: three lines of hint sit inside
-     --plate-h. */
+  /* 4 px top and bottom, as the cells: the freshness line's two or three
+     lines of hint sit inside --plate-h. */
   padding: var(--space-2xs) var(--space-md);
   min-width: 0;
   /* The same seam the cells are divided by, so the compartment reads as part of
@@ -3580,15 +3581,6 @@ p.output-parts {
 
 .status-plate-region[data-freshness="waiting"] .status-plate-freshness {
   font-weight: 700;
-}
-
-/* Visible, at the entrance, and fixed: a title carries no affordance on a
-   button and a bench tablet has no hover at all, so what a press does is
-   written on the page rather than hidden in an attribute (ADR 0059,
-   docs/ui-copy-voice.md rule 12). It says what the press does; each chip's
-   own text says what the droid is doing. Two surfaces that cannot drift. */
-.status-plate-affordance {
-  color: var(--text-dim);
 }
 
 /* The Ignored Input Notice (GLOSSARY.md, #324, #346).
@@ -5350,7 +5342,6 @@ body.shell-performing .topbar-brand,
 body.shell-performing .topbar-where,
 body.shell-performing .topbar-actions,
 body.shell-performing .status-plate,
-body.shell-performing .status-plate-affordance,
 body.shell-performing .status-plate-region[data-freshness="live"] .status-plate-fresh {
   display: none;
 }

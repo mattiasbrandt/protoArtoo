@@ -1036,7 +1036,6 @@
              same seam, so the plate reads as one instrument. -->
         <div class="status-plate-fresh">
           <p class="status-plate-freshness" id="status-plate-freshness" role="status" aria-live="polite">Waiting for the droid.</p>
-          <p class="status-plate-affordance">Press a chip to go where it is changed. ESTOP stops or releases right here.</p>
         </div>
       </div>
     `;
@@ -1081,20 +1080,32 @@
     if (!plateRegion || !plateFreshness) return;
     if (reading.status === null) {
       plateRegion.dataset.freshness = "waiting";
+      plateFreshness.hidden = false;
       plateFreshness.textContent = "Waiting for the droid.";
       return;
     }
-    const heard = `Last heard from the droid ${plateAgeText(Date.now() - reading.receivedAt)}.`;
     // Never amber, and the values are never blanked: the operator cannot act
     // on a reconnect that is already running, and a blank plate would be the
     // presentation they meet most often (#324, #327).
     plateRegion.dataset.freshness = reading.notHearing === null ? "live" : "waiting";
+    // Said only when the droid is not being heard (#472). The board sends a
+    // status frame only when something changes (s_broadcastRequested,
+    // src/web/web_server.cpp), so on a quiet healthy droid the age grows and
+    // reads like a fault. Hiding it masks nothing: a lost link is raised from
+    // the stream's error (stream_error -> loseContact(), data/live_reading.js),
+    // never from this age. The compartment stays, so the cells do not move
+    // when the line comes back.
+    plateFreshness.hidden = reading.notHearing === null;
+    if (reading.notHearing === null) {
+      plateFreshness.textContent = "";
+      return;
+    }
+    const heard = `Last heard from the droid ${plateAgeText(Date.now() - reading.receivedAt)}.`;
     if (reading.notHearing === "frame") {
       plateFreshness.textContent = `${heard} The droid could not report its status - these are the values it last sent.`;
       return;
     }
-    plateFreshness.textContent =
-      reading.notHearing === "link" ? `${heard} Reconnecting - these are the values it last sent.` : heard;
+    plateFreshness.textContent = `${heard} Reconnecting - these are the values it last sent.`;
   };
 
   applyIdentityName(identityName);
