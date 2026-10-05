@@ -296,7 +296,8 @@ before each to match (the run must begin clear; after that it clears any latch
 a clear-needing script meets, since the droid cannot say who set it). Its
 report ends with the estop state it left the board in. Each script's `// bench-auto:`
 line decides where it runs (`test/playwright/README.md`); never pick scripts by
-grepping their URLs. Run it in a Herdr pane; its report, samples and logs land
+grepping their URLs. Run it in a Herdr pane with
+`python3 tools/pane_run.py /tmp/bench-auto-<board>.log -- make bench-auto ...`; its report, samples and logs land
 in the PRIMARY checkout's `output/bench-auto/<image>-<time>/`, whichever worktree
 ran it (a relative `RUN_DIR` lands there too), and the report's last line is
 `run dir: <path>` - read that, never the newest directory you can find.
@@ -361,8 +362,15 @@ protocol.
 
 - **Run it in a Herdr pane, never through a plain shell tool.** `pause` calls
   `sys.stdin.isatty()` and fails without a controlling terminal; a `sudo`
-  YubiKey cue needs the same. Tee the output to a log and parse the log - the
-  pane is for the operator to watch, the log is what you verify against.
+  YubiKey cue needs the same. `python3 tools/pane_run.py /tmp/<name>.log --
+  make bench-rows ...` does it in one call: a sibling pane, the run under
+  `tools/gate_in_pane.sh`, the wait for `GATE_EXIT=`, the tail, and the pane
+  closed after. Never pipe through `tee` (it records tee's status). Give a
+  row with `pause`s `--timeout` long enough for the operator, and `--keep` if he
+  should read the pane after. The pane is for the operator to watch; the log
+  is what you verify against. A command line that says `make flash`, `make ota`
+  or an upload goes in a script: `pane_run.py <log> --script /tmp/<name>.sh`
+  (the upload guard matches the command text).
 - **One build machine-wide.** `make` and the slice gate take
   `/tmp/protoartoo-pio.lock` themselves; run them plainly, never with `flock`
   in front, which is refused as a nested take.
