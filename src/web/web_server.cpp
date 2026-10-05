@@ -430,10 +430,11 @@ void eventStreamTask(void*) {
                     webEventStreamBroadcast("rc", s_sseBody, nowMs);
                 }
             }
-            // Every path above (build failed, too large, sent) ends here, and
-            // the event is already on the wire: release the pools and strings
-            // now. Held until the next tick instead, the last document outlived
-            // the last stream, since no tick with a client follows it (#467).
+            // Every path above (build failed, too large, sent) ends here and
+            // nothing reads the document after this point, so release its
+            // pools and strings now. Held until the next tick instead, the last
+            // document outlived the last stream, since no tick with a client
+            // follows it (#467).
             s_sseRcDoc.clear();
             if (!hwmUnderLoadLogged) {
                 PA_LOG_DEBUG("WebEvents", "stack HWM under SSE load: %u bytes free",
