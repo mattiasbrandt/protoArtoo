@@ -251,8 +251,11 @@ size_t copyRecentLogs(char* buffer, size_t bufferSize) {
 }
 
 // Copy up to maxLines new log lines written since lastSent into out[][LOG_LINE_MAX].
-// Returns new totalWritten. Sets *linesCopied to number of entries filled.
-// Lines that have already been overwritten by the ring are silently skipped.
+// Returns the cursor just past the last line copied, so lines beyond maxLines
+// wait for the next call instead of being skipped; it used to return
+// totalWritten, which dropped every line of a burst past the batch (and, once
+// a long line spans several slots, its tail). Sets *linesCopied to the number
+// of entries filled. Lines the ring has already overwritten are skipped.
 uint32_t copyNewLogLinesSince(uint32_t lastSent, char out[][LOG_LINE_MAX], size_t maxLines,
                               size_t* linesCopied) {
     taskENTER_CRITICAL(&logMux);
@@ -273,7 +276,7 @@ uint32_t copyNewLogLinesSince(uint32_t lastSent, char out[][LOG_LINE_MAX], size_
     }
     *linesCopied = (size_t)n;
     taskEXIT_CRITICAL(&logMux);
-    return total;
+    return from + n;
 }
 
 // Return current number of lines in the log ring buffer.
