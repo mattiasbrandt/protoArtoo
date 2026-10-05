@@ -502,16 +502,30 @@ static bool hostedLivenessTick() {
 // which asks internal DMA-capable RAM (port_esp_hosted_host_os.c:128-143)
 // because CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM is off.
 //
-// Only the largest free block is knowable, not the second largest, so the
-// check is: the largest block holds steps 1 and 2 together, and the free
-// total also covers step 3. That is conservative -- two separate holes that
-// would each have fitted a pool are refused -- and it errs on the side of a
-// failed attempt rather than a vendor assert.
+// The check is a probe, not arithmetic: heap_caps_get_largest_free_block()
+// cannot predict TLSF placement. mapping_search() rounds each request up to
+// its size class before searching (tlsf_control_functions.h:326-333), the
+// reported largest block is already rounded down (tlsf_fit_size(),
+// multi_heap.c:434), and an aligned allocation carries the alignment gap and
+// the poisoning header and tail on top. So, after the deinit, the probe makes
+// the vendor's two pool allocations itself, in its order and with its caps,
+// with the small allocations between them stood in for by one block, then
+// frees them again. TLSF places an identical request sequence on an identical
+// heap identically, so a probe that succeeds is the vendor's placement, two
+// separate holes included. The free total must also cover step 3.
+//
+// This is a snapshot, not a guarantee. It narrows the vendor's assert path to
+// whatever another task allocates between the probe's free and the vendor's
+// own allocations; it does not close it.
 // ---------------------------------------------------------------------------
 
 // The sizes below are mirrored from private vendor headers this file cannot
 // include (the component exports only host/ and host/api/include). A vendor
-// bump stops the build here until they are re-read.
+// bump stops the build here until they are re-read. esp_hosted resolves
+// floating (the Arduino core asks ^2.9.2, esp_wifi_remote >=2.11,<3.0) and
+// managed_components/ and dependencies.lock are gitignored, so the next
+// esp_hosted release fails every firebeetle2 build on a fresh resolve. That
+// is intended: re-derive the sizes then.
 static_assert(ESP_HOSTED_VERSION_VAL(ESP_HOSTED_VERSION_MAJOR_1, ESP_HOSTED_VERSION_MINOR_1,
                                      ESP_HOSTED_VERSION_PATCH_1) ==
                   ESP_HOSTED_VERSION_VAL(2, 12, 13),
@@ -554,11 +568,11 @@ static constexpr size_t kHostedChannelPoolBytes =
 static constexpr size_t kHostedSdioPoolBytes =
     hostedMempoolBytes(CONFIG_ESP_HOSTED_SDIO_RX_Q_SIZE + 11, 1536);
 
-// Step 2's small allocations, made before the SDIO pool and so counted in
-// the same block: six priority queues of the queue depth x 24 B
-// interface_buffer_handle_t (3 x 40 x 24 = 2,880 B at 20/20) plus their
-// control blocks, two semaphores, the two channel structs and pool headers,
-// and up to 64 B of alignment slack for each pool. 4 KB covers them.
+// Step 2's small allocations, made between the two pools: six priority
+// queues of the queue depth x 24 B interface_buffer_handle_t (3 x 40 x 24 =
+// 2,880 B at 20/20) plus their control blocks, two semaphores, and the two
+// channel structs and pool headers. The probe stands them in with one block
+// of this size between its two pool allocations; 4 KB covers them.
 static constexpr size_t kHostedReinitBeforeSdioPoolBytes = 4096;
 
 // Step 3: the four SDIO tasks (sdio_rx_buf at CONFIG_ESP_HOSTED_DFLT_TASK_STACK,
@@ -569,28 +583,60 @@ static constexpr size_t kHostedReinitBeforeSdioPoolBytes = 4096;
 static constexpr size_t kHostedReinitAfterSdioPoolBytes =
     CONFIG_ESP_HOSTED_DFLT_TASK_STACK + 3 * 5120 + 2 * 5120 + 6 * 512 + 2048;
 
-static constexpr size_t kHostedReinitLargestBlockNeeded =
-    kHostedChannelPoolBytes + kHostedReinitBeforeSdioPoolBytes + kHostedSdioPoolBytes;
 static constexpr size_t kHostedReinitFreeNeeded =
-    kHostedReinitLargestBlockNeeded + kHostedReinitAfterSdioPoolBytes;
+    kHostedChannelPoolBytes + kHostedReinitBeforeSdioPoolBytes + kHostedSdioPoolBytes +
+    kHostedReinitAfterSdioPoolBytes;
 
 struct HostedReinitFit {
-    size_t largestBlock = 0;
+    size_t largestBlock = 0;  // for the log only; the probe decides placement
     size_t freeBytes = 0;
+    // Which probe allocation failed, or nullptr when all three fitted (or the
+    // free total was already short, so none was tried).
+    const char* failedProbe = nullptr;
 
     bool fits() const {
-        return largestBlock >= kHostedReinitLargestBlockNeeded &&
-               freeBytes >= kHostedReinitFreeNeeded;
+        return freeBytes >= kHostedReinitFreeNeeded && failedProbe == nullptr;
     }
 };
 
+// The probe: the vendor's allocation sequence up to the SDIO pool, made with
+// hosted_malloc_align()'s own call (heap_caps_aligned_alloc(64, size, caps)),
+// then freed in reverse order. A failure returns NULL rather than aborting:
+// CONFIG_HEAP_ABORT_WHEN_ALLOCATION_FAILS is unset on firebeetle2
+// (sdkconfig.firebeetle2). These are transient allocations on the Core 0
+// recovery task, freed before the vendor init they guard, which itself
+// allocates far more.
+static const char* hostedProbeReinitPools() {
+    void* channelPool = heap_caps_aligned_alloc(64, kHostedChannelPoolBytes, kHostedReinitHeapCaps);
+    if (channelPool == nullptr) {
+        return "channel pool";
+    }
+    void* smallAllocations =
+        heap_caps_malloc(kHostedReinitBeforeSdioPoolBytes, kHostedReinitHeapCaps);
+    if (smallAllocations == nullptr) {
+        heap_caps_free(channelPool);
+        return "small allocations";
+    }
+    void* sdioPool = heap_caps_aligned_alloc(64, kHostedSdioPoolBytes, kHostedReinitHeapCaps);
+    const char* failed = sdioPool == nullptr ? "SDIO pool" : nullptr;
+    if (sdioPool != nullptr) {
+        heap_caps_free(sdioPool);
+    }
+    heap_caps_free(smallAllocations);
+    heap_caps_free(channelPool);
+    return failed;
+}
+
 // Read after the deinit, never before it: the deinit is what frees the old
 // pools, tasks and queues, so only then does the heap show what the re-init
-// will find.
+// will find. The free total is read before the probe, which would consume it.
 static HostedReinitFit hostedMeasureReinitFit() {
     HostedReinitFit fit;
     fit.largestBlock = heap_caps_get_largest_free_block(kHostedReinitHeapCaps);
     fit.freeBytes = heap_caps_get_free_size(kHostedReinitHeapCaps);
+    if (fit.freeBytes >= kHostedReinitFreeNeeded) {
+        fit.failedProbe = hostedProbeReinitPools();
+    }
     return fit;
 }
 
@@ -607,8 +653,8 @@ static void hostedRunRecoveryLadder() {
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(kHostedLinkRecoveryAttemptIntervalMs));
 
-        PA_LOG_INFO(TAG, "Hosted link recovery attempt %u/%u: hostedDeinitWiFi + hostedInitWiFi",
-                    attemptsThisRun + 1, kHostedLinkRecoveryMaxAttempts);
+        PA_LOG_INFO(TAG, "Hosted link recovery attempt %u/%u", attemptsThisRun + 1,
+                    kHostedLinkRecoveryMaxAttempts);
 
         // Nothing to tear down after an attempt whose init was refused: its
         // deinit already freed the stack. Arduino's hostedDeinit() would
@@ -620,18 +666,27 @@ static void hostedRunRecoveryLadder() {
         const bool deinitTried = hostedIsInitialized();
         const bool deinitOk = deinitTried && hostedDeinitWiFi();
 
+        // One tick before the probe: the deinit deletes the vendor's tasks,
+        // and a task deleted while running on the other core has its stack
+        // and TCB freed later by the idle task. Letting idle run first means
+        // the probe sees those frees.
+        vTaskDelay(1);
+
         const HostedReinitFit fit = hostedMeasureReinitFit();
         const bool initTried = fit.fits();
         if (!initTried) {
             PA_LOG_WARN(TAG,
                         "Hosted link recovery attempt %u/%u: re-init refused, it would not fit "
-                        "the internal DMA heap: largest free block %u B, needs %u B (channel pool "
-                        "%u + %u + SDIO pool %u); free %u B, needs %u B. Attempt counted failed",
+                        "the internal DMA heap: %s%s; largest free block %u B; free %u B, needs "
+                        "%u B (channel pool %u + small allocations %u + SDIO pool %u + %u after "
+                        "it). Attempt counted failed",
                         attemptsThisRun + 1, kHostedLinkRecoveryMaxAttempts,
-                        (unsigned)fit.largestBlock, (unsigned)kHostedReinitLargestBlockNeeded,
-                        (unsigned)kHostedChannelPoolBytes,
+                        fit.failedProbe != nullptr ? "probe failed at the " : "free total short",
+                        fit.failedProbe != nullptr ? fit.failedProbe : "",
+                        (unsigned)fit.largestBlock, (unsigned)fit.freeBytes,
+                        (unsigned)kHostedReinitFreeNeeded, (unsigned)kHostedChannelPoolBytes,
                         (unsigned)kHostedReinitBeforeSdioPoolBytes, (unsigned)kHostedSdioPoolBytes,
-                        (unsigned)fit.freeBytes, (unsigned)kHostedReinitFreeNeeded);
+                        (unsigned)kHostedReinitAfterSdioPoolBytes);
         }
         const bool initOk = initTried && hostedInitWiFi();
         // Device-truthful outcome, never WiFi.status() -- a dead transport
