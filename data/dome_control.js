@@ -25,12 +25,24 @@
   // Only initialize on home page
   if (document.body.dataset.page !== 'home') return;
 
+  // The card is found now, while this script runs, and not when the drawing
+  // starts. The Operator Shell runs a surface's scripts with that surface in
+  // the document, and only then: on a first load pa:assets-ready waits for
+  // every section of the session, so an operator who has moved on by then has
+  // the Dashboard detached (ADR 0048), where getElementById finds nothing - and
+  // the Dashboard came back with no drawing at all (#472).
+  const cardEl = document.getElementById('dome-control-card');
+
+  // The one armed wait for the sections, so a second one replaces it instead
+  // of joining it: two waiting means two draws when the sections settle.
+  let armedSettle = null;
+
   // Wait for assets to be loaded. Already loaded means the Operator Shell is
   // mounting this surface after the page's first one (ADR 0048).
   if (!window.PAAssetsReady) {
-    window.addEventListener('pa:assets-ready', () => initDomeControl(false));
+    window.addEventListener('pa:assets-ready', () => initDomeControl(cardEl, false), { once: true });
   } else {
-    initDomeControl(true);
+    initDomeControl(cardEl, true);
   }
 
   // Runs `draw` once the Dashboard's own sections have settled - done, or
@@ -44,16 +56,18 @@
       draw();
       return;
     }
+    if (armedSettle) window.removeEventListener('pa:bootstrap-change', armedSettle);
     const onChange = (event) => {
       if (!event.detail?.sectionsStable) return;
       window.removeEventListener('pa:bootstrap-change', onChange);
+      armedSettle = null;
       draw();
     };
+    armedSettle = onChange;
     window.addEventListener('pa:bootstrap-change', onChange);
   }
 
-  function initDomeControl(mountedLate) {
-    const cardEl = document.getElementById('dome-control-card');
+  function initDomeControl(cardEl, mountedLate) {
     if (!cardEl) return;
 
     const feedbackEl = cardEl.querySelector('.dome-control-feedback');
@@ -66,6 +80,8 @@
 
     let bannerEl = null;
     let pickerContainer = null;
+    // Releases the one DomeLayout subscription this drawing holds.
+    let releaseLayout = null;
 
     // Build the picker SVG for the current model. Live/cached tiers have real
     // elements and render through DomeLayoutRender; the offline tiers have an
@@ -142,15 +158,22 @@
           });
         }
 
+        // One drawing, whatever drew before: a draw replaces the container it
+        // finds rather than adding a second beside it (#472, the operator saw
+        // the dome twice). Looked up in the card, not held, so a draw that
+        // overlapped another's await is replaced too.
+        domeEl.querySelectorAll('.dome-svg-container').forEach((stale) => stale.remove());
         pickerContainer = document.createElement('div');
         pickerContainer.className = 'dome-svg-container';
         domeEl.appendChild(pickerContainer);
 
         renderInto(window.DomeLayout?.getModel?.(), window.DomeLayout?.getSource?.() || 'vendored');
 
-        // Subscribe to layout changes for live reconnect
+        // Subscribe to layout changes for live reconnect, once: the previous
+        // draw's subscription goes before this one is taken.
         if (window.DomeLayout) {
-          window.DomeLayout.onChange(() => {
+          releaseLayout?.();
+          releaseLayout = window.DomeLayout.onChange(() => {
             renderInto(window.DomeLayout.getModel(), window.DomeLayout.getSource());
           });
         }
