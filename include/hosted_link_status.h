@@ -6,8 +6,8 @@
 // system.status.hosted-link (#471). Only defined on boards where
 // PA_CAP_HOSTED_WIFI is set (src/web/web_network_manager_hosted.cpp); both
 // call sites, web_server.cpp's and console_module.cpp's, are themselves
-// guarded by the same capability gate, so this header carries no #if of its own -- it is unreachable, not
-// undefined, on boards without the capability.
+// guarded by the same capability gate, so this header carries no #if of its
+// own -- it is unreachable, not undefined, on boards without the capability.
 // =============================================================================
 #pragma once
 
@@ -41,10 +41,10 @@ inline const char* hostedLinkInitOutcomeName(HostedLinkInitOutcome outcome) {
 // record is replaced on every attempt, so a refused attempt never carries an
 // earlier attempt's liveness results.
 //
-// Members are ordered small-first here and in the snapshot below so neither
-// carries padding: the snapshot is a member of StatusJsonInputs, which
-// buildStatusJson() holds on the WebEvents task's stack, a chain sized
-// by the rule (tools/task_stack_recipes.json).
+// The one-byte members lead, here and in the snapshot below, so they share a
+// word instead of each padding one out: the snapshot is a member of
+// StatusJsonInputs, which buildStatusJson() holds on the WebEvents task's
+// stack, a chain sized by the rule (tools/task_stack_recipes.json).
 struct HostedLinkLastAttempt {
     HostedLinkInitOutcome init = HostedLinkInitOutcome::None;
     // false when the host was not initialised after the re-init, so the C6
