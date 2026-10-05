@@ -573,8 +573,10 @@ constexpr size_t kSeamRouteCapacity = 80;
 SeamRoute s_routes[kSeamRouteCapacity];
 size_t s_routeCount = 0;
 
-// The seam's not-found handler, kept for the dispatcher's misses as well as
-// handed to onNotFound() for everything outside /api/.
+// The seam's not-found handler, called for the dispatcher's misses and, through
+// NotFoundHandler below, for everything no endpoint and no global handler
+// claimed: anything outside /api/, and under /api/ any method the dispatcher
+// has no endpoint for (HEAD, PUT, OPTIONS).
 WebRequestHandler s_notFoundHandler = nullptr;
 
 constexpr char kSeamRoutePrefix[] = "/api/";
@@ -629,6 +631,50 @@ esp_err_t dispatchSeamRoute(PsychicRequest* vendorReq, PsychicResponse* vendorRe
     handler(req);
     return ctx.result;
 }
+
+// Answers every request no endpoint and no global handler claimed: anything
+// outside /api/ (favicon.ico, a missing static file), and under /api/ any
+// method the dispatcher has no endpoint for (HEAD, PUT, OPTIONS). It sits on
+// the vendor's defaultEndpoint, which PsychicHttpServer::notFoundHandler() asks
+// through handler()->process() when a requestHandler() pass came back
+// HTTPD_404_NOT_FOUND. notFoundHandler() is also registered as IDF's 404 error
+// handler, but that route cannot be reached while "*" is registered for every
+// supported method: an unsupported method such as PATCH matches "*" with the
+// wrong method and gets IDF's 405 first (httpd_find_uri_handler(), httpd_uri.c).
+//
+// A plain PsychicHandler, not the PsychicWebHandler onNotFound() would build,
+// for the reason WebpPictureHandler above gives: PsychicWebHandler records each
+// new client in its own list, defaultEndpoint is not in the server's
+// _endpoints, so closeCallback() never prunes that list, and every connection
+// whose request reached not-found left a list node pointing at a deleted
+// PsychicClient (#467). This one keeps no per-request state.
+//
+// Unlike PsychicWebHandler it neither loads the body nor parses parameters:
+// handleNotFound() reads neither, and esp_http_server discards an unread body
+// when the request ends (httpd_req_delete()).
+class NotFoundHandler : public PsychicHandler {
+  public:
+    esp_err_t handleRequest(PsychicRequest* vendorReq, PsychicResponse* vendorResp) override {
+        if (s_notFoundHandler == nullptr) {
+            // The vendor's notFoundHandler() then sends its own plain 404.
+            return HTTPD_404_NOT_FOUND;
+        }
+        WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
+        WebRequest req(&ctx);
+        s_notFoundHandler(req);
+
+        // Keeps the oversize behaviour of PsychicWebHandler::handleRequest(),
+        // which answered a body over maxRequestBodySize and returned ESP_FAIL.
+        // A non-404 return passes through notFoundHandler(), and ESP_FAIL makes
+        // IDF close the session instead of httpd_req_delete() draining the
+        // whole unread body on the server task -- up to the socket's receive
+        // timeout per read, with no bound on the total.
+        if (vendorReq->contentLength() > s_server.maxRequestBodySize) {
+            return ESP_FAIL;
+        }
+        return ctx.result;
+    }
+};
 
 // The three endpoints every ordinary route is served through. Called once,
 // after webRegisterSeamRoutes() has filled the table.
@@ -736,20 +782,20 @@ void webRegisterNotFoundRoute(WebRequestHandler handler) {
     // that exists never reaches this handler, and one for a file that does not
     // is a not-found like any other.
     //
-    // onNotFound() replaces the handler on the library's defaultEndpoint, which
-    // it consults for every method, not the HTTP_GET the endpoint was built
-    // with. A POST to a mistyped path answers in the same shape as a GET.
+    // The handler goes on the library's defaultEndpoint, which the server
+    // consults for every method, not the HTTP_GET the endpoint was built with.
+    // A POST to a mistyped path answers in the same shape as a GET.
+    // setHandler() deletes the PsychicWebHandler the server's constructor put
+    // there. Not onNotFound(): that installs a PsychicWebHandler, which keeps a
+    // client list nothing prunes (NotFoundHandler above).
     //
-    // A miss under /api/ never gets this far: the route dispatcher calls the
-    // same handler itself (dispatchSeamRoute()).
+    // Heap-allocated once and never freed, like WebpPictureHandler: the
+    // endpoint owns it for the life of the server.
+    //
+    // A GET/POST/DELETE miss under /api/ never gets this far: the route
+    // dispatcher calls the same handler itself (dispatchSeamRoute()).
     s_notFoundHandler = handler;
-    s_server.onNotFound(
-        [handler](PsychicRequest* vendorReq, PsychicResponse* vendorResp) -> esp_err_t {
-            WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
-            WebRequest req(&ctx);
-            handler(req);
-            return ctx.result;
-        });
+    s_server.defaultEndpoint->setHandler(new NotFoundHandler());
 }
 
 void initPsychicWebServer() {
