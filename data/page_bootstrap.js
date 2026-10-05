@@ -1051,6 +1051,8 @@
     // cells (its ESTOP cell first), one stop on the page body, the brand link,
     // Sleep and Reboot, then the topbar's STOP on the 13th press, then the nav.
     // That is the containment #115 asked for and the reach #359 asked for.
+    // The empty stop on the page body was looked at and accepted by the
+    // operator on 2026-10-06 (#355 grilling Q7, hands-on item 13a).
 
     return backdrop;
   };
