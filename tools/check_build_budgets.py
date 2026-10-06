@@ -380,60 +380,69 @@ def main(argv=None):
     all_ok = True
     results = []
 
-    for env_name in sorted(envs.keys()):
-        env_budget = envs[env_name]
-        flash_ceiling_bytes = env_budget.get("flash_ceiling_bytes")
-        flash_budget_bytes = env_budget.get("flash_budget_bytes")
+    try:
+        # The table is written however the loop ends, the build lock's
+        # SystemExit(5) on a drifted penv included, so CI still shows the
+        # rows measured before it.
+        for env_name in sorted(envs.keys()):
+            env_budget = envs[env_name]
+            flash_ceiling_bytes = env_budget.get("flash_ceiling_bytes")
+            flash_budget_bytes = env_budget.get("flash_budget_bytes")
 
-        if flash_budget_bytes is None:
-            print(f"WARNING: {env_name} has no flash_budget_bytes", file=sys.stderr)
-            continue
+            if flash_budget_bytes is None or flash_ceiling_bytes is None:
+                missing = "flash_budget_bytes" if flash_budget_bytes is None else "flash_ceiling_bytes"
+                if args.envs:
+                    # Named on purpose (a CI board job): skipping it would build
+                    # nothing and pass, the same hole an unknown --env would be.
+                    print(f"\u2717 {env_name}: no {missing} in {BUDGETS_FILE.name}", file=sys.stderr)
+                    results.append(summary_row(env_name, False, f"no {missing}"))
+                    all_ok = False
+                else:
+                    print(f"WARNING: {env_name} has no {missing}", file=sys.stderr)
+                continue
 
-        if flash_ceiling_bytes is None:
-            print(f"WARNING: {env_name} has no flash_ceiling_bytes", file=sys.stderr)
-            continue
-
-        actual_size = build_environment(env_name, budgets)
-        if not check_one("flash", env_name, actual_size, flash_budget_bytes,
-                         flash_ceiling_bytes, results):
-            all_ok = False
-
-        # Read now, before buildfs or the next env can touch the pool. A failed
-        # build has no resolved config worth reading, and its failure is
-        # already the row's verdict.
-        if actual_size is not None and not check_envelope(env_name, "firmware", results):
-            all_ok = False
-
-        if "boot_heap_baseline_bytes" in env_budget:
-            figure = boot_heap_figure(env_name, budgets) if actual_size is not None else None
-            if not check_boot_heap(env_name, env_budget, figure, results):
+            actual_size = build_environment(env_name, budgets)
+            if not check_one("flash", env_name, actual_size, flash_budget_bytes,
+                             flash_ceiling_bytes, results):
                 all_ok = False
 
-        fs_budget_bytes = env_budget.get("fs_budget_bytes")
-        fs_ceiling_bytes = env_budget.get("fs_ceiling_bytes")
-        if fs_budget_bytes is None or fs_ceiling_bytes is None:
-            # Not every environment images a filesystem -- a bench sketch that
-            # excludes src/ has no web UI to carry -- so a missing pair is a
-            # quiet skip rather than the warning a missing flash budget earns.
-            continue
+            # Read now, before buildfs or the next env can touch the pool. A failed
+            # build has no resolved config worth reading, and its failure is
+            # already the row's verdict.
+            if actual_size is not None and not check_envelope(env_name, "firmware", results):
+                all_ok = False
 
-        # Measured even when the firmware build failed: the two artifacts are
-        # independent, and a broken build must not hide a filesystem regression.
-        if not check_one("fs", env_name, filesystem_image_bytes(env_name, budgets),
-                         fs_budget_bytes, fs_ceiling_bytes, results):
-            all_ok = False
+            if "boot_heap_baseline_bytes" in env_budget:
+                figure = boot_heap_figure(env_name, budgets) if actual_size is not None else None
+                if not check_boot_heap(env_name, env_budget, figure, results):
+                    all_ok = False
 
-        # Whatever buildfs returned: a half-run rebuild of the pool exits 0,
-        # and one that failed may still have reinstalled the pristine libs.
-        if actual_size is not None and not check_envelope(env_name, "buildfs", results):
-            all_ok = False
+            fs_budget_bytes = env_budget.get("fs_budget_bytes")
+            fs_ceiling_bytes = env_budget.get("fs_ceiling_bytes")
+            if fs_budget_bytes is None or fs_ceiling_bytes is None:
+                # Not every environment images a filesystem -- a bench sketch that
+                # excludes src/ has no web UI to carry -- so a missing pair is a
+                # quiet skip rather than the warning a missing flash budget earns.
+                continue
+
+            # Measured even when the firmware build failed: the two artifacts are
+            # independent, and a broken build must not hide a filesystem regression.
+            if not check_one("fs", env_name, filesystem_image_bytes(env_name, budgets),
+                             fs_budget_bytes, fs_ceiling_bytes, results):
+                all_ok = False
+
+            # Whatever buildfs returned: a half-run rebuild of the pool exits 0,
+            # and one that failed may still have reinstalled the pristine libs.
+            if actual_size is not None and not check_envelope(env_name, "buildfs", results):
+                all_ok = False
+    finally:
+        if args.summary:
+            write_summary(args.summary, results)
 
     print("", file=sys.stderr)
     print(f"Summary: {len([r for r in results if r[1]])} passed, "
           f"{len([r for r in results if not r[1]])} failed",
           file=sys.stderr)
-    if args.summary:
-        write_summary(args.summary, results)
 
     return 0 if all_ok else 1
 
