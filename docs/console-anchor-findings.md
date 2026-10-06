@@ -1,8 +1,20 @@
 # Controller Console Inventory Synthesis - Anchor Verification Findings
 
 **Ticket:** #212  
-**Base commit:** `c13cb6f` (epic/serial-console)  
+**Base commit:** `c13cb6f` (epic/serial-console, 2026-08-28)  
 **Inventory rows verified:** 189 (dome 55, sound 54, system 48, drive-servo-aux-rc 32)
+
+> **A dated record of #212 at `c13cb6f`, not a description of today
+> (2026-10-06, #475).** Its counts and gate findings were true at that base and
+> have moved since. On 2026-10-06 the inventory holds 217 rows (dome 66, sound
+> 58, system 54, drive-servo-aux-rc 39); two registry rows declare
+> `board_capability: PA_CAP_HOSTED_WIFI` (the FireBeetle 2's WiFi module, #471),
+> the catalog generator gives every drive row
+> `PA_CAP_DRIVE_BACKEND_HOVERBOARD`, and twelve catalog rows are board-gated in
+> all; the four `build_flag` rows still hold. Source and line references that
+> were wrong when written are corrected in place below and marked as such.
+> The live account of the gates is
+> [console-catalog-contributing.md](console-catalog-contributing.md).
 
 ---
 
@@ -21,15 +33,15 @@
 **Registry-declared flags (4 entries):**
 - `PA_HEAP_PROFILE` - Gates profiler queries
   - Affects: `system.action.profiler-trace-start`, `system.action.profiler-trace-stop`, `system.api.get-profiler`
-  - Evidence: `include/config.h:85` (build flag definition), `src/web/api_profiler.cpp:46,186,327,442,484,563` (guarded code)
+  - Evidence: `include/build_flags.inc:19` (build flag declaration), `src/web/api_profiler.cpp:35` (the `#if PA_HEAP_PROFILE` guard). Corrected 2026-10-06: this line first cited `include/config.h:85`, which is a `PA_HEAP_TRACING` requirement check, and `api_profiler.cpp:46,186,327,442,484,563`, which are `CONFIG_HEAP_TASK_TRACKING` guards
   
 - `PA_HEAP_TRACING` - Gates heap tracing commands
   - Affects: `system.action.profiler-trace-*`
-  - Evidence: `include/config.h:88`
+  - Evidence: `include/build_flags.inc:20` (corrected 2026-10-06 from `include/config.h:88`)
 
 - `PA_ADMISSION_TRACE` - Gates admission admission-trace diagnostics
   - Affects: `system.api.get-admission-trace`
-  - Evidence: `include/web_admission.h:34`, `src/web/web_admission_psychic.cpp:155,173` (guarded sections)
+  - Evidence: `include/build_flags.inc:21`, `include/api_admission_trace.h:18` (`#if PA_ADMISSION_TRACE`; corrected 2026-10-06 from `include/web_admission.h:34`, a comment), `src/web/web_admission_psychic.cpp:155,173` (guarded sections)
 
 **Chip/board capability flags (discovered):**
 - `PA_CAP_NATIVE_WIFI` - Distinguishes board WiFi capabilities
@@ -50,7 +62,7 @@
 **Objective:** Build both full-app firmware targets, examine their linker maps and object file manifests, and verify that all 189 declared operations are present in both images.
 
 **Methodology:**
-- Built both `artoo_esp32` and `firebeetle2` targets using `flock /tmp/protoartoo-pio.lock make build BUILD_ENV=<env>`
+- Built both `artoo_esp32` and `firebeetle2` targets using `flock /tmp/protoartoo-pio.lock make build BUILD_ENV=<env>` (the command as run then; today `make build` takes the build lock itself through `tools/pio_lock.py`, and a `flock` in front of it is refused - AGENTS.md "The build lock")
 - Captured `.pio/build/<env>/firmware.map` linker maps (17 MB, 13 MB respectively)
 - Analyzed object file dependencies to identify linked cores and dispatch helpers
 - Cross-referenced against inventory executor_or_core values
@@ -108,11 +120,11 @@
 
 ## Evidence Artifacts
 
-- **Gate-reverse source:** `src/web/api_profiler.cpp` (lines 46, 186, 327, 442, 484, 563 show CONFIG_HEAP_TASK_TRACKING guards)
-- **Gate-reverse source:** `include/config.h` (lines 85, 88 show PA_HEAP_PROFILE, PA_HEAP_TRACING definitions)
+- **Gate-reverse source:** `src/web/api_profiler.cpp` (line 35 is the `PA_HEAP_PROFILE` guard; lines 46, 186, 327, 442, 484, 563 are CONFIG_HEAP_TASK_TRACKING guards)
+- **Gate-reverse source:** `include/build_flags.inc` (lines 19-21 declare PA_HEAP_PROFILE, PA_HEAP_TRACING, PA_ADMISSION_TRACE; corrected 2026-10-06 from `include/config.h` lines 85, 88)
 - **Paired-artefact source:** `.pio/build/artoo_esp32/firmware.map` (17 MB, complete linker map)
 - **Paired-artefact source:** `.pio/build/firebeetle2/firmware.map` (13 MB, complete linker map)
-- **Inventory evidence:** `tools/console_inventory/{dome,sound,system,drive-servo-aux-rc}.yaml` (all pass `console_inventory_check.py`)
+- **Inventory evidence:** `tools/console_inventory/{dome,sound,system,drive-servo-aux-rc}.yaml`. Corrected 2026-10-06: this line first said they "all pass `console_inventory_check.py`"; no such script has existed in this tree. The inventory checks live in `tools/check_action_registry_drift.py` (`make check-action-drift`)
 
 ---
 
