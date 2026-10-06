@@ -178,7 +178,7 @@ void test_reason_is_present_for_every_real_reason_and_absent_for_none(void) {
     // enum's values are contiguous from NONE, so the only thing to keep in step
     // is the last enumerator, and getting that wrong is visible: a reason with
     // no string renders "unknown", which is asserted below.
-    for (int reason = CONSOLE_REASON_NONE + 1; reason <= CONSOLE_REASON_MODULE_CANNOT_MIX; ++reason) {
+    for (int reason = CONSOLE_REASON_NONE + 1; reason <= CONSOLE_REASON_NOT_ON_CONSOLE; ++reason) {
         const ConsoleReason real = (ConsoleReason)reason;
         TEST_ASSERT_TRUE_MESSAGE(consoleReasonIsPresent(real),
                                  "a real reason must render a reason field");

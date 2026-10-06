@@ -30,6 +30,18 @@
 #define CONSOLE_PARAM_TYPE_BOOL      "bool"
 #define CONSOLE_PARAM_TYPE_STRING    "string"
 
+// Why an operation is never on the Console, from the registry's
+// `console: excluded:` (ADR 0037 Amendment 2026-10-06, #474). An operation that
+// carries one answers `unavailable reason=not-on-console` and lists as
+// `not-on-console`; NONE is every operation that is on the Console, wired or not.
+typedef enum {
+    CONSOLE_EXCLUSION_NONE = 0,
+    CONSOLE_EXCLUSION_FILE_TRANSFER = 1,
+    CONSOLE_EXCLUSION_EDITOR_ONLY = 2,
+    CONSOLE_EXCLUSION_BROWSER_ONLY = 3,
+    CONSOLE_EXCLUSION_CONSOLE_ITSELF = 4,
+} ConsoleExclusion;
+
 // Parameter descriptor. Range/enum (has_range/range_min/range_max/
 // enum_values) close #221 gap 5: docs/action-registry.yaml's `range:` and
 // `values:` keys previously reached only the FS-resident help text
@@ -95,10 +107,18 @@ typedef struct {
                                           // and the same rule: the fact lives in the registry, so
                                           // the dispatcher never carries a list of names and a row
                                           // marked tomorrow is refused with no code change.
+    uint8_t console_excluded;            // a ConsoleExclusion: registry `console: excluded:`, or
+                                          // CONSOLE_EXCLUSION_NONE. A uint8_t rather than the enum
+                                          // so it sits in the padding after the two bools above.
     const char* output;                  // registry `output:`: the stored id (arm1..aux3) of
                                           // the one Output this operation is about, or NULL.
                                           // `{output}` in its help prose is that Output's
                                           // label on the running board (include/board_outputs.h).
+    const char* console_page;            // registry `console: page:`, as the NAME SURFACES gives
+                                          // that page (data/shell.js), never its id: `help`
+                                          // shows it to the builder. NULL when console_excluded
+                                          // is NONE. In the image, not the help file, so help
+                                          // names the page even when LittleFS is down.
 } ConsoleCatalogEntry;
 
 // Get the complete catalog
@@ -118,4 +138,8 @@ size_t consoleCatalogGetCount(void);
 // asks this instead of carrying a list of operation names, the same way
 // read_only above keeps the config refusal in the registry.
 const char* consoleCatalogSequenceFor(const char* operationName);
+
+// The registry word for an exclusion ("file-transfer"), or NULL for
+// CONSOLE_EXCLUSION_NONE or a value outside the enum.
+const char* consoleCatalogExclusionName(uint8_t exclusion);
 

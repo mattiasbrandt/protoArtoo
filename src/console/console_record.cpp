@@ -103,6 +103,8 @@ const char* consoleReasonString(ConsoleReason reason) {
             return "dome-not-calibrated";
         case CONSOLE_REASON_MODULE_CANNOT_MIX:
             return "module-cannot-mix";
+        case CONSOLE_REASON_NOT_ON_CONSOLE:
+            return "not-on-console";
         default:
             return "unknown";
     }

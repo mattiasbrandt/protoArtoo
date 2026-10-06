@@ -51,7 +51,7 @@ which #224 already made truthful.
   count is measured from the native suite
   (`pio test -e native -f test_native/test_console_module -v | grep '#220 report'`).
 
-## Amendment (2026-10-06, under #321): a row that is never on the Console says so up front
+## Amendment (2026-10-06, under #321, built in #474): a row that is never on the Console says so up front
 
 Readiness stays out of discovery. A different fact joins it there: some
 operations are **never** on the Console - a file transfer, a step that belongs

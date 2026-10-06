@@ -32,15 +32,14 @@
 //     already allows them through dispatchRcTriggerActionTest() - the same
 //     guard+dispatch core POST /api/actions/test uses.
 //
-// One row, dome.action.save-sequence, stays CONSOLE_REASON_EXECUTOR_NOT_READY
-// on purpose: its REST body (POST /api/seq, a full Learned Sequence JSON v1
-// document up to SEQ_FILE_MAX_BYTES with a steps array) is exactly the
-// "document/bulk transfer" #206 names out of scope for this epic - the
-// Console's one-line key=value argument grammar (docs/console-protocol.md
-// s.1.2) has no shape for an arbitrarily large JSON body, and inventing one
-// is a new Console Record/argument shape the coordinator pin requires asking
-// about first, not building. Reported on the ticket, not silently left
-// unexplained.
+// One row, dome.action.save-sequence, is never on the Console: its registry row
+// declares it `console: excluded: file-transfer`, so it answers
+// CONSOLE_REASON_NOT_ON_CONSOLE before dispatch reaches this file (#474). Its
+// REST body (POST /api/seq, a full Learned Sequence JSON v1 document up to
+// SEQ_FILE_MAX_BYTES with a steps array) is exactly the "document/bulk
+// transfer" #206 names out of scope - the Console's one-line key=value
+// argument grammar (docs/console-protocol.md s.1.2) has no shape for an
+// arbitrarily large JSON body.
 //
 // dome.action.sequence-stop's dangling-Learned-Sequence-binding report (the
 // analogous field on dome.action.delete-sequence's REST sibling,

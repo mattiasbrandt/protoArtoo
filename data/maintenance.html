@@ -182,6 +182,18 @@
       </div>
     </div>
 
+    <!-- The crash dump the controller keeps from its last crash, handed over
+         as a file (GET /api/coredump/status, GET /api/coredump). Reading it
+         is docs/troubleshooting.md's; data/maintenance.js only says whether
+         one is stored and offers the download when it is. -->
+    <div class="card" id="crash-dump-card">
+      <div class="sect"><h2>Crash dump</h2><span class="sub" id="crash-dump-state">checking</span></div>
+      <div id="crash-dump-row" class="button-row button-row-compact" hidden>
+        <a id="crash-dump-download" class="btn btn-sm icon-act" href="/api/coredump" download="coredump.elf"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download-outline"/></svg><span class="act-label">Download the crash dump</span></a>
+      </div>
+      <div id="crash-dump-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
     <!-- Backup & Restore -->
     <div class="card">
       <div class="sect"><h2>Backup</h2><span class="sub">a copy on your computer</span></div>

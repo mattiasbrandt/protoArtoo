@@ -330,6 +330,7 @@ never carries one. The tokens are stable — safe to match on in a script:
 | `conflict` | The value is fine on its own but clashes with another one, sent or already saved: speed presets that aren't distinct, a range whose low end is above its high end |
 | `malformed-argument` | The line didn't parse into `key=value` pairs at all — a bare word, bad quoting, or invalid text in a quoted value |
 | `not-executable` | This entry is not something you run — an event, or one of the [motion commands not yet wired](#what-doesnt-work-here-yet) |
+| `not-on-console` | Never run from here: a file that moves whole, a step of the Sequences editor, or something only a page does. `help` on it names the page, as `console_page` |
 | `executor-not-ready` | Recognised, but the firmware doesn't have a way to run it yet |
 
 ## While the log is printing
@@ -641,13 +642,12 @@ listed and answers `unavailable reason=not-on-this-board`.
 
 ## What doesn't work here yet
 
-- **Drive and dome-speed motion** (`drive.action.move`, `drive.action.speed`,
-  `drive.action.steer`, `dome.action.set-speed`, and their aliases) don't run
-  through the Console yet. `drive.action.move` answers
-  `unavailable reason=executor-not-ready`; the three analog axis actions
-  (`drive.action.speed`, `drive.action.steer`, `dome.action.set-speed`)
-  answer `unavailable reason=not-executable`. Drive the droid from the
-  dashboard or RC for now.
+- **Stick-style motion** (`drive.action.speed`, `drive.action.steer`,
+  `dome.action.set-speed`, and their aliases) doesn't run through the
+  Console: these are the axes a stick drives, and they answer
+  `unavailable reason=not-executable`. `drive.action.move speed=<n> steer=<n>`
+  does run, by the dashboard's rules: refused while the estop is latched, the
+  droid is Stationary, or there is no radio and web control is off.
 - **Most `config`-type commands** don't run here yet, but a growing number
   do. `operations type=config` lists every one of them either way: the
   listing tells you what exists, not what's wired up, so the only way to

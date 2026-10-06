@@ -270,7 +270,7 @@ The operator surface for declaring what the droid is made of - fitted Hardware C
 _Avoid_: Setup, Settings (as this page's name; a **Setting** is one stored value), Hardware page
 
 **Maintenance**:
-The operator surface for inspecting and repairing a controller that is already configured - Serial Status, Diagnostics, Memory Profiler, Backup & Restore, reboot. The other half of the former Setup page. It also carries the single deliberate way back into guided Setup once that run has ended (#297). Serial Status keeps only the **live** link readout; the lane, bus and baud it used to assert as fact belong to **Wiring** (#293).
+The operator surface for inspecting and repairing a controller that is already configured - Serial Status, Diagnostics, Memory Profiler, the crash dump download, Backup & Restore, reboot. The other half of the former Setup page. It also carries the single deliberate way back into guided Setup once that run has ended (#297). Serial Status keeps only the **live** link readout; the lane, bus and baud it used to assert as fact belong to **Wiring** (#293).
 _Avoid_: Setup, System, Diagnostics page, Tools
 
 **Backup**:

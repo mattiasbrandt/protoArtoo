@@ -18,6 +18,7 @@
 
 #include "console_catalog.h"
 #include "console_module.h"
+#include "action_registry.h"  // ACTION_REGISTRY_SIZE - the alias count
 
 // =============================================================================
 // Test: Catalog Lookup
@@ -44,7 +45,6 @@ void test_catalog_lookup_by_name() {
 void test_catalog_count_and_iteration() {
     size_t count = consoleCatalogGetCount();
     TEST_ASSERT_GREATER_THAN(0, count);
-    TEST_ASSERT_EQUAL_INT(217, count);  // Registry has 217 entries (#347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home, #442 servo.action.puppet-part and the five take rows, #451 dome.config.stand-down, #447 sound.action.play-track-happy, -play-next and -play-previous, #471 system.status.hosted-link, #472 dome.api.get-sequence-pins and dome.action.pin-sequence; #413 retired aux.config.led-pin)
 
     // Verify we can iterate all entries
     size_t count_via_api = 0;
@@ -98,14 +98,34 @@ void test_catalog_availability_flags() {
     TEST_ASSERT_NOT_NULL(hostedReset);
     TEST_ASSERT_FALSE(hostedReset->available_on_board);
 
-    // ...and it is the ONLY off-board row in this build. A second one appearing
-    // means a registry row gained a board_capability without anyone noticing,
-    // which silently removes an operation from a board.
+    // ...and the off-board set in this build is exactly the PA_CAP_HOSTED_WIFI
+    // rows, named. A row that gains a board_capability without anyone noticing
+    // silently removes an operation from a board, so it fails here by name; a
+    // row leaving the set fails here too. Update this list only together with
+    // the row's board_capability in docs/action-registry.yaml.
+    static const char* const kOffBoard[] = {
+        "system.action.reboot-wifi-module",
+        "system.status.hosted-link",
+    };
+    const size_t kOffBoardCount = sizeof(kOffBoard) / sizeof(kOffBoard[0]);
+
     int offBoard = 0;
     for (size_t i = 0; i < count; ++i) {
-        if (!entries[i].available_on_board) offBoard++;
+        if (entries[i].available_on_board) continue;
+        offBoard++;
+
+        bool named = false;
+        for (size_t r = 0; r < kOffBoardCount; ++r) {
+            if (strcmp(kOffBoard[r], entries[i].name) == 0) {
+                named = true;
+                break;
+            }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(named, entries[i].name);
     }
-    TEST_ASSERT_EQUAL_INT(1, offBoard);
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)kOffBoardCount, offBoard,
+                                  "a named off-board row came back on, or a new row went off - "
+                                  "update this list together with its board_capability");
 
     // The unrelated capability still resolves the other way in the same build:
     // PA_CAP_DRIVE_BACKEND_HOVERBOARD is 1 on artoo-esp32, so drive rows are on.
@@ -170,8 +190,8 @@ void test_help_text_offset_and_length() {
 // =============================================================================
 
 void test_aliases_null_terminated() {
-    // Registry has 38 rc_token entries that map to aliases.
-    // Others have NULL aliases. All alias arrays are NULL-terminated.
+    // An entry with an rc_token has it as its one alias; the others have NULL
+    // aliases. All alias arrays are NULL-terminated.
     size_t count = 0;
     const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
 
@@ -191,7 +211,10 @@ void test_aliases_null_terminated() {
             TEST_ASSERT_GREATER_THAN(0, alias_idx);  // At least one alias before NULL
         }
     }
-    TEST_ASSERT_EQUAL_INT(39, aliases_count);  // Exactly 39 rc_token entries
+    // Every rc_token is an RC-bindable action, and every RC-bindable action is
+    // one ACTION_REGISTRY[] row (make check-action-drift holds the registry to
+    // both), so the two tables count the same rows.
+    TEST_ASSERT_EQUAL_INT((int)ACTION_REGISTRY_SIZE, aliases_count);
 }
 
 // =============================================================================
