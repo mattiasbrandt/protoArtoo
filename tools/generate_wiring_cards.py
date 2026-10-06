@@ -23,8 +23,9 @@ finds none; it never asks which board it is on. Both files are this generator's,
 so the empty one cannot quietly gain markup.
 
 WHAT A CARD IS, AND WHAT IT IS NOT. The Component Registry id is the key
-(the product's `id`), and only a `supported` product's card is generated: a roadmap product cannot be fitted, so Wiring could never show its
-card and the image would pay for text nobody reads. A card carries no pin of
+(the product's `id`), and only a `supported` product's card is generated: a
+roadmap product cannot be fitted, so Wiring could never show its card and the
+image would pay for text nobody reads. A card carries no pin of
 any board. Pins are per board and a card is per product, so the page puts the
 running firmware's own answer beside each card (data/wiring.js).
 
