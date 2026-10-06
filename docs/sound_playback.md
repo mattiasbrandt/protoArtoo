@@ -560,6 +560,6 @@ Configuration; Maintenance shows the sound serial link's state.
 3. [CHIRP Audio Trigger GitHub](https://github.com/joymonkey/CHIRP)
 4. [R2D2 Sounds — Printed Droid](https://www.printed-droid.com/kb/r2d2-sounds)
 5. [DY-SV5W — Arduino Forum](https://forum.arduino.cc/t/how-to-use-dy-sv5w-mp3-player/1218247)
-6. [DY-SV5W spec sheet](spec-sheets/dy-sv5w-sound.md) — this project's protocol and hardware research for the DY-SV5W
-7. [MP3 Trigger spec sheet](spec-sheets/mp3-trigger-sound.md) — protocol, card layout, electricals, and what the driver actually sends
+6. [DY-SV5W spec sheet](spec-sheets/dy-sv5w-sound.md) — protocol and hardware facts for the DY-SV5W
+7. [MP3 Trigger spec sheet](spec-sheets/mp3-trigger-sound.md) — protocol, card layout and electricals
 8. [DFPlayer Mini spec sheet](spec-sheets/dfplayer-mini-sound.md) - on the Roadmap
