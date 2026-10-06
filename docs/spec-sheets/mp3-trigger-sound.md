@@ -1,149 +1,41 @@
-# MP3 Trigger Spec Sheet (SparkFun WIG-13720, registry token `mp3trigger_serial`)
+# MP3 Trigger Spec Sheet (SparkFun WIG-13720)
 
-Working spec for the **SparkFun MP3 Trigger**, the **Sound** lineup member that
-the astromech hobby standardised on ([#392](https://github.com/mattiasbrandt/protoArtoo/issues/392),
-minted from [#303](https://github.com/mattiasbrandt/protoArtoo/issues/303) and
-[#316](https://github.com/mattiasbrandt/protoArtoo/issues/316)), reached over the
-Component Protocol the registry calls `mp3trigger_serial`.
+The **SparkFun MP3 Trigger** is a microSD MP3 player board designed by
+Robertsonics, with eighteen trigger inputs and a one- and two-byte serial command
+set. The astromech hobby standardised on it: MarcDuino is built around it, and
+the 25-track sound banks every R2 sound pack ships in are its convention.
 
 Research date 2026-09-12. Every command byte, electrical value and default below
-was read this session from the **MP3 Trigger v2 User Guide PDF** (downloaded from
+was read from the **MP3 Trigger v2 User Guide PDF** (downloaded from
 robertsonics.com and read in full, all nine pages), from **SparkFun's own Eagle
 schematic** (cloned from `github.com/sparkfun/MP3_Trigger`), from the SparkFun
-v2.4 hookup guide, from this repository's driver, tests and defaults, or from the
-astromech projects on this disk. Claims that could not be sourced are marked
-`UNKNOWN` with the artefact or bench test that would settle them.
-
-> [!NOTE]
-> **Volume map (#396, 2026-09-13):** the operator's 0-30 slider maps onto the
-> vendor's audible 0-64 of the inverted register, not the full 0-255.
-> `nativeVol = (30 - vol) * 64 / 30`. Shipped default `audioVolume = 20` is
-> native **21**. A field measurement (AstroPixelsPlus) puts the floor at 100
-> rather than 64; the grill chose the vendor ceiling. Community reports can
-> tighten it; we do not have this module on the bench.
-
-> [!NOTE]
-> **Play-state, RX and picker (#396, 2026-09-15):** play-state follows
-> unsolicited `'X'` / `'x'` / `'E'`; `readLine()` skips those bytes so they
-> cannot fail a live S0/S1 query; `begin()` and `serviceRx()` do not take
-> UART2 (GPIO-sampled RX on artoo-esp32, dedicated UART3 on FireBeetle 2).
-> The Sound page names the 3.3 V jumper, the 9600 card file, a missing clip,
-> and a 254/255 range. Selecting the member is `POST /api/config
-> soundMember=mp3_trigger`; Setup does not pick the product. Component Picker
-> cards (#369) are still to come; `mp3_trigger.webp` already ships in the
-> default asset set.
+v2.4 hookup guide, or from the astromech projects that drive it. Claims that
+could not be sourced are marked `UNKNOWN` with the artefact or bench test that
+would settle them.
 
 > [!WARNING]
 > **The chip is a VS1063.** SparkFun's schematic names part `U7` as
 > `deviceset="VS1063" device="SMD" value="VS1063"`, annotated *"VLSI VS1063 audio
-> codec IC"*. Comments in this repository that said VS1053 were corrected
-> (Section 14.1). Nothing functional depends on the distinction -- the inverted
-> volume register is the same across the VS10xx family -- but a developer
-> copying from the header should see VS1063.
+> codec IC"*. Several secondary sources say VS1053. Nothing functional depends on
+> the distinction -- the inverted volume register is the same across the VS10xx
+> family -- but a reader chasing a datasheet should chase the right one
+> (Section 2.2).
 
 > [!IMPORTANT]
-> **The SparkFun SKU is WIG-13720, not DEV-13720.** Comments and
-> `docs/sound_playback.md` that said DEV-13720 were corrected (Section 14.2).
-> SparkFun's own repository README links `sparkfun.com/products/13720` as
-> *"MP3 Trigger (WIG-13720)"*.
-
-> [!NOTE]
-> **This part ships in every image and has never been run on our hardware.**
-> `docs/sound_playback.md:56` is the honest line -- *"Implemented -- hardware
-> validation pending"* -- and it is the difference between this sheet and
-> [`dy-sv5w-sound.md`](dy-sv5w-sound.md), which has a validation record going back
-> to 2026-03-22. Everything in Sections 11-13 is verified on a laptop through the
-> `AudioSerialIO` seam. Nothing here has made a sound.
-
-## Where this sits in the lineup
-
-The **Sound** category holds four products, and a builder picks one:
-
-| Product | What it is | Status | Registry value |
-| --- | --- | --- | --- |
-| DY-SV5W | binary-frame voice module with a 5 W amplifier | `supported`, **default** | 18 |
-| **MP3 Trigger** | **SparkFun/Robertsonics VS1063 board, 18 trigger pins** | **`supported`** | **19** |
-| CHIRP Audio Trigger | RP2350 multi-stream mixer, astromech-specific | `supported` | 20 |
-| DFPlayer Mini | hardware-decoded single-stream player with an amplifier | `roadmap` | 21 |
-
-[`dy-sv5w-sound.md`](dy-sv5w-sound.md) Section 16 sets out how the four differ in
-kind, and this sheet does not repeat that table. What it adds is the reason this
-particular row exists at all.
-
-**The MP3 Trigger is the hobby's common denominator, and that is its whole
-argument.** `docs/goal.md` records it in the landscape survey as the audio module
-of **three** other projects -- Padawan360, ShadowMD and ShadowRC (`:133-135`) --
-and MarcDuino, the dominant R2 control system, is built around it. The 25-track
-sound banks every R2 sound pack ships in (Section 9.1) are *its* convention. A
-builder arriving from any of those systems already owns the board, already owns
-the card, and already knows the numbers.
-
-So the DY-SV5W is the module protoArtoo recommends and the MP3 Trigger is the
-module a builder **already has**. Supporting it is a migration path, not a
-preference.
-
-## 0. Authority Contract
-
-This document is an implementation authority for the MP3 Trigger serial protocol
-and for the board's behaviour as protoArtoo uses it.
-
-Authority order for agent decisions:
-
-1. **The MP3 Trigger v2 User Guide** for the protocol, the initialization file,
-   the electricals and the card contract. It is Robertsonics' own document, it is
-   the source SparkFun's hookup guide reproduces, and every command in Section 7
-   was read from it this session.
-2. **SparkFun's published schematic** for what is on the board. It settled the
-   decoder question against four secondary sources (Section 2.2).
-3. This document.
-4. **Other implementations** -- CHIRP's `mp3_compat.cpp`, AstroPixelsPlus's
-   `MarcduinoSound.h`, and our own driver -- as evidence of practice. Section 13
-   names two places they disagree with each other.
-5. Community documentation (Section 13.3), for the operator-visible conventions
-   the vendor never wrote down.
-
-If references conflict:
-
-- Prefer the User Guide over any implementation for **what the board does**.
-- Prefer the schematic over any prose for **what is on the board**.
-- Prefer a **measurement** over the User Guide where one exists and is
-  attributed. The volume-audibility floor is the live example: the guide says 64,
-  a builder who measured says 100, and Section 8.3 reports both rather than
-  choosing.
-- If still unresolved, mark `UNKNOWN` and stop dependent work.
-
-Agent requirements when using this document:
-
-- MUST NOT map the operator volume slider onto the full 0-255 register. The
-  vendor-audible span is 0-64; #396 is the decision (Section 8.3).
-- MUST NOT treat `'E'` as a hardware error. It means **the requested track does
-  not exist** (Section 7.4). Our own comment says otherwise and is wrong.
-- MUST NOT assume a status response is terminated. The guide describes an
-  **18-byte version string** with no terminator, and `readLine()` waits for a
-  `\n` that may never arrive (Section 7.3, Open Item 2).
-- MUST NOT assume the next bytes on the wire are the reply. `'X'`, `'x'` and
-  `'E'` arrive unsolicited, at any time (Section 7.4).
-- MUST NOT send a track number above 255. The `'t'` argument is one byte and
-  `256` casts to `0x00` (Section 8.2).
-- MUST NOT assume the blank stop track is 254 everywhere. It is 254 here and in
-  CHIRP, and **252** in AstroPixelsPlus (Section 8.4).
-- MUST NOT change the baud rate expectation without the card. 9600 is **not** the
-  factory default; it requires `MP3TRIGR.INI` in the card root (Section 6).
-- MUST state that nothing in this sheet is hardware-verified on our droid.
+> **The SparkFun SKU is WIG-13720, not DEV-13720.** SparkFun's own repository
+> README links `sparkfun.com/products/13720` as *"MP3 Trigger (WIG-13720)"*. A
+> wrong part number is how a builder buys the wrong board.
 
 ## 1. Scope
 
 Covers the board and what is on it, the electrical contract, the serial protocol
 in full, the SD-card and file-naming contract, the initialization file, the
-trigger-pin hardware path we do not use, what protoArtoo's driver actually sends,
-the capability word and what the operator sees, how the astromech hobby uses the
-board, and the defects this research found in our own source.
+trigger-pin hardware path, and how the astromech hobby uses the board.
 
 Does not cover: the VS1063's own SCI register set below the `'v'` command, the
 PSoC bootloader beyond Section 3.4, the Qwiic MP3 Trigger (a different product --
 I2C, WT2003S decoder, and discontinued), the WAV Trigger and Tsunami successors
-beyond Section 2.4, or MarcDuino's own serial protocol (that is
-`docs/marcduino_commands.md`).
+beyond Section 2.4, or MarcDuino's own serial protocol.
 
 ## 2. What you are actually buying
 
@@ -167,15 +59,13 @@ beyond Section 2.4, or MarcDuino's own serial protocol (that is
 | Firmware update | microSD bootloader, no programmer needed (Section 3.4) |
 
 Board dimensions, weight and mounting-hole pattern: `UNKNOWN`. Neither the user
-guide nor the hookup guide states them, and no distributor page read this session
-carried a mechanical drawing. Settled by measuring a board, or by opening the
-`.brd` file in `github.com/sparkfun/MP3_Trigger/Hardware`.
+guide nor the hookup guide states them, and no distributor page read carried a
+mechanical drawing. Settled by measuring a board, or by opening the `.brd` file
+in `github.com/sparkfun/MP3_Trigger/Hardware`.
 
 ### 2.2 The decoder is a VS1063
 
-Comments in `src/drivers/audio_mp3trigger.cpp` and `include/audio_mp3trigger.h`
-that named the **VS1053** were corrected (Section 14.1). SparkFun's own Eagle
-schematic is the source:
+SparkFun's own Eagle schematic is the source:
 
 ```xml
 <part name="U7" library="SparkFun-DigitalIC" deviceset="VS1063" device="SMD" value="VS1063"/>
@@ -183,29 +73,26 @@ schematic is the source:
 
 and the sheet carries the annotation *"VLSI VS1063 audio codec IC"*. (`VS1033D`
 also appears in that file, but only as the name of a reused library *symbol*, not
-as a fitted part.)
+as a fitted part.) Five secondary sources, reseller listings and community code
+comments among them, say VS1053.
 
 > [!NOTE]
 > **Nothing functional turns on this.** The `'v'` command's semantics -- one byte,
 > `0x00` loudest, ascending toward silence -- are the VS10xx `SCI_VOL` convention
-> and identical across VS1033, VS1053 and VS1063. The correction matters because
-> the sheet's whole method is that a name in a comment is a fact, not a guess, and
-> because a reader chasing a datasheet should chase the right one. Fixed in
-> Section 14.1.
+> and identical across VS1033, VS1053 and VS1063. It matters because a reader
+> chasing a datasheet should chase the right one.
 
 ### 2.3 Availability
 
 WIG-13720 is still listed by SparkFun and carried by Digi-Key, Mouser and the
-usual distributors as of this research date, at roughly **USD 50**, which makes it
-the most expensive member of the Sound family by an order of magnitude -- the
-DY-SV5W is a few pounds. Two related SparkFun products are **not** this board and
-should not be bought by mistake:
+usual distributors as of this research date, at roughly **USD 50**. Two related
+SparkFun products are **not** this board and should not be bought by mistake:
 
 - **Qwiic MP3 Trigger** -- I2C, WT2003S decoder, on-board amplifier, and
   **discontinued**. A different protocol entirely; nothing in this sheet applies.
 - **WAV Trigger / Tsunami** -- the Robertsonics successors (Section 2.4).
 
-### 2.4 The successors, and why a droid might want one
+### 2.4 The successors
 
 Robertsonics' own line moved on, and SparkFun points polyphonic users at the
 newer boards:
@@ -216,15 +103,10 @@ newer boards:
 | WAV Trigger | up to **14** stereo | uncompressed WAV | ~8 ms trigger latency |
 | Tsunami | **32** mono / 18 stereo | uncompressed WAV | 8 output channels |
 
-**This is the same axis CHIRP sits on.** `GLOSSARY.md` defines a **Background Track** as
-something that exists *"where the fitted module mixes"*, and names the MP3 Trigger
-and the DY-SV5W as *"the single-track modules it contrasts itself with"*. A droid
-that wants a Background Track under a performance needs CHIRP, a WAV Trigger, or a Tsunami --
-not this board. Neither Robertsonics successor is in protoArtoo's lineup and
-neither is proposed here; they are recorded because a builder asking *"can I have
-music under the screams"* has to be told no, and told what would.
+The MP3 Trigger plays one track at a time. Music under another sound needs a
+board that mixes, such as a WAV Trigger or a Tsunami.
 
-## 3. The hardware paths we do not use
+## 3. The hardware paths beside the serial port
 
 ### 3.1 Eighteen trigger pins
 
@@ -238,26 +120,26 @@ the MP3 Trigger v2 looks to see if any trigger inputs are active, and will
 automatically start another track if so ... the MP3 Trigger v2 will always start
 the next higher trigger track, wrapping back to 1 after 18."*
 
-protoArtoo uses none of this. **But a builder's board may still be wired for it**,
-and a jumpered trigger will start tracks the droid never asked for. Section 13.3's
+A board under serial control may still be wired for its trigger pins, and a
+jumpered trigger starts tracks the controller never asked for. Section 8.3's
 false-trigger problem is the same wiring, misbehaving.
 
-### 3.2 Quiet Mode, which would let the droid read those pins
+### 3.2 Quiet Mode, which reports the pins over serial
 
 `'Q'` + `'1'` decouples the trigger pins from playback: instead of starting
 tracks, an activated trigger makes the board send `'M'` followed by a **3-byte
 bitmask** (TRIG01-08, TRIG09-16, TRIG17-18). *"Quiet Mode is off by default and is
 not preserved through a power cycle."*
 
-Recorded, not implemented. It would turn the sound module into an 18-input GPIO
-expander reporting over the same wire -- and it would also inject binary `'M'`
-frames into a response stream our parser reads as ASCII lines (Section 7.4).
+It turns the board into an 18-input expander reporting over the same wire, and
+it puts binary `'M'` frames into a response stream that is otherwise ASCII
+(Section 6.4).
 
 ### 3.3 The navigation switch
 
 Left is previous track, right is next, centre is start/stop -- and the `'R'`,
 `'F'` and `'O'` serial commands are documented as doing *"the same function"*.
-Useful for an operator testing a card without a droid attached.
+Useful for testing a card without a controller attached.
 
 ### 3.4 The bootloader
 
@@ -279,85 +161,45 @@ do it!"*
 A builder debugging silence should read the LED before reading a log. Three short
 blinks and no sound is a wiring or baud problem; anything else is a card problem.
 
-## 4. Project Integration
-
-- **[`src/drivers/audio_mp3trigger.cpp`](../../src/drivers/audio_mp3trigger.cpp)**
-  and
-  **[`include/audio_mp3trigger.h`](../../include/audio_mp3trigger.h)**
-  -- the driver. Section 8 is about these two files. GPIO-sampled RX lives in
-  `src/drivers/audio_soft_uart_rx.cpp`.
-- **[`include/audio_driver.h`](../../include/audio_driver.h)** -- the seam.
-  Lines 92-97 are the capability vocabulary; `:120-122` is the 0-30 volume
-  contract Section 8.3 argues we honour too literally.
-- **[`src/drivers/audio_soft_uart_tx.h`](../../src/drivers/audio_soft_uart_tx.h)**
-  -- the bit-bang TX every sound module shares. `SOFT_UART_BIT_US = 104`.
-- **[`include/component_registry.inc`](../../include/component_registry.inc)**
-  `:168-171` -- row 19, and the one declaration of this module's capability word.
-- **[`src/tasks/audio_sound_member.cpp`](../../src/tasks/audio_sound_member.cpp)**
-  -- `kSoundMemberDrivers` binds `"mp3_trigger"` to the driver instance, with a
-  `static_assert` that fails the build if a selectable member has no driver.
-- **[`src/tasks/audio_task.cpp`](../../src/tasks/audio_task.cpp)** --
-  `serviceRx()` every loop (no UART claim); Poll and auto-query still wrap
-  `queryModuleState()` in `audioUartClaim()`. `begin()` no longer opens UART2
-  (Section 14.5).
-- **[`include/config.h`](../../include/config.h)** -- `PIN_AUDIO_TX` /
-  `PIN_AUDIO_RX` / `UART_PORT_AUDIO` per Board Variant, and
-  `PA_CAP_DEDICATED_AUDIO_UART`.
-- **[`include/audio_dollar_parser.h`](../../include/audio_dollar_parser.h)**
-  `:42-55` -- the named-track defaults, which are **this module's** community
-  numbers (Section 9.2).
-- **[`docs/sound_playback.md`](../sound_playback.md)** `:238-320` -- the
-  operator-facing version of this sheet's Sections 6-9.
-- **[`dy-sv5w-sound.md`](dy-sv5w-sound.md)** -- the peer sheet. Its Section 16
-  is the four-member comparison this one does not repeat; its Section 17.5 is a
-  defect this module shares (Section 14.5).
-- **ADR 0027** (toggles staged at reboot), **ADR 0042** (Component Families
-  selected at runtime -- `:45` names this module's pin, `:174-178` is why no
-  Board Capability Gate excludes it).
-
-## 5. Sources Checked
+## 4. Sources Checked
 
 | Source | How it was taken | What it gave |
 | --- | --- | --- |
-| **MP3 Trigger v2 User Guide, 2012.02.01** | `curl` from `robertsonics.com`, `pdftotext -layout`, **all nine pages read** | **The protocol.** Every command in Section 7, the initialization file grammar, the LED codes, the trigger-pin behaviour, the bootloader, the electricals, and the 18-byte version string that Open Item 2 is about |
+| **MP3 Trigger v2 User Guide, 2012.02.01** | `curl` from `robertsonics.com`, `pdftotext -layout`, **all nine pages read** | **The protocol.** Every command in Section 6, the initialization file grammar, the LED codes, the trigger-pin behaviour, the bootloader, the electricals, and the 18-byte version string that Open Item 1 is about |
 | **SparkFun MP3 Trigger hardware repository** | `git clone github.com/sparkfun/MP3_Trigger`, Eagle `.sch` parsed | **The decoder question, settled.** `value="VS1063"` and *"VLSI VS1063 audio codec IC"* against five secondary sources saying VS1053. Also confirmed WIG-13720 from the README |
 | SparkFun v2.4 Hookup Guide | fetched and read | Confirmed the command list, the 3.3-5 V TTL level, the trigger pins, the LED codes and `MP3TRIGR.INI` against the guide -- two independent readings, no contradictions |
-| **Printed Droid knowledge base** | fetched and read | **The two field problems no vendor document mentions**: false triggers on long cables and the 1 kOhm fix, and the audio output's DC offset (Section 13.3) |
-| `~/Documents/GitHub/CHIRP/.../mp3_compat.cpp` | read on disk | **CHIRP speaks this protocol.** Its parser, its 254 stop track, and the two commands it does *not* implement (Section 13.1) |
-| `~/Documents/GitHub/AstroPixelsPlus/MarcduinoSound.h` | read on disk | The same volume formula we use -- and a different blank track (**252**), and the measured audibility floor of **100** that Section 8.3 turns on |
-| `~/Documents/GitHub/ShadowMD`, `~/Documents/GitHub/Padawan360_mega_maestro_DYSV5W` | read on disk | Neither drives this board directly today: ShadowMD delegates to MarcDuino over `$8x`, and the Padawan360 on this disk is a port **away** from the MP3 Trigger with its calls left commented out |
-| protoArtoo driver, tests, registry, config defaults | read on disk | Sections 8-11, and the four findings in Section 15 |
-| protoArtoo docs | read on disk | `docs/sound_playback.md:238-320`, `docs/status.md:125-126`, `docs/goal.md:133-135`, `GLOSSARY.md:401` |
+| **Printed Droid knowledge base** | fetched and read | **The two field problems no vendor document mentions**: false triggers on long cables and the 1 kOhm fix, and the audio output's DC offset (Section 8.3) |
+| CHIRP `mp3_compat.cpp` | read from source | **CHIRP speaks this protocol.** Its parser, its 254 stop track, and the two commands it does *not* implement (Section 8.1) |
+| AstroPixelsPlus `MarcduinoSound.h` | read from source | A blank track of **252**, and the measured audibility floor of **100** that Section 6.6 turns on |
+| ShadowMD, Padawan360 (DY-SV5W port) | read from source | Neither drives this board directly today: ShadowMD delegates to MarcDuino over `$8x`, and the Padawan360 port moved **away** from the MP3 Trigger with its calls left commented out |
 
 **What did not survive checking.** A web research pass attributed to the hookup
 guide a *"~80 ms MP3 startup latency"*, a *"~100-500 ms gap between sequential
 tracks"* and a claim that *"SDXC cards may not mount"*. **None of those appear in
-either the user guide or the hookup guide** as read this session. They may be
-true -- MP3 frame padding is real, and the guide does bound the card at SDSC and
-SDHC -- but they are not sourced and are not stated as facts here. Open Item 5
-names the measurement.
+either the user guide or the hookup guide.** They may be true -- MP3 frame
+padding is real, and the guide does bound the card at SDSC and SDHC -- but they
+are not sourced and are not stated as facts here. Open Item 4 names the
+measurement.
 
 The same pass reported the decoder as a VS1063 citing a reseller listing, which
-turned out to be **right** and to contradict our own source. It also reported the
-board as *"currently available"* while marking one of its own SKUs retired; the
-SKU history in Section 2.1 is what the documents actually say, and no attempt is
-made here to reconcile SparkFun's retired-product pages into a clean timeline.
+turned out to be **right**. It also reported the board as *"currently
+available"* while marking one of its own SKUs retired; the SKU history in
+Section 2.1 is what the documents actually say, and no attempt is made here to
+reconcile SparkFun's retired-product pages into a clean timeline.
 
-## 6. Getting the wire to work
+## 5. Getting the wire to work
 
-### 6.1 The factory baud is 38400 and we speak 9600
+### 5.1 The factory baud is 38400
 
-This is the first thing that will not work. `docs/sound_playback.md:56` and the
-driver's own log message both say it, and it is worth stating as a rule rather
-than a note: **a board out of the box will not answer protoArtoo.**
-
-The fix is a file on the card, not a firmware setting. From the user guide:
+A board out of the box talks **38400**. A controller that talks anything else
+gets no answer until the card says otherwise. The fix is a file on the card, not
+a firmware setting. From the user guide:
 
 > The initialization file must be named **"MP3TRIGR.INI"** and must, like all the
 > mp3 files, be in the root directory. The file is optional. If it does not
 > exist, then the MP3 Trigger v2 defaults to normal operation at 38.4K baud.
 
-The minimum contents for protoArtoo are one line:
+For 9600 the file is one line:
 
 ```
 #BAUD 9600
@@ -372,18 +214,14 @@ enumerates them and nothing else is accepted. Parsing rules that bite:
 - every command starts with `#` **followed by a space**
 - comments are *not* allowed before the `*`
 
-`docs/sound_playback.md:246-248` currently defers this to *"the SparkFun MP3
-Trigger v2.4 Hookup Guide for the exact filename and format"*. It is written out
-above, and Section 14.4 puts it in that document.
+The init file's other commands change what a board does on its own: `#RAND N`
+excludes the first N tracks from the random-trigger function, and
+`#TRIG N, F, L` repurposes a trigger pin (Section 3.1). `#VOLM N` sets a power-on
+volume, and the guide's note on it is the one Section 6.6 turns on: *"Default is
+full volume = 0. Useful range is 0 to 64, with values above 64 being
+inaudible."*
 
-The init file's other two commands are not protoArtoo's business but change what
-a builder's board does on its own: `#RAND N` excludes the first N tracks from the
-random-trigger function, and `#TRIG N, F, L` repurposes a trigger pin (Section
-3.1). `#VOLM N` sets a power-on volume, and the guide's note on it is the one
-Section 8.3 turns on: *"Default is full volume = 0. Useful range is 0 to 64, with
-values above 64 being inaudible."*
-
-### 6.2 The card contract
+### 5.2 The card contract
 
 | Rule | Value |
 | --- | --- |
@@ -399,34 +237,29 @@ The hot-swap rule is an operator fact, not a footnote. From the guide: *"the
 microSD media is only initialized during power up. So whenever the card is
 changed or updated, be sure to power cycle the MP3 Trigger v2 after installing
 the card."* **Changing a droid's sounds means power-cycling the sound module**,
-and a droid whose module is powered from the same rail as everything else means
-power-cycling the droid.
+and a module powered from the same rail as everything else means power-cycling
+the droid.
 
-### 6.3 Levels, and the one thing this sheet cannot tell you
+### 5.3 Levels, and the one thing this sheet cannot tell you
 
 The serial port is *"full duplex 3.3-5V serial TTL"* by the guide's own words, and
 the trigger inputs *"support voltage levels of either 5V or 3.3V"*. So the
-**module accepts 3.3 V from an ESP32 on its RX**, and protoArtoo's bit-bang TX is
-fine as it stands.
+**module accepts 3.3 V on its RX**, and a 3.3 V controller can talk to it
+directly.
 
-The direction that matters is the other one. The module's **TX drives our RX**,
-and `PIN_AUDIO_RX` on both Board Variants is an ESP32 pin that is **not 5 V
-tolerant**. Whether this board's TX idles at 3.3 V or at 5 V depends on which
-supply the jumper selects, and **no document read this session states the output
+The direction that matters is the other one: the module's **TX** into the
+controller's RX. Whether this board's TX idles at 3.3 V or at 5 V depends on
+which supply the jumper selects, and **no document read states the output
 swing**.
 
 > [!WARNING]
 > **`UNKNOWN`, and it is the one unknown on this sheet that could damage
-> hardware.** Neither `include/config.h` nor `docs/pin_map.md` carries a
-> level-shifting note for the audio lane, and this module is the only Sound
-> member that can be run from a 5 V rail. The astromech simulator on this disk
-> states the constraint in the general case -- *"Nothing may send 5 V back into an
-> ESP32 pin -- none of these are 5 V tolerant"* -- without answering it for this
-> board. **Measure the module's TX idle voltage before connecting it to
-> `PIN_AUDIO_RX`**, or power the module from the jumper-selected regulated 3.3 V
-> and take the level question off the table. Open Item 3.
+> hardware.** An ESP32 pin is not 5 V tolerant, and this module can be run from
+> a 5 V rail. **Measure the module's TX idle voltage before connecting it to a
+> 3.3 V controller's RX**, or power the module from the jumper-selected
+> regulated 3.3 V and take the level question off the table. Open Item 2.
 
-## 7. The serial protocol (normative)
+## 6. The serial protocol (normative)
 
 Full duplex, **8 bits, 1 start, 1 stop, no parity, no flow control**. Commands are
 never echoed. The whole command set is one or two bytes:
@@ -439,7 +272,7 @@ never echoed. The whole command set is one or two bytes:
 That rule is the whole grammar, and it is worth internalising: **case tells you
 how to encode the argument.**
 
-### 7.1 The command table
+### 6.1 The command table
 
 | Command | Bytes | First | Second | Effect |
 | --- | --- | --- | --- | --- |
@@ -453,10 +286,16 @@ how to encode the argument.**
 | **Status request** | 2 | **`'S'` `0x53`** | `'0'` or `'1'` | version string, or total track count |
 | Quiet mode | 2 | `'Q'` `0x51` | `'0'` or `'1'` | trigger pins report over serial instead of playing |
 
-Bolded rows are the four protoArtoo uses. There is **no checksum, no framing byte
-and no acknowledgement** -- a play command is two bytes and silence.
+Bolded rows are the four a serial controller uses: play, volume and the two
+status queries. There is **no checksum, no framing byte and no acknowledgement**
+-- a play command is two bytes and silence. Nothing in the user guide requires a
+gap between commands, but a SparkFun forum thread reports the board needing
+10-100 ms to settle after an `'X'` (Open Item 3).
 
-### 7.2 `'t'` and `'p'` address different things
+The `'t'` argument is one byte: a track number above 255 cannot be sent, and a
+controller that casts 256 to a byte sends `0x00`.
+
+### 6.2 `'t'` and `'p'` address different things
 
 This distinction is easy to miss and it is the module's best feature:
 
@@ -464,9 +303,9 @@ This distinction is easy to miss and it is the module's best feature:
 - **`'p'` addresses the directory position.** Track 42 is whatever the card
   enumerates 42nd.
 
-protoArtoo uses `'t'`. Section 9.1 is why that matters.
+Section 7.1 is why that matters.
 
-### 7.3 The two status responses, and the terminator that may not exist
+### 6.3 The two status responses, and the terminator that may not exist
 
 | Query | Response | Example |
 | --- | --- | --- |
@@ -475,24 +314,14 @@ protoArtoo uses `'t'`. Section 9.1 is why that matters.
 
 The guide describes the first as *"an 18-byte version string: e.g. `=MP3 Trigger
 v2.50`"*. **That example is exactly 18 characters.** If the count is literal,
-the response carries **no CR, no LF and no terminator of any kind** -- and
-`readLine()` (Section 8.1) waits for a `'\n'` that never arrives, returning only
-when its 500 ms timeout expires.
+the response carries **no CR, no LF and no terminator of any kind**, and a
+reader that waits for a line ending waits until its own timeout. Community
+implementations assume `"=MP3 Trigger v2.NN\r\n"` and `"=NNN\r\n"`, sourced from
+each other rather than from the guide. `UNKNOWN` which is right on real
+firmware; Open Item 1 is a capture, and it is ten minutes with a USB-serial
+adapter and a terminal.
 
-> [!IMPORTANT]
-> **If that reading is right, every status query costs its full 500 ms.** The
-> parse still succeeds -- the accumulated text is intact and `line[0] == '='` --
-> so nothing fails, it is just slow: `begin()` spends about **2 s** (1000 ms boot
-> wait plus two timed-out queries) and each `queryModuleState()` about **1 s**,
-> which is exactly the *"blocking up to ~1 s"* the driver already documents as
-> its worst case. The difference is that it would be the **only** case.
->
-> Our driver's comments claim `"=MP3 Trigger v2.NN\r\n"` and `"=NNN\r\n"`,
-> sourced from other implementations rather than from the guide. `UNKNOWN` which
-> is right on real firmware; Open Item 2 is a capture, and it is ten minutes with
-> a USB-serial adapter and a terminal.
-
-### 7.4 What the module says when nobody asked
+### 6.4 What the module says when nobody asked
 
 | Byte | Meaning |
 | --- | --- |
@@ -503,419 +332,119 @@ when its 500 ms timeout expires.
 
 > [!CAUTION]
 > **`'E'` means the track is missing, not that the hardware is broken.** The
-> guide: *"'E': When a requested track doesn't exist (error)."* The driver
-> records it as `missingTrack` and the Sound page names the clip (#396). The
-> distinction is *"your SD card does not have track 126"* versus *"your sound
-> board has failed"*.
+> guide: *"'E': When a requested track doesn't exist (error)."* The distinction
+> is *"your SD card does not have track 126"* versus *"your sound board has
+> failed"*.
 
-**These arrive at any time, including between a query and its reply.**
-`readLine()` skips leading `'X'` / `'x'` / `'E'` (and other non-`'='` noise)
-and hands them to `noteUnsolicited()`, so a finish byte in the drain-to-reply
-window updates play-state instead of failing a live query (#396).
+**These arrive at any time, including between a query and its reply.** A reader
+that takes the next bytes on the wire as the reply to its query fails on a track
+that happens to finish in that window; skip leading `'X'` / `'x'` / `'E'` until
+the `'='`.
 
-## 8. What protoArtoo's driver actually sends
+The protocol has **no play-state query and no current-track query**. These
+three bytes are the only play-state the module ever reports, and the last track
+sent is the only current track a controller can know.
 
-### 8.1 The four `AudioDriver` methods, and the two helpers under them
+### 6.5 There is no stop command, and the community does not agree on the blank track
 
-| Call | Bytes on the wire | Source |
-| --- | --- | --- |
-| `playTrack(n)` | `'t'`, `(uint8_t)n` | `audio_mp3trigger.cpp:185-186` |
-| `stop()` | `'t'`, `0xFE` | `audio_mp3trigger.cpp:197-198` |
-| `setVolume(v)` | `'v'`, `(30 - v) * 64 / 30` | `audio_mp3trigger.cpp` `setVolume()` (#396) |
-| `begin(v)` | `'S'`,`'0'` then `'S'`,`'1'` then `setVolume(v)` | `audio_mp3trigger.cpp:132`, `:148`, `:160` |
-| `queryModuleState()` | `'S'`,`'0'` then `'S'`,`'1'` | `audio_mp3trigger.cpp:243`, `:253` |
-
-Two private helpers carry all the RX work:
-
-- **`readLine()`** (`:79-95`) -- accumulates until `'\n'` or timeout, discards
-  `'\r'`, NUL-terminates. Buffer is `char line[48]` at both call sites, so 47
-  usable characters. Sleeps 1 ms between polls, which yields Core 0.
-- **`sendQuery()`** (`:98-105`) -- drains stale RX, writes the two command bytes,
-  reads one line. Every query in the driver goes through it.
-
-The acceptance test is the same four times: `if (n > 1 && line[0] == '=')`. Two
-things follow. A one-character response is rejected even if it is `'='`, and
-**any** `'='`-prefixed line counts as a live link -- the driver never checks that
-an S0 reply actually says *"MP3 Trigger"*.
-
-**There is no inter-command delay.** The DY-SV5W driver posts 100 ms after every
-frame and a test asserts it; this driver returns immediately after two
-`writeByte()` calls. Nothing in the user guide requires a gap, but a SparkFun
-forum thread reports the board needing 10-100 ms to settle after an `'X'`.
-`UNKNOWN` whether back-to-back commands can be dropped; Open Item 4.
-
-`begin()` **always returns `true`** (`:163`), link or no link. That is correct
-against the interface contract -- *"false only for a transient failure that should
-be retried"* -- and it means a missing module is reported through status, never
-through a failed init.
-
-### 8.2 The track guard, and why 256 is the interesting number
-
-```c
-if (track == 0)   { return; }                 // interface contract: silently ignore
-if (track > 255)  { /* log */ return; }       // 't' takes one byte
-m_lastTrack = track;
-```
-
-The comment at `:170-173` states the reason plainly: `(uint8_t)256` is `0x00`, so
-without the guard a track number one past the ceiling would play **a different
-track**, silently. `test_audio_mp3trigger.cpp:130` asserts that overflow directly,
-and `test_audio_io_seam.cpp:270-271` asserts the real driver emits **zero bytes**
-for `playTrack(256)`.
-
-`m_lastTrack` is assigned **before** the bytes go out, and `stop()` does not clear
-it. So `currentTrack` keeps naming the last track we asked for, after it has
-stopped -- which is what "last played" means and is worth knowing when reading the
-Sound page.
-
-### 8.3 Volume: the slider maps onto the vendor-audible 0-64 (#396)
-
-```c
-uint8_t nativeVol = (uint8_t)((uint32_t)(30u - vol) * MP3TRIGGER_VOL_AUDIBLE / 30u);
-```
-
-`MP3TRIGGER_VOL_AUDIBLE` is **64**. Direction is inverted (`0x00` loudest). The
-register still accepts 0-255; we do not send above 64.
-
-| `vol` | native |
-| --- | --- |
-| 30 | 0 (maximum) |
-| **20 (shipped default)** | **21** |
-| 15 | 32 |
-| 10 | 42 |
-| 0 | 64 (vendor floor) |
-
-Until #396 this mapped onto 0-255, so `vol` 0-18 was inaudible and the default
-was native 85. Two floors were on the table: the vendor's 64, and a field
-measurement of 100 (AstroPixelsPlus). The 2026-09-13 grill chose the vendor
-ceiling. Community reports can still tighten it; we do not have this module on
-the bench.
-
-`30u - vol` is **unsigned and unguarded**. AudioTask clamps to 0-30 before the
-call; a future caller that does not would underflow to a large `uint32_t`.
-Noted, not a live defect.
-
-### 8.4 `stop()` plays a track, and the community does not agree which one
-
-The MP3 Trigger has **no discrete stop command**. `'O'` toggles, which means its
-effect depends on a play state this protocol cannot report (Section 11.1). So
-every implementation stops by playing a silent file -- and picks a different one:
+`'O'` toggles, which means its effect depends on a play state this protocol
+cannot report (Section 6.4). So every implementation stops by playing a silent
+file -- and picks a different one:
 
 | Implementation | Blank track | Source |
 | --- | --- | --- |
-| **protoArtoo** | **254** | `MP3TRIGGER_STOP_TRACK`, `audio_mp3trigger.h:49` |
 | CHIRP compat layer | 254 | `mp3_compat.cpp` |
-| AstroPixelsPlus / Reeltwo | **252** | `MP3_EMPTY_SOUND`, `MarcduinoSound.h:53` |
+| AstroPixelsPlus / Reeltwo | **252** | `MP3_EMPTY_SOUND`, `MarcduinoSound.h` |
 
 > [!IMPORTANT]
-> **"Community standard" overstates it.** Our own comments call 254 *"the
-> community-standard blank track"* and name BetterDuino and SHADOW_MD; the
-> Reeltwo lineage uses 252 for the same purpose. Both are right for their own
-> card. What matters operationally is only this: **`254XXXX.MP3` must exist in
-> the root of the card in the droid**, or `stop()` produces an `'E'` and whatever
-> was playing keeps playing. That file ships in the common R2 sound packs, and a
-> builder who assembled a card by hand may not have it.
+> **There is no single community standard.** Both numbers are right for their own
+> card. What matters operationally is only this: **the blank track the
+> controller plays must exist in the root of the card**, or the stop produces an
+> `'E'` and whatever was playing keeps playing. `254XXXX.MP3` ships in the common
+> R2 sound packs, and a builder who assembled a card by hand may not have it.
 
-## 9. Track numbering, which is this module's real advantage
+### 6.6 Volume: the register is 0-255, the audible span is not
 
-### 9.1 It addresses the filename, and nothing else in the family does
+`'v'` takes one binary byte, inverted: `0x00` is loudest. The guide's `#VOLM`
+note puts the useful range at **0-64**, with values above 64 inaudible.
+AstroPixelsPlus, on the strength of its own measurement, maps its volume onto
+**0-100** instead. It is the one project that tested the audible floor and wrote
+the number down. Either way most of the register is silent, and a controller that
+maps a volume control onto the full 0-255 spends most of its travel on nothing.
+
+## 7. Track numbering, which is this module's real advantage
+
+### 7.1 It addresses the filename
 
 `'t'` plays the file whose name begins with the three digits you sent. Not the
 *n*th file, not the file the card happened to be written first -- the file that
 says `126` on the front.
 
-That is worth stating as a contrast, because the peer sheets both record the
-opposite problem. The DY-SV5W's index is **filesystem enumeration order**
-([`dy-sv5w-sound.md`](dy-sv5w-sound.md) Section 10.2), so a card rebuilt in a
-different order silently renumbers every sound in the droid. The DFPlayer has
-three addressing modes of which only two are stable
-([`dfplayer-mini-sound.md`](dfplayer-mini-sound.md) Section 9.1).
-
-**On an MP3 Trigger, copying the files again in any order changes nothing.** The
-card is self-describing, the numbers are visible in a file browser, and a builder
-can edit one sound without disturbing the rest. For a droid whose sound library
-is curated over years, that is the single most useful property this board has.
+**Copying the files again in any order changes nothing.** The card is
+self-describing, the numbers are visible in a file browser, and a builder can
+edit one sound without disturbing the rest. For a droid whose sound library is
+curated over years, that is the single most useful property this board has. A
+module that addresses by filesystem enumeration order renumbers every sound when
+a card is rebuilt in a different order.
 
 The costs of the same decision: **255 tracks, hard**, and no directories.
 
-### 9.2 protoArtoo's named tracks *are* this module's numbers
+### 7.2 The community's 25-track banks
 
-`include/audio_dollar_parser.h:42-55` carries the defaults, and they are the
-astromech community's MP3 Trigger banks:
+MarcDuino and the R2 sound packs number the card in banks of 25:
 
-| Tracks | Category | protoArtoo default that lands in it |
-| --- | --- | --- |
-| 001-025 | general | `AUDIO_TRACK_HAPPY = 3` |
-| 026-050 | chatty | -- |
-| 051-075 | happy | -- |
-| 076-100 | sad | -- |
-| 101-125 | whistle | -- |
-| 126-150 | scream | `AUDIO_TRACK_SCREAM = 126`, `AUDIO_TRACK_FAINT = 128` |
-| 151-175 | Leia | `AUDIO_TRACK_LEIA = 151` |
-| 176-200 | music | `AUDIO_TRACK_CANTINA_S = 176`, `SW_THEME = 177`, `IMP_MARCH = 178`, `CANTINA_L = 180` |
-| 201-225 | music | -- |
-| **254** | **silent blank** | `stop()` |
-| **255** | **startup** | `AUDIO_TRACK_STARTUP = 255` |
+| Tracks | Category |
+| --- | --- |
+| 001-025 | general |
+| 026-050 | chatty |
+| 051-075 | happy |
+| 076-100 | sad |
+| 101-125 | whistle |
+| 126-150 | scream |
+| 151-175 | Leia |
+| 176-200 | music |
+| 201-225 | music |
+| **254** | **silent blank** (Section 6.5) |
+| **255** | **startup** |
 
-`docs/sound_playback.md:270` claims *"All protoArtoo named-track NVS defaults
-match this layout with no remapping needed"*, and reading the header against the
-table this session, they do -- with one thing the table does not flag:
-**`AUDIO_TRACK_HAPPY = 3` sits in the general band, not the happy band.** That is
-almost certainly deliberate (track 3 is a specific community greeting clip, and
-the comment says so), but a reader checking the claim will trip on it.
+A controller that plays track 254 or 255 from a random range plays the blank or
+the startup sound.
 
-**This is the strongest argument for keeping this module supported.** protoArtoo's
-entire default sound namespace is the MP3 Trigger's convention. On this module the
-defaults are correct out of the box; on every other member they are a mapping
-exercise.
-
-### 9.3 Three ways the config layer can ask for a track this module cannot play
-
-The random pool and the twelve category ranges are `uint16_t` and validated as
-`0 .. 0xFFFF` (`src/config_store.cpp:1186-1190`). Nothing in the config layer
-knows this module's ceiling. So an operator can save, and the API will accept:
-
-1. **a range above 255** -- every draw from it is dropped by the driver's guard
-   with a `PA_LOG_WARN` and produces silence;
-2. **a range spanning 254** -- draws land on the blank stop track, producing a
-   silent "sound" at random;
-3. **a range spanning 255** -- draws replay the startup sound.
-
-None of these is a crash and all three present to the operator as *"sometimes
-nothing happens"*. The clean fix is a member-aware validator, which is a change
-to shared config validation for the sake of one module and therefore a decision
-rather than a typo. Open Item 6.
-
-## 10. The transport, which is borrowed on artoo-esp32
-
-### 10.1 Two directions, two mechanisms
-
-```c
-#if PA_CAP_DEDICATED_AUDIO_UART
-s_mp3Serial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);   // RX only, TX pin = -1
-#else
-softUartRxBegin();                                       // GPIO-sampled RX
-#endif
-softUartTxBegin();                                       // TX: bit-bang
-```
-
-**TX is a software UART on both boards.** RX is GPIO-sampled on artoo-esp32 so
-it never takes UART2 from the dome, and a dedicated hardware UART on FireBeetle
-2 (`UART_PORT_AUDIO` = 3). The reason for GPIO RX is on the artoo-esp32: three
-hardware UARTs, UART0 the console, UART1 the drive link, UART2 the dome link
-(`include/config.h`). There is no spare UART for audio, so RX is sampled on
-`PIN_AUDIO_RX` (GPIO 35, input-only) and TX is bit-banged (#396).
-
-| Board Variant | `PIN_AUDIO_TX` | `PIN_AUDIO_RX` | `UART_PORT_AUDIO` | `PA_CAP_DEDICATED_AUDIO_UART` |
-| --- | --- | --- | --- | --- |
-| artoo-esp32 | 26 (bit-bang) | 35 (GPIO-sampled, input-only) | unused by this driver | 0 |
-| firebeetle2 | 34 (bit-bang TX) | 36 (UART3 RX) | 3, exclusive | 1 |
-
-Every image carries this driver. FireBeetle 2 compiles the dedicated-UART RX
-path; that path has not run against a module on the bench.
-
-### 10.2 What a command costs Core 0
-
-`softUartTxByte()` wraps each byte in a `portMUX` critical section, because
-`delayMicroseconds()` is not interrupt-safe and a stretched bit period corrupts
-the frame. At 104 us per bit and ten bit periods per byte that is **about 1.04 ms
-per byte, with Core 0 non-preemptible**.
-
-| Command | Bytes | Core 0 blocked |
-| --- | --- | --- |
-| `playTrack`, `stop`, `setVolume` | 2 | **~2.1 ms** |
-| DY-SV5W play frame | 6 | ~6.2 ms |
-| DY-SV5W volume frame | 5 | ~5.2 ms |
-
-**The two-byte protocol is the cheapest in the family on this axis** -- a third of
-a DY-SV5W play frame. Core 1's real-time loops (drive, RC, dome link) are
-unaffected either way; this is Core 0's web and audio work only.
-
-### 10.3 Finish-byte RX does not take the dome UART; Poll still claims it
-
-On artoo-esp32 this driver's RX is GPIO-sampled. `begin()` and `serviceRx()`
-do not call `audioUartClaim()`, so a clip can finish (and play-state can
-update) while protoR2link owns UART2.
-
-`queryModuleState()` -- the Sound page Poll button, and any auto-query -- is
-still wrapped in `audioUartClaim()` / `audioUartRelease()` by AudioTask. A
-denied claim is **`AUDIO_RX_BLOCKED_BY_DOME_UART`**, which the Sound page
-renders as *"RX unavailable while protoR2link owns UART2"* rather than as a
-dead module. That claim is leftover arbitration from when audio RX lived on
-UART2; this driver no longer uses that controller for RX, but Poll still
-waits for it.
-
-The driver itself does no contention check. It also does not override
-`classifyRxStatus()`, and -- exactly as
-[`dy-sv5w-sound.md`](dy-sv5w-sound.md) Section 12.3 works out for its own module
--- it does not need to, because `audio_task.cpp` tests the claim **before**
-calling `queryModuleState()`.
-
-## 11. Capabilities, status, and what the operator sees
-
-### 11.1 The capability word is `0x0D`, and one of its three bits is memory
-
-```c
-PA_COMPONENT_PART(19, "mp3_trigger", "MP3 Trigger", COMPONENT_CATEGORY_SOUND, "mp3trigger_serial",
-                  COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID,
-                  AudioDriver::AUDIO_CAP_STATUS_QUERY | AudioDriver::AUDIO_CAP_TRACK_COUNT |
-                  AudioDriver::AUDIO_CAP_CURRENT_TRACK,
-                  nullptr, 1)
-```
-
-`0x01 | 0x04 | 0x08` = **`0x0D`**, asserted at
-`test_component_registry.cpp:88` and again through the driver at
-`test_audio_sound_member.cpp:48-51`. The driver does not restate the word; it
-returns `componentPartCapabilities("mp3_trigger")`, with a `static_assert` that
-the id exists. **This is the narrowest capability word of the three built Sound
-members** -- DY-SV5W is `0x0F`, CHIRP is `0x3F`.
-
-What the three bits actually cost the module to honour:
-
-| Bit | Set? | How it is satisfied |
-| --- | --- | --- |
-| `STATUS_QUERY` `0x01` | yes | `'S'`+`'0'` -- a real round trip |
-| `DEVICE_TYPE` `0x02` | **no** | no such command exists; `device` is hardcoded `0xFF` |
-| `TRACK_COUNT` `0x04` | yes | `'S'`+`'1'` -- a real round trip |
-| `CURRENT_TRACK` `0x08` | yes | **cached `m_lastTrack`, never queried** |
-| `QUERY_SAFE_PLAYING` `0x10` | **no** | polling during playback is not claimed safe |
-| `CATALOG` `0x20` | **no** | no banks; `playTrackBanked()` falls through to `playTrack()` |
-
-> [!NOTE]
-> **`CURRENT_TRACK` here means "the driver can report it", not "the module can be
-> asked".** The protocol has no current-track query; the value is what we last
-> sent. That is a defensible reading of the bit -- the operator gets a true answer
-> -- and it is a different guarantee from the DY-SV5W's, where the same bit is a
-> live `0x0D` query. Worth knowing before trusting the field after a track ends
-> on its own.
-
-**Play state has no capability bit at all.** It is emitted unconditionally by
-the API. This driver caches it from unsolicited `'X'` (finished) / `'x'`
-(cancelled) / `'E'` (missing track) via `serviceRx()` and `noteUnsolicited()`
-(#396). Until the first of those bytes after boot, `playState` is `0xFF`
-(`unknown`). `'E'` also records `missingTrack`. There is still no play-state
-*query*.
-
-### 11.2 What the Sound page does with `0x0D`
-
-`data/sound.js:307-360` is the one consumer, and its own comment sets the rule:
-*"a capability the firmware declares and nothing reads is worse than no
-capability, because the page then reports a field the fitted module cannot
-actually answer."* For this word:
-
-- Device row: **hidden** (`supportsStatusQuery && supportsDeviceType`)
-- Total tracks row: shown
-- Current track row: shown
-- Play-state: shown; follows `'X'`/`'x'`/`'E'`; `unknown` until the first of
-  those after boot
-- Status table: shown; the no-query notice: hidden
-- **Manual Poll button: shown**, because `showManualPoll` is
-  `supportsStatusQuery && !supportsSafePlayingQuery`
-- Auto-refresh cadence: **off** (`moduleStatusCadenceWanted` follows
-  `QUERY_SAFE_PLAYING`)
-- Note text: *"Status is cached from boot. Use Poll to refresh -- only poll when
-  not playing."*
-- CHIRP catalog card: hidden, with *"Catalog unavailable for this backend."*
-- When `driver === "MP3 Trigger"`: wiring note (3.3 V jumper, `MP3TRIGR.INI`
-  `#BAUD 9600`), missing-clip banner from `missing_track`, category-range
-  warning for 254/255
-
-The API still emits `"device"` for this module -- it serialises `0xFF` as
-`"none"` -- so a client that branches on the JSON field rather than on the
-capability bit will happily render a device row saying "none".
-`docs/api.md:589-590` already states the rule: *"Clients branch on a bit, never
-on `driver`."*
-
-### 11.3 Selecting it
-
-`snd_member` in NVS, value `mp3_trigger`, accepted by `POST /api/config` and
-**staged at reboot** like any Component Toggle (ADR 0027, ADR 0042). Validation is
-registry-driven: only a value whose row is in `COMPONENT_CATEGORY_SOUND` and is
-selectable is accepted, and an unrecognised stored member falls back to
-`dy_sv5w`.
-
-Every image carries this driver -- `included` is the literal `1` on the row and
-there is no Board Capability Gate, because all three Sound modules bolt to
-`PIN_AUDIO_TX` and no board narrows the set (ADR 0042:174-178). `PA_AUDIO_DRIVER
-= AUDIO_MP3TRIGGER` no longer selects what the image can drive; it only names
-what a controller **that has never been told** starts with. There is no
-dedicated build for this module: there is one build per board, and the builder
-picks it on Configuration (Hardware components -> Sound); it takes effect at the
-next start.
-
-Selecting the member is `POST /api/config soundMember=mp3_trigger`. Setup's
-Audio control is an enable toggle plus the live driver name; it does not POST
-this field. The Component Picker cards that would show `mp3_trigger.webp` are
-still to come (#369). The photograph already ships in the default asset set.
-
-## 12. How the four Sound members differ
-
-[`dy-sv5w-sound.md`](dy-sv5w-sound.md) Section 16 carries the full
-twenty-row comparison and this sheet does not duplicate it. The rows where the
-MP3 Trigger is the outlier:
-
-| Row | MP3 Trigger | Why it matters |
-| --- | --- | --- |
-| Frame | **2 bytes, no checksum, no ack** | cheapest command in the family (~2.1 ms of Core 0) |
-| Addressing | **filename prefix** | the only member whose numbering survives a card rebuild (Section 9.1) |
-| Volume native | **0-255 inverted; we send 0-64** | vendor-audible span; #396 |
-| Play-state query | **none** | follows `'X'`/`'x'`/`'E'`; `unknown` until the first |
-| Device-type query | **none** | the only built member missing this bit |
-| Stop | **no stop command** | done by playing a silent track (Section 8.4) |
-| On-board amplifier | **no** | needs an external amp; output is line level with a DC offset |
-| Trigger inputs | **18** | the only member with a hardware path that bypasses us entirely |
-| Price | **~USD 50** | an order of magnitude above the DY-SV5W |
-| Proven on our hardware | **no** | the only *supported* member with no bench record |
-
-**What it uniquely brings** is the ecosystem. Filename addressing, the 25-track
-bank convention every R2 sound pack ships in, and the fact that protoArtoo's own
-named-track defaults already *are* its numbers (Section 9.2). A builder migrating
-from MarcDuino, Padawan360 or SHADOW keeps their card and their muscle memory.
-
-**What it uniquely costs** is 255 tracks, no play-state *query* (finish bytes
-only), an external amplifier, and the price. Volume maps onto the vendor's
-0-64 audible span (#396); hardware listen is still unconfirmed.
-
-## 13. How the hobby drives this module (non-normative)
+## 8. How the hobby drives this module (non-normative)
 
 Everything in this section is evidence of practice. None of it is normative.
 
-### 13.1 CHIRP implements this protocol on purpose
+### 8.1 CHIRP implements this protocol on purpose
 
-`~/Documents/GitHub/CHIRP/.../mp3_compat.cpp` is a **deliberate MP3 Trigger
-compatibility layer** on a 2025-era RP2350 board:
-`checkAndHandleMp3Command()` intercepts `'O'`, `'F'`, `'R'`, `'T'`, `'t'`, `'v'`
-and `'p'` before CHIRP's own ASCII parser sees them, converts `'v'`'s inverted
-byte to a float gain (`1.0f - sfVol / 255.0f`) and applies it to every stream, and
-uses **track 254** as its blank.
+CHIRP's `mp3_compat.cpp` is a **deliberate MP3 Trigger compatibility layer** on a
+2025-era RP2350 board: `checkAndHandleMp3Command()` intercepts `'O'`, `'F'`,
+`'R'`, `'T'`, `'t'`, `'v'` and `'p'` before CHIRP's own ASCII parser sees them,
+converts `'v'`'s inverted byte to a float gain (`1.0f - sfVol / 255.0f`) and
+applies it to every stream, and uses **track 254** as its blank.
 
-That is the clearest possible statement of this board's standing: a newer,
-better-specified module shipped a shim so that droids already wired for an MP3
-Trigger could drop it in. **Two commands are not in that shim** -- `'S'` status
-and `'Q'` quiet mode -- so a controller pointed at a CHIRP while configured as an
-MP3 Trigger would play tracks correctly and report a dead link forever.
-protoArtoo never does this (it has a native CHIRP driver), but a builder
-debugging a mixed setup might.
+A newer module shipped a shim so that droids already wired for an MP3 Trigger
+could drop it in. **Two commands are not in that shim** -- `'S'` status and
+`'Q'` quiet mode -- so a controller pointed at a CHIRP while configured as an MP3
+Trigger plays tracks correctly and reports a dead link forever. A builder
+debugging a mixed setup should know it.
 
-### 13.2 The others have moved on, and one of them left a trail
+### 8.2 The others have moved on, and one of them left a trail
 
 - **AstroPixelsPlus / Reeltwo** (`MarcduinoSound.h`) abstracts three modules
-  (`kMP3Trigger`, `kDFMini`, `kHCR`) behind a `Stream&`, uses **the same volume
-  formula we do**, and -- as Section 8.3 sets out -- **maps to 0-100 rather than
-  0-255**, on the strength of its own measurement. It is the one project that
-  tested the audible floor and wrote the number down.
+  (`kMP3Trigger`, `kDFMini`, `kHCR`) behind a `Stream&`, uses a
+  `(range - vol)`-style inverted volume formula, and -- as Section 6.6 sets out
+  -- **maps to 0-100 rather than 0-255**, on the strength of its own
+  measurement.
 - **ShadowMD** does not drive a sound module at all. It delegates to MarcDuino
   over `$8x\r`, so the MP3 Trigger is behind that board, not behind ShadowMD.
-- **The Padawan360 on this disk is a port away from this module.** Its
-  `mp3Trigger.play()` calls survive as comments beside the DY-SV5W calls that
-  replaced them -- the migration [`dy-sv5w-sound.md`](dy-sv5w-sound.md) Section
-  15.2 shows got the volume direction wrong precisely because the two modules
-  invert against each other.
+- **A Padawan360 port to the DY-SV5W** keeps its `mp3Trigger.play()` calls as
+  comments beside the DY-SV5W calls that replaced them -- and got the volume
+  direction wrong in the move, because the two modules invert against each other.
 - **MarcDuino** itself is the reason the numbering exists. Its firmware and the
   R2 Touch app hardcode the 25-track banks, which is why the sound packs are
   shaped that way and why changing a filename breaks a droid.
 
-### 13.3 Two field problems no vendor document mentions
+### 8.3 Two field problems no vendor document mentions
 
 From Printed Droid's knowledge base, which is builders writing for builders:
 
@@ -925,139 +454,57 @@ From Printed Droid's knowledge base, which is builders writing for builders:
   cables (like 2ft or less)"*; the fix is a **1 kOhm pull-up** added between
   *"pin 3 of the micro-controller and the large tab (3.3v) of the nearby voltage
   regulator"*, which reportedly *"fixed the false triggers on all inputs, even
-  with 25ft cables"*. protoArtoo does not use the trigger pins -- but a board
-  wired for them in a droid will start tracks on its own, and the symptom is
-  indistinguishable from a firmware bug.
+  with 25ft cables"*. A board wired for its trigger pins in a droid starts tracks
+  on its own, and the symptom is indistinguishable from a controller bug.
 - **The audio output is not line out.** *"The included audio output has a DC
   offset with respect to the power supply ground, so it's only safe for driving
   headphones. Also, the static electricity from a long cable might fry the MP3
   decoder chip."* A droid runs a long cable to an amplifier in the body, which is
   exactly the case being warned about. **AC-couple it.**
 
-## 14. Findings against the shipping implementation
+## 9. Quick Reference
 
-Found by reading the driver against the user guide and the schematic
-(2026-09-12), then re-read against #396 (2026-09-15). Fixed items stay here
-so a later reader does not re-open them.
+- Field: Vendor part. Value: **WIG-13720** (SparkFun). **Not DEV-13720.**
+- Field: Decoder. Value: **VLSI VS1063**, from SparkFun's schematic. **Not VS1053.**
+- Field: Serial format. Value: **8 bits, 1 start, 1 stop, no parity, no flow control, full duplex, 3.3-5 V TTL**.
+- Field: Baud. Value: the factory default is **38400**; any other rate requires `MP3TRIGR.INI` on the card.
+- Field: Init file. Value: **`MP3TRIGR.INI`** in the card root, e.g. `#BAUD 9600`, `#` then a space, first 512 bytes only, `*` ends the command section.
+- Field: Allowed baud values. Value: **2400, 9600, 19200, 31250, 38400**. Nothing else.
+- Field: Command grammar. Value: 1 or 2 bytes. **Upper-case first byte takes an ASCII digit argument; lower-case takes a binary byte.**
+- Field: Play a track. Value: **`'t'` + binary 1-255**, addressing the file whose name starts with those three digits.
+- Field: `'p'` versus `'t'`. Value: **`'p'` is directory position, `'t'` is filename prefix.**
+- Field: Track ceiling. Value: **255**. The argument is one byte; 256 cast to a byte is `0x00`.
+- Field: Stop. Value: **no stop command**; play a blank track. **254** in CHIRP, **252** in AstroPixelsPlus/Reeltwo. The blank must exist in the card root.
+- Field: Volume command. Value: **`'v'` + binary 0-255, inverted** -- `0x00` loudest.
+- Field: Volume audibility. Value: the vendor says **above 64 is inaudible**; a builder's measurement says **above 100**. Either way most of the register is silent.
+- Field: Status queries. Value: **`'S'`+`'0'`** version, **`'S'`+`'1'`** track count, both replies `'='`-prefixed.
+- Field: Response terminator. Status: **UNKNOWN** -- the guide describes an 18-byte version string that is exactly 18 visible characters, implying no CR/LF (Open Item 1).
+- Field: Unsolicited bytes. Value: **`'X'` finished, `'x'` cancelled, `'E'` requested track does not exist.** `'E'` is **not** a hardware error.
+- Field: Play-state and current-track queries. Value: **none.** Only the unsolicited bytes report play-state.
+- Field: Quiet Mode. Value: `'Q'`+`'1'` makes trigger pins report `'M'` plus a 3-byte bitmask instead of playing. Off by default, not preserved across power cycles.
+- Field: Card. Value: **microSD, SDSC or SDHC, FAT16 or FAT32, root directory only, `NNNxxxx.MP3`**, MP3 up to 192 kbps stereo.
+- Field: Hot swap. Value: **not supported.** The card is read only at power-on.
+- Field: Power. Value: **4.5-12 V DC or regulated 3.3 V (jumper)**, about **45 mA idle / 85 mA playing**.
+- Field: Audio output. Value: **line level with a DC offset**, no on-board amplifier. AC-couple before a long cable.
+- Field: Trigger pins. Value: **18**, active low, internally pulled up, 3.3-5 V.
+- Field: Status LED. Value: **3 short blinks = ready.** 1 long = no card; 1 long + 1 short = card but no MP3s; constant short = decoder fault.
+- Field: TX level. Status: **UNKNOWN** -- the module's TX swing is not stated in any document read (Open Item 2).
 
-### 14.1 FIXED -- the decoder is a VS1063, not a VS1053
-
-Five comments across `include/audio_mp3trigger.h` and
-`src/drivers/audio_mp3trigger.cpp` name the VS1053, including the volume comment
-a developer would copy. SparkFun's schematic says `value="VS1063"`. Nothing
-functional turns on it (Section 2.2); the comments are corrected.
-
-### 14.2 FIXED -- the SparkFun part number is WIG-13720, not DEV-13720
-
-`include/audio_mp3trigger.h:4` and `docs/sound_playback.md:242` both say
-`DEV-13720`. SparkFun's own repository README links the product as *"MP3 Trigger
-(WIG-13720)"*. A wrong part number is how a builder buys the wrong board.
-
-### 14.3 FIXED -- `'E'` means the track is missing, not that the hardware failed
-
-Comments that called `'E'` a *"hardware error"* were corrected when this sheet
-landed. #396 also acts on the byte: `missingTrack` is recorded, play-state
-goes to stop, and the Sound page names the clip.
-
-### 14.4 FIXED -- `docs/sound_playback.md` sends the reader away for a fact we now have
-
-`:246-248` says to *"refer to the SparkFun MP3 Trigger v2.4 Hookup Guide for the
-exact filename and format"* of the baud init file. The filename is
-`MP3TRIGR.INI`, the line is `#BAUD 9600`, and both are now in that document and
-in Section 6.1.
-
-### 14.5 FIXED -- `begin()` no longer opens UART2
-
-#396: on artoo-esp32 `begin()` calls `softUartRxBegin()` (GPIO-sampled RX on
-GPIO 35) and does not call `audioUartClaim()`. Boot S0/S1 no longer race
-DomeLink for UART2. Poll still goes through `audioUartClaim()` (Section 10.3).
-Hardware listen of boot link is still unconfirmed.
-
-### 14.6 FIXED -- `readLine()` skips leading unsolicited bytes
-
-#396: `readLine()` skips `'X'` / `'x'` / `'E'` (and other non-`'='` noise)
-until `'='`, and `noteUnsolicited()` updates play-state / `missingTrack`. A
-finish byte in the drain-to-reply window no longer fails a live query. The
-peer sheet's rule --
-[`dy-sv5w-sound.md`](dy-sv5w-sound.md)'s *"MUST NOT assume a query response is
-the next bytes on the wire"* -- is the shape that landed.
-
-### 14.7 REPORTED -- the mirror test suite can pass while the driver is wrong
-
-`test_audio_mp3trigger.cpp` states it plainly at `:9-11`: *"The driver is not
-instantiated here ... all logic under test is extracted as standalone functions
-that mirror the implementation."* The volume formula, the constants and the
-guards are **copied** into the test. Change `setVolume()` in the driver and those
-eleven tests still pass.
-
-The saving grace is `test_audio_io_seam.cpp`, which drives the **real**
-`AudioDriverMp3Trigger` through the injected IO and asserts the actual TX bytes
-for play, stop, volume and `begin()` -- ten tests, including that `playTrack(256)`
-emits **zero** bytes and that a link-less `begin(10)` emits exactly
-`'S'`,`'0'`,`'v'`,`0xAA`. So the wire is genuinely pinned; the mirror suite is
-belt-and-braces that could silently stop matching the belt.
-
-**No test drives `queryModuleState()`.** Its parse path -- the `'='` guard, the
-`sscanf`, the S1-gated-on-S0 rule -- is exercised only through `begin()`.
-
-## 15. Agent Lookup Quick Reference
-
-- Field: Component Protocol. Required value: **`mp3trigger_serial`**.
-- Field: protoArtoo identifiers. Required value: registry value **19**, id `mp3_trigger`, name `MP3 Trigger`, build default `PA_AUDIO_DRIVER = AUDIO_MP3TRIGGER`, NVS member value `mp3_trigger` under key `snd_member`.
-- Field: Capability word. Required value: **`0x0D`** -- STATUS_QUERY, TRACK_COUNT, CURRENT_TRACK. **No `DEVICE_TYPE`, no `QUERY_SAFE_PLAYING`, no `CATALOG`.** Narrowest of the three built Sound members.
-- Field: Vendor part. Required value: **WIG-13720** (SparkFun). **Not DEV-13720.**
-- Field: Decoder. Required value: **VLSI VS1063**, from SparkFun's schematic. **Not VS1053**, whatever our comments said.
-- Field: Serial format. Required value: **8 bits, 1 start, 1 stop, no parity, no flow control, full duplex, 3.3-5 V TTL**.
-- Field: Baud. Required value: **9600 for protoArtoo**; the factory default is **38400** and the change requires `MP3TRIGR.INI` on the card.
-- Field: Init file. Required value: **`MP3TRIGR.INI`** in the card root, `#BAUD 9600`, `#` then a space, first 512 bytes only, `*` ends the command section.
-- Field: Allowed baud values. Required value: **2400, 9600, 19200, 31250, 38400**. Nothing else.
-- Field: Command grammar. Required value: 1 or 2 bytes. **Upper-case first byte takes an ASCII digit argument; lower-case takes a binary byte.**
-- Field: Play a track. Required value: **`'t'` + binary 1-255**, addressing the file whose name starts with those three digits.
-- Field: `'p'` versus `'t'`. Required value: **`'p'` is directory position, `'t'` is filename prefix.** protoArtoo uses `'t'`; never swap them.
-- Field: Track ceiling. Required value: **255**. `playTrack(256)` emits no bytes; `(uint8_t)256` would be `0x00`.
-- Field: Stop. Required value: **`'t'` + 254** -- there is no stop command. `254XXXX.MP3` must exist in the card root.
-- Field: Blank-track number elsewhere. Required value: **252** in AstroPixelsPlus/Reeltwo. Do not assume 254 is universal.
-- Field: Volume command. Required value: **`'v'` + binary 0-255, inverted** -- `0x00` loudest.
-- Field: Volume audibility. Required value: the vendor says **above 64 is inaudible**; a builder's measurement says **above 100**. Either way most of the register is silent.
-- Field: protoArtoo volume map. Required value: `nativeVol = (30 - vol) * 64 / 30` (#396). Shipped default `vol` 20 is native **21**. The register still accepts 0-255; we do not send above 64.
-- Field: Status queries. Required value: **`'S'`+`'0'`** version, **`'S'`+`'1'`** track count, both replies `'='`-prefixed.
-- Field: Response terminator. Status: **UNKNOWN** -- the guide describes an 18-byte version string that is exactly 18 visible characters, implying no CR/LF. Settled by capturing the bytes (Open Item 2).
-- Field: Unsolicited bytes. Required value: **`'X'` finished, `'x'` cancelled, `'E'` requested track does not exist.** `'E'` is **not** a hardware error. The driver caches play-state from these bytes (#396); `'E'` also sets `missingTrack`.
-- Field: Quiet Mode. Required value: `'Q'`+`'1'` makes trigger pins report `'M'` plus a 3-byte bitmask instead of playing. Off by default, not preserved across power cycles.
-- Field: Card. Required value: **microSD, SDSC or SDHC, FAT16 or FAT32, root directory only, `NNNxxxx.MP3`**, MP3 up to 192 kbps stereo.
-- Field: Hot swap. Required value: **not supported.** The card is read only at power-on.
-- Field: Power. Required value: **4.5-12 V DC or regulated 3.3 V (jumper)**, about **45 mA idle / 85 mA playing**.
-- Field: Audio output. Required value: **line level with a DC offset**, no on-board amplifier. AC-couple before a long cable.
-- Field: Trigger pins. Required value: **18**, active low, internally pulled up, 3.3-5 V. protoArtoo uses none of them.
-- Field: Status LED. Required value: **3 short blinks = ready.** 1 long = no card; 1 long + 1 short = card but no MP3s; constant short = decoder fault.
-- Field: Transport on artoo-esp32. Required value: **bit-bang TX on GPIO 26, GPIO-sampled RX on GPIO 35. Does not take UART2.** About **2.1 ms of blocked Core 0 per TX command**. FireBeetle 2 uses dedicated UART3 for RX. Poll still goes through `audioUartClaim()`.
-- Field: Level shifting. Status: **UNKNOWN** -- the module's TX swing is not stated in any document read. `PIN_AUDIO_RX` is not 5 V tolerant (Open Item 3).
-- Field: Hardware verification. Required value: **none.** No bench record exists for this module on this project's droid.
-
-If a required value cannot be proven for the board in hand, status is `UNKNOWN`
-and dependent work stops.
-
-## 16. Open Items
+## 10. Open Items
 
 | # | Item | How to settle it |
 | --- | --- | --- |
-| 1 | **Volume map.** Decided 2026-09-13 (#396): vendor 0-64, not field 0-100 and not full 0-255. Shipped. Community can still report if 64 is too quiet. | Done in firmware. A board-side listen is a community report, not a ticket. |
-| 2 | **Do the `'S'` replies end with CR/LF?** Section 7.3. If not, every query costs its full 500 ms timeout. | Ten minutes: USB-serial adapter, 9600 baud, send `S0`, capture raw bytes, count them. |
-| 3 | **What voltage does the module's TX idle at?** Section 6.3. `PIN_AUDIO_RX` is not 5 V tolerant on either board. | Meter on the module's TX pin with the board powered from 5 V, then from the 3.3 V jumper position. **Do this before wiring one to a controller.** |
-| 4 | **Can back-to-back commands be dropped?** Section 8.1. We post no inter-command delay; the DY-SV5W driver posts 100 ms; a SparkFun forum thread reports a 10-100 ms settling window after `'X'`. | Send `stop()` immediately followed by `playTrack(n)` twenty times and count how many play. |
-| 5 | **Is there a start-up latency worth designing around?** A research pass claimed about 80 ms of MP3 parser delay and 100-500 ms gaps between sequential tracks; **neither is in any document read this session** (Section 5). | Trigger a known track against a scope or a phone recording and measure command-to-first-sample. |
-| 6 | **Should config validation know the fitted module's track ceiling?** Section 9.3. Category ranges still save `0..0xFFFF`. #396: Sound page warns when a saved range includes 254 or 255; it does not refuse. | Done as save-and-warn. A member-aware validator was the rejected alternative. |
-| 7 | **Do `begin()`'s queries lose the UART race on artoo-esp32?** Section 14.5. #396: `begin()` uses GPIO-sampled RX and does not open UART2. | Firmware race closed. A boot-link listen against a fitted module is still a community report, not a ticket. |
-| 8 | **Should `sendQuery()` skip leading non-`'='` bytes?** Section 14.6. #396: `readLine()` skips `'X'`/`'x'`/`'E'` until `'='`. | Done in firmware. Native IO-seam tests cover the skip. |
-| 9 | **Is `AUDIO_TRACK_HAPPY = 3` right?** Section 9.2. It sits in the community's *general* band, not the *happy* band, while every other named default lands where the table says. | An operator decision about which clip should answer `$H`, not a research result. |
-| 10 | **Does anything test that the Device row is hidden for a `0x0D` module?** `test_sound_capability_consumers.js` pins `TRACK_COUNT` both ways but not `DEVICE_TYPE`. | Add the mirror case to the existing web test; it is four lines beside the ones already there. |
+| 1 | **Do the `'S'` replies end with CR/LF?** Section 6.3. | Ten minutes: USB-serial adapter, 9600 baud, send `S0`, capture raw bytes, count them. |
+| 2 | **What voltage does the module's TX idle at?** Section 5.3. | Meter on the module's TX pin with the board powered from 5 V, then from the 3.3 V jumper position. **Do this before wiring one to a 3.3 V controller.** |
+| 3 | **Can back-to-back commands be dropped?** Section 6.1. A SparkFun forum thread reports a 10-100 ms settling window after `'X'`. | Send a stop immediately followed by a play twenty times and count how many play. |
+| 4 | **Is there a start-up latency worth designing around?** A research pass claimed about 80 ms of MP3 parser delay and 100-500 ms gaps between sequential tracks; **neither is in any document read** (Section 4). | Trigger a known track against a scope or a phone recording and measure command-to-first-sample. |
 
-## 17. Sources
+## 11. Sources
 
 **Primary -- vendor**
 
 - **MP3 Trigger v2 User Guide, 2012.02.01** -- https://www.robertsonics.com/s/MP3TriggerV2UserGuide_2012-02-04.pdf
-  (downloaded and read in full this session; the source for Sections 3, 6 and 7)
+  (downloaded and read in full; the source for Sections 3, 5 and 6)
 - **SparkFun MP3 Trigger hardware repository** -- https://github.com/sparkfun/MP3_Trigger
   (cloned; the Eagle schematic settled the decoder and the SKU)
 - SparkFun MP3 Trigger Hookup Guide v2.4 -- https://learn.sparkfun.com/tutorials/mp3-trigger-hookup-guide-v24/all
@@ -1066,41 +513,27 @@ and dependent work stops.
   https://www.robertsonics.com/wav-trigger, https://www.robertsonics.com/tsunami
 - `MP3TRIGR.INI` sample, mirrored by Pololu -- https://www.pololu.com/file/0J531/mp3trigr.ini
 
-**Primary -- source code, read on this disk**
+**Primary -- community source code**
 
-- `~/Documents/GitHub/CHIRP/CHIRP_Audio_Trigger/Arduino_Sketches/CHIRP_Audio/mp3_compat.cpp`
-- `~/Documents/GitHub/AstroPixelsPlus/MarcduinoSound.h`
-- `~/Documents/GitHub/ShadowMD/src/Shadow_MD_DualController_Template.ino`
-- `~/Documents/GitHub/Padawan360_mega_maestro_DYSV5W/Padawan360_body_mega_maestro_DY5_audioplayer_BETA.ino`
+- CHIRP Audio Trigger, `CHIRP_Audio_Trigger/Arduino_Sketches/CHIRP_Audio/mp3_compat.cpp`
+- AstroPixelsPlus, `MarcduinoSound.h`
+- ShadowMD, `src/Shadow_MD_DualController_Template.ino`
+- Padawan360 DY-SV5W port, `Padawan360_body_mega_maestro_DY5_audioplayer_BETA.ino`
 
 **Builder documentation (primary source, non-normative)**
 
 - Printed Droid, SparkFun MP3 Trigger board -- https://www.printed-droid.com/kb/sparkfun-mp3-trigger-board/
-  (the false-trigger fix and the DC-offset warning in Section 13.3)
+  (the false-trigger fix and the DC-offset warning in Section 8.3)
 - CuriousMarc, MP3 Trigger sound system -- https://www.curiousmarc.com/r2-d2/mp3-trigger-sound-system
   (the MarcDuino bank convention)
-
-**protoArtoo**
-
-- `src/drivers/audio_mp3trigger.cpp`, `include/audio_mp3trigger.h`,
-  `src/drivers/audio_soft_uart_tx.h`, `include/audio_driver.h`
-- `include/component_registry.inc`, `src/tasks/audio_sound_member.cpp`,
-  `src/tasks/audio_task.cpp`, `include/config.h`, `src/config_store.cpp`,
-  `include/audio_dollar_parser.h`, `data/sound.js`
-- `test/test_native/test_audio_mp3trigger/`, `test_audio_io_seam/`,
-  `test_audio_sound_member/`, `test_component_registry/`,
-  `test/test_web/test_sound_capability_consumers.js`
-- `docs/sound_playback.md`, `docs/api.md`, `docs/status.md`, `docs/goal.md`,
-  `GLOSSARY.md`, ADR 0027, ADR 0042
-- [`dy-sv5w-sound.md`](dy-sv5w-sound.md), [`dfplayer-mini-sound.md`](dfplayer-mini-sound.md)
 
 > [!NOTE]
 > **Negative results, recorded so nobody repeats them.** The SparkFun hardware
 > repository carries **no firmware** -- only Eagle files and a production panel --
 > so the command set could not be read from source and the user guide is the
 > authority for it. No mechanical drawing was found for the board in any vendor
-> document. No document read this session states the module's TX output swing,
-> which is Open Item 3. And the astromech projects on this disk that once drove
-> this module have all moved off it: ShadowMD to MarcDuino, Padawan360 to the
-> DY-SV5W, AstroPixelsPlus to an abstraction that still carries it. **CHIRP's
-> compatibility layer is the only live MP3 Trigger code in the stable.**
+> document. No document read states the module's TX output swing, which is Open
+> Item 2. The astromech projects that once drove this module have moved off it:
+> ShadowMD to MarcDuino, a Padawan360 port to the DY-SV5W, AstroPixelsPlus to an
+> abstraction that still carries it. **CHIRP's compatibility layer is the live
+> MP3 Trigger code in the stable.**

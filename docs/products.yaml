@@ -606,8 +606,56 @@ products:
         - "A new module talks 38400 and the droid talks 9600. Without MP3TRIGR.INI holding '#BAUD 9600' on the card, it never answers."
         - "The card is read at power-up only. Change the card, then power the module off and on."
         - "The audio output carries a DC offset. Static from a long cable can kill the decoder chip."
-      source: "2.1, 6.1, 6.2, 6.3, 13, 15"
-    notes: ""
+      source: "2.1, 5.1, 5.2, 5.3, 8.3, 9"
+    notes: |
+      The droid talks 9600, so the card needs MP3TRIGR.INI holding `#BAUD 9600`;
+      a module without it never answers. The driver's stop plays the blank track
+      254, so `254XXXX.MP3` must be in the card root or a stop leaves the sound
+      playing.
+
+      Volume: the operator's 0-30 maps onto the vendor-audible 0-64 of the
+      inverted register, never the full 0-255 (#396). AstroPixelsPlus measured
+      the floor at 100; the grill of 2026-09-13 chose the vendor's 64. A builder
+      who finds 64 too quiet is a community report, not a ticket.
+
+      Wire behaviour of the driver that the code does not say on its face:
+      - Play-state follows the module's unsolicited `X` / `x` / `E` bytes;
+        `E` records the missing clip and the Sound page names it. There is no
+        play-state query, and the current track is the last one the driver
+        sent, cached, not asked.
+      - The status reply's terminator is unproven (the sheet's Open Item 1). If
+        the module sends none, every status query runs to the read timeout: the
+        boot queries take about 2 s and a Poll about 1 s. Nothing fails, it is
+        only slow.
+      - The driver posts no gap between commands. Whether back-to-back commands
+        drop is the sheet's Open Item 3.
+      - Two-byte commands are the cheapest in the Sound family on Core 0: about
+        2.1 ms of bit-banged TX each, with Core 0 non-preemptible.
+      - On artoo-esp32 RX is GPIO-sampled and does not take the dome UART; Poll
+        still goes through the audio UART claim, a leftover from when audio RX
+        shared UART2. FireBeetle 2 reads on its dedicated audio UART, and that
+        path has not run against a module.
+
+      Levels: the sound RX pin is not 5 V tolerant on either board and the
+      module's TX swing is UNKNOWN. Measure it, or power the module from its
+      3.3 V jumper, before wiring TX back.
+
+      The config layer does not know the 255 ceiling. Category and random ranges
+      save 0-65535: a range above 255 plays silence, one spanning 254 plays the
+      blank, one spanning 255 replays the startup sound. The Sound page warns on
+      a saved range that includes 254 or 255 and does not refuse it; a
+      member-aware validator was the rejected alternative (#396).
+
+      The named-track defaults are the community's 25-track banks, so they need
+      no remapping on this module. `AUDIO_TRACK_HAPPY = 3` sits in the general
+      band, not the happy band: which clip answers `$H` is an operator decision.
+
+      Test gaps: the driver's mirror suite copies the formula and the guards, so
+      it can pass while the driver is wrong; the IO-seam tests drive the real
+      driver and pin the wire bytes. No test drives `queryModuleState()`, and no
+      web test pins the Device row hidden for a module without DEVICE_TYPE.
+
+      The module has not run on this project's hardware.
 
   - value: 20
     id: chirp
