@@ -79,9 +79,12 @@ A line the body owns is refused, and not forwarded, when:
   on the Console. A full-droid sequence is the exception, as it is for the RC
   tokens: its body routine waits for the estop to clear, and its sound and the
   dome's half still go.
-- **nothing drives the Output it names** since the droid started. The answer
-  names why, the same sentence `POST /api/servo` gives: restart the droid, mark
-  the Output on Wiring, or the Output carries a light.
+- **the Output it names is not wired** since the droid started. The answer
+  names why, in the same sentence `POST /api/servo` gives
+  (`src/web/api_servo.cpp:87-124`): "Restart the droid to use X.", "X has no
+  Part on it. Put one on it on Wiring.", "X carries a light, not a servo.", or,
+  for a PCA9685 Output, "X is on the PCA9685. Choose it as the body servo
+  controller to use it." / "X is unreachable - the PCA9685 is not answering."
 - **the droid is asleep.** On the manual command and the Console, every
   prefixed line is held until you wake it (`423 sleeping`).
 - **the line is not one the body can run**, such as an `:MV` with no value,
@@ -124,7 +127,7 @@ cut short would be a different command.
     fitted sound module has a bank 8, and is refused with that reason where it
     has not. The CHIRP Audio Trigger reads banks 1 to 6
     (`docs/spec-sheets/chirp-audio-trigger-sound.md`) and the other modules
-    have no banks, so on every module protoArtoo drives today `$8nn` is
+    have no banks, so on every module protoArtoo supports today `$8nn` is
     refused. It never plays raw track 8nn. `$800` names sound 00, which no bank
     has, and is refused everywhere.
   - Every other number, `$nnn`, is a raw track number: `$001`, `$126`.
