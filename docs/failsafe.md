@@ -130,9 +130,10 @@ This is not a Failsafe Layer the firmware tracks. It belongs to one Foot Drive,
 the hoverboard with hacked firmware, and runs outside protoArtoo:
 
 - Source: hoverboard motor controller firmware
-- Trigger: hoverboard stops receiving valid UART frames for roughly 500 ms
-- Result: hoverboard firmware stops the motors independently of the Body
-  Controller
+- Trigger: hoverboard stops receiving valid UART frames for 800 ms (EFeru
+  firmware) or 500 ms (RoboDurden firmware)
+- Result: until then the wheels keep turning on the last frame; then EFeru
+  coasts and RoboDurden soft-brakes, independently of the Body Controller
 
 protoArtoo supports it by following the zero-frame rule: it never goes silent
 intentionally. Even when stopped, it keeps transmitting zero commands.
@@ -184,7 +185,7 @@ from, generated into `include/task_stack_figures.h` (ADR 0040).
 
 | Task | Priority | Role |
 |------|----------|------|
-| **DriveTask** | 5 | 50 Hz Foot Drive frame transmission + TWDT reset. Core-critical. Must complete within its 20 ms period or the hoverboard coasts. |
+| **DriveTask** | 5 | 50 Hz Foot Drive frame transmission + TWDT reset. Core-critical. Must complete within its 20 ms period, or the hoverboard keeps acting on its last frame. |
 | **RCInputTask** | 5 | RC poll (SBUS or PWM). Decodes frames and routes to failsafe/arbiter. Core-critical. Not created when the receiver mode reads no input (`elrs`, `not_fitted`). |
 | **ServoTask** | 4 | 50 Hz servo/ESC PWM updates for arms and dome ESC. Processes its queue without blocking. |
 | **DomeTask** | 4 | 50 Hz dome ESC command application. Applies speed presets, respects estop. Not created when the Dome ESC is off at boot. |
