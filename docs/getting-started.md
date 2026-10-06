@@ -28,10 +28,38 @@ carries every supported sound driver. Pick the module on Configuration
 
 ## First flash of a blank board
 
-A release carries the firmware and the web pages, not the boot loader a blank
-board needs. The very first flash goes over USB from a source checkout:
-follow [Build from source](#build-from-source) and run `make flash`. After that,
-every update can come from a release.
+A blank board needs more than the two update images: a boot loader, a
+partition table and `boot_app0`, each at its own flash address. A feature
+release carries all of them for each board, with `<board>-manifest.json`,
+which lists every file with its flash address, size and SHA-256, and names the
+chip and the firmware and filesystem versions. Download every file that starts
+with your board's prefix (`artoo_esp32-` or `firebeetle2-`) and
+`SHA256SUMS.txt`, and check them:
+
+```sh
+sha256sum -c --ignore-missing SHA256SUMS.txt
+```
+
+This is an initial install, and it erases the whole flash, settings included.
+To update a droid that already runs protoR2, use
+[the update above](#update-a-running-droid-from-a-release), which keeps them.
+
+Connect the board over USB and run the line for your board in the download
+folder. It needs [esptool](https://docs.espressif.com/projects/esptool/) v5
+(`pip install esptool`) and `jq`; the addresses come from the manifest.
+
+```sh
+# Artoo PCB
+esptool --chip esp32 write-flash --erase-all $(jq -r '.flash[] | "\(.offset) \(.file)"' artoo_esp32-manifest.json)
+
+# FireBeetle 2 (ESP32-P4)
+esptool --chip esp32p4 write-flash --erase-all $(jq -r '.flash[] | "\(.offset) \(.file)"' firebeetle2-manifest.json)
+```
+
+A patch release carries no files, and releases from before the blank-board
+files existed carry only the update pair. The other way onto a blank board is
+[Build from source](#build-from-source) and `make flash`. After the first
+flash, every update can come from a release.
 
 The FireBeetle 2 is a supported Body Controller, but read
 [the spec sheet's "Before you buy one"](spec-sheets/firebeetle2-esp32-p4-spec-sheet.md#before-you-buy-one)
