@@ -266,6 +266,9 @@ review that reads the words and not the layout has read half the page.
     Three breakpoints, and a surface reaches for those rather than inventing a
     fourth: **1100 px** the rail becomes a strip, **900 px** bays and grids
     stack and the Status Plate folds, **600 px** two-column forms go to one.
+    `data/style.css` does not hold to this yet: on 2026-10-06 it also carries a
+    `min-width: 1080px` query and `max-width` queries at 720, 700, 520 and
+    480 px. Read them as departures from the rule, not widths to reach for.
 
     **A color literal outside `:root` is a defect**, and
     `test/test_web/test_style_token_layer.js` turns the web suite red over one.
