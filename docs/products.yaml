@@ -464,8 +464,174 @@ products:
         - "Over 12.6 V destroys it at once. A 36 V hoverboard pack does, and so does a 4S pack."
         - "Battery wires the wrong way round damage the ESC."
         - "A jammed dome is not protected. Its 120 A limit is out of a dome motor's reach."
-      source: "5.1, 5.2, 5.3, 5.4, 5.5, 6.2"
-    notes: ""
+      source: "4.1, 4.2, 4.3, 4.4, 4.5, 5.2"
+    notes: |
+      The ISD Go baseline below is the operator's own tuning, locked on the bench on
+      2026-03-21 against a real dome ring on the Artoo PCB. For tuning it outranks a
+      vendor preset; for what a setting means, the manual outranks it. Final tuning is
+      always mechanical-build dependent: ring friction, gear mesh, mass and inertia,
+      wiring, supply sag and motor characteristics.
+
+      Baseline settings (ISD Go), operator-locked:
+      - Running mode: Forward and reverse. Required for bidirectional dome movement,
+        and the only mode in which the droid's signed speed command means what the
+        firmware thinks it means.
+      - Battery type: match the actual pack chemistry, for correct cutoff and
+        protection.
+      - Cell count: match the actual pack. 2-3S LiPo / 6-8 cell NiMH only.
+      - Cutoff voltage: Auto, or an equivalent safe manual value.
+      - BEC voltage: 5.0 V. Conservative for accessory power, and the value that makes
+        an accidental back-feed least destructive.
+      - Motor rotation: Forward, swapped if mechanically reversed. Pick this inversion
+        point, not the other two (below).
+      - PWM frequency: 1 kHz. Low-end torque for heavier loads.
+      - Start force: high or max. Breakaway torque, the main lever on an
+        over-specified controller.
+      - Brake force: minimum practical value. Reduces abrupt reversal loading.
+      - Active drag brake: disabled. Avoids neutral drag torque; also disables ramp
+        anti-skid, which is the same mechanism.
+      - Active brake: disabled. Avoids aggressive braking on direction flips, and
+        sidesteps the manual-versus-app contradiction.
+
+      Curve guidance. Curve shaping changes response feel, not absolute maximum
+      output. Throttle curve: stronger midrange while keeping endpoints linear, around
+      +50 input -> +80 to +85 output and -50 -> -80 to -85, endpoints +/-100 ->
+      +/-100. Brake curve: soft low-mid values, around 50 input -> 10 to 20 brake and
+      100 input -> 25 to 35 brake. The +/-100 endpoints are what take the factory
+      Novice curve's 70 % cap off; a dome tuned on a Novice curve is tuned around the
+      wrong number. The bench record reads "1 kHz PWM, Start force MAX, Brake 1,
+      drag/active brake off".
+
+      Calibration and verification checklist:
+      1. Complete throttle calibration (max, min, neutral) in ISD Go. Nothing else can
+         be set until this is done.
+      2. Verify command polarity and neutral hold behaviour.
+      3. Test unloaded movement at multiple command levels.
+      4. Test loaded dome movement with sustained one-direction runs.
+      5. Test direction reversals with neutral dwell, to check mechanical stress.
+      6. Re-tune start force and curve if breakaway or oscillation issues appear.
+
+      Operational cautions:
+      - Avoid immediate full-power direction reversals under heavy load.
+      - If cogging or stall appears at low command, increase start force first.
+      - If harsh reversals occur, reduce brake aggressiveness and add neutral dwell in
+        controller logic (no firmware does this today, below).
+      - If the dome refuses to move at all at low slider values, check
+        `dome_speed_limit_pct` before suspecting the ESC.
+      - If the dome turns one way and not the other, check the running mode before
+        suspecting the mechanics.
+
+      Calibrating against the droid instead of a transmitter. The droid is a legitimate
+      throttle source: it emits exactly the 1000 / 1500 / 2000 us the procedure wants.
+      Two steps are awkward from a web page:
+      - Step 1 needs full throttle held while the ESC powers up. The Dome page slider
+        can command +100 %, but `domeTaskInit()` writes neutral at boot and the 500 ms
+        command timeout returns to neutral when the slider stops sending. Set the
+        slider to +100 %, then switch the ESC on within the timeout window, or hold the
+        slider.
+      - Every step is "hold until you hear N beeps", and the beeps come from the motor,
+        so somebody has to listen next to the droid.
+      The clean way is to calibrate with whatever will drive the ESC. Calibrated
+      against the droid, the learned endpoints are exactly 1000 / 2000 us and
+      `dome_min_pulse_us` / `dome_max_pulse_us` stay at their defaults. Calibrated
+      against a transmitter with non-default EPA, the learned endpoints are not
+      1000 / 2000, and those two fields are the trim that fixes it without
+      recalibrating. That is what they are for, not direction.
+
+      Direction has three inversion points: the motor wires, the app's Motor rotation
+      setting, and swapping `dome_min_pulse_us` / `dome_max_pulse_us` on the Dome page.
+      Pick the app setting, record it, and leave the other two alone.
+
+      The neutral deadband and `dome_speed_limit_pct`. The droid's neutral is a fixed
+      1500 us from a hardware timer, so the drift the ESC's deadband exists to absorb
+      does not exist here, and the manual's "keep default" advice is doubly safe. But
+      the speed limit scales the whole usable range toward neutral
+      (`domeSpeedToPulseUs`): at 100 % full command is 2000 us, at 20 % it is 1600 us,
+      at 10 % it is 1550 us, plausibly inside the deadband. The symptom is a dome that
+      does nothing at any slider position, with the firmware happy and the log showing
+      a sensible pulse width. Check the speed limit before concluding the ESC is dead.
+      Open: ramp the limit down until the dome stops responding and record the pulse
+      width, which would give the Dome page a real minimum instead of 0.
+
+      Arming. `domeTaskInit()` holds neutral for `ESC_ARMING_DURATION_MS` (2000 ms),
+      the vendor's two-second rule, once at controller boot, not when the ESC powers
+      up. ESC
+      switched on after the controller: it comes up into a steady 1500 us stream,
+      fine. ESC powered first: it reports Receiver Lost through the boot window, then
+      gets its two seconds. ESC power-cycled mid-session: the boot hold does not
+      repeat, so it gets no fresh hold. Reboot the controller after power-cycling the ESC, or
+      clear the error from the app.
+
+      Board wiring:
+      - FireBeetle 2: the DFR1237 field is a row per GPIO with IO / 3V3 / GND columns,
+        and its plug-and-go ergonomics make the mistake easy. Push the ESC's 3-pin wire
+        onto row 48 (`PIN_DOME_ESC`) and the BEC's 5-7.5 V lands on the 3.3 V plane.
+        Wire signal and ground only.
+      - artoo-esp32: what the Artoo PCB's dome header power pin carries is UNKNOWN
+        (unpowered, 5 V, or the logic rail). A meter on the header with the board
+        powered settles it; until then, wire signal and ground only there too. This is
+        the highest-value open item for this part.
+      - Proven on artoo-esp32 only (GPIO 25, 2026-03-21/22): the 3.3 V LEDC path
+        reaches the ESC, the app reports back the commanded throttle, the motor turns
+        at 50 / 70 / 90 % unloaded, and the ring moves under load ("friction sectors
+        and direction flip resistance noted"). Not proven: anything on FireBeetle 2 /
+        ESP32-P4, where GPIO 48 also sits on the `VDD_IO_5` LDO rail that
+        docs/pin_map.md flags as an unquantified risk to edge quality (the symptom
+        would be erratic dome throttle and would never appear in a log); the arming
+        hold against a real ESC power-cycle; sustained thermal behaviour; the deadband
+        floor; any protection firing. confirmed_on_droid rests on #455.
+
+      Command sources. Every source of dome motion posts one normalised speed to
+      `domeCmdQueue`, and DomeTask (Core 1) is the only writer of the dome channel:
+      the web slider / REST handler, the RC dispatcher (PWM or SBUS binding), the
+      sequence dispatcher's `SEQ_ACT_DOME_ROTATE`, the dome link's rotation cue, the
+      console direct action, the RC signal-loss stop, and the random idle machine
+      inside DomeTask.
+
+      Why the droid uses an RC ESC on LEDC: configuration moves out of the firmware
+      onto a phone, and the runtime driver is a PWM write on a pin the board already
+      has. A SyRen in packet serial would move configuration into the firmware and
+      cost a UART artoo-esp32 does not have spare; a SyRen in R/C mode plugs into the
+      same pin with no new code. The hobby practices the sheet records have droid
+      equivalents: the SBUS neutral band and confirm-frames filter in
+      `dome_input_filter.h` (a stricter host-side deadzone), `dome_speed_limit_pct`
+      (a configurable cap), and the 500 ms `DOME_COMMAND_TIMEOUT_MS` standing in for
+      the hardware timeout the SyRen has and the ESC70 does not.
+
+      DomeTask logged its speed with `%.2f` once (2026-03-21); on ESP32 newlib that
+      routes through `_dtoa_r` and `malloc` on a Core 1 real-time task and produced a
+      "Stack canary watchpoint triggered (DomeTask)" panic loop. That is why the dome
+      log lines use integer percent.
+
+      Findings against the code (2026-09-12 research, re-checked 2026-10-06):
+      - The brushless comment: `include/ledc_pwm.h` was fixed and now says a BRUSHED
+        ESC, but `include/config.h` (the DOME channel comment, "drives brushless
+        motor") and `include/servo_backend.h` ("LEDC_CH_DOME (a brushless ESC") still
+        say brushless. The ESC70 is brushed only and cannot run a brushless motor.
+      - Stack sizes (resolved): docs/failsafe.md once carried a Chip-Specific column
+        reading No for DomeTask at 3072 B, while config.h had 3072 B on artoo-esp32
+        and 4608 B on P4, with an 80 B lower-bound floor recorded on artoo-esp32 as a
+        known exposure; the same mismatch sat on DriveTask, ServoTask and
+        DomeLinkTask. The column is gone: stack sizes now live in
+        `tools/task_stack_recipes.json`, generated into `include/task_stack_figures.h`
+        (ADR 0040), and DomeTask has headroom on both chips. Re-check the dome chain
+        before adding anything to the DomeTask loop on either chip.
+      - Nothing ramps. A `-1.0` DomeCommand right after a `+1.0` is one PWM frame at
+        1000 us with the motor still spinning forward, and in mode (c) the ESC obeys
+        at once. The ESC has no ramp setting, and the SyRen's EEPROM ramping persists
+        and leaks into other modes. A host-side slew limit in DomeTask is the natural
+        home, and it is a behaviour change to a Core 1 task that would also change how
+        the random idle machine and sequence steps feel: a decision, not a correction.
+        Open.
+      - The dome is write-only. `robotState.domeTargetSpeed` is what was commanded,
+        not what the dome is doing. The Dome ESC health row (`data/health_signals.js`)
+        now reads Idle or Spinning in grey as a commanded word, never green. The Dome page's own
+        rotation-state word still reads Idle / Spinning from the commanded target, so a
+        dome whose ESC is in protection, unpowered, uncalibrated or in the wrong
+        running mode shows the same page as a turning dome: the same shape as the old
+        optimistic audio "Playing" badge, with no wire to read. Open: word that state
+        as commanded on the Dome page (operator's call on wording), and whether a
+        sensed dome input (a rotation sensor or a current shunt) is worth a GPIO.
 
   - value: 12
     id: syren10
