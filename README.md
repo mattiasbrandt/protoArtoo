@@ -81,59 +81,33 @@ it from any web browser, with no app and no rebuild. Every source line is open.
 
 ## What it supports
 
-The products in each family are peers: fit the one you own. Every product on a
-card is **Supported**; **Tested** marks the ones that have run on a real droid,
-and **Roadmap** names what is planned.
+The products in each family are peers: fit the one you own. Tested means it has
+run on a real droid.
 
-<table>
-<tr>
-<td width="33%" valign="top">
-<img src="docs/images/families/body-controller.svg" width="28" height="28" alt=""><br>
-<b>Body Controller</b><br>
-<a href="https://www.artoo.uk/">Artoo PCB</a> <sub><b>Tested</b></sub><br><a href="docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md">FireBeetle 2 (ESP32-P4)</a>
-</td>
-<td width="33%" valign="top">
-<img src="docs/images/families/radio-controller.svg" width="28" height="28" alt=""><br>
-<b>Radio Controller</b><br>
-<a href="docs/spec-sheets/hotrc-ds650-radio.md">HotRC DS-650</a> <sub><b>Tested</b></sub><br>RC Radio<br><a href="docs/spec-sheets/rc-receiver-spec.md">RC Receiver - PWM</a><br><a href="docs/spec-sheets/sbus-protocol.md">RC Receiver - SBUS</a><br><a href="docs/spec-sheets/elrs-crsf-radio.md">RC Receiver - ELRS</a>
-<br><sub>Roadmap: <a href="docs/spec-sheets/xbox-controller-input.md">Xbox Controller</a></sub>
-</td>
-<td width="33%" valign="top">
-<img src="docs/images/families/body-servo-controller.svg" width="28" height="28" alt=""><br>
-<b>Body servo controller</b><br>
-<a href="docs/spec-sheets/servo-communication.md">Body controller board GPIO</a> <sub><b>Tested</b></sub><br><a href="docs/spec-sheets/pca9685-servo-expander.md">PCA9685</a>
-<br><sub>Roadmap: <a href="docs/spec-sheets/pololu-maestro-servo-controller.md">Pololu Maestro</a></sub>
-</td>
-</tr>
-<tr>
-<td width="33%" valign="top">
-<img src="docs/images/families/dome-rotation.svg" width="28" height="28" alt=""><br>
-<b>Dome Rotation</b><br>
-<a href="docs/spec-sheets/isdt-esc70-dome-esc.md">ISDT ESC70 (RC ESC)</a> <sub><b>Tested</b></sub>
-<br><sub>Roadmap: <a href="docs/spec-sheets/sabertooth-syren-packet-serial.md">SyRen 10</a></sub>
-</td>
-<td width="33%" valign="top">
-<img src="docs/images/families/dome-controller.svg" width="28" height="28" alt=""><br>
-<b>Dome Controller</b><br>
-<a href="docs/spec-sheets/astropixels-dome-controller.md">AstroPixels Plus</a> <sub><b>Tested</b></sub>
-<br><sub>Roadmap: <a href="docs/spec-sheets/teeces-dome-lighting.md">Teeces</a></sub>
-</td>
-<td width="33%" valign="top">
-<img src="docs/images/families/foot-drive.svg" width="28" height="28" alt=""><br>
-<b>Foot Drive</b><br>
-<a href="docs/spec-sheets/hoverboard-hacked-firmware-foot-drive.md">Hoverboard, hacked firmware</a>
-<br><sub>Roadmap: <a href="docs/spec-sheets/sabertooth-syren-packet-serial.md">Sabertooth 2x25</a>, <a href="docs/spec-sheets/flipsky-vesc-foot-drive.md">Flipsky Mini V6 VESC</a></sub>
-</td>
-</tr>
-<tr>
-<td width="33%" valign="top">
-<img src="docs/images/families/sound.svg" width="28" height="28" alt=""><br>
-<b>Sound</b><br>
-<a href="docs/spec-sheets/dy-sv5w-sound.md">DY-SV5W</a> <sub><b>Tested</b></sub><br><a href="docs/spec-sheets/mp3-trigger-sound.md">MP3 Trigger</a><br><a href="docs/spec-sheets/chirp-audio-trigger-sound.md">CHIRP Audio Trigger</a> <sub><b>Tested</b></sub>
-<br><sub>Roadmap: <a href="docs/spec-sheets/dfplayer-mini-sound.md">DFPlayer Mini</a></sub>
-</td>
-</tr>
-</table>
+| Family | Product | Supported | Tested | Roadmap |
+|---|---|:---:|:---:|:---:|
+| <img src="docs/images/families/body-controller.svg" width="20" height="20" alt=""> **Body Controller** | [Artoo PCB](https://www.artoo.uk/) | ✓ | ✓ |  |
+|  | [FireBeetle 2 (ESP32-P4)](docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md) | ✓ |  |  |
+| <img src="docs/images/families/radio-controller.svg" width="20" height="20" alt=""> **Radio Controller** | [HotRC DS-650](docs/spec-sheets/hotrc-ds650-radio.md) | ✓ | ✓ |  |
+|  | RC Radio | ✓ |  |  |
+|  | [RC Receiver - PWM](docs/spec-sheets/rc-receiver-spec.md) | ✓ |  |  |
+|  | [RC Receiver - SBUS](docs/spec-sheets/sbus-protocol.md) | ✓ |  |  |
+|  | [RC Receiver - ELRS](docs/spec-sheets/elrs-crsf-radio.md) <sub>(selectable, not read yet)</sub> | ✓ |  |  |
+|  | [Xbox Controller](docs/spec-sheets/xbox-controller-input.md) |  |  | ✓ |
+| <img src="docs/images/families/body-servo-controller.svg" width="20" height="20" alt=""> **Body servo controller** | [Body controller board GPIO](docs/spec-sheets/servo-communication.md) | ✓ | ✓ |  |
+|  | [PCA9685](docs/spec-sheets/pca9685-servo-expander.md) | ✓ |  |  |
+|  | [Pololu Maestro](docs/spec-sheets/pololu-maestro-servo-controller.md) |  |  | ✓ |
+| <img src="docs/images/families/dome-rotation.svg" width="20" height="20" alt=""> **Dome Rotation** | [ISDT ESC70 (RC ESC)](docs/spec-sheets/isdt-esc70-dome-esc.md) | ✓ | ✓ |  |
+|  | [SyRen 10](docs/spec-sheets/sabertooth-syren-packet-serial.md) |  |  | ✓ |
+| <img src="docs/images/families/dome-controller.svg" width="20" height="20" alt=""> **Dome Controller** | [AstroPixels Plus](docs/spec-sheets/astropixels-dome-controller.md) | ✓ | ✓ |  |
+|  | [Teeces](docs/spec-sheets/teeces-dome-lighting.md) |  |  | ✓ |
+| <img src="docs/images/families/foot-drive.svg" width="20" height="20" alt=""> **Foot Drive** | [Hoverboard, hacked firmware](docs/spec-sheets/hoverboard-hacked-firmware-foot-drive.md) | ✓ |  |  |
+|  | [Sabertooth 2x25](docs/spec-sheets/sabertooth-syren-packet-serial.md) |  |  | ✓ |
+|  | [Flipsky Mini V6 VESC](docs/spec-sheets/flipsky-vesc-foot-drive.md) |  |  | ✓ |
+| <img src="docs/images/families/sound.svg" width="20" height="20" alt=""> **Sound** | [DY-SV5W](docs/spec-sheets/dy-sv5w-sound.md) | ✓ | ✓ |  |
+|  | [MP3 Trigger](docs/spec-sheets/mp3-trigger-sound.md) | ✓ |  |  |
+|  | [CHIRP Audio Trigger](docs/spec-sheets/chirp-audio-trigger-sound.md) | ✓ | ✓ |  |
+|  | [DFPlayer Mini](docs/spec-sheets/dfplayer-mini-sound.md) |  |  | ✓ |
 
 [Full support detail](docs/goal.md#target-hardware-profile)
 
