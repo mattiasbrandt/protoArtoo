@@ -167,10 +167,10 @@ This document was created to address five core error-signalling inconsistencies 
 
 | Inconsistency Class | Module | Instance | Resolution |
 |---|---|---|---|
-| Input validation (Class 1) | parseAudioDollar | unrecognized $ commands | Aligned: WARN log added in `src/tasks/audio_task_step.cpp` (issue #129, slice 2) |
-| Operational failure (Class 2) | configSave* | rollback paths | Aligned: ERROR logs on both rollback paths in `src/web/api_audio.cpp` (issue #129, slice 3) |
+| Input validation (Class 1) | parseAudioDollar | unrecognized $ commands | Aligned: WARN log added in `src/tasks/audio_task_step.cpp` (issue #129) |
+| Operational failure (Class 2) | configSave* | rollback paths | Aligned: ERROR logs on both rollback paths in `src/web/api_audio.cpp` (issue #129) |
 | Repeated failure (Class 3) | queue send/drop | drops to queues | Exempted: Already aligned by issue #128 via `queue_drop_tracker.h` — the "bool + counter + rate-limited log" reference implementation cited above |
-| Operational failure (Class 2) | parseMarcduinoCommand | RC dispatch calls | DEBUG logs added in `src/rc_dispatcher_helpers.cpp` (issue #129, slice 4). Not aligned as written: Class 2 asks for WARN or ERROR, and the code logs DEBUG (`rcDispatchAudioTrigger()`); the class or the level is wrong, and which is a decision still open |
+| Operational failure (Class 2) | parseMarcduinoCommand | RC dispatch calls | DEBUG logs added in `src/rc_dispatcher_helpers.cpp` (issue #129). Not aligned as written: Class 2 asks for WARN or ERROR, and the code logs DEBUG (`rcDispatchAudioTrigger()`); the class or the level is wrong, and which is a decision still open |
 | Benign failure (Class 4) | audio task | unrecognized AUDIO_ACTION_NONE | Exempted: Expected behavior for forward-incompatible or unrecognized commands; silent handling is correct per Class 4 (log-and-continue). No change needed. |
 
 ## Related

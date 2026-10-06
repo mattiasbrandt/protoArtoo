@@ -133,14 +133,9 @@ on that board, the WiFi-module entries answer `not-on-this-board`, and the
 shape is `< id=<n> type=item value=<name> (<type>[, <reason>])` plus the CR LF
 terminator (#267), with a single-digit request id.
 
-```
-entries: 217
-bytes on the wire: 13004
-seconds @115200 8N1 (10 bits/byte): 1.13
-```
-
-Measured 2026-10-06 (#475). The figure moves with every catalog row; what the
-decision below rests on is its order of magnitude, about a second.
+At 115200 8N1 the listing takes about a second on the wire. The exact figure
+moves with every catalog row; the decision below rests on its order of
+magnitude.
 
 **Decision: no paging.** On both serial and web transports the listing is
 emitted in full, in one request. Justification:
@@ -149,9 +144,9 @@ emitted in full, in one request. Justification:
   shared serial mutex for that whole window, blocking every other task's log
   line (#219 R1) - that was the actual defect, and it is fixed by locking
   per record line (section 3.1), not by paging. With the mutex held per
-  line, `operations`' ~1.1 s is Core 0 non-real-time wall-clock time; it never
+  line, `operations`' second or so is Core 0 non-real-time wall-clock time; it never
   touches Core 1 and never delays a log line by more than one record's
-  width. Paging would trade that one linear ~1.1 s wait for a slower,
+  width. Paging would trade that one linear wait of about a second for a slower,
   stateful, multi-round-trip one, for no remaining safety benefit.
 - `operations` is an explicit, operator-typed discovery command, not
   telemetry - it is not issued in a loop, and a bench operator reading a

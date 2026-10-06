@@ -32,15 +32,15 @@
 **Registry-declared flags (4 entries):**
 - `PA_HEAP_PROFILE` - Gates profiler queries
   - Affects: `system.action.profiler-trace-start`, `system.action.profiler-trace-stop`, `system.api.get-profiler`
-  - Evidence: `include/build_flags.inc:19` (build flag declaration), `src/web/api_profiler.cpp:35` (the `#if PA_HEAP_PROFILE` guard). Corrected 2026-10-06: this line first cited `include/config.h:85`, which is a `PA_HEAP_TRACING` requirement check, and `api_profiler.cpp:46,186,327,442,484,563`, which are `CONFIG_HEAP_TASK_TRACKING` guards
+  - Evidence: `include/build_flags.inc:19` (build flag declaration), `src/web/api_profiler.cpp:35` (the `#if PA_HEAP_PROFILE` guard), both at `c13cb6f`. Corrected 2026-10-06: this line first cited `include/config.h:85`, which is a `PA_HEAP_TRACING` requirement check, and `api_profiler.cpp:46,186,327,442,484,563`, which are `CONFIG_HEAP_TASK_TRACKING` guards
   
 - `PA_HEAP_TRACING` - Gates heap tracing commands
   - Affects: `system.action.profiler-trace-*`
-  - Evidence: `include/build_flags.inc:20` (corrected 2026-10-06 from `include/config.h:88`)
+  - Evidence: `include/build_flags.inc:20` (at `c13cb6f`; corrected 2026-10-06 from `include/config.h:88`)
 
 - `PA_ADMISSION_TRACE` - Gates admission admission-trace diagnostics
   - Affects: `system.api.get-admission-trace`
-  - Evidence: `include/build_flags.inc:21`, `include/api_admission_trace.h:18` (`#if PA_ADMISSION_TRACE`; corrected 2026-10-06 from `include/web_admission.h:34`, a comment), `src/web/web_admission_psychic.cpp:155,173` (guarded sections)
+  - Evidence: `include/build_flags.inc:21`, `include/api_admission_trace.h:18` (`#if PA_ADMISSION_TRACE`, both at `c13cb6f`; corrected 2026-10-06 from `include/web_admission.h:34`, a comment), `src/web/web_admission_psychic.cpp:155,173` (guarded sections)
 
 **Chip/board capability flags (discovered):**
 - `PA_CAP_NATIVE_WIFI` - Distinguishes board WiFi capabilities
@@ -119,8 +119,8 @@
 
 ## Evidence Artifacts
 
-- **Gate-reverse source:** `src/web/api_profiler.cpp` (line 35 is the `PA_HEAP_PROFILE` guard; lines 46, 186, 327, 442, 484, 563 are CONFIG_HEAP_TASK_TRACKING guards)
-- **Gate-reverse source:** `include/build_flags.inc` (lines 19-21 declare PA_HEAP_PROFILE, PA_HEAP_TRACING, PA_ADMISSION_TRACE; corrected 2026-10-06 from `include/config.h` lines 85, 88)
+- **Gate-reverse source:** `src/web/api_profiler.cpp` (at `c13cb6f`: line 35 is the `PA_HEAP_PROFILE` guard; lines 46, 186, 327, 442, 484, 563 are CONFIG_HEAP_TASK_TRACKING guards)
+- **Gate-reverse source:** `include/build_flags.inc` (at `c13cb6f`, lines 19-21 declare PA_HEAP_PROFILE, PA_HEAP_TRACING, PA_ADMISSION_TRACE; corrected 2026-10-06 from `include/config.h` lines 85, 88)
 - **Paired-artefact source:** `.pio/build/artoo_esp32/firmware.map` (17 MB, complete linker map)
 - **Paired-artefact source:** `.pio/build/firebeetle2/firmware.map` (13 MB, complete linker map)
 - **Inventory evidence:** `tools/console_inventory/{dome,sound,system,drive-servo-aux-rc}.yaml`. Corrected 2026-10-06: this line first said they "all pass `console_inventory_check.py`"; no such script has existed in this tree. The inventory checks live in `tools/check_action_registry_drift.py` (`make check-action-drift`)

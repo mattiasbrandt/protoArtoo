@@ -89,8 +89,8 @@ its path in beside the others rather than fetching a package to read it again.
 (#350) is the destination the prototype's own nav row named `connection`, so
 landing that surface was one path copied in and no package fetched.
 `wrench-outline` came in the same way with Maintenance (#404), the row the
-prototype drew it on, and Configuration kept the `tune-variant` the Setup page
-it split from had worn.
+prototype drew it on, and Configuration kept the `tune-variant` it carried
+before that split.
 
 `robot-outline` is the one choice the prototype did not make for us: it left
 Servos out of the rail because `GLOSSARY.md` **Activity Group** does not list it
