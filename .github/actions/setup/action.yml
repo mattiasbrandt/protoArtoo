@@ -1,0 +1,139 @@
+name: protoArtoo build setup
+description: >-
+  Python, the PlatformIO Core this tree builds with, the Python tools, Node with
+  esbuild on PATH, zopfli, and the PlatformIO cache for one core dir. Shared by
+  verification.yml and release.yml, so a release image is built on the same
+  toolchain Verification checked (#473). Check the repository out first.
+
+# Every `uses:` is pinned to a full commit SHA with its `# vX.Y.Z`, and a new
+# action lands pinned the same way (#473). Dependabot's grouped weekly
+# updates move the pins.
+
+inputs:
+  pool:
+    description: >-
+      The PlatformIO core dir this job builds in: `classic` (~/.platformio, the
+      ESP32 and native envs), `p4` (~/.platformio-p4, the ESP32-P4), or empty
+      for a job that runs no pio at all (a documentation-only change).
+    required: false
+    default: ''
+  cache-name:
+    description: >-
+      Names this job's cache entry inside the pool. Two jobs on one core dir
+      install different packages (a board job the toolchain, the checks job
+      the native platform and cppcheck too), so each keeps its own.
+    required: false
+    default: ''
+
+outputs:
+  core-dir:
+    description: The PLATFORMIO_CORE_DIR for `pool`, empty when no pool was asked for.
+    value: ${{ steps.pool.outputs.core-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: 🧭 Resolve the core dir
+      id: pool
+      shell: bash
+      env:
+        POOL: ${{ inputs.pool }}
+      run: |
+        case "$POOL" in
+          classic) dir="$HOME/.platformio" ;;
+          p4)      dir="$HOME/.platformio-p4" ;;
+          '')      dir="" ;;
+          *) echo "unknown pool '$POOL' (classic, p4 or empty)" >&2; exit 1 ;;
+        esac
+        echo "core-dir=$dir" >> "$GITHUB_OUTPUT"
+
+    # Pinned to the bench's own (python3 --version, 2026-10-06). `3.x` resolved
+    # whatever was newest on the day, so CI and the bench could build with two
+    # different interpreters without anyone choosing it.
+    - name: 🐍 Set up Python
+      id: python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      with:
+        python-version: '3.14.7'
+        cache: pip
+        cache-dependency-path: tools/requirements.txt
+
+    - name: 📦 Install PlatformIO
+      # Pinned to the core the tree is verified with. An unpinned install
+      # picked up PlatformIO 6.2.0 on 2026-09-06, whose tool-scons 4.11
+      # fails every env at the link step with "No module named
+      # 'SCons.Tool.FortranCommon'"; 6.1.19 with tool-scons 4.8 links all
+      # of them. Bump deliberately, with a green run, not by drift.
+      if: inputs.pool != ''
+      shell: bash
+      run: pip install platformio==6.1.19
+
+    - name: 📦 Install Python tools
+      # Always: the drift, web and tooling checks run on every change,
+      # including a documentation-only one.
+      shell: bash
+      run: pip install -r tools/requirements.txt
+
+    - name: 💾 Cache PlatformIO packages and toolchains
+      # The whole core dir (platforms, packages, toolchains, library
+      # downloads), so a warm run skips re-downloading and re-unpacking the
+      # ESP-IDF toolchain. Build artifacts (.pio/build/) are never cached and
+      # are not verification evidence. The cache saves only when the job
+      # succeeds (actions/cache's default post-if), so a pool a failed build
+      # left broken is never stored. Bump `v1` to discard every entry.
+      if: inputs.pool != ''
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: ${{ steps.pool.outputs.core-dir }}
+        key: ${{ runner.os }}-pio-v1-py${{ steps.python.outputs.python-version }}-${{ inputs.pool }}-${{ inputs.cache-name }}-${{ hashFiles('platformio.ini') }}
+        restore-keys: ${{ runner.os }}-pio-v1-py${{ steps.python.outputs.python-version }}-${{ inputs.pool }}-${{ inputs.cache-name }}-
+
+    - name: 📌 Pin the ESP32-P4 penv's PlatformIO Core
+      # The P4 platform (pioarduino 55.03.311, builder/penv_setup.py) builds
+      # inside its own ~/.platformio-p4/penv, created on first use with
+      # `uv pip install --upgrade "pioarduino>=6.1.19"`. That resolved to
+      # Core 6.2.0 from 2026-09-15, whose tool-scons 4.11.1 fails the P4
+      # link with "No module named 'SCons.Tool.FortranCommon'"; every
+      # Verification run was red from then until this step (#473). On a cold
+      # runner the penv is created inside the build, after the build lock's
+      # penv check has passed, so it has to exist and be pinned before then.
+      # `pio pkg install -e` installs the platform and runs its package
+      # configuration, which creates the penv, without building. The penv
+      # is a uv venv with no pip, and the platform reads the `pioarduino`
+      # dist, so the pin goes through the penv's own uv on that dist. Once
+      # it holds 6.1.19, ">=6.1.19" is satisfied and nothing upgrades it.
+      # A restored cache already holds the pinned penv; the step re-pins it
+      # anyway, which is a no-op then and costs seconds.
+      if: inputs.pool == 'p4'
+      shell: bash
+      env:
+        PLATFORMIO_CORE_DIR: ${{ steps.pool.outputs.core-dir }}
+      run: |
+        penv="$PLATFORMIO_CORE_DIR/penv"
+        pio pkg install -e firebeetle2
+        "$penv/bin/uv" pip install --python "$penv/bin/python" \
+          --reinstall-package pioarduino pioarduino==6.1.19
+        grep -m1 '^VERSION' "$penv"/lib/python*/site-packages/platformio/__init__.py
+
+    # Pinned to the bench's own (node --version, 2026-10-06), as Python is.
+    - name: 🟢 Set up Node
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      with:
+        node-version: '26.8.1'
+        cache: npm
+        cache-dependency-path: package-lock.json
+
+    - name: 📦 Install npm dependencies
+      # Also puts esbuild on PATH: tools/gzip_fsdata.py minifies the web UI
+      # with it on every pio build, and refuses to build without it (#382).
+      shell: bash
+      run: |
+        npm ci
+        echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+
+    - name: 🗜️ Install zopfli
+      # tools/gzip_fsdata.py gzips every web asset with zopfli on every pio
+      # build and refuses to build without it (#461). Always installed: the
+      # tooling tests stage a filesystem too, on a documentation-only change.
+      shell: bash
+      run: sudo apt-get install -y --no-install-recommends zopfli

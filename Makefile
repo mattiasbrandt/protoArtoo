@@ -156,8 +156,10 @@ pw-fixture: ## Run fixture Playwright scripts in DIR (make pw-fixture DIR=seq)
 check-protocol-mirror: ## Browser half of the protocol-check corpus (firmware half: --native)
 	python3 tools/check_protocol_mirror.py
 
-check: ## Static analysis with cppcheck
-	$(FLOCK) pio check -e artoo_esp32
+# --fail-on-defect=high as in CI: check_severity only filters what is printed,
+# and cppcheck exits 0 whatever it finds without it (#473).
+check: ## Static analysis with cppcheck (fails on a HIGH defect, as CI does)
+	$(FLOCK) pio check -e artoo_esp32 --fail-on-defect=high
 
 check-action-drift: ## Ad hoc check that action YAML, C++, and RC fallback metadata align
 	python3 tools/check_action_registry_drift.py

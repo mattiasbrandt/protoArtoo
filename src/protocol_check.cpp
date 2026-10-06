@@ -968,7 +968,10 @@ static __attribute__((noinline)) GestureFault checkGesture(const SeqStep& s) {
         int8_t half = -1;
         // Catalog indices fit a byte (DROID_PART_COUNT is well under 256), and
         // this frame sits on the Sequence Coordinator's measured chain (ADR 0040).
-        uint8_t seen[SEQ_GESTURE_MEMBERS_MAX];
+        // Zeroed although only seen[0..n) is ever read: cppcheck cannot follow
+        // the writes through the lambda and reports a HIGH uninitvar, which
+        // fails CI's static analysis (#473). The array is the same size.
+        uint8_t seen[SEQ_GESTURE_MEMBERS_MAX] = {};
         seqGestureEachListed(s.payload, [&](const char* id) {
             const size_t idx = droidPartIndexOf(id);
             if (idx >= DROID_PART_COUNT) {

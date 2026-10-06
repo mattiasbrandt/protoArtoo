@@ -1,12 +1,27 @@
 name: Verification
 
+# Every `uses:` is pinned to a full commit SHA with its `# vX.Y.Z`, and a new
+# action lands pinned the same way (#473). Dependabot's grouped weekly
+# updates move the pins.
+#
+# Shape (#473): `changes` decides whether code changed; the two boards and the
+# checks run as parallel jobs on the shared setup (.github/actions/setup); the
+# final job, named `verification` because protect-main requires that name,
+# writes the summary, posts the pull request comment and is the gate. It
+# fails on any job that failed, was cancelled, or was skipped for any reason
+# but a documentation-only change.
+
 on:
   pull_request:
     branches:
       - main
   push:
+    # An epic branch is verified on every push too, so a long epic is not
+    # first checked by its closure pull request (#473: epic/operator-experience
+    # went its whole life without a run).
     branches:
       - main
+      - 'epic/**'
     # A commit that only touches Markdown cannot change what the firmware
     # does, with one exception: docs/spec-sheets/. Each sheet's wiring_card
     # block is generated into the Wiring page's partial under data/
@@ -17,10 +32,9 @@ on:
     # everything, minus Markdown and LICENSE, plus the spec sheets again.
     #
     # Only push is filtered here -- a pull request is filtered per-PR in the
-    # "Decide whether code changed" step, because GitHub evaluates
-    # pull_request path filters against the whole PR diff, not the commit
-    # just pushed, so they would never skip anything on a branch that also
-    # carries code.
+    # `changes` job, because GitHub evaluates pull_request path filters
+    # against the whole PR diff, not the commit just pushed, so they would
+    # never skip anything on a branch that also carries code.
     paths:
       - '**'
       - '!**/*.md'
@@ -28,54 +42,64 @@ on:
       - 'docs/spec-sheets/**'
   workflow_dispatch:
 
-# Workflow-level default: read-only. Pull-requests: write is scoped to the job
-# that posts the sticky comment, not applied globally.
+# Workflow-level default: read-only. Each job widens only what it needs:
+# `changes` reads the pull request's file list, `verification` posts the
+# sticky comment.
 permissions:
   contents: read
 
-# One run per pull request. Pushing again supersedes the run already in
-# flight, which otherwise keeps a 40-minute build alive for a commit nobody
-# is waiting on any more. Runs on main are never cancelled: main's history
-# keeps a result for every commit.
+# One run per pull request or epic branch: a newer push supersedes the run in
+# flight, which otherwise keeps a 20-minute build alive for a commit nobody is
+# waiting on any more. A run on main and a manual dispatch each get a group of
+# their own (the run id), because cancel-in-progress: false only spares the
+# run in progress: GitHub still cancels a PENDING run in the same group when a
+# newer one queues. Shared, version-sync's bot push would cancel a merge's
+# pending run on main, and an epic push would cancel a dispatch. main keeps a
+# result for every commit.
 concurrency:
-  group: verification-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: verification-${{ github.event.pull_request.number || ((github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && github.run_id) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/epic/')) }}
 
 jobs:
-  verification:
-    name: verification
+  changes:
+    name: changes
     runs-on: ubuntu-latest
-    # Version-sync's bot commit now pushes via a deploy key, and deploy-key
+    timeout-minutes: 5
+    # Version-sync's bot commit pushes via a deploy key, and deploy-key
     # pushes (unlike GITHUB_TOKEN pushes) trigger on:push workflows. A
-    # version-JSON-only commit needs no verification run — skip it.
+    # version-JSON-only commit needs no verification run - skip it. Every
+    # other job needs this one, so they skip with it; `verification` repeats
+    # the guard because it runs always().
     if: github.event_name != 'push' || github.event.head_commit.author.email != '41898282+github-actions[bot]@users.noreply.github.com'
     permissions:
       contents: read
-      pull-requests: write
-
+      pull-requests: read
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
     steps:
       - name: 🧭 Decide whether code changed
         id: changes
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
           # Markdown and LICENSE cannot change what the firmware does. Anything
           # else -- .py, .yaml, .json, data/, src/, include/, test/, tools/,
-          # platformio.ini, Makefile, .github/workflows/ -- counts as code and
-          # runs the full set. The list is deliberately an allow-list of two
-          # harmless extensions rather than a deny-list of source directories:
-          # a new source directory then fails closed, running everything.
+          # platformio.ini, Makefile, .github/ -- counts as code and runs the
+          # full set. The list is deliberately an allow-list of two harmless
+          # extensions rather than a deny-list of source directories: a new
+          # source directory then fails closed, running everything.
           # A spec sheet is Markdown that generates part of data/ (#458); the
           # drift check holding it to its partial is one of the checks that
           # still run on a documentation-only pull request.
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
+          if [ "$EVENT" != "pull_request" ]; then
             echo "code=true" >> "$GITHUB_OUTPUT"
             echo "Not a pull request - running every check."
             exit 0
           fi
-          files=$(gh api \
-            "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
-            --paginate --jq '.[].filename' || true)
+          files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename' || true)
           if [ -z "$files" ]; then
             echo "code=true" >> "$GITHUB_OUTPUT"
             echo "Could not list the pull request's files - running every check."
@@ -88,152 +112,193 @@ jobs:
             printf '%s\n' "$code" | head -20
           else
             echo "code=false" >> "$GITHUB_OUTPUT"
-            echo "Documentation only - skipping the builds, budgets, native tests"
-            echo "and static analysis. Drift, web and tooling checks still run."
+            echo "Documentation only - skipping the board builds, budgets, native"
+            echo "tests and static analysis. Drift, web and tooling checks still run."
           fi
 
+  # ── Boards ─────────────────────────────────────────────────────────────────
+  # One job per board, each on its own PlatformIO core dir and cache. A board
+  # job that succeeds saves its cache; one that fails saves nothing, so a
+  # pool a failed build left broken is never restored by the next run.
+  #
+  # Each job reports its rows as `outcome<TAB>label<TAB>command` lines and the
+  # budget script's headroom table as outputs; `verification` renders them.
+
+  artoo:
+    name: artoo
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    # A warm run builds in ~10 min (profiler build, firmware, buildfs); a
+    # cold one adds the toolchain download. Without a limit a hung pio holds
+    # the runner for GitHub's 6 h default.
+    timeout-minutes: 45
+    outputs:
+      rows: ${{ steps.record.outputs.rows }}
+      headroom: ${{ steps.build-budgets.outputs.headroom }}
+    steps:
       - name: ⬇️ Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v7
+      - name: 🧰 Set up the build
+        uses: ./.github/actions/setup
         with:
-          python-version: '3.x'
-          cache: pip
-          cache-dependency-path: tools/requirements.txt
-
-      - name: 🔧 Install cppcheck
-        if: steps.changes.outputs.code == 'true'
-        run: sudo apt-get install -y --no-install-recommends cppcheck
-
-      - name: 📦 Install PlatformIO
-        # Pinned to the core the tree is verified with. An unpinned install
-        # picked up PlatformIO 6.2.0 on 2026-09-06, whose tool-scons 4.11
-        # fails every env at the link step with "No module named
-        # 'SCons.Tool.FortranCommon'"; 6.1.19 with tool-scons 4.8 links all
-        # of them. Bump deliberately, with a green run, not by drift.
-        if: steps.changes.outputs.code == 'true'
-        run: pip install platformio==6.1.19
-
-      - name: 📦 Install Python tools
-        # Always installed: the drift, web and tooling checks run on every
-        # change, including a documentation-only one.
-        run: pip install -r tools/requirements.txt
-
-      - name: 💾 Cache PlatformIO packages and toolchains (classic)
-        if: steps.changes.outputs.code == 'true'
-        uses: actions/cache@v6
-        with:
-          # Cache the whole ~/.platformio tree (platforms, packages, toolchains,
-          # library downloads) — not just the download cache — so a warm run
-          # skips re-downloading and re-unpacking the ESP-IDF toolchain, cppcheck,
-          # etc. Build artifacts (.pio/build/) are never cached and must not be
-          # treated as verification evidence.
-          path: ~/.platformio
-          key: ${{ runner.os }}-pio-classic-${{ hashFiles('platformio.ini') }}
-          restore-keys: ${{ runner.os }}-pio-classic-
-
-      - name: 💾 Cache PlatformIO packages and toolchains (ESP32-P4)
-        if: steps.changes.outputs.code == 'true'
-        uses: actions/cache@v6
-        with:
-          # Separate cache for P4 toolchain (different pioarduino platform version)
-          path: ~/.platformio-p4
-          key: ${{ runner.os }}-pio-p4-${{ hashFiles('platformio.ini') }}
-          restore-keys: ${{ runner.os }}-pio-p4-
-
-      - name: 📌 Pin the ESP32-P4 penv's PlatformIO Core
-        # The P4 platform (pioarduino 55.03.311, builder/penv_setup.py) builds
-        # inside its own ~/.platformio-p4/penv, created on first use with
-        # `uv pip install --upgrade "pioarduino>=6.1.19"`. That resolved to
-        # Core 6.2.0 from 2026-09-15, whose tool-scons 4.11.1 fails the P4
-        # link with "No module named 'SCons.Tool.FortranCommon'"; every
-        # Verification run was red from then until this step (#473). On a cold
-        # runner the penv is created inside the build, after the build lock's
-        # penv check has passed, so it has to exist and be pinned before then.
-        # `pio pkg install -e` installs the platform and runs its package
-        # configuration, which creates the penv, without building. The penv
-        # is a uv venv with no pip, and the platform reads the `pioarduino`
-        # dist, so the pin goes through the penv's own uv on that dist. Once
-        # it holds 6.1.19, ">=6.1.19" is satisfied and nothing upgrades it.
-        if: steps.changes.outputs.code == 'true'
-        run: |
-          penv="$HOME/.platformio-p4/penv"
-          PLATFORMIO_CORE_DIR="$HOME/.platformio-p4" pio pkg install -e firebeetle2
-          "$penv/bin/uv" pip install --python "$penv/bin/python" \
-            --reinstall-package pioarduino pioarduino==6.1.19
-          grep -m1 '^VERSION' "$penv"/lib/python*/site-packages/platformio/__init__.py
-
-      - name: 🟢 Set up Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: lts/*
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: 📦 Install npm dependencies
-        # Also puts esbuild on PATH: tools/gzip_fsdata.py minifies the web UI
-        # with it on every pio build, and refuses to build without it (#382).
-        run: |
-          npm ci
-          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
-
-      - name: 🗜️ Install zopfli
-        # tools/gzip_fsdata.py gzips every web asset with zopfli on every pio
-        # build and refuses to build without it (#461). Always installed: the
-        # tooling tests stage a filesystem too, on a documentation-only change.
-        run: sudo apt-get install -y --no-install-recommends zopfli
+          pool: classic
+          cache-name: artoo
 
       - name: 🔑 Provision CI placeholder secrets.h
         run: cp src/secrets.h.example src/secrets.h
 
-      # ── Checks ───────────────────────────────────────────────────────────────
-      # All check steps use continue-on-error: true so every check runs
-      # regardless of earlier failures. The gate step at the end fails the job
-      # if any check did not succeed. steps.<id>.outcome reflects the actual
-      # pass/fail even when continue-on-error is set.
-
       - name: 🏗️ Profiler build
         id: profiler-build
-        continue-on-error: true
-        if: steps.changes.outputs.code == 'true'
         run: pio run -e artoo_esp32_profiler
 
-      - name: 🏗️ Builds and size budgets
+      - name: 🏗️ Build and size budgets
         id: build-budgets
-        continue-on-error: true
-        if: steps.changes.outputs.code == 'true'
-        # This step IS the firmware build. It ran as a duplicate for a long
-        # time: artoo_esp32 and firebeetle2 were each built by a dedicated step
-        # and then rebuilt here minutes later in the same job (3m08s then
-        # 3m30s; 5m57s then 5m52s - full rebuilds, not incremental), which was
-        # 9m22s of a 30m31s run buying nothing. The dedicated steps are gone and
-        # this one reports both outcomes: a build that fails and a build that
-        # overruns its budget both fail this row.
-        run: python3 tools/check_build_budgets.py
+        # Runs after a failed profiler build too: the two images are
+        # independent, and one failing must not hide the other.
+        if: ${{ !cancelled() }}
+        # This step IS the firmware build: a build that fails and a build that
+        # overruns its budget both fail it. The headroom table is published
+        # whatever the verdict.
+        run: |
+          set +e
+          python3 tools/check_build_budgets.py --env artoo_esp32 --summary headroom.md
+          code=$?
+          if [ -f headroom.md ]; then
+            { echo 'headroom<<HEADROOM_EOF'; cat headroom.md; echo 'HEADROOM_EOF'; } >> "$GITHUB_OUTPUT"
+          fi
+          exit "$code"
 
-      # The budget step keeps every pio run's whole output in build-logs/ and
-      # prints only the tail of a failed one; a link error can start above it.
-      # continue-on-error keeps failure() false, so this keys on the outcome.
+      # The budget script keeps every pio run's whole output in build-logs/
+      # and prints only the tail of a failed one; a link error can start
+      # above it.
       - name: 📤 Upload build logs
-        if: always() && steps.build-budgets.outcome == 'failure'
+        if: ${{ !cancelled() && steps.build-budgets.outcome == 'failure' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: build-logs-${{ github.run_id }}
+          name: build-logs-${{ github.job }}
           path: build-logs/
           retention-days: 7
+
+      - name: 🧾 Record results
+        id: record
+        if: always()
+        env:
+          PROFILER_OUTCOME: ${{ steps.profiler-build.outcome }}
+          BUDGETS_OUTCOME: ${{ steps.build-budgets.outcome }}
+        run: |
+          {
+            echo 'rows<<ROWS_EOF'
+            printf '%s\t%s\t%s\n' "$PROFILER_OUTCOME" "Profiler build" "pio run -e artoo_esp32_profiler"
+            printf '%s\t%s\t%s\n' "$BUDGETS_OUTCOME" "artoo_esp32 build and size budgets" "python3 tools/check_build_budgets.py --env artoo_esp32"
+            echo 'ROWS_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+  firebeetle2:
+    name: firebeetle2
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    # A cold ESP32-P4 build is ~7.5 min (2026-10-06), plus the penv pin and
+    # the toolchain download.
+    timeout-minutes: 40
+    outputs:
+      rows: ${{ steps.record.outputs.rows }}
+      headroom: ${{ steps.build-budgets.outputs.headroom }}
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: 🧰 Set up the build
+        uses: ./.github/actions/setup
+        with:
+          pool: p4
+          cache-name: firebeetle2
+
+      - name: 🔑 Provision CI placeholder secrets.h
+        run: cp src/secrets.h.example src/secrets.h
+
+      - name: 🏗️ Build and size budgets
+        id: build-budgets
+        run: |
+          set +e
+          python3 tools/check_build_budgets.py --env firebeetle2 --summary headroom.md
+          code=$?
+          if [ -f headroom.md ]; then
+            { echo 'headroom<<HEADROOM_EOF'; cat headroom.md; echo 'HEADROOM_EOF'; } >> "$GITHUB_OUTPUT"
+          fi
+          exit "$code"
+
+      - name: 📤 Upload build logs
+        if: ${{ !cancelled() && steps.build-budgets.outcome == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: build-logs-${{ github.job }}
+          path: build-logs/
+          retention-days: 7
+
+      - name: 🧾 Record results
+        id: record
+        if: always()
+        env:
+          BUDGETS_OUTCOME: ${{ steps.build-budgets.outcome }}
+        run: |
+          {
+            echo 'rows<<ROWS_EOF'
+            printf '%s\t%s\t%s\n' "$BUDGETS_OUTCOME" "firebeetle2 build and size budgets" "python3 tools/check_build_budgets.py --env firebeetle2"
+            echo 'ROWS_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+  # ── Checks ─────────────────────────────────────────────────────────────────
+  # Every check step uses continue-on-error: true so every check runs
+  # regardless of earlier failures; the job's own gate at the end fails it if
+  # any check did not succeed. steps.<id>.outcome reflects the actual
+  # pass/fail even when continue-on-error is set.
+
+  checks:
+    name: checks
+    needs: changes
+    runs-on: ubuntu-latest
+    # Native tests ~3 min, static analysis ~2 min, the rest seconds each,
+    # plus a cold classic platform and the native toolchain.
+    timeout-minutes: 40
+    outputs:
+      rows: ${{ steps.record.outputs.rows }}
+    env:
+      CODE_CHANGED: ${{ needs.changes.outputs.code }}
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: 🧰 Set up the build
+        uses: ./.github/actions/setup
+        with:
+          # No PlatformIO at all on a documentation-only change: the native
+          # tests and static analysis are its only users here.
+          pool: ${{ needs.changes.outputs.code == 'true' && 'classic' || '' }}
+          cache-name: checks
+
+      - name: 🔧 Install cppcheck
+        if: needs.changes.outputs.code == 'true'
+        run: sudo apt-get install -y --no-install-recommends cppcheck
+
+      - name: 🔑 Provision CI placeholder secrets.h
+        run: cp src/secrets.h.example src/secrets.h
 
       - name: 🧪 Native tests
         id: native-tests
         continue-on-error: true
-        if: steps.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true'
         run: pio test -e native
 
+      # check_severity in platformio.ini only filters what is printed;
+      # cppcheck exits 0 whatever it finds unless told which severity fails.
       - name: 🔍 Static analysis
         id: static-analysis
         continue-on-error: true
-        if: steps.changes.outputs.code == 'true'
-        run: pio check -e artoo_esp32
+        if: needs.changes.outputs.code == 'true'
+        run: pio check -e artoo_esp32 --fail-on-defect=high
 
       - name: 📋 Action registry drift
         id: action-drift
@@ -307,6 +372,14 @@ jobs:
         continue-on-error: true
         run: make check-servo-motion-drift
 
+      # The browser half of the protocol-check corpus: data/seq_protocol_check.js
+      # against test/fixtures/protocol_mirror.json. Its firmware half is the
+      # native test test_protocol_mirror; this half ran nowhere in CI (#473).
+      - name: 🪞 Protocol mirror
+        id: protocol-mirror
+        continue-on-error: true
+        run: make check-protocol-mirror
+
       - name: 🌐 Web logic tests
         id: web-tests
         continue-on-error: true
@@ -324,13 +397,47 @@ jobs:
         continue-on-error: true
         run: make test-tools
 
-      # ── Summary ──────────────────────────────────────────────────────────────
+      # Each budgeted env is one board job above. A board added to
+      # tools/build_budgets.json and not to this workflow would never be built
+      # here, so the set is held to the two jobs that exist.
+      - name: 🧮 Board jobs cover the budgets
+        id: board-jobs
+        continue-on-error: true
+        run: |
+          envs=$(python3 -c 'import json; print(" ".join(sorted(json.load(open("tools/build_budgets.json"))["envs"])))')
+          if [ "$envs" != "artoo_esp32 firebeetle2" ]; then
+            echo "tools/build_budgets.json budgets: $envs" >&2
+            echo "verification.yml has board jobs for: artoo_esp32 firebeetle2" >&2
+            echo "Add a board job for each new env in .github/workflows/verification.yml (and its row here)." >&2
+            exit 1
+          fi
 
-      - name: 📊 Write run summary
+      # Lints every workflow, with ShellCheck on each workflow run: block, and
+      # checks the inputs each workflow passes the shared setup action. It does
+      # not lint the composite action's own run: blocks. A pinned release
+      # binary, checked against the digest actionlint's own checksums file
+      # lists for it, rather than an action.
+      - name: 🧹 actionlint
+        id: actionlint
+        continue-on-error: true
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          # actionlint skips its ShellCheck pass silently when the binary is
+          # missing, so its absence fails the row instead.
+          command -v shellcheck
+          tarball="$RUNNER_TEMP/actionlint.tar.gz"
+          curl -fsSL -o "$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "$ACTIONLINT_SHA256  $tarball" | sha256sum -c -
+          tar -xzf "$tarball" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
+
+      - name: 🧾 Record results
+        id: record
         if: always()
         env:
-          PROFILER_OUTCOME: ${{ steps.profiler-build.outcome }}
-          BUDGETS_OUTCOME: ${{ steps.build-budgets.outcome }}
           TESTS_OUTCOME: ${{ steps.native-tests.outcome }}
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
           DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
@@ -342,119 +449,152 @@ jobs:
           BOARD_LABEL_OUTCOME: ${{ steps.board-label-drift.outcome }}
           COLOR_OUTCOME: ${{ steps.color-drift.outcome }}
           SERVO_MOTION_OUTCOME: ${{ steps.servo-motion-drift.outcome }}
+          PROTOCOL_MIRROR_OUTCOME: ${{ steps.protocol-mirror.outcome }}
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
           TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          CODE_CHANGED: ${{ steps.changes.outputs.code }}
+          ACTIONLINT_OUTCOME: ${{ steps.actionlint.outcome }}
+          BOARD_JOBS_OUTCOME: ${{ steps.board-jobs.outcome }}
         run: |
-          row() {
-            local outcome="$1" label="$2" cmd="$3"
-            if [ "$outcome" = "success" ]; then
-              echo "| ✅ | $label | \`$cmd\` | Passed |"
-            elif [ "$outcome" = "skipped" ]; then
-              echo "| ⏭️ | $label | \`$cmd\` | Skipped — documentation-only change |"
-            else
-              echo "| ❌ | $label | \`$cmd\` | **Failed** |"
-            fi
-          }
+          row() { printf '%s\t%s\t%s\n' "$1" "$2" "$3"; }
+          {
+            row "$TESTS_OUTCOME"           "Native tests"             "pio test -e native"
+            row "$ANALYSIS_OUTCOME"        "Static analysis"          "pio check -e artoo_esp32 --fail-on-defect=high"
+            row "$DRIFT_OUTCOME"           "Action registry drift"    "make check-action-drift"
+            row "$COMPONENT_DRIFT_OUTCOME" "Component registry drift" "make check-component-drift"
+            row "$PIN_DRIFT_OUTCOME"       "Pin drift"                "make check-pin-drift"
+            row "$ANATOMY_OUTCOME"         "Surface Anatomy"          "make check-surface-anatomy"
+            row "$VOCABULARY_OUTCOME"      "Vocabulary drift"         "make check-vocabulary-drift"
+            row "$GLOSSARY_NAME_OUTCOME"   "Glossary name"            "git grep for the old glossary name"
+            row "$BOARD_LABEL_OUTCOME"     "Board label drift"        "make check-board-label-drift"
+            row "$COLOR_OUTCOME"           "Color drift"              "make check-color-drift"
+            row "$SERVO_MOTION_OUTCOME"    "Servo motion drift"       "make check-servo-motion-drift"
+            row "$PROTOCOL_MIRROR_OUTCOME" "Protocol mirror"          "make check-protocol-mirror"
+            row "$WEB_OUTCOME"             "Web logic tests"          "node --test test/test_web/*.js"
+            row "$TOOLING_OUTCOME"         "Tooling tests"            "make test-tools"
+            row "$BOARD_JOBS_OUTCOME"      "Board jobs cover the budgets" "tools/build_budgets.json envs"
+            row "$ACTIONLINT_OUTCOME"      "Workflow lint"            "actionlint"
+          } > "$RUNNER_TEMP/rows.tsv"
+          { echo 'rows<<ROWS_EOF'; cat "$RUNNER_TEMP/rows.tsv"; echo 'ROWS_EOF'; } >> "$GITHUB_OUTPUT"
 
+      # A skipped check passes ONLY when `changes` positively said this change
+      # touched nothing but documentation -- the one condition under which it
+      # was deliberately not run; an empty answer fails closed. Skipped for
+      # any other reason is a failure, so a step that never executes can
+      # never quietly satisfy the gate.
+      - name: 🚦 Fail if any check failed
+        if: always()
+        run: |
+          failed=()
+          while IFS=$'\t' read -r outcome label _; do
+            [ "$outcome" = success ] && continue
+            [ "$outcome" = skipped ] && [ "$CODE_CHANGED" = false ] && continue
+            failed+=("$label ($outcome)")
+          done < "$RUNNER_TEMP/rows.tsv"
+          if [ ${#failed[@]} -gt 0 ]; then
+            printf 'Failed: %s\n' "${failed[@]}"
+            exit 1
+          fi
+          echo "All checks passed."
+
+  # ── Gate ───────────────────────────────────────────────────────────────────
+
+  verification:
+    name: verification
+    needs: [changes, artoo, firebeetle2, checks]
+    # always(), not !cancelled(): a skipped required check counts as passed,
+    # so a cancelled run must still reach this job and fail here. The bot
+    # guard repeats the one on `changes`, since always() would otherwise run
+    # this job on version-sync's commit.
+    if: always() && (github.event_name != 'push' || github.event.head_commit.author.email != '41898282+github-actions[bot]@users.noreply.github.com')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      CODE_CHANGED: ${{ needs.changes.outputs.code }}
+    steps:
+      - name: 📊 Write run summary
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          ARTOO_RESULT: ${{ needs.artoo.result }}
+          FIREBEETLE2_RESULT: ${{ needs.firebeetle2.result }}
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          ARTOO_ROWS: ${{ needs.artoo.outputs.rows }}
+          FIREBEETLE2_ROWS: ${{ needs.firebeetle2.outputs.rows }}
+          CHECKS_ROWS: ${{ needs.checks.outputs.rows }}
+          ARTOO_HEADROOM: ${{ needs.artoo.outputs.headroom }}
+          FIREBEETLE2_HEADROOM: ${{ needs.firebeetle2.outputs.headroom }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          mark() {
+            case "$1" in
+              success) echo "✅" ;;
+              skipped) echo "⏭️" ;;
+              *) echo "❌" ;;
+            esac
+          }
+          job() { echo "| $(mark "$2") | $1 | $2 |"; }
+          headroom() {
+            [ -n "$2" ] || return 0
+            printf '\n### Headroom: %s\n\n%s\n' "$1" "$2"
+          }
           {
             echo "## 🤖 Verification"
             echo ""
-            if [ "$CODE_CHANGED" != "true" ]; then
-              echo "This change touches documentation only, so the builds, budgets,"
-              echo "native tests and static analysis were skipped. They run again on"
-              echo "the first commit that touches anything else."
+            if [ "$CODE_CHANGED" = "false" ]; then
+              echo "This change touches documentation only, so the board builds,"
+              echo "budgets, native tests and static analysis were skipped. They run"
+              echo "again on the first commit that touches anything else."
               echo ""
             fi
+            echo "| | Job | Result |"
+            echo "|---|---|---|"
+            job changes "$CHANGES_RESULT"
+            job artoo "$ARTOO_RESULT"
+            job firebeetle2 "$FIREBEETLE2_RESULT"
+            job checks "$CHECKS_RESULT"
+            echo ""
             echo "| | Check | Command | Status |"
             echo "|---|---|---|---|"
-            row "$PROFILER_OUTCOME"  "Profiler build"       "pio run -e artoo_esp32_profiler"
-            row "$BUDGETS_OUTCOME"   "Builds and size budgets" "python3 tools/check_build_budgets.py"
-            row "$TESTS_OUTCOME"    "Native tests"          "pio test -e native"
-            row "$ANALYSIS_OUTCOME" "Static analysis"      "pio check -e artoo_esp32"
-            row "$DRIFT_OUTCOME"    "Action registry drift" "make check-action-drift"
-            row "$COMPONENT_DRIFT_OUTCOME" "Component registry drift" "make check-component-drift"
-            row "$PIN_DRIFT_OUTCOME" "Pin drift"            "make check-pin-drift"
-            row "$ANATOMY_OUTCOME"  "Surface Anatomy"      "make check-surface-anatomy"
-            row "$VOCABULARY_OUTCOME" "Vocabulary drift"   "make check-vocabulary-drift"
-            row "$GLOSSARY_NAME_OUTCOME" "Glossary name"      "git grep for the old glossary name"
-            row "$BOARD_LABEL_OUTCOME" "Board label drift" "make check-board-label-drift"
-            row "$COLOR_OUTCOME"      "Color drift"        "make check-color-drift"
-            row "$SERVO_MOTION_OUTCOME" "Servo motion drift" "make check-servo-motion-drift"
-            row "$WEB_OUTCOME"      "Web logic tests"       "node --test test/test_web/*.js"
-            row "$TOOLING_OUTCOME"  "Tooling tests"         "make test-tools"
+            printf '%s\n' "$ARTOO_ROWS" "$FIREBEETLE2_ROWS" "$CHECKS_ROWS" |
+              while IFS=$'\t' read -r outcome label cmd; do
+                [ -n "$outcome" ] || continue
+                case "$outcome" in
+                  success) status="Passed" ;;
+                  skipped) status="Skipped" ;;
+                  *) status="**Failed** ($outcome)" ;;
+                esac
+                echo "| $(mark "$outcome") | $label | \`$cmd\` | $status |"
+              done
+            headroom artoo_esp32 "$ARTOO_HEADROOM"
+            headroom firebeetle2 "$FIREBEETLE2_HEADROOM"
             echo ""
             echo "Run: [$(date -u '+%Y-%m-%d %H:%M UTC')]($RUN_URL)"
           } | tee .ci-summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: 💬 Post PR comment
-        if: always() && github.event_name == 'pull_request'
+        # Not on a cancelled run: a superseded run must not post its partial
+        # table over the newer one. The gate below keeps always().
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3.0.5
         with:
           header: verification
           path: .ci-summary.md
 
-      # ── Gate ─────────────────────────────────────────────────────────────────
-      # Fail the job (and therefore the required status check) if any check
-      # did not succeed. Runs after summary so the findings are always visible.
-
-      - name: 🚦 Gate — fail if any check failed
+      # A skipped job passes only when `changes` positively said "false"
+      # (documentation only), which skips the two board jobs. An empty answer
+      # fails closed. Skipped, failed or cancelled for any other reason fails
+      # the required check.
+      - name: 🚦 Gate - fail if any job did not succeed
         if: always()
         env:
-          PROFILER_OUTCOME: ${{ steps.profiler-build.outcome }}
-          BUDGETS_OUTCOME: ${{ steps.build-budgets.outcome }}
-          TESTS_OUTCOME: ${{ steps.native-tests.outcome }}
-          ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
-          DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
-          COMPONENT_DRIFT_OUTCOME: ${{ steps.component-drift.outcome }}
-          PIN_DRIFT_OUTCOME: ${{ steps.pin-drift.outcome }}
-          ANATOMY_OUTCOME: ${{ steps.surface-anatomy.outcome }}
-          VOCABULARY_OUTCOME: ${{ steps.vocabulary-drift.outcome }}
-          GLOSSARY_NAME_OUTCOME: ${{ steps.glossary-name.outcome }}
-          BOARD_LABEL_OUTCOME: ${{ steps.board-label-drift.outcome }}
-          COLOR_OUTCOME: ${{ steps.color-drift.outcome }}
-          SERVO_MOTION_OUTCOME: ${{ steps.servo-motion-drift.outcome }}
-          WEB_OUTCOME: ${{ steps.web-tests.outcome }}
-          TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
-          CODE_CHANGED: ${{ steps.changes.outputs.code }}
+          RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          failed=()
-
-          # A skipped check passes ONLY when this change touched nothing but
-          # documentation -- the one condition under which it was deliberately
-          # not run. Skipped for any other reason is a failure, so a step that
-          # never executes can never quietly satisfy the gate.
-          check() {
-            local outcome="$1" name="$2"
-            [ "$outcome" = "success" ] && return 0
-            [ "$outcome" = "skipped" ] && [ "$CODE_CHANGED" != "true" ] && return 0
-            failed+=("$name")
-          }
-
-          check "$PROFILER_OUTCOME"     "profiler-build"
-          check "$BUDGETS_OUTCOME"      "builds-and-budgets"
-          check "$TESTS_OUTCOME"        "native-tests"
-          check "$ANALYSIS_OUTCOME"     "static-analysis"
-          check "$DRIFT_OUTCOME"        "action-drift"
-          check "$COMPONENT_DRIFT_OUTCOME" "component-drift"
-          check "$PIN_DRIFT_OUTCOME"    "pin-drift"
-          check "$ANATOMY_OUTCOME"      "surface-anatomy"
-          check "$VOCABULARY_OUTCOME"   "vocabulary-drift"
-          check "$GLOSSARY_NAME_OUTCOME" "glossary-name"
-          check "$BOARD_LABEL_OUTCOME"  "board-label-drift"
-          check "$COLOR_OUTCOME"        "color-drift"
-          check "$SERVO_MOTION_OUTCOME" "servo-motion-drift"
-          check "$WEB_OUTCOME"          "web-tests"
-          check "$TOOLING_OUTCOME"      "tooling-tests"
-
-          if [ ${#failed[@]} -gt 0 ]; then
-            echo "Failed checks: ${failed[*]}"
+          for r in $RESULTS; do
+            [ "$r" = success ] && continue
+            [ "$r" = skipped ] && [ "$CODE_CHANGED" = false ] && continue
+            echo "a required job ended $r (changes, artoo, firebeetle2, checks: $RESULTS)"
             exit 1
-          fi
-          if [ "$CODE_CHANGED" != "true" ]; then
-            echo "Documentation-only change: drift, web and tooling checks passed;"
-            echo "builds, budgets, native tests and static analysis were skipped."
-          else
-            echo "All checks passed."
-          fi
+          done
+          echo "Every job passed."
