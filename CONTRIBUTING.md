@@ -97,7 +97,7 @@ Always include one:
 |---|---|
 | `drive` | DriveTask, hoverboard UART, failsafe |
 | `sbus` | RCInputTask, the RC receivers (SBUS, PWM) |
-| `failsafe` | Any of the 5 safety layers, estop, TWDT |
+| `failsafe` | Any of the five Failsafe Layers, estop, TWDT |
 | `dome` | DomeLinkTask, bidirectional serial, heartbeat |
 | `audio` | AudioTask, AudioDriver, DY-SV5W, track mapping |
 | `servo` | ServoTask, arm servos, LEDC PWM |
@@ -112,13 +112,19 @@ Always include one:
 ### Examples
 
 ```
-feat(drive): add CH8 speed-limit dial with linear scaling
+feat(sbus): a puppet string moves a Part in proportion to its RC stick (#442)
 
-CH8 on receiver #1 scales drive output linearly from 0 to SPEED_LIMIT_MAX.
-CH8 at minimum completely locks drive. Gives the operator a physical
-confidence dial for tight spaces.
-
-NVS key ch8_mode_lock (default false) enables optional binary mode-lock.
+An RC Map entry whose action is puppet_part and whose payload is a Part id.
+Half the stick's travel spans the Part's close-to-open throw; a released
+stick commands the close end. Nothing moves until the stick does: a string
+takes a baseline on its first frame and engages past 5% of the throw, so a
+save, a boot, an estop clearing or a signal gap moves no Part. Targets go
+out on a 1% step at most once per ServoTask frame, never into the last four
+servoCmdQueue places, and a target extending a move in progress waits for
+it to arrive (ServoTask plans every move from rest). SERVO_CMD_PUPPET is
+dropped on an Output the dial or a Find by Moving run holds. A latched estop
+lets a string go. Strings never touch a drive or dome-speed binding; a
+channel stays one binding, so a control is a string or a cue, never both.
 ```
 
 ```
@@ -273,8 +279,9 @@ persistence, or JSON/API contracts are touched (see `AGENTS.md`
   (tooling) pass. There is no on-device suite.
 - [ ] Through 2026-10-31 the local native and web suites are paused (#464,
   `tools/suite_pause.py`): `make test` and `make test-web` return at once, a
-  second reviewer's read of the diff stands in for them, and CI still runs
-  native, web and tooling tests on a pull request into `main`
+  second reviewer's read of the diff stands in for them. On a pull request
+  into `main`, CI runs the web and tooling tests every time, and the native
+  tests when the pull request changes anything but Markdown or `LICENSE`
 
 **Drift checks** - CI fails a pull request on any of them
 - [ ] The `make check-*` drift targets `.github/workflows/verification.yml` runs
