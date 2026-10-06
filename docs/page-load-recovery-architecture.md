@@ -224,7 +224,7 @@ A section loader concludes in success or one of three failure outcome kinds
 - Network loss / connection timeout / truncated JSON → `no-response` (retryable backoff)
 - HTTP 404 or 2xx with missing/invalid required keys → `failed-terminal` (incompatible)
 - HTTP 503 → `busy` (honor Retry-After)
-- Deterministic HTTP 500 (e.g., `api_identity.cpp:58` "identity response overflow") → `failed-terminal` (device-error)
+- Deterministic HTTP 500 (e.g., `GET /api/identity`'s "identity response overflow") → `failed-terminal` (device-error)
 
 **Fault-Injection Coverage:**
 Page bootstrap behavior is verified via deterministic fault-injection fixtures in the web
@@ -246,42 +246,24 @@ live-hardware iteration. Each page slice requires coverage of:
 Every surface declares its script chain via `data-scripts` on `<html>`. Since
 ADR 0048 the browser loads exactly one document -- `index.html`, the Operator
 Shell -- and its inline recovery kernel (`data/_recovery_kernel.html`) fetches
-`page_bootstrap.js` with retry and hands it the shell's own chain
-(`web_api.js`, `overlay.js`, `status_stream.js`, `live_reading.js`,
-`health_signals.js`, `shell.js`). Each surface's chain is then
+`page_bootstrap.js` with retry and hands it the shell's own chain (the
+`data-scripts` of `index.html`). Each surface's chain is then
 handed over as a wave when that surface is first opened, and the shared prefix
 in it is skipped as already loaded. `overlay.js` (the shared question, Escape
 and receipt, #456) is in the shell's chain and, after `web_api.js`, in the
-chain of every surface that calls it (Firmware, Maintenance, Parts, RC Control,
-Sequences, Servos, Wiring);
-the loader runs it once. Every surface shares that
-prefix, then its own script(s).
+chain of every surface that calls it; the loader runs it once. Every surface shares the
+shell's prefix, then its own scripts.
 
-Counted from each file's `data-scripts` on 2026-10-06, the shared prefix (five
-scripts, six with `overlay.js`) included:
+Which scripts a surface adds is its own `data-scripts` attribute; this page
+does not keep a copy of the list. Two surfaces carry a rule of their own here:
+Firmware's upload flow is exempt from the Operation Deadline, and Sound's catalog
+load uses the Catalog deadline (both below).
 
-| Surface | Script count | Notes |
-|---|---|---|
-| `wifi.html` | 6 | Tracer -- fixed first by #52 |
-| `firmware.html` | 7 | OTA/filesystem upload flow exempt from Operation Deadline (see below) |
-| `sound.html` | 6 | CHIRP catalog load uses the 12000ms deadline category |
-| `servo.html` | 11 | The Parts model and the Output rows (`outputs.js`, `parts_mapping.js`) |
-| `dome.html` | 7 | Adds `dome_bearing.js` |
-| `drive.html` | 6 | Safety-adjacent (live vehicle control); the Foot Drive surface |
-| `parts.html` | 17 | The droid picture chain (`body_art.js`, `body_view.js`, `droid_picture.js`) |
-| `wiring.html` | 17 | Adds `find_by_moving.js` and the Component Picker |
-| `lights.html` | 10 | Adds `dome_lights.js` and `outputs.js` |
-| `configuration.html` | 14 | Adds `feature_availability.js`, the Droid Build and Component pickers, and `setup.js` for the guided run it hosts |
-| `maintenance.html` | 13 | Adds `feature_availability.js`, `servo_motion.js` and `seq_rehearsal.js` |
-| `rc.html` | 11 | Safety-adjacent (RC mapping) |
-| `seq.html` | 26 | Heaviest: the timeline, the Rehearsal, Gestures and the droid picture chain |
-| `dashboard.html` | 20 | The landing surface, split out of `index.html` when that file became the shell |
-
-Each of these files also carries a thin delegate that hands a direct visit to
+Each surface's file also carries a thin delegate that hands a direct visit to
 the shell at that surface's hash route, so every address that worked before
 ADR 0048 still opens what it names. A delegate carries **no** recovery kernel:
 its `<head>` never runs, so only `index.html` inlines it (ADR 0048 amendment,
-2026-09-13, #382). `setup.html` is not in the table: since #404 it is a
+2026-09-13, #382). `setup.html` is the exception: since #404 it is a
 forwarder with no body and no chain, kept so the old address opens
 Configuration through the `setup` alias.
 
