@@ -122,12 +122,14 @@ then what it shows, with what the file must contain in backticks — and
 `notes`. What the operation is (its type, route, executor, params, whether
 it is on the Console) is the registry's, and is never copied into a row:
 the copied `registry_*` fields, the `executor_or_core` mirror of `executor`,
-`type` and `missing_metadata` left the rows in #474. They were written by hand during the epic's inventory pass
-(#208–#212) as a one-time cross-check that every registry entry really does
-reach a real executor and not just an HTTP adapter — they do not regenerate
-themselves when you edit the registry, so **adding a registry entry means
-adding its inventory row by hand in the same change**, in whichever of the
-four files matches its domain.
+`type` and `missing_metadata` left the rows in #474.
+
+The rows were written by hand during the epic's inventory pass (#208–#212)
+as a one-time cross-check that every registry entry really does reach a real
+executor and not just an HTTP adapter — they do not regenerate themselves
+when you edit the registry, so **adding a registry entry means adding its
+inventory row by hand in the same change**, in whichever of the four files
+matches its domain.
 
 `make check-action-drift` (`tools/check_action_registry_drift.py`) enforces
 this both ways, by three separate checks:

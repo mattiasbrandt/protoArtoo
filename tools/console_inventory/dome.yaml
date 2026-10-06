@@ -1,7 +1,6 @@
 # Controller Console operation inventory - dome domain(s): dome
-# Analysis-slice artifact for #208 (epic #206). Generated skeleton: 55 rows from
-# docs/action-registry.yaml at base f0b0dbc. Every `FILL` cell is decided by READING the
-# firmware and replaced with evidence; a file containing FILL is unfinished by definition.
+# Written in the inventory pass, #208 (epic #206): one row per registry entry in these
+# domains, decided by reading the firmware.
 #
 # Row schema, one row per registry entry (decide these):
 #   anchor_kind:        api | rc_internal | event | config | aggregate-field | none

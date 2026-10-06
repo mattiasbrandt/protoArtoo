@@ -3109,13 +3109,18 @@ curl -s http://artoo.local/api/coredump/status
 
 ### GET /api/coredump
 
-Streams the raw ELF coredump from flash (chunked, no large heap buffer). Empty
-when no coredump is present. Retrieval works on the seated controller over WiFi —
-USB read is blocked when the ESP32 is in the PCB (GPIO15/SBUS strapping).
+Streams the raw ELF coredump from flash (chunked, no large heap buffer). When no
+coredump is stored it answers `404` instead (below). Retrieval works on the seated
+controller over WiFi — USB read is blocked when the ESP32 is in the PCB
+(GPIO15/SBUS strapping). Maintenance downloads it: its Crash dump card asks
+`/api/coredump/status` and offers this route as a link only when one is stored
+(#474).
 
-- Success: `200` `application/octet-stream` (ELF), `Content-Disposition: attachment; filename=coredump.elf`
+- Success: `200` `application/octet-stream` (ELF). No `Content-Disposition` header is
+  sent; name the file yourself (`-o coredump.elf`), as Maintenance's link does with
+  its `download` attribute.
 - Errors:
-- `404` `{"ok":false,"error":"no coredump"}`
+- `404` `{"ok":false,"error":"no coredump"}` — no coredump is stored
 - `500` `{"ok":false,"error":"no coredump partition"}`
 
 #### Example request
