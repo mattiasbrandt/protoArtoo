@@ -28,7 +28,7 @@ carries every supported sound driver. Pick the module on Configuration
 
 ## First flash of a blank board
 
-A blank board needs more than the two update images: a boot loader, a
+A blank board needs more than the two update images: a bootloader, a
 partition table and `boot_app0`, each at its own flash address. A feature
 release carries all of them for each board, with `<board>-manifest.json`,
 which lists every file with its flash address, size and SHA-256, and names the
@@ -46,7 +46,8 @@ To update a droid that already runs protoR2, use
 
 Connect the board over USB and run the line for your board in the download
 folder. It needs [esptool](https://docs.espressif.com/projects/esptool/) v5
-(`pip install esptool`) and `jq`; the addresses come from the manifest.
+(`pip install esptool`), `jq` and a POSIX shell (on Windows, WSL or Git Bash);
+the addresses come from the manifest.
 
 ```sh
 # Artoo PCB

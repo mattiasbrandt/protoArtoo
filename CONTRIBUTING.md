@@ -432,7 +432,7 @@ reached `main` and stopped there (#285).
 | Tier | Tag shape | Release notes | Artifacts |
 |---|---|---|---|
 | **Patch** | `vX.Y.Z` with `Z > 0` | Generated from the commit subjects in the range. Terse and clearly machine-written. | None. The source tag only. |
-| **Minor / major** | `vX.Y.0` | The curated `CHANGELOG.md` section, in maker voice. | Per board: the firmware and filesystem images an update uses, the blank-board parts (boot loader, partition table, `boot_app0`) and a manifest of every file's flash address, size and SHA-256. `SHA256SUMS.txt` over all of them. |
+| **Minor / major** | `vX.Y.0` | The curated `CHANGELOG.md` section, in maker voice. | Per board: the firmware and filesystem images an update uses, the blank-board parts (bootloader, partition table, `boot_app0`) and a manifest of every file's flash address, size and SHA-256. `SHA256SUMS.txt` over all of them. |
 
 A fix should reach people quickly, and rebuilding every board's image for a
 one-line change should not gate that. A patch release therefore carries no
