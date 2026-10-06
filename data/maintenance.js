@@ -87,8 +87,6 @@
   const diagHeapFree = document.getElementById("diag-heap-free");
   const diagHeapMin = document.getElementById("diag-heap-min");
   const diagHeapLargest = document.getElementById("diag-heap-largest");
-  const diagHeapFreeLight = document.getElementById("diag-heap-free-light");
-  const diagHeapMinLight = document.getElementById("diag-heap-min-light");
   const diagHeapLargestLight = document.getElementById("diag-heap-largest-light");
 
   // A health signal reads as a droid LED and the COLOR IS THE READING: the
@@ -143,40 +141,41 @@
       diagUptime.textContent = formatUptime(d.uptimeMs);
     }
 
-    const heapFreeKb = Math.round((d.heapFree || 0) / 1024);
-    const heapMinKb = Math.round((d.heapMin || 0) / 1024);
-    const hasLargest = d.heapLargestBlock !== undefined && d.heapLargestBlock !== null;
-    const heapLargestKb = hasLargest ? Math.round(d.heapLargestBlock / 1024) : null;
+    const kb = (bytes) => `${Math.round(bytes / 1024)} KB`;
+    // A number the frame did not carry reads the Live Reading's Unknown,
+    // never "0 KB".
+    const reading = (value) => {
+      const bytes = Number(value);
+      return value !== undefined && value !== null && Number.isFinite(bytes) && bytes >= 0 ? bytes : null;
+    };
+    const heapFree = reading(d.heapFree);
+    const heapMin = reading(d.heapMin);
+    const heapLargest = reading(d.heapLargestBlock);
 
-    // The floors are the health grid's (data/health_signals.js HEAP_FLOORS).
-    const t = window.PAHealthSignals.HEAP_FLOORS;
-    const heapFreeState = heapFreeKb < Math.round(t.freeCritical / 1024) ? "critical" : heapFreeKb < Math.round(t.freeWarn / 1024) ? "watch" : "good";
-    const heapMinState = heapMinKb < Math.round(t.minCritical / 1024) ? "critical" : heapMinKb < Math.round(t.minWarn / 1024) ? "watch" : "good";
-    const heapLargestState = !hasLargest ? "na" : heapLargestKb < Math.round(t.largestCritical / 1024) ? "critical" : heapLargestKb < Math.round(t.largestWarn / 1024) ? "watch" : "good";
-
-    // Four states, each to a lamp. "na" is the firmware that reports no
-    // largest block at all - never asked, so grey.
-    const lampForState = (state) =>
-      state === "critical" ? "fail" : state === "watch" ? "warn" : state === "na" ? "off" : "ok";
-
+    // Free and the lowest since the last restart are readings, not states:
+    // neither separates a healthy droid from a failing one, so they carry no
+    // light and no word, as Uptime carries none (#355 grilling Q2, Q2b; the
+    // evidence is at HEAP_FLOORS, data/health_signals.js).
     if (diagHeapFree) {
-      const word = heapFreeState === "critical" ? "Critical" : heapFreeState === "watch" ? "Watch" : "Good";
-      diagHeapFree.textContent = `${heapFreeKb} KB ${word}`;
-      setLight(diagHeapFreeLight, lampForState(heapFreeState));
+      diagHeapFree.textContent = heapFree === null ? window.PALiveReading.UNKNOWN : kb(heapFree);
     }
     if (diagHeapMin) {
-      const word = heapMinState === "critical" ? "Critical" : heapMinState === "watch" ? "Watch" : "Good";
-      diagHeapMin.textContent = `${heapMinKb} KB ${word}`;
-      setLight(diagHeapMinLight, lampForState(heapMinState));
+      diagHeapMin.textContent = heapMin === null ? window.PALiveReading.UNKNOWN : kb(heapMin);
     }
+    // The largest block is judged by the health grid's one judge and table
+    // (data/health_signals.js largestBlockState, HEAP_FLOORS), in bytes, so a
+    // reading on a floor reads the same here as on the Dashboard. Firmware
+    // that reports no largest block was never asked, so grey.
     if (diagHeapLargest) {
-      if (!hasLargest) {
+      if (heapLargest === null) {
         diagHeapLargest.textContent = window.PALiveReading.UNKNOWN;
+        setLight(diagHeapLargestLight, "off");
       } else {
-        const word = heapLargestState === "critical" ? "Fragmented" : heapLargestState === "watch" ? "Watch" : "Good";
-        diagHeapLargest.textContent = `${heapLargestKb} KB ${word}`;
+        const state = window.PAHealthSignals.largestBlockState(heapLargest);
+        const word = state === "fail" ? "Fragmented" : state === "warn" ? "Watch" : "Good";
+        diagHeapLargest.textContent = `${kb(heapLargest)} ${word}`;
+        setLight(diagHeapLargestLight, state);
       }
-      setLight(diagHeapLargestLight, lampForState(heapLargestState));
     }
     // When the droid sent it, not when it was painted: a lost link repaints
     // the same frame, and "Updated" must not move with it.

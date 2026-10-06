@@ -20,7 +20,8 @@
 // - The Dome ESC and the Foot Drive are answered the same way (readDomeEsc,
 //   readFootDrive): green only for something heard back, and what the droid
 //   commands is the detail, never the light (#399)
-// - Memory is judged against one table of heap floors (HEAP_FLOORS), which
+// - Memory is judged by its largest free block against one table of heap
+//   floors (HEAP_FLOORS) by one judge (largestBlockState), which
 //   Maintenance's memory rows read too
 // =============================================================================
 (() => {
@@ -40,22 +41,49 @@
     "rcCh6",
   ]);
 
-  // The heap floors, in bytes: the one table the health grid here and
-  // Maintenance's memory rows both judge by. On the grid a reading at or below
-  // a warn floor is Low, at or below a fail floor Critical.
+  // The heap floors, in bytes: the one table, for both chips, that the health
+  // grid here and Maintenance's memory rows both judge by (largestBlockState
+  // below). A reading at or below the warn floor is Low, at or below the
+  // critical floor Critical.
   //
-  // largest* judges the Internal Data Heap's largest free block. Its floors are
-  // the admission ones until the bench day (#355) measures this reading's own.
-  // free* and min* are the earlier runtime floors (heapMin held >= 40 KB with
-  // the stream open), kept as they were.
+  // Only the Internal Data Heap's largest free block (heapLargestBlock) is
+  // judged. The failed requests were 1,552-1,696 B (GET /api/profiler
+  // lastFail, output/bench-auto/artoo-20261005-144651); at the 1 Hz
+  // /api/status samples where failedAllocs advanced in the 2026-10-05 artoo
+  // runs (artoo-20261005-*/samples.jsonl) the largest block read 8,692 to
+  // 21,492, so (inferred) it ran short between samples. The runs with no
+  // failure bottomed at 12,276 (artoo-20261005-112400) and 12,788 (-151007),
+  // so 12,000 / 16,000 stay as they were.
+  //
+  // heapFree has no floor (#355 grilling Q2b): it does not separate a healthy
+  // droid from a failing one. Where allocations failed it read 19,084 to
+  // 29,404 (highest at artoo-20261005-141337 line 322), and on the clean run
+  // artoo-20261005-151007 (0 failures) it read 24,864 in the console sweep,
+  // 27,712 in a shell script and 28,852 on Maintenance. Any floor that caught
+  // the failures would colour a healthy artoo whenever a page is open.
+  //
+  // heapMin has no floor either (#355 grilling Q2): it is the lowest since the
+  // last restart, so after any page load it reads low until a reboot with
+  // nothing failing. That is the plain image's meaning; on a _profiler build
+  // it is a window that restarts on every stream connect
+  // (docs/troubleshooting.md). Both are readings, shown as numbers and never
+  // coloured.
   const HEAP_FLOORS = Object.freeze({
-    freeCritical: 40000,
-    freeWarn: 65000,
-    minCritical: 36864,
-    minWarn: 53248,
     largestCritical: 12000,
     largestWarn: 16000,
   });
+
+  // The largest free block in bytes, judged against the floors: "ok" above
+  // the warn floor, "warn" at or below it, "fail" at or below the critical.
+  // Every surface judges through this, so a reading on a floor reads the same
+  // on each.
+  const largestBlockState = (bytes) => {
+    if (bytes > HEAP_FLOORS.largestWarn) return "ok";
+    if (bytes > HEAP_FLOORS.largestCritical) return "warn";
+    return "fail";
+  };
+
+  const HEAP_WORDS = Object.freeze({ ok: "Normal", warn: "Low", fail: "Critical" });
 
   const hasOwnKey = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
   const healthSignal = (state, reason = "") => ({ state, reason });
@@ -90,28 +118,20 @@
   };
 
   const evaluateHeap = (payload, unknown) => {
-    const heapBytes = Number(payload.heapFree);
-
     // Judge memory health by the Internal Data Heap's largest free block
     // (heapLargestBlock, include/heap_reading.h): the droid's own RAM, which
     // counts no IRAM on the artoo-esp32 and no PSRAM on the ESP32-P4. NOT
     // heapLargest8bit: that is the Buffer Reading admission sheds requests by,
     // and on the P4 it counts megabytes of PSRAM, so it stays high while the
     // internal heap runs out.
+    //
+    // A payload without heapLargestBlock (older firmware) is not judged from
+    // heapFree, which has no floor (HEAP_FLOORS): it is a reading we cannot
+    // judge, so grey.
     const largest = Number(payload.heapLargestBlock);
-    if (Number.isFinite(largest) && largest >= 0) {
-      if (largest > HEAP_FLOORS.largestWarn) return healthSignal("ok", "Normal");
-      if (largest > HEAP_FLOORS.largestCritical) return healthSignal("warn", "Low");
-      return healthSignal("fail", "Critical");
-    }
-
-    // A payload without heapLargestBlock: fall back to total free heap.
-    // Neither number present is a reading we do not have, not a low one.
-    if (!Number.isFinite(heapBytes) || heapBytes < 0) return healthSignal("off", unknown);
-
-    if (heapBytes > HEAP_FLOORS.freeWarn) return healthSignal("ok", "Normal");
-    if (heapBytes > HEAP_FLOORS.freeCritical) return healthSignal("warn", "Low");
-    return healthSignal("fail", "Critical");
+    if (!Number.isFinite(largest) || largest < 0) return healthSignal("off", unknown);
+    const state = largestBlockState(largest);
+    return healthSignal(state, HEAP_WORDS[state]);
   };
 
   // ---------------------------------------------------------------------------
@@ -389,6 +409,7 @@
   const api = Object.freeze({
     INDICATOR_STATE_LABELS,
     HEAP_FLOORS,
+    largestBlockState,
     deriveHealthSignals,
     readProtoR2link,
     readSoundLink,
