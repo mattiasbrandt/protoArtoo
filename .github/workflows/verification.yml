@@ -142,6 +142,28 @@ jobs:
           key: ${{ runner.os }}-pio-p4-${{ hashFiles('platformio.ini') }}
           restore-keys: ${{ runner.os }}-pio-p4-
 
+      - name: 📌 Pin the ESP32-P4 penv's PlatformIO Core
+        # The P4 platform (pioarduino 55.03.311, builder/penv_setup.py) builds
+        # inside its own ~/.platformio-p4/penv, created on first use with
+        # `uv pip install --upgrade "pioarduino>=6.1.19"`. That resolved to
+        # Core 6.2.0 from 2026-09-15, whose tool-scons 4.11.1 fails the P4
+        # link with "No module named 'SCons.Tool.FortranCommon'"; every
+        # Verification run was red from then until this step (#473). On a cold
+        # runner the penv is created inside the build, after the build lock's
+        # penv check has passed, so it has to exist and be pinned before then.
+        # `pio pkg install -e` installs the platform and runs its package
+        # configuration, which creates the penv, without building. The penv
+        # is a uv venv with no pip, and the platform reads the `pioarduino`
+        # dist, so the pin goes through the penv's own uv on that dist. Once
+        # it holds 6.1.19, ">=6.1.19" is satisfied and nothing upgrades it.
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          penv="$HOME/.platformio-p4/penv"
+          PLATFORMIO_CORE_DIR="$HOME/.platformio-p4" pio pkg install -e firebeetle2
+          "$penv/bin/uv" pip install --python "$penv/bin/python" \
+            --reinstall-package pioarduino pioarduino==6.1.19
+          grep -m1 '^VERSION' "$penv"/lib/python*/site-packages/platformio/__init__.py
+
       - name: 🟢 Set up Node
         uses: actions/setup-node@v7
         with:
@@ -189,6 +211,17 @@ jobs:
         # this one reports both outcomes: a build that fails and a build that
         # overruns its budget both fail this row.
         run: python3 tools/check_build_budgets.py
+
+      # The budget step keeps every pio run's whole output in build-logs/ and
+      # prints only the tail of a failed one; a link error can start above it.
+      # continue-on-error keeps failure() false, so this keys on the outcome.
+      - name: 📤 Upload build logs
+        if: always() && steps.build-budgets.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: build-logs-${{ github.run_id }}
+          path: build-logs/
+          retention-days: 7
 
       - name: 🧪 Native tests
         id: native-tests

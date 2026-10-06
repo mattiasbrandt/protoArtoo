@@ -352,7 +352,16 @@ def refuse_bad_penv(core: Path, problem: str) -> None:
     note("does not show this. Left alone, every env fails at the link step with")
     note("\"No module named 'SCons.Tool.FortranCommon'\". The fix:")
     pin = ".".join(map(str, PINNED_PIO_VERSION))
-    note(f"  {core / 'penv' / 'bin' / 'python'} -m pip install platformio=={pin}")
+    # Through the penv's own uv, on the `pioarduino` dist. pioarduino creates
+    # the penv with `uv venv`, which has no pip, and the P4 platform decides
+    # whether to upgrade by reading that dist's version, so `pip install
+    # platformio==` either fails or leaves the 6.2.0 dist listed. Both penvs
+    # on the bench carry uv (2026-10-06). --reinstall-package rewrites the
+    # files even when the dist already reads 6.1.19 but platformio/ moved
+    # under it, which a plain install leaves alone (#473).
+    penv = core / "penv" / "bin"
+    note(f"  {penv / 'uv'} pip install --python {penv / 'python'} "
+         f"--reinstall-package pioarduino pioarduino=={pin}")
     raise SystemExit(EXIT_PENV)
 
 
