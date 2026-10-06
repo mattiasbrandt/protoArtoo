@@ -57,7 +57,7 @@ both show up there.
      explicitly — a standalone query whose answer is a sequence of `item`
      records instead of scalar fields, because it doesn't fit the
      fields:/JSON-key model the first shape assumes (`system.status.logs`
-     is the one example today).
+     and `servo.api.get-outputs` are two of them).
   3. **Non-query** — `is_query: false` and no `fields:` — this row only
      describes a field inside another query's aggregate response
      (`system.status.dashboard-health`-style rows); it is metadata, never
@@ -159,12 +159,6 @@ this both ways, by three separate checks:
   inventory row whose `notes` still say `NO-CORE-BELOW-HANDLER` once the
   registry's own `executor` field names a real one — the two must agree
   about whether an executor exists at all, not just about its name.
-
-> Correction to an earlier internal note: `docs/console-anchor-findings.md`
-> describes these four files as passing a `console_inventory_check.py`
-> script. No such script exists in this tree at this base — the checks
-> described above live inside `tools/check_action_registry_drift.py`
-> itself, run via `make check-action-drift`.
 
 ## Readiness is answered at execution, never in the catalog
 

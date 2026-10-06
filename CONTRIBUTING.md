@@ -96,8 +96,8 @@ Always include one:
 | Scope | Covers |
 |---|---|
 | `drive` | DriveTask, hoverboard UART, failsafe |
-| `sbus` | SBUSInputTask, both receivers, CH8 dial |
-| `failsafe` | Any of the 5 safety layers, estop, TWDT |
+| `sbus` | RCInputTask, the RC receivers (SBUS, PWM) |
+| `failsafe` | Any of the five Failsafe Layers, estop, TWDT |
 | `dome` | DomeLinkTask, bidirectional serial, heartbeat |
 | `audio` | AudioTask, AudioDriver, DY-SV5W, track mapping |
 | `servo` | ServoTask, arm servos, LEDC PWM |
@@ -112,13 +112,19 @@ Always include one:
 ### Examples
 
 ```
-feat(drive): add CH8 speed-limit dial with linear scaling
+feat(sbus): a puppet string moves a Part in proportion to its RC stick (#442)
 
-CH8 on receiver #1 scales drive output linearly from 0 to SPEED_LIMIT_MAX.
-CH8 at minimum completely locks drive. Gives the operator a physical
-confidence dial for tight spaces.
-
-NVS key ch8_mode_lock (default false) enables optional binary mode-lock.
+An RC Map entry whose action is puppet_part and whose payload is a Part id.
+Half the stick's travel spans the Part's close-to-open throw; a released
+stick commands the close end. Nothing moves until the stick does: a string
+takes a baseline on its first frame and engages past 5% of the throw, so a
+save, a boot, an estop clearing or a signal gap moves no Part. Targets go
+out on a 1% step at most once per ServoTask frame, never into the last four
+servoCmdQueue places, and a target extending a move in progress waits for
+it to arrive (ServoTask plans every move from rest). SERVO_CMD_PUPPET is
+dropped on an Output the dial or a Find by Moving run holds. A latched estop
+lets a string go. Strings never touch a drive or dome-speed binding; a
+channel stays one binding, so a control is a string or a cue, never both.
 ```
 
 ```
@@ -258,7 +264,7 @@ the "Scopes" table.
 
 Before opening a PR from your branch to `main`, confirm the items that apply. These are risk-scaled per `AGENTS.md`'s
 verification policy, not a flat checklist every PR must clear in full: a
-docs-only or copy change needs inspection, not a full `pio test` run; a
+docs-only or copy change needs inspection, not a full test run; a
 change touching a failsafe layer, protocol parsing, or shared state needs
 the full build/test/check pass below. When in doubt, scale up.
 
@@ -269,8 +275,18 @@ the full build/test/check pass below. When in doubt, scale up.
 **Tests** — required when safety, protocol parsing, shared state, config
 persistence, or JSON/API contracts are touched (see `AGENTS.md`
 "Verification and Reporting" for the full rule)
-- [ ] `pio test -e native` — all native tests pass
-- [ ] `pio test -e artoo_esp32` — all on-device tests pass (if hardware available)
+- [ ] `make test` (native), `make test-web` (web behaviour) and `make test-tools`
+  (tooling) pass. There is no on-device suite.
+- [ ] Through 2026-10-31 the local native and web suites are paused (#464,
+  `tools/suite_pause.py`): `make test` and `make test-web` return at once, a
+  second reviewer's read of the diff stands in for them. On a pull request
+  into `main`, CI runs the web and tooling tests every time, and the native
+  tests when the pull request changes anything but Markdown or `LICENSE`
+
+**Drift checks** - CI fails a pull request on any of them
+- [ ] The `make check-*` drift targets `.github/workflows/verification.yml` runs
+  (`make check-action-drift` after any registry or RC token change) and
+  `tools/check_build_budgets.py` pass
 
 **Verification status**
 - [ ] PR notes classify verification using the project labels:
@@ -311,7 +327,8 @@ SBUS/RMT spec compliance gate:
 - [ ] Any `pio check` suppression or analysis-only build flag in `platformio.ini` has an inline comment explaining rationale and scope (no broad/global suppressions unless unavoidable)
 
 **Code style** — required for firmware source changes
-- [ ] `clang-format -i src/**/*.cpp src/**/*.h` applied
+- [ ] `clang-format -i` (the repo's `.clang-format`) applied to the changed `.cpp` and `.h`
+  files under `src/` and `include/`; CI does not run it
 - [ ] All new functions have a header comment (see "Code standards summary" below)
 - [ ] No inline `//TODO` items that disable or bypass safety logic
 
@@ -352,13 +369,16 @@ real-time tasks use timeout 0 (non-blocking). Core assignment is documented
 in each `xTaskCreatePinnedToCore()` call.
 
 **Memory** — no dynamic allocation (`new` / `malloc`) inside task loops. All
-buffers are statically sized. Free heap monitored in `SafetyMonitorTask`.
+buffers are statically sized. Free heap is monitored by the `SafetyMonitor` task
+(`src/tasks/safety.cpp`).
 
 **Defensive** — bounds-check every buffer write. `static_assert` for
 compile-time invariants. `constrain()` on all external inputs before use.
 
-**Logging** — TAG-prefixed format `[TAG] event — value`. Per-frame verbose
-logging gated by `#ifdef PA_VERBOSE_<TASK>` build flag.
+**Logging** - through the `PA_LOG_ERROR` / `WARN` / `INFO` / `DEBUG` macros
+(`include/logging.h`), which print `[<millis>][<E|W|I|D>][<tag>] <message>`.
+Per-frame verbose logging gated by a `#ifdef PA_VERBOSE_<TASK>` build flag
+(for example `PA_VERBOSE_DRIVE`).
 
 ---
 

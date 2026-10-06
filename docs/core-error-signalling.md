@@ -15,7 +15,7 @@ Failures in the core fall into four classes, each with its own signalling strate
 
 **Signalling:** Return an explicit **result struct** with a `type`/`status` field indicating success or the class of failure. Callers must check the discriminant field.
 
-**Logging:** Log a WARN when the failure is unexpected or operator-actionable (e.g., unrecognized MarcDuino command, out-of-range config value). Do NOT log expected/benign failures (e.g., an unrecognized audio $ command from old firmware).
+**Logging:** Log a WARN when the failure is unexpected or operator-actionable (e.g., unrecognized MarcDuino command, out-of-range config value). Do NOT log expected/benign failures (e.g., a bare `$` with nothing after it). An unrecognized non-empty audio `$` command is logged at WARN (`src/tasks/audio_task_step.cpp`).
 
 **Why:** Input validation can fail for many reasons; returning the reason lets the caller decide whether to log/count/ignore/retry.
 
@@ -25,9 +25,10 @@ struct AudioAction {
     AudioActionType type = AUDIO_ACTION_NONE;  // Discriminant; NONE = parse failed
     uint16_t track = 0;
 };
-AudioAction action = parseAudioDollar(cmd);
-if (action.type == AUDIO_ACTION_NONE && strncmp(cmd, "$", 1) == 0) {
-    PA_LOG_WARN("audio", "unrecognized $ command: %s", cmd);  // Only on unexpected
+AudioAction action = parseAudioDollar(cmd.dollar, *in.named);
+if (action.type == AUDIO_ACTION_NONE && cmd.dollar[0] == '$' &&
+    cmd.dollar[1] != '\0') {
+    PA_LOG_WARN("audio", "unrecognized $ command: %s", cmd.dollar);  // Not for a bare "$"
 }
 ```
 
@@ -48,7 +49,9 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
     // ... schema check ...
     if (stored > CONFIG_SCHEMA_VERSION) {
         configSnapshotDefaults(out);
-        PA_LOG_WARN("config", "unsupported schema version %u, resetting to defaults", stored);
+        prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION);
+        PA_LOG_WARN("config", "unsupported schema version %u (current=%u), resetting to defaults",
+                    (unsigned)stored, (unsigned)CONFIG_SCHEMA_VERSION);
         return false;
     }
     return true;
@@ -62,7 +65,7 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
 
 **Architecture:** Separate the pure decision logic (when to log) from the side effects (logging + counter increment).
 
-**Why:** Unbounded logging would drown the logs; counters let the operator see magnitude without spam.
+**Why:** Unbounded logging would drown the logs; counters let the operator see magnitude without spam. So the counter counts **every** failure, and only the log is rate-limited.
 
 **Example:**
 ```cpp
@@ -80,15 +83,19 @@ inline bool queueDropShouldLog(QueueDropRateState& state, uint32_t nowMs) {
     return false;
 }
 
-// Adapter that calls the pure function, logs, and increments counter
+// Adapter that calls the pure function, logs, and increments the counter
+// (src/queue_drop_tracker.cpp). The counter is outside the if: every drop is
+// counted, only the WARN is rate-limited.
 void logQueueDrop(QueueDropId queueId, const char* description) {
-    QueueDropRateState& state = dropRateStates[queueId];
-    if (queueDropShouldLog(state, millis())) {
-        PA_LOG_WARN("queue", "%s dropped message", description);
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.queueOverflowCount++;
-        taskEXIT_CRITICAL(&robotStateMux);
+    if (queueId >= QUEUE_DROP_ID_COUNT) {
+        return;
     }
+    if (queueDropShouldLog(s_dropTracking[queueId], millis())) {
+        PA_LOG_WARN(TAG, "queue full: %s", description);  // TAG = "QueueDrop"
+    }
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.queueOverflowCount++;
+    taskEXIT_CRITICAL(&robotStateMux);
 }
 ```
 
@@ -116,10 +123,10 @@ if (action.type == AUDIO_ACTION_PLAY_TRACK) {
 ## Web Layer Alignment
 
 The web layer (HTTP REST handlers, SSE) uses a separate wire contract ([api.md](api.md), #133):
-- **Wire shape:** `{"ok":false,"error":"<token>"}` with optional `hint` and `field` fields
-- **Status codes:** 400 (invalid input), 409 (state conflict), 423 (locked), 500 (server error)
+- **Wire shape:** `{"ok":false,"error":"<token>"}` with optional `hint` and `field` fields. An Apply Core's refusal (ADR 0011, amended 2026-09-25) carries more: `{"ok":false,"error":"<sentence>","field":"...","reason":"...","accepts":"..."}`, `field` and `accepts` only where the refusal has them
+- **Status codes:** 400 (invalid input), 404 (not found), 409 (state conflict), 413 (body too large), 423 (sleeping), 429 (rate limited), 500 (server error), 503 (unavailable: queue full, link down, config write busy)
 
-**Alignment rule:** When a core failure (types 1–3 above) propagates through a web route handler, map the result to the appropriate HTTP status code and error token. The internal signalling (return struct, bool + log) crosses the seam at the handler boundary via `webSendJsonError()`.
+**Alignment rule:** When a core failure (types 1-3 above) propagates through a web route handler, map the result to the appropriate HTTP status code and error token. The internal signalling (return struct, bool + log) crosses the seam at the handler boundary via `webSendJsonError()`, or `webSendApplyRefusal()` for an Apply Core's refusal (`include/api_json_response.h`).
 
 **Example:**
 ```cpp
@@ -152,7 +159,7 @@ When adding a function that can fail:
 3. **Log at the right level** — WARN for unexpected, INFO/DEBUG for benign.
 4. **Document return semantics** in the function header.
 5. **For Core 1 real-time paths:** Use Class 4 (log-and-continue) or Class 3 (counter + rate-limited log). Avoid blocking or allocation.
-6. **For web handlers:** Catch core failures at the seam, map to HTTP status/error, and call `webSendJsonError()`.
+6. **For web handlers:** Catch core failures at the seam, map to HTTP status/error, and call `webSendJsonError()` (or `webSendApplyRefusal()` for an Apply Core's refusal).
 
 ## Core Inconsistencies Resolved (Issue #129)
 
@@ -160,10 +167,10 @@ This document was created to address five core error-signalling inconsistencies 
 
 | Inconsistency Class | Module | Instance | Resolution |
 |---|---|---|---|
-| Input validation (Class 1) | parseAudioDollar | unrecognized $ commands | Aligned: WARN log added in `src/tasks/audio_task_step.cpp` (issue #129, slice 2) |
-| Operational failure (Class 2) | configSave* | rollback paths | Aligned: ERROR logs added in `src/web/api_audio.cpp` lines 510, 589 (issue #129, slice 3) |
+| Input validation (Class 1) | parseAudioDollar | unrecognized $ commands | Aligned: WARN log added in `src/tasks/audio_task_step.cpp` (issue #129) |
+| Operational failure (Class 2) | configSave* | rollback paths | Aligned: ERROR logs on both rollback paths in `src/web/api_audio.cpp` (issue #129) |
 | Repeated failure (Class 3) | queue send/drop | drops to queues | Exempted: Already aligned by issue #128 via `queue_drop_tracker.h` — the "bool + counter + rate-limited log" reference implementation cited above |
-| Operational failure (Class 2) | parseMarcduinoCommand | RC dispatch calls | Aligned: DEBUG logs added in `src/rc_dispatcher_helpers.cpp` (issue #129, slice 4) |
+| Operational failure (Class 2) | parseMarcduinoCommand | RC dispatch calls | DEBUG logs added in `src/rc_dispatcher_helpers.cpp` (issue #129). Not aligned as written: Class 2 asks for WARN or ERROR, and the code logs DEBUG (`rcDispatchAudioTrigger()`); the class or the level is wrong, and which is a decision still open |
 | Benign failure (Class 4) | audio task | unrecognized AUDIO_ACTION_NONE | Exempted: Expected behavior for forward-incompatible or unrecognized commands; silent handling is correct per Class 4 (log-and-continue). No change needed. |
 
 ## Related

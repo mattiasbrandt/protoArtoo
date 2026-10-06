@@ -3,13 +3,10 @@
 This document describes the currently exposed HTTP and SSE API in protoArtoo,
 including request shape, accepted parameters, and observed response contracts.
 
-**Route Coverage (for drift detection):** 72 routes registered in every build,
-counted from `src/web/web_seam_routes.cpp` (2026-10-03): 68 core API routes + 3
-multipart upload routes (`/upload/firmware`, `/upload/filesystem`,
-`/api/take/file`) + 1 SSE stream (`/api/events`). Four more exist only on
-builds that carry them: `/api/admission/trace` (`PA_ADMISSION_TRACE`),
+Every route `src/web/web_seam_routes.cpp` registers is documented here or
+listed under "Internal Routes". `/api/admission/trace` (`PA_ADMISSION_TRACE`),
 `/api/profiler` (`PA_HEAP_PROFILE`) and the two `/api/profiler/trace` routes
-(`PA_HEAP_TRACING`). All are documented here or listed under "Internal Routes".
+(`PA_HEAP_TRACING`) exist only on builds that carry them.
 
 ## Table of Contents
 
@@ -32,7 +29,8 @@ builds that carry them: `/api/admission/trace` (`PA_ADMISSION_TRACE`),
 
 ## Request/Response Conventions
 
-- Most POST endpoints read body fields as form parameters (`req->getParam(..., true)`).
+- Most POST endpoints read body fields as form parameters, through the WebRequest seam's
+  `req.param(name, buf, size)` (ADR 0021).
 - Endpoints that support JSON body read `plain` request payload and parse JSON.
 - Success payload is usually `{"ok":true}` unless the endpoint returns a full JSON object.
 - Errors are returned as JSON with `ok:false` + `error` in most routes.
@@ -45,11 +43,17 @@ builds that carry them: `/api/admission/trace` (`PA_ADMISSION_TRACE`),
 
 ## Error Contract
 
-All error responses use a unified JSON shape:
+Error responses from the API handlers use a unified JSON shape:
 
 ```json
 {"ok":false,"error":"<error-token>"}
 ```
+
+Two routes answer `503` as `text/plain` instead, because a browser stream or
+a plain-text reader is on the other end: `GET /api/events` ("event stream at
+capacity", "event stream unavailable") and `GET /api/logs` ("log buffer
+unavailable"). A request the admission layer refuses before any handler runs
+gets no JSON either; see [page-load-recovery-architecture.md](page-load-recovery-architecture.md).
 
 An error response may optionally include:
 - `"hint"`: a string suggesting recovery action (e.g., `"POST /api/wake"`)
@@ -167,8 +171,7 @@ routes each signal over.
     rides that controller - read the lane and the capability together.
     A lane whose wire contract is the lane's own also carries `baud` and
     `protocol` (`include/board_lane_wire.h`): today only `protor2link`, at
-    `9600` and `"marcduino"`, which Configuration's Dome Controller card
-    states. `drive` and `audio` carry neither, because their contract is the
+    `9600` and `"marcduino"`. `drive` and `audio` carry neither, because their contract is the
     fitted Component Member's.
   - `build_flags`: an object containing every Build Feature Flag from
     `include/build_flags.inc`, with boolean values
@@ -192,7 +195,9 @@ Persists a new cosmetic droid name and/or mDNS hostname preference.
 
 - Body fields:
   - `droidName`: required; must be 1–32 lowercase letters, numbers, or hyphens (no spaces)
-  - `mdnsUseName`: optional; `true`, `false`, `0`, or `1` (defaults to existing value)
+  - `mdnsUseName`: optional; `true`, `false`, `0`, or `1`. Omitted means
+    `false`: the stored preference is overwritten either way, so send it on
+    every write that should keep the name as the hostname
 - Success: `200` JSON with the updated identity and the same `board`,
   `learned_sequence_cap`, `learned_sequence_max_bytes`, `board_capabilities`,
   `board_lanes`, and `build_flags` fields as GET
@@ -213,7 +218,7 @@ curl -s -X POST http://artoo.local/api/identity \
 #### Example response
 
 ```json
-{"droidName":"r2d2","mdnsUseName":true,"board":"artoo_esp32","learned_sequence_cap":5,"learned_sequence_max_bytes":12288,"board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
+{"droidName":"r2d2","mdnsUseName":true,"board":"artoo_esp32","learned_sequence_cap":5,"learned_sequence_max_bytes":12288,"board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true,"PA_CAP_DEDICATED_AUDIO_UART":false},"board_lanes":{"drive":{"uart":1,"tx":16,"rx":17},"audio":{"uart":2,"tx":26,"rx":35},"protor2link":{"uart":2,"tx":33,"rx":34,"baud":9600,"protocol":"marcduino"}},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
 ```
 
 ### GET /api/identity/components
@@ -232,12 +237,16 @@ this one runs to roughly 5.5 KB; it is sent chunked.
     - `id`, `name`: the stable token and the operator-visible category name
     - `selectable`: how many of its members this image can drive
     - `member_key`: the setting that names which member is fitted, or `null`
-      where there is nothing to choose. Present only where `selectable` is
-      greater than 1.
-    - `active_member`: the member the controller has been running since its
-      last boot, or `null`. A member change is staged at reboot, so this can
-      differ from the saved choice `GET /api/config` reports under
-      `components.audio.member`.
+      where the family has no member setting. Always present, whatever
+      `selectable` says.
+    - `active_member`: the member in use, or `null` where the family has no
+      member setting or none is fitted. For Sound and the Body servo
+      controller it is the member the controller has been running since its
+      last boot: a member change is staged at reboot, so it can differ from
+      the saved choice `GET /api/config` reports under
+      `components.audio.member` or `components.bodyServo.member`. For the
+      Radio Controller there is no boot
+      latch, and it is the saved choice.
   - `parts`: one entry per product, each carrying
     - `id`, `name`: the stable token and the operator-visible product name
     - `value`: the stable numeric id a member setting stores
@@ -255,8 +264,7 @@ this one runs to roughly 5.5 KB; it is sent chunked.
       bitmask. `0` where the family has no vocabulary yet. Sound's bits are
       the `AUDIO_CAP_*` words (`include/audio_driver.h`); the Foot Drive's are
       `DRIVE_CAP_*` (`include/drive_capabilities.h`), where `1` says the Foot
-      Drive reports readings back and the Foot Drive page shows the wheel
-      controller's card only then.
+      Drive reports readings back.
     - `included`: whether this image carries a driver for it. A controller
       fact, not a project one: a `supported` part can read `false`.
     - `board_capability`: the `PA_CAP_*` gate it requires, or `null` for a part
@@ -457,7 +465,7 @@ Queues dome speed command.
 - Success: `200` `{"ok":true}`
 - Errors:
 - `400` `{"ok":false,"error":"missing speed"}`
-- `423` `{"error":"sleeping","hint":"POST /api/wake"}`
+- `423` `{"ok":false,"error":"sleeping","hint":"POST /api/wake"}`
 - `400` `{"ok":false,"error":"speed must be a float in range -1.0..1.0"}`
 - `409` `{"ok":false,"error":"dome output is disabled"}`
 - `503` `{"ok":false,"error":"dome command queue full"}`
@@ -511,7 +519,7 @@ Sends a raw dome command or a factory sequence (DM:* name).
 
 The command is routed based on its prefix:
 - Starts with `DM:` — queued as a Learned Sequence or factory sequence (same as `POST /api/seq/test`)
-- Otherwise — queued as a raw command to the dome link
+- Otherwise - queued as a raw command to protoR2link
 
 - Body fields:
 - `cmd`: required; raw string or `DM:*` factory sequence name; max 127 characters, and a raw
@@ -554,14 +562,16 @@ curl -s -X POST http://artoo.local/api/dome/cmd \
 
 Fetches cached dome layout JSON from WiFi transport.
 
-The controller makes no HTTPS connections. The dome link's WiFi (fallback)
+The controller makes no HTTPS connections. protoR2link's WiFi (fallback)
 transport and OTA both use plain `http://` on the local network, and the
 firmware is built without an HTTPS client, so an `https://` peer address
 will not connect.
 
-The layout is cached by the dome link task. This endpoint streams the cached bytes from a chunked response, so no per-request buffer allocation is needed.
+The layout is cached by the protoR2link task. This endpoint streams the cached bytes from a chunked response, so no per-request buffer allocation is needed.
 
-If the cache is empty or transport is not WiFi, returns `503` and sets a flag for the background task to fetch on the next loop.
+If transport is not WiFi, returns `503` and does nothing else. If the cache
+is empty, returns `503` and sets a flag for the background task to fetch on
+the next loop.
 
 - Success: `200` chunked JSON with layout structure
 - Errors:
@@ -943,11 +953,11 @@ curl -s http://artoo.local/api/servo/outputs
 #### Example response (an Artoo PCB, fresh, with the two utility arms on ARM1 and ARM2; then the same droid with a door ganged to an arm part way through opening, a dial holding a calibrated ARM2, ARM3 - free, no Part on it - let go by a Find by Moving run after its nudge, and ARM5, with a door on it, released by the estop. A FireBeetle 2 answers the same rows named `GPIO 49` .. `GPIO 51`)
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","id":"arm1","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":["utilUp"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:1","name":"ARM2","id":"arm2","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":["utilLo"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:3","name":"ARM3","id":"aux1","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:4","name":"ARM4","id":"aux2","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:5","name":"ARM5","id":"aux3","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","id":"arm1","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":["utilUp"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:1","name":"ARM2","id":"arm2","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":["utilLo"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:3","name":"ARM3","id":"aux1","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:4","name":"ARM4","id":"aux2","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:5","name":"ARM5","id":"aux3","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1}],"expander":null}
 ```
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","id":"arm1","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","release":2000,"boot":"limp","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1620,"targetUs":2000,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:1","name":"ARM2","id":"arm2","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":["utilLo"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":1150,"centreUs":1500,"closeUs":1850,"calibrated":true,"narrowedFrom":null,"commandedUs":1450,"targetUs":1450,"held":true,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:3","name":"ARM3","id":"aux1","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"pulses-off","nudgesDone":1,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:4","name":"ARM4","id":"aux2","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:5","name":"ARM5","id":"aux3","switchable":true,"wired":true,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":["doorRR"],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"estop","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null,"activeLedCount":1}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","id":"arm1","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","release":2000,"boot":"limp","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1620,"targetUs":2000,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:1","name":"ARM2","id":"arm2","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":["utilLo"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":1150,"centreUs":1500,"closeUs":1850,"calibrated":true,"narrowedFrom":null,"commandedUs":1450,"targetUs":1450,"held":true,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:3","name":"ARM3","id":"aux1","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"pulses-off","nudgesDone":1,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:4","name":"ARM4","id":"aux2","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:5","name":"ARM5","id":"aux3","switchable":true,"wired":true,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","release":0,"boot":"limp","parts":["doorRR"],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"estop","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null,"activeLedCount":1}],"expander":null}
 ```
 
 ### POST /api/aux-led/color
@@ -969,6 +979,7 @@ step and an RC action send.
 - `400` `{"ok":false,"error":"output must be an Output Address this droid has"}`
 - `503` `{"ok":false,"error":"no light on that wire"}`
 - `503` `{"ok":false,"error":"aux LED command queue full"}`
+- `500` `{"ok":false,"error":"lights response overflow"}`
 
 #### Example request (form)
 
@@ -1011,6 +1022,7 @@ for the color route above.
 - `400` `{"ok":false,"error":"output must be an Output Address this droid has"}`
 - `503` `{"ok":false,"error":"no light on that wire"}`
 - `503` `{"ok":false,"error":"aux LED command queue full"}`
+- `500` `{"ok":false,"error":"lights response overflow"}`
 
 #### Example request
 
@@ -1055,6 +1067,12 @@ Returns live audio module status.
     capability is absent (MP3 Trigger).
   - `missing_track`: last track the module said was not on the card (`'E'` on
     the MP3 Trigger); `0` when none.
+  - `rx_status`: whether the controller can hear the sound module answer:
+    `available`, `blocked_by_dome_uart` (the board shares one UART between
+    sound and protoR2link, and protoR2link holds it), `no_response` or
+    `unknown`.
+  - `rx_detail`: the same as a sentence for a person, e.g.
+    `Held by protoR2link`.
 
 #### Example request
 
@@ -1065,7 +1083,7 @@ curl -s http://artoo.local/api/audio
 #### Example response
 
 ```json
-{"driver":"DY-SV5W","output":"on","capabilities":15,"link_ok":true,"active":false,"play_state":"stop","device":"FLASH","total_tracks":999,"current_track":0,"missing_track":0}
+{"driver":"DY-SV5W","output":"on","capabilities":15,"link_ok":true,"active":false,"play_state":"stop","device":"FLASH","total_tracks":999,"current_track":0,"missing_track":0,"rx_status":"available","rx_detail":"Sound module RX is available"}
 ```
 
 ### POST /api/audio
@@ -1393,7 +1411,18 @@ curl -s -X POST http://artoo.local/api/mood \
 Returns cached CHIRP catalog.
 
 - Optional query param: `bank=1..6`
-- Success: `200` JSON with `ready`, `banks[]`, `entries[]`
+- Success: `200` JSON with:
+  - `ready`: a catalog has been read
+  - `busy`: a refresh holds the catalog right now; a reader keeps the rows it
+    already has rather than reading this answer as "no catalog"
+  - `complete`: `ready` and none of the `limits` below tripped
+  - `limits`: `manifest_incomplete`, `missing_names` (a count) and
+    `entry_cap_reached`, what the last discovery could not see
+  - `refresh`: `request` (the latest refresh id handed out), `active`,
+    `settled` (ids) and `state`, how the settled one ended: `none`, `queued`,
+    `running`, `completed`, `blocked`, `failed` or `interrupted`
+  - `bindings`: `sound_list_changed` and `sound_list_checked`
+  - `banks[]`, `entries[]`
 - Errors:
 - `404` `{"ok":false,"error":"catalog unsupported by active backend"}`
 - `400` invalid `bank`
@@ -1407,14 +1436,15 @@ curl -s 'http://artoo.local/api/audio/catalog?bank=2'
 #### Example response (abridged)
 
 ```json
-{"ready":true,"banks":[{"bank":2,"page":"A","dir":"BANK2_A","count":20}],"entries":[{"bank":2,"page":"A","index":1,"name":"TRACK_001"}]}
+{"ready":true,"busy":false,"complete":true,"limits":{"manifest_incomplete":false,"missing_names":0,"entry_cap_reached":false},"refresh":{"request":1,"active":0,"settled":1,"state":"completed"},"bindings":{"sound_list_changed":false,"sound_list_checked":true},"banks":[{"bank":2,"page":"A","dir":"BANK2_A","count":20}],"entries":[{"bank":2,"page":"A","index":1,"name":"TRACK_001"}]}
 ```
 
 ### POST /api/audio/catalog/refresh
 
 Queues catalog refresh.
 
-- Success: `200` `{"ok":true}`
+- Success: `200` `{"ok":true,"request":<n>}`: the refresh id that
+  `GET /api/audio/catalog` reports under `refresh` once it settles
 - Errors:
 - `404` unsupported backend
 - `409` sound is off this boot (the same answer as `POST /api/audio`)
@@ -1429,7 +1459,7 @@ curl -s -X POST http://artoo.local/api/audio/catalog/refresh
 #### Example response
 
 ```json
-{"ok":true}
+{"ok":true,"request":3}
 ```
 
 ### POST /api/audio/play-banked
@@ -1525,8 +1555,9 @@ Returns factory sequence metadata and optionally a full factory sequence JSON.
   `suppressMs`, `stepCount` and `lengthMs` as in `/api/seq/list`, and `purpose` in full
 - Success (single): `200` JSON v1 of a single factory sequence (full step data)
 - Errors:
-  - `404` `{"ok":false,"error":"factory sequence not found"}` (when fetching a single sequence by name)
-  - `500` on response overflow
+  - `404` `{"ok":false,"error":"not found"}` (when fetching a single sequence by name)
+  - `500` `{"ok":false,"error":"payload too large"}` or
+    `{"ok":false,"error":"response buffer alloc failed"}`
 
 #### Example request (list all factory sequences)
 
@@ -1538,21 +1569,21 @@ curl -s http://artoo.local/api/seq/builtins
 
 ```json
 [
-  {"name":"DM:ROCKMARCH","toggleGroup":"movement","suppressMs":1000,"source":"factory","modified":"","valid":true,"retrained":false},
-  {"name":"DM:HELLO","toggleGroup":"greeting","suppressMs":2000,"source":"factory","modified":"","valid":true,"retrained":false}
+  {"name":"DM:HELLO","toggleGroup":"none","suppressMs":4000,"stepCount":6,"lengthMs":950,"purpose":"\"Hello There\" greeting: front and rear logic text, then P1 opens and closes (4 s)."},
+  {"name":"DM:NOD","toggleGroup":"none","suppressMs":3000,"stepCount":5,"lengthMs":300,"purpose":"Short acknowledgment: a sound, logic text, and a P1 panel wave (3 s)."}
 ]
 ```
 
 #### Example request (fetch single factory sequence)
 
 ```bash
-curl -s 'http://artoo.local/api/seq/builtins?name=DM:ROCKMARCH'
+curl -s 'http://artoo.local/api/seq/builtins?name=DM:NOD'
 ```
 
 #### Example response (abridged)
 
 ```json
-{"name":"DM:ROCKMARCH","version":1,"toggleGroup":"movement","suppressMs":1000,"steps":[{"type":"dome","action":"speed","payload":"0.5","durationMs":1000}]}
+{"format":1,"name":"DM:NOD","suppressMs":3000,"toggleGroup":"none","meta":{"source":"factory","origin":"","license":"","notes":"","purpose":"Short acknowledgment: a sound, logic text, and a P1 panel wave (3 s).","modified":false},"steps":[{"t":0,"type":"audio","cmd":"$H","boundAudio":false},{"t":0,"type":"dome","cmd":"@1MYes"},{"t":0,"type":"dome","cmd":":OP01"},{"t":150,"type":"dome","cmd":":CL01"},{"t":300,"type":"end"}],"closeSteps":[]}
 ```
 
 ### POST /api/seq/test
@@ -1570,8 +1601,11 @@ Accepts the sequence name via query parameter or JSON body. The body form is pre
 - Success: `200` `{"ok":true}`
 - Errors:
   - `400` `{"ok":false,"error":"missing or invalid DM:* name"}`
-  - `423` `{"error":"sleeping","hint":"POST /api/wake"}` (sleep mode blocks)
+  - `400` `{"ok":false,"error":"invalid json body"}`
+  - `413` `{"ok":false,"error":"payload too large"}` for a JSON body over 512 B
+  - `500` `{"ok":false,"error":"request buffer alloc failed"}`
   - `503` `{"ok":false,"error":"sequence queue full"}`
+  - No sleep check: this route never answers `423`
 
 #### Example request (form)
 
@@ -1634,7 +1668,7 @@ The request names the sequence and the instant, and nothing else. The firmware w
 - Then each dome panel and body Part goes to where the last step before that instant left it, one at a time. Consecutive motions are at least the Cadence Floor apart, a body Output also holds the next one off for its own throw, and nothing is ever sent as a group command.
 - A Part the routine has not yet moved is not commanded, and neither is a dome panel's flutter, a random step's pick, a dome turn or a raw light code. A body Part whose last word is a flutter goes to its closed end, where a flutter leaves it; a pose swings nothing.
 - Past the end, the pose is what the routine's own ending leaves: ring panels closed, pies and body Parts where they were.
-- The later word wins. A sequence started, or `POST /api/seq/stop`, after the press cancels a pose the controller has not taken yet. A second press replaces the first, and its first motion still waits out the first one's spacing. A dome resync (after an estop clears, or when the dome link comes up) ends a pose being reached, and a pose that starts ends a resync's panel-by-panel close.
+- The later word wins. A sequence started, or `POST /api/seq/stop`, after the press cancels a pose the controller has not taken yet. A second press replaces the first, and its first motion still waits out the first one's spacing. A dome resync (after an estop clears, or when protoR2link comes up) ends a pose being reached, and a pose that starts ends a resync's panel-by-panel close.
 
 No Non-RC Control consent is asked: it commands what a normal run commands at that instant.
 
@@ -1643,6 +1677,8 @@ No Non-RC Control consent is asked: it commands what a normal run commands at th
 - Errors:
   - `400` `{"ok":false,"error":"missing or invalid DM:* name"}`
   - `400` `{"ok":false,"error":"t must be whole milliseconds from the start"}`
+  - `400` `{"ok":false,"error":"missing JSON body"}` or `{"ok":false,"error":"invalid json body"}`
+  - `413` `{"ok":false,"error":"payload too large"}`: a body over 512 B
   - `404` `{"ok":false,"error":"not a saved or factory sequence"}`: the name is not one whose steps the droid holds
   - `409` `{"ok":false,"error":"Estop latched. Clear it to send the droid to this moment."}`, or the Sleep Mode sentence. The Coordinator applies the same rule again when it takes the request.
 
@@ -1728,6 +1764,8 @@ Pins or unpins one Sequence, and answers the list as it now stands. One name per
 - Errors:
   - `400` `{"ok":false,"error":"missing or invalid DM:* name"}`: not `DM:` and 1 to 18 of `A-Z`, `0-9`, `_`
   - `400` `{"ok":false,"error":"pinned must be true or false"}`
+  - `400` `{"ok":false,"error":"missing JSON body"}` or `{"ok":false,"error":"invalid json body"}`
+  - `413` `{"ok":false,"error":"payload too large"}`: a body over 128 B
   - `409` `{"ok":false,"error":"8 are pinned. Unpin one first."}`: a ninth pin
   - `500` `{"ok":false,"error":"pins not read; nothing changed"}`: NVS would not give the list back, so it is not written over.
   - `500` `{"ok":false,"error":"pins not saved"}`: NVS refused the write - most often a full namespace. Nothing changed.
@@ -1754,9 +1792,10 @@ Fetches the raw JSON of a single Learned Sequence by name.
   - `name=<sequence-name>`: required; Learned Sequence name to fetch
 - Success: `200` JSON v1 of the Learned Sequence
 - Errors:
-  - `400` `{"ok":false,"error":"name is required"}`
-  - `404` `{"ok":false,"error":"sequence not found"}`
-  - `500` on response overflow
+  - `400` `{"ok":false,"error":"missing name parameter"}`
+  - `404` `{"ok":false,"error":"not found"}`
+  - `500` `{"ok":false,"error":"read failed"}`: the file is streamed off
+    LittleFS in chunks, so there is no overflow path
 
 #### Example request
 
@@ -1767,7 +1806,7 @@ curl -s 'http://artoo.local/api/seq?name=DM:CUSTOM'
 #### Example response (abridged)
 
 ```json
-{"name":"DM:CUSTOM","version":1,"steps":[{"type":"dome","action":"speed","payload":"0.5","durationMs":1000}]}
+{"format":1,"name":"DM:CUSTOM","steps":[{"t":0,"type":"dome","cmd":":OP01"},{"t":800,"type":"dome","cmd":":CL01"},{"t":1000,"type":"end"}]}
 ```
 
 ### POST /api/seq
@@ -1777,9 +1816,9 @@ Validates and persists a Learned Sequence.
 Sends a full sequence JSON v1 in the body. The endpoint runs Protocol Check validation and persists to storage if valid.
 
 - Body: JSON v1 sequence object with:
+  - `format`: must be `1`
   - `name`: `DM:*` identifier
-  - `version`: must be `1`
-  - `steps`: array of valid step objects, in the forms
+  - `steps`: array of valid step objects, the last one `{"type":"end"}`, in the forms
     [`docs/sequence-authoring.md`](sequence-authoring.md) lists. A Background
     Track (ADR 0054) is two of them: `{"t":0,"type":"backgroundTrack","cmd":"$W","vol":12,"boundAudio":true}`
     starts it - `cmd` a `$` sound as on an `audio` step, `vol` 0-30 and
@@ -1813,7 +1852,7 @@ Sends a full sequence JSON v1 in the body. The endpoint runs Protocol Check vali
 ```bash
 curl -s -X POST http://artoo.local/api/seq \
   -H 'Content-Type: application/json' \
-  -d '{"name":"DM:CUSTOM","version":1,"steps":[{"type":"dome","action":"speed","payload":"0.5","durationMs":1000}]}'
+  -d '{"format":1,"name":"DM:CUSTOM","steps":[{"t":0,"type":"dome","cmd":":OP01"},{"t":800,"type":"dome","cmd":":CL01"},{"t":1000,"type":"end"}]}'
 ```
 
 #### Example response
@@ -1829,10 +1868,14 @@ unless another sequence carries the same `id`.
 
 - Query params:
   - `name=<sequence-name>`: required; Learned Sequence name to delete
-- Success: `200` `{"ok":true}`
+- Success: `200` `{"ok":true}`, plus `danglingBindings` when RC triggers are
+  left pointing at the wiped name and no Factory Sequence shadows it:
+  `[{"source":"sbus1","channel":7}]`, `source` one of `pwm`, `sbus1`, `sbus2`,
+  `speed`, `hstop`, `rest`, `track`, `wspeed`, `wamps`. Those triggers do
+  nothing from now on.
 - Errors:
-  - `400` `{"ok":false,"error":"name is required"}`
-  - `404` `{"ok":false,"error":"sequence not found"}`
+  - `400` `{"ok":false,"error":"missing name parameter"}`
+  - `404` `{"ok":false,"error":"not found"}`
   - `500` `{"ok":false,"error":"delete failed"}`
 
 #### Example request
@@ -1941,7 +1984,8 @@ On a full store, a take not yet saved into its sequence is replaced.
 One take file as stored, `application/octet-stream`.
 
 - Query params: `owner` (the sequence's stable id), `take` (the take's id)
-- Errors: `400` invalid params, `404` no such take
+- Errors: `400` invalid params, `404` no such take, `500` `{"ok":false,"error":"read failed"}`
+  when the chunked send could not start
 
 The file is little-endian: `PATK`, format `1`, `rateHz`, `partCount`, a
 reserved byte, `lengthTicks` (u32), `sampleCount` (u32), the Part ids at 11
@@ -1988,7 +2032,14 @@ Returns current config snapshot.
   LED count, its Motion Profile and boot behaviour, its ends and its Parts - is
   read whole from its row on `GET /api/servo/outputs` and written back the same
   way (ADR 0068). There are no `arm1OpenUs`-style end names here any more.
-- `dome`: pulse calibration, speed limit, random movement config, wifi peer IP
+- `domeEsc`: the Dome Rotation ESC's pulse calibration (`neutralUs`,
+  `minPulseUs`, `maxPulseUs`), `speedLimitPct`, the random movement config
+  (`rndEnable`, `rndSpeedPct`, `rndPauseMin`, `rndPauseMax`, `rndMoveMs`) and
+  the Dome Bearing's calibration (`fullTurnMs`, `fullTurnPct`, `positiveTurn`).
+  There is no `dome` key.
+- `protoR2link.wifiPeerIp`: the dome's address for protoR2link over WiFi
+- `servo`: `cadenceFloorMs` and `cadenceFloorSource` (see POST below)
+- `seq.standDown`: the Stand Down Sequence (see POST below)
 - `system.logLevel`
 - `droidBuild`: the Droid Build (ADR 0047) — `domeDesign`, `domeVariant`,
   `bodyDesign`, `bodyVariant` (design ids from `data/droid_parts.js`'s
@@ -2008,7 +2059,7 @@ Returns current config snapshot.
   it reads `false`. Which steps EXIST is the browser's, not the
   firmware's — the run is drawn in `data/setup.js` and its list grows, so
   firmware stores the keys it is handed and checks their form alone.
-- `wifi`: Device WiFi Settings (ADR 0015) — `provisioned`, `mode` (`client`|`standalone_ap`), `staSsid`, `staPasswordSet`, `apSsid`, `apPasswordSet`, `pendingApply` (true when persisted settings differ from what is currently applied to WiFi hardware — a Staged Network Switch awaiting reboot/restart). Plaintext passwords are never returned.
+- `wifi`: Device WiFi Settings (ADR 0015) - `provisioned`, `mode` (`client`|`standalone_ap`), `staSsid`, `staPasswordSet`, `apSsid`, `apPasswordSet`, `pendingApply` (true when persisted settings differ from what is currently applied to WiFi hardware - a Staged Network Switch awaiting reboot/restart), `networkRecovery` (true when Network Recovery Mode is the posture this boot entered; see `GET /api/wifi`). Plaintext passwords are never returned.
 
 #### Example request
 
@@ -2044,17 +2095,15 @@ Updates supported config fields and persists to NVS.
   `{"ok":false,"error":"soundMember is not a sound module this firmware can drive"}`.
   Independent of `enableAudio`: the toggle says a sound module is fitted, the
   member says which product it is. Saved immediately, **takes effect at the next
-  reboot** like a component toggle. Configuration's Component Picker writes
-  it from the Sound family's cards, which guided Setup shows as its step; its
-  "Not fitted" card is `enableAudio=false` (#369).
+  reboot** like a component toggle. Configuration writes it; "not fitted" is
+  `enableAudio=false` (#369).
 - components (Component Member): `bodyServoMember` — the body servo controller,
   a Component Registry part id from the `body_servo_controller` category:
   `esp32_gpio_ledc` (the board's GPIO, the default) or `pca9685`. Anything else
   is `400` `{"ok":false,"error":"bodyServoMember is not a body servo controller this firmware can drive"}`.
   Choosing `pca9685` **adds** the expander's sixteen Outputs, `pca:0`..`pca:15`,
   beside the board's own, which keep working (#444). Saved immediately, **takes
-  effect at the next reboot**. Configuration's Component Picker writes it from
-  the Body servo controller family's cards.
+  effect at the next reboot**. Configuration writes it.
 - `pcaAddress(64..127)` — the PCA9685's I2C address (`0x40`..`0x7F`, base
   `0x40` plus its address jumpers); default 64 (`0x40`). Takes effect at the
   next reboot. `112`..`115` (`0x70`..`0x73`) are refused, `400` with `field`
@@ -2411,7 +2460,8 @@ Returns live RC diagnostics snapshot.
   driving. The droid is driving while the drive output is not zero, while a
   wheel reports turning, and for 1.5 s after the output reaches zero. Counts
   restart when the Reaction is edited and at boot.
-- Errors: `500` json build/stream alloc failures
+- Errors: `500` `{"ok":false,"error":"rc json build failed"}`, or `payload too large` /
+  `response buffer alloc failed` from the buffered send (no stream)
 
 #### Example request
 
@@ -2433,9 +2483,8 @@ Sets RC debug mode.
 - Max payload size: 128 bytes
 - Success: `200` `{"ok":true}`
 - Errors:
-- `413` payload too large
-- `400` invalid chunking or invalid JSON
-- `500` request buffer allocation failed
+- `413` `{"ok":false,"error":"payload too large"}` for an empty body or one over 128 bytes
+- `400` `{"ok":false,"error":"invalid json"}`, also for a form-encoded body
 
 #### Example request
 
@@ -2539,7 +2588,7 @@ The browser adapter for the Controller Console (ADR 0036) — the same command
 processor a serial terminal drives, over HTTP. See
 [console.md](console.md) for the command language and
 [console-protocol.md](console-protocol.md) for the full record format. This is
-the endpoint the dashboard's Live Logs command box calls.
+the endpoint the Dashboard's Console command box calls.
 
 - Input: form field `command`, or JSON body `{ "command": "..." }`.
 - Success: `200` `{"records":[...]}` — one object per Console Record, each
@@ -2575,6 +2624,8 @@ the endpoint the dashboard's Live Logs command box calls.
     this endpoint's bounded response can hold
   - `500` `{"ok":false,"error":"response alloc failed"}` / `{"ok":false,"error":"response too large"}` —
     response-stream allocation failure
+  - `500` `{"ok":false,"error":"request scratch unavailable"}` - the request
+    scratch this endpoint borrows was not available
 
 #### Example request (form)
 
@@ -2612,6 +2663,12 @@ curl -s -X POST http://artoo.local/api/console \
 Returns controller status snapshot.
 
 - Success: `200`
+- Errors:
+  - `500` `{"ok":false,"error":"request scratch unavailable"}`
+  - `200` `{"ok":false,"error":"status payload overflow"}` when the snapshot did not
+    fit its buffer: a `200` that is **not** a status object, so a reader checks
+    for `ok:false` before reading fields. The `status` event on `/api/events`
+    carries the same fallback body in that case
 - Top-level fixed fields include:
 - `estop`, `webControlEnabled`, `sbusSignalLost`, `sbusHwFailsafe`, `webDriveExpired`
 - `failsafeSource`, `failsafeCount`, `failsafeTriggerMs`, `failsafeZeroMs`, `failsafeTriggerToZeroMs`, `failsafeWatchdogMs`, `failsafeTriggerSource`
@@ -2644,7 +2701,24 @@ Returns controller status snapshot.
   `/api/profiler` reports the same counter plus the failing request's size,
   capability mask and backtrace, but only exists when `PA_HEAP_PROFILE=1`. ADR
   0017's memory-recovery rule wants this flat across a load wave.
-- `sseClients` — registered `/api/events` clients (admission cap is 3)
+- `sseClients` - registered `/api/events` clients (admission cap is 3);
+  `sseClientsPeak` the most at once this boot; `refusedSseCap` streams refused
+  because the cap was met; `sseEvicted` streams dropped by the send deadline,
+  and `sseEvictAgeMs` milliseconds since the last one (`-1` if none since boot)
+- Request admission (`include/web_admission.h`, see
+  [page-load-recovery-architecture.md](page-load-recovery-architecture.md)):
+  `inflightRequests`, `inflightRequestsPeak` - requests being served now, and
+  the most at once; `refusedInflightCap` - refused because the in-flight cap
+  was met; `refusedHeapFloor`, `refusedHeapFloorDiag` - refused under the heap
+  floor, ordinary and Diagnostic requests counted apart;
+  `busyRecoveryPagesServed` - refusals answered with the Busy Recovery Page
+  rather than a bare close
+- `acceptGuardLastUs`, `acceptGuardMaxUs` - what the connection accept guard
+  itself cost, in microseconds: the last run and this boot's longest
+- `otaActive`, `otaProgress`, `otaLastError` - an ArduinoOTA (`espota`)
+  transfer: running now, its percentage (`255` until one has started this
+  boot), and the last error (`none` when there is none). An upload through
+  `/upload/firmware` or `/upload/filesystem` does not move them
 - `tcpAcceptRejectHeap`, `tcpAcceptRejectRate`, `tcpAcceptRejectAgeMs` —
   accept-guard rejection counters (heap floor / rate pacing) and milliseconds
   since the last rejection (`-1` if none since boot)
@@ -2688,9 +2762,19 @@ Returns controller status snapshot.
   `GET /api/config` names it under `components` (`aux1`), each carrying `r`,
   `g`, `b`, `effect` and `available`. A droid with no light answers `{}`. There
   is no pin here: where a wire plugs in is Wiring's answer (ADR 0067, #413)
-- Additional component objects are conditionally present when enabled: each Output under its stored id (`arm1`..`aux3`, the `components{}` keys of `GET /api/config`, never shown - its name is that entry's `label`), and `domeEsc`, `rcCh1..rcCh6`, `drive`, `audio`, `protoR2link`
-- Includes top-level `dome_link` object (`state`, `transport`, counters, last_rx_ms)
-- Includes `hoverboard` object when feedback is valid
+- Additional component objects are conditionally present when enabled: each Output under its stored id (`arm1`..`aux3`, the `components{}` keys of `GET /api/config`, never shown - its name is that entry's `label`), and `domeEsc`, `rcCh1..rcCh6`, `drive`, `audio`, `protoR2link`.
+  Each carries `state` and `detail`; `audio` adds `driver`, `output`,
+  `link_ok`, `rx_status` and `rx_detail`, as on `GET /api/audio`
+- Top-level `dome_link` object, always present: `state` (`disabled`,
+  `not_seen`, `connected` - a heartbeat within 5 s - or `lost`), `transport`,
+  `detail`, `hb_tx`, `hb_rx` (heartbeat counts), `rx_overflow` (received
+  lines or packets too long for the buffer, discarded or truncated),
+  `rx_unknown` (received lines nothing understood), `last_rx_ms`
+  (`-1` before the first), `uart_owner` (`dome`, `audio` or `none`, on a board
+  where sound and protoR2link share one UART) and `uart_owned_by_dome`
+- `hoverboard` object, present while Foot Drive feedback is valid: `batteryV`,
+  `boardTempC`, `speedL`, `speedR`, `currentL`, `currentR`. The key keeps the
+  hoverboard's name whichever Foot Drive reports it (#346)
 - `hostedLink` object, on the FireBeetle 2 only (ESP-Hosted, the WiFi module
   reached over SDIO; absent on the Artoo PCB): the WiFi module link's recovery
   ladder (#189) and the liveness watch that can arm it (#471). The Console's
@@ -2750,6 +2834,7 @@ it is on the admission layer's short list of read-only diagnostic paths
 (`webPathIsDiagnostic()`), which are let through at a lower floor.
 
 - Success: `200` JSON
+- Errors: `500` `{"ok":false,"error":"request scratch unavailable"}`
 - Fields: `estop`, `sbusSignalLost`, `sbusHwFailsafe`, `webControlEnabled`,
   `wifiConnected`, `wifiClientConnected`, `littleFsReady`, `heapFree`,
   `heapMin`, `heapLargestBlock` (the Internal Data Heap, the same reading
@@ -2837,7 +2922,7 @@ curl -s -X POST http://artoo.local/api/wifi \
 #### Example response
 
 ```json
-{"ok":true,"wifi":{"provisioned":true,"mode":"client","staSsid":"HomeNetwork","staPasswordSet":true,"apSsid":"protoArtoo","apPasswordSet":true,"pendingApply":true}}
+{"ok":true,"wifi":{"provisioned":true,"mode":"client","staSsid":"HomeNetwork","staPasswordSet":true,"apSsid":"protoArtoo","apPasswordSet":true,"pendingApply":true,"networkRecovery":false}}
 ```
 
 ### GET /api/serial
@@ -2850,6 +2935,10 @@ Returns serial/transport status JSON.
   `S1`/`S2`/`S3` on the Artoo PCB, GPIO numbers on a FireBeetle 2. A board that
   declares none answers `""`. Where a signal is routed is the Board Lane, on
   GET /api/identity.
+- Every port also carries `name`, `active` and a fixed `note` for a person;
+  every port but `debug` carries `hardwareRequired: true`, since its full
+  behaviour needs the hardware on the other end wired. `dome` adds
+  `heartbeatRx` and `heartbeatTx`, the protoR2link heartbeat counts.
 
 #### Example request
 
@@ -2857,10 +2946,10 @@ Returns serial/transport status JSON.
 curl -s http://artoo.local/api/serial
 ```
 
-#### Example response (abridged, from an `artoo_esp32` image)
+#### Example response (from an `artoo_esp32` image)
 
 ```json
-{"debug":{"label":"S0","name":"ESP debug","active":true},"hoverboard":{"label":"S1","name":"Hoverboard","active":true},"sound":{"label":"S2","name":"Sound","active":false},"dome":{"label":"S3","name":"protoR2link","active":true,"heartbeatRx":49,"heartbeatTx":52}}
+{"debug":{"label":"S0","name":"ESP debug","active":true,"note":"USB debug serial"},"hoverboard":{"label":"S1","name":"Hoverboard","active":true,"hardwareRequired":true,"note":"Firmware path active; full behaviour needs the hoverboard chain wired"},"sound":{"label":"S2","name":"Sound","active":false,"hardwareRequired":true,"note":"Needs a supported sound module wired and switched on"},"dome":{"label":"S3","name":"protoR2link","active":true,"heartbeatRx":49,"heartbeatTx":52,"hardwareRequired":true,"note":"Body-dome serial transport"}}
 ```
 
 ### GET /api/logs
@@ -2895,7 +2984,8 @@ Returns validation-focused consolidated snapshot.
 - `domeLink` (`state`, `hbTx`, `hbRx`, `lastRxMs`)
 - `audio` (`enabled`, `active`, `activeMood`, random and interval settings)
 - `rc` (`mode`, `timeoutMs`, source map with `enabled|linked|signalLost|failsafe|ageMs`)
-- Errors: `500` on json build or stream alloc failure
+- Errors: `500` `{"ok":false,"error":"validation json build failed"}`, or `payload too large` /
+  `response buffer alloc failed` from the buffered send (no stream)
 
 #### Example request
 
@@ -2973,7 +3063,7 @@ Executes supported manual command.
 - Errors:
 - `429` `{"ok":false,"error":"rate limit exceeded"}`
 - `400` `{"ok":false,"error":"missing command"}`
-- `423` `{"error":"sleeping","hint":"POST /api/wake"}`
+- `423` `{"ok":false,"error":"sleeping","hint":"POST /api/wake"}`
 - `400` `{"ok":false,"error":"unsupported command"}`
 - `400` `{"ok":false,"error":"a # line goes to the Marcduino body parser, so #st and #sm never change mode","hint":"POST /api/mode with mode=stationary or mode=driving","field":"command"}`
 - `409` `{"ok":false,"error":"estop active"}` -- a line the body owns, refused and not forwarded
@@ -3043,11 +3133,17 @@ curl -s -X POST http://artoo.local/api/reboot
 Streams OTA firmware update.
 
 - Body: multipart upload
-- Size limit: 4 MB
-- Success: `200` `{"ok":true}` (reboot scheduled)
+- Size limit: the size of the next OTA app partition, read from the partition
+  table at upload time (`firmwarePartitionSize()`), so it differs per board
+- Success: `200` `{"ok":true,"bytes":<n>,"minHeapFree":<n>,"durationMs":<n>}`
+  (reboot scheduled): bytes written, the smallest free heap seen during the
+  transfer, and how long it took. The device reboots a second later, so this
+  is the only report that saw every chunk
 - Errors:
-- `413` `{"ok":false,"error":"firmware image exceeds upload size limit"}`
+- `400` `{"ok":false,"error":"no image received"}`
+- `413` `{"ok":false,"error":"firmware image is larger than the app partition"}`
 - `500` `{"ok":false,"error":"update failed"}`
+- `503` `{"ok":false,"error":"the controller could not read the upload body; no image data reached the updater. retry"}`
 
 #### Example request
 
@@ -3059,7 +3155,7 @@ curl -s -X POST http://artoo.local/upload/firmware \
 #### Example response
 
 ```json
-{"ok":true}
+{"ok":true,"bytes":<n>,"minHeapFree":<n>,"durationMs":<n>}
 ```
 
 ### POST /upload/filesystem
@@ -3067,11 +3163,15 @@ curl -s -X POST http://artoo.local/upload/firmware \
 Streams OTA filesystem update.
 
 - Body: multipart upload
-- Size limit: 1536 KB
-- Success: `200` `{"ok":true}` (reboot scheduled)
+- Size limit: the size of the filesystem partition, read from the partition
+  table at upload time (`filesystemPartitionSize()`), so it differs per board
+- Success: `200` `{"ok":true,"bytes":<n>,"minHeapFree":<n>,"durationMs":<n>}`
+  (reboot scheduled), as for firmware
 - Errors:
-- `413` `{"ok":false,"error":"filesystem image exceeds upload size limit"}`
+- `400` `{"ok":false,"error":"no image received"}`
+- `413` `{"ok":false,"error":"filesystem image is larger than the filesystem partition"}`
 - `500` `{"ok":false,"error":"filesystem update failed"}`
+- `503` `{"ok":false,"error":"the controller could not read the upload body; no image data reached the updater. retry"}`
 
 #### Example request
 
@@ -3083,7 +3183,7 @@ curl -s -X POST http://artoo.local/upload/filesystem \
 #### Example response
 
 ```json
-{"ok":true}
+{"ok":true,"bytes":<n>,"minHeapFree":<n>,"durationMs":<n>}
 ```
 
 ### GET /api/coredump/status
@@ -3112,16 +3212,15 @@ curl -s http://artoo.local/api/coredump/status
 Streams the raw ELF coredump from flash (chunked, no large heap buffer). When no
 coredump is stored it answers `404` instead (below). Retrieval works on the seated
 controller over WiFi — USB read is blocked when the ESP32 is in the PCB
-(GPIO15/SBUS strapping). Maintenance downloads it: its Crash dump card asks
-`/api/coredump/status` and offers this route as a link only when one is stored
-(#474).
+(GPIO15/SBUS strapping). Maintenance offers it for download when
+`/api/coredump/status` reports one (#474).
 
 - Success: `200` `application/octet-stream` (ELF). No `Content-Disposition` header is
-  sent; name the file yourself (`-o coredump.elf`), as Maintenance's link does with
-  its `download` attribute.
+  sent; name the file yourself (`-o coredump.elf`).
 - Errors:
 - `404` `{"ok":false,"error":"no coredump"}` — no coredump is stored
 - `500` `{"ok":false,"error":"no coredump partition"}`
+- `500` `{"ok":false,"error":"response alloc failed"}` - the chunked send could not start
 
 #### Example request
 
@@ -3157,11 +3256,19 @@ curl -s -X POST http://artoo.local/api/coredump/erase
 
 Server-Sent Events stream.
 
-- Event names currently emitted:
-- `status` (same payload family as GET /api/status)
-- `rc` (same payload family as GET /api/rc)
-- `log` (plain log line text)
-- Emission loop runs from `eventStreamTask` with 1000 ms delay.
+- Event names currently emitted, from `eventStreamTask` (task `WebEvents`),
+  which ticks once a second while a client is connected and sends nothing
+  while an OTA upload runs:
+- `status` (same payload family as GET /api/status): only when something
+  requests a broadcast (`requestStatusBroadcastNow()`): a new client
+  connecting, a failsafe edge, a mode, sleep, mood or setting change, a
+  sequence starting or ending, and the like. A droid that is not changing
+  sends no `status` at all
+- `rc` (same payload family as GET /api/rc): every tick
+- `log`: every second tick, the new log lines since the last batch, up to
+  eight, joined by `\x01`; each line is `[<millis>][<E|W|I|D>][<tag>] <message>`
+- Too many clients or a stream that cannot start answer `503` `text/plain`
+  (see [Error Contract](#error-contract)).
 
 #### Example request
 
@@ -3179,7 +3286,7 @@ event: rc
 data: {"mode":"dual_sbus","updatedMs":123456,...}
 
 event: log
-data: [WebServer] HTTP server started on port 80
+data: [123456][I][WebServer] HTTP server started on port 80
 ```
 
 ## Profiling (Build-Conditional)
@@ -3195,10 +3302,15 @@ Returns heap/profile snapshot JSON including:
   `heapLargestBlock`
 - allocator block counters, and the `snapshots[]` window figures, of the same
   Internal Data Heap
-- `failedAllocs`
+- `failedAllocs`, and `lastFail` once it is above zero: `size`, `caps` and
+  `bt`, the backtrace PCs of the last failed allocation, to decode against the
+  matching `firmware.elf` with `addr2line`
 - `taskStacks[]` high-water marks
 - optional `taskHeap[]` when `CONFIG_HEAP_TASK_TRACKING`
 - mode-window `current` and `snapshots[]`
+- `requestTrace[]`: a bounded, oldest-first ring of recent requests, each
+  `path`, `startMs`, `handlerDoneMs`. Read it once after an experiment; never
+  poll it during the workload
 
 #### Example request
 
@@ -3209,7 +3321,7 @@ curl -s http://artoo.local/api/profiler
 #### Example response (abridged)
 
 ```json
-{"heapFree":173152,"heapMin":150932,"heapLargest":132000,"fragRatio":0.238,"allocBlocks":412,"freeBlocks":128,"totalBlocks":540,"failedAllocs":0,"taskStacks":[{"name":"DriveTask","hwmBytes":2048,"status":"ok"}],"snapshots":[{"label":"boot","heapFree":150932,"largestBlock":120000,"ts":1234}]}
+{"heapFree":173152,"heapMin":150932,"heapLargest":132000,"fragRatio":0.238,"allocBlocks":412,"freeBlocks":128,"totalBlocks":540,"failedAllocs":0,"taskStacks":[{"name":"DriveTask","hwmBytes":2048,"status":"ok"}],"snapshots":[{"label":"boot","heapFree":150932,"largestBlock":120000,"ts":1234}],"requestTrace":[{"path":"/api/status","startMs":51234,"handlerDoneMs":51241}]}
 ```
 
 ### POST /api/profiler/trace/start
@@ -3240,7 +3352,9 @@ curl -s -X POST http://artoo.local/api/profiler/trace/start
 Present only when `PA_HEAP_TRACING` is enabled.
 
 - Success: `200` `{"ok":true,"note":"dump written to serial log"}`
-- Error: `409` `{"ok":false,"error":"trace not running"}`
+- Errors:
+  - `409` `{"ok":false,"error":"trace not running"}`
+  - `500` `{"ok":false,"error":"stop failed"}`
 
 #### Example request
 

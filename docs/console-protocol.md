@@ -1,7 +1,7 @@
 # Controller Console protocol
 
 The Controller Console is one command language shared by two operator surfaces:
-the **Live Logs** command box in the browser dashboard and a **serial terminal**
+the **Console** command box on the browser Dashboard and a **serial terminal**
 attached to the controller's USB port. Both surfaces send the same lines and
 receive the same results; this page is the reference for that language and its
 result format. Architecture and rationale: ADR 0036. Vocabulary: `GLOSSARY.md`
@@ -124,23 +124,18 @@ operations type=action
 
 ### 2.1 Operations listing output volume - no paging (decided, #219 R1)
 
-The `operations` command lists all 194 catalog entries. Measured, not
+The `operations` command lists every catalog entry. Measured, not
 estimated, by summing each entry's rendered item line against the shipped
 catalog table (`src/console/console_catalog.cpp`) and `artoo_esp32`'s actual
-macro values: four profiler/admission-trace entries answer `not-in-this-build`
-on that board and one WiFi-module entry answers `not-on-this-board`, each with
-a longer item line. Line shape is `< id=<n> type=item value=<name> (<type>[,
-<reason>])` plus the CR LF terminator (#267), with a single-digit request id.
+macro values: the profiler/admission-trace entries answer `not-in-this-build`
+on that board, the WiFi-module entries answer `not-on-this-board`, and the
+`not-on-console` entries (#474) carry that reason, each with a longer item line. Line
+shape is `< id=<n> type=item value=<name> (<type>[, <reason>])` plus the CR LF
+terminator (#267), with a single-digit request id.
 
-```
-entries: 194
-bytes on the wire: 11436
-seconds @115200 8N1 (10 bits/byte): 0.99
-```
-
-Re-measured at #243. The previous figures (190 entries, 10985 B, 0.95 s) were
-taken at #219, before the catalog grew and before #267 replaced the bare LF
-terminator with CR LF - so they understated the wire cost on two counts.
+At 115200 8N1 the listing takes about a second on the wire. The exact figure
+moves with every catalog row; the decision below rests on its order of
+magnitude.
 
 **Decision: no paging.** On both serial and web transports the listing is
 emitted in full, in one request. Justification:
@@ -149,27 +144,27 @@ emitted in full, in one request. Justification:
   shared serial mutex for that whole window, blocking every other task's log
   line (#219 R1) - that was the actual defect, and it is fixed by locking
   per record line (section 3.1), not by paging. With the mutex held per
-  line, `operations`' ~1 s is Core 0 non-real-time wall-clock time; it never
+  line, `operations`' second or so is Core 0 non-real-time wall-clock time; it never
   touches Core 1 and never delays a log line by more than one record's
-  width. Paging would trade that one linear ~1 s wait for a slower,
+  width. Paging would trade that one linear wait of about a second for a slower,
   stateful, multi-round-trip one, for no remaining safety benefit.
 - `operations` is an explicit, operator-typed discovery command, not
   telemetry - it is not issued in a loop, and a bench operator reading a
-  catalog can wait under a second for it.
+  catalog can wait about a second for it.
 - A paging protocol (chunk size, a `more` continuation, cursor state per
   session) is real design and state to carry on an already resource-constrained
-  embedded console, for a command whose entire cost is under a second and
+  embedded console, for a command whose entire cost is about a second and
   whose result usefully reassembles by Request ID either way (below).
 - This is a function of the byte count, not a fixed exemption: if the
   catalog grows by an order of magnitude, or a board ships at a lower baud
   rate, re-measure (sum each entry's rendered `< id=<n> type=item
-  value=<name> (<type>[, <reason>])\n` line length against the built
+  value=<name> (<type>[, <reason>])` line plus its CR LF against the built
   `src/console/console_catalog.cpp` and that env's actual build flags) and
   revisit before assuming the answer still holds.
 
 **What "no paging" does NOT mean:** it does not mean the listing is atomic on
 the wire. Per section 3.1, records of one request may be separated by other
-lines - `operations`' 194 `item` records can have log lines from other tasks
+lines - `operations`' `item` records can have log lines from other tasks
 land between them, and a reader reassembles the group by Request ID, not by
 assuming contiguity. The invariant that does hold, unconditionally, is
 section 6's "no line is ever interleaved inside another": every record and
@@ -185,20 +180,20 @@ pairs; the first pair is always the Request ID.
 
 ```text
 > sound.action.random-humming
-< id=18 type=result status=ok outcome=queued operation=sound.action.random-humming
+< id=18 type=result status=ok outcome=queued
 
 > system.status.health
 < id=19 type=begin operation=system.status.health
 < id=19 type=field name=heapFree value=42120
 < id=19 type=field name=heapMin value=31840
 < id=19 type=field name=estop value=false
-< id=19 type=end status=ok
+< id=19 type=end status=ok outcome=completed
 
 > system.config.log-level value=debug
-< id=20 type=result status=ok outcome=applied operation=system.config.log-level
+< id=20 type=result status=ok outcome=applied
 
 > system.action.profiler-trace-start
-< id=21 type=result status=err outcome=unavailable reason=not-in-this-build operation=system.action.profiler-trace-start
+< id=21 type=result status=err outcome=unavailable reason=not-in-this-build
 ```
 
 | `type=` | Meaning |
@@ -365,8 +360,8 @@ occur on a normal path).
 
 **A prose field that is present but shortened says so, separately.** The three
 file-resident fields are copied into fixed buffers - 255 bytes for
-`description`, 63 for `display_name` and `executor` - and ten of the catalog's
-194 descriptions are longer than that, up to 506 bytes. The value is emitted
+`description`, 63 for `display_name` and `executor`. A row longer than its
+buffer is not refused. The value is emitted
 clamped, and a clamped field is followed by a `<name>_truncated` field with
 value `true`: `description_truncated`, `display_name_truncated`,
 `executor_truncated`. The marker is absent when nothing was cut, so a reader
@@ -386,9 +381,9 @@ two senses, and a transcript shows both as `truncated=true`:
 | | `<name>_truncated` (this section) | `"truncated": true` on the envelope |
 |---|---|---|
 | Scope | one prose **field**, clamped to its buffer | the **number of items** in the answer - the bounded sink skipped or refused some (`system.status.logs` on a near-full ring, #239/#240) |
-| Where | a Console Record: `type=field name=description_truncated value=true` | a key on the JSON response body, beside `records` (`src/web/api_console.cpp:584`) |
+| Where | a Console Record: `type=field name=description_truncated value=true` | a key on the JSON response body, beside `records` (`src/web/api_console.cpp`) |
 | Adapter | both | browser only - serial has no envelope at all |
-| Consequence | routine, expected on ten catalog rows; the answer is complete | `tools/console_client.py` reports `[ADAPTER-CAPPED]` and exits **4**: a bench sheet stops there |
+| Consequence | the answer is complete; only that field was clamped | `tools/console_client.py` reports `[ADAPTER-CAPPED]` and exits **4**: a bench sheet stops there |
 
 Reading one as the other inverts what the run means, so it is worth being
 explicit that **a machine reader cannot confuse them**: they live in different
@@ -592,7 +587,7 @@ the task and a backtrace on its own path.
 
 ## 9. Browser
 
-The Live Logs command box sends the raw line to one endpoint and receives the
+The Dashboard's Console command box sends the raw line to one endpoint and receives the
 same records, rendered inline between the live log lines. History, Tab
 completion and ambiguity listing behave as on serial; the browser additionally
 keeps its own persistent session history.
