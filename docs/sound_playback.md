@@ -80,9 +80,10 @@ them: naming an unbuilt module as a build's default is a build error.
 **Files:** `src/drivers/audio_dy_sv5w.cpp`, `include/audio_dy_sv5w.h`
 
 **Full protocol reference: [`docs/spec-sheets/dy-sv5w-sound.md`](spec-sheets/dy-sv5w-sound.md)** —
-the source of truth for this module: every command and query frame with its
-computed checksum, the DIP mode table, the electrical contract, the storage
-rules, and what our own hardware has proven.
+the module's facts: every command and query frame with its computed checksum,
+the DIP mode table, the electrical contract, the storage rules, and the
+module's behaviour measured on a bench. Project notes on it are in
+[`docs/products.yaml`](products.yaml).
 
 Binary command frames at 9600 baud 8-N-1, in the format
 `0xAA [CMD] [LEN] [DATA...] [SM]`, where `SM` is the low 8 bits of the sum of all
