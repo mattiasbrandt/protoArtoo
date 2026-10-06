@@ -33,7 +33,8 @@ envelope check Verification holds them to):
 
 It fails, and stages nothing it was unsure of, on a missing part, an image
 the metadata names that is not on disk, overlapping regions, an image larger
-than its partition, or a pio or envelope failure. It never ships the
+than its partition, boot_app0 anywhere but the otadata partition, or a pio or
+envelope failure. It never ships the
 builder's firmware.factory.bin: that merge leaves LittleFS out and only
 prints, without failing, when it cannot be made.
 """
@@ -202,6 +203,19 @@ def plan_images(env_name, idedata, env):
         raise PackagingError(
             f"extra.application_offset is {declared} but partitions.bin puts ota_0 at {app.offset:#x}"
         )
+
+    # boot_app0 is the initial image of the otadata partition (it points the
+    # bootloader at ota_0), and its offset comes from the board manifest, not
+    # from this table, so the two must agree: written anywhere else it would
+    # land in another partition and leave otadata stale. Its size is then
+    # held to that partition by check_layout.
+    otadata = one_partition(table, "data", "ota")
+    boot_app0 = next(image for image in images if image[0] == "boot_app0")
+    if boot_app0[2] != otadata.offset:
+        raise PackagingError(
+            f"boot_app0 is at {boot_app0[2]:#x} but partitions.bin puts otadata at {otadata.offset:#x}"
+        )
+    images[images.index(boot_app0)] = (*boot_app0[:3], otadata.size)
 
     for part, name in (("firmware", "firmware.bin"), ("filesystem", "littlefs.bin")):
         if not (build_dir / name).is_file():
