@@ -2054,7 +2054,7 @@ products:
       module needs `#BAUD_RATE 9600` in CHIRP.INI or Prev + Play/Stop until it says
       9600.
 
-      The local clone (~/Documents/GitHub/CHIRP, upstream 3adcc0d) is a fork in both
+      The operator's local CHIRP clone (upstream 3adcc0d) is a fork in both
       directions:
       - Local, not upstream: platformio.ini, variants/chirp_revb/pins_arduino.h,
         protoArtoo-config.md, platformio-psram-issue.md and
@@ -2066,11 +2066,11 @@ products:
       - Upstream, not local: origin/main has moved on and carries
         CHIRP_Droid_Control/ plus its own platformio.ini and main.cpp, which the local
         HEAD predates.
-      - ~/Dropbox/R2-CHIRP/protoArtoo-chirp-changes.md is an older copy of
+      - protoArtoo-chirp-changes.md, kept outside the clone, is an older copy of
         protoArtoo-config.md and is stale where they disagree (it says
         `board = pimoroni_pico_plus_2`; the cold-boot fix is `board = rpipico2`). Read
         the in-tree copy.
-      - The droid's card is ~/Dropbox/R2-CHIRP/CHIRP-SD.zip: 1A_general plus 13 Bank
+      - The droid's card is kept as an archive, CHIRP-SD.zip: 1A_general plus 13 Bank
         2-6 directories, which is past the module's 12-directory GMAN limit. The
         driver recovers Bank 1's count from LIST when BANK:1 is lost; whether the
         loss happens on the wire is the sheet's Open Item 1.
