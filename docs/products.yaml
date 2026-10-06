@@ -1141,8 +1141,83 @@ products:
         - "V on the dome header stays unconnected. Two supplies joined through the slip ring feed each other."
         - "A freshly flashed dome talks 2400 and the body talks 9600. Set mserial2 to 9600 on the dome's Setup page, or the link stays silent."
         - "The USB port on its ESP32 is fragile. Power a fitted dome from the screw terminal."
-      source: "5.1, 7.1, 7.2, 13.5"
-    notes: ""
+      source: "4.1, 6.1, 6.2, 10.5"
+    notes: |
+      The droid talks protoR2link to the AstroPixelsPlus fork (mattiasbrandt/AstroPixelsPlus)
+      running on an AstroPixels set. The stock vendor builds, `standard-md` and upstream
+      AstroPixelsPlus have no body link and no `DV:` / `DL:` / `DT:` / `DH:` layer: on any
+      of them the structured commands match nothing and are dropped in silence, so an
+      AstroPixels set with other firmware gets the raw Marcduino families at best.
+
+      The registry row names the firmware, not the product. Part 13 is called
+      "AstroPixels Plus" on the Component Picker card, but a builder buys an AstroPixels
+      set and then flashes AstroPixelsPlus onto it. Recorded as drift, not corrected: the
+      `astropixels_plus` id is persisted in NVS and never renamed, and the visible name is
+      an operator decision. GLOSSARY.md, docs/topology.md, docs/goal.md and
+      docs/terminology.md make the same substitution ("AstroPixelsPlus-class board").
+
+      Baud: the body is fixed at 9600 and cannot tell "no dome" from "dome at 2400". A dome
+      flashed from scratch, or after `#APZERO`, is at 2400 until `mserial2` is set. Idea,
+      not built: after N failed 9600 probes, probe at 2400 and report "dome found at 2400,
+      set mserial2 to 9600" instead of "no dome".
+
+      Health: the fork publishes `body_link` and `visual_authoring` telemetry on its own
+      `/api/health`, over HTTP. The body never reads it; its view of dome health is one
+      bit, a heartbeat inside 5 s.
+
+      Gaps and findings against the fork, outside this repo:
+      - `*RD00` has no handler. The fork has `*RD01`-`*RD03` but not the all-holos form
+        from the standard ShadowMD button table; `*ON00`, `*OF00` and `*ST00` exist, so it
+        is a one-registration gap.
+      - `DH:` color tokens ORANGE and YELLOW look swapped. The fork's
+        `parseVisualHoloColor` sends ORANGE as HP color 2 and YELLOW as 7, and Reeltwo
+        23.5.3 numbers HP 2 Yellow and 7 Orange; PURPLE goes out as 6, Magenta. Read from
+        source, not seen on a dome.
+      - `DL:...:WHITE` is not white. ReelTwo logics have no white, so the fork maps WHITE
+        to the palette default, while the authoring contract lists WHITE as valid and
+        telemetry reports the requested color: `/api/health` says WHITE for a display
+        that is not white. `DH:` WHITE is real white (HP 9).
+      - `DH:` names holos by letter (F/R/T/A), which keeps it clear of the fork's
+        `@7` = top / `@8` = rear swap; raw `@7`/`@8` from a JawaLite table move the wrong
+        holo.
+
+      The structured layer ran on a dome on 2026-06-22, one case per family:
+      `DL:LOGIC:MARCH:RED:5`, `DT:FLD:DEFAULT:5:0:TEST%0ATEXT`, `DH:A:FLASH:RED:5` and
+      `DV:RESET_VISUALS`, all applied with `reject_count` 0.
+
+      Logic settings do not survive a dome reboot (the sheet, "Brightness is the current
+      knob"), which is why `DV:` / `DL:` re-assert visual state at the start of a sequence
+      rather than assuming it.
+
+      Panels: the sheet's panel map is read from the fork's source. docs/droid-parts.yaml
+      keeps `dome_link_panel` TBD until a hardware check that each `:OPnn` moves the named
+      panel on the droid; #386 carries the proposed values.
+
+      The fork's `DM:` vocabulary is 40 names, ported from Jessica Janiuk's
+      `thePunderWoman/AstroPixelsPlus` fork and adapted. docs/sequence-parity.md lists all
+      of them except `DM:RANDOM`.
+
+      Command length: DomeTxCmd holds 64 bytes and `domeQueueTx()` truncates silently, and
+      the SEQ_FALLBACK path forwards unvalidated `DM:*` names. Whether the body ever emits
+      a line over 63 characters is unchecked: a length assertion in `domeQueueTx()`, or a
+      native test over every emitted string, would settle it. Raw `*` commands are
+      forwarded uninterpreted, so an operator can reach `*HPS303` (the sheet's crash Open
+      Item).
+
+      Costs of the fork:
+      - A second firmware with its own release cycle, web UI, NVS and update path: two OTA
+        stories, not one.
+      - It rewrites the control layer rather than patching it, is far ahead of upstream,
+        and is not headed upstream. The divergence is a maintenance obligation.
+      - A sequence that uses fork-only commands (`@nT12`/`15`/`22`/`24`, `DV:` / `DL:` / `DT:` / `DH:`)
+        is not portable to another droid's dome.
+
+      The fork finds the body by mDNS at `protoartoo.local`, with a manual `bodypeerip`
+      override. The WiFi fallback needs dome and body on the same network, which an
+      AP-mode dome is not.
+
+      Current draw has not been measured on this droid: an inline meter on the dome 5 V
+      feed, idle and during `DV:SCREAM`, would settle it.
 
   - value: 14
     id: teeces
