@@ -131,6 +131,15 @@ typedef enum {
     // A fact about the module the builder fitted, the way part-not-assigned is
     // one about their wiring, read from its registry row's AUDIO_CAP_MIXES.
     CONSOLE_REASON_MODULE_CANNOT_MIX = 21,
+    // The operation is never on the Console - a file transfer, a step of the
+    // Sequences editor, an act that only orders a browser page, the browser
+    // Console Adapter itself - and the builder does it on a page instead
+    // (ADR 0037 Amendment 2026-10-06, #474). Declared on the registry row and
+    // carried by the catalog (console_excluded/console_page), so unlike
+    // EXECUTOR_NOT_READY it is known at discovery and never becomes work.
+    // Distinct from NOT_EXECUTABLE, which is a row that only describes a field
+    // of another query: these operations exist on the droid.
+    CONSOLE_REASON_NOT_ON_CONSOLE = 22,
 } ConsoleReason;
 
 // =============================================================================

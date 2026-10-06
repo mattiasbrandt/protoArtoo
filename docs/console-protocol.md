@@ -267,6 +267,7 @@ never type an ID.
   | `bearing-unknown` | the dome does not know where it points - a boot, an estop or Sleep Mode forgot it - so go home and a bearing step do not move it until the builder says front is here (#445) |
   | `dome-not-calibrated` | the dome's full turn is not timed, or which way positive turns it is not set, so no turn can be planned and no bearing believed (#445) |
   | `module-cannot-mix` | the fitted sound module plays one sound at a time, so a sequence's Background Track does not play; the rest of the sequence runs (ADR 0054, #447) |
+  | `not-on-console` | the operation is never on the Console - a file transfer, a Sequences editor step, a browser-only act, or the browser Console Adapter itself; `help` names the page that does it as `console_page`. Declared on the registry row, so `operations` lists it too (ADR 0037 Amendment 2026-10-06, #474) |
 
   `part-not-assigned` is the one that is a fact about the builder's wiring
   rather than about the image, the board or a toggle (`dome-not-calibrated` is
@@ -350,8 +351,12 @@ be read:
 
 What is withheld is only that prose. The fields the in-image catalog owns -
 `type`, `available_on_board`, `available_in_build`, `requires_web_control`,
-`read_only`, `aliases`, `params` - do not come from the file and render
-regardless of its health (#219 D3).
+`read_only`, `console_excluded`, `console_page`, `aliases`, `params` - do not
+come from the file and render regardless of its health (#219 D3).
+`console_excluded` (`file-transfer`, `editor-only`, `browser-only` or
+`console-itself`) and `console_page` (the page's name in the nav, quoted when
+it has a space: `console_page="RC Control"`) are present only on an operation
+that answers `not-on-console`.
 
 This field is only present when help text could not be retrieved in full; a
 successful help response contains no `help_file_status` field. This allows a

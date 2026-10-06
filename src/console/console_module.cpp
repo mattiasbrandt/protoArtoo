@@ -387,10 +387,11 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
     // field list mirrors a REST JSON schema (docs/console-protocol.md s.3.5) -
     // these fields have no REST counterpart to mirror.
     //
-    // These three are the whole availability set help reports, and each is a
-    // compile-time fact. There is deliberately no readiness field: whether an
-    // executor is wired is answered by running the operation and reading its
-    // outcome/reason, never claimed at discovery (ADR 0037).
+    // These three, and console_excluded below, are the whole availability set
+    // help reports, and each is a compile-time fact. There is deliberately no
+    // readiness field: whether an executor is wired is answered by running the
+    // operation and reading its outcome/reason, never claimed at discovery
+    // (ADR 0037).
     if (sink->onRecordField) {
         sink->onRecordField(requestId, "available_on_board",
                            entry->available_on_board ? "true" : "false");
@@ -406,6 +407,26 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
         // value that only a refusal can follow. Where to set it instead is
         // the entry's own description, the same answer write_excluded gives.
         sink->onRecordField(requestId, "read_only", entry->read_only ? "true" : "false");
+
+        // An operation never on the Console says why, and names the page that
+        // does it instead by the name the nav shows - "Sequences", never the
+        // `seq` id (ADR 0037 Amendment 2026-10-06, #474). Present only on
+        // those rows, like `aliases` below. The name is quoted when it carries
+        // a space ("RC Control") so the value stays one token on the wire.
+        // Both come from the in-image catalog, so they render with the help
+        // file down; the help row and its #282 length bound are unchanged.
+        const char* exclusion = consoleCatalogExclusionName(entry->console_excluded);
+        if (exclusion != nullptr) {
+            sink->onRecordField(requestId, "console_excluded", exclusion);
+            if (entry->console_page != nullptr) {
+                // The longest SURFACES name is 13 bytes ("Configuration");
+                // quoting adds two and the terminator one.
+                char quotedPage[40];
+                sink->onRecordField(requestId, "console_page",
+                                    consoleQuoteValue(entry->console_page, quotedPage,
+                                                      sizeof(quotedPage)));
+            }
+        }
     }
 
     // Aliases: comma-joined into one field value. Neither adapter's record
@@ -609,6 +630,15 @@ static bool consoleIsAvailableInBuild(const char* operationName) {
     const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(operationName);
     if (!entry) return false;
     return entry->available_in_build;
+}
+
+// Whether the registry declares the operation is never on the Console (its
+// `console: excluded:`, carried by the catalog). A declared fact like the two
+// above, so the same live read: no list of names lives in this file.
+static bool consoleIsNeverOnConsole(const char* operationName) {
+    const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(operationName);
+    if (!entry) return false;
+    return entry->console_excluded != CONSOLE_EXCLUSION_NONE;
 }
 
 // Get the operation type from its name
@@ -3567,11 +3597,14 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // Emit each operation as an item record
             // Format: name (type, [reason if unavailable])
             //
-            // The two annotations are the two availability facts knowable
-            // without executing. Discovery never annotates executor-not-ready:
-            // that is an execution-time answer (ADR 0037), and the branch that
-            // used to emit it here was unreachable for the life of the catalog's
-            // readiness flag, which read `true` for every entry.
+            // The three annotations are the three availability facts knowable
+            // without executing, in the order execution checks them: board,
+            // build, then not-on-console (the registry's `console:`, ADR 0037
+            // Amendment 2026-10-06). Discovery never annotates
+            // executor-not-ready: that is an execution-time answer (ADR 0037),
+            // and the branch that used to emit it here was unreachable for the
+            // life of the catalog's readiness flag, which read `true` for every
+            // entry.
             if (sink->onRecordItem) {
                 char itemBuf[256];
                 if (!entry->available_on_board) {
@@ -3579,6 +3612,9 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                             entry->name, entry->type);
                 } else if (!entry->available_in_build) {
                     snprintf(itemBuf, sizeof(itemBuf), "%s (%s, not-in-this-build)",
+                            entry->name, entry->type);
+                } else if (entry->console_excluded != CONSOLE_EXCLUSION_NONE) {
+                    snprintf(itemBuf, sizeof(itemBuf), "%s (%s, not-on-console)",
                             entry->name, entry->type);
                 } else {
                     snprintf(itemBuf, sizeof(itemBuf), "%s (%s)",
@@ -3634,6 +3670,19 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
         if (sink->onRecordResult) {
             sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
                                 CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_NOT_IN_THIS_BUILD);
+        }
+        return;
+    }
+
+    // An operation the registry declares is never on the Console answers so
+    // before any type's dispatch, and so before the ACTION_REGISTRY[] name
+    // lookup an action would otherwise fall through to executor-not-ready.
+    // Third, after board and build, in the order the `operations` listing
+    // renders its annotation. `help <op>` names the page that does it instead.
+    if (consoleIsNeverOnConsole(opName)) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_NOT_ON_CONSOLE);
         }
         return;
     }
@@ -3754,43 +3803,27 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // Resolve the (possibly aliased) operation name to its
             // RobotActionId via ACTION_REGISTRY[] (#220). Not found here
             // means this action has no RC-bindable target yet - a motion
-            // target #222 owns, or one of the eighteen rows below.
+            // target #222 owns, or one of the three rows below.
             //
             // EVERY action row that still answers EXECUTOR_NOT_READY lands
             // here on purpose, and each one has a recorded reason on its own
-            // docs/action-registry.yaml entry (#221). They are eighteen, in
-            // five groups; test_the_executor_not_ready_set_is_exactly_the_
-            // recorded_rows (test/test_native/test_console_module) names them
-            // and fails if a nineteenth appears, so a new unwired row cannot
-            // join this set silently.
+            // docs/action-registry.yaml entry (#221). They are three: a real
+            // core the Console module cannot reach without editing a file
+            // #221 fenced. Probed, not assumed - the compiler and linker
+            // errors are quoted on each registry entry:
+            //   system.api.get-coredump-status   esp_core_dump_image_get()
+            //   system.action.erase-coredump     esp_core_dump_image_erase()
+            //   system.api.get-admission-trace   webAdmissionTraceInstance()
+            // test_the_executor_not_ready_set_is_exactly_the_unwired_rows
+            // (test/test_native/test_console_module) names them and fails if a
+            // fourth appears, so a new unwired row cannot join this set
+            // silently.
             //
-            // 1. #206's document/bulk-transfer exclusion - the transfer IS the
-            //    operation, and the Console's one-line key=value grammar has
-            //    no shape for it:
-            //      dome.api.get-sequence      seqStoreReadFileSlice()
-            //      dome.api.get-layout        domeLayoutCacheReadChunk()
-            //      dome.action.save-sequence  a whole Learned Sequence JSON v1
-            //      rc.api.get-map             the RC-map document, read half
-            //      rc.action.set-map          the RC-map document, write half
-            //      system.api.get-coredump    the raw ELF image
-            //      system.action.upload-firmware / -filesystem  OTA images
-            // 2. A real core the Console module cannot reach without editing a
-            //    file this ticket fences. Probed, not assumed - the compiler and
-            //    linker errors are quoted on each registry entry:
-            //      system.api.get-coredump-status   esp_core_dump_image_get()
-            //      system.action.erase-coredump     esp_core_dump_image_erase()
-            //      system.api.get-admission-trace   webAdmissionTraceInstance()
-            // 3. Not an operation at all:
-            //      system.console  is the browser Console Adapter itself
-            //                      (POST /api/console, ADR 0036)
-            // 4. A take belongs to the sequence open in the Sequences editor,
-            //    whose receipt places its cue presses as steps (#442):
-            //      dome.action.arm-take / -keep-take
-            //      dome.api.get-take-file          a binary document transfer
-            //      dome.action.restore-take-file   a file upload route
-            // 5. The pins only order the Dashboard's Sequences line, and the
-            //    Console has no line of Sequences to order (#472):
-            //      dome.api.get-sequence-pins / dome.action.pin-sequence
+            // The operations that are never on the Console - file transfers,
+            // editor steps, browser-only acts, the browser Console Adapter -
+            // never reach here: the registry declares them with `console:` and
+            // the not-on-console guard above answers them (ADR 0037 Amendment
+            // 2026-10-06, #474).
             //
             // servo.api.get-outputs was once a group of its own - a read with
             // no Console record shape yet (#347) - until #362 gave it one: it

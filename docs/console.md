@@ -330,6 +330,7 @@ never carries one. The tokens are stable — safe to match on in a script:
 | `conflict` | The value is fine on its own but clashes with another one, sent or already saved: speed presets that aren't distinct, a range whose low end is above its high end |
 | `malformed-argument` | The line didn't parse into `key=value` pairs at all — a bare word, bad quoting, or invalid text in a quoted value |
 | `not-executable` | This entry is not something you run — an event, or one of the [motion commands not yet wired](#what-doesnt-work-here-yet) |
+| `not-on-console` | Never run from here: a file that moves whole, a step of the Sequences editor, or something only a page does. `help` on it names the page, as `console_page` |
 | `executor-not-ready` | Recognised, but the firmware doesn't have a way to run it yet |
 
 ## While the log is printing

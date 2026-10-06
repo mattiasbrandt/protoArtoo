@@ -32,8 +32,10 @@
 //     already allows them through dispatchRcTriggerActionTest() - the same
 //     guard+dispatch core POST /api/actions/test uses.
 //
-// One row, dome.action.save-sequence, stays CONSOLE_REASON_EXECUTOR_NOT_READY
-// on purpose: its REST body (POST /api/seq, a full Learned Sequence JSON v1
+// One row, dome.action.save-sequence, is never on the Console: its registry row
+// declares it `console: excluded: file-transfer`, so it answers
+// CONSOLE_REASON_NOT_ON_CONSOLE before dispatch reaches this file (#474). Its
+// REST body (POST /api/seq, a full Learned Sequence JSON v1
 // document up to SEQ_FILE_MAX_BYTES with a steps array) is exactly the
 // "document/bulk transfer" #206 names out of scope for this epic - the
 // Console's one-line key=value argument grammar (docs/console-protocol.md
