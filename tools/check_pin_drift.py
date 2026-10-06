@@ -100,6 +100,18 @@ ROW_NAMES: dict[str, dict[str, str | None]] = {
         "I2C (D)": "PIN_I2C_SDA",
     },
     FIREBEETLE: {
+        # The glossary's names for the same rows (#475 renamed them in
+        # docs/pin_map.md: Foot Drive, protoR2link, Sound module).
+        "Foot Drive (UART1) TX": "PIN_DRIVE_TX",
+        "Foot Drive (UART1) RX": "PIN_DRIVE_RX",
+        "protoR2link (UART2) TX": "PIN_DOME_TX",
+        "protoR2link (UART2) RX": "PIN_DOME_RX",
+        "Sound module (UART3) TX": "PIN_AUDIO_TX",
+        "Sound module (UART3) RX": "PIN_AUDIO_RX",
+        "Foot Drive TX (UART1)": "PIN_DRIVE_TX",
+        "Foot Drive RX (UART1)": "PIN_DRIVE_RX",
+        "protoR2link TX (UART2)": "PIN_DOME_TX",
+        "protoR2link RX (UART2)": "PIN_DOME_RX",
         "Drive (UART1) TX": "PIN_DRIVE_TX",
         "Drive (UART1) RX": "PIN_DRIVE_RX",
         "Dome link (UART2) TX": "PIN_DOME_TX",
