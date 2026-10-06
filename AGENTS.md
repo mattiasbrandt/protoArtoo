@@ -499,8 +499,9 @@ names the last holder, not necessarily a live process — check with `kill -0`.
 build's own `<core>/penv` (the core dir comes from the build's env, not your
 shell). A penv that upgraded itself past 6.1.19 breaks every build with SCons
 errors, so the lock refuses it with exit 5 and prints the one fix line:
-`<core>/penv/bin/python -m pip install platformio==6.1.19`. Run that line and
-nothing else, then re-run the build. Never `pacman -S scons`.
+`<core>/penv/bin/uv pip install --python <core>/penv/bin/python --reinstall-package pioarduino pioarduino==6.1.19`
+(the penv is a `uv venv` with no pip, and the platform reads the `pioarduino`
+dist, #473). Run that line and nothing else, then re-run the build. Never `pacman -S scons`.
 
 ## Suite pause (through 2026-10-31, #464)
 
