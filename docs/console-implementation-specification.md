@@ -1,6 +1,31 @@
 # Controller Console Implementation Specification
 
-This document maps every operation in the action registry to its implementation path. It serves as the reference for implementing the Console module and its two adapters (serial terminal and browser live-logs console).
+> **A dated planning record, not a reference (2026-10-06, #475).** This is the
+> #212 plan, written 2026-08-28 (commit `1045822d`) before the Console was
+> built. Its counts (189 operations: 127 actions, 33 configs, 14 status) and
+> its names (`DispatchOutcome`, `driveArbiter`, `configCommitStep`,
+> `src/console/console_core.cpp`, `test/test_console/`, the `CommandSource`
+> numbering, the reason codes `estop-engaged`, `stationary-required` and
+> `rc-link-unhealthy`) are the plan's; the implementation chose otherwise, and
+> they do not describe the code today. Read instead:
+>
+> - [console-protocol.md](console-protocol.md): the command language, the
+>   Console Records, every outcome and reason token
+>   ([section 3](console-protocol.md#3-results-console-records)), and the
+>   consent rule for both adapters
+>   ([section 5](console-protocol.md#5-actions-safety-and-provenance))
+> - [console-catalog-contributing.md](console-catalog-contributing.md): how a
+>   registry row becomes a catalog entry, the `executor`, `fields:`,
+>   `board_capability` and `build_flag` fields, the inventory and the drift
+>   checks
+> - [action-registry.yaml](action-registry.yaml): the operations themselves
+>   (217 on 2026-10-06)
+> - [ADR 0036](adr/0036-controller-console-one-core-two-adapters.md): one core,
+>   two adapters; the core is `src/console/console_module.cpp`
+>
+> The body below is left as it was written, apart from retired names.
+
+This document maps every operation in the action registry to its implementation path. It serves as the reference for implementing the Console module and its two adapters (serial terminal and the browser's Console).
 
 **Scope:** 189 operations across four domains: drive, dome, sound, system (plus aux, rc, servo sub-domains).  
 **ADR Reference:** ADR 0036 (one operation core below HTTP handlers, two adapters).  
@@ -291,7 +316,7 @@ The drift checker (`tools/check_action_registry_drift.py`) enforces:
 - `src/console/console_core.cpp` - Transport-independent operation dispatcher
 - `src/console/console_record.cpp` - Record serialization (key=value, outcome codes)
 - `src/tasks/console_task.cpp` - Serial adapter task (persistent Core 0)
-- `src/web/api_console.cpp` - Browser Live Logs endpoint
+- `src/web/api_console.cpp` - Browser Console endpoint
 - `include/console_*.h` - Console module headers (API, record types)
 - `test/test_console/` - Host-native tests for core logic
 - `docs/action-registry.yaml` - Operation metadata (189 entries, newly annotated with executor)
