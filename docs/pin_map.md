@@ -173,13 +173,11 @@ The six CH headers (CH1-CH6) support three mutually exclusive wiring modes:
 | Single SBUS    | SBUS -> CH1 (GPIO 15), or CH2 (GPIO 13) | Up to 16      |
 | Dual SBUS      | SBUS1 → CH1 (GPIO 15), SBUS2 → CH2 (GPIO 13) | Up to 32  |
 
-The receiver mode is the `rcInputMode` Setting (`rc.inputMode`), chosen with the Radio
-Controller cards on Configuration and shown on RC Control under "Receiver type"
-(`src/config_settings.cpp:104`, `data/rc.html:59`). Besides the three wiring modes it takes
-`not_fitted` (no Radio Controller: a web-only droid) and `elrs`. ELRS is on the Roadmap: the
-mode can be stored, and the controller reads no input from it yet (`include/robot_state.h:84-90`).
-Single SBUS reads CH1 by default; the `sbusRecvCh2` Setting moves it to CH2 ("Receiver input"
-on RC Control). A mode change takes effect after a restart.
+The receiver mode is the `rcInputMode` Setting (`rc.inputMode`). Besides the three wiring
+modes it takes `not_fitted` (no Radio Controller: a web-only droid) and `elrs`. ELRS is on the
+Roadmap: the mode can be stored, and the controller reads no input from it yet. Single SBUS
+reads CH1 by default; the `sbusRecvCh2` Setting moves it to CH2. A mode change takes effect
+after a restart.
 
 In SBUS modes, CH3–CH6 (GPIO 2, 4, 12, 27) are unused:
 
@@ -192,7 +190,7 @@ In SBUS modes, CH3–CH6 (GPIO 2, 4, 12, 27) are unused:
 
 ### RC Binding Defaults
 
-The RC mapping profile is persisted in NVS and configurable from the RC Control page.
+The RC mapping profile is persisted in NVS and configurable on the RC Control page.
 Factory defaults:
 
 | Runtime profile | Action | Default binding | Notes |
@@ -210,8 +208,7 @@ Factory defaults:
 | `single_sbus` / `dual_sbus` | Second output's toggle (`arm2_toggle`) | `sbus2:3:172:992:1811:0:0` | Active in `dual_sbus`; can be remapped |
 | `single_sbus` / `dual_sbus` | Sound trigger | `none:0:1000:1500:2000:0:0` | Unbound by default |
 
-Two trigger bindings sit beside the profiles and are not tied to one of them
-(`src/config_store.cpp:126-133`):
+Two trigger bindings sit beside the profiles and are not tied to one of them:
 
 | Trigger | Action | Default binding |
 |---------|--------|-----------------|
@@ -219,7 +216,7 @@ Two trigger bindings sit beside the profiles and are not tied to one of them
 | `rc_arm2` | Second output's toggle | SBUS #1 CH5 |
 
 There is no RC speed-limit binding: drive output is capped by the `speedLimitMax` Setting and
-the speed presets (`src/tasks/rc_input.cpp:20`).
+the speed presets.
 
 SBUS channels `17` and `18` are also valid persisted binding channels for digital
 trigger actions. When a binding targets `17` or `18`, `/api/rc` reports it in the
@@ -375,7 +372,7 @@ The FireBeetle 2's DFR1237 shield exposes exactly **24 GPIO pins** from the ESP3
 
 | Category | GPIOs | Count | Notes |
 |----------|-------|-------|-------|
-| **Exposed on DFR1237 headers** | 4, 5, 7, 8, 20–23, 28–38, 48–52 | 24 total | See spec sheet "Exposed GPIO table" (lines 906–929) |
+| **Exposed on DFR1237 headers** | 4, 5, 7, 8, 20-23, 28-38, 48-52 | 24 total | See spec sheet "Exposed GPIO table" |
 | **Claimed by production inventory** | 20 pins (see table above) | 20 | All firmware design outputs + board bring-up lanes |
 | **Remaining after production** | 35, 37, 38, 52 | 4 GPIOs | Breakdown below |
 | **GPIO 37** | Console/download UART TX | Reserved | Always keep as UART0 TX for flashing and serial debug |
@@ -388,7 +385,7 @@ The FireBeetle 2's DFR1237 shield exposes exactly **24 GPIO pins** from the ESP3
 - GPIO 52 is dual-purpose: the sole free GPIO and a reserved ADC fallback for battery sense (should I2C battery charger decisions reverse).
 - No headroom for additional peripherals without removing an existing lane.
 
-See spec sheet "Exposed GPIO table" (lines 906–929) and the chip errata for P3 strapping pins (GPIO 4, 5, 34, 35, 36) if GPIO matrix bindings are needed.
+See spec sheet "Exposed GPIO table" and the chip errata for P3 strapping pins (GPIO 4, 5, 34, 35, 36) if GPIO matrix bindings are needed.
 
 ---
 
