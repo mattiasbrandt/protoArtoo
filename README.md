@@ -154,7 +154,7 @@ MIT, see [LICENSE](LICENSE) for what it covers: this repository's firmware, web
 pages, docs and tooling. Third-party libraries keep their own licences, the
 Artoo Controller PCB is [Steve's](https://www.artoo.uk/) hardware design, and
 the MK4 droid is [MrBaddeley's](https://www.patreon.com/mrbaddeley) paid design;
-no print files or geometry live here.
+no print files live here.
 
 Star Wars, R2-D2 and related names and marks belong to Lucasfilm Ltd. This is
 a non-commercial fan project with no affiliation with, connection to, or
