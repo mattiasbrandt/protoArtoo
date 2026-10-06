@@ -263,7 +263,7 @@ around this tool, switch on the exit code and read the JSON — not the sentence
 > apart: a real run always writes a JSON object to `stdout`, and a usage error
 > writes nothing there. Check for the report, not just the code.
 
-The artefact carries `schemaVersion` (currently `4`). It is bumped when a key is
+The artefact carries `schemaVersion`. It is bumped when a key is
 removed or changes meaning; adding a key does not bump it. A consumer that
 ignores unknown keys is unaffected by an addition — check the version before
 relying on anything else.
