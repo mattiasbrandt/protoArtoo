@@ -2,7 +2,11 @@ version: 2
 updates:
   # GitHub Actions — workflow action version pins
   - package-ecosystem: github-actions
-    directory: /
+    # The shared setup is a composite action with pinned uses: of its own;
+    # "/" alone scans .github/workflows only.
+    directories:
+      - /
+      - /.github/actions/*
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
