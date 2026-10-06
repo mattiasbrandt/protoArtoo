@@ -44,6 +44,8 @@ item 5.
 
 Only the symbols the chrome and a swept surface actually draw are in the image:
 a `<symbol>` nothing references is bytes in a 640 KiB filesystem for no reason.
+The one exception today is `console-line`, carried for the Controller Console
+and drawn nowhere yet (its row below).
 `tools/check_surface_anatomy.py` fails the build on a reference that resolves to
 no symbol, which is the failure this list would otherwise hide.
 
