@@ -72,8 +72,9 @@ const state = (page, fn) => page.evaluate(fn);
     // the work area's children, which the view marks inert.
     const host = bd.parentElement;
     const inSurface = !!(a && host && host !== document.body && host.contains(a) && !bd.contains(a));
-    // Which attempt the blocking resource is on: a retry rebuilds the panel,
-    // and the rebuild moves focus into it (see stays-on-stop below).
+    // Which attempt the blocking resource is on. A retry rebuilds the panel;
+    // focus that was in the panel follows the rebuild, and focus outside it
+    // stays where it is (data/page_bootstrap.js render(); stays-on-stop below).
     const st = window.PABootstrap?.getState?.();
     const step = st && !st.resourcesReady ? st.resources[st.resourceCursor] : null;
     return {
@@ -91,25 +92,39 @@ const state = (page, fn) => page.evaluate(fn);
     const bd = document.getElementById("page-recovery-backdrop");
     const host = bd.parentElement;
     const others = host && host !== document.body ? Array.from(host.children).filter((c) => c !== bd) : [];
-    return { count: others.length, inert: others.filter((c) => c.inert).length };
+    return { host: host ? host.id || host.tagName.toLowerCase() : null, count: others.length, inert: others.filter((c) => c.inert).length };
   });
 
   const f0 = await focusInfo();
   record("focus-moved-in", f0.inside ? "PASS" : "FAIL",
     `focus after panel appeared: ${f0.el} (inside=${f0.inside}, focusables=${f0.focusables})`);
 
-  const held = await surfaceInert();
+  // The panel can be up before the shell has attached the surface's node
+  // beside it: 5 runs in 40 on the fixture, 4 at a time, read #shell-content
+  // with no surface at first and attached and inert 23-28 ms later. The view
+  // marks a node inert on its next render, not as it arrives
+  // (holdSurfacesInert; a render tick is TICK_MS 250 in data/page_bootstrap.js).
+  // So read for up to 500 ms: past that delay and one tick, and short of the
+  // first retry (2 s, NO_RESPONSE_BASE_BACKOFF_MS), so a surface held only
+  // when a retry rebuilds the panel still fails.
+  let held = await surfaceInert();
+  for (let i = 0; i < 10 && !(held.count > 0 && held.inert === held.count); i++) {
+    await page.waitForTimeout(50);
+    held = await surfaceInert();
+  }
   record("surface-inert", held.count > 0 && held.inert === held.count ? "PASS" : "FAIL",
-    `surface nodes beside the panel: ${held.count}, inert: ${held.inert}`);
+    `surface nodes beside the panel in #${held.host}: ${held.count}, inert: ${held.inert}`);
 
   // One whole Tab cycle each way, with REAL key presses, from the panel until
   // focus is back in it. The chrome is long (Plate cells, topbar, nav), so the
   // cycle is bounded generously; one that never comes back is a failure too.
   const CYCLE_LIMIT = 80;
-  // A retry landing mid-cycle rebuilds the panel and pulls focus into it,
-  // which would read as the cycle coming home. Such a cycle is walked again
-  // (the retry interval grows, so a second walk fits); landing in the surface
-  // fails it whether or not a retry landed.
+  // A retry landing mid-cycle rebuilds the panel, but a walk is out on the
+  // chrome then, and a rebuild leaves focus outside the panel where it is: it
+  // cannot end a walk early. The re-walk below dates from when a rebuild
+  // pulled focus into the panel, which read as the cycle coming home; now it
+  // only sets aside a walk a retry landed in and walks again.
+  // Landing in the surface fails a cycle whether or not a retry landed.
   const cycle = async (key) => {
     let walk;
     for (let tries = 0; tries < 4; tries++) {

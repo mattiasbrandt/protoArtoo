@@ -3,7 +3,13 @@
 // the product pictures on the Component Picker's cards and the design
 // pictures on the Droid Build's. Introduced by #369 (ADR 0065).
 //
-// PRECONDITION: none beyond a droid that answers. Writes nothing.
+// PRECONDITION: the image carries the photographs, the default Asset Set. The
+// legacy set ships line drawings and no .webp (ADR 0065), so on it this rule
+// means nothing and the script reports NOT ASSESSED. Which set the image
+// carries is read from what the droid serves, by data/component_picker.js's
+// own rule: a card draws the symbol `art-<id>` when the page inlines one and
+// asks for /<id>.webp only when it does not. Never from the board name - a
+// set describes what it holds, not the board that carries it. Writes nothing.
 //
 // WHAT IT PROVES.
 //   a  rc_radio's picture (a product: /rc_radio.webp) is answered with
@@ -22,7 +28,9 @@
 //   BASE_URL=http://<board>   (default http://10.0.0.22)   HEADLESS=true   no window
 // Offline proof: FIXTURE=1 BASE_URL=http://127.0.0.1:<port> HEADLESS=true
 // against tools/serve_editor_fixture.py (routes in ../_lib/fixture_routes.js,
-// which answers the photographs the way the firmware does).
+// which answers the photographs the way the firmware does). The legacy set's
+// NOT ASSESSED: the same against
+//   python3 tools/stage_fsdata.py --set legacy --out <empty dir> --serve <port>
 // Self-test: SELFTEST=plain has the fixture answer rc_radio and artoo_pcb as
 // text/plain; a and c must FAIL.
 const lib = require('../_lib/checks.js');
@@ -33,11 +41,26 @@ const NAMED = [
   { id: 'mrbaddeley', frame: '#droid-build-body .droid-build-plate[data-option="mk4"] .component-card-art' },
 ];
 
+// The legacy set inlines its drawings into the page's markup, so the page
+// Configuration is mounted from says which set this image carries. Read as
+// text from the neutral page: fetching runs none of the page's scripts.
+const drawnInstead = async ({ page }) => {
+  const served = await page.evaluate(async () => {
+    const response = await fetch('/configuration.html', { cache: 'no-store' });
+    return { status: response.status, text: await response.text() };
+  });
+  if (served.status !== 200) return `GET /configuration.html answered ${served.status}, so which Asset Set this image carries could not be read`;
+  const drawn = NAMED.map(({ id }) => id).filter((id) => served.text.includes(`id="art-${id}"`));
+  if (drawn.length === 0) return null;
+  return `this image draws ${drawn.join(' and ')} as line drawings (art-<id> in /configuration.html), the legacy Asset Set: it carries no photograph to ask for (ADR 0065)`;
+};
+
 lib.runCheck({
   rule: 'Configuration\'s photographs are answered image/webp and decode',
   artifactDir: ARTIFACTS,
   selftests: ['plain'],
   fixture: lib.SELFTEST === 'plain' ? { textPlainPhotos: ['rc_radio', 'artoo_pcb'] } : {},
+  precondition: drawnInstead,
   run: async ({ page, report }) => {
     const answers = [];
     page.on('response', (response) => {

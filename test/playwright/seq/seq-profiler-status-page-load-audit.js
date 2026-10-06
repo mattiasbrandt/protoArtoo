@@ -13,20 +13,41 @@
  *
  * Pace matters. An unpaced multi-page sweep measures the connection admission
  * guard rather than the routes, so each page load is separated by a settle gap.
+ *
+ * A page is held to a route only after the page has asked it. /seq.html and
+ * /maintenance.html hand the browser to the Operator Shell at their route
+ * (`location.replace("/#seq")`, ADR 0048), and the shell loads the surface's
+ * script chain one script at a time before the surface asks anything: the
+ * Sequences surface asks its two list routes only once the last script of
+ * that chain has run. A fixed settle after the document loads is then a guess
+ * at the droid's speed, and on artoo-esp32 it guessed short: the settle ended
+ * with the chain one script from the end, before the list routes (#355). So a
+ * page waits for the routes it is held to, up to ROUTE_WAIT_MS, and then
+ * settles; a route the page never asks is still a failure, just a later one.
+ * Maintenance asks no route of its own on every build (GET /api/profiler only
+ * on a build that has the profiler, data/maintenance.js renderAvailability),
+ * so it is held to the last script of its chain, /maintenance.js: a 404 count
+ * taken before that proves nothing.
  */
 
 const { chromium } = require('playwright');
 const assert = require('assert');
+const fs = require('node:fs');
 
 const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
 const FIXTURE = process.env.FIXTURE === '1';
 const HEADLESS = process.env.HEADLESS !== 'false';
 const SETTLE_MS = Number(process.env.SETTLE_MS || 3000);
+// The same bound the document load has: a surface that has not asked its
+// routes by then is not going to.
+const ROUTE_WAIT_MS = Number(process.env.ROUTE_WAIT_MS || 30000);
+const ARTIFACTS = 'output/playwright/seq';
 
 /**
- * `GET /api/profiler` is compiled out unless the firmware was built from the
- * `protoArtoo_profiler` environment, so a 404 from it is the correct answer on
- * a normal build rather than a missing route. Every other 404 is a failure.
+ * `GET /api/profiler` is compiled out unless the firmware was built from a
+ * profiler environment (`artoo_esp32_profiler`, `firebeetle2_profiler`:
+ * PA_HEAP_PROFILE=1), so a 404 from it is the correct answer on a normal
+ * build rather than a missing route. Every other 404 is a failure.
  */
 const EXPECTED_404 = [/\/api\/profiler(\?|$)/];
 
@@ -34,7 +55,8 @@ function isExpected404(url) {
   return EXPECTED_404.some((pattern) => pattern.test(url));
 }
 
-async function loadPage(context, path) {
+// `awaited` names the routes (pathnames) the caller will hold the page to.
+async function loadPage(context, path, awaited = []) {
   const page = await context.newPage();
   const responses = [];
   const failures = [];
@@ -52,10 +74,20 @@ async function loadPage(context, path) {
     failures.push({ url: request.url(), error: request.failure()?.errorText });
   });
 
+  // Waited on as responses, registered before the navigation: the hand-over to
+  // the shell replaces the document, which a wait inside the page would not
+  // survive. A route that never answers resolves this to nothing, and the
+  // caller's own assertion says which route the page did not ask.
+  const asked = Promise.all(awaited.map((route) =>
+    page.waitForResponse((response) => new URL(response.url()).pathname === route, { timeout: ROUTE_WAIT_MS })
+      .catch(() => null)));
+
   // Not `networkidle`: these pages hold an open SSE connection to /api/events,
   // so the network is never idle and the wait would always time out. Wait for
-  // the document instead, then settle for the deferred fetches the page makes.
-  await page.goto(`${BASE_URL}${path}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  // the document and the routes asked of it, then settle for the render and
+  // for any late fetch whose 404 the report must still see.
+  await page.goto(`${BASE_URL}${path}`, { waitUntil: 'domcontentloaded', timeout: ROUTE_WAIT_MS });
+  await asked;
   await page.waitForTimeout(SETTLE_MS);
 
   return { page, responses, failures, payloads };
@@ -79,7 +111,7 @@ function reportPage(path, responses, failures) {
 
 async function auditSeqPage(context) {
   console.log('seq.html - sequence routes');
-  const { page, responses, failures, payloads } = await loadPage(context, '/seq.html');
+  const { page, responses, failures, payloads } = await loadPage(context, '/seq.html', ['/api/seq/list', '/api/seq/builtins']);
 
   try {
     reportPage('/seq.html', responses, failures);
@@ -122,19 +154,21 @@ async function auditSeqPage(context) {
     assert.strictEqual(rendered.learnedCards, learned.length, 'seq.html must render a card per saved sequence');
     assert.strictEqual(rendered.factoryCards, untuned.length, 'seq.html must render a card per untuned factory sequence');
 
-    await page.screenshot({ path: '/tmp/issue90-seq.png', fullPage: true });
+    await page.screenshot({ path: `${ARTIFACTS}/page-load-audit-seq.png`, fullPage: true });
   } finally {
     await page.close();
   }
 }
 
-async function auditSetupPage(context) {
+async function auditMaintenancePage(context) {
   console.log('maintenance.html - profiler routes');
-  const { page, responses, failures } = await loadPage(context, '/maintenance.html');
+  const { page, responses, failures } = await loadPage(context, '/maintenance.html', ['/maintenance.js']);
 
   try {
     reportPage('/maintenance.html', responses, failures);
-    await page.screenshot({ path: '/tmp/issue90-setup.png', fullPage: true });
+    assert.ok(responses.some((r) => new URL(r.url).pathname === '/maintenance.js'),
+      'maintenance.html must load its surface script chain to the end (/maintenance.js)');
+    await page.screenshot({ path: `${ARTIFACTS}/page-load-audit-maintenance.png`, fullPage: true });
   } finally {
     await page.close();
   }
@@ -142,7 +176,7 @@ async function auditSetupPage(context) {
 
 async function auditIndexPage(context) {
   console.log('index.html - status and shared helper routes');
-  const { page, responses, failures } = await loadPage(context, '/index.html');
+  const { page, responses, failures } = await loadPage(context, '/index.html', ['/api/status']);
 
   try {
     reportPage('/index.html', responses, failures);
@@ -166,7 +200,7 @@ async function auditIndexPage(context) {
       'the firmware/status payload must have been applied, not left at its placeholder',
     );
 
-    await page.screenshot({ path: '/tmp/issue90-index.png', fullPage: true });
+    await page.screenshot({ path: `${ARTIFACTS}/page-load-audit-index.png`, fullPage: true });
   } finally {
     await page.close();
   }
@@ -178,6 +212,7 @@ async function main() {
     process.exitCode = 2;
     return;
   }
+  fs.mkdirSync(ARTIFACTS, { recursive: true });
   const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 50 });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   // Offline, the controller routes the fixture server does not answer.
@@ -189,7 +224,7 @@ async function main() {
     await auditSeqPage(context);
     await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
 
-    await auditSetupPage(context);
+    await auditMaintenancePage(context);
     await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
 
     await auditIndexPage(context);
