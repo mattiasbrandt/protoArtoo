@@ -98,14 +98,21 @@ void test_catalog_availability_flags() {
     TEST_ASSERT_NOT_NULL(hostedReset);
     TEST_ASSERT_FALSE(hostedReset->available_on_board);
 
-    // ...and it is the ONLY off-board row in this build. A second one appearing
-    // means a registry row gained a board_capability without anyone noticing,
-    // which silently removes an operation from a board.
+    // ...and so is the other PA_CAP_HOSTED_WIFI row, while most of the catalog
+    // stays on. How many rows are off is the catalog's to say, not a number
+    // pinned here (it read 1 until #471 added the second row): a
+    // registry row gaining a board_capability shows up as a registry diff,
+    // and make check-action-drift's byte-compare of this catalog
+    // (tools/check_console_catalog_drift.py) holds the table to it.
     int offBoard = 0;
     for (size_t i = 0; i < count; ++i) {
         if (!entries[i].available_on_board) offBoard++;
     }
-    TEST_ASSERT_EQUAL_INT(1, offBoard);
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(1, offBoard);
+    TEST_ASSERT_LESS_THAN_INT((int)count, offBoard);
+    const ConsoleCatalogEntry* hostedLink = consoleCatalogFindByName("system.status.hosted-link");
+    TEST_ASSERT_NOT_NULL(hostedLink);
+    TEST_ASSERT_EQUAL(hostedReset->available_on_board, hostedLink->available_on_board);
 
     // The unrelated capability still resolves the other way in the same build:
     // PA_CAP_DRIVE_BACKEND_HOVERBOARD is 1 on artoo-esp32, so drive rows are on.
