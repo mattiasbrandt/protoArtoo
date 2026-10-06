@@ -146,7 +146,7 @@ different shapes, and some do not publish it at all.
 
 | Mode | Image | Notable differences |
 | --- | --- | --- |
-| `artoo` | the `artoo_esp32` product image | No `bootCount`; `resetReason` is a name, not a number; no recovery-ladder block (the board has no companion radio); no reset route |
+| `artoo` | the `artoo_esp32` product image | No `bootCount`; `resetReason` is a name, not a number; no recovery-ladder block (the board has no WiFi Module); no reset route |
 | `shipping` | the `firebeetle2` product image | Same as `artoo`, plus the recovery ladder nested under `hostedLink`; still no reset route (#243) |
 | `bench` | `bench/p4_hosted_bench.cpp`, built by `firebeetle2_hosted_bench` | Built to be measured: `bootCount`, the raw reset-reason enum, flat ladder counters, a reset route, and an `/api/events` stream whose payload is a monotonic frame counter |
 
@@ -226,8 +226,8 @@ start advancing again.
 
 On both product images it is **Unavailable**: there is no reset route to
 provoke. It refuses before sending anything, and says which of the two reasons
-applies — the FireBeetle 2 has a companion radio and simply has no route yet
-(#243); artoo-esp32 has no companion radio at all, so there is nothing to reset.
+applies: the FireBeetle 2 has a WiFi Module and simply has no route yet
+(#243); artoo-esp32 has no WiFi Module at all, so there is nothing to reset.
 
 An unavailable driver is never a pass. It collapses the Run Verdict to
 `INVALID`, because a coverage gap is not evidence of health. If you want an exit
