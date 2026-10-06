@@ -63,6 +63,13 @@ def load_surfaces(path=SURFACES_PATH):
     if not surfaces:
         raise CatalogError([f"no SURFACES rows found in {path}; {GENERATOR_NAME} reads "
                             "each `page:` and `name:` from there"])
+    # A name is emitted into console_catalog.cpp as a C string literal with no
+    # escaping, so a quote or a backslash would end it early or start an escape.
+    unsafe = [f"SURFACES page {page!r}: name {name!r} carries a quote or a backslash, "
+              "which the catalog's C string cannot hold as written"
+              for page, name in surfaces.items() if '"' in name or '\\' in name]
+    if unsafe:
+        raise CatalogError(unsafe)
     return surfaces
 
 
