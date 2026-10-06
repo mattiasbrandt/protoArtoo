@@ -103,7 +103,7 @@ FLOCK := python3 tools/pio_lock.py
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift check-setting-words check-parts-drift check-wiring-cards-drift check-console-catalog-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-servo-motion-drift check-build-budgets check-protocol-mirror pw-fixture flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift check-setting-words check-parts-drift check-products-drift check-wiring-cards-drift check-console-catalog-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-servo-motion-drift check-build-budgets check-protocol-mirror pw-fixture flash ota uploadfs \
         flash-monitor \
         setup setup-wifi clean monitor console bench-rows bench-auto check-deps
 
@@ -176,11 +176,19 @@ check-setting-words: ## Check every declared Setting has browser words for its r
 check-parts-drift: ## Ad hoc check that the parts catalog and its generated outputs align
 	python3 tools/check_droid_parts_drift.py
 
-# Wiring's product cards against the wiring_card blocks in docs/spec-sheets/
-# (#458), in the same report-never-rewrite shape: the real generator with its
-# writes intercepted, byte-compared. check-action-drift runs it too, which is
-# how the slice gate carries it. To regenerate: python3 tools/generate_wiring_cards.py
-check-wiring-cards-drift: ## Check Wiring's product cards against the spec sheets' wiring_card blocks
+# The Component Registry manifest against docs/products.yaml (#475), in the
+# same report-never-rewrite shape: the real generator with its writes
+# intercepted, byte-compared, so a hand edit to the manifest fails. check-action-drift
+# runs it too, which is how the slice gate carries it.
+# To regenerate: python3 tools/generate_component_registry.py
+check-products-drift: ## Check the Component Registry manifest against docs/products.yaml
+	python3 tools/check_products_drift.py
+
+# Wiring's product cards against the wiring_card entries in docs/products.yaml
+# (#458, #475), in the same report-never-rewrite shape, and every card's
+# citations against its spec sheet's headings. check-action-drift runs it too,
+# which is how the slice gate carries it. To regenerate: python3 tools/generate_wiring_cards.py
+check-wiring-cards-drift: ## Check Wiring's product cards against docs/products.yaml
 	python3 tools/check_wiring_cards_drift.py
 
 # The Operation Catalog against the registry it is generated from (#474), in the

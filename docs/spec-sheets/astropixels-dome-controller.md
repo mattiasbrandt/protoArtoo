@@ -48,33 +48,6 @@ or bench test that would settle them.
 > chooser, and getting it wrong looks like a dome that lights up beautifully and
 > ignores the body completely.
 
-## Wiring card
-
-How to wire and power this product, in the fixed shape **Wiring** shows
-([#458](https://github.com/mattiasbrandt/protoArtoo/issues/458)).
-`tools/generate_wiring_cards.py` generates it into the Wiring page, and it is
-the only part of this sheet the product ships. Every line is proven by a
-section `source` names: change the section first, then the card. A value this
-sheet does not know stays `UNKNOWN`.
-
-```yaml
-wiring_card:
-  id: "astropixels_plus"
-  supply: "clean 5 V, 1 A minimum: best from a buck converter in the dome"
-  draw: "about 700 mA in normal use, the vendor's estimate. Measured is UNKNOWN"
-  logic: "3.3 V"
-  wires:
-    - { from: "T", to: "the board's dome link RX", note: "crossed, through the slip ring" }
-    - { from: "R", to: "the board's dome link TX", note: "crossed, through the slip ring" }
-    - { from: "G", to: "the board's ground", note: "common ground is mandatory" }
-    - { from: "V", to: "nothing", note: "no power crosses the slip ring" }
-  hazards:
-    - "V on the dome header stays unconnected. Two supplies joined through the slip ring feed each other."
-    - "A freshly flashed dome talks 2400 and the body talks 9600. Set mserial2 to 9600 on the dome's Setup page, or the link stays silent."
-    - "The USB port on its ESP32 is fragile. Power a fitted dome from the screw terminal."
-  source: "5.1, 7.1, 7.2, 13.5"
-```
-
 ## Where this sits in the lineup
 
 The **Dome Controller** category holds two products, and a builder picks one:

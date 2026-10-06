@@ -1,30 +1,5 @@
 # ESP32 Servo Communication Reference
 
-## Wiring card
-
-How to wire and power this product, in the fixed shape **Wiring** shows
-([#458](https://github.com/mattiasbrandt/protoArtoo/issues/458)).
-`tools/generate_wiring_cards.py` generates it into the Wiring page, and it is
-the only part of this sheet the product ships. Every line is proven by a
-section `source` names: change the section first, then the card. A value this
-sheet does not know stays `UNKNOWN`.
-
-```yaml
-wiring_card:
-  id: "esp32_gpio_ledc"
-  supply: "4.8-6.0 V on the servo's power wire, from a supply of its own"
-  draw: "hundreds of mA to over 1 A a servo on a spike. An MG996R stalls at 1.0-1.4 A"
-  logic: "3.3 V signal, which most servos take"
-  wires:
-    - { from: "Servo signal", to: "the output's pin" }
-    - { from: "Servo ground", to: "the board's ground and the servo supply's ground", note: "always shared" }
-    - { from: "Servo power", to: "the servo supply", note: "never the board's own regulator" }
-  hazards:
-    - "A servo surge on the board's own regulator resets the Body Controller mid-move. Power servos from a separate supply."
-    - "A servo held against a hard stop overheats. Record its ends short of the stops."
-  source: "2, 3, 6"
-```
-
 ## Purpose
 
 This document captures factual electrical and signaling behavior for controlling hobby RC servos from ESP32-class controllers.

@@ -86,32 +86,6 @@ test that would settle them.
 > is the reason this sheet leans on firmware source rather than a datasheet, and
 > the reason Open Item 1 asks what the Component Picker card should say.
 
-## Wiring card
-
-How to wire and power this product, in the fixed shape **Wiring** shows
-([#458](https://github.com/mattiasbrandt/protoArtoo/issues/458)).
-`tools/generate_wiring_cards.py` generates it into the Wiring page, and it is
-the only part of this sheet the product ships. Every line is proven by a
-section `source` names: change the section first, then the card. A value this
-sheet does not know stays `UNKNOWN`.
-
-```yaml
-wiring_card:
-  id: "chirp"
-  supply: "5 V on the +5V pin or the screw pads, or USB-C: the POWER SELECT jumper picks"
-  draw: "UNKNOWN"
-  logic: "3.3 V"
-  wires:
-    - { from: "TX", to: "the board's sound RX", note: "crossed" }
-    - { from: "RX", to: "the board's sound TX", note: "crossed" }
-    - { from: "G", to: "the board's ground", note: "the grounds must be common" }
-    - { from: "+5V", to: "a 5 V supply" }
-    - { from: "3.5 mm jack", to: "an amplifier", note: "no amplifier on the module" }
-  hazards:
-    - "The droid talks 9600 only, and the stock firmware talks 115200. Hold Prev and press Play/Stop until the module says 9600."
-  source: "2.1, 2.2, 6.1, 6.2"
-```
-
 ## Where this sits in the lineup
 
 The **Sound** category holds four products, and a builder picks one:

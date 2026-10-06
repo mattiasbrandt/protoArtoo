@@ -2,30 +2,6 @@
 
 Non-SBUS communication with RC receivers typically uses PWM (Pulse Width Modulation) or PPM (Pulse Position Modulation) protocols. These are analog-style signals for transmitting channel data (e.g., throttle, steering) from the receiver to a microcontroller like Arduino or ESP32. HOTRC receivers (e.g., DS-600, DS-4A, F-08A) support PWM outputs in non-SBUS modes, with standard 20ms periods and 1000–2000µs pulses. Regular modern receivers (e.g., FlySky FS-iA6B, Turnigy iA6C) offer PWM/PPM options, compatible with Arduino's pulseIn() or ESP32's RMT for efficient reading. This setup is ideal for DIY drones, robots, or RC vehicles, allowing microcontrollers to interpret controls without flight controller intermediaries.
 
-#### Wiring card
-
-How to wire and power this product, in the fixed shape **Wiring** shows
-([#458](https://github.com/mattiasbrandt/protoArtoo/issues/458)).
-`tools/generate_wiring_cards.py` generates it into the Wiring page, and it is
-the only part of this sheet the product ships. Every line is proven by a
-section `source` names: change the section first, then the card. A value this
-sheet does not know stays `UNKNOWN`.
-
-```yaml
-wiring_card:
-  id: "rc_transmitter_pwm"
-  supply: "4.5-6 V on the red wire of a HotRC receiver"
-  draw: "UNKNOWN"
-  logic: "3.3-5 V. A 5 V output needs a divider before the board"
-  wires:
-    - { from: "Signal, white or orange", to: "one of the board's RC channel pins", note: "one wire for each channel" }
-    - { from: "+, red", to: "4.5-6 V from a BEC", note: "not straight from the battery" }
-    - { from: "-, black", to: "the board's ground", note: "shared" }
-  hazards:
-    - "A receiver that puts out 5 V damages the board's pins. Put a 3.9k/6.8k divider on each signal wire."
-  source: "PWM Protocol Details, Wiring"
-```
-
 #### PWM Protocol Details
 PWM is the simplest and oldest RC protocol, sending individual pulses per channel over separate wires.
 - **Signal Characteristics**:

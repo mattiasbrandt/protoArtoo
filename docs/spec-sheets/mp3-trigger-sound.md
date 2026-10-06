@@ -55,33 +55,6 @@ astromech projects on this disk. Claims that could not be sourced are marked
 > to 2026-03-22. Everything in Sections 11-13 is verified on a laptop through the
 > `AudioSerialIO` seam. Nothing here has made a sound.
 
-## Wiring card
-
-How to wire and power this product, in the fixed shape **Wiring** shows
-([#458](https://github.com/mattiasbrandt/protoArtoo/issues/458)).
-`tools/generate_wiring_cards.py` generates it into the Wiring page, and it is
-the only part of this sheet the product ships. Every line is proven by a
-section `source` names: change the section first, then the card. A value this
-sheet does not know stays `UNKNOWN`.
-
-```yaml
-wiring_card:
-  id: "mp3_trigger"
-  supply: "4.5-12 V DC, or regulated 3.3 V, by its jumper"
-  draw: "about 45 mA idle, 85 mA playing"
-  logic: "takes 3.3 V on its RX. What its TX puts out is UNKNOWN"
-  wires:
-    - { from: "Serial RX", to: "the board's sound TX", note: "crossed" }
-    - { from: "Serial TX", to: "the board's sound RX", note: "crossed, and only once its level is measured" }
-    - { from: "Audio jack", to: "an amplifier", note: "no amplifier on the module. AC-couple a long cable" }
-  hazards:
-    - "Its TX level is UNKNOWN and the board's sound RX is not 5 V tolerant. Measure TX at idle first, or power the module from its 3.3 V jumper."
-    - "A new module talks 38400 and the droid talks 9600. Without MP3TRIGR.INI holding '#BAUD 9600' on the card, it never answers."
-    - "The card is read at power-up only. Change the card, then power the module off and on."
-    - "The audio output carries a DC offset. Static from a long cable can kill the decoder chip."
-  source: "2.1, 6.1, 6.2, 6.3, 13, 15"
-```
-
 ## Where this sits in the lineup
 
 The **Sound** category holds four products, and a builder picks one:
