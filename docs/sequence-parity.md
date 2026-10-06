@@ -78,7 +78,10 @@ that moves pies or panel groups carries the same pie and group cautions as above
 
 Recorded in the 2026-06-18 log: `DM:NOD`, `DM:LOW` (ring open and close, staggered
 cleanup) and the `DM:ROCKMARCH` panel wave with its re-close pass. The `DV:` light
-presets and the 200 ms panel spacing came after that log.
+presets and the 200 ms panel spacing came after that log. The `DM:VADER`,
+`DM:ALARM` and `DM:LEIA` dome visuals and their teardown ran on a droid on
+2026-06-29 ([dome-visual-presets.md](dome-visual-presets.md)). `DM:HELLO` used to
+send five opens that jammed the dome; #287 made it the one open and close above.
 
 ## Checking a run
 
