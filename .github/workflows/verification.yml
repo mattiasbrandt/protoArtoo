@@ -199,7 +199,7 @@ jobs:
         with:
           name: build-logs-${{ github.run_id }}
           path: build-logs/
-          retention-days: 14
+          retention-days: 7
 
       - name: 🧪 Native tests
         id: native-tests

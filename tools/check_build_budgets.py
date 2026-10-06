@@ -97,8 +97,8 @@ def run_pio(cmd, env, timeout, env_name, phase):
     """Run one pio command under the build lock, keeping its whole output.
 
     Writes stdout and stderr, interleaved as pio wrote them, to
-    build-logs/<env>-<phase>.log whatever the outcome. Returns (code, log),
-    code None on a timeout. On a non-zero exit or a timeout the log's last
+    build-logs/<env>-<phase>.log whatever the outcome. Returns the exit
+    code, None on a timeout. On a non-zero exit or a timeout the log's last
     FAILURE_TAIL_LINES lines and its path go to stderr: pio prints a compile
     or link error on stdout, so a stderr-only report shows nothing.
     """
@@ -129,7 +129,7 @@ def run_pio(cmd, env, timeout, env_name, phase):
     if code != 0:
         print("\n".join(out.splitlines()[-FAILURE_TAIL_LINES:]), file=sys.stderr)
         print(f"  full log: {log}", file=sys.stderr)
-    return code, log
+    return code
 
 
 def build_environment(env_name, budgets):
@@ -142,7 +142,7 @@ def build_environment(env_name, budgets):
 
     cmd = ["pio", "run", "-e", env_name]
     try:
-        code, _ = run_pio(cmd, env, 1800, env_name, "firmware")
+        code = run_pio(cmd, env, 1800, env_name, "firmware")
         if code is None:
             print("  FAILED: Build timed out", file=sys.stderr)
             return None
@@ -187,7 +187,7 @@ def filesystem_image_bytes(env_name, budgets):
 
     cmd = ["pio", "run", "-e", env_name, "-t", "buildfs"]
     try:
-        code, _ = run_pio(cmd, env, 600, env_name, "buildfs")
+        code = run_pio(cmd, env, 600, env_name, "buildfs")
         if code is None:
             print("  FAILED: filesystem image timed out", file=sys.stderr)
             return None
