@@ -57,6 +57,16 @@
 #                        board: GET /api/actions and Console help say "ARM3 Toggle"
 #                        on the Artoo and "GPIO 4 Toggle" on the FireBeetle 2.
 #
+# An operation that is never on the Controller Console says so on its row, and
+# says where the builder does it instead (ADR 0037 Amendment 2026-10-06, #474):
+#   console:
+#     excluded: <why>    file-transfer | editor-only | browser-only | console-itself
+#     page: <page>       a `page:` id from SURFACES in data/shell.js
+# The Console answers such a row `unavailable reason=not-on-console` and `help`
+# names the page. A row that is only not wired yet carries no `console:`; it
+# answers executor-not-ready. tools/generate_console_catalog.py refuses any
+# other reason and any page SURFACES does not list.
+#
 ## Runtime action registry API notes:
 ## - GET /api/actions returns bindable actions with token + testability metadata.
 ## - `token` maps to robotActionIdToString() and is accepted by POST /api/actions/test.
@@ -553,14 +563,17 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # Out of scope for the Console (#221 remainder, coordinator decision
-  # 2026-09-01, issue #221): domeLayoutCacheReadChunk(buf, len, offset, ...) is
+  # A file transfer (#221 remainder, coordinator decision 2026-09-01, issue
+  # #221): domeLayoutCacheReadChunk(buf, len, offset, ...) is
   # a byte-slice reader over one cached document (the dome's composed layout
   # JSON), the same "document/bulk transfer ... keeps its dedicated
   # mechanisms" exclusion #206 states for sequence/RC-map/config documents,
   # firmware/FS images and the coredump - not a gap this ticket owes a
   # Console Record shape for. REST (this row's own api_path) remains the only
   # way to read it.
+  console:
+    excluded: file-transfer
+    page: home
   executor: domeLayoutCacheReadChunk
 - name: dome.action.sequence-stop
   display_name: Stop Sequence
@@ -901,14 +914,17 @@ entries:
     explanation: The Learned Sequence to read. Reading it moves nothing.
     type: string
     required: true
-  # Out of scope for the Console (#221 remainder, coordinator decision
-  # 2026-09-01, issue #221): seqStoreReadFileSlice(name, offset, ...) is a
+  # A file transfer (#221 remainder, coordinator decision 2026-09-01, issue
+  # #221): seqStoreReadFileSlice(name, offset, ...) is a
   # byte-slice reader over one stored Learned Sequence JSON v1 document, the
   # same "document/bulk transfer ... keeps its dedicated mechanisms"
   # exclusion #206 states for sequence/RC-map/config documents, firmware/FS
   # images and the coredump - not a gap this ticket owes a Console Record
   # shape for. dome.api.list-sequences above gives the Console the metadata
   # index; the document body remains REST-only (this row's own api_path).
+  console:
+    excluded: file-transfer
+    page: seq
   executor: seqStoreReadFileSlice
 - name: dome.action.save-sequence
   display_name: Save Learned Sequence
@@ -924,7 +940,7 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # Out of scope for the Console (#221): the request body is a whole Learned
+  # A file transfer (#221): the request body is a whole Learned
   # Sequence JSON v1 document, up to SEQ_FILE_MAX_BYTES with a steps array
   # (handleSeqPost(), src/web/api_seq.cpp:220-230). #206's "document/bulk
   # transfer ... keeps its dedicated mechanisms" exclusion names sequence
@@ -934,6 +950,9 @@ entries:
   # dome.api.list-sequences carries the metadata index; the body stays REST-only
   # (this row's own api_path). The dispatch site records the same reasoning
   # (include/console_direct_action_dome.h).
+  console:
+    excluded: file-transfer
+    page: seq
   executor: seqStoreSave
 - name: dome.action.delete-sequence
   display_name: Memory Wipe
@@ -1055,9 +1074,12 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # Out of scope for the Console (#472): the pins only order the Dashboard's
+  # Browser-only (#472): the pins only order the Dashboard's
   # Sequences line, and the Console has no line of Sequences to order. Kept in
   # their own NVS key, outside ConfigSnapshot, read by the web task alone.
+  console:
+    excluded: browser-only
+    page: home
   executor: seqPinsRead
 - name: dome.action.pin-sequence
   display_name: Pin Sequence
@@ -1073,8 +1095,11 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # Out of scope for the Console (#472), as dome.api.get-sequence-pins: a pin
+  # Browser-only (#472), as dome.api.get-sequence-pins: a pin
   # orders the Dashboard's Sequences line and moves nothing on the droid.
+  console:
+    excluded: browser-only
+    page: home
   params:
   - name: name
     explanation: The Sequence to pin or unpin. Only its form is checked; a pin naming a Sequence deleted since stays pinned.
@@ -1119,9 +1144,12 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # No Non-RC Control consent: a take is RC motion (ADR 0061, ADR 0064). Out of
-  # scope for the Console: a take belongs to the sequence open in the editor,
+  # No Non-RC Control consent: a take is RC motion (ADR 0061, ADR 0064).
+  # Editor-only: a take belongs to the sequence open in the editor,
   # whose receipt places its cue presses as steps (#442).
+  console:
+    excluded: editor-only
+    page: seq
   params:
   - name: seq
     explanation: The saved sequence the take belongs to. Arming moves nothing; the sticks do.
@@ -1142,8 +1170,11 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # Out of scope for the Console, as dome.action.arm-take: the answer is the
+  # Editor-only, as dome.action.arm-take: the answer is the
   # receipt the Sequences page turns into a take reference and cue steps.
+  console:
+    excluded: editor-only
+    page: seq
   executor: takeStoreWriteNew
 - name: dome.api.get-take-file
   display_name: Get Take File
@@ -1159,8 +1190,11 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # Out of scope for the Console: a binary document transfer, the exclusion
+  # A binary document transfer, the exclusion
   # #206 states for sequence documents and dome.api.get-sequence follows.
+  console:
+    excluded: file-transfer
+    page: seq
   params:
   - name: owner
     explanation: The stable id of the sequence that holds the take.
@@ -1185,9 +1219,12 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # Out of scope for the Console: a file upload (webRegisterUploadRoute()), the
+  # A file upload (webRegisterUploadRoute()), the
   # dedicated mechanism system.action.upload-filesystem uses, never a Console
   # record.
+  console:
+    excluded: file-transfer
+    page: seq
   executor: takeStoreRestoreBegin
 - name: sound.action.play-track
   display_name: Play Track
@@ -3745,12 +3782,15 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # Out of scope for the Console (#221): the answer is the raw ELF coredump
+  # A file transfer (#221): the answer is the raw ELF coredump
   # image streamed straight off the partition a chunk at a time
   # (handleCoredumpGet(), src/web/api_system.cpp:163-183). #206's
   # document/bulk-transfer exclusion names the coredump outright. HTTP stays
   # the only way to fetch it, which is what docs/troubleshooting.md's decode
   # procedure already assumes.
+  console:
+    excluded: file-transfer
+    page: maintenance
   executor: none
 - name: system.action.erase-coredump
   display_name: Erase Coredump
@@ -3841,12 +3881,15 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # Out of scope for the Console (#221): a multipart image streamed chunk by
+  # A file transfer (#221): a multipart image streamed chunk by
   # chunk straight into the flash partition through the Update library
   # (handleFirmwareUploadChunk(), src/web/api_upload.cpp:214-216) - #206's
   # document/bulk-transfer exclusion names firmware images outright, and that
   # file's own header comment already says so. There is no executor to point at
   # because there is no queue or core in the path at all.
+  console:
+    excluded: file-transfer
+    page: firmware
   executor: none
 - name: system.action.upload-filesystem
   display_name: Upload Filesystem
@@ -3862,12 +3905,15 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # Out of scope for the same reason as system.action.upload-firmware above
+  # A file transfer, for the same reason as system.action.upload-firmware above
   # (#221): a LittleFS image streamed into the data partition through the
   # Update library (handleFilesystemUploadChunk(), src/web/api_upload.cpp:226),
   # which #206 excludes as an FS image. LittleFS is unmounted for the duration,
   # so the Console's own help file is unreadable mid-write - a second reason
   # this belongs to the dedicated mechanism and not to a Console record.
+  console:
+    excluded: file-transfer
+    page: firmware
   executor: none
 - name: system.api.event-stream
   display_name: Event Stream
@@ -3957,7 +4003,7 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # Out of scope for the Console (#221): the read half of the RC-map document,
+  # A file transfer (#221): the read half of the RC-map document,
   # which #206's document/bulk-transfer exclusion names alongside sequence and
   # configuration documents. Unlike dome.api.list-sequences, which reads a real
   # item-indexed accessor (seqStoreIndexAt()), there is no per-binding accessor
@@ -3969,6 +4015,9 @@ entries:
   # avoid - or render through the JSON builder, which the Console's status
   # executors do not do. rc.status.snapshot answers live RC state; the binding
   # map stays REST-only, with its write side (rc.action.set-map above).
+  console:
+    excluded: file-transfer
+    page: rc
   executor: populateRcMapJson
 - name: rc.action.set-map
   display_name: Set RC Map
@@ -3984,13 +4033,16 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # Out of scope for the Console (#221): the write half of the RC-map document.
+  # A file transfer (#221): the write half of the RC-map document.
   # rcMapApply() (src/web/api_rc_map_apply.cpp:85) reads one whole JSON body
   # through a ConfigParamSource - "map body required", then a map array of
   # binding objects - which is exactly the "RC-map document" #206's
   # document/bulk-transfer exclusion names. The Console's one-line key=value
   # grammar has no shape for it, and its read half is excluded for the same
   # reason (rc.api.get-map below).
+  console:
+    excluded: file-transfer
+    page: rc
   executor: rcMapApply
 - name: rc.action.test-bindable
   display_name: Test Bindable Action
@@ -4301,10 +4353,13 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # Not an operation the Console executes (#221): this row IS the browser
+  # The Console itself (#221): this row IS the browser
   # Console Adapter - POST /api/console, the transport that carries every other
   # operation (ADR 0036, src/web/api_console.cpp:108). Running it from the
   # Console would be the adapter invoking itself. It stays in the registry
   # because the route exists and the inventory tracks routes; it is not a
   # wiring gap and never will be one.
+  console:
+    excluded: console-itself
+    page: home
   executor: consoleExecuteCommand

@@ -9,6 +9,11 @@ This tool produces:
 
 The catalog is the machine-readable part (names, types, argument keys, availability).
 Help text (description, display_name, parameter schema, executor details) goes into the FS partition.
+
+The render_*() functions build each file as a string and write nothing; main()
+is the one writer. tools/check_console_catalog_drift.py calls generate() and
+byte-compares what it returns with the committed files, so the check runs this
+generator's own rules rather than a copy of them.
 """
 
 import re
@@ -17,6 +22,75 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from registry_yaml import load_registry_yaml
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+GENERATOR_NAME = "tools/generate_console_catalog.py"
+REGISTRY_PATH = REPO_ROOT / "docs" / "action-registry.yaml"
+SURFACES_PATH = REPO_ROOT / "data" / "shell.js"
+CATALOG_H_PATH = REPO_ROOT / "include" / "console_catalog.h"
+CATALOG_CPP_PATH = REPO_ROOT / "src" / "console" / "console_catalog.cpp"
+HELP_TXT_PATH = REPO_ROOT / "data" / "console_help.txt"
+
+# Why an operation is never on the Console: the registry's `console: excluded:`
+# takes one of these and nothing else (ADR 0037 Amendment 2026-10-06, #474).
+# Their order is the ConsoleExclusion enum's, so a reason is only ever appended.
+EXCLUSION_REASONS = ("file-transfer", "editor-only", "browser-only", "console-itself")
+
+
+class CatalogError(Exception):
+    """The registry asks for something the catalog cannot say. Raised before
+    anything is written, so a bad row never reaches the committed files."""
+
+    def __init__(self, problems):
+        super().__init__("\n".join(problems))
+        self.problems = problems
+
+
+# One SURFACES row of data/shell.js: its `page:` id, then its `name:`.
+SURFACE_ROW_RE = re.compile(r'\{\s*page:\s*"([^"]+)"[^}]*?\bname:\s*"([^"]+)"')
+
+
+def load_surfaces(path=SURFACES_PATH):
+    """Return {page id: name} from the SURFACES array in data/shell.js.
+
+    The page a `console:` row names must be one the shell can open, and `help`
+    shows that page by the name the nav shows. An empty result is an error, not
+    an empty set: a reshaped shell.js must fail here rather than make every page
+    unknown."""
+    text = Path(path).read_text(encoding="utf-8")
+    match = re.search(r"const SURFACES = \[(.*?)\n\s*\];", text, re.DOTALL)
+    surfaces = dict(SURFACE_ROW_RE.findall(match.group(1))) if match else {}
+    if not surfaces:
+        raise CatalogError([f"no SURFACES rows found in {path}; {GENERATOR_NAME} reads "
+                            "each `page:` and `name:` from there"])
+    return surfaces
+
+
+def console_exclusions(entries, surfaces):
+    """Return {operation name: (reason, page name)} for every row the registry
+    marks as never on the Console, refusing an unknown reason or page."""
+    exclusions = {}
+    problems = []
+    for entry in entries:
+        console = entry.get("console")
+        if console is None:
+            continue
+        name = entry["name"]
+        if not isinstance(console, dict) or set(console) != {"excluded", "page"}:
+            problems.append(f"{name}: `console:` takes exactly `excluded:` and `page:`")
+            continue
+        reason, page = console["excluded"], console["page"]
+        if reason not in EXCLUSION_REASONS:
+            problems.append(f"{name}: console excluded {reason!r} is not one of "
+                            f"{', '.join(EXCLUSION_REASONS)}")
+        if page not in surfaces:
+            problems.append(f"{name}: console page {page!r} is not a `page:` in SURFACES "
+                            "(data/shell.js)")
+        if reason in EXCLUSION_REASONS and page in surfaces:
+            exclusions[name] = (reason, surfaces[page])
+    if problems:
+        raise CatalogError(problems)
+    return exclusions
 
 def load_registry(registry_path):
     """Load and validate the action registry YAML.
@@ -65,8 +139,14 @@ def build_rc_token_map(entries):
             rc_token_map[name] = rc_token
     return rc_token_map
 
-def generate_catalog_header(entries, output_path):
-    """Generate include/console_catalog.h"""
+def exclusion_enum_name(reason):
+    return "CONSOLE_EXCLUSION_" + reason.upper().replace("-", "_")
+
+
+def render_catalog_header():
+    """Return include/console_catalog.h"""
+    exclusion_enum = "".join(f"    {exclusion_enum_name(reason)} = {i},\n"
+                             for i, reason in enumerate(EXCLUSION_REASONS, start=1))
     header = """// =============================================================================
 // include/console_catalog.h
 //
@@ -98,6 +178,14 @@ def generate_catalog_header(entries, output_path):
 #define CONSOLE_PARAM_TYPE_FLOAT     "float"
 #define CONSOLE_PARAM_TYPE_BOOL      "bool"
 #define CONSOLE_PARAM_TYPE_STRING    "string"
+
+// Why an operation is never on the Console, from the registry's
+// `console: excluded:` (ADR 0037 Amendment 2026-10-06, #474). An operation that
+// carries one answers `unavailable reason=not-on-console` and lists as
+// `not-on-console`; NONE is every operation that is on the Console, wired or not.
+typedef enum {
+    CONSOLE_EXCLUSION_NONE = 0,
+""" + exclusion_enum + """} ConsoleExclusion;
 
 // Parameter descriptor. Range/enum (has_range/range_min/range_max/
 // enum_values) close #221 gap 5: docs/action-registry.yaml's `range:` and
@@ -164,10 +252,18 @@ typedef struct {
                                           // and the same rule: the fact lives in the registry, so
                                           // the dispatcher never carries a list of names and a row
                                           // marked tomorrow is refused with no code change.
+    uint8_t console_excluded;            // a ConsoleExclusion: registry `console: excluded:`, or
+                                          // CONSOLE_EXCLUSION_NONE. A uint8_t rather than the enum
+                                          // so it sits in the padding after the two bools above.
     const char* output;                  // registry `output:`: the stored id (arm1..aux3) of
                                           // the one Output this operation is about, or NULL.
                                           // `{output}` in its help prose is that Output's
                                           // label on the running board (include/board_outputs.h).
+    const char* console_page;            // registry `console: page:`, as the NAME SURFACES gives
+                                          // that page (data/shell.js), never its id: `help`
+                                          // shows it to the builder. NULL when console_excluded
+                                          // is NONE. In the image, not the help file, so help
+                                          // names the page even when LittleFS is down.
 } ConsoleCatalogEntry;
 
 // Get the complete catalog
@@ -188,18 +284,20 @@ size_t consoleCatalogGetCount(void);
 // read_only above keeps the config refusal in the registry.
 const char* consoleCatalogSequenceFor(const char* operationName);
 
+// The registry word for an exclusion ("file-transfer"), or NULL for
+// CONSOLE_EXCLUSION_NONE or a value outside the enum.
+const char* consoleCatalogExclusionName(uint8_t exclusion);
+
 """
+    return header
 
-    with open(output_path, 'w') as f:
-        f.write(header)
-
-def generate_help_text(entries, output_path):
-    """Generate data/console_help.txt - help text for LittleFS.
+def render_help_text(entries):
+    """Return (data/console_help.txt, offsets) - help text for LittleFS.
 
     Format: one entry per line
     name|display_name|description|executor|param1:type1:required1|param2:type2:required2|...
 
-    Returns dict mapping name -> (offset, length)
+    offsets maps name -> (offset, length)
     """
     lines = []
     offsets = {}
@@ -243,21 +341,27 @@ def generate_help_text(entries, output_path):
         current_offset += len(encoded)
         lines.append(line)
 
-    # Explicit encoding: the offsets above are UTF-8 byte counts, so the file
-    # must be written as UTF-8 whatever the caller's locale says.
-    with open(output_path, 'w', encoding='utf-8') as f:
-        for line in lines:
-            f.write(line)
+    return ''.join(lines), offsets
 
-    # Print stats
-    total_bytes = sum(len(l.encode('utf-8')) for l in lines)
-    print(f"Generated help text: {len(lines)} entries, {total_bytes} bytes")
+def write_text(output_path, text):
+    # Explicit encoding: the help offsets are UTF-8 byte counts, so every file
+    # is written as UTF-8 whatever the caller's locale says - and the drift
+    # check compares these exact bytes.
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(text)
+
+def generate_help_text(entries, output_path):
+    """Write the help text for `entries` to output_path; return its offsets."""
+    text, offsets = render_help_text(entries)
+    write_text(output_path, text)
     return offsets
 
-def generate_catalog_source(entries, offsets, output_path):
-    """Generate src/console/console_catalog.cpp with the complete catalog table.
+def render_catalog_source(entries, offsets, exclusions):
+    """Return src/console/console_catalog.cpp with the complete catalog table.
 
     offsets: dict mapping entry name -> (offset, length)
+    exclusions: dict mapping entry name -> (reason, page name), from
+    console_exclusions()
     """
 
     # Build rc_token map for aliases
@@ -518,8 +622,17 @@ def generate_catalog_source(entries, offsets, output_path):
         source += f"        {fields_expr},  // fields\n"
         source += f"        {'true' if is_query else 'false'},  // is_query\n"
         source += f"        {'true' if read_only else 'false'},  // read_only\n"
+        if name in exclusions:
+            reason, page_name = exclusions[name]
+            excluded_expr = exclusion_enum_name(reason)
+            page_expr = f'"{page_name}"'
+        else:
+            excluded_expr = "CONSOLE_EXCLUSION_NONE"
+            page_expr = "NULL"
+        source += f"        {excluded_expr},  // console_excluded\n"
         output_id = entry.get('output')
         source += f"        {chr(34) + output_id + chr(34) if output_id else 'NULL'},  // output\n"
+        source += f"        {page_expr},  // console_page\n"
         source += f"    }},\n"
 
     source += "};\n\n"
@@ -581,48 +694,62 @@ size_t consoleCatalogGetCount(void) {
 }
 """
 
-    with open(output_path, 'w') as f:
-        f.write(source)
+    # Exclusion words in ConsoleExclusion order: index 0 is NONE, which has no
+    # word, so the table starts at the first reason.
+    quoted = ', '.join(f'"{reason}"' for reason in EXCLUSION_REASONS)
+    source += "\n// =============================================================================\n"
+    source += "// Why an Operation Is Never on the Console (registry console: excluded:)\n"
+    source += "// =============================================================================\n\n"
+    source += f"static const char* const g_exclusionNames[] = {{ {quoted} }};\n\n"
+    source += """const char* consoleCatalogExclusionName(uint8_t exclusion) {
+    const size_t count = sizeof(g_exclusionNames) / sizeof(g_exclusionNames[0]);
+    if (exclusion == CONSOLE_EXCLUSION_NONE || exclusion > count) return NULL;
+    return g_exclusionNames[exclusion - 1];
+}
+"""
+    return source
+
+def generate(registry_path=REGISTRY_PATH, surfaces_path=SURFACES_PATH):
+    """Build the three outputs from the registry and SURFACES, writing nothing.
+
+    Returns {output path: text} in the order main() writes them. Raises
+    CatalogError when a row names an unknown exclusion reason or page."""
+    entries = load_registry(registry_path)
+    exclusions = console_exclusions(entries, load_surfaces(surfaces_path))
+    help_text, offsets = render_help_text(entries)
+    return {
+        CATALOG_H_PATH: render_catalog_header(),
+        HELP_TXT_PATH: help_text,
+        CATALOG_CPP_PATH: render_catalog_source(entries, offsets, exclusions),
+    }
 
 def main():
-    repo_root = Path(__file__).parent.parent
-    registry_path = repo_root / 'docs' / 'action-registry.yaml'
-
-    if not registry_path.exists():
-        print(f"Error: Registry not found at {registry_path}", file=sys.stderr)
+    if not REGISTRY_PATH.exists():
+        print(f"Error: Registry not found at {REGISTRY_PATH}", file=sys.stderr)
         sys.exit(1)
 
-    # Load registry
-    print(f"Loading registry from {registry_path}...")
-    entries = load_registry(registry_path)
+    print(f"Loading registry from {REGISTRY_PATH}...")
+    entries = load_registry(REGISTRY_PATH)
     print(f"Loaded {len(entries)} entries")
 
-    # Count aliases for diagnostic output
-    rc_token_map = build_rc_token_map(entries)
-    print(f"Found {len(rc_token_map)} entries with rc_token (aliases)")
-
-    # Count build flags for diagnostic output
-    build_flag_count = sum(1 for e in entries if e.get('build_flag'))
-    print(f"Found {build_flag_count} entries with build_flag")
-
-    board_capability_count = sum(1 for e in entries if e.get('board_capability'))
-    print(f"Found {board_capability_count} entries with board_capability")
-
+    # Counts for diagnostic output
+    print(f"Found {len(build_rc_token_map(entries))} entries with rc_token (aliases)")
+    print(f"Found {sum(1 for e in entries if e.get('build_flag'))} entries with build_flag")
+    print(f"Found {sum(1 for e in entries if e.get('board_capability'))} entries with board_capability")
     print(f"Found {len(named_sequence_rows(entries))} action entries with a literal DM: sequence")
+    print(f"Found {sum(1 for e in entries if e.get('console'))} entries never on the Console")
 
-    # Generate files
-    catalog_h = repo_root / 'include' / 'console_catalog.h'
-    catalog_cpp = repo_root / 'src' / 'console' / 'console_catalog.cpp'
-    help_txt = repo_root / 'data' / 'console_help.txt'
+    try:
+        outputs = generate()
+    except CatalogError as error:
+        print(f"Error: {GENERATOR_NAME} wrote nothing:", file=sys.stderr)
+        for problem in error.problems:
+            print(f"  - {problem}", file=sys.stderr)
+        sys.exit(1)
 
-    print(f"Generating {catalog_h}...")
-    generate_catalog_header(entries, catalog_h)
-
-    print(f"Generating {help_txt}...")
-    offsets = generate_help_text(entries, help_txt)
-
-    print(f"Generating {catalog_cpp}...")
-    generate_catalog_source(entries, offsets, catalog_cpp)
+    for path, text in outputs.items():
+        print(f"Generating {path}... ({len(text.encode('utf-8'))} bytes)")
+        write_text(path, text)
 
     print("Done!")
 

@@ -378,7 +378,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "drive.action.speed",
@@ -394,7 +396,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "drive.action.steer",
@@ -410,7 +414,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "drive.action.speed-preset-slow",
@@ -426,7 +432,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "drive.action.speed-preset-normal",
@@ -442,7 +450,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "drive.action.speed-preset-turbo",
@@ -458,7 +468,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "drive.action.speed-preset-cycle",
@@ -474,7 +486,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "drive.status.current",
@@ -490,7 +504,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "drive.event.failsafe-triggered",
@@ -506,7 +522,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "drive.config.speed-limit",
@@ -522,7 +540,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.set-speed",
@@ -538,7 +558,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.send-command",
@@ -554,7 +576,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.marcduino-sequence",
@@ -570,7 +594,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.marcduino-command",
@@ -586,7 +612,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.dome-sequence",
@@ -602,7 +630,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.droid-sequence-scream",
@@ -618,7 +648,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.droid-sequence-wave",
@@ -634,7 +666,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.droid-sequence-fast-wave",
@@ -650,7 +684,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.droid-sequence-open-wave",
@@ -666,7 +702,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.droid-sequence-beep-cantina",
@@ -682,7 +720,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.droid-sequence-faint",
@@ -698,7 +738,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.droid-sequence-cantina",
@@ -714,7 +756,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.droid-sequence-leia",
@@ -730,7 +774,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.droid-sequence-disco",
@@ -746,7 +792,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.droid-sequence-screams",
@@ -762,7 +810,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.droid-sequence-wiggle",
@@ -778,7 +828,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.api.get-layout",
@@ -794,7 +846,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_FILE_TRANSFER,  // console_excluded
         NULL,  // output
+        "Dashboard",  // console_page
     },
     {
         "dome.action.sequence-stop",
@@ -810,7 +864,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.config.stand-down",
@@ -826,7 +882,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.event.cue-scream",
@@ -842,7 +900,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.event.cue-happy",
@@ -858,7 +918,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.event.cue-overload",
@@ -874,7 +936,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.event.cue-alarm",
@@ -890,7 +954,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.event.cue-vader",
@@ -906,7 +972,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.event.cue-rockmarch",
@@ -922,7 +990,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.event.cue-leia",
@@ -938,7 +1008,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.event.cue-cantina",
@@ -954,7 +1026,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.event.cue-heart",
@@ -970,7 +1044,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.event.cue-hello",
@@ -986,7 +1062,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.event.cue-reset",
@@ -1002,7 +1080,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.status.current",
@@ -1018,7 +1098,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_dome_status_current,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.move",
@@ -1034,7 +1116,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.front-is-here",
@@ -1050,7 +1134,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.go-home",
@@ -1066,7 +1152,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.api.list-sequences",
@@ -1082,7 +1170,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.api.list-builtin-sequences",
@@ -1098,7 +1188,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.api.get-sequence",
@@ -1114,7 +1206,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_FILE_TRANSFER,  // console_excluded
         NULL,  // output
+        "Sequences",  // console_page
     },
     {
         "dome.action.save-sequence",
@@ -1130,7 +1224,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_FILE_TRANSFER,  // console_excluded
         NULL,  // output
+        "Sequences",  // console_page
     },
     {
         "dome.action.delete-sequence",
@@ -1146,7 +1242,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.test-sequence",
@@ -1162,7 +1260,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.pose-sequence",
@@ -1178,7 +1278,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.api.get-sequence-last-run",
@@ -1194,7 +1296,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_dome_api_get_sequence_last_run,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.api.get-sequence-pins",
@@ -1210,7 +1314,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_BROWSER_ONLY,  // console_excluded
         NULL,  // output
+        "Dashboard",  // console_page
     },
     {
         "dome.action.pin-sequence",
@@ -1226,7 +1332,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_BROWSER_ONLY,  // console_excluded
         NULL,  // output
+        "Dashboard",  // console_page
     },
     {
         "dome.api.get-take",
@@ -1242,7 +1350,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.action.arm-take",
@@ -1258,7 +1368,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_EDITOR_ONLY,  // console_excluded
         NULL,  // output
+        "Sequences",  // console_page
     },
     {
         "dome.action.keep-take",
@@ -1274,7 +1386,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_EDITOR_ONLY,  // console_excluded
         NULL,  // output
+        "Sequences",  // console_page
     },
     {
         "dome.api.get-take-file",
@@ -1290,7 +1404,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_FILE_TRANSFER,  // console_excluded
         NULL,  // output
+        "Sequences",  // console_page
     },
     {
         "dome.action.restore-take-file",
@@ -1306,7 +1422,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_FILE_TRANSFER,  // console_excluded
         NULL,  // output
+        "Sequences",  // console_page
     },
     {
         "sound.action.play-track",
@@ -1322,7 +1440,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.play-track-scream",
@@ -1338,7 +1458,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.play-track-faint",
@@ -1354,7 +1476,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.play-track-leia",
@@ -1370,7 +1494,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.play-track-cantina-short",
@@ -1386,7 +1512,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.play-track-cantina-long",
@@ -1402,7 +1530,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.play-track-sw-theme",
@@ -1418,7 +1548,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.play-track-imperial-march",
@@ -1434,7 +1566,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.play-track-startup",
@@ -1450,7 +1584,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.play-track-disco",
@@ -1466,7 +1602,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.play-track-happy",
@@ -1482,7 +1620,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.api.get-catalog",
@@ -1498,7 +1638,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_sound_api_get_catalog,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.api.refresh-catalog",
@@ -1514,7 +1656,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.api.play-banked",
@@ -1530,7 +1674,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.api.get-mood-map",
@@ -1546,7 +1692,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_sound_api_get_mood_map,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.set-mood-map",
@@ -1562,7 +1710,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.set-category-range",
@@ -1578,7 +1728,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.query-status",
@@ -1594,7 +1746,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.track-stop",
@@ -1610,7 +1764,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.quiet",
@@ -1626,7 +1782,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.set-volume",
@@ -1642,7 +1800,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.volume-up",
@@ -1658,7 +1818,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.volume-down",
@@ -1674,7 +1836,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.volume-preset-mid",
@@ -1690,7 +1854,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.volume-preset-max",
@@ -1706,7 +1872,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.volume-preset-min",
@@ -1722,7 +1890,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.dollar-command",
@@ -1738,7 +1908,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.random-on",
@@ -1754,7 +1926,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.random-off",
@@ -1770,7 +1944,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.random-general",
@@ -1786,7 +1962,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.random-chatty",
@@ -1802,7 +1980,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.random-happy",
@@ -1818,7 +1998,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.random-processing",
@@ -1834,7 +2016,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.random-sad",
@@ -1850,7 +2034,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.random-sentimental",
@@ -1866,7 +2052,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.random-humming",
@@ -1882,7 +2070,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.random-scream",
@@ -1898,7 +2088,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.random-surprised",
@@ -1914,7 +2106,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.random-alert",
@@ -1930,7 +2124,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.random-snarky",
@@ -1946,7 +2142,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.random-whistle",
@@ -1962,7 +2160,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.play-next",
@@ -1978,7 +2178,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.action.play-previous",
@@ -1994,7 +2196,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.status.current",
@@ -2010,7 +2214,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_sound_status_current,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.config.volume",
@@ -2026,7 +2232,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.config.random-min",
@@ -2042,7 +2250,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.config.random-max",
@@ -2058,7 +2268,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.config.mood-interval-quiet",
@@ -2074,7 +2286,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         true,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.config.mood-interval-mid",
@@ -2090,7 +2304,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         true,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.config.mood-interval-full",
@@ -2106,7 +2322,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         true,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.config.mood-interval-awake-plus",
@@ -2122,7 +2340,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         true,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.config.startup-track",
@@ -2138,7 +2358,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.config.boot-complete-track",
@@ -2154,7 +2376,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.config.network-down-track",
@@ -2170,7 +2394,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.config.track-assignments",
@@ -2186,7 +2412,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.config.system-track-assignments",
@@ -2202,7 +2430,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.config.category-ranges",
@@ -2218,7 +2448,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "sound.config.mood-category-map",
@@ -2234,7 +2466,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "servo.action.open",
@@ -2250,7 +2484,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "servo.action.close",
@@ -2266,7 +2502,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "servo.action.set-position",
@@ -2282,7 +2520,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "servo.action.nudge",
@@ -2298,7 +2538,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "servo.action.travel",
@@ -2314,7 +2556,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "servo.action.hold",
@@ -2330,7 +2574,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "servo.action.release",
@@ -2346,7 +2592,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "servo.action.centre-all",
@@ -2362,7 +2610,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "servo.config.cadence-floor",
@@ -2378,7 +2628,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "servo.action.stop",
@@ -2394,7 +2646,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "servo.action.toggle-arm1",
@@ -2410,7 +2664,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         "arm1",  // output
+        NULL,  // console_page
     },
     {
         "servo.action.toggle-arm2",
@@ -2426,7 +2682,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         "arm2",  // output
+        NULL,  // console_page
     },
     {
         "servo.action.toggle-aux1",
@@ -2442,7 +2700,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         "aux1",  // output
+        NULL,  // console_page
     },
     {
         "servo.action.toggle-aux2",
@@ -2458,7 +2718,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         "aux2",  // output
+        NULL,  // console_page
     },
     {
         "servo.action.toggle-aux3",
@@ -2474,7 +2736,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         "aux3",  // output
+        NULL,  // console_page
     },
     {
         "servo.action.puppet-part",
@@ -2490,7 +2754,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "servo.status.current",
@@ -2506,7 +2772,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "servo.api.get-outputs",
@@ -2522,7 +2790,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "aux.action.led-color",
@@ -2538,7 +2808,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "aux.action.led-effect",
@@ -2554,7 +2826,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "aux.status.led-state",
@@ -2570,7 +2844,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "aux.config.led-count",
@@ -2586,7 +2862,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.set-mode",
@@ -2602,7 +2880,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.estop",
@@ -2618,7 +2898,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.estop-clear",
@@ -2634,7 +2916,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.enable-web-control",
@@ -2650,7 +2934,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.disable-web-control",
@@ -2666,7 +2952,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.reboot",
@@ -2682,7 +2970,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.reboot-wifi-module",
@@ -2698,7 +2988,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.set-mood",
@@ -2714,7 +3006,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.sleep",
@@ -2730,7 +3024,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.wake",
@@ -2746,7 +3042,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.sleep-toggle",
@@ -2762,7 +3060,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.event.drives-engaged",
@@ -2778,7 +3078,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.event.dome-enabled",
@@ -2794,7 +3096,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.event.boot-complete",
@@ -2810,7 +3114,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.status.sleep-mode",
@@ -2826,7 +3132,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.status.mood",
@@ -2842,7 +3150,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.config.mood",
@@ -2858,7 +3168,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_arm1",
@@ -2874,7 +3186,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         "arm1",  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_arm2",
@@ -2890,7 +3204,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         "arm2",  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_aux1",
@@ -2906,7 +3222,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         "aux1",  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_aux2",
@@ -2922,7 +3240,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         "aux2",  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_aux3",
@@ -2938,7 +3258,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         "aux3",  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_dome_esc",
@@ -2954,7 +3276,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_rc_ch1",
@@ -2970,7 +3294,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_rc_ch2",
@@ -2986,7 +3312,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_rc_ch3",
@@ -3002,7 +3330,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_rc_ch4",
@@ -3018,7 +3348,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_rc_ch5",
@@ -3034,7 +3366,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_rc_ch6",
@@ -3050,7 +3384,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_drive",
@@ -3066,7 +3402,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_audio",
@@ -3082,7 +3420,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.config.enable_protor2link",
@@ -3098,7 +3438,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.config.log-level",
@@ -3114,7 +3456,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.status.health",
@@ -3130,7 +3474,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_system_status_health,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.status.dashboard-health",
@@ -3146,7 +3492,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.status.logs",
@@ -3162,7 +3510,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.status.wifi",
@@ -3178,7 +3528,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_system_status_wifi,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.status.hosted-link",
@@ -3194,7 +3546,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_system_status_hosted_link,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "wifi.config.settings",
@@ -3210,7 +3564,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.status.serial-link",
@@ -3226,7 +3582,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_dome_status_serial_link,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.api.get-identity",
@@ -3242,7 +3600,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_system_api_get_identity,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.api.get-components",
@@ -3258,7 +3618,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.set-identity",
@@ -3274,7 +3636,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.api.get-profiler",
@@ -3290,7 +3654,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.profiler-trace-start",
@@ -3306,7 +3672,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.profiler-trace-stop",
@@ -3322,7 +3690,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.api.get-coredump-status",
@@ -3338,7 +3708,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.api.get-coredump",
@@ -3354,7 +3726,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_FILE_TRANSFER,  // console_excluded
         NULL,  // output
+        "Maintenance",  // console_page
     },
     {
         "system.action.erase-coredump",
@@ -3370,7 +3744,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.api.get-admission-trace",
@@ -3386,7 +3762,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.api.get-validation",
@@ -3402,7 +3780,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_system_api_get_validation,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.action.upload-firmware",
@@ -3418,7 +3798,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_FILE_TRANSFER,  // console_excluded
         NULL,  // output
+        "Firmware",  // console_page
     },
     {
         "system.action.upload-filesystem",
@@ -3434,7 +3816,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_FILE_TRANSFER,  // console_excluded
         NULL,  // output
+        "Firmware",  // console_page
     },
     {
         "system.api.event-stream",
@@ -3450,7 +3834,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "rc.status.snapshot",
@@ -3466,7 +3852,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_rc_status_snapshot,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "rc.action.toggle-debug",
@@ -3482,7 +3870,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "rc.api.get-bindable-actions",
@@ -3498,7 +3888,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "rc.api.get-map",
@@ -3514,7 +3906,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_FILE_TRANSFER,  // console_excluded
         NULL,  // output
+        "RC Control",  // console_page
     },
     {
         "rc.action.set-map",
@@ -3530,7 +3924,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_FILE_TRANSFER,  // console_excluded
         NULL,  // output
+        "RC Control",  // console_page
     },
     {
         "rc.action.test-bindable",
@@ -3546,7 +3942,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "rc.config.mode",
@@ -3562,7 +3960,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.vader",
@@ -3578,7 +3978,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.hello",
@@ -3594,7 +3996,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.nod",
@@ -3610,7 +4014,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.flutter",
@@ -3626,7 +4032,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.bloom",
@@ -3642,7 +4050,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.leia",
@@ -3658,7 +4068,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.alarm",
@@ -3674,7 +4086,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.heart",
@@ -3690,7 +4104,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.reset",
@@ -3706,7 +4122,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.pies",
@@ -3722,7 +4140,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.low",
@@ -3738,7 +4158,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.openall",
@@ -3754,7 +4176,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.cantina",
@@ -3770,7 +4194,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.rockmarch",
@@ -3786,7 +4212,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.scream",
@@ -3802,7 +4230,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "dome.seq.overload",
@@ -3818,7 +4248,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_NONE,  // console_excluded
         NULL,  // output
+        NULL,  // console_page
     },
     {
         "system.console",
@@ -3834,7 +4266,9 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        CONSOLE_EXCLUSION_CONSOLE_ITSELF,  // console_excluded
         NULL,  // output
+        "Dashboard",  // console_page
     },
 };
 
@@ -3903,4 +4337,16 @@ const char* consoleCatalogSequenceFor(const char* operationName) {
         }
     }
     return NULL;
+}
+
+// =============================================================================
+// Why an Operation Is Never on the Console (registry console: excluded:)
+// =============================================================================
+
+static const char* const g_exclusionNames[] = { "file-transfer", "editor-only", "browser-only", "console-itself" };
+
+const char* consoleCatalogExclusionName(uint8_t exclusion) {
+    const size_t count = sizeof(g_exclusionNames) / sizeof(g_exclusionNames[0]);
+    if (exclusion == CONSOLE_EXCLUSION_NONE || exclusion > count) return NULL;
+    return g_exclusionNames[exclusion - 1];
 }
