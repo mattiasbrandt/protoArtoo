@@ -3606,7 +3606,7 @@ void test_drive_move_rejects_an_unknown_argument() {
 
 // Consent depends on RobotState, never on which adapter asked - the serial
 // terminal is "a trusted local source" for the SAME reason the web adapter
-// is: neither is the RC link (docs/console-implementation-specification.md).
+// is: neither is the RC link (docs/console-protocol.md section 5).
 void test_drive_move_consent_is_identical_from_both_adapters() {
     robotState.webControlEnabled = false;
     robotState.sbusSignalLost = true;
