@@ -160,7 +160,8 @@ jobs:
         run: |
           penv="$HOME/.platformio-p4/penv"
           PLATFORMIO_CORE_DIR="$HOME/.platformio-p4" pio pkg install -e firebeetle2
-          "$penv/bin/uv" pip install --python "$penv/bin/python" pioarduino==6.1.19
+          "$penv/bin/uv" pip install --python "$penv/bin/python" \
+            --reinstall-package pioarduino pioarduino==6.1.19
           grep -m1 '^VERSION' "$penv"/lib/python*/site-packages/platformio/__init__.py
 
       - name: 🟢 Set up Node

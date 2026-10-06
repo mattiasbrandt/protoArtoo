@@ -201,7 +201,8 @@ class PenvPreflight(unittest.TestCase):
         proc = self.run_locked()
         self.assertEqual(proc.returncode, pio_lock.EXIT_PENV, proc.stderr)
         self.assertIn("holds PlatformIO Core 6.2.0", proc.stderr)
-        self.assertIn(f"{self.tmp}/penv/bin/python -m pip install platformio==6.1.19", proc.stderr)
+        self.assertIn(f"{self.tmp}/penv/bin/uv pip install --python {self.tmp}/penv/bin/python "
+                      "--reinstall-package pioarduino pioarduino==6.1.19", proc.stderr)
         # Refused before the lock: the next agent's record is not ours.
         self.assertFalse(self.lock.exists() and self.lock.read_text().strip())
 
