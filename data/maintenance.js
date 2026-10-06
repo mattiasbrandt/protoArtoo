@@ -87,7 +87,6 @@
   const diagHeapFree = document.getElementById("diag-heap-free");
   const diagHeapMin = document.getElementById("diag-heap-min");
   const diagHeapLargest = document.getElementById("diag-heap-largest");
-  const diagHeapFreeLight = document.getElementById("diag-heap-free-light");
   const diagHeapLargestLight = document.getElementById("diag-heap-largest-light");
 
   // A health signal reads as a droid LED and the COLOR IS THE READING: the
@@ -142,37 +141,41 @@
       diagUptime.textContent = formatUptime(d.uptimeMs);
     }
 
-    const heapFree = d.heapFree || 0;
-    const hasLargest = d.heapLargestBlock !== undefined && d.heapLargestBlock !== null;
-    const kb = (bytes) => Math.round(bytes / 1024);
+    const kb = (bytes) => `${Math.round(bytes / 1024)} KB`;
+    // A number the frame did not carry reads the Live Reading's Unknown,
+    // never "0 KB".
+    const reading = (value) => {
+      const bytes = Number(value);
+      return value !== undefined && value !== null && Number.isFinite(bytes) && bytes >= 0 ? bytes : null;
+    };
+    const heapFree = reading(d.heapFree);
+    const heapMin = reading(d.heapMin);
+    const heapLargest = reading(d.heapLargestBlock);
 
-    // Judged in bytes by the health grid's one judge and table
-    // (data/health_signals.js heapState, HEAP_FLOORS), so a reading on a floor
-    // reads the same here as on the Dashboard. "na" is the firmware that
-    // reports no largest block at all - never asked, so grey.
-    const heapState = window.PAHealthSignals.heapState;
-    const heapFreeState = heapState("free", heapFree);
-    const heapLargestState = hasLargest ? heapState("largest", d.heapLargestBlock) : "na";
-
+    // Free and the lowest since the last restart are readings, not states:
+    // neither separates a healthy droid from a failing one, so they carry no
+    // light and no word, as Uptime carries none (#355 grilling Q2, Q2b; the
+    // evidence is at HEAP_FLOORS, data/health_signals.js).
     if (diagHeapFree) {
-      const word = heapFreeState === "fail" ? "Critical" : heapFreeState === "warn" ? "Watch" : "Good";
-      diagHeapFree.textContent = `${kb(heapFree)} KB ${word}`;
-      setLight(diagHeapFreeLight, heapFreeState);
+      diagHeapFree.textContent = heapFree === null ? window.PALiveReading.UNKNOWN : kb(heapFree);
     }
-    // The lowest since the last restart is history, not a state: after any
-    // page load it stays low until a reboot with nothing failing, so it carries
-    // no light and no word, as Uptime carries none (#355 grilling Q2).
     if (diagHeapMin) {
-      diagHeapMin.textContent = `${kb(d.heapMin || 0)} KB`;
+      diagHeapMin.textContent = heapMin === null ? window.PALiveReading.UNKNOWN : kb(heapMin);
     }
+    // The largest block is judged by the health grid's one judge and table
+    // (data/health_signals.js largestBlockState, HEAP_FLOORS), in bytes, so a
+    // reading on a floor reads the same here as on the Dashboard. Firmware
+    // that reports no largest block was never asked, so grey.
     if (diagHeapLargest) {
-      if (!hasLargest) {
+      if (heapLargest === null) {
         diagHeapLargest.textContent = window.PALiveReading.UNKNOWN;
+        setLight(diagHeapLargestLight, "off");
       } else {
-        const word = heapLargestState === "fail" ? "Fragmented" : heapLargestState === "warn" ? "Watch" : "Good";
-        diagHeapLargest.textContent = `${kb(d.heapLargestBlock)} KB ${word}`;
+        const state = window.PAHealthSignals.largestBlockState(heapLargest);
+        const word = state === "fail" ? "Fragmented" : state === "warn" ? "Watch" : "Good";
+        diagHeapLargest.textContent = `${kb(heapLargest)} ${word}`;
+        setLight(diagHeapLargestLight, state);
       }
-      setLight(diagHeapLargestLight, heapLargestState === "na" ? "off" : heapLargestState);
     }
     // When the droid sent it, not when it was painted: a lost link repaints
     // the same frame, and "Updated" must not move with it.
