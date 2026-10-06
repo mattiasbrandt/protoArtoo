@@ -684,6 +684,22 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
   its label alongside. State chips stay verb-free text labels; the **Surface
   Anatomy** (`GLOSSARY.md`) is the standard for the look.
 
+## Docs Level
+
+Operator decision 2026-10-06 (#475): docs do not carry detail that goes stale or
+wrong with a minor UI change.
+
+- **Leave out:** exact button labels and copy strings, click-by-click paths,
+  which section a control sits in, screen layouts, per-page script counts,
+  line numbers into source, and counts that move with every slice.
+- **Keep:** what a feature does, concepts, safety behaviour, hardware and wiring
+  facts, Console commands and their words, and protocol and API contracts. The
+  API reference (`docs/api.md`) stays exact: it is a contract, not UI.
+- Name a page by its nav name at most. When a stale UI detail turns up, cut it
+  rather than patch it; a thin doc that stays true beats a full one that drifts.
+- Public docs name a product's state **Supported**, **Tested** or **Roadmap**
+  (operator decision 2026-10-06, #475; `GLOSSARY.md` "Confirmed on a Droid").
+
 ## Change Hygiene
 
 - Write proper, quality code — not quick fixes. If the right solution is larger, do it right.
