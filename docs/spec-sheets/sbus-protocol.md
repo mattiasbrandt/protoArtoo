@@ -1,27 +1,9 @@
 # SBUS Protocol
 
-## 0. Authority Contract
-
-This document is an implementation authority for SBUS frame parsing and validation behavior.
-
-Authority order for agent decisions:
-
-1. Vendor or standards references listed in Sources.
-2. This document.
-3. Secondary community references.
-
-If references conflict:
-
-- Prefer vendor/standards references.
-- If still unresolved, mark value as `UNKNOWN` and stop implementation changes that depend on it.
-- Request new evidence instead of trial-and-error tuning.
-
-Agent requirements when using this document:
-
-- MUST treat sections labeled protocol as normative.
-- MUST label heuristics as heuristics in code comments and notes.
-- MUST NOT invent byte layouts, bit assignments, or timing constants not present here.
-- MUST NOT silently switch between inverted and non-inverted assumptions.
+SBUS is Futaba's serial receiver bus: one signal wire carries sixteen
+proportional channels, two digital channels and the receiver's link-status
+flags, in a fixed 25-byte frame. This sheet collects the framing, packing and
+timing from the public decoder references listed in Section 10.
 
 ## 1. Overview
 
@@ -42,11 +24,6 @@ For Futaba-style SBUS, serial configuration is:
   - 1 even parity bit
   - 2 stop bits
 - Logic level convention: inverted relative to normal UART TTL representation.
-
-Normative parser baseline for this spec:
-
-- Assume `100000`, `8E2`, inverted signaling.
-- Treat alternative electrical variants as profile overrides, not default behavior.
 
 Parity detail:
 
@@ -71,12 +48,12 @@ An SBUS message is 25 bytes:
 - Byte 23: flag byte
 - Byte 24: footer (`0x00` in baseline references)
 
-Normative frame acceptance rules:
+Footer variants:
 
-- MUST require exact frame length of 25 bytes.
-- MUST require header byte `0x0F`.
-- MUST decode flags from byte 23 using Section 5 bit assignments.
-- MUST treat footer handling as profile-configurable when hardware evidence shows accepted variants.
+- SBUS2-style receivers send a footer whose low nibble is `0x04` instead of
+  `0x00`. `bolderflight/sbus` v8.x accepts `0x00` or any footer with low nibble
+  `0x04`. A measured example is the HotRC SBUS-A: see
+  [`hotrc-ds650-radio.md`](hotrc-ds650-radio.md), "The footer is not 0x00".
 
 Timing commonly documented in public references:
 
@@ -158,11 +135,9 @@ Bit-label caveat:
   - mappings to control units like `1000..2000`
 - Other implementations also use common reference points near `172 / 992 / 1811`.
 
-Normative interpretation:
-
-- Parser output domain is `0..2047`.
-- Any mapping to PWM/us/percent is an application-layer transform and out of scope for frame decode.
-- Agents MUST NOT hardcode control mapping ranges into parser logic unless explicitly requested.
+The frame itself carries only the raw `0..2047` value. Any mapping to PWM, us or
+percent is an application-layer transform, and the transmitter's end-point,
+trim and reverse settings decide which part of the raw range a channel uses.
 
 ## 7. Synchronization Notes from Public Decoder References
 
@@ -186,32 +161,22 @@ Timing health heuristics found in public implementation notes:
 
 These are implementation heuristics, not extra wire-format fields.
 
-Normative sync safety rules:
-
-- MUST fail closed: reject malformed frame candidates and resynchronize.
-- MUST NOT accept a frame on payload plausibility alone without structural checks.
-- MUST make frame validity checks deterministic and repeatable.
-
 ## 8. Representation Caveat
 
 Some references display captured data in inverted/bit-order views where the start byte can appear as `0xF0`. In logical decoded SBUS framing, header is treated as `0x0F`.
 
-## 9. Agent Lookup Quick Reference
+## 9. Quick Reference
 
-Use this table first when implementing or reviewing parser behavior.
-
-- Field: Frame length. Required value: 25 bytes.
-- Field: Header. Required value: `0x0F`.
-- Field: Channel payload bytes. Required value: bytes 1-22 packed 16 x 11-bit LSB-first.
-- Field: Flags byte index. Required value: 23.
-- Field: Footer byte index. Required value: 24.
-- Field: CH17 bit. Required value: flags bit 0.
-- Field: CH18 bit. Required value: flags bit 1.
-- Field: lost_frame bit. Required value: flags bit 2.
-- Field: failsafe bit. Required value: flags bit 3.
-- Field: Raw channel range. Required value: `0..2047`.
-
-If a required value above cannot be proven for the target hardware profile, status is `UNKNOWN` and implementation work should stop pending clarification.
+- Field: Frame length. Value: 25 bytes.
+- Field: Header. Value: `0x0F`.
+- Field: Channel payload bytes. Value: bytes 1-22 packed 16 x 11-bit LSB-first.
+- Field: Flags byte index. Value: 23.
+- Field: Footer byte index. Value: 24.
+- Field: CH17 bit. Value: flags bit 0.
+- Field: CH18 bit. Value: flags bit 1.
+- Field: lost_frame bit. Value: flags bit 2.
+- Field: failsafe bit. Value: flags bit 3.
+- Field: Raw channel range. Value: `0..2047`.
 
 ## 10. Sources
 
@@ -221,3 +186,4 @@ If a required value above cannot be proven for the target hardware profile, stat
 - Ordinoscope SBUS notes and decoder example: https://www.ordinoscope.net/index.php/Electronique/Protocoles/SBUS
 - mbed notebook (Futaba S-BUS controlled by mbed): https://os.mbed.com/users/Digixx/notebook/futaba-s-bus-controlled-by-mbed/
 - mbed SBUS library source (FutabaSBUS.cpp): https://os.mbed.com/users/Digixx/code/SBUS-Library_16channel/file/83e415034198/FutabaSBUS/FutabaSBUS.cpp/
+- bolderflight/sbus (footer validation, v8.x): https://github.com/bolderflight/sbus

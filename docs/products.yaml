@@ -282,8 +282,112 @@ products:
       hazards:
         - "CCS holds the throttle with your thumb off the stick. The droid keeps going and cannot tell."
         - "The handset will not switch off while its receiver has power. Power the droid down first."
-      source: "5.1, 5.3"
-    notes: ""
+      source: "4.1, 4.3"
+    notes: |
+      The DS-650 is the handset every RC bench result in this project was taken
+      against, paired with separately bought HotRC SBUS-A receivers (the bundled
+      F-06A is PWM and runs through standard_pwm). The firmware has no HotRC
+      calibration table and should not get one: the handset is set up to fit the
+      generic 172 / 992 / 1811 binding.
+
+      T19 bench record (2026-04-15 to 2026-04-18). Its sources -
+      tasks/phase5-tasks.md T19, tasks/lessons.md, tasks/phase5-verification-closeout.md
+      and tasks/rc_diagnostics_contract.md - are local and untracked, so this digest
+      is the only tracked home of the record:
+      - The SBUS-A clocks about 115 kbaud (8.68 us per bit). With the RMT decoder's
+        fixed period of 10 ticks, 98.4 % of frames failed to extract (commit
+        a26aaae2). The adaptive period estimate gives 9 ticks.
+      - Gap-tick lesson: the last RMT symbol carries the ~300-tick inter-frame gap.
+        Including it in the period sum rounds 9 up to 10 and fails ~98 % of frames,
+        so the estimate excludes the last symbol. Native decode tests pin it.
+      - Before per-byte start-bit re-sync (+/-1 bit), no frame with CH1 above 1472
+        decoded across a full stick sweep.
+      - The footer is 0x04. The original 0x00-only check rejected 100 % of frames;
+        the decoder now accepts 0x00 or low nibble 0x04, as bolderflight/sbus does.
+      - invertBits=true and the 200 kbaud attempt produced 75 % of the
+        header-mismatch noise and no decodes; d9f4a50e removed both. The five-step
+        decode fix is commits 6f5a9d42, d9f4a50e, c4ccfdbd, b86a1bf5 and a26aaae2.
+      - Parity gating was tried and rejected: at 115 kbaud the bit-run expansion
+        shifts parity positions and every frame fails. It is on the no-backtracking
+        list; do not re-attempt it without new telemetry. parityFailCount and its
+        log plumbing exist, but nothing increments the counter.
+      - Factory-stroke sweep: CH1 ~255 / rest ~1472 / ~1919, CH2 ~97 to ~2028 with
+        rest ~1889-2028. Against the 172 / 992 / 1811 binding CH1 read +59 % (a dome
+        spinning at 59 % with the stick untouched) and CH2's rest clamped to 1811 and
+        read full throttle on every frame. We met the throttle trap this way on
+        2026-04-15.
+      - After reducing EPA/stroke on the handset: neutral 992, sweep 192 -> 992 ->
+        1792 on both axes, mapped +/-0.977. Final binding profile: min 172, center
+        992, max 1811 on all channels. The HOTRC-specific values (neutral 1472 /
+        1889) are outdated.
+      - CH1 display-to-raw, measured on the dome receiver before recalibration:
+        SBUS_raw = -2.176 x (display_us - 1500) + 1472. There is no SBUS-raw to
+        microsecond conversion in firmware; rawUs is a reporting field only, so any
+        microsecond figure for this handset came from its screen.
+      - Held value: on a brief RF interruption the receiver sends ch1=389
+        (normalized -89 %) with lost_frame=true, failsafe=false (d9f4a50e). Without
+        the lost_frame guard that value reached the dome task directly.
+      - Dual SBUS: one DS-650 ran both sbus1 and sbus2 linked at once with identical
+        channel values, against the community's "one receiver at a time" (sheet Open
+        Item 1).
+      - Failsafe gate passed 2026-04-18: the watchdog fires on unplug, drive stops,
+        control restores cleanly on re-plug.
+      - full-hardware-verified: the DS-650 + SBUS-A dome-control path with a real
+        dome motor under stick control, and RC mapping persistence across reboot.
+      - Still deferred: RC to drive on real motors. The T19 closeout says "Drive motor
+        output remains deferred (drive not connected in this session)"; everything
+        above the drive arbiter is proven with the dome, not the feet.
+      - The SBUS frame period was never measured. ageMs stayed under 20-30 ms with
+        the link healthy.
+
+      sbusTimeoutMs: during T19 the timeout was raised to 5000 ms as a diagnostic
+      while the decoder was unreliable, and the saved controller backup
+      tasks/artoo-backup-20260903-203848-config.json still carries
+      sbusTimeoutMs: 5000. That is a diagnostic value, not a setting to ship; a
+      controller found with it goes back to 200 ms. Whether the 200 ms default should
+      scale with the frame period is a safety decision still open.
+
+      Findings against the code the code does not say on its face:
+      - rcTriggerDefaultReverse() keys on SBUS channels 3-6, not on the product, so a
+        non-HotRC SBUS handset whose CH3-CH6 idle low reads inverted out of the box.
+        The named product wins the default, deliberately; an operator re-binding a
+        channel can override reverse.
+      - rcMapChannels() hardcodes useCh2 = false. The live task path routes per
+        source and does not use it, but the pure mapper's dual-receiver story is
+        unfinished.
+      - A three-position (3 gears) button buys nothing beyond a different threshold:
+        rcAnalogToSwitchState() splits LOW / MID / HIGH, but trigger dispatch is
+        boolean. Whether a three-state binding target is worth adding is a design
+        question.
+      - The handset's own failsafe positions are secondary here: they arrive with
+        failsafe=true and the firmware discards the channel values, so SBUS_HW cuts
+        the drive path, not the receiver's numbers. Set the handset to neutral anyway.
+      - CCS is not detectable; the estop and the drive speed cap are the only bounds
+        on a cruising handset.
+      - tasks/rc_diagnostics_contract.md is stale: it gives the ARM1/ARM2 boot
+        defaults as deadband 50 and reverse 0 where the code uses deadband 0 and
+        reverse 1, and it still names src/tasks/sbus_input.cpp (now rc_input.cpp).
+        It does not change behaviour.
+
+      Control grammar: one DS-650 addresses six channels, two of them taken by
+      driving, against far more RC-bindable actions than that; this is why dual SBUS
+      exists. The RC page shows six channels per SBUS source, not sixteen. Our
+      grammar is configuration (a binding table edited from a web page) rather than
+      a hardcoded button map, because with six inputs, which six must be answerable
+      without a rebuild. Neither ShadowMD nor Padawan360 reads a receiver, so their
+      chorded grammars do not port.
+
+      Against those projects: both ramp and default to a non-zero deadzone; we do
+      neither (deadband defaults to 0), which with this handset's sudden throttle is
+      a real difference in feel.
+
+      Open decisions (operator, not research):
+      - Should the mapper refuse a binding whose center is at an endpoint? That is
+        the throttle trap expressed as configuration; the simulator guards against
+        it, we do not.
+      - Is the throttle's lack of a curve worth compensating in firmware? Scope for
+        the drive work, not this product.
+      - Should sbusTimeoutMs scale with the frame period (above)?
 
   - value: 22
     id: rc_radio
