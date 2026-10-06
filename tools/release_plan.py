@@ -361,7 +361,7 @@ def patch_notes(repo, tag, commits, previous_tag, full_tag, repo_url=None):
         lines.append(
             "**There are no files to download here, and that is on purpose.** A patch "
             "release ships the source tag and these notes, so a one-line fix does not "
-            f"wait on four firmware builds. The newest flashable images are on {where}, "
+            f"wait on every board's firmware build. The newest flashable images are on {where}, "
             "and they were built before this fix -- to run it now, build from this tag; "
             "otherwise it reaches you with the next feature release."
         )
@@ -369,7 +369,7 @@ def patch_notes(repo, tag, commits, previous_tag, full_tag, repo_url=None):
         lines.append(
             "**There are no files to download here, and that is on purpose.** A patch "
             "release ships the source tag and these notes, so a one-line fix does not "
-            "wait on four firmware builds. Build from this tag to run it now; otherwise "
+            "wait on every board's firmware build. Build from this tag to run it now; otherwise "
             "it reaches you with the next feature release."
         )
     return "\n".join(lines) + "\n"
