@@ -39,7 +39,7 @@ It also explicitly targets builders whose droids are primarily static display pi
 | Family | Supported today | Direction |
 |---|---|---|
 | Body Controller | Artoo PCB (artoo.uk, a generic ESP32 clone; confirmed on a droid); FireBeetle 2 (ESP32-P4) | a new board is a Board Variant: pin map, build environment and size budget, not a fork |
-| Radio Controller | HotRC DS-650 (confirmed on a droid); RC Radio; RC Receiver - PWM, SBUS and ELRS; or none fitted, driving from the web | roadmap: Xbox Controller |
+| Radio Controller | HotRC DS-650 (confirmed on a droid); RC Radio; RC Receiver - PWM, SBUS and ELRS (ELRS selectable, not read yet, #369); or none fitted, driving from the web | roadmap: Xbox Controller |
 | Body servo controller | Body controller board GPIO (confirmed on a droid); PCA9685 | roadmap: Pololu Maestro |
 | Foot Drive | Hoverboard, hacked firmware | roadmap: Sabertooth 2x25, Flipsky Mini V6 VESC; protocol-contract compatibility over vendor lock |
 | Dome Rotation | ISDT ESC70 RC ESC (confirmed on a droid) | roadmap: SyRen 10 |
@@ -51,7 +51,7 @@ It also explicitly targets builders whose droids are primarily static display pi
 
 | Support dimension | Intent |
 |---|---|
-| RC modes | standard_pwm, single_sbus, dual_sbus, elrs; or no Radio Controller fitted |
+| RC modes | standard_pwm, single_sbus, dual_sbus; elrs is selectable and not read yet (#369); or no Radio Controller fitted |
 | Usage focus | static-display-first operation with convenient tablet/computer control for regular use, and RC driving for roaming |
 | Hardware model | each subsystem a Component Family of peer products, picked at runtime on Configuration; one firmware image per board carries every supported driver |
 | Configuration model | runtime configuration for normal workflows, persisted state, validated API boundaries |
@@ -107,7 +107,7 @@ Positioning:
 The following baseline captures what protoR2 is expected to provide in normal operation.
 
 Control and safety baseline:
-- RC control supports standard_pwm, single_sbus, dual_sbus and elrs modes, and a droid with no Radio Controller fitted drives from the web
+- RC control supports standard_pwm, single_sbus and dual_sbus modes (elrs is selectable and not read yet, #369), and a droid with no Radio Controller fitted drives from the web
 - drive output paths enforce safety limits before transmit
 - estop behavior remains latching and explicit-clear
 - failsafe status is visible in diagnostics and API surfaces
@@ -136,7 +136,7 @@ This table captures stack posture and typical hardware assumptions.
 
 | Stack | Typical controller hardware profile | Typical control input profile | Typical drive/audio profile | Source and distribution posture |
 |---|---|---|---|---|
-| protoR2 | ESP32 Body Controller (Artoo PCB, FireBeetle 2 ESP32-P4) | RC receivers (PWM/SBUS/ELRS) plus browser UI, or browser only | pluggable Foot Drive (hoverboard today; artoo-esp32's default, forced by its wiring, ADR 0029) plus body-owned audio modules (DY-SV5W, CHIRP Audio Trigger, MP3 Trigger) | fully open repository target (firmware + web + docs) with no binary-only paywall goal |
+| protoR2 | ESP32 Body Controller (Artoo PCB, FireBeetle 2 ESP32-P4) | RC receivers (PWM/SBUS) plus browser UI, or browser only | pluggable Foot Drive (hoverboard today; artoo-esp32's default, forced by its wiring, ADR 0029) plus body-owned audio modules (DY-SV5W, CHIRP Audio Trigger, MP3 Trigger) | fully open repository target (firmware + web + docs) with no binary-only paywall goal |
 | Padawan360 | Arduino 2560 or Mega ADK (UNO possible) plus USB Host Shield | Xbox 360 wireless controller plus Xbox wireless USB receiver | Sabertooth (feet), SyRen (dome), MP3 Trigger audio; I2C-centric peripheral control model | public code and long-running community documentation are available |
 | ShadowMD | Arduino 2560/Mega ADK plus USB Host Shield as a master coordinating MarcDuino/Benduino nodes | 1-2 PS3 Move Navigation controllers via CSR-class BT dongle | Sabertooth 2x32A (feet), SyRen 10 (dome), MP3 Trigger-class audio, XBee integration, sequence/animation routing to dependent nodes | ◐ public implementations/docs exist, but maintenance and exact architecture vary by fork/build |
 | ShadowRC (Printed-Droid fork lineage) | Arduino Mega 2560/Mega ADK as main controller with MarcDuino integration path | RC radio/receiver model (Turnigy Evolution plus iBus-class receivers documented) | Sabertooth (feet), SyRen 10 (dome), direct MP3 Trigger plus parallel MarcDuino sound/panel control | ◐ public documentation and source publication are documented for this fork lineage; name now overlaps with unrelated closed-source software |

@@ -44,7 +44,7 @@ it from any web browser, with no app and no rebuild. Every source line is open.
 
 - **The Dashboard** draws your droid's body and dome. Click a door to open it,
   press a chip to run a show, pin the ones you use.
-- **RC Radio or none.** PWM, SBUS and ELRS receivers, with every channel
+- **RC Radio or none.** PWM and SBUS receivers, with every channel
   mapped and calibrated in the browser. No radio fitted? Drive from the web.
 - **Moods** set how alive the droid is when nobody touches it: Quiet,
   Mid-Awake, Full-Awake and Awake+.
@@ -88,7 +88,7 @@ droid)*: the project has seen it work on a real droid.
 | Family | Supported | On the roadmap |
 |---|---|---|
 | Body Controller | [Artoo PCB](https://www.artoo.uk/) *(run on a droid)*; [FireBeetle 2 (ESP32-P4)](docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md) | |
-| Radio Controller | [HotRC DS-650](docs/spec-sheets/hotrc-ds650-radio.md) *(run on a droid)*; RC Radio; [RC Receiver - PWM](docs/spec-sheets/rc-receiver-spec.md); [RC Receiver - SBUS](docs/spec-sheets/sbus-protocol.md); [RC Receiver - ELRS](docs/spec-sheets/elrs-crsf-radio.md) | [Xbox Controller](docs/spec-sheets/xbox-controller-input.md) |
+| Radio Controller | [HotRC DS-650](docs/spec-sheets/hotrc-ds650-radio.md) *(run on a droid)*; RC Radio; [RC Receiver - PWM](docs/spec-sheets/rc-receiver-spec.md); [RC Receiver - SBUS](docs/spec-sheets/sbus-protocol.md); [RC Receiver - ELRS](docs/spec-sheets/elrs-crsf-radio.md) (selectable, not read yet) | [Xbox Controller](docs/spec-sheets/xbox-controller-input.md) |
 | Body servo controller | [Body controller board GPIO](docs/spec-sheets/servo-communication.md) *(run on a droid)*; [PCA9685](docs/spec-sheets/pca9685-servo-expander.md) | [Pololu Maestro](docs/spec-sheets/pololu-maestro-servo-controller.md) |
 | Dome Rotation | [ISDT ESC70 (RC ESC)](docs/spec-sheets/isdt-esc70-dome-esc.md) *(run on a droid)* | [SyRen 10](docs/spec-sheets/sabertooth-syren-packet-serial.md) |
 | Dome Controller | [AstroPixels Plus](docs/spec-sheets/astropixels-dome-controller.md) *(run on a droid)* | [Teeces](docs/spec-sheets/teeces-dome-lighting.md) |
