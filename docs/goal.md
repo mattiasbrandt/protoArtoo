@@ -39,7 +39,7 @@ It also explicitly targets builders whose droids are primarily static display pi
 | Family | Supported | Direction |
 |---|---|---|
 | Body Controller | Artoo PCB (artoo.uk, a generic ESP32 clone; Tested); FireBeetle 2 (ESP32-P4) | a new board is a Board Variant: pin map, build environment and size budget, not a fork |
-| Radio Controller | HotRC DS-650 (Tested); RC Radio; RC Receiver - PWM, SBUS and ELRS (ELRS selectable, not read yet, #369); or none fitted, driving from the web | Roadmap: Xbox Controller |
+| Radio Controller | HotRC DS-650 (Tested); RC Radio; RC Receiver - PWM and SBUS; or none fitted, driving from the web | Roadmap: RC Receiver - ELRS, Xbox Controller |
 | Body servo controller | Body controller board GPIO (Tested); PCA9685 | Roadmap: Pololu Maestro |
 | Foot Drive | Hoverboard, hacked firmware | Roadmap: Sabertooth 2x25, Flipsky Mini V6 VESC; protocol-contract compatibility over vendor lock |
 | Dome Rotation | ISDT ESC70 RC ESC (Tested) | Roadmap: SyRen 10 |
@@ -51,7 +51,7 @@ It also explicitly targets builders whose droids are primarily static display pi
 
 | Support dimension | Intent |
 |---|---|
-| RC modes | standard_pwm, single_sbus, dual_sbus; elrs is selectable and not read yet (#369); or no Radio Controller fitted |
+| RC modes | standard_pwm, single_sbus, dual_sbus; or no Radio Controller fitted. ELRS is Roadmap |
 | Usage focus | static-display-first operation with convenient tablet/computer control for regular use, and RC driving for roaming |
 | Hardware model | each subsystem a Component Family of peer products, picked at runtime on Configuration; one firmware image per board works with every Supported product |
 | Configuration model | runtime configuration for normal workflows, persisted state, validated API boundaries |
@@ -107,7 +107,7 @@ Positioning:
 The following baseline captures what protoR2 is expected to provide in normal operation.
 
 Control and safety baseline:
-- RC control supports standard_pwm, single_sbus and dual_sbus modes (elrs is selectable and not read yet, #369), and a droid with no Radio Controller fitted drives from the web
+- RC control supports standard_pwm, single_sbus and dual_sbus modes (ELRS is Roadmap), and a droid with no Radio Controller fitted drives from the web
 - drive output paths enforce safety limits before transmit
 - estop behavior remains latching and explicit-clear
 - failsafe status is visible in diagnostics and API surfaces

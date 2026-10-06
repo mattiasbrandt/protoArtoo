@@ -65,7 +65,7 @@ From `include/component_registry.inc`. **Supported**: in the project and works.
 | Family | Supported | Roadmap | How the Body Controller reaches it |
 |---|---|---|---|
 | Body Controller | Artoo PCB (Tested); FireBeetle 2 (ESP32-P4) | | the running image is the answer |
-| Radio Controller | HotRC DS-650 (Tested); RC Radio; RC Receiver - PWM; RC Receiver - SBUS; RC Receiver - ELRS (selectable, not read yet) | Xbox Controller | PWM or SBUS receiver input; none fitted is also an answer |
+| Radio Controller | HotRC DS-650 (Tested); RC Radio; RC Receiver - PWM; RC Receiver - SBUS | RC Receiver - ELRS; Xbox Controller | PWM or SBUS receiver input; none fitted is also an answer |
 | Body servo controller | Body controller board GPIO (Tested); PCA9685 | Pololu Maestro | LEDC PWM on the board's Outputs; I2C |
 | Dome Rotation | ISDT ESC70 (RC ESC) (Tested) | SyRen 10 | LEDC PWM |
 | Dome Controller | AstroPixels Plus (Tested) | Teeces | protoR2link |
@@ -134,8 +134,9 @@ The RC mode follows the Radio Controller and receiver picked on Configuration:
 | standard_pwm | CH1-CH6 as PWM inputs (GPIO 15,13,2,4,12,27 / GPIO 28-33) | Conventional multi-channel PWM receivers |
 | single_sbus | SBUS on CH1 (GPIO15 / GPIO28) | One receiver for core control |
 | dual_sbus | SBUS1 on CH1, SBUS2 on CH2 (GPIO15 + GPIO13 / GPIO28 + GPIO29) | Split drive/dome control workflows |
-| elrs | none read yet (#369) | Selectable; the droid behaves as with no receiver |
 | not fitted | none | A droid driven from the web alone |
+
+An ELRS receiver is Roadmap.
 
 Default behavioral intent:
 - SBUS1 carries drive-centric controls.

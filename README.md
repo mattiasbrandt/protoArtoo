@@ -92,7 +92,7 @@ run on a real droid.
 |  | RC Radio | ✓ |  |  |
 |  | [RC Receiver - PWM](docs/spec-sheets/rc-receiver-spec.md) | ✓ |  |  |
 |  | [RC Receiver - SBUS](docs/spec-sheets/sbus-protocol.md) | ✓ |  |  |
-|  | [RC Receiver - ELRS](docs/spec-sheets/elrs-crsf-radio.md) <sub>(selectable, not read yet)</sub> | ✓ |  |  |
+|  | [RC Receiver - ELRS](docs/spec-sheets/elrs-crsf-radio.md) |  |  | ✓ |
 |  | [Xbox Controller](docs/spec-sheets/xbox-controller-input.md) |  |  | ✓ |
 | <img src="docs/images/families/body-servo-controller.svg" width="20" height="20" alt=""> **Body servo controller** | [Body controller board GPIO](docs/spec-sheets/servo-communication.md) | ✓ | ✓ |  |
 |  | [PCA9685](docs/spec-sheets/pca9685-servo-expander.md) | ✓ |  |  |
