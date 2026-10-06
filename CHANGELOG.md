@@ -489,6 +489,15 @@ the patch releases, whose notes live on their own GitHub Release.
   A card without it is built, not yet run on a droid. It never changes the
   order of the cards or what you can pick.
 
+- **STOP is on every screen.** The red STOP sits in the top bar wherever you
+  are, not only on the Dashboard and Foot Drive, and it stays there as you
+  move between screens. The sleep screen no longer covers it.
+- **Find a screen by what you are doing.** The menu is in four groups: Drive,
+  Perform, Configure and Maintain. Sound and Dome are in both Drive and
+  Perform, because you reach for them either way. The Dashboard sits on its
+  own before the groups, and the group holding the screen you are on is
+  marked.
+
 ### Changed
 - **One firmware per board, whatever sound module you fitted.** A release now
   carries one firmware and one filesystem image for each board, not one per
@@ -582,6 +591,26 @@ the patch releases, whose notes live on their own GitHub Release.
   than it gave it back. It now keeps a limit on what it holds at once, so pages
   load a little slower, about a tenth of a second each.
 
+- **Changing screen keeps the droid in view.** Moving between screens no
+  longer reloads the page. The top bar, the Status Plate and the live updates
+  stay up while the screen beneath them changes, so the droid's status never
+  goes blank. Each screen keeps its own address, so a link or a bookmark still
+  opens it.
+- **A screen you have left stops asking the droid.** Leave a screen and it
+  stops asking the droid for updates, so the controller spends its time on the
+  screen you are reading. Leaving changes nothing on the droid. Come back and
+  the screen shows what it had, without loading it again.
+- **A no looks like what it is.** Something you can switch on here, something
+  that needs other firmware or another board, something still being checked,
+  and something that will not happen are each drawn their own way. None of
+  them is amber any more, so amber is left for something on the droid that
+  needs you.
+- **Your servo settings come through the update.** The first time the droid
+  starts on this firmware, every output keeps the ends, the part and the
+  servo you set before. An output that only had open and close gets its centre
+  halfway between. If the controller cannot save a setting, it says the save
+  failed and keeps the old one, instead of losing your calibration.
+
 ### Fixed
 - **The WiFi module comes back without a restart (ESP32-P4).** The droid
   now notices a WiFi module that stops answering, restarts the module and
@@ -599,6 +628,13 @@ the patch releases, whose notes live on their own GitHub Release.
 - **Sequences no longer says "Nothing learned yet" while it is still loading.**
   Right after the droid starts, the page shows the waiting dots until your
   sequences arrive.
+- **A mode change that was not saved says so.** Pressing Driving or Stationary
+  on the Dashboard used to say Mode updated even when the droid could not save
+  it. It now says the update failed. The droid is in the new mode, but goes
+  back to the old one after a restart.
+- **`#st` and `#sm` are refused instead of answering ok.** They never changed
+  the mode, but the droid answered ok anyway. Now it refuses them and names
+  the request that does change the mode.
 
 ## [1.3.0] - 2026-09-11
 
