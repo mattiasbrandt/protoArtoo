@@ -149,8 +149,12 @@ void driveTask(void* pvParameters) {
         // frame goes out at all is decided here and never down there.
         // Unconditional on purpose, every tick, failsafe or not: the backend
         // must be fed inside the deadline it declares, or its far end acts on
-        // its own -- the hoverboard fitted today holds its last command and
-        // the wheels DRIFT. Even a zero-speed frame goes out every cycle
+        // its own -- the hoverboard fitted today holds its last command, for
+        // 800 ms then a coast (EFeru) or 500 ms then a soft brake
+        // (RoboDurden), and the wheels DRIFT on through that window. A
+        // packet-serial controller stops only if its serial timeout was armed
+        // since power-up, and otherwise holds its last command for as long as
+        // it is starved. Even a zero-speed frame goes out every cycle
         // (DriveArbiter has already zeroed speed/steer when failsafe is active).
         driveBackendSend(driveSerial, speed, steer);
 

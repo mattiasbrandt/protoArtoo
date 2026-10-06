@@ -194,13 +194,16 @@ Drive safety is layered and converges on zero output behavior (`docs/failsafe.md
 2. SBUS software watchdog timeout (200 ms default).
 3. Web-drive command timeout (500 ms default).
 4. ESP32 task watchdog reset (3 s); the next boot latches estop.
-5. The Foot Drive's own timeout: the hoverboard firmware stops its motors after about
-   500 ms without a valid frame, which is why the Body Controller never goes silent and
-   keeps sending zero frames.
+5. Latching Estop.
 
 Layers 1 and 2 apply only while a Radio Controller is fitted; with none, the web-drive
-timeout and the estop hold the feet. Layer 5 is the hoverboard's; another Foot Drive
-brings its own.
+timeout and the estop hold the feet.
+
+Beyond the five Failsafe Layers, a Foot Drive may carry a timeout of its own, and it is
+not one of them. Starved, a hoverboard keeps acting on its last frame: EFeru firmware
+for 800 ms, then it coasts; RoboDurden firmware for 500 ms, then it soft-brakes. That is
+up to 0.8 s of motion nobody commanded, which is why the Body Controller never goes
+silent and keeps sending zero frames. Another Foot Drive brings its own rule.
 
 Estop topology:
 - Estop is latching and requires explicit clear action.

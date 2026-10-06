@@ -121,11 +121,11 @@ assembled or as a partial kit; the kit difference is connectors only. USB VID
 | `maestro-linux` package, release 2026-08-10 | **Downloaded and unpacked.** `UscCmd`'s option list, the Mono prerequisite, the udev rule, the XML settings format, and errata strings the guide lacks |
 | `pololu/maestro-arduino`, commit `bcbd0c06` | **Read in full.** Three defects; confirmation that compact mode never emits `0xAA` |
 | `pololu/pololu-usb-sdk` -- `Maestro/protocol.h`, `Maestro/Sequencer/Sequence.cs` | The command/request/parameter split that proves configuration is USB-only, and the script generator's `return` trap |
-| `Padawan360_mega_maestro_DYSV5W` (read locally) | The hobby's real grammar: eight buttons, eight `restartScript(n)`, SoftwareSerial at 9600 |
-| `r2d2-astromech-simulator/arduino/MaestroPCA` (read locally) | A reimplementation of the protocol and kinematics with an ESP32 backend: independent confirmation of the motion units, and a documented parser exploit |
-| `r2d2-astromech-simulator/src/js/maestro/lint.js` (read locally) | The speed-80 / acceleration-10 throw time used as a check in Section 7.2 |
+| `Imperiallandm/Padawan360_mega_maestro_DYSV5W` | The hobby's real grammar: eight buttons, eight `restartScript(n)`, SoftwareSerial at 9600 |
+| `mikeeddington-lgtm/r2d2-astromech-simulator` `arduino/MaestroPCA` | A reimplementation of the protocol and kinematics with an ESP32 backend: independent confirmation of the motion units, and a documented parser exploit |
+| `mikeeddington-lgtm/r2d2-astromech-simulator` `src/js/maestro/lint.js` | The speed-80 / acceleration-10 throw time used as a check in Section 7.2 |
 | `BitMarkus/ESP32_Hexapod` | The only working ESP32-plus-Maestro integration found, and a field confirmation of Section 4.3 |
-| `ShadowMD`, `CHIRP`, `AstroPixelsPlus`, MarcDuino (read locally and cloned) | **Negative results**, each grep validated against a known positive (Section 12.2) |
+| `RealNobser/ShadowMD`, `joymonkey/CHIRP`, `reeltwo/AstroPixelsPlus`, MarcDuino (cloned and read) | **Negative results**, each grep validated against a known positive (Section 12.2) |
 
 ## 4. Electrical
 
@@ -856,8 +856,8 @@ embedded serial host does not use.
 
 ### 12.1 Padawan360: the whole grammar is eight `restartScript` calls
 
-`~/Documents/GitHub/Padawan360_mega_maestro_DYSV5W/` (Steve Baudains /
-Imperiallandm fork). Both sketches are identical in their Maestro handling:
+[`Imperiallandm/Padawan360_mega_maestro_DYSV5W`](https://github.com/Imperiallandm/Padawan360_mega_maestro_DYSV5W)
+(Steve Baudains / Imperiallandm fork). Both sketches are identical in their Maestro handling:
 
 ```cpp
 SoftwareSerial maestroSerial(10, 11);        //tx pin 11
@@ -947,7 +947,7 @@ computed, not authored.**
 
 ### 12.4 `MaestroPCA`: the protocol answered from the other side
 
-`~/Documents/GitHub/r2d2-astromech-simulator/arduino/MaestroPCA/` (Mike Eddington)
+[`mikeeddington-lgtm/r2d2-astromech-simulator`, `arduino/MaestroPCA/`](https://github.com/mikeeddington-lgtm/r2d2-astromech-simulator/tree/main/arduino/MaestroPCA) (Mike Eddington)
 reimplements Maestro *behaviour* on a PCA9685 or ESP32 LEDC, and its `MaestroLink`
 **answers the Maestro's own serial protocol**, so a Padawan host needs no changes.
 It is the most useful artefact here because it is a *reader* of the protocol and
@@ -1066,12 +1066,12 @@ The fix for an exported script: replace the generator's trailing `return` with
 - `pololu/maestro-arduino` -- https://github.com/pololu/maestro-arduino (`PololuMaestro.h`, `PololuMaestro.cpp`, commit `bcbd0c06`, 2020-12-17)
 - `pololu/pololu-usb-sdk` -- `Maestro/protocol.h` (the `uscCommand` / `uscRequest` / `uscParameter` enumerations) and `Maestro/Sequencer/Sequence.cs` (the script generator)
 
-**Astromech projects, read locally**
+**Astromech projects**
 
-- `~/Documents/GitHub/Padawan360_mega_maestro_DYSV5W/` -- Steve Baudains / Imperiallandm
-- `~/Documents/GitHub/r2d2-astromech-simulator/arduino/MaestroPCA/` -- Mike Eddington
-- `~/Documents/GitHub/r2d2-astromech-simulator/src/js/maestro/lint.js` -- the Maestro lint notes (speed 80 / acceleration 10 throw time)
-- `~/Documents/GitHub/ShadowMD/`, `~/Documents/GitHub/AstroPixelsPlus/`, `~/Documents/GitHub/CHIRP/` -- negative results
+- `Imperiallandm/Padawan360_mega_maestro_DYSV5W` -- https://github.com/Imperiallandm/Padawan360_mega_maestro_DYSV5W -- Steve Baudains / Imperiallandm
+- `mikeeddington-lgtm/r2d2-astromech-simulator` `arduino/MaestroPCA/` -- https://github.com/mikeeddington-lgtm/r2d2-astromech-simulator -- Mike Eddington
+- `mikeeddington-lgtm/r2d2-astromech-simulator` `src/js/maestro/lint.js` -- the Maestro lint notes (speed 80 / acceleration 10 throw time)
+- `RealNobser/ShadowMD` (https://github.com/RealNobser/ShadowMD), `reeltwo/AstroPixelsPlus` (https://github.com/reeltwo/AstroPixelsPlus), `joymonkey/CHIRP` (https://github.com/joymonkey/CHIRP) -- negative results
 
 **Third party**
 
