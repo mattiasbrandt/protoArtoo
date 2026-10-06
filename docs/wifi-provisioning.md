@@ -12,8 +12,8 @@ rationale and [api.md](api.md) for the underlying `/api/wifi` and
 
 Public release binaries are published one per **board** (`artoo_esp32`,
 `firebeetle2` — `<env>-firmware.bin` + `<env>-filesystem.bin`). The sound
-module is not a build choice either: pick it on Configuration (Hardware
-components -> Sound); it takes effect at the next start. There is no separate
+module is not a build choice either: pick it on Configuration; it takes
+effect at the next start. There is no separate
 "AP build" or "client build" —
 every release binary boots the same way and lets you choose WiFi Client Mode
 or Standalone AP Mode after flashing, from the browser.
@@ -41,17 +41,17 @@ up (see "Changing AP settings" below).
 
 ## Choosing an ongoing WiFi mode
 
-The WiFi page (`/wifi.html`) is the one place to view and change network
-settings — Configuration's guided Setup only links to it.
+The WiFi page is the one place to view and change network settings.
 
 ### WiFi Client Mode (recommended)
 
-The controller joins your existing WiFi network. From the **WiFi Client
-Settings** section, enter your network name and password, then save.
+The controller joins your existing WiFi network. On the WiFi page, choose
+WiFi Client Mode, enter your network name and password, then save.
 
-Once applied, reach the controller at `http://artoo.local` (or your droid's
-custom mDNS name, if you've set one on the Configuration page) or its IP address from
-your router.
+Once applied, reach the controller by its name: `http://artoo.local` on an
+artoo-esp32, `http://firebeetle2.local` on a FireBeetle 2, or your droid's own
+name if you set one on Configuration. Its IP address from your router works
+too.
 
 **WPA3-only WiFi networks are not supported; use WPA2 or WPA2/WPA3 mixed
 mode.** Mixed mode is the common home-router default and accepts the
@@ -60,8 +60,8 @@ controller. On a WPA3-only network the join simply never completes.
 ### Standalone AP Mode
 
 The controller hosts its own network instead of joining yours — useful in
-the field, away from any home network. From the **Standalone AP Settings**
-section, set a network name and (optionally) a password, then save.
+the field, away from any home network. On the WiFi page, choose Standalone AP
+Mode, set a network name and a password, then save.
 
 Once applied, join that network and open `http://192.168.4.1`.
 
@@ -70,22 +70,23 @@ Once applied, join that network and open `http://192.168.4.1`.
 Saving WiFi settings never changes your active connection immediately — the
 controller would drop the browser session mid-edit. Instead:
 
-1. **Save** — the WiFi page validates and persists the new settings to the
-   controller (`POST /api/wifi`). The page shows them as "pending" alongside
-   your currently active settings.
-2. **Apply** — use the **Reboot to Apply** button (or power-cycle the
-   controller). The new mode takes effect on that reboot.
-3. **Reconnect** — the WiFi page tells you exactly where to go next: the AP
-   address and network name for Standalone AP Mode, or `artoo.local` / the
-   observed IP for WiFi Client Mode.
+1. **Save** - the WiFi page validates and persists the new settings to the
+   controller (`POST /api/wifi`), next to the settings still active.
+2. **Apply** - reboot the controller from the WiFi page, or power-cycle it.
+   The new mode takes effect on that reboot.
+3. **Reconnect** - at the AP address and network name for Standalone AP Mode,
+   or the droid's `.local` name or IP for WiFi Client Mode. The WiFi page
+   says which.
 
 ### Changing AP settings
 
-The AP SSID and password are editable the same way — save new values in the
-**Standalone AP Settings** section, then apply. This is how you replace the
-shared Default AP Credential with your own password. Leaving the AP password
-field blank keeps the network open (no password); 8–63 characters sets a
-WPA2 password (ESP32 SoftAP requirement).
+The AP SSID and password are editable the same way: save new values, then
+apply. This is how you replace the shared
+Default AP Credential with your own password, 8 to 63 characters (a WPA2
+password, the ESP32 SoftAP requirement). A blank password field keeps the saved
+password, and every controller starts with the Default AP Credential saved, so
+the WiFi page never opens the network. An open AP is only reachable by sending
+an empty `apPassword` to `POST /api/wifi` ([api.md](api.md)).
 
 ### Password fields are write-only
 

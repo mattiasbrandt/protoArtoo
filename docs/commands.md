@@ -2,7 +2,7 @@
 
 Implementation-focused command reference for supported command inputs.
 
-This file is not a protocol spec and not a dome-link contract. It documents
+This file is not a protocol spec and not a protoR2link contract. It documents
 what command inputs are accepted by the current firmware and where to verify
 full behavior.
 
@@ -103,12 +103,11 @@ Recognized line families from dome ingress:
   - `#APSL`, `#APWU`, `#PAHB`
 
 A line the dome sends is never forwarded back to it, including a full-droid
-`:SE` line: the dome already has it. A `:` or `#` line the parser does not run
-is counted as an unknown dome RX line.
+`:SE` line: the dome already has it.
 
-Intentionally not body-handled by parser path (ignored/deferred by topology):
-
-- `@...`, `*...`, `%...`, `&...`, `!...`
+The body does not run `@...`, `*...`, `%...`, `&...` or `!...` lines; those
+belong to the dome. Every line the body does not run, these included, is
+counted as an unknown dome RX line.
 
 ## RC Bindable Command Actions
 

@@ -79,9 +79,11 @@ A line the body owns is refused, and not forwarded, when:
   on the Console. A full-droid sequence is the exception, as it is for the RC
   tokens: its body routine waits for the estop to clear, and its sound and the
   dome's half still go.
-- **nothing drives the Output it names** since the droid started. The answer
-  names why, the same sentence `POST /api/servo` gives: restart the droid, mark
-  the Output on Wiring, or the Output carries a light.
+- **the Output it names cannot move** since the droid started. The answer
+  says why, the same way `POST /api/servo` does: the Output needs a restart to
+  come up, it has no Part on it (put one on it on Wiring), it carries a light
+  rather than a servo, or it is on a PCA9685 that is not the chosen body servo
+  controller or is not answering.
 - **the droid is asleep.** On the manual command and the Console, every
   prefixed line is held until you wake it (`423 sleeping`).
 - **the line is not one the body can run**, such as an `:MV` with no value,
@@ -124,7 +126,7 @@ cut short would be a different command.
     fitted sound module has a bank 8, and is refused with that reason where it
     has not. The CHIRP Audio Trigger reads banks 1 to 6
     (`docs/spec-sheets/chirp-audio-trigger-sound.md`) and the other modules
-    have no banks, so on every module protoArtoo drives today `$8nn` is
+    have no banks, so on every module protoArtoo supports today `$8nn` is
     refused. It never plays raw track 8nn. `$800` names sound 00, which no bank
     has, and is refused everywhere.
   - Every other number, `$nnn`, is a raw track number: `$001`, `$126`.
@@ -133,11 +135,10 @@ cut short would be a different command.
 
 ## `:OP01` means an arm here
 
-ADR 0055, verbatim: *"`:OP01` means body arm 1 here
-(`include/marcduino_helpers.h:33-34`) and dome panel 1 to the fork. That
+`:OP01` means body arm 1 here and dome panel 1 to the dome (ADR 0055). That
 matches what ShadowMD itself means on `Serial3`, so the body's reading is the
-faithful one - but a builder pasting a *dome* binding into the body surface
-still gets an arm. The published boundary is what tells them so."*
+faithful one, but a builder pasting a *dome* binding into the body still gets
+an arm.
 
 The same holds for `:OP02`-`:OP05`, `:OP00`/`:OP99` and the matching `:CL`,
 `:OF` and `:MV` numbers. To reach dome panel 1 itself, send `:OP01` through

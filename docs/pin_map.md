@@ -75,9 +75,9 @@ S3 — Dome Control
 | PCB Header | Function | TX GPIO | RX GPIO | Baud | Protocol |
 |------------|----------|---------|---------|------|----------|
 | S0 | USB debug | 1 | 3 | 115200 | Standard UART0 |
-| S1 | Hoverboard drive | 16 | 17 | 115200 | Gen2.x 8-byte frames |
-| S2 | Audio module | 26 | 35 | 9600 | DY-SV5W binary (TX primary, RX for status queries) |
-| S3 | Dome link (slip ring) | 33 | 34 | 9600 | Marcduino ASCII, bidirectional |
+| S1 | Foot Drive (hoverboard) | 16 | 17 | 115200 | Gen2.x 8-byte frames |
+| S2 | Sound module | 26 | 35 | 9600 | The fitted module's serial protocol: DY-SV5W, MP3 Trigger or CHIRP (TX primary, RX for status queries) |
+| S3 | protoR2link (slip ring) | 33 | 34 | 9600 | Marcduino ASCII, bidirectional |
 
 **Notes:**
 - GPIO 34 (S3 RX) and GPIO 35 (S2 RX) are ESP32 input-only pins — they cannot be used as outputs.
@@ -86,9 +86,9 @@ S3 — Dome Control
   so SBUS costs no UART controller on this board.
 - **S2 and S3 are not simultaneous.** This chip has three HP UART controllers
   (`SOC_UART_HP_NUM = 3`): UART0 is S0, UART1 is S1, and the single remaining controller
-  serves both S3 (dome link, TX and RX) and S2's RX. Ownership alternates via
-  `domeUartAcquire()` / `domeUartRelease()`, so audio status queries only run while the dome
-  link is on its WiFi fallback; S2's TX is a software bit-bang for the same reason. Both are
+  serves both S3 (protoR2link, TX and RX) and S2's RX. Ownership alternates via
+  `domeUartAcquire()` / `domeUartRelease()`, so audio status queries only run while
+  protoR2link is on its WiFi fallback; S2's TX is a software bit-bang for the same reason. Both are
   consequences of the controller count, not of the PCB wiring — see
   `PA_CAP_DEDICATED_AUDIO_UART` in `include/config.h`, which is 0 here and 1 on FireBeetle 2.
 
@@ -116,9 +116,9 @@ The DFR1237 IO expansion shield routes all UART lanes to dedicated headers. Stan
 
 | Silkscreen | Function | TX GPIO | RX GPIO | Baud | Protocol | Notes |
 |--------|----------|---------|---------|------|----------|-------|
-| main field rows `20` + `21` | Drive (UART1) | 20 | 21 | 115200 | Gen2.x 8-byte hoverboard frames | Default for this board; ADR 0029 amendment (2026-08-26) |
-| main field rows `22` + `23` | Dome link (UART2) | 22 | 23 | 9600 | Marcduino ASCII | Owned by DomeLinkTask for the whole boot; not shared |
-| main field rows `34` + `36` | Audio module (UART3) | 34 | 36 | 9600 | DY-SV5W binary | Hardware UART both directions |
+| main field rows `20` + `21` | Foot Drive (UART1) | 20 | 21 | 115200 | Gen2.x 8-byte hoverboard frames | Default for this board; ADR 0029 amendment (2026-08-26) |
+| main field rows `22` + `23` | protoR2link (UART2) | 22 | 23 | 9600 | Marcduino ASCII | Owned by DomeLinkTask for the whole boot; not shared |
+| main field rows `34` + `36` | Sound module (UART3) | 34 | 36 | 9600 | The fitted module's serial protocol: DY-SV5W, MP3 Trigger or CHIRP | Hardware UART both directions |
 
 **No audio/dome UART sharing on this board (#254).** The ESP32-P4 has five HP UARTs, so each
 consumer gets its own controller: `UART0` console, `UART1` drive, `UART2` dome, `UART3` audio,
@@ -130,10 +130,10 @@ Consequences specific to this board, all of which are the artoo-esp32 behaviour 
 
 - Audio TX on GPIO34 is a real hardware UART, not the `softUartTxByte()` bit-bang.
 - The `domeUartAcquire()` / `domeUartRelease()` ownership handoff does not run. `DomeUartOwner`
-  still exists and `/api/status` still reports `dome_link.uart_owner`, but on this board the dome
-  link simply holds it from boot.
-- Audio status queries work while the dome link is on serial -- the posture epic #182 calls primary
-  for this board. On artoo-esp32 that combination starves audio RX by design.
+  still exists and `/api/status` still reports `dome_link.uart_owner`, but on this board
+  protoR2link simply holds it from boot.
+- Audio status queries work while protoR2link is on its UART slip ring -- the posture epic #182
+  calls primary for this board. On artoo-esp32 that combination starves audio RX by design.
 
 Binding a UART to GPIO34/36 costs no pin: `UART0`-`UART4` route TX/RX to any GPIO through the GPIO
 matrix (spec sheet "UART Lane Plan"), so audio uses the two pins it already had.
@@ -149,31 +149,35 @@ matrix (spec sheet "UART Lane Plan"), so audio uses the two pins it already had.
 | 5    | ARM2          | Utility arm servo #2 — Bottom / Right | LEDC PWM  |
 | 13   | CH2           | SBUS receiver #2 (dome spin)          | RMT       |
 | 15   | CH1           | SBUS receiver #1 (drive)              | RMT       |
-| 16   | S1 TX         | Hoverboard TX                         | UART1     |
-| 17   | S1 RX         | Hoverboard RX                         | UART1     |
+| 16   | S1 TX         | Foot Drive TX                         | UART1     |
+| 17   | S1 RX         | Foot Drive RX                         | UART1     |
 | 18   | ARM4          | Servo output; can carry the LED strip | LEDC PWM  |
 | 19   | ARM3          | Servo output; can carry the LED strip | LEDC PWM  |
 | 21   | I2C (D)       | I2C SDA                               | I2C       |
 | 22   | I2C (C)       | I2C SCL                               | I2C       |
 | 23   | ARM1          | Utility arm servo #1 — Top / Left     | LEDC PWM  |
 | 25   | DOME          | Dome rotation ESC                     | LEDC PWM  |
-| 26   | S2 TX         | Audio module TX                       | Soft UART |
+| 26   | S2 TX         | Sound module TX                       | Soft UART |
 | 32   | ARM5          | Servo output; can carry the LED strip | LEDC PWM  |
-| 33   | S3 TX         | Dome serial TX                        | UART2     |
-| 34   | S3 RX         | Dome serial RX (input-only)           | UART2     |
-| 35   | S2 RX         | Audio module RX (input-only)          | UART2     |
+| 33   | S3 TX         | protoR2link TX                        | UART2     |
+| 34   | S3 RX         | protoR2link RX (input-only)           | UART2     |
+| 35   | S2 RX         | Sound module RX (input-only)          | UART2     |
 
 ### RC Receiver Wiring Modes
 
-The six CH headers (CH1–CH6) support three mutually exclusive wiring modes:
+The six CH headers (CH1-CH6) support three mutually exclusive wiring modes:
 
 | Mode           | Wiring                              | Channels available |
 |----------------|-------------------------------------|--------------------|
 | Standard PWM   | CH1–CH6 → GPIO 15,13,2,4,12,27     | 6 (one per pin)    |
-| Single SBUS    | SBUS → CH1 (GPIO 15)               | Up to 16           |
+| Single SBUS    | SBUS -> CH1 (GPIO 15), or CH2 (GPIO 13) | Up to 16      |
 | Dual SBUS      | SBUS1 → CH1 (GPIO 15), SBUS2 → CH2 (GPIO 13) | Up to 32  |
 
-Configure the active mode from the RC Control page (`rc_mode` setting).
+The receiver mode is the `rcInputMode` Setting (`rc.inputMode`). Besides the three wiring
+modes it takes `not_fitted` (no Radio Controller: a web-only droid) and `elrs`. ELRS is on the
+Roadmap: the mode can be stored, and the controller reads no input from it yet. Single SBUS
+reads CH1 by default; the `sbusRecvCh2` Setting moves it to CH2. A mode change takes effect
+after a restart.
 
 In SBUS modes, CH3–CH6 (GPIO 2, 4, 12, 27) are unused:
 
@@ -186,25 +190,33 @@ In SBUS modes, CH3–CH6 (GPIO 2, 4, 12, 27) are unused:
 
 ### RC Binding Defaults
 
-The RC mapping profile is persisted in NVS and configurable from the RC Control page.
+The RC mapping profile is persisted in NVS and configurable on the RC Control page.
 Factory defaults:
 
 | Runtime profile | Action | Default binding | Notes |
 |-----------------|--------|-----------------|-------|
 | `standard_pwm` | Drive speed | `pwm:1:1000:1500:2000:0:0` | CH1 |
 | `standard_pwm` | Drive steer | `pwm:2:1000:1500:2000:0:0` | CH2 |
-| `standard_pwm` | Drive limit | `none:0:1000:1500:2000:0:0` | Unbound by default |
 | `standard_pwm` | Dome speed | `pwm:3:1000:1500:2000:0:0` | CH3 |
 | `standard_pwm` | First output's toggle (`arm1_toggle`) | `pwm:4:1000:1500:2000:0:0` | CH4 |
 | `standard_pwm` | Second output's toggle (`arm2_toggle`) | `pwm:5:1000:1500:2000:0:0` | CH5 |
 | `standard_pwm` | Sound trigger | `pwm:6:1000:1500:2000:0:0` | CH6 |
 | `single_sbus` / `dual_sbus` | Drive speed | `sbus1:1:172:992:1811:0:0` | SBUS #1 CH1 |
 | `single_sbus` / `dual_sbus` | Drive steer | `sbus1:2:172:992:1811:0:0` | SBUS #1 CH2 |
-| `single_sbus` / `dual_sbus` | Drive limit | `sbus1:8:172:992:1811:0:0` | SBUS #1 CH8 |
 | `single_sbus` / `dual_sbus` | Dome speed | `sbus2:1:172:992:1811:0:0` | Active in `dual_sbus`; inactive in `single_sbus` until remapped |
 | `single_sbus` / `dual_sbus` | First output's toggle (`arm1_toggle`) | `sbus2:2:172:992:1811:0:0` | Active in `dual_sbus`; can be remapped |
 | `single_sbus` / `dual_sbus` | Second output's toggle (`arm2_toggle`) | `sbus2:3:172:992:1811:0:0` | Active in `dual_sbus`; can be remapped |
 | `single_sbus` / `dual_sbus` | Sound trigger | `none:0:1000:1500:2000:0:0` | Unbound by default |
+
+Two trigger bindings sit beside the profiles and are not tied to one of them:
+
+| Trigger | Action | Default binding |
+|---------|--------|-----------------|
+| `rc_arm1` | First output's toggle | SBUS #1 CH4 |
+| `rc_arm2` | Second output's toggle | SBUS #1 CH5 |
+
+There is no RC speed-limit binding: drive output is capped by the `speedLimitMax` Setting and
+the speed presets.
 
 SBUS channels `17` and `18` are also valid persisted binding channels for digital
 trigger actions. When a binding targets `17` or `18`, `/api/rc` reports it in the
@@ -328,8 +340,8 @@ The other connectors, with their silkscreen labels:
 |------|-------------------------------------------|----------|------------|---------------|-------|
 | 28 | `SPI` block, pin `28/SCK` | SBUS receiver #1 (drive) | RMT | SCK | P2 unimpeachable; SPI header |
 | 29 | `SPI` block, pin `29/MO` | SBUS receiver #2 (dome) | RMT | MOSI | P2 unimpeachable; SPI header |
-| 30 | `SPI` block, pin `30/MI` | RC channel #3 | RMT | MISO | P2 unimpeachable; SPI header |
-| 31 | main field, row `31` | RC channel #4 | RMT | SS | P2 unimpeachable; spec sheet "best clean pin in <=36 range" |
+| 30 | `SPI` block, pin `30/MI` | RC channel #3 | GPIO | MISO | P2 unimpeachable; SPI header |
+| 31 | main field, row `31` | RC channel #4 | GPIO | SS | P2 unimpeachable; spec sheet "best clean pin in <=36 range" |
 | 32 | main field, row `32` | RC channel #5 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
 | 33 | main field, row `33` | RC channel #6 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
 | 34 | main field, row `34` | Audio module TX (UART3) | UART3 | — | P3 strapping (JTAG source); hardware UART via GPIO matrix (#254) |
@@ -345,10 +357,10 @@ The other connectors, with their silkscreen labels:
 
 | GPIO | Silkscreen (what is printed on the board) | Function | Peripheral | Arduino alias | Notes |
 |------|-------------------------------------------|----------|------------|---------------|-------|
-| 20 | main field, row `20` | Drive TX (UART1) | UART1 | A0 | Spec sheet "Recommended allocation"; ADC1_CHANNEL4 |
-| 21 | main field, row `21` | Drive RX (UART1) | UART1 | A1 | Spec sheet "Recommended allocation"; ADC1_CHANNEL5 |
-| 22 | main field, row `22` | Dome TX (UART2) | UART2 | A2 | Spec sheet "Recommended allocation"; ADC1_CHANNEL6 |
-| 23 | main field, row `23` | Dome RX (UART2) | UART2 | A3 | Spec sheet "Recommended allocation"; ADC1_CHANNEL7; dome link owns it from boot |
+| 20 | main field, row `20` | Foot Drive TX (UART1) | UART1 | A0 | Spec sheet "Recommended allocation"; ADC1_CHANNEL4 |
+| 21 | main field, row `21` | Foot Drive RX (UART1) | UART1 | A1 | Spec sheet "Recommended allocation"; ADC1_CHANNEL5 |
+| 22 | main field, row `22` | protoR2link TX (UART2) | UART2 | A2 | Spec sheet "Recommended allocation"; ADC1_CHANNEL6 |
+| 23 | main field, row `23` | protoR2link RX (UART2) | UART2 | A3 | Spec sheet "Recommended allocation"; ADC1_CHANNEL7; protoR2link owns it from boot |
 | 7 | `I2C` block, pin `7/D` | I2C SDA | I2C | T2 | Board default SDA; P2 unimpeachable |
 | 8 | `I2C` block, pin `8/C` | I2C SCL | I2C | T3 | Board default SCL; P2 unimpeachable |
 
@@ -360,7 +372,7 @@ The FireBeetle 2's DFR1237 shield exposes exactly **24 GPIO pins** from the ESP3
 
 | Category | GPIOs | Count | Notes |
 |----------|-------|-------|-------|
-| **Exposed on DFR1237 headers** | 4, 5, 7, 8, 20–23, 28–38, 48–52 | 24 total | See spec sheet "Exposed GPIO table" (lines 906–929) |
+| **Exposed on DFR1237 headers** | 4, 5, 7, 8, 20-23, 28-38, 48-52 | 24 total | See spec sheet "Exposed GPIO table" |
 | **Claimed by production inventory** | 20 pins (see table above) | 20 | All firmware design outputs + board bring-up lanes |
 | **Remaining after production** | 35, 37, 38, 52 | 4 GPIOs | Breakdown below |
 | **GPIO 37** | Console/download UART TX | Reserved | Always keep as UART0 TX for flashing and serial debug |
@@ -373,7 +385,7 @@ The FireBeetle 2's DFR1237 shield exposes exactly **24 GPIO pins** from the ESP3
 - GPIO 52 is dual-purpose: the sole free GPIO and a reserved ADC fallback for battery sense (should I2C battery charger decisions reverse).
 - No headroom for additional peripherals without removing an existing lane.
 
-See spec sheet "Exposed GPIO table" (lines 906–929) and the chip errata for P3 strapping pins (GPIO 4, 5, 34, 35, 36) if GPIO matrix bindings are needed.
+See spec sheet "Exposed GPIO table" and the chip errata for P3 strapping pins (GPIO 4, 5, 34, 35, 36) if GPIO matrix bindings are needed.
 
 ---
 
@@ -438,7 +450,7 @@ protoArtoo convention:
 |--------------------|---------|-------------------------|------------------|------|
 | Arm 1 (Top)        | 23      | Left utility arm        | ARM1             | — |
 | Arm 2 (Bottom)     | 5       | Right utility arm       | ARM2             | — |
-| Dome Servo         | 25      | Dome rotation control   | DOME (ESC)       | Drives an ESC (ISDT ESC70), not a servo |
+| Dome Servo         | 25      | Dome rotation control   | DOME (ESC)       | Carries an ESC (ISDT ESC70), not a servo |
 | Motor Controller   | 16, 17  | Hoverboard serial       | S1 Hoverboard    | artoo.uk manual places these on S3; PCB silkscreen is correct: S1 = Hoverboard |
 
 If you have a different PCB revision and find different assignments, please open an issue.

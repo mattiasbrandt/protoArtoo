@@ -146,7 +146,7 @@ different shapes, and some do not publish it at all.
 
 | Mode | Image | Notable differences |
 | --- | --- | --- |
-| `artoo` | the `artoo_esp32` product image | No `bootCount`; `resetReason` is a name, not a number; no recovery-ladder block (the board has no companion radio); no reset route |
+| `artoo` | the `artoo_esp32` product image | No `bootCount`; `resetReason` is a name, not a number; no recovery-ladder block (the board has no WiFi Module); no reset route |
 | `shipping` | the `firebeetle2` product image | Same as `artoo`, plus the recovery ladder nested under `hostedLink`; still no reset route (#243) |
 | `bench` | `bench/p4_hosted_bench.cpp`, built by `firebeetle2_hosted_bench` | Built to be measured: `bootCount`, the raw reset-reason enum, flat ladder counters, a reset route, and an `/api/events` stream whose payload is a monotonic frame counter |
 
@@ -219,15 +219,15 @@ stopped looking is not a measurement.
 
 ### `c6_reset_recovery` — does the link come back on its own?
 
-Only available on the `bench` Image Mode. It schedules a reset of the companion
+Only available on the `bench` Image Mode. It schedules a reset of the
 WiFi Module through `POST /api/c6/reset`, then watches for the host to
 re-establish the link **without rebooting itself**, and for a fresh SSE stream to
 start advancing again.
 
 On both product images it is **Unavailable**: there is no reset route to
 provoke. It refuses before sending anything, and says which of the two reasons
-applies — the FireBeetle 2 has a companion radio and simply has no route yet
-(#243); artoo-esp32 has no companion radio at all, so there is nothing to reset.
+applies: the FireBeetle 2 has a WiFi Module and simply has no route yet
+(#243); artoo-esp32 has no WiFi Module at all, so there is nothing to reset.
 
 An unavailable driver is never a pass. It collapses the Run Verdict to
 `INVALID`, because a coverage gap is not evidence of health. If you want an exit
@@ -263,7 +263,7 @@ around this tool, switch on the exit code and read the JSON — not the sentence
 > apart: a real run always writes a JSON object to `stdout`, and a usage error
 > writes nothing there. Check for the report, not just the code.
 
-The artefact carries `schemaVersion` (currently `4`). It is bumped when a key is
+The artefact carries `schemaVersion`. It is bumped when a key is
 removed or changes meaning; adding a key does not bump it. A consumer that
 ignores unknown keys is unaffected by an addition — check the version before
 relying on anything else.

@@ -18,7 +18,7 @@ Sequence contribution   (gate below)          + registry + test + credits
 
 1. **Entry point.** A request arrives via the **Sequence request** template ("can we get
    project X's sequence?") or the **Sequence contribution** template ("here is one I built"
-   -- the editor's *Share to project* button targets this). Both are in
+   -- the editor can share a sequence straight to it). Both are in
    `.github/ISSUE_TEMPLATE/`.
 2. **Evaluate** against the gate below. If it does not pass, say so honestly on the issue
    (per the project's issue-rejection convention) and close it.
@@ -30,8 +30,9 @@ Accept a sequence only if all hold; otherwise decline with a written reason.
 
 1. **Novel.** Its operator-recognizable behavior is not already produced by a Factory
    sequence or an alias. Check the name *and the behavior* against the catalog and alias
-   tables in `src/tasks/sequence_catalog.cpp` -- the 16 Factory sequences plus ~26 `:SE`/`$`
-   aliases already cover the classic R2 repertoire, so most "ports" are duplicates.
+   tables in `src/tasks/sequence_catalog.cpp` -- the Factory sequences (including the body
+   routines `DM:SE30`..`DM:SE36`) and the `:SE`/`$` aliases already cover the classic R2
+   repertoire, so most "ports" are duplicates.
 2. **Plays to protoArtoo's strength.** Prefer choreographies that pair a body sound with
    synced dome and body motion. A panel-only wave with no sound is almost always already an
    alias.
@@ -57,7 +58,8 @@ the motion as a panel intent command:
 | Full open | `:OP<target>` |
 | Full close | `:CL<target>` |
 | Flutter / wiggle / nervous | `:OF<target>` (ends closed; needs no close after it) |
-| Partial open / easing | approximate with `:OP`/`:CL` pairs or `:OF`; note deviation |
+| Partial open | `:OP<target>` / `:CL<target>` with `howFar` 1..100 (sent as `:MV`; PP3 and PP5 go all the way) |
+| Easing | not on the step; the dome keeps its own speed. Note the deviation |
 
 **Allowed targets** (see `sequence-authoring.md` for the full reference):
 
@@ -71,16 +73,17 @@ Timing remains **absolute** from sequence start (`tMs`). Compose simultaneous mo
 issuing steps at the same `t`; staggered motion by incrementing `t`.
 
 **Partial-open motion:** `:SM` pulse ranges are not available in body-authored sequences.
-If the source depends on exact partial-open percentages or calibrated easing, either:
-- approximate with `:OF` flutter, or with an `:OP` + short hold + `:CL` pair, or
-- defer migration until dome-side calibrated commands exist for that motion.
+A part-way open is a dome `:OP`/`:CL` step with `howFar` (a fraction of the panel's own
+calibrated travel, sent as `:MV`; see [How far a dome panel goes](sequence-authoring.md#how-far-a-dome-panel-goes)).
+PP3 and PP5 have no part-way move on our dome firmware. Calibrated easing has no
+equivalent: approximate it, or with `:OF` flutter.
 
 Note any fidelity deviation in the catalog comment.
 
 ### 2. Sounds -> named roles / categories
 
 Reference a sound by **role**, not a raw track number, so it follows the operator's
-configured tracks. The authoritative role list is `kNamedSlotLabels` in `src/seq_json.cpp`;
+configured tracks. The authoritative role list is `kSlotLabels` in `src/seq_json.cpp`;
 the category list is `enum AudioPlaybackCategory` in `include/audio_playback_policy.h`.
 
 | `$` command | role | | `audioCat` category |
@@ -93,6 +96,7 @@ the category list is `enum AudioPlaybackCategory` in `include/audio_playback_pol
 | `$M` | imp_march | | |
 | `$W` | sw_theme | | |
 | `$D` | disco | | |
+| `$B` | startup | | |
 
 If the source's signature sound has no matching role, the sequence is not a clean migration
 (gate rule 3).
@@ -107,14 +111,14 @@ effects. Drop anything outside the allowed set.
 - Full open -> `:OP<target>`
 - Full close -> `:CL<target>`
 - Flutter / wiggle -> `:OF<target>` (ends closed)
-- Partial open / easing -> approximate (see step 1); `:SM` is **not allowed**
+- Partial open -> `:OP`/`:CL` with `howFar` (see step 1); `:SM` is **not allowed**
 
 **Non-panel dome effects** -- keep the trigger, not per-frame content:
 
 - Logic / PSI / display: `@0T...`, `@0P...`, `@1M...` (pass through the trigger; the dome
   executes the effect -- never author per-frame LED content over the 9600-baud slip ring)
 - Holos / HPs: `*HP...`, `*ST00` etc.
-- Legacy Marcduino sequence: `:SE##` (2-digit zero-padded; Advanced only; not inside loops)
+- Legacy Marcduino sequence: `:SE##` (2-digit zero-padded; sent as written; not inside a loop)
 
 `:SM` may appear in source code or explanatory comments to document the original project's
 approach. It is never valid migration output.
@@ -139,7 +143,8 @@ static const SeqStep kExampleSteps[] = {
     SEQ_DOME(1200, FX_NONE, ":CL14"),   // close all pies
     SEQ_TERM(1500),
 };
-// catalog row: { "DM:EXAMPLE", kExampleSteps, SEQ_STEPCOUNT(kExampleSteps), <suppressMs>, TOGGLE_NONE, nullptr, 0 }
+// catalog row: { "DM:EXAMPLE", kExampleSteps, SEQ_STEPCOUNT(kExampleSteps), <suppressMs>, TOGGLE_NONE, nullptr, 0,
+//                "<one-line description> (<length> s)." }
 ```
 
 Use a clean, **additive** `DM:` name that collides with no existing Factory or alias name.
@@ -172,22 +177,23 @@ A Migrated Sequence is verified like any Factory Sequence:
 
 | Layer | Proves |
 |---|---|
-| `make check-action-drift` + native engine-timeline test | the table is well-formed and deterministically produces the intended action log (`software-verified`) |
-| Integrated-droid run (existing hardware gate) | it reads right on the real droid -- the only fidelity proof |
+| `make check-action-drift` + native engine-timeline test | the table is well-formed and deterministically produces the intended action log |
+| A run on a real droid | it reads right on the droid -- the only fidelity proof |
 
 State verification honestly; a software test proves self-consistency, not fidelity to the
-source. Hardware fidelity joins the existing v1.0.0 hardware gate.
+source. Until it has run on a droid, say so in the PR: the droid run is recorded as still
+to do, and it does not hold the merge.
 
 ## Per-migration checklist
 
 - [ ] Behavior is novel (not a Factory sequence or alias) and sound-synced
 - [ ] Panel motion mapped to `:OP`/`:CL`/`:OF` panel intent commands; no `:SM`
-- [ ] Partial-open / easing approximated or deferred; deviation noted in catalog comment
+- [ ] Partial open as `howFar`; easing approximated; deviation noted in catalog comment
 - [ ] Sound resolves to an existing named role or `audioCat` category
 - [ ] Non-panel dome effects kept as triggers (`@...`, `*...`); no per-frame LED content
 - [ ] Additive `DM:` name (no Factory/alias collision)
 - [ ] License permits redistribution; provenance in catalog comment + `sequence-credits.md`
 - [ ] `SeqStep[]` table + catalog row with explicit `FX_*` tags; `suppressMs >= STEP_END`
 - [ ] `action-registry.yaml` entry; `make check-action-drift` clean
-- [ ] Native engine-timeline test added; `software-verified`
-- [ ] Hardware fidelity added to the v1.0.0 hardware gate
+- [ ] Native engine-timeline test added and passing
+- [ ] Droid run done, or recorded as still to do

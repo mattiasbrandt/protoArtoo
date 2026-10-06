@@ -70,12 +70,25 @@ at a time. A pie opened with `:OP` stays open unless the branch closes it.
 
 ### Non-panel dome commands
 
-These are allowed in Advanced/raw steps and are not panel intent commands:
+Light steps send the dome's own typed commands, which Protocol Check validates
+field by field:
+
+- `DV:<NAME>` -- Visual Preset; the name must be one the dome knows (`ROCKMARCH`,
+  `VADER`, `ALARM`, `LEIA`, `HEART`, `CANTINA`, `SCREAM`, `OVERLOAD`, `HELLO`,
+  `RESET_VISUALS`); an unknown name is refused
+- `DL:...` -- Logic / PSI Mode; `DT:...` -- Logic Text; `DH:...` -- Holo Effect
+  (grammar in [dome-visual-authoring-contract.md](dome-visual-authoring-contract.md))
+
+Any other dome string is sent as written. These are not panel intent commands:
 
 - `@0T...` / `@0P...` / `@1M...` -- logic / PSI / text display
 - `*HP...` / `*ST00` -- holo / HP commands
 - `:SE##` -- legacy Marcduino sequence trigger (2-digit zero-padded, e.g. `:SE07`);
-  advanced only; not for panel control; rejected inside loops and random steps
+  not for panel control; rejected inside a loop
+
+A raw logic, PSI or holo code saves, but the dome draws it in its default colors, so
+the Rehearsal warns (`raw-light-code`) and suggests a Visual Preset instead.
+Raw logic text (`@nM...`) is not warned about: no preset carries text.
 
 ### `:SM` is not available in sequences
 
@@ -85,7 +98,7 @@ intent commands above for all panel choreography.
 
 ## Dome rotation
 
-Body-owned dome motor rotation is a first-class timed step, separate from dome serial commands.
+Body-owned dome motor rotation is a first-class timed step, separate from the commands sent to the dome over protoR2link.
 A rotation step specifies a target speed and duration:
 
 ```json
@@ -111,18 +124,18 @@ itself, or a dome Part by its catalog id.
 ```
 
 It turns the short way round from where the dome **believes** it points, at the
-speed its full turn was timed at, and stops on time (the Dome page records the
-full turn). The Part's bearing is read when the step runs, so a corrected
+speed its full turn was timed at, and stops on time (the full turn is timed on
+the Dome page). The Part's bearing is read when the step runs, so a corrected
 `bearing_deg` reaches every saved step.
 
 It is a different promise from `domeRotate`: a duration always completes, and a
 turn to a target may not. While where the dome points is unknown (after a boot,
-an estop or Sleep Mode, until **Front is here**), the dome not calibrated or the
-Dome ESC off, the
-step does not move the dome; the run reports `bearing-unknown`,
+an estop or Sleep Mode, until the builder confirms front on the Dome page), the
+dome not calibrated or the Dome ESC off, the step does not move the dome; the run reports `bearing-unknown`,
 `dome-not-calibrated` or `component-disabled` and carries on. It saves either
 way. A sequence's end stops the dome, so leave the end at least half the
-dome's full-turn time after a bearing step. A pose press (the timeline's send to this moment) does not turn the dome.
+dome's full-turn time after a bearing step. Sending one moment of the timeline to
+the droid does not turn the dome.
 
 ## Moving a body part
 
@@ -141,7 +154,7 @@ what it does in the same three words a dome panel already uses:
   and a body **light** part stores the same token (a surface shows it as
   on / off / flash).
 - `howFar`: 1..100, a percentage of **that part's own throw** -- the open/close
-  ends recorded on the Servo Output that drives it. Optional; omit it for the
+  ends recorded on the Servo Output it is on. Optional; omit it for the
   whole throw. So the same step means the same gesture on a different linkage,
   and recalibrating the part changes the microseconds without touching the
   routine. A value below 5% is *floored* to 5% rather than refused, because the
@@ -159,7 +172,7 @@ Speed, acceleration and easing are **not** on the step. They live on the Servo
 Output and apply to every use of that part, so your choreography travels between
 droids and your physics does not.
 
-**Naming a part nothing drives yet is fine.** It saves, and at run time the body
+**Naming a part no Output claims yet is fine.** It saves, and at run time the body
 reports `part-not-assigned` and carries on to the next step. Wire the part, let a
 Servo Output record it, and the same saved sequence starts moving it with nothing
 re-authored.
@@ -176,7 +189,7 @@ In Factory Sequences, use the
 
 `:SE30`..`:SE36` -- the body buttons a builder arriving from ShadowMD already has
 bound -- are the Factory Sequences `DM:SE30`..`DM:SE36`, written entirely in Body
-Steps. RC and the dome link start them through the Sequence Coordinator, so they
+Steps. RC and protoR2link start them through the Sequence Coordinator, so they
 preempt and are preempted like any other sequence, and saving a Learned Sequence
 under one of those names retrains that button.
 
@@ -190,7 +203,7 @@ under one of those names retrains that button.
 | `:SE35` | the breadpan doors take turns, faster then slower | `doorFL`, `doorFR` |
 | `:SE36` | BT-1: both doors, both arms, both claws snap together | `doorFL`, `gripArm`, `gripClaw`, `doorFR`, `interArm`, `interTool` |
 
-A Part no Output drives is skipped with `part-not-assigned` and the routine carries
+A Part no Output claims is skipped with `part-not-assigned` and the routine carries
 on, so a droid with only the two utility arms wired still runs every one. Each
 routine ends with every Part it moved closed. How fast any of them moves is the
 Output's Motion Profile, not the routine's. Where the choreography came from is
@@ -226,9 +239,9 @@ Only a sound module that mixes can play one: today that is the CHIRP Audio Trigg
 On any other module the sequence still saves and runs, without the Background
 Track; the run reports `module-cannot-mix` and carries on, and the Rehearsal warns
 about it beforehand. With Sound switched off the run reports `component-disabled`
-instead. A pose press (the timeline's send to this moment) does not
-start or stop a Background Track, unless the press ends the sequence that
-started it: that end stops it, as any abnormal end does.
+instead. Sending one moment of the timeline to the droid does not start or stop
+a Background Track, unless it ends the sequence that started it: that end stops
+it, as any abnormal end does.
 
 ## Tempo and beats
 
@@ -258,7 +271,7 @@ A `gesture` step spreads one shape across a **set** of Parts (ADR 0046):
 - `set` is a token from the parts catalog (`ring`, `pies`, `dome`, `breadpan`,
   `bodyDoors`), or `parts` lists Part ids (all on the dome or all on the body,
   at most 24). The droid works out the Parts when the step **runs**, so a part
-  fitted later joins in, and a part nothing drives is reported and skipped.
+  fitted later joins in, and a part no Output claims is reported and skipped.
 - The order comes from where the Parts sit (`bearing_deg`, 0 dead astern, 180
   dead ahead), clockwise or counter-clockwise from `front`, `right`, `rear` or
   `left`. A Part with no bearing (every body Part today) goes last.
@@ -316,9 +329,7 @@ run, and the log says so.
 The editor reads the sequence you are writing and says what will not happen the
 way you wrote it. It is not Protocol Check: Protocol Check decides whether a
 sequence can be saved, and the Rehearsal can never stop a save or a run
-(ADR 0044). Its counts sit under Protocol Check's verdict. You get the full list
-when you save and when you tune a Factory sequence, and a folded badge after a
-test run.
+(ADR 0044).
 
 Every finding is one of two levels -- a **warning** (it will not do what you
 wrote) or a **note** (worth knowing) -- and carries a token beside its message
@@ -327,9 +338,18 @@ and a fix:
 | Token | Level | What it catches | Why it is a rule |
 |---|---|---|---|
 | `dispatch-spacing` | warning | dome commands less than 200 ms apart, or at the same moment | the dome's eight-entry command queue dropped a close on 2026-06-18 |
-| `retarget-before-arrival` | warning | the same open or close sent again to a panel or Part with nothing in between | `DM:HELLO`'s five identical opens made one |
+| `servo-burst` | warning | dome panel moves closer together than the dome's measured cadence | the dome browned out moving panels this close together |
+| `group-panel` | warning | a group target (`00`, `14`, `15`) that moves every member at once, naming members nothing else in the sequence moves | a group move is the burst that browns the dome out; move the panels you mean one at a time |
+| `retarget-before-arrival` | warning | the same open or close sent again to a panel or Part with nothing in between, or a calibrated body Part turned back before its move can arrive | `DM:HELLO`'s five identical opens made one |
 | `quiet-in-sequence` | warning | a `$s` step | it turned idle chatter off until reboot on 2026-06-17 |
+| `raw-light-code` | warning | a raw logic, PSI or holo code (`@...` other than text, `*...`) | the dome draws it in its default colors; a Visual Preset step draws the dome's own |
+| `switched-off` | warning | a step aimed at something switched off on this droid: Sound, protoR2link, the Dome ESC, or a Part on an Output that is not wired | the step does nothing |
+| `dome-unavailable` | warning | a dome panel the connected dome reports it cannot move | the step still runs and nothing moves |
+| `body-overlap` | warning | hand-written moves on different body Parts started closer together than the Cadence Floor | the floor paces only what the body generates itself; your own timing is advised on, never rewritten (ADR 0049) |
 | `part-left-open` | note | a body Part whose last step is an open; not said on a toggle's opening half of a Part its close half closes | the body undoes nothing (ADR 0049) |
+| `flutter-cut` | note | a body flutter still going at the end step | the droid ends it there, closed, so it is shorter than written |
+| `audio-outlives-show` | note | a named track set to keep playing after the sequence ends (`boundAudio: false`) | it plays exactly as written, past the end (ADR 0010) |
+| `gesture-cut` | warning | a Gesture with moves that fall at or after the end step | the droid stops a Gesture at the end, mid-pass |
 | `gesture-dome` | warning | a dome Gesture the dome performs only in part, or not at all | a dome Gesture is the dome's `$` command (ADR 0046) |
 | `dome-how-far` | warning | a part-way move of PP3 or PP5 | our dome firmware has no part-way move for them |
 | `tempo-confidence` | warning | a tempo that is only a guess (confidence under 0.5) | Cantina's ~200 BPM read as 127.8 (ADR 0058) |
@@ -340,7 +360,7 @@ and a fix:
 | `background-track-cannot-mix` | warning | a Background Track on a droid whose sound module plays one sound at a time | it saves and runs without the Background Track (ADR 0054) |
 
 It also says how many steps it could check. A dome panel move, a body move and a
-random pick each carry a question it cannot answer from the page -- how long the
+random pick each carry a question it cannot answer from the sequence -- how long the
 panel or part takes to move, or which panel the dice will choose -- and those
 steps are named as not checked, with what would close the gap.
 
@@ -369,11 +389,12 @@ Use panel intent commands (`:OP`/`:CL`/`:OF`) for all panel choreography.
 static const SeqStep kNodSteps[] = {
     SEQ_AUDIO(0, "$H"),                       // ack clip
     SEQ_DOME(0, FX_NONE, "@1MYes"),           // logic text
-    SEQ_DOME(0, FX_PANEL, ":OP01"),           // P1 open  -> auto :CL00 at end
+    SEQ_DOME(0, FX_PANEL, ":OP01"),           // P1 open
     SEQ_DOME(150, FX_NONE, ":CL01"),          // P1 close (explicit timed close)
-    SEQ_TERM(300),
+    SEQ_TERM(300),                            // P1 already closed: no panel cleanup
 };
-// catalog row: { "DM:NOD", kNodSteps, SEQ_STEPCOUNT(kNodSteps), 3000, TOGGLE_NONE, nullptr, 0 }
+// catalog row: { "DM:NOD", kNodSteps, SEQ_STEPCOUNT(kNodSteps), 3000, TOGGLE_NONE, nullptr, 0,
+//                "Short acknowledgment: a sound, logic text, and a P1 panel wave (3 s)." }
 ```
 
 `suppressMs` (the random-suppression window) must be `>=` the terminal `STEP_END` time.
@@ -401,8 +422,8 @@ model -- no `fx` field (inferred), no manual cleanup steps (automatic).
   "closeSteps": [] }
 ```
 
-- `type` is one of `dome | audio | body | gesture | sequence | loop | random | audioCat | domeRotate | domeBearing | end`.
-- `dome` steps carry a single panel intent or Advanced dome command string.
+- `type` is one of `dome | audio | body | gesture | sequence | loop | random | audioCat | domeRotate | domeBearing | backgroundTrack | backgroundTrackStop | end`.
+- `dome` steps carry a single panel intent, light command (`DV:`/`DL:`/`DT:`/`DH:`) or dome command string.
 - A `loop` header is followed by its `body` steps (relative `t`); loops do not
   nest, and a `sequence` step cannot sit in a loop body.
 - `random` steps pick from a logical target set (`ring`, `pie`, `all`, `hold`) and emit
@@ -417,11 +438,9 @@ model -- no `fx` field (inferred), no manual cleanup steps (automatic).
   sequence runs, each take plays from its `t` beside the steps: where two takes cover one
   part, the later one in the array moves it, and a step that moves the part wins over
   both. A toggle sequence plays its takes on its open half only, and a sequence placed
-  inside another (`sequence` step) brings its steps but not its takes. A take is made by
-  Perform in the editor, never written by hand. On the timeline it is one block across
-  the lanes of the parts it moves: dragged to move it, its edges dragged to trim it, which
-  writes `from` and `to` (ms into the take; `t` is then where `from` plays), and never
-  opened step by step. Perform again, on a picked take, performs a new one in its place.
+  inside another (`sequence` step) brings its steps but not its takes. A take is recorded
+  in the editor, never written by hand. Trimming it writes `from` and `to` (ms into the
+  take; `t` is then where `from` plays).
 
 ### Named Tracks vs `$NNN`
 
@@ -445,14 +464,15 @@ the format cannot express a bypass for.
 | branch | `<=96` steps; ends with explicit `end`; `t` non-decreasing outside loop bodies |
 | `:OP`/`:CL`/`:OF` | target must be in the allowed set (see Panel intent vocabulary) |
 | `:SM` | **rejected** -- diagnostic only, not allowed in sequences |
-| `:SE` | exactly 2 digits (e.g. `:SE09`); not allowed inside loops or random |
+| `:SE` | exactly 2 digits (e.g. `:SE09`); not allowed inside a loop |
 | `@`/`*`/`$` | length- and charset-bounded; recognised prefix |
+| `DV:`/`DL:`/`DT:`/`DH:` | a known Visual Preset name; each light command's fields within range ([dome-visual-authoring-contract.md](dome-visual-authoring-contract.md)) |
 | `domeRotate` | speedPct -100..100; durationMs positive (or 0 paired with speedPct=0 for neutral stop) |
 | `domeBearing` | `target` is `front` or a dome Part the catalog gives a bearing; nothing about the dome's calibration or belief is checked on save |
 | `body` | `part` in the Droid Parts Catalog; `shape` open/close/flutter; `howFar` 1..100; a flutter's `flutterMs` 50..60000 and no duration on any other shape |
 | `loop` | period 100..60000, duration `<=120000`, no nesting, body within branch |
 | `random` | set: ring/pie/all/hold; mode: flutter/open/close; jitter `<=2000`, move `<=5000` |
-| capacity | 16 files max. Per-file size and free-space floor depend on the controller board: **12 KB / 24 KB** on artoo-esp32, **24 KB / 48 KB** on the FireBeetle 2 (ESP32-P4). Only the larger board can hold a sequence that uses all 96+96 steps |
+| capacity | 5 Learned Sequences on artoo-esp32, 10 on the FireBeetle 2 (ESP32-P4) (ADR 0065; `GET /api/identity` reports it as `learned_sequence_cap`). Per-file size and free-space floor depend on the controller board: **12 KB / 24 KB** on artoo-esp32, **24 KB / 48 KB** on the FireBeetle 2 (ESP32-P4). Only the larger board can hold a sequence that uses all 96+96 steps |
 
 ## Triggering
 
