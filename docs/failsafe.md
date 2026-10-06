@@ -6,9 +6,12 @@ active layer has cleared (`include/failsafe_gate.h`). The design goal is
 simple: loss of control input, stalled firmware, or an operator stop must all
 converge on zero drive output.
 
-The two radio layers apply only while a Radio Controller is fitted. With none
-fitted (`not_fitted`), they stand down and the feet are held by the web drive
-timeout and the Latching Estop, so a web-only droid can drive.
+The two radio layers (1 and 2) are SBUS layers: they apply only while drive is
+read from an SBUS receiver. With no Radio Controller fitted (`not_fitted`) they
+stand down and the feet are held by the web drive timeout and the Latching
+Estop, so a web-only droid can drive. With a PWM receiver (`standard_pwm`) they
+also stand down: a lost or stale PWM signal zeroes the RC drive command
+(`src/tasks/rc_input.cpp`), but it sets no layer and there is no boot lock.
 
 ## Table of Contents
 
@@ -87,9 +90,11 @@ timeout like any other.
 ## Layer 4 - Watchdog reset
 
 - Source: the chip's watchdogs (task watchdog, interrupt watchdog, or RTC watchdog)
-- Implementation: `src/tasks/drive.cpp` feeds the task watchdog; the boot
-  decision is `src/failsafe_boot_twdt.cpp`, called from `src/main.cpp`
-- Trigger: `DriveTask` stops reaching `esp_task_wdt_reset()` within
+- Implementation: five tasks subscribe to the task watchdog: DriveTask,
+  ServoTask, RCInputTask, SequenceDispatcherTask and DomeTask (the last three
+  when they are created). The boot decision is `src/failsafe_boot_twdt.cpp`,
+  called from `src/main.cpp`
+- Trigger: a subscribed task stops reaching `esp_task_wdt_reset()` within
   `WATCHDOG_TIMEOUT_S` (3 s), or any other watchdog reset (interrupt WDT,
   RTC WDT, super WDT) that defeats the panic handler
 - Result: ESP32 resets; next boot detects any watchdog reset reason
@@ -108,7 +113,8 @@ something was wrong.
 - Source: the operator
 - Implementation: `src/failsafe_gate.cpp` (`failsafeClearEstop()` is the only
   path that clears it)
-- Trigger: `POST /api/estop`, or STOP in the web interface
+- Trigger: `POST /api/estop`, STOP in the web interface, `POST /api/manual-command`
+  with `command=estop`, or an RC trigger bound to estop
 - Result: `estop=true`, `failsafeSource=FS_ESTOP_CMD`
 - Cleared by: releasing STOP in the web interface, `POST /api/estop/clear`,
   `POST /api/manual-command` with `command=clear_estop`, or the Console's
@@ -135,10 +141,11 @@ intentionally. Even when stopped, it keeps transmitting zero commands.
 
 The system boots with conservative defaults:
 
-- when the receiver mode reads drive from SBUS, the SBUS watchdog layer is set
-  at boot (`sbusSignalLost = true`) and clears after valid drive-receiver
-  traffic is seen; with no Radio Controller fitted
-  there is no radio layer to set
+- when the receiver mode reads drive from SBUS and the drive channel is
+  switched on, the SBUS watchdog layer is set at boot (`sbusSignalLost = true`)
+  and clears after valid drive-receiver traffic is seen
+  (`src/tasks/rc_input_step.cpp`); with a PWM receiver, or no Radio Controller
+  fitted, there is no radio layer to set
 - watchdog-reset reboot sets `estop = true`
 - the persisted Settings (`speedLimitMax`, `sbusTimeoutMs`,
   `webDriveTimeoutMs`) are loaded into the config cache before tasks start;
@@ -190,10 +197,10 @@ from, generated into `include/task_stack_figures.h` (ADR 0040).
 
 | Task | Priority | Role |
 |------|----------|------|
-| **Pca9685Task** | 6 | Sends PCA9685 servo frames over I2C, so a release is never queued behind a page load. Not on the task watchdog. |
+| **Pca9685Task** | 6 | Sends PCA9685 servo frames over I2C, so a release is never queued behind a page load. Created only when the PCA9685 is this boot's body servo controller and answers. Not on the task watchdog. |
 | **AudioTask** | 3 | Commands to the sound module. On artoo-esp32 TX is a software bit-bang (blocking ~6 ms per command); on firebeetle2 the module has its own hardware UART. Kept off Core 1 to avoid timing interaction with DriveTask/ServoTask. Not created when audio is off at boot. |
 | **SequenceDispatcherTask** | 3 | Body-side DM:* coordinator. Routes to queues without holding Core 1 (ADR 0004). |
-| **AuxLedTask** | 2 | WS2812B effects. Independent of Core 1. |
+| **AuxLedTask** | 2 | WS2812B effects. Independent of Core 1. Not created when its init fails. |
 | **SafetyMonitorTask** | 2 | Audit loop. Logs failsafe transitions and heap diagnostics. Observer only. |
 | **Console** | 2 | Controller Console serial adapter (ADR 0036). Needs no network. |
 | **ReactionTask** | 2 | Fires the Reactions bound to the droid's own conditions (ADR 0053). Reads the resolved drive output from `RobotState`; adds nothing to DriveTask and is not on the task watchdog. |
