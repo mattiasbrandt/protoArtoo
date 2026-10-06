@@ -167,6 +167,13 @@ surface once, live, at the Closing Ticket's bench session, not mid-epic
 (operator, 2026-09-29, the third time it was said). A ticket criterion, a
 handoff or an older brief that says "stop for a look" does not override this.
 
+DOCS LEVEL (AGENTS.md "Docs Level", operator 2026-10-06)
+A doc you write or touch carries no detail a minor UI change makes wrong:
+no exact button labels or copy strings, no click-by-click paths, no line
+numbers into source, no counts that move with every slice. Keep what a
+feature does, safety, hardware facts, commands, and API contracts. Cut a
+stale UI detail rather than patch it.
+
 BOUNDARIES
 - Operate ONLY inside {WORKTREE}. Never edit, checkout, stash, restore, or
   clean anything outside it. Out-of-tree touches are an automatic reject.
