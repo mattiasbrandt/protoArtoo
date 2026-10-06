@@ -41,7 +41,9 @@ The shell on this bench is zsh. Quote a glob (`--include='*.cpp'`). An unquoted 
 - Component Registry and each product's project facts (its spec sheet, wiring
   card, notes): `docs/products.yaml`. It generates
   `include/component_registry.inc` and Wiring's product cards; edit the YAML,
-  never the generated files
+  never the generated files. The spec sheets under `docs/spec-sheets/` below
+  hold vendor and community facts only; what the project does with a product
+  goes in its `notes:` there
 - Operator-facing copy voice: `docs/ui-copy-voice.md`
 - REST API contracts: `docs/api.md`
 - Core error-signalling conventions: `docs/core-error-signalling.md`
@@ -50,7 +52,7 @@ The shell on this bench is zsh. Quote a glob (`--include='*.cpp'`). An unquoted 
   `docs/soak.md` (the contract itself is ADR 0035)
 - SBUS protocol truth: `docs/spec-sheets/sbus-protocol.md`
 - ESP-IDF5 RMT driver truth: `docs/spec-sheets/rmt-esp32-idf5.md`
-- HotRC DS-650 product and HOTRC profile truth: `docs/spec-sheets/hotrc-ds650-radio.md`
+- HotRC DS-650 product truth: `docs/spec-sheets/hotrc-ds650-radio.md`
   (supersedes `docs/spec-sheets/hotrc-sbus-spec.md`, kept as the older summary)
 - Teeces / JawaLite truth: `docs/spec-sheets/teeces-dome-lighting.md`
 - PCA9685 / I2C PWM expander truth: `docs/spec-sheets/pca9685-servo-expander.md`
@@ -64,8 +66,8 @@ The shell on this bench is zsh. Quote a glob (`--include='*.cpp'`). An unquoted 
 - DY-SV5W / DY UART truth: `docs/spec-sheets/dy-sv5w-sound.md`
 - ISDT ESC70 / dome ESC RC PWM truth: `docs/spec-sheets/isdt-esc70-dome-esc.md`
 - SparkFun MP3 Trigger / MP3 Trigger serial truth: `docs/spec-sheets/mp3-trigger-sound.md`
-- CHIRP Audio Trigger / `chirp_ascii_uart` truth: `docs/spec-sheets/chirp-audio-trigger-sound.md`
-- AstroPixels product, AstroPixelsPlus firmware and protoR2link truth:
+- CHIRP Audio Trigger / CHIRP serial truth: `docs/spec-sheets/chirp-audio-trigger-sound.md`
+- AstroPixels product and AstroPixelsPlus firmware truth:
   `docs/spec-sheets/astropixels-dome-controller.md`
 - Long-term project memory: MemPalace — see "Memory" below
 - Espressif MCP servers (repo-level): `espressif-documentation`, `esp-component-registry`
