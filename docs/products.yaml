@@ -1307,8 +1307,72 @@ products:
       hazards:
         - "Neither Speaker pad is ground. Never wire one to ground or to an amplifier input."
         - "The 5 W on the box is about 3 W. A loud sound on a shared 5 V regulator browns the droid out."
-      source: "5.1, 5.2, 5.3, 5.4"
-    notes: ""
+      source: "4.1, 4.2, 4.3, 4.4"
+    notes: |
+      The protocol token `soft_uart_binary` names the wire, not the contract.
+      GLOSSARY.md's Component Protocol says to avoid "transport (that names the wire,
+      not the contract spoken over it)", and the three sibling tokens
+      (`mp3trigger_serial`, `chirp_ascii_uart`, `dfplayer_serial`) all name the
+      contract. It is also false on FireBeetle 2, where audio has a hardware UART of
+      its own and nothing is bit-banged. The token travels in the identity manifest
+      to the browser, so a rename (`dy_uart` or `dy_serial` would match the siblings)
+      is a decision with a compatibility question attached, not a typo fix. Not
+      changed.
+
+      Reply checksum: `sendQuery()` callers check the start byte, the command byte and
+      (in `queryModuleState()`) the length byte, then use the payload; the trailing
+      `SM` is read and thrown away, so a corrupted payload byte in a reply is
+      believed. `Lenoirio/dy-sv5w` makes the same call; `SnijderC/dyplayer` checks
+      it. Cheap to add and testable natively with the recording IO, but it is a
+      behaviour change to a shipping driver. The queries inside `begin()` check only
+      the start and command bytes, not the length byte. Not changed.
+
+      `begin()`'s queries are not arbitrated. Every other query AudioTask makes is
+      wrapped in `audioUartClaim()`; the four inside `begin()` are not. On
+      artoo-esp32, `begin()` opens the dome link's UART RX-only and sleeps 1.5 s,
+      while DomeLinkTask on Core 1 can re-open the same controller on the dome's pins
+      in that window. If it wins, all four queries get zero bytes: no device, no
+      `switchDrive` (the safe branch), zero tracks, and the cached state the Sound
+      page seeds from says no link. Reasoned from the code, not measured. Against it:
+      the 2026-03 bench record shows the pre-init queries answering on that board.
+      For it: that record predates the current transport arrangement. The outcome is
+      safe either way: a cached "no response" that Poll clears, never a droid that
+      will not play. FireBeetle 2 is unaffected (nothing is shared). The settling
+      check is one boot with the dome link on serial: does the log say
+      `pre-init: device online = ...` or `no response`? If the latter, claim the UART
+      around `begin()` or move detection to the first poll.
+
+      `begin()` always returns true, so a module that answers nothing is reported
+      through the link state, never through the init retry; for this driver the
+      Audio Step Core's begin retries never fire.
+
+      Drive select: a hardcoded `switchDrive(SD)` on a FLASH module silenced its
+      replies (2026-03-22, 3e45db4b; the sheet keeps the module fact). A later change
+      that forced FLASH when detection failed (364cd9ff) was reverted (50e72c76):
+      send nothing when detection fails.
+
+      Ideas recorded, not scheduled:
+      - Compare the module's `0x0C` track count at boot with the highest configured
+        track, and log or surface a mismatch. The driver already reads the count and
+        nothing compares it; it is the cheapest detection of a card rebuilt in the
+        wrong order.
+      - Play-by-path (`0x08`) as an escape from enumeration-order addressing. The
+        driver plays by index. Prototype against a card with 8.3 names and decide
+        whether name-stable addressing is worth the variable-length frame, the 8.3
+        naming and the break with the community's numbered cards. Only if
+        enumeration order becomes a real operator complaint.
+      - Interlude (`0x16`) is not a Background Track. GLOSSARY.md records the DY-SV5W
+        as one of the single-track modules a Background Track contrasts itself with;
+        the vendor's "level 1 only" note (sheet, Setting commands) says one interlude
+        covers the previous one, with no volume of its own. Read both before anyone
+        proposes this module can mix. Expected answer: it cannot.
+
+      Not yet proven on hardware:
+      - The module has never run on FireBeetle 2 (ESP32-P4). Everything about that
+        board's audio lane is read from the code and the pin map.
+      - The phase 5 audio edge cases HW1.5-HW1.14, and the disconnected-module "No
+        response" badge check, are open: the module was not installed during that
+        bench session.
 
   - value: 19
     id: mp3_trigger
