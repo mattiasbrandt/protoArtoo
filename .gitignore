@@ -4,6 +4,8 @@
 .piolibdeps
 .piolib
 .pio-build/
+# Full pio output per env and phase, kept by tools/check_build_budgets.py
+build-logs/
 
 # Arduino/ESP32 build artifacts
 *.elf

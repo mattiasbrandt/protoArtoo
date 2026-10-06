@@ -190,6 +190,17 @@ jobs:
         # overruns its budget both fail this row.
         run: python3 tools/check_build_budgets.py
 
+      # The budget step keeps every pio run's whole output in build-logs/ and
+      # prints only the tail of a failed one; a link error can start above it.
+      # continue-on-error keeps failure() false, so this keys on the outcome.
+      - name: 📤 Upload build logs
+        if: always() && steps.build-budgets.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: build-logs-${{ github.run_id }}
+          path: build-logs/
+          retention-days: 14
+
       - name: 🧪 Native tests
         id: native-tests
         continue-on-error: true

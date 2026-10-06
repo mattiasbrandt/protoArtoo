@@ -19,19 +19,38 @@ artoo_esp32 only) and this script (which builds every env, the ESP32-P4 too)
 cannot disagree. The figure is not runtime heap; see slice_verify.boot_heap_bytes.
 There is no ACK here: growth past the threshold is either given back or a
 deliberate, operator-approved re-stamp of the baseline (#468).
+
+Every pio run's whole output, success or failure, is kept in
+build-logs/<env>-<phase>.log, and a failed or timed-out run prints its last
+lines and the log's path. The script used to discard that output, so CI said
+only "pio run exited with code 1" for weeks while the firebeetle2 build was
+red on main (#473).
+
+After each env's firmware build, and again after its `buildfs`, the env's
+framework envelope is checked (tools/check_framework_envelope.py): a `buildfs`
+can half-run the shared pool's rebuild and exit 0 with the budget still
+passing, which is how the 2026-08-29 image went out pristine.
 """
 
+import contextlib
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
+import check_framework_envelope  # tools/, beside this script
 import pio_lock  # tools/, beside this script
 import slice_verify  # tools/, beside this script: the boot heap arithmetic
 
 ROOT = Path(__file__).resolve().parents[1]
 BUDGETS_FILE = ROOT / "tools" / "build_budgets.json"
+BUILD_LOGS = ROOT / "build-logs"
+
+# Lines of a failed run's log printed to stderr. A compile error usually sits
+# above the linker's and scons' closing lines, so this is generous; the whole
+# log is on disk (and uploaded by CI) when it is not enough.
+FAILURE_TAIL_LINES = 100
 
 # LittleFS allocates in blocks of this size on both boards, and rounds every
 # file up to one. It is why the image costs far more than its files add up to:
@@ -74,6 +93,45 @@ def get_platformio_core_dir(env_name, budgets):
     return os.path.expanduser(spec["core_dir"])
 
 
+def run_pio(cmd, env, timeout, env_name, phase):
+    """Run one pio command under the build lock, keeping its whole output.
+
+    Writes stdout and stderr, interleaved as pio wrote them, to
+    build-logs/<env>-<phase>.log whatever the outcome. Returns (code, log),
+    code None on a timeout. On a non-zero exit or a timeout the log's last
+    FAILURE_TAIL_LINES lines and its path go to stderr: pio prints a compile
+    or link error on stdout, so a stderr-only report shows nothing.
+    """
+    log = BUILD_LOGS / f"{env_name}-{phase}.log"
+    log.parent.mkdir(exist_ok=True)
+    # The framework pool is shared by every worktree and rebuilt in place,
+    # so a build outside the machine-wide lock can strand it (AGENTS.md
+    # "The build lock"). Waiting for the lock is not part of the timeout.
+    with pio_lock.build_lock(cmd, env=env):
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=timeout,
+                env=env,
+            )
+            out, code = result.stdout, result.returncode
+        except subprocess.TimeoutExpired as e:
+            # CPython hands back what was captured before the kill as bytes,
+            # even with text=True (TimeoutExpired.stdout is the raw buffer).
+            raw = e.stdout or b""
+            out = raw.decode(errors="replace") if isinstance(raw, bytes) else raw
+            code = None
+    log.write_text(out)
+    if code != 0:
+        print("\n".join(out.splitlines()[-FAILURE_TAIL_LINES:]), file=sys.stderr)
+        print(f"  full log: {log}", file=sys.stderr)
+    return code, log
+
+
 def build_environment(env_name, budgets):
     """Build an environment and return the binary size in bytes, or None on error."""
     print(f"Building {env_name}...", file=sys.stderr)
@@ -84,21 +142,12 @@ def build_environment(env_name, budgets):
 
     cmd = ["pio", "run", "-e", env_name]
     try:
-        # The framework pool is shared by every worktree and rebuilt in place,
-        # so a build outside the machine-wide lock can strand it (AGENTS.md
-        # "The build lock"). Waiting for the lock is not part of the timeout.
-        with pio_lock.build_lock(cmd, env=env):
-            result = subprocess.run(
-                cmd,
-                cwd=ROOT,
-                capture_output=True,
-                text=True,
-                timeout=1800,
-                env=env
-            )
-
-        if result.returncode != 0:
-            print(f"  FAILED: pio run exited with code {result.returncode}", file=sys.stderr)
+        code, _ = run_pio(cmd, env, 1800, env_name, "firmware")
+        if code is None:
+            print("  FAILED: Build timed out", file=sys.stderr)
+            return None
+        if code != 0:
+            print(f"  FAILED: pio run exited with code {code}", file=sys.stderr)
             return None
 
         # Get binary size
@@ -111,9 +160,6 @@ def build_environment(env_name, budgets):
         print(f"  OK: {size} bytes", file=sys.stderr)
         return size
 
-    except subprocess.TimeoutExpired:
-        print(f"  FAILED: Build timed out", file=sys.stderr)
-        return None
     except Exception as e:
         print(f"  FAILED: {e}", file=sys.stderr)
         return None
@@ -141,18 +187,12 @@ def filesystem_image_bytes(env_name, budgets):
 
     cmd = ["pio", "run", "-e", env_name, "-t", "buildfs"]
     try:
-        with pio_lock.build_lock(cmd, env=env):
-            result = subprocess.run(
-                cmd,
-                cwd=ROOT,
-                capture_output=True,
-                text=True,
-                timeout=600,
-                env=env,
-            )
-
-        if result.returncode != 0:
-            print(f"  FAILED: pio run -t buildfs exited with code {result.returncode}", file=sys.stderr)
+        code, _ = run_pio(cmd, env, 600, env_name, "buildfs")
+        if code is None:
+            print("  FAILED: filesystem image timed out", file=sys.stderr)
+            return None
+        if code != 0:
+            print(f"  FAILED: pio run -t buildfs exited with code {code}", file=sys.stderr)
             return None
 
         image = ROOT / ".pio" / "build" / env_name / "littlefs.bin"
@@ -175,9 +215,6 @@ def filesystem_image_bytes(env_name, budgets):
         print(f"  OK: {size} bytes in {allocated} blocks", file=sys.stderr)
         return size
 
-    except subprocess.TimeoutExpired:
-        print("  FAILED: filesystem image timed out", file=sys.stderr)
-        return None
     except Exception as e:
         print(f"  FAILED: {e}", file=sys.stderr)
         return None
@@ -216,6 +253,26 @@ def check_one(kind, env_name, actual, budget, ceiling, results):
         pct = (actual / budget) * 100
         print(f"{status} {label}: {actual} bytes ({pct:.1f}%) - {budget - actual} bytes headroom",
               file=sys.stderr)
+    return ok
+
+
+def check_envelope(env_name, after, results):
+    """Check the env's framework envelope held after `after`. Returns True if ok.
+
+    Its report goes to stderr with the rest of this script's, so the CI log
+    reads in order. An env that declares no custom_sdkconfig passes: there is
+    nothing pioarduino could have failed to apply.
+    """
+    label = f"{env_name} envelope after {after}"
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            ok = check_framework_envelope.check(env_name, quiet=True) == 0
+    except Exception as e:
+        print(f"  FAILED: envelope check for {env_name}: {e}", file=sys.stderr)
+        ok = False
+    results.append((label, None, None, ok))
+    status = "\u2713" if ok else "\u2717"
+    print(f"{status} {label}", file=sys.stderr)
     return ok
 
 
@@ -282,6 +339,12 @@ def main():
                          flash_ceiling_bytes, results):
             all_ok = False
 
+        # Read now, before buildfs or the next env can touch the pool. A failed
+        # build has no resolved config worth reading, and its failure is
+        # already the row's verdict.
+        if actual_size is not None and not check_envelope(env_name, "firmware", results):
+            all_ok = False
+
         if "boot_heap_baseline_bytes" in env_budget:
             figure = boot_heap_figure(env_name, budgets) if actual_size is not None else None
             if not check_boot_heap(env_name, env_budget, figure, results):
@@ -299,6 +362,11 @@ def main():
         # independent, and a broken build must not hide a filesystem regression.
         if not check_one("fs", env_name, filesystem_image_bytes(env_name, budgets),
                          fs_budget_bytes, fs_ceiling_bytes, results):
+            all_ok = False
+
+        # Whatever buildfs returned: a half-run rebuild of the pool exits 0,
+        # and one that failed may still have reinstalled the pristine libs.
+        if actual_size is not None and not check_envelope(env_name, "buildfs", results):
             all_ok = False
 
     print("", file=sys.stderr)
