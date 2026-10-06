@@ -30,7 +30,7 @@ was resolved - lives in `GLOSSARY.md` under Language and Flagged Ambiguities.
 |---|---|---|
 | ESTOP | Latching emergency stop state | Prevents unintended movement restart |
 | failsafe | Layered safety stop behavior when control health is bad | Core motion safety model |
-| UART | Serial transport used for hoverboard, dome link, audio, debug | Defines key inter-device communication paths |
+| UART | Serial transport used for the Foot Drive, protoR2link, sound and the Console | Defines key inter-device communication paths |
 | RMT | ESP32 peripheral used for precise pulse capture (SBUS decoding here) | Enables reliable SBUS timing capture |
 | Marcduino | Prefix-based serial command style used across droid ecosystems | Governs body/dome command routing |
 | ReelTwo / Reeltwo | C++ framework/library ecosystem used heavily by dome-side stacks | Shapes compatibility boundaries with AstroPixelsPlus |
@@ -64,7 +64,11 @@ In this project, failsafe is not one single trigger. It is a layered model, incl
 - SBUS software watchdog timeout
 - web-drive timeout
 - watchdog-reset recovery posture
-- hoverboard-side timeout behavior
+- operator estop (latching)
+
+The two radio layers apply only while a Radio Controller is fitted; with none
+fitted they stand down (`include/failsafe_gate.h`, `docs/failsafe.md`). The
+hoverboard's own UART timeout is a backstop outside the firmware, not a layer.
 
 Why it matters:
 - Multiple independent layers reduce single-point failure risk.
@@ -77,11 +81,15 @@ Related distinction:
 
 `UART` means Universal Asynchronous Receiver/Transmitter: asynchronous serial communication.
 
-In protoArtoo topology:
-- debug console uses UART0
-- hoverboard drive link uses UART path on S1
-- dome link uses UART path on S3 (bidirectional over slip ring)
-- sound module uses UART-style serial path on S2
+In protoArtoo topology (`include/config.h`):
+- the Console uses UART0 (a USB serial bridge on the Artoo PCB, USB CDC on the
+  FireBeetle 2)
+- the Foot Drive uses UART1 (header S1 on the Artoo PCB)
+- protoR2link uses UART2, bidirectional over the slip ring (header S3 on the
+  Artoo PCB)
+- the sound module has its own UART3 on the FireBeetle 2; on the Artoo PCB
+  (header S2) its TX is a software bit-bang and its RX borrows the protoR2link
+  UART
 
 Why it matters:
 - UART links are core integration boundaries between body controller and peripherals.
@@ -138,7 +146,7 @@ Why it matters:
 
 In protoArtoo topology:
 - dome controller is treated as an AstroPixelsPlus-class peer subsystem.
-- body and dome coordinate over bidirectional serial links with explicit responsibility boundaries.
+- body and dome coordinate over protoR2link with explicit responsibility boundaries.
 - dome-side effects (lighting/animation ownership) are dome responsibilities.
 
 Why it matters:
@@ -156,12 +164,14 @@ Why it matters:
 What it contains:
 
 - Live runtime state: drive commands, failsafe state, timing, heartbeat counters
-- Persisted config loaded from NVS: fields prefixed with `cfg_`
-- Feature toggles for hardware subsystems: `cfg_enable_*`
+
+Persisted config is not in `RobotState`. It lives in the config cache and tasks
+read it as a `ConfigSnapshot` through `configCacheRead()` (for example
+`src/main.cpp:89-91`).
 
 Why it matters:
 
-- It is the contract between tasks (`DriveTask`, `SbusInputTask`, web handlers, etc.)
+- It is the contract between tasks (`DriveTask`, `RCInputTask`, web handlers, etc.)
 - Incorrect unsynchronized access can cause race conditions
 - Most API responses and control decisions ultimately come from this state
 
@@ -176,21 +186,21 @@ Rule of thumb:
 
 - Namespace used by this project: `proto` (`NVS_NAMESPACE`)
 - Main load/save path: `configLoad()` and `configSave()` in `src/config_store.cpp`, which delegate to `configDeserialize()` / `configSerialize()` in `src/config_serializer.cpp`
-- All NVS key strings are centralized in `src/config_serializer.cpp` (single source of truth); `PrefsReader`/`PrefsWriter` in `src/config_nvsio.cpp` are the NVS adapters; `MapReader`/`MapWriter` in `test/stubs/config/map_config_io.h` are the test doubles
+- Every Setting's NVS key lives in the Settings table in `src/config_settings.cpp`, which `src/config_serializer.cpp` includes; the keys old schemas used, and their migrations, are in `src/config_store.cpp`. `PrefsReader`/`PrefsWriter` in `src/config_nvsio.cpp` are the NVS adapters; `MapReader`/`MapWriter` in `test/stubs/config/map_config_io.h` are the test doubles
 
 What NVS stores in this repo:
 
 - Persistent config such as speed limits, timeouts, servo positions, dome pulse settings
-- Feature toggles (`en_arm1`, `en_dome`, `en_s1_hoverboard`, etc.)
+- Component Toggles (`en_arm1`, `en_dome_esc`, `en_drive`, `en_audio`, etc.)
 
 Why it matters:
 
 - Settings survive reboot and power loss
-- Web setup changes are not temporary; they are persisted and reloaded at boot
+- Changes saved on Configuration are not temporary; they are persisted and reloaded at boot
 
 Important distinction:
 
-- Tasks should use `robotState.cfg_*` values at runtime
+- Tasks read config from the config cache (`configCacheRead(&cfg)`) at runtime
 - NVS reads/writes should stay centralized in config paths, not scattered in task loops
 
 ## STA
@@ -205,7 +215,9 @@ In practical terms:
 Where it shows up:
 
 - Mentioned in project docs and WiFi/status APIs
-- Credentials come from `src/secrets.h`
+- Credentials are the Device WiFi Settings saved on the controller from the WiFi page
+  or WiFi provisioning (ADR 0015); `src/secrets.h` is only the Developer WiFi
+  Shortcut for a self-build
 
 Why it matters:
 
@@ -223,7 +235,7 @@ In practical terms:
 
 Why it matters:
 
-- Gives direct phone-to-droid connectivity without external infrastructure
+- Gives a direct browser-to-droid connection without external infrastructure
 - Common for field setup, debugging, and controlled local operation
 
 STA vs AP quick view:
