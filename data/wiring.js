@@ -19,7 +19,7 @@
 // Nothing here keeps a copy of one board's pin numbers, which is the defect a
 // Board Lane exists to close (include/board_lanes.inc).
 // The product wiring cards are generated too, at build time: the wiring cards
-// the spec sheets carry, where the image holds them (#458). On the screen
+// docs/products.yaml carries, where the image holds them (#458). On the screen
 // each opens on its product's row of the table; on paper they follow Power
 // wiring.
 //
@@ -633,8 +633,8 @@
   // One card for each fitted product that has one: on the screen it opens on
   // the row of the parts wiring table its product is on, and on paper every
   // one follows Power wiring (operator, 2026-10-01 on #463). A card's facts -
-  // supply, draw, logic level, each wire, the hazards - are the wiring card
-  // its spec sheet carries, generated into the image
+  // supply, draw, logic level, each wire, the hazards - are its product's
+  // wiring card in docs/products.yaml, generated into the image
   // (tools/generate_wiring_cards.py) and handed over in the model as `cards`,
   // keyed by Component Registry id.
   // Nothing here restates one. An image built without them hands over none,

@@ -13,6 +13,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from registry_yaml import load_registry_yaml
 import check_setting_words  # noqa: E402  (after the path insert above)
+import check_products_drift  # noqa: E402
 import check_wiring_cards_drift  # noqa: E402
 import check_console_catalog_drift  # noqa: E402
 
@@ -1114,8 +1115,10 @@ def main() -> int:
     # Every declared Setting has words in the browser (ADR 0068, amended
     # 2026-09-26): run here so the slice gate's drift stage carries it.
     check_setting_words.check(errors)
-    # Wiring's product cards are what the spec sheets' wiring_card blocks
-    # generate today (#458): run here so the slice gate's drift stage carries it.
+    # The Component Registry manifest and Wiring's product cards are what
+    # docs/products.yaml generates today (#475, #458): run here so the slice
+    # gate's drift stage carries them.
+    check_products_drift.check(errors)
     check_wiring_cards_drift.check(errors)
     # The Operation Catalog is what the registry generates today, byte for
     # byte, and every `console:` row names a known reason and page (#474).

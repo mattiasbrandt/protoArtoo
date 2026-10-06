@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Check that Wiring's committed product cards still match the spec sheets.
+"""Check that Wiring's committed product cards still match docs/products.yaml.
 
-The `wiring_card:` blocks in docs/spec-sheets/ generate two committed partials
+The `wiring_card` entries in docs/products.yaml generate two committed partials
 (tools/generate_wiring_cards.py), and the one failure the generator cannot
-catch is nobody running it. A sheet's card edited with the partial left stale
-is a hazard corrected in the research and still wrong on the builder's screen
+catch is nobody running it. A card edited with the partial left stale is a
+hazard corrected in the research and still wrong on the builder's screen
 (#458).
 
     python3 tools/check_wiring_cards_drift.py     # or: make check-wiring-cards-drift
@@ -15,8 +15,8 @@ byte-compares the result against the committed files, the shape
 tools/check_droid_parts_drift.py uses and whose interception this borrows: a
 check that rebuilds what it tests in place can never fail twice.
 
-A card the generator refuses - an unknown id, a citation of no section, an
-avoided word - is reported here too, as the finding it is.
+A card the generator refuses - a missing sheet, a citation of no section of
+it, an avoided word - is reported here too, as the finding it is.
 
 The slice gate carries this through tools/check_action_registry_drift.py, the
 way that check carries check_setting_words.
@@ -59,8 +59,8 @@ def check(errors: list[str]) -> int:
         built = captured[path.resolve()].encode("utf-8")
         if committed != built:
             errors.append(
-                f"{name} is not what {gen.GENERATOR_NAME} makes of the wiring_card "
-                f"blocks in {gen.rel(gen.SHEETS_DIR)}/ today ({len(committed)} bytes "
+                f"{name} is not what {gen.GENERATOR_NAME} makes of the wiring cards "
+                f"in {gen.rel(gen.PRODUCTS_PATH)} today ({len(committed)} bytes "
                 f"committed, {len(built)} generated); regenerate it"
             )
     return len(cards)

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Generate Wiring's product wiring cards from the spec sheets.
+"""Generate Wiring's product wiring cards from docs/products.yaml.
 
-Each product sheet under docs/spec-sheets/ may carry one short, fixed-shape
-`wiring_card:` block: how to wire and power that product, every line proven by
-a section of the same sheet. This turns those blocks into the one partial the
-Wiring page includes (#458). The sheets are never read at run: the cards reach
-the image by being generated into it, the catalog rule #301 set.
+A product in docs/products.yaml may carry one short, fixed-shape `wiring_card`:
+how to wire and power that product, every line proven by a section of the spec
+sheet its `sheet` names. This turns those cards into the one partial the
+Wiring page includes (#458). Neither file is read at run: the cards reach the
+image by being generated into it, the catalog rule #301 set.
 
-    docs/spec-sheets/*.md  (the fenced `wiring_card:` blocks)
+    docs/products.yaml  (each product's `wiring_card`, checked against its `sheet`)
        |-> data/asset-sets/default/_wiring_cards.html   the cards and their plate
        '-> data/_wiring_cards.html                      the same name, no cards
 
@@ -23,21 +23,19 @@ finds none; it never asks which board it is on. Both files are this generator's,
 so the empty one cannot quietly gain markup.
 
 WHAT A CARD IS, AND WHAT IT IS NOT. The Component Registry id is the key
-(include/component_registry.inc), and only a `supported` row's card is
-generated: a roadmap product cannot be fitted, so Wiring could never show its
-card and the image would pay for text nobody reads. A card carries no pin of
+(the product's `id`), and only a `supported` product's card is generated: a
+roadmap product cannot be fitted, so Wiring could never show its card and the
+image would pay for text nobody reads. A card carries no pin of
 any board. Pins are per board and a card is per product, so the page puts the
 running firmware's own answer beside each card (data/wiring.js).
 
 This generator refuses, each because the alternative ships something wrong:
 
-  - an id the registry does not declare, or two cards for one id;
-  - a `wiring_card:` line it cannot read as a card (a trailing comment, a
-    ```yml fence): skipping that sheet would drop a product's hazards
-    from the image with the drift check still agreeing;
+  - two products with one id: the page finds a card by it;
+  - a card whose product names no `sheet`, or a sheet that is not there;
   - a missing or unknown field, or a value that is not a quoted string: YAML
     reads a bare `5` or `off` as a number or a boolean, and a card is text;
-  - a `source` naming a section its own sheet does not have. Every line of a
+  - a `source` naming a section its sheet does not have. Every line of a
     card is proven by a section, so a citation of nothing is a guess;
   - "lead", "driven" or "drives" (GLOSSARY.md "Wiring" _Avoid_), and anything
     outside ASCII, which is where a pictograph would arrive from.
@@ -70,8 +68,8 @@ def rel(path):
         return str(path)
 
 
+PRODUCTS_PATH = ROOT / "docs" / "products.yaml"
 SHEETS_DIR = ROOT / "docs" / "spec-sheets"
-REGISTRY_PATH = ROOT / "include" / "component_registry.inc"
 CARDS_OUTPUT_PATH = ROOT / "data" / "asset-sets" / "default" / "_wiring_cards.html"
 EMPTY_OUTPUT_PATH = ROOT / "data" / "_wiring_cards.html"
 GENERATOR_NAME = rel(__file__)
@@ -81,23 +79,13 @@ GENERATOR_NAME = rel(__file__)
 # built without the cards has no plate either.
 CARDS_ELEMENT_ID = "wiring-product-cards"
 
-FIELDS = ("id", "supply", "draw", "logic", "wires", "hazards", "source")
+FIELDS = ("supply", "draw", "logic", "wires", "hazards", "source")
 WIRE_FIELDS = ("from", "to", "note")
 
-CARD_BLOCK_RE = re.compile(r"^```yaml\n(wiring_card:\n.*?)^```\s*$", re.M | re.S)
-# Any line that opens a card, in whatever form somebody wrote it: a trailing
-# comment, a ```yml fence. CARD_BLOCK_RE reads one form only,
-# and a card it cannot read must be a failure, never a sheet quietly skipped.
-CARD_KEY_RE = re.compile(r"^[ \t]*wiring_card[ \t]*:", re.M)
 FENCE_RE = re.compile(r"^```.*?^```\s*$", re.M | re.S)
 HEADING_RE = re.compile(r"^#{1,6} +(.+?)\s*$", re.M)
 SECTION_NUMBER_RE = re.compile(r"\d+(\.\d+)*")
-# One registry row: its id and its status. A row spans lines, so the match runs
-# to the status token rather than to the end of a line.
-REGISTRY_ROW_RE = re.compile(
-    r'PA_COMPONENT_PART\(\s*\d+,\s*"([A-Za-z0-9_]+)".*?COMPONENT_STATUS_([A-Z]+)', re.S
-)
-SUPPORTED = "SUPPORTED"
+SUPPORTED = "supported"
 
 # GLOSSARY.md "Wiring" _Avoid_: a wire is a wire, and nothing is "driven".
 AVOIDED_WORDS = re.compile(r"\b(leads?|driven|drives)\b", re.I)
@@ -111,13 +99,6 @@ class CardError(Exception):
         self.problems = problems
 
 
-def registry_rows(path=None):
-    """{id: status} for every Component Registry row, in the file's order."""
-    text = (path or REGISTRY_PATH).read_text(encoding="utf-8")
-    # The header comment quotes the macro's signature; a row carries a number.
-    return dict(REGISTRY_ROW_RE.findall(text))
-
-
 def sheet_headings(text):
     """Every heading of a sheet, with the fenced blocks taken out first: a `#`
     line inside one is a comment in somebody's config file, not a section."""
@@ -128,7 +109,7 @@ def cites(headings, token):
     """Whether `token` names one of the sheet's sections: by its number
     (`5.2`, or `6` for `6. Getting the wire to work`) or by its whole title.
     A title is matched whole, so `Wiring` cites a section called Wiring and
-    not the `Wiring card` heading the card itself sits under."""
+    not one whose title only begins with that word."""
     if SECTION_NUMBER_RE.fullmatch(token):
         return any(heading.startswith(token + " ") or heading.startswith(token + ". ")
                    for heading in headings)
@@ -150,18 +131,11 @@ def _text(where, key, value, problems):
     return value.strip()
 
 
-def read_card(sheet, block, headings, problems):
+def read_card(where, card, headings, problems):
     """One card as the page gets it, or None when it cannot be generated."""
-    where = rel(sheet)
     before = len(problems)
-    try:
-        document = yaml.safe_load(block)
-    except yaml.YAMLError as error:
-        problems.append(f"{where}: the wiring_card block is not readable YAML: {error}")
-        return None
-    card = document.get("wiring_card") if isinstance(document, dict) else None
     if not isinstance(card, dict):
-        problems.append(f"{where}: `wiring_card:` holds no mapping")
+        problems.append(f"{where}: `wiring_card` holds no mapping")
         return None
     for key in card:
         if key not in FIELDS:
@@ -172,8 +146,7 @@ def read_card(sheet, block, headings, problems):
     if len(problems) > before:
         return None
 
-    out = {"id": _text(where, "id", card["id"], problems)}
-    where = f"{where} ({out['id']})"
+    out = {}
     for key in ("supply", "draw", "logic"):
         out[key] = _text(where, key, card[key], problems)
 
@@ -201,65 +174,62 @@ def read_card(sheet, block, headings, problems):
         for position, hazard in enumerate(hazards)
     ]
 
-    # The citation stays in the sheet: it is what a maintainer checks a line
-    # against, and a builder at the bench has no sheet to open.
+    # The citation stays out of the image: it is what a maintainer checks a
+    # line against, and a builder at the bench has no sheet to open.
     source = _text(where, "source", card["source"], problems)
     for token in (part.strip() for part in source.split(",")):
         if token and not cites(headings, token):
-            problems.append(f"{where}: `source` cites {token!r}, which is no section of this sheet")
+            problems.append(f"{where}: `source` cites {token!r}, which is no section of its sheet")
     return None if len(problems) > before else out
 
 
-def load_cards(sheets_dir=None, registry_path=None):
-    """Every generated card, keyed by registry id, in the registry's order."""
+def load_cards(products_path=None, sheets_dir=None):
+    """Every generated card, keyed by registry id, in the products' order."""
+    products_path = products_path or PRODUCTS_PATH
     sheets_dir = sheets_dir or SHEETS_DIR
-    rows = registry_rows(registry_path)
+    document = yaml.safe_load(products_path.read_text(encoding="utf-8"))
+    products = document.get("products") if isinstance(document, dict) else None
+    if not isinstance(products, list):
+        raise CardError([f"{rel(products_path)}: holds no `products` list"])
     problems = []
-    found = {}
-    for sheet in sorted(sheets_dir.glob("*.md")):
-        text = sheet.read_text(encoding="utf-8")
-        blocks = CARD_BLOCK_RE.findall(text)
-        if len(CARD_KEY_RE.findall(text)) != len(blocks):
-            # The generator and the drift check would agree on the shorter set
-            # and the product's hazards would leave the image with every
-            # check green, so the form is refused rather than widened.
+    cards = {}
+    seen = set()
+    for position, product in enumerate(products):
+        if not isinstance(product, dict):
+            problems.append(f"{rel(products_path)}: products[{position}] is no mapping")
+            continue
+        product_id = product.get("id")
+        where = f"{rel(products_path)} ({product_id})"
+        if product_id in seen:
+            problems.append(f"{where}: a second product with this id")
+            continue
+        seen.add(product_id)
+        if "wiring_card" not in product:
+            continue
+        sheet_name = product.get("sheet")
+        sheet = sheets_dir / str(sheet_name)
+        if not sheet_name or not sheet.is_file():
             problems.append(
-                f"{rel(sheet)}: has a `wiring_card:` line the generator cannot read as a "
-                "card. Write the block as a ```yaml fence whose first line is exactly "
-                "`wiring_card:`, with nothing after the colon"
+                f"{where}: a wiring card is proven by its product's `sheet`, and "
+                f"{sheet_name!r} is no file in {rel(sheets_dir)}/"
             )
             continue
-        if not blocks:
-            continue
-        if len(blocks) > 1:
-            problems.append(f"{rel(sheet)}: carries {len(blocks)} wiring_card blocks; a sheet has one")
-            continue
-        card = read_card(sheet, blocks[0], sheet_headings(text), problems)
-        if card is None:
-            continue
-        if card["id"] not in rows:
-            problems.append(
-                f"{rel(sheet)}: id {card['id']!r} is no row of {rel(registry_path or REGISTRY_PATH)}"
-            )
-        elif card["id"] in found:
-            problems.append(f"{rel(sheet)}: a second card for {card['id']!r}")
-        else:
-            found[card["id"]] = card
+        where = f"{where} wiring_card, against {rel(sheet)}"
+        headings = sheet_headings(sheet.read_text(encoding="utf-8"))
+        card = read_card(where, product["wiring_card"], headings, problems)
+        if card is not None and product.get("status") == SUPPORTED:
+            cards[product_id] = card
     if problems:
         raise CardError(problems)
-    return {
-        product: {key: value for key, value in found[product].items() if key != "id"}
-        for product, status in rows.items()
-        if product in found and status == SUPPORTED
-    }
+    return cards
 
 
 STAMP = "DO NOT EDIT MANUALLY"
 
 CARDS_HEADER = f"""<!--
   {STAMP}. Generated by {GENERATOR_NAME} from the
-  wiring_card blocks in {rel(SHEETS_DIR)}/. Edit a sheet's card, then run the
-  generator; tools/check_wiring_cards_drift.py fails while the two disagree.
+  wiring cards in {rel(PRODUCTS_PATH)}. Edit a product's card there, then run
+  the generator; tools/check_wiring_cards_drift.py fails while the two disagree.
 
   Wiring's product wiring cards (#458): how to wire and power each product, by
   its Component Registry id. Reference content, which this set carries and the
@@ -313,9 +283,9 @@ def cards_partial(cards):
     )
 
 
-def generate(quiet=False, sheets_dir=None, registry_path=None, cards_path=None, empty_path=None):
+def generate(quiet=False, products_path=None, sheets_dir=None, cards_path=None, empty_path=None):
     """Write both partials and return the cards. Raises CardError on a bad card."""
-    cards = load_cards(sheets_dir, registry_path)
+    cards = load_cards(products_path, sheets_dir)
     cards_path = cards_path or CARDS_OUTPUT_PATH
     empty_path = empty_path or EMPTY_OUTPUT_PATH
     cards_path.write_text(cards_partial(cards), encoding="utf-8")

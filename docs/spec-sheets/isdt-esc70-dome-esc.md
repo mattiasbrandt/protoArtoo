@@ -57,35 +57,6 @@ test that would settle them.
 > high-friction sectors) is the low-current end of a very large controller, and
 > Section 5.3 is what to do about it.
 
-## Wiring card
-
-How to wire and power this product, in the fixed shape **Wiring** shows
-([#458](https://github.com/mattiasbrandt/protoArtoo/issues/458)).
-`tools/generate_wiring_cards.py` generates it into the Wiring page, and it is
-the only part of this sheet the product ships. Every line is proven by a
-section `source` names: change the section first, then the card. A value this
-sheet does not know stays `UNKNOWN`.
-
-```yaml
-wiring_card:
-  id: "isdt_esc70"
-  supply: "2-3S LiPo, 6.0-12.6 V, on a rail of its own"
-  draw: "rated 70 A continuous. A dome motor pulls single-digit amps"
-  logic: "takes a 3.3 V signal: measured on one Artoo PCB, not yet on a FireBeetle 2"
-  wires:
-    - { from: "Throttle wire, signal", to: "the board's dome ESC pin" }
-    - { from: "Throttle wire, ground", to: "the board's ground" }
-    - { from: "Throttle wire, centre", to: "nothing", note: "it is the BEC's 5.0-7.5 V out: cut it or tape it back" }
-    - { from: "Motor wires", to: "the dome motor", note: "either way round" }
-    - { from: "Battery wires", to: "a 2-3S pack or a 12 V step-down", note: "polarity matters" }
-  hazards:
-    - "The throttle wire's centre conductor is 5.0-7.5 V out. Plugged onto a FireBeetle 2 row it lands on the 3.3 V plane and kills the board."
-    - "Over 12.6 V destroys it at once. A 36 V hoverboard pack does, and so does a 4S pack."
-    - "Battery wires the wrong way round damage the ESC."
-    - "A jammed dome is not protected. Its 120 A limit is out of a dome motor's reach."
-  source: "5.1, 5.2, 5.3, 5.4, 5.5, 6.2"
-```
-
 ## Where this sits in the lineup
 
 The **Dome Rotation** category holds two products, and a builder picks one:

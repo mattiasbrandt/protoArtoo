@@ -38,8 +38,9 @@ image carries.
 Interface reference:
 
 - `include/audio_driver.h` — the interface
-- `include/component_registry.inc` — the one declaration of every module, with
-  its operator-visible name, protocol, status and capability bits
+- `docs/products.yaml` — the one declaration of every module, with its
+  operator-visible name, protocol, status and capability bits, generated into
+  `include/component_registry.inc`
 
 Volume is normalised to **0–30** at the interface boundary. Each backend maps
 this to its module's native range.

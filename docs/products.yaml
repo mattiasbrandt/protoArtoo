@@ -1,0 +1,657 @@
+# protoArtoo Products
+# ===================
+# Source of truth for every Component Family and every product in it: what the
+# Component Registry declares (ADR 0042 as amended 2026-09-09), each product's
+# spec sheet, its wiring card, and the project's own notes about it.
+#
+# AFTER EDITING THIS FILE, REGENERATE:
+#
+#     python3 tools/generate_component_registry.py
+#     python3 tools/generate_wiring_cards.py
+#
+# The first rewrites include/component_registry.inc, the X-macro manifest the
+# firmware tables, the identity payload and the operator lineup all expand.
+# The second rewrites Wiring's product cards,
+# data/asset-sets/default/_wiring_cards.html, and its empty counterpart
+# data/_wiring_cards.html. Editing this file without regenerating them leaves
+# the firmware and the Wiring page stale against it; `make check-action-drift`
+# fails while they disagree, and never rewrites either.
+#
+# Nothing reads this file at runtime. It is generated into the firmware and the
+# image at build time.
+#
+# FAMILIES, in the order the registry declares them:
+#   id          the stable token the JSON payload reports the family under
+#   enumerator  its C++ enumerator
+#   name        the operator-visible family name
+#   member_key  the NVS key of its Component Member Setting, or null where it
+#               has none (one exists only where more than one member is
+#               selectable)
+#   comment     prose above the family's row in the registry, or absent
+#   section     the banner above the family's products in the registry
+#
+# PRODUCTS, grouped by family, in the order the registry lists them:
+#   value       stable numeric id, unique across the registry. A Component
+#               Member setting persists it, so it is never reused and never
+#               renumbered; a new product takes the next free value
+#   id, name    the payload token and the operator-visible product name
+#   family      a family id above
+#   protocol    the Component Protocol token firmware speaks to it
+#   status      supported (a driver ships) or roadmap (planned, not built)
+#   confirmed_on_droid
+#               true where it has run on a real droid; a roadmap product never
+#               is. `confirmed_source` says where that claim comes from
+#   capabilities
+#               the family's capability bits it can be asked, as C++ tokens;
+#               [] is "nothing to ask"
+#   gate        the Board Capability Gate it needs, or null for none
+#   included    whether this image carries its driver, as the C expression the
+#               registry compiles (0 for every roadmap product)
+#   sheet       its spec sheet under docs/spec-sheets/, or null
+#   wiring_card how to wire and power it, on Wiring (#458). Generated for a
+#               supported product only. Every line is proven by a section of
+#               `sheet` that `source` names, by number or by whole title; a
+#               value the sheet does not know is written UNKNOWN. Quoted
+#               strings only, ASCII only, and never "lead", "driven" or "drives"
+#   notes       the project's own specifics about the product
+#
+# The column-by-column contract, and the reasons behind each rule, are in the
+# header of include/component_registry.inc.
+
+categories_banner: The seven categories (#303, resolved by the operator 2026-09-07).
+
+families:
+  - id: body_controller
+    enumerator: COMPONENT_CATEGORY_BODY_CONTROLLER
+    name: Body Controller
+    member_key: null
+    section: |
+      Body Controller -- the board hosting protoArtoo. "more to come"; the category
+      is open (#303). Neither row is driven by protoArtoo, so neither declares a
+      protocol: the running image IS the answer to which one is fitted, which is
+      why `included` tests PA_BOARD rather than a capability.
+
+  - id: radio_controller
+    enumerator: COMPONENT_CATEGORY_RADIO_CONTROLLER
+    name: Radio Controller
+    member_key: rc_member
+    comment: |
+      The Radio Controller's member is the radio a builder holds (operator,
+      2026-09-18 on #369). "rc_member" is its NVS key (the rcMember Setting, src/config_settings.cpp).
+    section: |
+      Radio Controller -- the RC Radio a builder holds and the RC Receiver it
+      talks to, both members of this one category (GLOSSARY.md "RC Radio";
+      operator, 2026-09-18 on #369).
+
+      The radios are the family's cards and its Component Member (rc_member). A
+      radio row declares the `rc_receiver` protocol: the controller never hears the
+      radio itself, only the receiver it talks to. "RC Radio" is the glossary's
+      generic term and the answer for every radio not listed by name; its card is
+      pictured with a RadioMaster TX16S.
+
+      The receivers are the chosen radio's sub-selection, and the protocol each
+      declares is the wire the controller reads - which is what picking one
+      writes, as rc_input_mode. ELRS is selectable and the controller reads no
+      input from it yet: with it chosen the RC path behaves exactly as with no
+      receiver fitted (src/tasks/rc_input_step.cpp starts no decoder for a mode it
+      does not read). Its ids still say `transmitter`, which the glossary avoids;
+      renaming them moves the photographs, their handler and the drawings, and is
+      recorded on #369 rather than done here.
+
+  - id: body_servo_controller
+    enumerator: COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER
+    name: Body servo controller
+    member_key: srv_member
+    comment: |
+      The Body servo controller has two selectable members once the PCA9685 is
+      built (#444), so it has a member setting: "srv_member", the bodyServoMember
+      Setting (src/config_settings.cpp).
+    section: |
+      Body servo controller -- what drives the body's servos. The first row is the
+      MCU's own LEDC PWM on the body controller board's GPIO, and is named for what
+      a builder sees rather than for the peripheral: "LEDC does not make sense for
+      an operator" (operator, 2026-09-18 on #369). Its card borrows the running
+      board's picture. The spec sheets keep the technical name.
+
+      Choosing the PCA9685 ADDS its sixteen Outputs, `pca:0`-`pca:15`, and the
+      board's GPIO Outputs keep working beside them (operator, 2026-09-30, #444;
+      the ADR 0042 note): two backends, never one Output shared between them. It
+      needs no Board Capability Gate - the I2C header is declared on both boards,
+      and whether the expander answers is a runtime fact the droid reports. The
+      board's GPIO is the family's default member because it is the first
+      selectable row here (componentCategoryDefaultMember()): a controller that
+      has never been told keeps driving what it always drove.
+
+  - id: dome_rotation
+    enumerator: COMPONENT_CATEGORY_DOME_ROTATION
+    name: Dome Rotation
+    member_key: null
+    section: |
+      Dome Rotation -- what turns the dome.
+
+  - id: dome_controller
+    enumerator: COMPONENT_CATEGORY_DOME_CONTROLLER
+    name: Dome Controller
+    member_key: null
+    section: |
+      Dome Controller -- the dome's own board, panels and lighting, over protoR2link.
+      Teeces' protocol is genuinely undecided and says so rather than guessing;
+      #313 resolves it.
+
+  - id: foot_drive
+    enumerator: COMPONENT_CATEGORY_FOOT_DRIVE
+    name: Foot Drive
+    member_key: null
+    section: |
+      Foot Drive -- what drives the feet.
+
+      The capability word is the ONE declaration of whether a Foot Drive reports
+      readings back (include/drive_capabilities.h). The drive backend profile reads
+      the hoverboard's bit from this row rather than restating it
+      (include/drive_backend.h), and the Foot Drive page reads it off the lineup,
+      so neither can disagree with the row. The two roadmap rows declare 0: whether
+      a Sabertooth or a VESC reports back over the seam is #304's open follow-up,
+      and a bit on either row would answer it here.
+
+  - id: sound
+    enumerator: COMPONENT_CATEGORY_SOUND
+    name: Sound
+    member_key: snd_member
+    comment: |
+      Sound carries more than one selectable member, so it has a Component Member
+      setting. "snd_member" is its NVS key
+      (the soundMember Setting, src/config_settings.cpp); 10 characters, clear of
+      the 15-character Preferences ceiling.
+    section: |
+      Sound -- the sound module, and the only Component Family with more than one
+      selectable member. All three supported modules bolt to PIN_AUDIO_TX
+      (include/config.h, include/audio_chirp.h, include/audio_mp3trigger.h), so no
+      board narrows the set and every image carries all three drivers.
+
+      These capability words are the ONE declaration of what each module can be
+      asked: the concrete drivers return them from capabilities() rather than
+      restating them (include/audio_chirp.h, include/audio_dy_sv5w.h,
+      include/audio_mp3trigger.h), so a row and its driver cannot drift apart.
+
+      AUDIO_CAP_MIXES (a Background Track under vocals, ADR 0054) is CHIRP's alone:
+      it is the only member with more than one stream. DY-SV5W and MP3 Trigger play
+      one sound at a time.
+
+      DFPlayer Mini declares 0 because nobody has read its protocol against this
+      bitmask yet, not because it can be asked nothing. #305 declares its bits when
+      it builds the driver; until then 0 is the honest word for "none declared".
+
+products:
+  # ---------------------------------------------------------------------------
+  # Body Controller
+  # ---------------------------------------------------------------------------
+  - value: 1
+    id: artoo_pcb
+    name: Artoo PCB (artoo.uk)
+    family: body_controller
+    protocol: none
+    status: supported
+    confirmed_on_droid: true
+    confirmed_source: "operator, 2026-09-30, #455."
+    capabilities: []
+    gate: null
+    included: (PA_BOARD == PA_BOARD_ARTOO_ESP32)
+    sheet: null
+    notes: ""
+
+  - value: 2
+    id: firebeetle2
+    name: FireBeetle 2 (ESP32-P4)
+    family: body_controller
+    protocol: none
+    status: supported
+    confirmed_on_droid: false
+    capabilities: []
+    gate: null
+    included: (PA_BOARD == PA_BOARD_FIREBEETLE2)
+    sheet: firebeetle2-esp32-p4-spec-sheet.md
+    wiring_card:
+      supply: "5 V DC, on USB-C or VIN"
+      draw: "80 mA idle. WiFi peaks at 1330 mA as an access point, 1050 mA joined to a network"
+      logic: "3.3 V only"
+      wires:
+        - { from: "VIN", to: "a 5 V supply", note: "sized for the WiFi peak" }
+      hazards:
+        - "No GPIO header pin takes 5 V. The 5 V rail is power only."
+      source: "Electrical Summary"
+    notes: ""
+
+  # ---------------------------------------------------------------------------
+  # Radio Controller
+  # ---------------------------------------------------------------------------
+  - value: 3
+    id: hotrc_ds650
+    name: HotRC DS-650
+    family: radio_controller
+    protocol: rc_receiver
+    status: supported
+    confirmed_on_droid: true
+    confirmed_source: "operator, 2026-09-30, #455."
+    capabilities: []
+    gate: null
+    included: 1
+    sheet: hotrc-ds650-radio.md
+    wiring_card:
+      supply: "built-in 1S lithium, 1500 mAh, charged over USB-C"
+      draw: "UNKNOWN. The 1200 mAh handset before it ran out inside a field day"
+      logic: "none: it reaches the droid by radio, through its receiver"
+      wires: []
+      hazards:
+        - "CCS holds the throttle with your thumb off the stick. The droid keeps going and cannot tell."
+        - "The handset will not switch off while its receiver has power. Power the droid down first."
+      source: "5.1, 5.3"
+    notes: ""
+
+  - value: 22
+    id: rc_radio
+    name: RC Radio
+    family: radio_controller
+    protocol: rc_receiver
+    status: supported
+    confirmed_on_droid: false
+    capabilities: []
+    gate: null
+    included: 1
+    sheet: null
+    notes: ""
+
+  - value: 7
+    id: xbox_controller
+    name: Xbox Controller
+    family: radio_controller
+    protocol: bluetooth_hid
+    status: roadmap
+    confirmed_on_droid: false
+    capabilities: []
+    gate: null
+    included: 0
+    sheet: xbox-controller-input.md
+    notes: ""
+
+  - value: 4
+    id: rc_transmitter_pwm
+    name: RC Receiver - PWM
+    family: radio_controller
+    protocol: standard_pwm
+    status: supported
+    confirmed_on_droid: false
+    capabilities: []
+    gate: null
+    included: 1
+    sheet: rc-receiver-spec.md
+    wiring_card:
+      supply: "4.5-6 V on the red wire of a HotRC receiver"
+      draw: "UNKNOWN"
+      logic: "3.3-5 V. A 5 V output needs a divider before the board"
+      wires:
+        - { from: "Signal, white or orange", to: "one of the board's RC channel pins", note: "one wire for each channel" }
+        - { from: "+, red", to: "4.5-6 V from a BEC", note: "not straight from the battery" }
+        - { from: "-, black", to: "the board's ground", note: "shared" }
+      hazards:
+        - "A receiver that puts out 5 V damages the board's pins. Put a 3.9k/6.8k divider on each signal wire."
+      source: "PWM Protocol Details, Wiring"
+    notes: ""
+
+  - value: 5
+    id: rc_transmitter_sbus
+    name: RC Receiver - SBUS
+    family: radio_controller
+    protocol: sbus
+    status: supported
+    confirmed_on_droid: false
+    capabilities: []
+    gate: null
+    included: 1
+    sheet: sbus-protocol.md
+    wiring_card:
+      supply: "UNKNOWN here: it is the receiver's own figure"
+      draw: "UNKNOWN here: it is the receiver's own figure"
+      logic: "inverted serial, 100000 baud, 8E2. Its voltage is UNKNOWN"
+      wires:
+        - { from: "Signal", to: "one of the board's RC pins", note: "one wire carries every channel" }
+      hazards:
+        - "The droid reads inverted SBUS. Some FrSky receivers send it non-inverted."
+      source: "1, 2"
+    notes: ""
+
+  # ELRS stays supported here until #477 moves it to roadmap.
+  - value: 6
+    id: rc_transmitter_elrs
+    name: RC Receiver - ELRS
+    family: radio_controller
+    protocol: crsf
+    status: supported
+    confirmed_on_droid: false
+    capabilities: []
+    gate: null
+    included: 1
+    sheet: elrs-crsf-radio.md
+    wiring_card:
+      supply: "UNKNOWN"
+      draw: "UNKNOWN"
+      logic: "3.0 to 3.3 V, not inverted: no level shifter"
+      wires: []
+      hazards:
+        - "The droid does not read ELRS yet. With it picked, the sticks do nothing."
+      source: "Where this sits in the lineup, 5.1, 12"
+    notes: ""
+
+  # ---------------------------------------------------------------------------
+  # Body servo controller
+  # ---------------------------------------------------------------------------
+  - value: 8
+    id: esp32_gpio_ledc
+    name: Body controller board GPIO
+    family: body_servo_controller
+    protocol: ledc
+    status: supported
+    confirmed_on_droid: true
+    confirmed_source: "operator, 2026-09-30, #455."
+    capabilities: []
+    gate: null
+    included: 1
+    sheet: servo-communication.md
+    wiring_card:
+      supply: "4.8-6.0 V on the servo's power wire, from a supply of its own"
+      draw: "hundreds of mA to over 1 A a servo on a spike. An MG996R stalls at 1.0-1.4 A"
+      logic: "3.3 V signal, which most servos take"
+      wires:
+        - { from: "Servo signal", to: "the output's pin" }
+        - { from: "Servo ground", to: "the board's ground and the servo supply's ground", note: "always shared" }
+        - { from: "Servo power", to: "the servo supply", note: "never the board's own regulator" }
+      hazards:
+        - "A servo surge on the board's own regulator resets the Body Controller mid-move. Power servos from a separate supply."
+        - "A servo held against a hard stop overheats. Record its ends short of the stops."
+      source: "2, 3, 6"
+    notes: ""
+
+  - value: 9
+    id: pca9685
+    name: PCA9685
+    family: body_servo_controller
+    protocol: i2c_pwm_expander
+    status: supported
+    confirmed_on_droid: false
+    capabilities: []
+    gate: null
+    included: 1
+    sheet: pca9685-servo-expander.md
+    notes: ""
+
+  - value: 10
+    id: pololu_maestro
+    name: Pololu Maestro
+    family: body_servo_controller
+    protocol: maestro_serial
+    status: roadmap
+    confirmed_on_droid: false
+    capabilities: []
+    gate: null
+    included: 0
+    sheet: pololu-maestro-servo-controller.md
+    notes: ""
+
+  # ---------------------------------------------------------------------------
+  # Dome Rotation
+  # ---------------------------------------------------------------------------
+  - value: 11
+    id: isdt_esc70
+    name: ISDT ESC70 (RC ESC)
+    family: dome_rotation
+    protocol: ledc
+    status: supported
+    confirmed_on_droid: true
+    confirmed_source: "operator, 2026-09-30, #455."
+    capabilities: []
+    gate: null
+    included: 1
+    sheet: isdt-esc70-dome-esc.md
+    wiring_card:
+      supply: "2-3S LiPo, 6.0-12.6 V, on a rail of its own"
+      draw: "rated 70 A continuous. A dome motor pulls single-digit amps"
+      logic: "takes a 3.3 V signal: measured on one Artoo PCB, not yet on a FireBeetle 2"
+      wires:
+        - { from: "Throttle wire, signal", to: "the board's dome ESC pin" }
+        - { from: "Throttle wire, ground", to: "the board's ground" }
+        - { from: "Throttle wire, centre", to: "nothing", note: "it is the BEC's 5.0-7.5 V out: cut it or tape it back" }
+        - { from: "Motor wires", to: "the dome motor", note: "either way round" }
+        - { from: "Battery wires", to: "a 2-3S pack or a 12 V step-down", note: "polarity matters" }
+      hazards:
+        - "The throttle wire's centre conductor is 5.0-7.5 V out. Plugged onto a FireBeetle 2 row it lands on the 3.3 V plane and kills the board."
+        - "Over 12.6 V destroys it at once. A 36 V hoverboard pack does, and so does a 4S pack."
+        - "Battery wires the wrong way round damage the ESC."
+        - "A jammed dome is not protected. Its 120 A limit is out of a dome motor's reach."
+      source: "5.1, 5.2, 5.3, 5.4, 5.5, 6.2"
+    notes: ""
+
+  - value: 12
+    id: syren10
+    name: SyRen 10
+    family: dome_rotation
+    protocol: de_packet_serial
+    status: roadmap
+    confirmed_on_droid: false
+    capabilities: []
+    gate: null
+    included: 0
+    sheet: sabertooth-syren-packet-serial.md
+    notes: ""
+
+  # ---------------------------------------------------------------------------
+  # Dome Controller
+  # ---------------------------------------------------------------------------
+  - value: 13
+    id: astropixels_plus
+    name: AstroPixels Plus
+    family: dome_controller
+    protocol: protor2link
+    status: supported
+    confirmed_on_droid: true
+    confirmed_source: "operator, 2026-09-30, #455."
+    capabilities: []
+    gate: null
+    included: 1
+    sheet: astropixels-dome-controller.md
+    wiring_card:
+      supply: "clean 5 V, 1 A minimum: best from a buck converter in the dome"
+      draw: "about 700 mA in normal use, the vendor's estimate. Measured is UNKNOWN"
+      logic: "3.3 V"
+      wires:
+        - { from: "T", to: "the board's dome link RX", note: "crossed, through the slip ring" }
+        - { from: "R", to: "the board's dome link TX", note: "crossed, through the slip ring" }
+        - { from: "G", to: "the board's ground", note: "common ground is mandatory" }
+        - { from: "V", to: "nothing", note: "no power crosses the slip ring" }
+      hazards:
+        - "V on the dome header stays unconnected. Two supplies joined through the slip ring feed each other."
+        - "A freshly flashed dome talks 2400 and the body talks 9600. Set mserial2 to 9600 on the dome's Setup page, or the link stays silent."
+        - "The USB port on its ESP32 is fragile. Power a fitted dome from the screw terminal."
+      source: "5.1, 7.1, 7.2, 13.5"
+    notes: ""
+
+  - value: 14
+    id: teeces
+    name: Teeces
+    family: dome_controller
+    protocol: tbd
+    status: roadmap
+    confirmed_on_droid: false
+    capabilities: []
+    gate: null
+    included: 0
+    sheet: teeces-dome-lighting.md
+    notes: ""
+
+  # ---------------------------------------------------------------------------
+  # Foot Drive
+  # ---------------------------------------------------------------------------
+  - value: 15
+    id: hoverboard
+    name: Hoverboard, hacked firmware
+    family: foot_drive
+    protocol: hoverboard_gen2_uart
+    status: supported
+    confirmed_on_droid: false
+    capabilities: [DRIVE_CAP_REPORTS_FEEDBACK]
+    gate: PA_CAP_DRIVE_BACKEND_HOVERBOARD
+    included: PA_CAP_DRIVE_BACKEND_HOVERBOARD
+    sheet: hoverboard-hacked-firmware-foot-drive.md
+    wiring_card:
+      supply: "its own drive battery, 10S Li-ion, 42 V full. None from the board"
+      draw: "UNKNOWN. The firmware caps each motor at 15 A by default"
+      logic: "3.3 V is safe on either sensor cable. The left cable is not 5 V tolerant"
+      wires:
+        - { from: "TX", to: "the board's Foot Drive RX", note: "crossed" }
+        - { from: "RX", to: "the board's Foot Drive TX", note: "crossed" }
+        - { from: "GND", to: "the board's ground", note: "the two sides share nothing else" }
+        - { from: "Red wire", to: "nothing" }
+      hazards:
+        - "Gen 2: wire to the empty header by the flash header, PB6/PB7. The 4-pin header joins its two motor boards."
+        - "The red wire on a sensor cable is 12-15 V, not 5 V. On some hoverboards the black wire is live too."
+        - "With a 6-wire hall cable, the right sensor cable carries battery voltage, 36-42 V."
+        - "Nothing isolates the two sides. A fault on the 36 V side reaches the Body Controller through ground."
+        - "The battery reading is not good to a tenth of a volt until that hoverboard is calibrated."
+      source: "The configuration that has to be right on the board, 9.2, 9.3, 9.4, 12.1, 15"
+    notes: ""
+
+  - value: 16
+    id: sabertooth_2x25
+    name: Sabertooth 2x25
+    family: foot_drive
+    protocol: de_packet_serial
+    status: roadmap
+    confirmed_on_droid: false
+    capabilities: []
+    gate: null
+    included: 0
+    sheet: sabertooth-syren-packet-serial.md
+    notes: ""
+
+  - value: 17
+    id: flipsky_mini_v6_vesc
+    name: Flipsky Mini V6 VESC
+    family: foot_drive
+    protocol: vesc_uart
+    status: roadmap
+    confirmed_on_droid: false
+    capabilities: []
+    gate: null
+    included: 0
+    sheet: flipsky-vesc-foot-drive.md
+    notes: ""
+
+  # ---------------------------------------------------------------------------
+  # Sound
+  # ---------------------------------------------------------------------------
+  - value: 18
+    id: dy_sv5w
+    name: DY-SV5W
+    family: sound
+    protocol: soft_uart_binary
+    status: supported
+    confirmed_on_droid: true
+    confirmed_source: "operator, 2026-09-30, #455."
+    capabilities:
+      - AudioDriver::AUDIO_CAP_STATUS_QUERY
+      - AudioDriver::AUDIO_CAP_DEVICE_TYPE
+      - AudioDriver::AUDIO_CAP_TRACK_COUNT
+      - AudioDriver::AUDIO_CAP_CURRENT_TRACK
+    gate: null
+    included: 1
+    sheet: dy-sv5w-sound.md
+    wiring_card:
+      supply: "DC 5 V"
+      draw: "about 0.7 A at full volume, by arithmetic: budget 1 A. Idle is UNKNOWN"
+      logic: "3.3 V on every I/O pin, UART included: no level shifter"
+      wires:
+        - { from: "TXD/IO0", to: "the board's sound RX", note: "crossed: TX to RX" }
+        - { from: "RXD/IO1", to: "the board's sound TX", note: "crossed: RX to TX" }
+        - { from: "5V+ and 5V-", to: "a 5 V supply and its ground" }
+        - { from: "GND", to: "ground" }
+        - { from: "Speaker pads", to: "a 4 ohm speaker", note: "or the 3.5 mm jack to an amplifier" }
+      hazards:
+        - "Neither Speaker pad is ground. Never wire one to ground or to an amplifier input."
+        - "The 5 W on the box is about 3 W. A loud sound on a shared 5 V regulator browns the droid out."
+      source: "5.1, 5.2, 5.3, 5.4"
+    notes: ""
+
+  - value: 19
+    id: mp3_trigger
+    name: MP3 Trigger
+    family: sound
+    protocol: mp3trigger_serial
+    status: supported
+    confirmed_on_droid: false
+    capabilities:
+      - AudioDriver::AUDIO_CAP_STATUS_QUERY
+      - AudioDriver::AUDIO_CAP_TRACK_COUNT
+      - AudioDriver::AUDIO_CAP_CURRENT_TRACK
+    gate: null
+    included: 1
+    sheet: mp3-trigger-sound.md
+    wiring_card:
+      supply: "4.5-12 V DC, or regulated 3.3 V, by its jumper"
+      draw: "about 45 mA idle, 85 mA playing"
+      logic: "takes 3.3 V on its RX. What its TX puts out is UNKNOWN"
+      wires:
+        - { from: "Serial RX", to: "the board's sound TX", note: "crossed" }
+        - { from: "Serial TX", to: "the board's sound RX", note: "crossed, and only once its level is measured" }
+        - { from: "Audio jack", to: "an amplifier", note: "no amplifier on the module. AC-couple a long cable" }
+      hazards:
+        - "Its TX level is UNKNOWN and the board's sound RX is not 5 V tolerant. Measure TX at idle first, or power the module from its 3.3 V jumper."
+        - "A new module talks 38400 and the droid talks 9600. Without MP3TRIGR.INI holding '#BAUD 9600' on the card, it never answers."
+        - "The card is read at power-up only. Change the card, then power the module off and on."
+        - "The audio output carries a DC offset. Static from a long cable can kill the decoder chip."
+      source: "2.1, 6.1, 6.2, 6.3, 13, 15"
+    notes: ""
+
+  - value: 20
+    id: chirp
+    name: CHIRP Audio Trigger
+    family: sound
+    protocol: chirp_ascii_uart
+    status: supported
+    confirmed_on_droid: true
+    confirmed_source: "operator, 2026-09-30, #455."
+    capabilities:
+      - AudioDriver::AUDIO_CAP_STATUS_QUERY
+      - AudioDriver::AUDIO_CAP_DEVICE_TYPE
+      - AudioDriver::AUDIO_CAP_TRACK_COUNT
+      - AudioDriver::AUDIO_CAP_CURRENT_TRACK
+      - AudioDriver::AUDIO_CAP_QUERY_SAFE_PLAYING
+      - AudioDriver::AUDIO_CAP_CATALOG
+      - AudioDriver::AUDIO_CAP_MIXES
+    gate: null
+    included: 1
+    sheet: chirp-audio-trigger-sound.md
+    wiring_card:
+      supply: "5 V on the +5V pin or the screw pads, or USB-C: the POWER SELECT jumper picks"
+      draw: "UNKNOWN"
+      logic: "3.3 V"
+      wires:
+        - { from: "TX", to: "the board's sound RX", note: "crossed" }
+        - { from: "RX", to: "the board's sound TX", note: "crossed" }
+        - { from: "G", to: "the board's ground", note: "the grounds must be common" }
+        - { from: "+5V", to: "a 5 V supply" }
+        - { from: "3.5 mm jack", to: "an amplifier", note: "no amplifier on the module" }
+      hazards:
+        - "The droid talks 9600 only, and the stock firmware talks 115200. Hold Prev and press Play/Stop until the module says 9600."
+      source: "2.1, 2.2, 6.1, 6.2"
+    notes: ""
+
+  - value: 21
+    id: dfplayer_mini
+    name: DFPlayer Mini
+    family: sound
+    protocol: dfplayer_serial
+    status: roadmap
+    confirmed_on_droid: false
+    capabilities: []
+    gate: null
+    included: 0
+    sheet: dfplayer-mini-sound.md
+    notes: ""
