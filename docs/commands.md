@@ -107,7 +107,7 @@ A line the dome sends is never forwarded back to it, including a full-droid
 
 The body does not run `@...`, `*...`, `%...`, `&...` or `!...` lines; those
 belong to the dome. Every line the body does not run, these included, is
-counted as an unknown dome RX line (`src/tasks/dome_link.cpp:397-401`).
+counted as an unknown dome RX line.
 
 ## RC Bindable Command Actions
 

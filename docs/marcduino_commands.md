@@ -79,12 +79,11 @@ A line the body owns is refused, and not forwarded, when:
   on the Console. A full-droid sequence is the exception, as it is for the RC
   tokens: its body routine waits for the estop to clear, and its sound and the
   dome's half still go.
-- **the Output it names is not wired** since the droid started. The answer
-  names why, in the same sentence `POST /api/servo` gives
-  (`src/web/api_servo.cpp:87-124`): "Restart the droid to use X.", "X has no
-  Part on it. Put one on it on Wiring.", "X carries a light, not a servo.", or,
-  for a PCA9685 Output, "X is on the PCA9685. Choose it as the body servo
-  controller to use it." / "X is unreachable - the PCA9685 is not answering."
+- **the Output it names cannot move** since the droid started. The answer
+  says why, the same way `POST /api/servo` does: the Output needs a restart to
+  come up, it has no Part on it (put one on it on Wiring), it carries a light
+  rather than a servo, or it is on a PCA9685 that is not the chosen body servo
+  controller or is not answering.
 - **the droid is asleep.** On the manual command and the Console, every
   prefixed line is held until you wake it (`423 sleeping`).
 - **the line is not one the body can run**, such as an `:MV` with no value,
@@ -136,11 +135,10 @@ cut short would be a different command.
 
 ## `:OP01` means an arm here
 
-ADR 0055, verbatim: *"`:OP01` means body arm 1 here
-(`include/marcduino_helpers.h:33-34`) and dome panel 1 to the fork. That
+`:OP01` means body arm 1 here and dome panel 1 to the dome (ADR 0055). That
 matches what ShadowMD itself means on `Serial3`, so the body's reading is the
-faithful one - but a builder pasting a *dome* binding into the body surface
-still gets an arm. The published boundary is what tells them so."*
+faithful one, but a builder pasting a *dome* binding into the body still gets
+an arm.
 
 The same holds for `:OP02`-`:OP05`, `:OP00`/`:OP99` and the matching `:CL`,
 `:OF` and `:MV` numbers. To reach dome panel 1 itself, send `:OP01` through
