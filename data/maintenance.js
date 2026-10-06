@@ -3,7 +3,7 @@
 //
 // Maintenance: inspecting and repairing a controller that is already configured
 // (GLOSSARY.md "Maintenance", #288). The serial lanes, the diagnostics, the
-// Memory Profiler, Backup & Restore, Restart - and the single
+// Memory Profiler, the crash dump, Backup & Restore, Restart - and the single
 // deliberate way back into guided Setup, for a builder who skipped it or
 // rebuilt the droid wholesale (#297).
 //
@@ -1425,6 +1425,51 @@
   };
 
   window.PAFeatureAvailability.subscribe(renderAvailability);
+})();
+
+
+// =============================================================================
+// The crash dump (#474)
+//
+// The controller keeps one crash dump, from its last crash, until it is erased.
+// This says whether one is stored and, when it is, offers it as a file - the
+// one place a builder can fetch it, since the Console never moves a file
+// (system.api.get-coredump names this page). The download is a plain link to
+// GET /api/coredump: the controller streams it from flash a chunk at a time,
+// and the browser saves it as it arrives rather than holding it whole here.
+// Asked when the page opens and on every return to it, never on a timer.
+// =============================================================================
+(() => {
+  const state = document.getElementById("crash-dump-state");
+  const row = document.getElementById("crash-dump-row");
+  const feedback = document.getElementById("crash-dump-feedback");
+  if (!state || !row || !window.PAApi || !window.PASurface) return;
+
+  const setFeedback = (message, variant = "") => {
+    if (!feedback) return;
+    feedback.textContent = message;
+    feedback.className = variant ? `feedback ${variant}` : "feedback";
+  };
+
+  const readCrashDump = async () => {
+    let answer;
+    try {
+      answer = (await window.PAApi.get("/api/coredump/status", { timeoutMs: 5000 })).data;
+    } catch (error) {
+      state.textContent = "not checked";
+      row.hidden = true;
+      setFeedback(`The droid did not say: ${window.PAApi.messageFor(error)}`, "warning");
+      // Rethrown so the surface's poll records the failure (#360).
+      throw error;
+    }
+    const stored = Boolean(answer && answer.present);
+    state.textContent = stored ? `one stored, ${(answer.size / 1024).toFixed(1)} KB` : "none stored";
+    row.hidden = !stored;
+    setFeedback("");
+    return true;
+  };
+
+  window.PASurface.poll(readCrashDump, { runOnStart: true, refreshOnReturn: true }).start();
 })();
 
 
