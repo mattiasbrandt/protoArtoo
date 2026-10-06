@@ -164,42 +164,22 @@ static void typeLine(const char* line) {
 void setUp() { resetCapture(); }
 void tearDown() {}
 
+// The number of catalog entries of one type, or all of them for NULL.
+static int catalogCountOfType(const char* type) {
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+    int matching = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (type == nullptr || strcmp(entries[i].type, type) == 0) matching++;
+    }
+    return matching;
+}
+
 // -----------------------------------------------------------------------------
 // The regression: "operations type=<t>" typed as one line, through the real
-// parser and the real reconstruction function, must actually filter.
-// Catalog totals (docs/action-registry.yaml, confirmed against
-// test_console_catalog.cpp's exact-215 count): action 136, config 37,
-// event 15, status 27. Status was 26 before #471 added
-// system.status.hosted-link. Config was 36 before #451 added
-// dome.config.stand-down, and 35 before #453 added
-// servo.config.cadence-floor: #225 (system.config.log-level) and #227
-// (wifi.config.settings) had taken it to 36, and #413 retired
-// aux.config.led-pin.
-// Action was 128 and status 14 before #221's remainder reclassified
-// dome.api.get-sequence-last-run/-list-sequences/-list-builtin-sequences
-// from type: action to type: status (the only way to route them through
-// g_statusExecutors[], src/console/console_module.cpp); #224 moved
-// system.api.get-profiler across the same way, taking action from 125 to
-// 124 and status from 17 to 18; #221 moved sound.api.get-catalog/
-// -get-mood-map, system.api.get-identity/-get-validation and
-// rc.api.get-bindable-actions across for the same reason, taking action to
-// 119 and status to 23; #243 added system.action.reboot-wifi-module,
-// taking action to 120; #340 added system.api.get-components, taking status
-// to 24; #347 added servo.api.get-outputs, taking action to 121; #362 moved
-// servo.api.get-outputs across to status when it gained a Console record
-// shape, taking action back to 120 and status to 25; #363 added
-// servo.action.nudge, taking action to 121; #364 added servo.action.hold and
-// servo.action.release, taking action to 123; #365 added
-// servo.action.centre-all, taking action to 124; #352 added
-// servo.action.travel, taking action to 125; #440 added
-// dome.action.pose-sequence, taking action to 126; #445 added
-// dome.action.front-is-here and dome.action.go-home, taking action to 128;
-// #442 added servo.action.puppet-part, taking action to 129, and its take
-// slice dome.action.arm-take, -keep-take, -restore-take-file and
-// dome.api.get-take-file, taking it to 133; #447 added
-// sound.action.play-track-happy ($H), taking it to 134, and
-// sound.action.play-next and -play-previous, taking it to 136; #472 added
-// dome.api.get-sequence-pins and dome.action.pin-sequence, taking it to 138.
+// parser and the real reconstruction function, must actually filter. Each
+// listing is held to the catalog's own count of that type, so a registry row
+// added or retired moves both together and no total is pinned here by hand.
 // -----------------------------------------------------------------------------
 
 void test_operations_type_action_filters_through_the_real_adapter_path() {
@@ -208,8 +188,8 @@ void test_operations_type_action_filters_through_the_real_adapter_path() {
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(138, g_itemCount,
-        "operations type=action must list exactly the 138 action entries when "
+    TEST_ASSERT_EQUAL_INT_MESSAGE(catalogCountOfType(CONSOLE_CATALOG_TYPE_ACTION), g_itemCount,
+        "operations type=action must list exactly the catalog's action entries when "
         "typed as one line through the real embedded-cli parser and "
         "consoleBuildCommandLine() - not when the module is called directly "
         "with a hand-built \"operations type=action\" string");
@@ -221,7 +201,7 @@ void test_operations_type_event_filters_through_the_real_adapter_path() {
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT(15, g_itemCount);
+    TEST_ASSERT_EQUAL_INT(catalogCountOfType(CONSOLE_CATALOG_TYPE_EVENT), g_itemCount);
 }
 
 void test_operations_type_nonsense_is_invalid_through_the_real_adapter_path() {
@@ -246,7 +226,7 @@ void test_bare_operations_still_lists_everything_through_the_real_adapter_path()
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT(217, g_itemCount);  // #347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home, #442 servo.action.puppet-part and the five take rows, #451 dome.config.stand-down, #447 sound.action.play-track-happy, -play-next and -play-previous, #471 system.status.hosted-link, #472 dome.api.get-sequence-pins and dome.action.pin-sequence; #413 retired aux.config.led-pin
+    TEST_ASSERT_EQUAL_INT(catalogCountOfType(nullptr), g_itemCount);
 }
 
 // help <op> must still work through the same real path (the reconstruction

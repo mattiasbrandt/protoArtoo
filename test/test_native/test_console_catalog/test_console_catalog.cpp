@@ -18,6 +18,7 @@
 
 #include "console_catalog.h"
 #include "console_module.h"
+#include "action_registry.h"  // ACTION_REGISTRY_SIZE - the alias count
 
 // =============================================================================
 // Test: Catalog Lookup
@@ -44,7 +45,6 @@ void test_catalog_lookup_by_name() {
 void test_catalog_count_and_iteration() {
     size_t count = consoleCatalogGetCount();
     TEST_ASSERT_GREATER_THAN(0, count);
-    TEST_ASSERT_EQUAL_INT(217, count);  // Registry has 217 entries (#347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor, #445 dome.action.front-is-here and dome.action.go-home, #442 servo.action.puppet-part and the five take rows, #451 dome.config.stand-down, #447 sound.action.play-track-happy, -play-next and -play-previous, #471 system.status.hosted-link, #472 dome.api.get-sequence-pins and dome.action.pin-sequence; #413 retired aux.config.led-pin)
 
     // Verify we can iterate all entries
     size_t count_via_api = 0;
@@ -170,8 +170,8 @@ void test_help_text_offset_and_length() {
 // =============================================================================
 
 void test_aliases_null_terminated() {
-    // Registry has 38 rc_token entries that map to aliases.
-    // Others have NULL aliases. All alias arrays are NULL-terminated.
+    // An entry with an rc_token has it as its one alias; the others have NULL
+    // aliases. All alias arrays are NULL-terminated.
     size_t count = 0;
     const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
 
@@ -191,7 +191,10 @@ void test_aliases_null_terminated() {
             TEST_ASSERT_GREATER_THAN(0, alias_idx);  // At least one alias before NULL
         }
     }
-    TEST_ASSERT_EQUAL_INT(39, aliases_count);  // Exactly 39 rc_token entries
+    // Every rc_token is an RC-bindable action, and every RC-bindable action is
+    // one ACTION_REGISTRY[] row (make check-action-drift holds the registry to
+    // both), so the two tables count the same rows.
+    TEST_ASSERT_EQUAL_INT((int)ACTION_REGISTRY_SIZE, aliases_count);
 }
 
 // =============================================================================

@@ -2396,44 +2396,51 @@ void test_scoped_non_motion_actions_are_not_executor_not_ready() {
                               "every non-motion, non-parameterized action must dispatch");
 }
 
+// An operation the registry keeps off the Console answers not-on-console, and
+// nothing else does (ADR 0037 Amendment 2026-10-06, #474). The catalog is the
+// one record of which rows those are, so this asserts over it rather than over
+// a list of names: every row whose `console:` marks it excluded answers the
+// reason, and every action row that answers it is marked.
+void test_every_excluded_row_answers_not_on_console_and_only_those() {
+    robotState.webControlEnabled = true;
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+
+    int excluded = 0;
+    for (size_t i = 0; i < count; ++i) {
+        const bool marked = entries[i].console_excluded != CONSOLE_EXCLUSION_NONE;
+        if (!marked && strcmp(entries[i].type, CONSOLE_CATALOG_TYPE_ACTION) != 0) continue;
+        runQuery(entries[i].name);
+        if (marked) {
+            excluded++;
+            TEST_ASSERT_EQUAL_INT_MESSAGE(CONSOLE_REASON_NOT_ON_CONSOLE, g_cap.reason,
+                                          entries[i].name);
+        } else {
+            TEST_ASSERT_NOT_EQUAL_MESSAGE(CONSOLE_REASON_NOT_ON_CONSOLE, g_cap.reason,
+                                          entries[i].name);
+        }
+    }
+    TEST_ASSERT_GREATER_THAN_MESSAGE(0, excluded, "no catalog row is marked excluded");
+}
+
 // The closing guard for #221 (epic row #46): the action rows that still answer
-// executor-not-ready are exactly these eighteen, each carrying a true, specific
-// reason on its own docs/action-registry.yaml entry and in the dispatch-site
-// comment (consoleExecuteCommand()'s CONSOLE_OP_ACTION case). A nineteenth row
-// joining the set fails here, so the next unwired operation cannot arrive
-// unexplained; a row leaving it fails here too, so the list cannot rot.
+// executor-not-ready are exactly these three, each with a true, specific reason
+// on its own docs/action-registry.yaml entry and in the dispatch-site comment
+// (consoleExecuteCommand()'s CONSOLE_OP_ACTION case). They are work, not scope:
+// a core the Console module could not reach. A fourth row joining the set fails
+// here, so the next unwired operation cannot arrive unexplained; a row leaving
+// it fails here too, so the list cannot rot.
 //
 // Update this list only together with the reason at both sites - never to make
-// the row green.
-void test_the_executor_not_ready_set_is_exactly_the_recorded_rows() {
-    static const char* const kRecorded[] = {
-        // #206 document / bulk transfer
-        "dome.api.get-sequence",
-        "dome.api.get-layout",
-        "dome.action.save-sequence",
-        "rc.api.get-map",
-        "rc.action.set-map",
-        "system.api.get-coredump",
-        "system.action.upload-firmware",
-        "system.action.upload-filesystem",
-        // core unreachable from this module without editing a fenced file
+// the row green. A row that is never on the Console does not belong here: its
+// registry row says so with `console:` and it answers not-on-console.
+void test_the_executor_not_ready_set_is_exactly_the_unwired_rows() {
+    static const char* const kUnwired[] = {
         "system.api.get-coredump-status",
         "system.action.erase-coredump",
         "system.api.get-admission-trace",
-        // the browser Console Adapter itself, not an operation
-        "system.console",
-        // a take belongs to the sequence open in the Sequences editor (#442)
-        "dome.action.arm-take",
-        "dome.action.keep-take",
-        "dome.api.get-take-file",
-        "dome.action.restore-take-file",
-        // the pins only order the Dashboard's Sequences line (#472)
-        "dome.api.get-sequence-pins",
-        "dome.action.pin-sequence",
-        // servo.api.get-outputs left this set at #362, when it gained a record
-        // shape: test_servo_api_get_outputs_streams_every_row_as_an_item
     };
-    const size_t kRecordedCount = sizeof(kRecorded) / sizeof(kRecorded[0]);
+    const size_t kUnwiredCount = sizeof(kUnwired) / sizeof(kUnwired[0]);
 
     robotState.webControlEnabled = true;
     size_t count = 0;
@@ -2446,18 +2453,18 @@ void test_the_executor_not_ready_set_is_exactly_the_recorded_rows() {
         if (g_cap.reason != CONSOLE_REASON_EXECUTOR_NOT_READY) continue;
         notReady++;
 
-        bool recorded = false;
-        for (size_t r = 0; r < kRecordedCount; ++r) {
-            if (strcmp(kRecorded[r], entries[i].name) == 0) {
-                recorded = true;
+        bool unwired = false;
+        for (size_t r = 0; r < kUnwiredCount; ++r) {
+            if (strcmp(kUnwired[r], entries[i].name) == 0) {
+                unwired = true;
                 break;
             }
         }
-        TEST_ASSERT_TRUE_MESSAGE(recorded, entries[i].name);
+        TEST_ASSERT_TRUE_MESSAGE(unwired, entries[i].name);
     }
 
-    TEST_ASSERT_EQUAL_INT_MESSAGE((int)kRecordedCount, notReady,
-                                  "a recorded row started dispatching, or a new row stopped - "
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)kUnwiredCount, notReady,
+                                  "an unwired row started dispatching, or a new row stopped - "
                                   "update this list together with its reason at the registry "
                                   "and the dispatch site");
 }
@@ -4770,51 +4777,6 @@ void test_257_every_direct_action_row_still_dispatches() {
     }
 }
 
-// dome.action.save-sequence (#259) is the one dome.action.* row #259
-// deliberately leaves EXECUTOR_NOT_READY: its REST body (POST /api/seq, a
-// full Learned Sequence JSON v1 document with a steps array) is the
-// "document/bulk transfer" #206 names out of scope for this epic, and the
-// Console's one-line key=value argument grammar has no shape for it - see
-// include/console_direct_action_dome.h's own header comment for the full
-// reasoning. Asserted here so a future accidental wiring (or an accidental
-// unwiring) of this specific row is caught by name, not folded into the
-// aggregate #220 report count.
-void test_action_save_sequence_stays_executor_not_ready_document_transfer_out_of_scope() {
-    runQuery("dome.action.save-sequence");
-
-    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
-    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
-}
-
-// dome.api.get-sequence / dome.api.get-layout (#221 remainder): the other
-// two of the five dome.api.* rows - the three above them
-// (get-sequence-last-run/list-sequences/list-builtin-sequences) are wired
-// and covered by their own tests above. These two stay EXECUTOR_NOT_READY
-// on purpose, the same document/bulk-transfer #206 exclusion
-// dome.action.save-sequence's test above asserts: seqStoreReadFileSlice()/
-// domeLayoutCacheReadChunk() are byte-slice readers over one stored
-// document (a Learned Sequence JSON v1 file; the dome's cached composed-
-// layout JSON), not a gap this ticket owes a Console Record shape for -
-// see the registry entries' own comments (docs/action-registry.yaml) and
-// consoleExecuteCommand()'s CONSOLE_OP_ACTION case (src/console/
-// console_module.cpp) for the full reasoning. Asserted here by name for the
-// same reason dome.action.save-sequence's test is: a future accidental
-// wiring (or unwiring) is caught, not folded into the aggregate #220
-// report count.
-void test_action_get_sequence_stays_executor_not_ready_document_transfer_out_of_scope() {
-    runQuery("dome.api.get-sequence");
-
-    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
-    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
-}
-
-void test_action_get_layout_stays_executor_not_ready_document_transfer_out_of_scope() {
-    runQuery("dome.api.get-layout");
-
-    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
-    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
-}
-
 // =============================================================================
 // Known-but-unavailable operations (#224, ADR 0029/0036)
 //
@@ -5809,7 +5771,8 @@ int main(int, char**) {
     RUN_TEST(test_action_dispatch_attributes_serial_source);
     RUN_TEST(test_action_dispatch_attributes_web_source);
     RUN_TEST(test_scoped_non_motion_actions_are_not_executor_not_ready);
-    RUN_TEST(test_the_executor_not_ready_set_is_exactly_the_recorded_rows);
+    RUN_TEST(test_every_excluded_row_answers_not_on_console_and_only_those);
+    RUN_TEST(test_the_executor_not_ready_set_is_exactly_the_unwired_rows);
     RUN_TEST(test_servo_api_get_outputs_streams_every_row_as_an_item);
     RUN_TEST(test_system_api_get_components_names_the_radio_member);
     RUN_TEST(test_system_api_get_components_part_items_are_whole_and_carry_the_droid_fact);
@@ -5886,9 +5849,6 @@ int main(int, char**) {
     RUN_TEST(test_action_test_sequence_missing_name_answers_missing_argument);
     RUN_TEST(test_action_test_sequence_rejects_a_non_dm_name);
     RUN_TEST(test_action_test_sequence_valid_name_queues_through_the_dispatcher);
-    RUN_TEST(test_action_save_sequence_stays_executor_not_ready_document_transfer_out_of_scope);
-    RUN_TEST(test_action_get_sequence_stays_executor_not_ready_document_transfer_out_of_scope);
-    RUN_TEST(test_action_get_layout_stays_executor_not_ready_document_transfer_out_of_scope);
 
     RUN_TEST(test_component_toggle_read_reports_saved_and_active);
     RUN_TEST(test_component_toggle_write_persists_and_reports_staged_until_reboot);
