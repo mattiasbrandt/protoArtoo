@@ -9,70 +9,72 @@ owns the Foot Drive, the body servos and lights, the sound module, Dome
 Rotation and the link to the Dome Controller. You set it up, wire it and run
 it from any web browser, with no app and no rebuild. Every source line is open.
 
-[Get started](#get-started) | [The pages](#the-pages) | [Features](#features) | [What it supports](#what-it-supports) | [Safety](#safety)
+[Get started](#get-started) | [Showcase](#showcase) | [Features](#features) | [What it supports](#what-it-supports) | [Safety](#safety)
 
-## The pages
+## Showcase
 
 <img src="docs/images/readme/dashboard.webp" alt="Dashboard. The body and the dome, then the page scrolling down." width="720">
-
-FireBeetle 2. The picture above keeps scrolling. Each picture below is the top of that page. Open one to watch it scroll.
-
-| <a href="#readme-configuration"><img src="docs/images/readme/configuration.png" alt="Configuration. The board, then the dome and body you built." width="220"><br>Configuration</a> | <a href="#readme-wiring"><img src="docs/images/readme/wiring.png" alt="Wiring. The wires on this FireBeetle 2, and the part on each one." width="220"><br>Wiring</a> | <a href="#readme-parts"><img src="docs/images/readme/parts.png" alt="Parts. Where each part sits, and which output it is on." width="220"><br>Parts</a> |
-| --- | --- | --- |
-| <a href="#readme-lights"><img src="docs/images/readme/lights.png" alt="Lights. The charge bay light on the body." width="220"><br>Lights</a> | <a href="#readme-servos"><img src="docs/images/readme/servos.png" alt="Servos. The body panels, and the pulse each output is told." width="220"><br>Servos</a> | <a href="#readme-foot-drive"><img src="docs/images/readme/foot-drive.png" alt="Foot Drive. The pad, the speed presets, and the limits." width="220"><br>Foot Drive</a> |
-| <a href="#readme-dome"><img src="docs/images/readme/dome.png" alt="Dome. Rotation, and the motor settings." width="220"><br>Dome</a> | <a href="#readme-sound"><img src="docs/images/readme/sound.png" alt="Sound. The named tracks, then the catalog." width="220"><br>Sound</a> | <a href="#readme-sequences"><img src="docs/images/readme/sequences.png" alt="Sequences. Nothing learned on this droid yet." width="220"><br>Sequences</a> |
 
 <a id="readme-configuration"></a>
 <details>
 <summary>Configuration</summary>
+<img src="docs/images/readme/configuration.png" alt="Configuration. The board, then the dome and body you built." width="1440">
 <img src="docs/images/readme/configuration.webp" alt="Configuration scrolling from the board down through the build." width="720">
 </details>
 
 <a id="readme-wiring"></a>
 <details>
 <summary>Wiring</summary>
+<img src="docs/images/readme/wiring.png" alt="Wiring. The wires on this FireBeetle 2, and the part on each one." width="1440">
 <img src="docs/images/readme/wiring.webp" alt="Wiring scrolling through the wires and the parts on each output." width="720">
 </details>
 
 <a id="readme-parts"></a>
 <details>
 <summary>Parts</summary>
+<img src="docs/images/readme/parts.png" alt="Parts. Where each part sits, and which output it is on." width="1440">
 <img src="docs/images/readme/parts.webp" alt="Parts scrolling through where each part sits." width="720">
 </details>
 
 <a id="readme-lights"></a>
 <details>
 <summary>Lights</summary>
+<img src="docs/images/readme/lights.png" alt="Lights. The charge bay light on the body." width="1440">
 <img src="docs/images/readme/lights.webp" alt="Lights scrolling past the charge bay light." width="720">
 </details>
 
 <a id="readme-servos"></a>
 <details>
 <summary>Servos</summary>
+<img src="docs/images/readme/servos.png" alt="Servos. The body panels, and the pulse each output is told." width="1440">
 <img src="docs/images/readme/servos.webp" alt="Servos scrolling past the body panel outputs." width="720">
 </details>
 
 <a id="readme-foot-drive"></a>
 <details>
 <summary>Foot Drive</summary>
+<img src="docs/images/readme/foot-drive.png" alt="Foot Drive. The pad, the speed presets, and the limits." width="1440">
 <img src="docs/images/readme/foot-drive.webp" alt="Foot Drive scrolling from the pad into the speed limits." width="720">
 </details>
 
 <a id="readme-dome"></a>
 <details>
 <summary>Dome</summary>
+<img src="docs/images/readme/dome.png" alt="Dome. Rotation, and the motor settings." width="1440">
 <img src="docs/images/readme/dome.webp" alt="Dome scrolling through rotation and the motor settings." width="720">
 </details>
 
 <a id="readme-sound"></a>
 <details>
 <summary>Sound</summary>
+<img src="docs/images/readme/sound.png" alt="Sound. The named tracks, then the catalog." width="1440">
 <img src="docs/images/readme/sound.webp" alt="Sound scrolling from the named tracks into the catalog." width="720">
 </details>
 
 <a id="readme-sequences"></a>
 <details>
 <summary>Sequences</summary>
+<img src="docs/images/readme/sequences.png" alt="Sequences. Nothing learned on this droid yet." width="1440">
 <img src="docs/images/readme/sequences.webp" alt="Sequences. The page scrolls a short way. Nothing is learned yet." width="720">
 </details>
 
