@@ -430,10 +430,11 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
     }
 
     // Aliases: comma-joined into one field value. Neither adapter's record
-    // emitter quotes values today (docs/console-protocol.md s.7 asks for it,
-    // but consoleQuoteValue() is unused - a pre-existing gap out of scope
-    // here), so this stays comma-joined rather than space-separated to keep
-    // the value one whitespace-free token regardless.
+    // emitter quotes values itself (docs/console-protocol.md s.7 asks for it);
+    // a caller quotes a value that needs it with consoleQuoteValue(), as the
+    // Output words and console_page above do. This stays comma-joined rather
+    // than space-separated so the value is one whitespace-free token and
+    // needs no quoting.
     if (entry->aliases != nullptr) {
         char aliasesBuf[128] = {};
         size_t used = 0;
@@ -953,9 +954,9 @@ static void consoleExecuteDomeStatusSerialLink(uint32_t requestId, const Console
 
 // Renders one RcDiagnosticsSourceSnapshot as a single whitespace-free token.
 // Colon-separated (not "="): the record's own wire format is space-separated
-// key=value tokens and no adapter quotes values yet (docs/console-protocol.md
-// s.3.5 asks for it; consoleQuoteValue() is unused, a pre-existing gap out of
-// scope here - same reasoning as the alias/param comma-joining above). An
+// key=value tokens and no adapter quotes values itself (docs/console-protocol.md
+// s.3.5 asks for it; a caller quotes with consoleQuoteValue() - same reasoning
+// as the alias/param comma-joining above, which needs no quoting). An
 // internal "=" would still parse under a first-"="-split reader, but would
 // violate the documented "quote a value containing =" rule for no benefit, so
 // this avoids "=" entirely instead.
