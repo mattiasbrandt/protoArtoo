@@ -109,7 +109,8 @@ A board's mDNS name is **configurable by design**, so guess it in an order rathe
 than pinning one. The compiled-in default is `WIFI_MDNS_HOST`
 (`include/config.h`) - `artoo` on artoo-esp32, `firebeetle2` on a FireBeetle 2,
 so the two never contest one LAN. But when an operator sets a Droid Name and
-ticks *Use as network hostname (mDNS)* on the **Setup** page (`mdnsUseName` in the
+ticks *Use as network hostname (mDNS)* in the Droid identity card on the
+**Configuration** page (`mdnsUseName` in the
 API), *that* name, lowercased, is what the board advertises, and the compiled
 default is only the fallback (`configResolvedMdnsHostname()`,
 `src/config_store.cpp`).
@@ -140,7 +141,7 @@ host that is not there is a different thing: that fails, and exits 1.
 
 `--port <device>` (default `/dev/ttyUSB0`) is the serial adapter. `--http
 <base-url>` is the browser adapter - the same `POST /api/console` the dashboard's
-Live Logs box uses. Every `send` and `sendlen` works on both, and the HTTP
+Console box uses. Every `send` and `sendlen` works on both, and the HTTP
 transport re-renders the JSON it gets back into the serial line grammar, so a
 transcript from one adapter diffs line for line against the other. That is what
 makes a parity check a one-program job.

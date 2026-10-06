@@ -3,7 +3,7 @@
 The Controller Console lets you type commands straight at the controller and
 read back what happened, in plain `key=value` lines. It is the same command
 language in two places: a **serial terminal** plugged into the controller's
-USB port, and the **Live Logs** command box on the dashboard. Whichever one
+USB port, and the **Console** command box on the dashboard. Whichever one
 you use, you type the same commands and get the same answers back.
 
 This page is for a builder at the bench: how to open a terminal, what to
@@ -14,16 +14,17 @@ anyone extending the firmware) is [console-protocol.md](console-protocol.md).
 > **The Console isn't finished yet.** Reading status (`system.status.*`),
 > discovering commands (`help`, `operations`), running most sound/dome
 > actions, and a growing list of `config` reads and writes all work today.
-> Drive and dome-speed motion still don't run through the Console — see
-> [What doesn't work here yet](#what-doesnt-work-here-yet) for exactly which
-> `config` settings are wired up and which still route through the
-> **Setup** page instead.
+> Stick-style motion (the speed, steer and dome-speed axes) does not run
+> through the Console - see
+> [What doesn't work here yet](#what-doesnt-work-here-yet), which also says
+> which `config` settings are wired up and which still route through the
+> **Configuration** page instead.
 
 ## Two ways in
 
-| | Serial terminal | Dashboard Live Logs |
+| | Serial terminal | Dashboard Console |
 |---|---|---|
-| Where | USB cable + a terminal program | The **📋 Live Logs** panel on the dashboard, in the command box below the log |
+| Where | USB cable + a terminal program | The **Console** panel on the dashboard, directly under Controls, in the command box below the log |
 | Needs the network up? | No | Yes |
 | Leaves a session history? | Only for this session (Up/Down) | Yes — saved in the browser, survives a page reload |
 | How you leave | Ctrl-C | Just navigate away or close the tab |
@@ -61,8 +62,8 @@ type. `make console` is the one that opens a session you can type at (it
 resolves the port for you); `pio device monitor -e <env>` above works too.
 
 **Flash the right firmware image.** The image that runs the Console is
-`firebeetle2` (and, on the classic board, `artoo_esp32` or one of its
-variants). `firebeetle2_hosted_bench` is a bench harness that builds none of
+`firebeetle2` on the FireBeetle 2 and `artoo_esp32` (or one of its
+variants) on the Artoo PCB. `firebeetle2_hosted_bench` is a bench harness that builds none of
 the firmware — it is not the Console.
 
 **Once attached**, the controller prints a ready banner and a prompt:
@@ -102,8 +103,8 @@ go by — because the seated board's USB path shares a pin with the SBUS
 receiver
 ([troubleshooting.md](troubleshooting.md#3-flashing-constraint-read-before-collecting-usb-evidence)).
 Whether a seated controller takes commands you type has never been measured,
-so don't plan around it: unseat the board, or use the dashboard's **Live
-Logs** command box, which needs no cable at all.
+so don't plan around it: unseat the board, or use the dashboard's
+**Console** command box, which needs no cable at all.
 
 **The line you type is 62 bytes long.** That cap belongs to this transport,
 not to the Console — the dashboard's command box takes 255. Go over it and the
@@ -158,7 +159,7 @@ than assuming the board itself is unwell.
 
 ## Use the Console from the dashboard
 
-Open the dashboard and find the **📋 Live Logs** panel. Type into the command
+Open the dashboard and find the **Console** panel. Type into the command
 box under the log and press Enter — the reply prints inline in the same log,
 in the same `< id=... type=...` shape a serial terminal would show, with an
 error record shown in red. Up/Down cycles through commands you've sent this
@@ -172,7 +173,7 @@ belongs to:
 
 ```text
 < id=12 type=end status=ok outcome=completed
-[CUT] The controller could not fit the whole answer — some lines are missing from the reply above.
+[CUT] The Body Controller could not fit the whole answer — some lines are missing from the reply above.
 ```
 
 The lines you do get are the newest ones; see [api.md](api.md) for exactly
@@ -252,6 +253,7 @@ dome.action.marcduino-sequence value=30
 < id=4 type=field name=available_on_board value=true
 < id=4 type=field name=available_in_build value=true
 < id=4 type=field name=requires_web_control value=false
+< id=4 type=field name=read_only value=false
 < id=4 type=field name=aliases value=sound_rand_humming
 < id=4 type=field name=display_name value=Random Humming
 < id=4 type=field name=description value=Play one random track from the configured Humming category range
@@ -332,6 +334,11 @@ never carries one. The tokens are stable — safe to match on in a script:
 | `not-executable` | This entry is not something you run — an event, or one of the [motion commands not yet wired](#what-doesnt-work-here-yet) |
 | `not-on-console` | Never run from here: a file that moves whole, a step of the Sequences editor, or something only a page does. `help` on it names the page, as `console_page` |
 | `executor-not-ready` | Recognised, but the firmware doesn't have a way to run it yet |
+| `read-only` | A write to a setting that can only be read here; its `help` says `read_only=true` and its description says where to set it |
+| `part-not-assigned` | The Part this needs has no Output claiming it on Wiring, so it does not move; the rest of a Sequence carries on |
+| `dome-not-calibrated` | A dome bearing move with no dome calibration saved |
+| `bearing-unknown` | A dome bearing move while where the dome points is unknown: turn it to front and press Front is here |
+| `module-cannot-mix` | A Background Track the fitted sound module cannot play under other sounds |
 
 ## While the log is printing
 
@@ -379,7 +386,7 @@ then simply absent. `/api/logs` still has that one — so when a log line looks
 missing and no marker says it was dropped, that is where to look. When that
 keeps happening — a terminal plugged in but not reading, so line after line is
 dropped — the log says so where you are already looking: a `serial
-backpressure` warning appears in **📋 Live Logs** (and in `/api/logs`), and a
+backpressure` warning appears in the dashboard's **Console** (and in `/api/logs`), and a
 line carrying `dropped=<n>` follows once the terminal is reading again,
 counting how many lines were lost.
 
@@ -446,7 +453,7 @@ the same time, neither locks the other out, and the answers are the same.
 - **Answers go back to whoever asked.** A command run in the dashboard does
   not print on the serial terminal, and vice versa. What both surfaces *do*
   share is the log: anything the firmware logs on the way lands in the ring,
-  so it reaches the serial terminal and the dashboard's **📋 Live Logs** panel
+  so it reaches the serial terminal and the dashboard's **Console** panel
   alike.
 - **The same question gets the same answer on both.** Measured on 2026-09-05
   on an artoo-esp32: `system.status.health` asked over serial and from the
@@ -454,7 +461,7 @@ the same time, neither locks the other out, and the answers are the same.
   order. The one deliberate difference is `help`, whose `detach_key` field
   only exists on serial — there is no terminal to detach from in a browser.
 - **Two settings writes can't overwrite each other.** Every writer — this
-  Console, the dashboard's Setup forms, and the API behind them — goes through
+  Console, the Configuration and Maintenance forms, and the API behind them - goes through
   one write window. If another writer is inside it when your command arrives,
   the command answers `unavailable reason=temporarily-unavailable` and changes
   nothing at all; try it again. On a `config`-type command that reason means
@@ -463,8 +470,8 @@ the same time, neither locks the other out, and the answers are the same.
 
 ## Web control: what actions need
 
-Enable **Web control** (the **✓ Enable Web Control** button under Safety
-Controls on the Drive page, `POST /api/web-control/enable`, or the command
+Enable **Web control** (the **Enable web control** button in the Drive card
+on the **Foot Drive** page, `POST /api/web-control/enable`, or the command
 `system.action.enable-web-control`) before running an action-type command —
 this applies from serial too, not just the dashboard. Until it's on, an
 action answers `blocked reason=blocked-by-state`:
@@ -484,6 +491,10 @@ away.
 `system.action.estop` always answers `blocked` this way, on purpose — this
 interface never triggers an estop; use the STOP button on the top bar, which
 is on every screen, or `POST /api/estop` for that.
+
+`system.action.estop-clear` does the other half: it releases a latched estop,
+needs no Web control, and answers `applied` (the same release as
+`POST /api/estop/clear` and the top bar's STOP toggle).
 
 ## WiFi settings, as one command
 
@@ -564,7 +575,7 @@ clear the browser's site data (dashboard).
 ## Setting the log level
 
 `system.config.log-level` reads and changes how much detail the controller
-writes to its log — over serial and on the dashboard's Live Logs panel
+writes to its log - over serial and on the dashboard's Console panel
 alike. Read it with no arguments; write it with either the plain number or
 the word, either case — `value=4` and `value=debug` set the same thing:
 
@@ -588,7 +599,7 @@ across a reboot too.
 ## Reading the log ring
 
 `system.status.logs` prints the controller's own recent log lines back to
-you — the same lines the dashboard's **📋 Live Logs** panel shows — one line
+you - the same lines the dashboard's **Console** panel shows - one line
 per `item` record, oldest first, no arguments needed:
 
 ```text
@@ -654,7 +665,7 @@ listed and answers `unavailable reason=not-on-this-board`.
   know is to run one. Run it with the value you actually want — if it works
   it has already taken effect, and if it doesn't you get
   `executor-not-ready` back, meaning the Console knows the command but has
-  nothing behind it yet. Change that setting from the **Setup** page in the
+  nothing behind it yet. Change that setting from the **Configuration** page in the
   meantime. Among the ones that work, a Component Toggle
   (`system.config.enable_*`) always answers `staged-until-reboot` — saved,
   but only takes effect at the next restart;
