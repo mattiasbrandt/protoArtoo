@@ -1,50 +1,36 @@
 # FireBeetle 2 ESP32-P4 Spec Sheet
 
-Working spec for using the DFRobot FireBeetle 2 ESP32-P4 and DFR1237 IO
-expansion board as a controller candidate.
+Reference for the DFRobot FireBeetle 2 ESP32-P4 (DFR1172) and the DFR1237 kit
+that adds a passive IO expansion board: DFRobot and Espressif sources, community
+reports, and measured examples from two retail v1.3 boards.
 
 ## Before you buy one
 
-This sheet documents the FireBeetle 2 for protoArtoo development. It is not a
-recommendation to buy this board for a droid build — that question is still
-open, and this page does not answer it yet.
+Two retail DFR1172 boards were measured in August 2026. One works. The other
+arrived with the image for its ESP32-C6 radio written to the wrong place in
+flash, so that board cannot join WiFi at all, and you cannot tell which one you
+have until you power it up. DFRobot has publicly acknowledged the affected
+batch (units manufactured 2025-10-31). See "Known Issue: retail C6 provisioning
+is inconsistent, and recovery is marginal" and "C6 flash layout".
 
-We have bought two. One works. The other arrived with the image for its ESP32-C6
-radio written to the wrong place in flash, so that board cannot join WiFi at
-all, and you cannot tell which one you have until you power it up. DFRobot has
-publicly acknowledged the affected batch. Recovering a bad board means soldering
-to three unlabelled 2 mm pads and holding all three connected for the eight to
-twelve minutes the write takes — someone attempting exactly that, with a
-purpose-bought jig, a meter and a written procedure, could not keep contact.
-The radio cannot be reflashed through the board's USB port or over WiFi either;
-we tested the wire-free route and a factory radio refuses it.
+Recovering an affected board means a wired reflash through three unlabelled
+2 mm pads on the underside, holding all three in contact for the eight to
+twelve minutes the write takes. One attempt with a purpose-bought jig, a meter
+and a written procedure could not keep contact. The radio cannot be reflashed
+through the board's USB port or over WiFi either: a C6 running the factory
+image refuses the update RPCs (see "Known Issue: the factory C6 refuses the OTA
+RPCs").
 
-**If you are building a droid today, use the artoo-esp32 controller.** It is
-fully supported, it is what this project develops against day to day, and none
-of the above applies to it.
+The P4 on this board is chip revision v1.x. Both measured units report v1.3
+(see [Identifying the revision](#identifying-the-revision) for the verbatim
+output). v1.0 and v1.3 are firmware-interchangeable and DFRobot ships units
+across the v1.x family, so **check your own board rather than assume it matches
+these.** The only split that changes toolchain configuration is v1.x versus
+v3.x; see [Chip Revision: v1.x vs v3.x](#chip-revision-v1x-vs-v3x).
 
-This page will say something different once DFRobot ships corrected boards or a
-corrected factory image. Nothing else changes it — not a successful repair on
-our bench, and not more good boards arriving, because neither tells you what is
-in the box you would be opening.
-
-Sources re-verified 2026-08-07. The previous revision of this sheet (2026-05-19)
-was written against the ESP32-P4 datasheet DFRobot hosts on its wiki, which has
-since been superseded twice over. See [Chip Revision: v1.x vs
-v3.x](#chip-revision-v1x-vs-v3x) first; it changes the toolchain configuration.
-
-**This project's bench board reports chip revision v1.3**, read from the board
-over USB on 2026-08-21 (see [Identifying the
-revision](#identifying-the-revision) for the verbatim output). An earlier
-revision of this sheet recorded v1.0 for the unit in hand; v1.3 is the
-verified reading for the board this project actually builds against.
-
-That correction changes no toolchain setting. v1.0 and v1.3 are both v1.x and
-are firmware-interchangeable, and DFRobot ships units across the v1.x family —
-so **both are documented throughout this sheet, and you must check your own
-board rather than assume it matches ours.** All toolchain guidance below is
-written for the v1.x family as a whole; the only split that changes
-configuration is v1.x versus v3.x.
+Sources re-verified 2026-08-07. The ESP32-P4 datasheet DFRobot hosts on the
+DFR1172 wiki has since been superseded twice over; "Official Sources Checked"
+names the current ones.
 
 ## Boards Covered
 
@@ -57,14 +43,6 @@ DFRobot markets the main board as "ESP32-P4R32". That is a DFRobot shorthand for
 "P4 with 32 MB PSRAM", not an Espressif part number. Espressif's part numbers are
 `ESP32-P4NRW16` / `ESP32-P4NRW32` (chip revision v1.x) and
 `ESP32-P4NRW16X` / `ESP32-P4NRW32X` (chip revision v3.x).
-
-## Project Integration
-
-This spec sheet is the authoritative hardware reference for the FireBeetle 2 target. GPIO allocations and pin assignments are linked to the project's canonical pin map:
-
-- **[`docs/pin_map.md`](../pin_map.md)** — human-readable cross-reference for all production GPIO assignments, the exposed pin budget, and constraint notes. **Start here for pin questions.**
-- **[`include/config.h`](../../include/config.h)** (firebeetle2 block) — compile-time GPIO configuration used by the firmware
-- **[`include/firebeetle_required_pins.inc`](../../include/firebeetle_required_pins.inc)** — production pin inventory and static_assert guards
 
 ## Official Sources Checked
 
@@ -125,21 +103,21 @@ the revision-specific `esp32-p4-chip-revision-v1.3_datasheet_en.pdf` (file dated
 2026-01-19), and Espressif's `dfrobot_firebeetle2_esp32p4` Arduino board entry
 defaults to `build.chip_variant=esp32p4_es` and `build.f_cpu=360000000L`.
 Individual units vary within the v1.x family, so **do not infer your board's
-revision from this sheet - read it from your own board.** This project's bench
-unit is **v1.3**. Because any difference inside v1.x is a minor-number
-difference, nothing in the toolchain configuration changes either way.
+revision from this sheet - read it from your own board.** Both units measured
+in August 2026 report **v1.3**. Because any difference inside v1.x is a
+minor-number difference, nothing in the toolchain configuration changes either
+way.
 
 Datasheet, by the revision you actually have:
 
 - **v1.3** - use `esp32-p4-chip-revision-v1.3_datasheet_en.pdf` from the DFR1237
-  kit ZIP. It matches the silicon exactly. This is the case for our bench board.
+  kit ZIP. It matches the silicon exactly. Both measured units are this case.
 - **v1.0** - Espressif publishes no v1.0-specific datasheet. Use the same v1.3
   datasheet; minor-revision compatibility makes it applicable.
 
-This also resolves the 360 vs 400 MHz question the previous revision of this
-sheet left open: 360 MHz is not a conservative choice, it is the correct one for
-this board. And it means the previous PlatformIO recommendation
-(`board = esp32-p4_r3`) was wrong.
+So 360 MHz is not a conservative choice, it is the correct one for this
+board, and the generic PlatformIO target `board = esp32-p4_r3` (v3.x silicon)
+does not apply to it.
 
 ### Selecting for the wrong revision
 
@@ -162,7 +140,7 @@ into download mode but writes nothing:
 esptool --port /dev/ttyACM0 chip-id
 ```
 
-Actual output from this project's bench board, `esptool` v5.3.0, 2026-08-21:
+Output read from a v1.3 board, `esptool` v5.3.0, 2026-08-21:
 
 ```
 Detecting chip type... ESP32-P4
@@ -194,7 +172,7 @@ marking:
 | --- | --- |
 | v0.0 | `X A XX` |
 | v1.0 | `X C XX` |
-| **v1.3** (our bench board) | **`X E XX`** |
+| **v1.3** (both measured units) | **`X E XX`** |
 | v3.0 | `X F XX` |
 | v3.1 | `X G XX` |
 | v3.2 | `X H XX` |
@@ -206,8 +184,7 @@ The revision is also encoded in eFuse: major in
 
 Per ESP32-P4 Series SoC Errata v1.3 (2026-07-22), the same four errata affect
 v0.0, v1.0 and v1.3 alike. Nothing is gained or lost by which v1.x revision a
-board carries, so this table applies whichever one you have - including our
-v1.3 bench board.
+board carries, so this table applies whichever one you have.
 
 | Errata | Affects | Relevance here |
 | --- | --- | --- |
@@ -317,11 +294,11 @@ disabled by default). Worth enabling on slow-edged or long-run digital inputs.
 
 | Resource | Value |
 | --- | --- |
-| Main SoC | ESP32-P4, chip revision **v1.3** on our bench board (verified 2026-08-21 by `esptool`, and again 2026-08-22 by the running firmware reporting `Revision: 103`); DFRobot ships across the v1.x family, so check your own |
+| Main SoC | ESP32-P4, chip revision **v1.3** on both measured units (`esptool` on 2026-08-21 and 2026-08-29; an application reading the eFuse revision also reports `103`); DFRobot ships across the v1.x family, so check your own |
 | HP CPU | RISC-V 32-bit dual-core, **360 MHz max on this board** (the `400MHz` in `esptool` output is a series figure, not this die's ceiling) |
 | LP CPU | RISC-V 32-bit single-core, 40 MHz |
 | PSRAM | 32 MB in package |
-| Flash on DFR1172 | 16 MB external QSPI flash. `esptool flash-id` on our board reports manufacturer `ef`, device `4018` - a Winbond W25Q128-class part - and detects 16MB |
+| Flash on DFR1172 | 16 MB external QSPI flash. `esptool flash-id` on a measured board reports manufacturer `ef`, device `4018` - a Winbond W25Q128-class part - and detects 16MB |
 | HP L2 memory | 768 KB |
 | HP TCM | 8 KB zero-wait |
 | LP SRAM | 32 KB |
@@ -377,8 +354,8 @@ The DFR1172 wiki additionally lists a `WAKEUP` line on GPIO6. The Arduino varian
 does not define it, and it is **not required for boot or link bring-up**: in the
 esp-hosted-mcu Kconfig, GPIO6 is the host-wakeup input, used only when
 `ESP_HOSTED_HOST_DEEP_SLEEP_ALLOWED` is enabled so the slave can wake a sleeping
-host. Whether it is physically routed to the C6 on this board is still unread
-from the main-board schematic; nothing in the normal path depends on it.
+host. The main-board schematic shows it routed to the C6 module's `IO2` (see
+Open Items, GPIO6); nothing in the normal path depends on it.
 
 > [!NOTE]
 > **GPIO54 polarity: a contradiction on paper, tested, and not the cause.** The
@@ -388,11 +365,12 @@ from the main-board schematic; nothing in the normal path depends on it.
 > `CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_HIGH=1`, under which the host would
 > release reset by driving the pin **LOW**. The two readings disagree.
 >
-> Tested 2026-08-22: both `RESET_ACTIVE_HIGH` symbols set to `n` and **verified
-> applied in the generated config** before flashing. The failure was identical.
-> Inverting the polarity changes nothing on this board, so this is not the cause
-> of the link failure. Left recorded because the paper contradiction is real and
-> will confuse the next reader otherwise.
+> Tested 2026-08-22 on a board whose link did not come up (the affected unit in
+> "Measured: first boot does not bring the link up"): both `RESET_ACTIVE_HIGH`
+> symbols set to `n` and **verified applied in the generated config** before
+> flashing. The failure was identical, so inverting the polarity is not a cure
+> for that failure. The schematic reading in the next note settles the
+> polarity: the pin drives the C6 module's `EN`, an active-LOW reset.
 
 > [!NOTE]
 > **The C6 reset net, read from the main-board schematic 2026-08-29.** This
@@ -451,13 +429,12 @@ AT-command modem.
 ### The C6 as hardware: module, factory firmware, reflashing
 
 Confirmed 2026-08-22 against the DFR1172 wiki and by inspecting the vendor
-binary. Previously this sheet described the C6 only as "a physically separate
-ESP32-C6"; these are the specifics.
+binary.
 
 | Fact | Detail | Source |
 | --- | --- | --- |
 | Module | **ESP32-C6-MINI-1** | DFR1172 wiki, "On-board Function Diagram" table |
-| Physical location | **Underside** of the FireBeetle 2, with its own PCB antenna | wiki table; confirmed visually on the bench board |
+| Physical location | **Underside** of the FireBeetle 2, with its own PCB antenna | wiki table; confirmed visually on a board |
 | Factory firmware | `C6_v14_eco2_0022.bin`, 1178352 bytes, dated 2025-02-12 | DFRobot-published ZIP linked from wiki doc 21646 |
 | Factory firmware type | **ESP-Hosted-MCU slave firmware** - not ESP-AT, not blank | strings in the binary: `ESP-Hosted-MCU Slave FW version :: %d.%d.%d`, `esp_hosted_rpc.pb-c.c`, `fg_mcu_slave`, `./main/sdio_slave_api.c` |
 | Factory firmware age | Built from `esp_as_mcu_host`, the project's **former** name - an early build | build path string in the binary |
@@ -477,8 +454,10 @@ transcribed here rather than guessed.
 
 ### Measured: first boot does not bring the link up
 
-Recorded 2026-08-22 on the bench board, `CONFIG_ESP_HOSTED_ENABLED=y`,
-arduino-esp32 3.3.11 / ESP-Hosted 2.12.11, factory C6 firmware untouched:
+Recorded 2026-08-22 on one of the two measured boards - the one later found to
+carry the misprovisioned C6 flash described in "C6 flash layout" -
+`CONFIG_ESP_HOSTED_ENABLED=y`, arduino-esp32 3.3.11 / ESP-Hosted 2.12.11,
+factory C6 firmware untouched:
 
 ```
 E sdmmc_io: sdmmc_init_io: sdmmc_io_send_op_cond (1) returned 0x107
@@ -495,6 +474,15 @@ is a different class of fault from a host/slave version mismatch (that would fai
 later, at handshake or RPC). The P4 side is otherwise healthy: USB CDC console,
 timers, heap and application code all run normally.
 
+The same toolchain and configuration bring the link up on the second measured
+board, whose C6 is correctly provisioned (see "What to prove before relying on
+it"). `0x107` on its own does not say which side failed: esp-hosted-mcu
+[#127](https://github.com/espressif/esp-hosted-mcu/issues/127) (M5Stack Tab5,
+P4 + C6) reports the identical `sdmmc_io_send_op_cond` `0x107` with a healthy,
+booting slave. A C6 UART boot log on a cold start (see "Programming the C6")
+tells a slave that never reaches its app apart from a live slave with a host
+link fault.
+
 Ruled out by measurement, so nobody repeats them:
 
 - **Host pin configuration** - the variant defines match the table above, and
@@ -504,14 +492,15 @@ Ruled out by measurement, so nobody repeats them:
   card is irrelevant.
 - **`CONFIG_ESP_HOSTED_P4_DEV_BOARD_NONE=1`** - benign. It only defers deep-sleep
   wakeup GPIO configuration; it does not disable or misconfigure SDIO.
-- **Application code driving GPIO54** - removed entirely and reflashed; identical
-  failure. The hosted driver owns the pin.
+- **Application code driving GPIO54** - every application write to the pin
+  removed and reflashed; identical failure. The hosted driver owns the pin.
 
 ### Configuration gotcha: three Kconfig namespaces, one effective
 
 Hit twice while eliminating the hypotheses above, and it silently invalidates
-experiments. The generated `sdkconfig.defaults` carries the same ESP-Hosted SDIO
-settings under three prefixes:
+experiments. Under pioarduino's `custom_sdkconfig`, the generated
+`sdkconfig.defaults` carries the same ESP-Hosted SDIO settings under three
+prefixes:
 
 | Namespace | Example | Role |
 | --- | --- | --- |
@@ -533,12 +522,32 @@ plus `..._BUS_WIDTH=4` and the clock.
 > Exception worth knowing: there is no `CONFIG_ESP_SDIO_RESET_ACTIVE_HIGH`. Only
 > two `RESET_ACTIVE_HIGH` symbols exist in the whole generated config.
 
-### ⚠️ Programming the C6: what is verified, and one hazard
+**Host restart on a transport failure.** When the slave stops answering, the
+ESP-Hosted SDIO driver logs "Unrecoverable host sdio state" after
+`MAX_SDIO_WRITE_RETRY` (2) failed writes, posts
+`ESP_HOSTED_EVENT_TRANSPORT_FAILURE`, and then restarts the **host** under
+`#if H_TRANSPORT_RESTART_ON_FAILURE`. A C6 reset is exactly that condition, so
+with the stock setting a co-processor reset reboots the P4. The guard is
+`defined()`-gated (`port_esp_hosted_host_config.h`), so the symbol has to be
+**absent**, not `=n`:
 
-Established on the bench 2026-08-22. Full working notes in issue #198.
+```ini
+custom_sdkconfig =
+	'# CONFIG_ESP_HOSTED_TRANSPORT_RESTART_ON_FAILURE is not set'
+```
+
+The failure event is posted before the restart either way, so an application
+can run its own recovery instead; the vendor's `examples/host_hosted_events`
+shows deinit, re-init and a slave reset over GPIO54 with the host still
+running. Measured on the working board: with the symbol absent, the link
+recovers from a C6 reset without a host reboot.
+
+### Programming the C6: what is verified, and one hazard
+
+Established by measurement from 2026-08-22.
 
 > [!CAUTION]
-> ⛔ **Do NOT connect the programmer's `5V` to the pad silkscreened `NC`.**
+> **Do NOT connect the programmer's `5V` to the pad silkscreened `NC`.**
 > DFRobot wiki doc 21646's wiring diagram shows exactly that, and following it
 > made the board **heat up on the opposite face, near the DSI/CSI FPC connectors**,
 > where the ESP32-P4 and its power circuitry sit. Power was removed immediately
@@ -548,14 +557,14 @@ Established on the bench 2026-08-22. Full working notes in issue #198.
 
 **For passive UART console capture** (receive-only observation of the C6's boot output,
 non-destructive; chip remains running from flash), verified by capturing 46.5 KB in 20 s
-with no ground wire to the pads, and by #198 Phase A's 118-cycle boot log:
+with no ground wire to the pads, and by a 118-cycle boot log:
 
 | USB-TTL (3V3 logic) | FireBeetle 2 |
 | --- | --- |
-| `TXD` | (not connected — receive only) |
+| `TXD` | (not connected - receive only) |
 | `RXD` | pad **3** of the four gold pads below the beetle logo (underside) |
-| `GND` | (not needed — FT232 and board share ground via host USB) |
-| ⛔ `5V` | **not connected** |
+| `GND` | (not needed - FT232 and board share ground via host USB) |
+| `5V` | **not connected** |
 
 > [!WARNING]
 > **DFRobot doc 21646 has three documentation defects.** (1) Its wiring diagram
@@ -565,13 +574,13 @@ with no ground wire to the pads, and by #198 Phase A's 118-cycle boot log:
 > Hardware Connection figure places the GND signal in download-mode boot
 > position, which accidentally straps `ESP32C6_IO9/BOOT` to ground. The pad
 > order (confirmed by continuity on 2026-08-23, all jumpers removed) is
-> **left-to-right: `ESP32C6_IO9/BOOT` — `ESP32C6_RX` — `ESP32C6_TX` — `GND`
+> **left-to-right: `ESP32C6_IO9/BOOT`, `ESP32C6_RX`, `ESP32C6_TX`, `GND`
 > (corner).** The corner pad (`GND`) is nearest the `48/49/50` header column and
 > is the only one of the four with `3V3` and `ESP32C6_RST` stacked directly
 > beneath it. Count from the header, not from a board edge.
-> 
+>
 > **For passive UART console capture** (observe the C6's boot output, non-destructive):
-> use **one contact only** — `RXD` → pad 3 (`ESP32C6_TX`). Pad 1 must be **free** (not
+> use **one contact only**: `RXD` to pad 3 (`ESP32C6_TX`). Pad 1 must be **free** (not
 > grounded); the FT232 and board already share ground through the host USB, so no ground
 > wire to the pad array is needed. Grounding pad 1 forces download mode and prevents boot
 > from flash. Confirm contact on pad 3 by traffic, not by voltage: a floating FT232
@@ -579,7 +588,7 @@ with no ground wire to the pads, and by #198 Phase A's 118-cycle boot log:
 > Only received bytes prove contact.
 >
 > **For flash download mode (erase/write/read):** **ground pad 1** (`ESP32C6_IO9/BOOT`)
-> to force download mode, plus `TXD` → pad 2 (`ESP32C6_RX`) and `RXD` → pad 3
+> to force download mode, plus `TXD` to pad 2 (`ESP32C6_RX`) and `RXD` to pad 3
 > (`ESP32C6_TX`). This configuration is verified by `esptool chip-id` and by full 4 MB
 > read-back. Without pad 1 grounded, the chip boots from flash instead.
 
@@ -594,15 +603,21 @@ with no ground wire to the pads, and by #198 Phase A's 118-cycle boot log:
 > | --- | --- | --- |
 > | `C6_RX0` | C6 pin 30 `RXD0` | `ESP32C6_RX` |
 > | `C6_TX0` | C6 pin 31 `TXD0` | `ESP32C6_TX` |
-> | `C6_IO9` | C6 pin 23 `IO9`, pulled up by `R17` 10 k to `ESP_3V3` | `ESP32C6_IO9/BOOT` |
+> | `C6_IO9` | C6 pin 23 `IO9`, no external pull-up | `ESP32C6_IO9/BOOT` |
 > | `C6_RST` | C6 pin 8 `EN` - **and P4 GPIO54** | `ESP32C6_RST` |
 > | `ESP_3V3` | board 3V3 rail | `3V3` |
 > | GND | ground | `GND` |
 >
-> Two consequences worth having: `C6_IO9` shares `R17` with `C6_IO8` (both
-> strapping pins, both pulled high), which is why grounding pad 1 forces download
-> mode; and `C6_RST` is the **only** pad that is also a P4 GPIO, making it the
-> one point where host-driven behaviour can be observed directly.
+> Two consequences worth having. First, the C6's two boot straps are wired
+> differently: `C6_IO9` reaches pad 1 with no external pull-up, which is why
+> grounding pad 1 forces download mode, while `C6_IO8` (module pin 22) is pulled
+> to `ESP_3V3` by `R17` 10 k and is **not** brought out to any pad. UART
+> download needs `IO8` high and `IO9` low (`boot:0x4`); a C6 that reads
+> `IO8 = 0` at reset never listens on UART0, and nothing on the pad array can
+> fix that. (A 900 dpi re-render of page 7, 2026-09-07, corrected an earlier
+> reading that had `R17` shared between `IO8` and `IO9`.) Second, `C6_RST` is
+> the **only** pad that is also a P4 GPIO, making it the one point where
+> host-driven behaviour can be observed directly.
 
 The host P4 must be prevented from driving GPIO54 (the C6 reset line); parking
 it in ROM bootloader does this without holding buttons:
@@ -614,7 +629,7 @@ esptool --chip esp32p4 --port <P4> --before default-reset --after no-reset flash
 
 ### C6 flash layout
 
-Read from the chip, and corrected 2026-08-22 (see #198): the board is **factory
+Read from the chip of the affected board on 2026-08-22: it is **factory
 misprovisioned**. A complete merged image (bootloader + partition table + app) was
 written at global `0x10000` instead of `0x0`, so the chip carries two boot chains,
 one nested inside the other:
@@ -657,15 +672,16 @@ relative to a base of `0x0`, i.e. this image expects to live at `0x0`):
 > should fix it. The placement error is byte-proven; the exact runtime failure mode is
 > inference until a C6 UART boot log is captured.
 >
-> The earlier "app-only image overflowing a 1024 KiB `factory` partition" reading in
-> this sheet was **wrong and is retracted** (credit: independent analysis by Codex,
-> reproduced here with `esptool image-info` and `gen_esp32part.py`). The
-> 129,776-byte "overhang" is the tail of a whole merged image written at the wrong
-> base, not an app spilling its slot.
+> Read with `esptool image-info` and `gen_esp32part.py`, the image looks like an
+> app overflowing the 1024 KiB `factory` partition by 129,776 bytes. It is not:
+> that "overhang" is the tail of a whole merged image written at the wrong base,
+> not an app spilling its slot.
 
 > [!NOTE]
-> **Reflash (only if we choose to reflash rather than RMA - see #198):** write a
-> coherent layout, do not patch the nested one. Verify the 4 MB backup hash is
+> **Reflashing an affected unit** (the alternative is a return to the vendor):
+> write a coherent layout, do not patch the nested one. This sequence is derived
+> from DFRobot's and Espressif's published offsets; it has not been carried to
+> completion on a measured unit. Verify the 4 MB backup hash is
 > stored safely and run read-only `esptool get-security-info` first (stop on
 > secure-boot / flash-encryption / secure-download). Then: erase the C6; flash
 > DFRobot's complete merged `C6_v14_eco2_0022.bin` at `0x0` exactly as DFRobot
@@ -677,25 +693,6 @@ relative to a base of `0x0`, i.e. this image expects to live at `0x0`):
 > a larger `factory` table. **Do not** flash the new app into the current nested
 > layout, and **do not** hand-build a larger outer `factory` entry to legitimise the
 > overhang - that fixes the wrong layer and discards the coherent dual-OTA structure.
-
-### Current status
-
-The link has never been observed to come up on this board. Every host-side lever
-reachable from `custom_sdkconfig`, the Arduino variant, or the application has been
-tried and measured; the failure sits at SDIO CMD5 enumeration
-(`sdmmc_io_send_op_cond`, `0x107` timeout), below the ESP-Hosted protocol. The
-leading explanation is no longer "old slave firmware" but a **byte-proven factory
-misprovisioning** (see the layout above): the merged C6 image sits at `0x10000`
-instead of `0x0`, so the C6 most likely never reaches its real app. This is a reflash
-of a misprovisioned unit (misprovisioned flash state, not dead silicon), not routine provisioning - escalate the evidence
-to DFRobot in parallel (#198). The single most decisive non-destructive test is a
-**C6 UART boot log** on a cold start (TX/RX/GND only, never adapter 5 V), which shows
-directly which bootloader / table / app the C6 selects; measuring the GPIO54 (`EN`)
-level is still worthwhile. Note esp-hosted-mcu #127 (M5Stack Tab5, P4+C6) hits the
-identical `send_op_cond 0x107` with a HEALTHY, booting slave, so 0x107 is ambiguous
-(dead slave vs live slave + host-link failure) - the UART boot log tells them apart, and
-a reflash may be necessary but not sufficient. #198 carries the reasoning, the reflash procedure, and
-the risks.
 
 ### Wireless capability (from the ESP32-C6)
 
@@ -789,13 +786,11 @@ it (`cores/esp32/esp32-hal-hosted.h`), so it is tractable rather than scary:
 
 Points that matter for a fielded device:
 
-- **The C6 is updated over SDIO, not over wires - but NOT on a factory unit.**
-  ~~No ESP-Prog, no jumpers, no disassembly. That removes the worst version of
-  this problem.~~ **Refuted by measurement, 2026-08-29 - see "Known Issue: the
-  factory C6 refuses the OTA RPCs" below.** The mechanism exists and is correct;
-  the *factory* slave image does not implement the RPCs it needs, so on a board
-  as shipped there is no wire-free path. Do not plan an update story around this
-  bullet without reading that note first.
+- **The mechanism updates the C6 over SDIO, not over wires - but NOT on a
+  factory unit.** Measured 2026-08-29: the *factory* slave image does not
+  implement the RPCs the update needs, so on a board as shipped there is no
+  wire-free path. See "Known Issue: the factory C6 refuses the OTA RPCs" below
+  before planning an update story around it.
 - **Version skew is detected, not silently tolerated.** `hostedHasUpdate()` warns
   in both directions: host-newer prints an update URL, host-older prints
   "Version on Host is OLDER than version on co-processor".
@@ -813,16 +808,15 @@ Points that matter for a fielded device:
 ### What to prove before relying on it
 
 > [!NOTE]
-> **Updated 2026-09-01 - item 0 is discharged and items 1-4 are partly answered.**
-> ~~the link has not yet been observed to come up on this board at all~~ - the
-> link comes up on board 2, and the shipping protoArtoo `firebeetle2` image has
-> served HTTP, SSE and the web UI over it. Against the list below:
+> **Measured by 2026-09-01 on the correctly provisioned board, factory C6
+> image.** The link comes up, and an application on the P4 has served HTTP,
+> Server-Sent Events and a web UI over it. Against the list below:
 >
 > | # | Status |
 > | --- | --- |
 > | 1 | **Partly measured.** 3 concurrent SSE clients held 25 min with zero drops; a multi-hour soak and reconnect storm are still outstanding |
 > | 2 | Not measured |
-> | 3 | **Measured, and it needed a fix.** Recovery works *only* with `CONFIG_ESP_HOSTED_TRANSPORT_RESTART_ON_FAILURE` absent - see the configuration note above. The host does **not** need a reboot |
+> | 3 | **Measured, and it needed a configuration change.** Recovery works *only* with `CONFIG_ESP_HOSTED_TRANSPORT_RESTART_ON_FAILURE` absent - see "Host restart on a transport failure" above. The host does **not** need a reboot |
 > | 4 | **Answered: no.** Slave OTA does not work on a factory unit at all - see the Known Issue below |
 
 Bandwidth is not the risk; the transport is fast. The things worth measuring on
@@ -836,11 +830,10 @@ this board specifically:
    or does it need a reboot?
 4. Whether host application OTA and slave OTA can coexist in one update flow.
 
-### Known Issue: the factory C6 refuses the OTA RPCs (unresolvable here)
+### Known Issue: the factory C6 refuses the OTA RPCs
 
 > [!CAUTION]
-> **Measured on hardware 2026-08-29; recorded rather than scheduled, because no
-> board on this bench can take it further.**
+> **Measured on hardware 2026-08-29, on the correctly provisioned board.**
 >
 > Streaming a slave image through
 > `hostedBeginUpdate()`/`hostedWriteUpdate()`/`hostedEndUpdate()`/`hostedActivateUpdate()`
@@ -859,38 +852,28 @@ this board specifically:
 > **What this costs a builder:** the argument *"one wired bootstrap, then
 > wire-free forever"* does not hold on a unit as shipped. Updating the C6 needs a
 > slave image that already speaks the OTA RPCs, which has to arrive some other
-> way.
+> way - in practice the wired route in "Programming the C6".
 >
-> **Why it is not scheduled:** proving a fix needs a C6 running an OTA-capable
-> slave image, and neither board here can provide one - board 2's C6 is factory
-> and refuses the RPC, and board 1's is misprovisioned (below). Per `AGENTS.md`,
-> a real but unmeasurable risk is documented, not carried as a ticket nobody can
-> action.
+> Whether a C6 already running an OTA-capable slave image accepts the update
+> over SDIO on this board is unmeasured: neither measured board carried one.
 
 ### Known Issue: retail C6 provisioning is inconsistent, and recovery is marginal
 
 > [!CAUTION]
-> **n=2, and one of the two shipped broken.** Board 1 arrived with a complete
+> **n=2, and one of the two shipped broken.** One board arrived with a complete
 > merged ESP32-C6 image flashed at **`0x10000` instead of `0x0`**, so its
-> bootloader is absent from where the ROM looks. Board 2 provisions correctly.
-> DFRobot has publicly acknowledged the Oct 31 2025 batch.
+> bootloader is absent from where the ROM looks (see "C6 flash layout"). The
+> other provisions correctly. DFRobot has publicly acknowledged the batch of
+> units manufactured 2025-10-31.
 >
 > **Recovery is a wire reflash, and it is genuinely hard.** The C6 programming
-> pads are three unlabelled **2 mm** bare pads. An experienced operator with a
-> purpose-bought jig, a meter, a verified 4 MB backup and a written runbook could
-> not hold contact long enough: pad 3 dropped inside 15 s, against the 8-12
-> minutes a full write needs.
+> pads are three unlabelled **2 mm** bare pads. One attempt with a purpose-bought
+> jig, a meter, a verified 4 MB backup and a written procedure could not hold
+> contact long enough: pad 3 dropped inside 15 s, against the 8-12 minutes a full
+> write needs.
 >
-> **What this costs a builder:** a wire reflash is acceptable as a developer
-> bring-up expedient, but it is not a builder path - it violates the solder-free,
-> web-flashable promise. This is why the board is **not recommended to builders
-> yet** (see "Before you buy one"); the stated revision trigger is a
-> DFRobot-supplied fix - a corrected factory image or pre-flashed boards - and
-> explicitly *not* more good units arriving, since absence cannot be proven.
->
-> **Board 2's own C6 flash contents are UNKNOWN** and are staying that way:
-> reading them needs the same 2 mm pad contact, and board 2 is deliberately not
-> getting pad work.
+> **What this costs a builder:** a wire reflash needs soldering or a jig on bare
+> pads; it is not a USB or web flash.
 
 ### Issue-tracker signals (espressif/esp-hosted-mcu, checked 2026-08-21)
 
@@ -939,11 +922,10 @@ Taken from the DFR1237 KiCad schematic, which supersedes the OCR-derived list in
 the previous revision of this sheet.
 
 > [!WARNING]
-> **These are net names, not silkscreen.** The distinction was blurred by the
-> phrase "the actual net names on the board" that stood here until 2026-09-01, and
-> it produced two wrong claims further down (`A0`-`A3` and `I3C`, both retracted
-> below). The physical board's main GPIO field prints **plain numbers only**;
-> `docs/pin_map.md` is the silkscreen-first view.
+> **These are net names, not silkscreen.** The physical board's main GPIO field
+> prints **plain numbers only**: no `A0`-`A4` and no `I3C` labels (confirmed
+> against a physical DFR1237, 2026-09-01). See "Connectors" for what the board
+> does print.
 
 ### Module sockets
 
@@ -977,12 +959,10 @@ the previous revision of this sheet.
 
 > [!IMPORTANT]
 > **These `J*` designators are KiCad schematic reference designators and are NOT printed on the
-> board.** Verified against the physical DFR1237, 2026-09-01. Use the **silkscreen** column when
-> working with a board in hand: the main GPIO field is headed `IO` / `3V3` / `GND` with the GPIO
-> number printed once per row down the left edge, and the peripheral blocks are labelled `SPI`,
-> `UART`, `I2C`, `RST GND` and `VIN:5V GND`. `docs/pin_map.md` carries the full silkscreen-first
-> wiring view.
-
+> board.** Verified against the physical DFR1237, 2026-09-01. Working with a board in hand: the
+> main GPIO field is headed `IO` / `3V3` / `GND` with the GPIO number printed once per row down
+> the left edge, and the peripheral blocks are labelled `SPI`, `UART`, `I2C`, `RST GND` and
+> `VIN:5V GND`.
 
 | Ref | Type | Contents |
 | --- | --- | --- |
@@ -999,21 +979,16 @@ the previous revision of this sheet.
 `4`, `5`, `20/A0`, `21/A1`, `22/A2`, `23/A3`, `31`, `32/I3C/SCL`,
 `33/I3C/SDA`, `34`, `35`, `36`, `48`, `49`, `50`, `51/A4`, `52`
 
-Two things the previous revision of this sheet missed, both visible in the
-schematic and both consequential:
+Two things visible in the schematic, both consequential:
 
-- **GPIO20-GPIO23 are the board's analog pins, and GPIO51 is the fifth** -- a
-  silicon/variant fact that still holds. ~~are silkscreened A0-A3 ... GPIO51 is A4~~
-  **The silkscreen half is retracted 2026-09-01: it is wrong.** `20/A0` and the
-  rest are KiCad **net names**; the physical DFR1237's main field prints **plain
-  numbers only, on every row, with no aliases at all** (operator-confirmed).
-- **GPIO32/GPIO33 are the P4's IO MUX I3C master pins**, not generic GPIOs -- a
-  silicon fact, and it still holds. ~~are silkscreened I3C SCL/SDA~~ **The
-  silkscreen half is retracted 2026-09-01: it is wrong.** `32/I3C/SCL` and
-  `33/I3C/SDA` are KiCad **net names**; on the physical DFR1237 these two sit in
-  the main field as ordinary numbered rows with **no special label**
-  (operator-confirmed against the board). Net names are not silkscreen, and this
-  sheet conflated them.
+- **GPIO20-GPIO23 are the board's analog pins, and GPIO51 is the fifth** - a
+  silicon and variant fact. `20/A0` and the rest are KiCad **net names**; the
+  physical DFR1237's main field prints **plain numbers only, on every row, with
+  no aliases at all** (confirmed against a physical board).
+- **GPIO32/GPIO33 are the P4's IO MUX I3C master pins**, not generic GPIOs - a
+  silicon fact. `32/I3C/SCL` and `33/I3C/SDA` are KiCad **net names**; on the
+  physical DFR1237 these two sit in the main field as ordinary numbered rows
+  with **no special label** (confirmed against a physical board).
 
 The `SPI`, `UART`, and `I2C` groupings are still convenience labels; ESP32-P4
 routes most digital peripherals through the GPIO matrix. But the analog and I3C
@@ -1033,25 +1008,6 @@ sheet now adopts in place of its own ad-hoc ratings:
 
 UART2 through UART4 have no P1 pins at all, so they must come from the P2/P3
 pool.
-
-> [!IMPORTANT]
-> **Observed 2026-08-23: protoArtoo's full peripheral set fits this board with zero
-> spare header GPIOs.** Counting the pins this board actually routes, and honouring
-> the "Pairs to avoid unless proven" table below in full, the supply is 15 usable
-> GPIOs against a demand of 14 - six RC/SBUS inputs, a two-pin audio UART, and six
-> servo/ESC outputs. One spare, and it is an avoid-list pin.
->
-> **The constraint is this board, not the ESP32-P4.** The chip carries five HP UARTs
-> and ample GPIO; the FireBeetle 2 routes a subset, further reduced by the ESP32-C6
-> SDIO link (GPIO14-19), the TF card slot (GPIO39-45), USB and MIPI, and pins not
-> brought out at all (GPIO0-2, 10-11, 13, 26-27, 46-47, 53). This is the chip-layer
-> versus board-variant distinction ADR 0028 draws: a different ESP32-P4 board has the
-> same peripherals and more headers.
->
-> Recorded because "works, with no room to grow" is a materially different
-> recommendation from "works", and a builder choosing this board deserves to know
-> which one they are getting. Figures are as of this date and change with the
-> peripheral set; the current allocation and its revision triggers live on issue #190.
 
 ### Two board-level constraints that override the taxonomy
 
@@ -1077,8 +1033,8 @@ LDO-cautioned range.
 
 | GPIO | Board label | Priority | Silicon alternates | Notes |
 | --- | --- | --- | --- | --- |
-| GPIO4 | `4` | P3 | JTAG `MTMS`, `TOUCH_CHANNEL3`, LP GPIO | Arduino `T0`. Input-enabled at reset. Downgraded from "Good" |
-| GPIO5 | `5` | P3 | JTAG `MTDO`, `TOUCH_CHANNEL4`, LP GPIO | Arduino `T1`. `MTDO` is an output-capable pad. Downgraded from "Good" |
+| GPIO4 | `4` | P3 | JTAG `MTMS`, `TOUCH_CHANNEL3`, LP GPIO | Arduino `T0`. Input-enabled at reset |
+| GPIO5 | `5` | P3 | JTAG `MTDO`, `TOUCH_CHANNEL4`, LP GPIO | Arduino `T1`. `MTDO` is an output-capable pad |
 | GPIO7 | `7/SDA` | P2 | `SPI2_CS_PAD`, `TOUCH_CHANNEL6`, LP GPIO | Board default SDA; Arduino `T2` |
 | GPIO8 | `8/SCL` | P2 | `SPI2_D_PAD`, `TOUCH_CHANNEL7`, LP GPIO | Board default SCL; Arduino `T3` |
 | GPIO20 | `20/A0` | P2 | `ADC1_CHANNEL4` | Clean digital, but spends an ADC1 channel |
@@ -1277,7 +1233,7 @@ Key values baked into that board entry:
 | `build.chip_variant` | `esp32p4_es` (menu default: "Before v3.00") |
 | `build.f_cpu` | `360000000L` |
 | `build.flash_size` | `16MB` |
-| `build.flash_mode` | `dio` (bootloader `build.boot=qio`) — **but see the note below; the PlatformIO board JSON in this sheet uses `qio`, and `qio` is what has actually been flashed and booted** |
+| `build.flash_mode` | `dio` (bootloader `build.boot=qio`) - **but see the note below; the PlatformIO board JSON in this sheet uses `qio`, and `qio` is what has actually been flashed and booted** |
 | `build.flash_freq` | `80m` |
 | `build.bootloader_addr` | `0x2000` |
 | `build.usb_mode` | `1` (Hardware CDC and JTAG) |
@@ -1294,7 +1250,7 @@ Tool settings that matter:
   (`16M Flash (3MB APP/9.9MB FATFS)` or similar) to use the flash on the board.
 - `USB CDC On Boot` defaults to enabled here, so `Serial` is USB CDC. `Serial0`
   is the UART0 path on GPIO37/GPIO38. **This default belongs to the Arduino IDE,
-  not to PlatformIO** — under PlatformIO you must pass
+  not to PlatformIO** - under PlatformIO you must pass
   `-DARDUINO_USB_CDC_ON_BOOT=1` and `-DARDUINO_USB_MODE=1` in `build_flags`,
   or `Serial` silently becomes UART0 and nothing reaches `/dev/ttyACM*`. Board
   JSON keys do not work for this; see the note on the board JSON below.
@@ -1305,7 +1261,7 @@ Tool settings that matter:
 > PlatformIO board JSON specifies `qio`. Measured on 2026-08-22: a `qio` image
 > flashed with `Hash of data verified` and boots and runs on the v1.3 board, so
 > `qio` is empirically viable for the app image. The two figures have not been
-> reconciled against a primary source — do not cite "the spec sheet default"
+> reconciled against a primary source - do not cite "the spec sheet default"
 > as if it were unambiguous.
 
 Convenience aliases the variant defines, beyond what the silkscreen shows:
@@ -1322,11 +1278,9 @@ Convenience aliases the variant defines, beyond what the silkscreen shows:
 | `T0`-`T3` | 4, 5, 7, 8 | | `A7` | 52 |
 
 > [!WARNING]
-> **Every alias in this table is code-only.** ~~Note `A4` maps to GPIO51 in both
-> the silkscreen and the variant~~ -- retracted 2026-09-01, it is not on the
-> silkscreen either. The DFR1237's main GPIO field prints a **plain number on
-> every row and no aliases at all** (operator-confirmed against the board), so
-> none of `A0`-`A7` is findable on it. The `SPI`, `UART` and `I2C` blocks are the
+> **Every alias in this table is code-only.** The DFR1237's main GPIO field
+> prints a **plain number on every row and no aliases at all** (confirmed
+> against a physical board, 2026-09-01), so none of `A0`-`A7` is findable on it. The `SPI`, `UART` and `I2C` blocks are the
 > exception: those do print slash labels (`28/SCK`, `29/MO`, `30/MI`, `37/T`,
 > `38/R`, `8/C`, `7/D`).
 
@@ -1355,11 +1309,11 @@ Save as `boards/dfrobot_firebeetle2_esp32p4.json` in the project root:
 > [!IMPORTANT]
 > **This board JSON alone does not give you a USB serial console.** `Serial`
 > binds to UART0 (GPIO37/GPIO38), so a board flashed over USB Serial/JTAG runs
-> but prints **nothing** on `/dev/ttyACM*` — which reads as dead firmware when
+> but prints **nothing** on `/dev/ttyACM*` - which reads as dead firmware when
 > it is only a misrouted console. Add the build flags shown in the PlatformIO
 > env below.
 >
-> Putting `cdc_on_boot` / `usb_mode` *in this JSON does not work* — the keys
+> Putting `cdc_on_boot` / `usb_mode` *in this JSON does not work* - the keys
 > are accepted but this platform does not translate them into defines.
 > Verified on 2026-08-22: with the keys in the board manifest the linked ELF
 > carried **0 `HWCDC` symbols** and `Serial` resolved to `Serial0`; moving the
@@ -1445,7 +1399,7 @@ Two items to verify on first build rather than assume:
   the wrong setting will fail to download or fail to boot.
 - With that set, `CONFIG_ESP32P4_REV_MIN` offers v0.0, v0.1, and v1.0; the
   default falls to the lowest, and the maximum supported becomes v1.99. Any of
-  those accepts the v1.0 chip on this board, so no further action is needed.
+  those accepts any v1.x chip, so no further action is needed.
 - If RMT is used in continuous TX mode, `RMT-176` applies. ESP-IDF has bypassed
   it since v5.2, but confirm rather than assume if the RMT idle level matters.
 - Wi-Fi requires the `esp_hosted` component and matching ESP32-C6 slave firmware.
@@ -1476,24 +1430,22 @@ Two items to verify on first build rather than assume:
 
 Things this sheet states from documentation but has not confirmed on hardware:
 
-1. ~~**Chip revision.**~~ Resolved: the bench board reports **v1.3**, not v1.0 -
-   see the correction note at the top of this sheet and [Identifying the
-   revision](#identifying-the-revision) for the verbatim `esptool` output. A
-   **second DFR1172, read on 2026-08-29, also reports v1.3**, so both units this
-   project owns are v1.3. Keep confirming on any further unit: DFRobot ships
-   across the v1.x family, and a v3.x unit needs a different build entirely (see
-   [Selecting for the wrong revision](#selecting-for-the-wrong-revision)).
+1. **Chip revision - resolved for the units measured.** Two DFR1172 boards,
+   read on 2026-08-21 and 2026-08-29, both report **v1.3**; see [Identifying
+   the revision](#identifying-the-revision) for the verbatim `esptool` output.
+   Keep confirming on any further unit: DFRobot ships across the v1.x family,
+   and a v3.x unit needs a different build entirely (see [Selecting for the
+   wrong revision](#selecting-for-the-wrong-revision)).
 2. **GPIO48-GPIO52 under load.** Espressif's "LDO power issues with high numbered
    GPIOs" warning is unquantified. Measure before committing a UART or any
    timing-critical signal there.
 3. **PlatformIO flash mode.** `qio` vs `dio` per the note above.
-4. ~~**GPIO6.**~~ **Resolved 2026-08-29 by reading the main-board schematic.**
+4. **GPIO6 - resolved 2026-08-29 by reading the main-board schematic.**
    `C6_WAKEUP` is on ESP32-P4 **pin 6** (`GPIO6/SPI2_HOLD`, page 1) and lands on
    **ESP32-C6-MINI-1 pin 5 = `IO2`** (page 7). The wakeup line **is** physically
    routed. The Arduino variant still does not define it, and nothing in the
    normal boot or link-bring-up path depends on it (it is the host-wakeup input,
-   used only under `ESP_HOSTED_HOST_DEEP_SLEEP_ALLOWED`), so this changes no
-   firmware - it closes the question.
+   used only under `ESP_HOSTED_HOST_DEEP_SLEEP_ALLOWED`).
 5. **Main-board schematic.** DFRobot ships it only as a raster PDF (Microsoft
    Print To PDF; `pdftotext` yields zero characters). **It is nonetheless
    readable**: render it with `pdftoppm -r 1200` and crop. Done 2026-08-29 for

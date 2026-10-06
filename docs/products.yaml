@@ -219,7 +219,45 @@ products:
       hazards:
         - "No GPIO header pin takes 5 V. The 5 V rail is power only."
       source: "Electrical Summary"
-    notes: ""
+    notes: |
+      Supported, and not yet a board to buy for a droid. The reasons are the board
+      facts in the sheet's "Before you buy one": a DFRobot-acknowledged bad batch
+      whose C6 cannot join WiFi, a recovery that needs a wired reflash on 2 mm bare
+      pads, and a factory C6 that refuses the wire-free update. A wire reflash is a
+      developer bring-up expedient, not a builder path: it breaks the promise that a
+      droid is built without soldering and flashed from the web. None of this applies
+      to the artoo-esp32.
+
+      What changes that verdict: DFRobot shipping corrected boards or a corrected
+      factory C6 image. A successful repair on our bench does not change it, and nor
+      do more good boards arriving, because neither tells a builder what is in the
+      box they would be opening.
+
+      The two bench boards (both chip revision v1.3):
+      - Board 1 is the misprovisioned unit. Its link never came up. #198 tried the
+        wired C6 reflash and closed not planned on 2026-09-07: the C6 latches
+        IO8 = 0 at every reset, so it never enters UART download mode, and IO8 is not
+        on any pad. A full 4 MB read worked on 2026-08-22 with IO8 high, so the fault
+        most likely came from the pad work, not from DFRobot; it is not part of the
+        vendor escalation. The C6 was never erased or written. Board 1 now runs main
+        as the bench's WiFi-module-absent fixture and may be flashed freely.
+      - Board 2 provisions correctly and runs the shipping firebeetle2 image: link
+        up, HTTP, SSE and the web UI served over it. Its C6 flash contents are
+        UNKNOWN and stay that way: reading them needs the same 2 mm pad contact, and
+        board 2 gets no pad work and its C6 is not reflashed, because it is the
+        project's only working C6.
+
+      Programming the C6: the pad order, the 5 V-to-NC hazard and the reflash
+      sequence in the sheet came out of #198 (Phase A, the 118-cycle passive boot
+      log; Phase B, the jig attempts, one of which lost pad 3 inside 15 s). #198
+      holds the full working notes, the strap diagnosis and the do-not-repeat list. The reflash
+      sequence has never been carried to completion here.
+
+      C6 updates over SDIO: refused by the factory C6 (ADR 0034 records the
+      measurement on board 2 and why update support is discovered, not declared).
+      Proving the update path needs a C6 already running an OTA-capable slave image,
+      and neither board can provide one without reflashing board 2's working C6. It
+      is recorded as a risk, not carried as a ticket nobody can action.
 
   # ---------------------------------------------------------------------------
   # Radio Controller
@@ -244,8 +282,112 @@ products:
       hazards:
         - "CCS holds the throttle with your thumb off the stick. The droid keeps going and cannot tell."
         - "The handset will not switch off while its receiver has power. Power the droid down first."
-      source: "5.1, 5.3"
-    notes: ""
+      source: "4.1, 4.3"
+    notes: |
+      The DS-650 is the handset every RC bench result in this project was taken
+      against, paired with separately bought HotRC SBUS-A receivers (the bundled
+      F-06A is PWM and runs through standard_pwm). The firmware has no HotRC
+      calibration table and should not get one: the handset is set up to fit the
+      generic 172 / 992 / 1811 binding.
+
+      T19 bench record (2026-04-15 to 2026-04-18). Its sources -
+      tasks/phase5-tasks.md T19, tasks/lessons.md, tasks/phase5-verification-closeout.md
+      and tasks/rc_diagnostics_contract.md - are local and untracked, so this digest
+      is the only tracked home of the record:
+      - The SBUS-A clocks about 115 kbaud (8.68 us per bit). With the RMT decoder's
+        fixed period of 10 ticks, 98.4 % of frames failed to extract (commit
+        a26aaae2). The adaptive period estimate gives 9 ticks.
+      - Gap-tick lesson: the last RMT symbol carries the ~300-tick inter-frame gap.
+        Including it in the period sum rounds 9 up to 10 and fails ~98 % of frames,
+        so the estimate excludes the last symbol. Native decode tests pin it.
+      - Before per-byte start-bit re-sync (+/-1 bit), no frame with CH1 above 1472
+        decoded across a full stick sweep.
+      - The footer is 0x04. The original 0x00-only check rejected 100 % of frames;
+        the decoder now accepts 0x00 or low nibble 0x04, as bolderflight/sbus does.
+      - invertBits=true and the 200 kbaud attempt produced 75 % of the
+        header-mismatch noise and no decodes; d9f4a50e removed both. The five-step
+        decode fix is commits 6f5a9d42, d9f4a50e, c4ccfdbd, b86a1bf5 and a26aaae2.
+      - Parity gating was tried and rejected: at 115 kbaud the bit-run expansion
+        shifts parity positions and every frame fails. It is on the no-backtracking
+        list; do not re-attempt it without new telemetry. parityFailCount and its
+        log plumbing exist, but nothing increments the counter.
+      - Factory-stroke sweep: CH1 ~255 / rest ~1472 / ~1919, CH2 ~97 to ~2028 with
+        rest ~1889-2028. Against the 172 / 992 / 1811 binding CH1 read +59 % (a dome
+        spinning at 59 % with the stick untouched) and CH2's rest clamped to 1811 and
+        read full throttle on every frame. We met the throttle trap this way on
+        2026-04-15.
+      - After reducing EPA/stroke on the handset: neutral 992, sweep 192 -> 992 ->
+        1792 on both axes, mapped +/-0.977. Final binding profile: min 172, center
+        992, max 1811 on all channels. The HOTRC-specific values (neutral 1472 /
+        1889) are outdated.
+      - CH1 display-to-raw, measured on the dome receiver before recalibration:
+        SBUS_raw = -2.176 x (display_us - 1500) + 1472. There is no SBUS-raw to
+        microsecond conversion in firmware; rawUs is a reporting field only, so any
+        microsecond figure for this handset came from its screen.
+      - Held value: on a brief RF interruption the receiver sends ch1=389
+        (normalized -89 %) with lost_frame=true, failsafe=false (d9f4a50e). Without
+        the lost_frame guard that value reached the dome task directly.
+      - Dual SBUS: one DS-650 ran both sbus1 and sbus2 linked at once with identical
+        channel values, against the community's "one receiver at a time" (sheet Open
+        Item 1).
+      - Failsafe gate passed 2026-04-18: the watchdog fires on unplug, drive stops,
+        control restores cleanly on re-plug.
+      - full-hardware-verified: the DS-650 + SBUS-A dome-control path with a real
+        dome motor under stick control, and RC mapping persistence across reboot.
+      - Still deferred: RC to drive on real motors. The T19 closeout says "Drive motor
+        output remains deferred (drive not connected in this session)"; everything
+        above the drive arbiter is proven with the dome, not the feet.
+      - The SBUS frame period was never measured. ageMs stayed under 20-30 ms with
+        the link healthy.
+
+      sbusTimeoutMs: during T19 the timeout was raised to 5000 ms as a diagnostic
+      while the decoder was unreliable, and the saved controller backup
+      tasks/artoo-backup-20260903-203848-config.json still carries
+      sbusTimeoutMs: 5000. That is a diagnostic value, not a setting to ship; a
+      controller found with it goes back to 200 ms. Whether the 200 ms default should
+      scale with the frame period is a safety decision still open.
+
+      Findings against the code the code does not say on its face:
+      - rcTriggerDefaultReverse() keys on SBUS channels 3-6, not on the product, so a
+        non-HotRC SBUS handset whose CH3-CH6 idle low reads inverted out of the box.
+        The named product wins the default, deliberately; an operator re-binding a
+        channel can override reverse.
+      - rcMapChannels() hardcodes useCh2 = false. The live task path routes per
+        source and does not use it, but the pure mapper's dual-receiver story is
+        unfinished.
+      - A three-position (3 gears) button buys nothing beyond a different threshold:
+        rcAnalogToSwitchState() splits LOW / MID / HIGH, but trigger dispatch is
+        boolean. Whether a three-state binding target is worth adding is a design
+        question.
+      - The handset's own failsafe positions are secondary here: they arrive with
+        failsafe=true and the firmware discards the channel values, so SBUS_HW cuts
+        the drive path, not the receiver's numbers. Set the handset to neutral anyway.
+      - CCS is not detectable; the estop and the drive speed cap are the only bounds
+        on a cruising handset.
+      - tasks/rc_diagnostics_contract.md is stale: it gives the ARM1/ARM2 boot
+        defaults as deadband 50 and reverse 0 where the code uses deadband 0 and
+        reverse 1, and it still names src/tasks/sbus_input.cpp (now rc_input.cpp).
+        It does not change behaviour.
+
+      Control grammar: one DS-650 addresses six channels, two of them taken by
+      driving, against far more RC-bindable actions than that; this is why dual SBUS
+      exists. The RC page shows six channels per SBUS source, not sixteen. Our
+      grammar is configuration (a binding table edited from a web page) rather than
+      a hardcoded button map, because with six inputs, which six must be answerable
+      without a rebuild. Neither ShadowMD nor Padawan360 reads a receiver, so their
+      chorded grammars do not port.
+
+      Against those projects: both ramp and default to a non-zero deadzone; we do
+      neither (deadband defaults to 0), which with this handset's sudden throttle is
+      a real difference in feel.
+
+      Open decisions (operator, not research):
+      - Should the mapper refuse a binding whose center is at an endpoint? That is
+        the throttle trap expressed as configuration; the simulator guards against
+        it, we do not.
+      - Is the throttle's lack of a curve worth compensating in firmware? Scope for
+        the drive work, not this product.
+      - Should sbusTimeoutMs scale with the frame period (above)?
 
   - value: 22
     id: rc_radio
@@ -271,7 +413,80 @@ products:
     gate: null
     included: 0
     sheet: xbox-controller-input.md
-    notes: ""
+    notes: |
+      Roadmap (#312). #303 recorded the Component Protocol as Bluetooth HID; #312
+      names the wireless dongle and the wired controller, and both of those are USB.
+      The sheet shows four protocols in this family, so which one #312 is about is an
+      operator decision, not a research result.
+
+      The board decides the protocol. artoo-esp32 is a classic ESP32: Bluetooth
+      Classic and BLE, no USB host. firebeetle2 is an ESP32-P4: a USB host, no radio
+      of its own, and a BLE-only C6 companion. So the dongle and wired paths are
+      firebeetle2-only, the Bluetooth Classic path is artoo-esp32-only, and the
+      Component Protocol and the Board Capability Gate are one decision here, not
+      two. The three coherent positions:
+      - Bluetooth, Series X|S pad, artoo-esp32: a current-production controller, no
+        dongle, Bluepad32 does the work. Costs: reverses the Bluetooth Framework
+        Envelope decision, the BLE-versus-BR/EDR firmware trap, nothing on
+        firebeetle2.
+      - USB, 360 dongle, firebeetle2: the hobby's proven arrangement, explicit
+        disconnect events, four controllers. Costs: discontinued hardware, a custom
+        USB class driver, nothing on artoo-esp32.
+      - USB, wired GIP, firebeetle2: a published Microsoft specification and a
+        current controller; a cable is a dead man's handle. Costs: tethered.
+      No position serves both boards. Whether firebeetle2 could ever take a
+      Bluetooth controller is the sheet's Open Item 1 (HID host over ESP-Hosted).
+
+      Which controller the lineup names is open too: the hobby's part (360 + receiver)
+      is discontinued, and the current-production Series X|S pad is used by no droid
+      project. Both cannot be the lineup entry.
+
+      Bluetooth means reversing a Framework Envelope decision. artoo-esp32's
+      `artoo_envelope` block compiles Bluetooth out (`CONFIG_BT_ENABLED=n`) and
+      records its saving and how to undo it. That saving is the floor, not the bill:
+      a Bluetooth HID host (BTstack or Bluedroid, HID parsing, bonding storage) has
+      never been measured here. Settle it by building once with `CONFIG_BT_ENABLED=y`
+      plus a host stack and reading `check-envelope`; the static-DRAM segment, not
+      flash, is the number to watch. The block's "an operator would notice: nothing"
+      line becomes false and is rewritten in the same commit.
+
+      Bluepad32 would be the first dependency whose licence depends on how the
+      project is distributed (BTstack is free for open source, commercial for closed
+      source). protoArtoo is a public repository, which is the case the open-source
+      terms cover, but adopting it is an explicit operator decision, answered once.
+
+      Either path, the driver is written: a custom class driver over the ESP-IDF USB
+      Host Library matching `FF/47/D0` (GIP) or the 360 vendor interface, or
+      Bluepad32. The seam is the same: a Radio Controller member that produces what
+      `rc_input.cpp` already produces.
+
+      A gamepad does not fit the binding model. `RcBindingConfig` is channel and
+      range shaped (source, channel, min/center/max, deadband, reverse). A pad has no
+      channels, no pulse widths and nothing to calibrate; what it has is button
+      identity, click-versus-hold and modifiers, the grammar the sheet's Padawan360
+      section shows. So it needs a new `RcBindingSource` and a second binding shape,
+      not one more enum value, and that design is shared with any future gamepad:
+      decide it before the first one. Diagnostics likewise: the RC diagnostics
+      contract defines `raw` and `rawUs` in SBUS counts and pulse microseconds, and a
+      gamepad has neither. Either the contract grows a third source-native form, or a
+      gamepad reports `normalized` and `mapped` only and the UI says so.
+
+      The failsafe, not negotiable:
+      - a last-report watchdog owned by protoArtoo, on the order of
+        `SBUS_TIMEOUT_MS`, feeding the existing failsafe; the disconnect event only
+        makes the common case fast;
+      - disarmed on connect, and on every reconnect, as Padawan360 does;
+      - an idle disconnect (the controller's ~15 minute power-off) is normal, not an
+        error;
+      - consider pinning the controller's address, as ShadowMD pins a MAC. Pairing
+        is not authorisation.
+      Unlike Padawan360's cooperative `loop()` check, the 50 Hz DriveTask's zeroing
+      does not depend on the USB stack being serviced.
+
+      Padawan360's Home-button LED ring shows drive armed state and the speed preset
+      on the controller itself; protoArtoo has no equivalent. No astromech project
+      drives an Xbox controller from an ESP32, so protoArtoo would be first, with no
+      build to copy.
 
   - value: 4
     id: rc_transmitter_pwm
@@ -338,8 +553,99 @@ products:
       wires: []
       hazards:
         - "The droid does not read ELRS yet. With it picked, the sticks do nothing."
-      source: "Where this sits in the lineup, 5.1, 12"
-    notes: ""
+      source: "4.1"
+    notes: |
+      ELRS is Roadmap in public wording (operator, 2026-10-06); the registry row
+      still says supported and follows in #477. The controller reads no ELRS input
+      yet. Picking it stores the `elrs` RC input mode, and the RC path then behaves
+      exactly as with no receiver fitted: no decoder and no RC task start, and the
+      feet are held by the stale web drive command and the estop. That is the
+      Wiring card's hazard ("the sticks do nothing"), and the only proof of it is
+      the code, not the spec sheet.
+
+      The safety model inverts. The two radio Failsafe Layers are the receiver
+      hardware failsafe flag and the SBUS timeout (`SBUS_TIMEOUT_MS`, 200 ms). CRSF
+      has no flag: on link loss the receiver stops sending. The first layer has
+      nothing to read and the timeout becomes the only radio protection. The TBS
+      specification advises waiting a second before failsafe; that is aircraft
+      advice. The recommendation is to keep 200 ms for CRSF and record that the
+      second was declined on purpose, not by oversight.
+
+      What protoArtoo would have to do:
+
+      The UART. SBUS costs no UART because it is decoded on RMT; CRSF at 420 kbaud
+      is UART work. artoo-esp32's three UARTs are all committed (console, drive, and
+      one shared by the dome link and the audio RX, with audio TX already
+      bit-banged). firebeetle2's UART4 is unclaimed. So the Board Capability Gate is
+      probably {firebeetle2}, but say it honestly: "no spare UART for CRSF on
+      artoo-esp32, and freeing one would cost the dome link or the console", not
+      "impossible". ShadyRC runs CRSF on a classic ESP32's three UARTs by moving the
+      slow devices to software serial, which is what artoo-esp32 already does for
+      audio TX. It still does not fit: UART0 is a real console, the dome link is
+      bidirectional and timing-sensitive, and a 420 kbaud stream is the least
+      suitable thing on the board to bit-bang. Open question: can artoo-esp32 free
+      a UART, which decides whether the Gate is a fact or an assumption.
+
+      The decoder is small, because CRSF's channel values are SBUS's
+      (172 / 992 / 1811):
+      - New: frame sync, length and CRC-8 (`0xD5`); the 11-bit unpack into 16
+        channels.
+      - Unchanged: the value domain, RC bindings, calibration, deadband and
+        reverse, and the per-channel raw / normalized / mapped diagnostics (raw is
+        already this domain).
+      - Failsafe: the receiver-flag layer goes; the timeout becomes the only radio
+        layer.
+      - The `elrs` input mode already exists as a stored answer; the decoder is what
+        is missing.
+      Extended limits on the handset widen the range to 0-1984, outside the SBUS
+      defaults; per-channel min/max calibration already allows for that.
+
+      The failsafe design, which is the real work:
+      1. Keep the 200 ms timeout and record the declined one-second advice.
+      2. Zero the cached channel values on link loss, not merely stop acting on
+         them (ShadyRC does this). It covers the unknown window where a receiver
+         may repeat stale data before going silent.
+      3. Require an arm channel: a switch position read every tick, not a toggle.
+         With no failsafe flag the arming gate does safety work.
+      4. Come back disarmed and slow; a reconnect never resumes at speed.
+      5. Feed the existing `FailsafeGate` rather than a parallel path; an ELRS link
+         loss is the same class of event as an SBUS timeout.
+
+      Library: `AlfredoCRSF` is sound for a real-time path. Read
+      `getChannelsPacked()` for the raw domain (`getChannel()` converts to
+      microseconds), and keep our own 200 ms timeout rather than the library's
+      300 ms `checkLinkDown()`.
+
+      Link quality: channel 15 carries uplink link quality for free in every mode
+      except full-resolution 16-channel, readable through the binding model with no
+      telemetry parsing; parsing frame `0x14` adds RSSI, SNR, antenna and RF mode.
+      Either way this is the first RC member that can say the link is getting worse,
+      not only that it failed, and the Status Plate's RC-link chip is where that
+      belongs.
+
+      Telemetry, out of scope for a first driver: CRSF is full duplex, so the droid
+      could report to the operator's handset. The frames fit state the droid
+      already holds: battery (`0x08`) from the drive feedback battery reading,
+      temperature (`0x0D`) from the board temperature, RPM (`0x0C`) from the
+      left and right speeds, and a short status string (`0x21`) for estop, armed and
+      speed preset. Whether a first implementation sends any of it is scope, not
+      research.
+
+      Costs to state plainly: a UART (firebeetle2 only); a small new decoder; a
+      failsafe redesign, because the receiver-flag layer stops existing; an arm
+      channel, which changes how a builder drives the droid; and a builder-side
+      provisioning story (binding phrase, packet rate, switch mode, telemetry ratio,
+      receiver baud), all set outside protoArtoo.
+
+      Interference with our own AP: ELRS at 2.4 GHz and the droid's WiFi AP share
+      the band on one droid; nobody has measured what the receiver does to the AP.
+      Bench test: run both and watch link quality and AP throughput together.
+
+      The hobby's own ELRS droid control has been announced three times and built
+      once (ShadyRC Crossfire). protoArtoo would not be following a finished peer;
+      it would arrive at about the same time as CHIRP Droid Control.
+
+      No ELRS receiver has run on this project's hardware.
 
   # ---------------------------------------------------------------------------
   # Body servo controller
@@ -381,7 +687,33 @@ products:
     gate: null
     included: 1
     sheet: pca9685-servo-expander.md
-    notes: ""
+    notes: |
+      The dome already runs two of these: `0x40` for the panels and `0x41` for the
+      holos, 19 slots, on the operator's AstroPixelsPlus fork
+      (`mattiasbrandt/AstroPixelsPlus`), which pins Reeltwo at `23.5.3` in its
+      platformio.ini rather than vendoring it. The sheet's three field problems (the
+      grinding servo, the off-by-one, the pin-0 underflow) were found there; the
+      fork's FORK_IMPROVEMENTS.md and its ADR 0004 (holo servoSettings starts at
+      pin 17) are the record.
+
+      Things about the dome fork that a body-side change must not inherit by
+      accident:
+      - It is 1-based Reeltwo. The body expander's Outputs are the silkscreen,
+        0-based (`pca:0`-`pca:15`). Porting a channel table between the two shifts
+        every servo by one.
+      - Its live holo table is pins 17-22, with the old 16-21 values left commented
+        out. Upstream still has the pin-16 comment, so bumping Reeltwo or re-syncing
+        the table from upstream regresses it.
+      - It calls a bare `Wire.begin()` and runs its bus at 100 kHz; the body
+        expander runs 400 kHz (#306).
+      - It ships 800-2200 us per slot. The body's LEDC defaults are 500-2500 us. Not
+        a conflict, but a body Output should not silently take either range from the
+        other.
+
+      The bus-init and seam plan the sheet carried is built (#444): the servo
+      backend seam, the I2C bring-up at an explicit clock, silkscreen numbering,
+      the driver's own clamped microseconds-to-ticks conversion, and the no-trim
+      decision on the oscillator (#306, 2026-09-30) are in the driver and its header.
 
   - value: 10
     id: pololu_maestro
@@ -394,7 +726,180 @@ products:
     gate: null
     included: 0
     sheet: pololu-maestro-servo-controller.md
-    notes: ""
+    notes: |
+      Not built. No Maestro has been attached to this project's hardware; everything
+      below is design from the sheet's vendor facts (#307, minted from #303, which
+      assigned the Maestro serial Component Protocol).
+
+      Architecture, decided in #307's research: dumb output, not sequencer. Firmware
+      keeps the Motion Profile ramp and streams positions; the Maestro's speed and
+      acceleration stay at 0 so its engine cannot fight the ramp firmware computed;
+      the script engine goes unused. The sequencer model collides with five
+      decisions, and the last one decides it:
+      - ADR 0052 easing (`none`, `soft`, `overshoot`): the device has only the
+        trapezoid, which is `none`; the other two exist only if firmware streams.
+      - ADR 0052 speed and acceleration are times: a script stores rates, authored
+        on a PC, on a device whose servo period firmware cannot read.
+      - The Cadence Floor would move into a Maestro script, where the Sequence
+        Coordinator cannot hold it.
+      - ADR 0043 schedules an Output Release from arrival: firmware stops knowing
+        when arrival is; Get Moving State is global and Mini-only.
+      - #301 / #318: the builder edits Outputs in protoArtoo's UI. A sequencer
+        Maestro moves authorship into an XML on a PC: two editors, one droid, no
+        sync.
+      The hobby's reason for a co-processor (a single-threaded AVR loop stalls the
+      animation) does not apply: ServoTask is its own 50 Hz task and the drive lane
+      is fenced onto Core 1. One exception left open: the device engine is the right
+      tool for a move that must complete while the host is not talking, such as a
+      slow return during a fault. Nothing asks for that today; if something does,
+      the sheet's travel-time-to-rate conversion applies, per Output rather than
+      per droid.
+
+      Motion Profile on a Maestro, if the engine is ever used: ADR 0052 rejects
+      storing Maestro units, so firmware converts the stored times with the sheet's
+      "Converting a travel time into speed and acceleration". Recalibrating an
+      Endpoint Pair changes D, so S and A are recomputed and re-sent whenever an
+      endpoint moves (free on LEDC). S and A are lost on any Maestro reset: re-send
+      the whole per-channel profile after one. An acceleration clamped at 255 gives
+      a slower move than stored, and the surface says so, as a degraded overshoot
+      does.
+
+      Driver rules the sheet's facts imply:
+      - Use the Pololu protocol (pay two bytes a command, 0xAA on every packet), or
+        open with one complete Pololu-protocol command and then go compact. Never
+        depend on a fixed baud set over USB: a driver that works only against a
+        pre-configured device fails in the field with no diagnosis.
+      - Any reply decoder abandons a packet on a high-bit byte (the protocol's
+        self-resync).
+      - Do not use pololu/maestro-arduino's read path: its reads are unbounded
+        spins, and no task in this firmware may spin on a read. The write side is
+        small enough to own.
+      - If this project ever presents a Maestro-compatible interface (a reader),
+        refuse an oversized Set Multiple Targets count, never clamp it.
+      - If this project ever ships Maestro builder documentation, its first line is
+        the sequencer-export fix: replace the trailing `return` with `quit`.
+
+      Factory defaults against this project:
+      - A factory Maestro limits pulses to 992-2000 us; LEDC's range is 500-2500 us
+        (include/ledc_pwm.h). Most of what Endpoint Pair calibration can record is
+        unreachable until the settings file widens Min / Max (on the 16 us grid).
+      - The factory startup/error mode, Off, is already ADR 0052's limp by default
+        and ADR 0043's Output Release. Keep it Off, except per channel for a part
+        held against gravity (Ignore). Go to turns every Maestro error into a mass
+        servo move, the overlapping inrush the Cadence Floor exists to prevent.
+
+      Release and the first move: Output Release is Set Target 0 per channel, and
+      ADR 0043's "a bus drop is reported, not escalated" applies with the UART in
+      place of the I2C bus. For estop use explicit Set Target 0 (or one Set Multiple
+      Targets with every target 0 on a Mini), never Go Home, whose effect depends on
+      a setting firmware cannot read. A released channel has no position, so its
+      next Set Target is a jump at full speed. After a release firmware
+      re-establishes the position before ramping: command the last commanded
+      target, let it snap, then ramp. SERVO_PULSE_NEUTRAL_US is not a safe
+      re-establish value.
+
+      Keep-alive: with the serial timeout armed, a quiet link is a fault. The driver
+      keeps the link alive inside the timeout window (Get Errors qualifies) rather
+      than lengthening the timeout. Same shape as the drive lane's zero-frame rule.
+
+      Frame budget, streaming every Output at the 50 Hz ServoTask tick with Set
+      Multiple Targets (Mini only; 3 header bytes plus 2 per channel): for 23
+      channels that is 49 bytes, 51 ms at
+      9600 baud (does not fit a 20 ms tick), 12.8 ms at 38400, 4.3 ms at 115200,
+      2.5 ms at 200000. Run 115200 or faster. A dedupe against the last sent value
+      drops a resting droid's traffic to the keep-alive. The hobby's 9600 cannot
+      carry a streamed body.
+
+      UART:
+      - artoo-esp32 has no spare UART (console, drive, dome; audio shares the
+        dome's controller), and freeing one costs the dome link or the console. The
+        drive lane's "replace, never append" escape does not apply: LEDC, the Body
+        servo controller's supported member, costs no UART, so there is nothing for
+        a Maestro to replace.
+      - FireBeetle 2: UART4 is unclaimed by the firmware (include/config.h). The
+        ELRS sheet claims UART4 for CRSF, which must be a real UART at 420 kbaud; a
+        Maestro link is one-way, slow and tolerant. If a builder wants both, CRSF
+        takes UART4 and the Maestro goes elsewhere. Open: which of #311 and #307
+        gets UART4 is a decision for the two tickets, not a measurement.
+
+      Three ways to reach it:
+      - A hardware UART: FireBeetle 2's UART4, if CRSF has not taken it.
+      - The existing soft-UART TX (src/drivers/audio_soft_uart_tx.h, 9600 baud,
+        about 1.04 ms per byte in a Core 0 critical section). Fine for
+        gesture-triggered traffic (a compact restartScript, 2 bytes, 2.1 ms; one
+        Set Target, 4 bytes, 4.2 ms); impossible for streaming (a 49-byte frame
+        blocks Core 0 for 51 ms, 2.55 s per second at 50 Hz). So it supports only
+        the sequencer model the decision above closed.
+      - Freeing a second hardware UART by a trade: on artoo-esp32 it costs the
+        console or the dome link. Not acceptable.
+
+      Pins, if a link is wired:
+      - artoo-esp32: GPIO 2, 4, 12 and 27 are unused in SBUS modes (the CH3-CH6
+        headers, docs/pin_map.md); one can carry TX. Open: which of them are
+        boot-strapping pins? The research expects two are; the pin map does not
+        flag them, and a pin held low at boot by an attached device changes how the
+        chip starts. Check GPIO 4 and 27 first; read all four against the ESP32
+        datasheet and record the answer in docs/pin_map.md.
+      - FireBeetle 2: one spare GPIO, itself an avoid-list pin (docs/pin_map.md). A
+        write-only link fits it. A return path needs a GPIO that does not exist, so
+        reading the Maestro back on this board is a design change, not a wiring
+        choice.
+
+      Level shifter: at the research date, the first part this project lists that
+      needs one. A
+      write-only link needs one shifter channel, or none if the builder accepts
+      Pololu's "not guaranteed" on 3.3 V RX, as the only ESP32 precedent does (out
+      of specification). A bidirectional link needs a real shifter both ways; a
+      divider cannot raise a voltage. The Maestro's 5 V out can power the shifter.
+      Builder documentation that says "wire the signal and a ground" is wrong for
+      this part. The FireBeetle 2's servo field advice in docs/pin_map.md (servos
+      and ESCs from a separate BEC) still holds; joining VSRV=VIN only moves where
+      the servo rail terminates.
+
+      Provisioning, made checkable: author the settings in the Control Center,
+      export the XML, commit it to this repository (one file per variant),
+      `UscCmd --configure` it, then `--getconf` and diff to prove it took. The
+      serial timeout makes that file a safety artefact; treat it like
+      docs/droid-parts.yaml, not a wiki page.
+      - Serial mode: UART, fixed baud (or detect, with a Pololu-protocol driver).
+      - Baud: 115200 or higher (frame budget above).
+      - Serial timeout: non-zero. It is the servo failsafe, and firmware cannot arm
+        or read it.
+      - Min / Max per channel: widened to the LEDC range, on the 16 us grid.
+      - Startup / error: Off, except parts held against gravity.
+      - Startup speed / acceleration: 0 (firmware owns the ramp).
+      - Period: 20 ms (changing it rescales the motion units invisibly).
+      - CRC: off.
+
+      Registry, Gate, Member:
+      - Component Protocol: Maestro serial stands. A different wire format, a
+        different transport class from both peers, and a device holding state
+        firmware cannot read.
+      - Board Capability Gate: needed, and a real board fact (does this board have
+        a UART, or a spare GPIO, to reach a Maestro), entangled with #311. #311 and
+        #307 should agree on one gate rather than mint two.
+      - Component Member: the servo backend seam exists (include/servo_backend.h,
+        #444 from #306). A Maestro is a third backend row beside LEDC and the
+        PCA9685. Like the PCA9685, its writes leave Core 1: ServoTask hands a
+        frame's changes over in servoBackendCommit() and a Core 0 task does the
+        UART writes. It sits on a link that can drop, so its Outputs are reported
+        unreachable when the link fails.
+
+      Costs to state plainly to a builder:
+      - A level shifter enters the bill of materials.
+      - A PC provisioning step becomes mandatory, on Windows or x86 Linux. macOS
+        cannot do it; a Raspberry Pi probably cannot run the GUI.
+      - The scarcest bus on the board is spent, and on FireBeetle 2 it is contested
+        with ELRS.
+      - Reading the device back is unaffordable on FireBeetle 2, so Get Errors, Get
+        Position and Get Moving State, and every diagnostic the device offers, are
+        out in the realistic wiring. A Mini's ERR pin is the one cheap substitute.
+      - The serial timeout and the channel limits are invisible to firmware, so the
+        operator UI cannot honestly report whether the servo failsafe is armed, only
+        that the settings file says it should be.
+      - The motion engine is bought and not used. What a builder paying USD 2.29 to
+        4.66 per channel gets: channel count off a single wire, a hardware failsafe,
+        and per-channel startup behaviour.
 
   # ---------------------------------------------------------------------------
   # Dome Rotation
@@ -426,8 +931,174 @@ products:
         - "Over 12.6 V destroys it at once. A 36 V hoverboard pack does, and so does a 4S pack."
         - "Battery wires the wrong way round damage the ESC."
         - "A jammed dome is not protected. Its 120 A limit is out of a dome motor's reach."
-      source: "5.1, 5.2, 5.3, 5.4, 5.5, 6.2"
-    notes: ""
+      source: "4.1, 4.2, 4.3, 4.4, 4.5, 5.2"
+    notes: |
+      The ISD Go baseline below is the operator's own tuning, locked on the bench on
+      2026-03-21 against a real dome ring on the Artoo PCB. For tuning it outranks a
+      vendor preset; for what a setting means, the manual outranks it. Final tuning is
+      always mechanical-build dependent: ring friction, gear mesh, mass and inertia,
+      wiring, supply sag and motor characteristics.
+
+      Baseline settings (ISD Go), operator-locked:
+      - Running mode: Forward and reverse. Required for bidirectional dome movement,
+        and the only mode in which the droid's signed speed command means what the
+        firmware thinks it means.
+      - Battery type: match the actual pack chemistry, for correct cutoff and
+        protection.
+      - Cell count: match the actual pack. 2-3S LiPo / 6-8 cell NiMH only.
+      - Cutoff voltage: Auto, or an equivalent safe manual value.
+      - BEC voltage: 5.0 V. Conservative for accessory power, and the value that makes
+        an accidental back-feed least destructive.
+      - Motor rotation: Forward, swapped if mechanically reversed. Pick this inversion
+        point, not the other two (below).
+      - PWM frequency: 1 kHz. Low-end torque for heavier loads.
+      - Start force: high or max. Breakaway torque, the main lever on an
+        over-specified controller.
+      - Brake force: minimum practical value. Reduces abrupt reversal loading.
+      - Active drag brake: disabled. Avoids neutral drag torque; also disables ramp
+        anti-skid, which is the same mechanism.
+      - Active brake: disabled. Avoids aggressive braking on direction flips, and
+        sidesteps the manual-versus-app contradiction.
+
+      Curve guidance. Curve shaping changes response feel, not absolute maximum
+      output. Throttle curve: stronger midrange while keeping endpoints linear, around
+      +50 input -> +80 to +85 output and -50 -> -80 to -85, endpoints +/-100 ->
+      +/-100. Brake curve: soft low-mid values, around 50 input -> 10 to 20 brake and
+      100 input -> 25 to 35 brake. The +/-100 endpoints are what take the factory
+      Novice curve's 70 % cap off; a dome tuned on a Novice curve is tuned around the
+      wrong number. The bench record reads "1 kHz PWM, Start force MAX, Brake 1,
+      drag/active brake off".
+
+      Calibration and verification checklist:
+      1. Complete throttle calibration (max, min, neutral) in ISD Go. Nothing else can
+         be set until this is done.
+      2. Verify command polarity and neutral hold behaviour.
+      3. Test unloaded movement at multiple command levels.
+      4. Test loaded dome movement with sustained one-direction runs.
+      5. Test direction reversals with neutral dwell, to check mechanical stress.
+      6. Re-tune start force and curve if breakaway or oscillation issues appear.
+
+      Operational cautions:
+      - Avoid immediate full-power direction reversals under heavy load.
+      - If cogging or stall appears at low command, increase start force first.
+      - If harsh reversals occur, reduce brake aggressiveness and add neutral dwell in
+        controller logic (no firmware does this today, below).
+      - If the dome refuses to move at all at low slider values, check
+        `dome_speed_limit_pct` before suspecting the ESC.
+      - If the dome turns one way and not the other, check the running mode before
+        suspecting the mechanics.
+
+      Calibrating against the droid instead of a transmitter. The droid is a legitimate
+      throttle source: it emits exactly the 1000 / 1500 / 2000 us the procedure wants.
+      Two steps are awkward from a web page:
+      - Step 1 needs full throttle held while the ESC powers up. The Dome page slider
+        can command +100 %, but `domeTaskInit()` writes neutral at boot and the 500 ms
+        command timeout returns to neutral when the slider stops sending. Set the
+        slider to +100 %, then switch the ESC on within the timeout window, or hold the
+        slider.
+      - Every step is "hold until you hear N beeps", and the beeps come from the motor,
+        so somebody has to listen next to the droid.
+      The clean way is to calibrate with whatever will drive the ESC. Calibrated
+      against the droid, the learned endpoints are exactly 1000 / 2000 us and
+      `dome_min_pulse_us` / `dome_max_pulse_us` stay at their defaults. Calibrated
+      against a transmitter with non-default EPA, the learned endpoints are not
+      1000 / 2000, and those two fields are the trim that fixes it without
+      recalibrating. That is what they are for, not direction.
+
+      Direction has three inversion points: the motor wires, the app's Motor rotation
+      setting, and swapping `dome_min_pulse_us` / `dome_max_pulse_us` on the Dome page.
+      Pick the app setting, record it, and leave the other two alone.
+
+      The neutral deadband and `dome_speed_limit_pct`. The droid's neutral is a fixed
+      1500 us from a hardware timer, so the drift the ESC's deadband exists to absorb
+      does not exist here, and the manual's "keep default" advice is doubly safe. But
+      the speed limit scales the whole usable range toward neutral
+      (`domeSpeedToPulseUs`): at 100 % full command is 2000 us, at 20 % it is 1600 us,
+      at 10 % it is 1550 us, plausibly inside the deadband. The symptom is a dome that
+      does nothing at any slider position, with the firmware happy and the log showing
+      a sensible pulse width. Check the speed limit before concluding the ESC is dead.
+      Open: ramp the limit down until the dome stops responding and record the pulse
+      width, which would give the Dome page a real minimum instead of 0.
+
+      Arming. `domeTaskInit()` holds neutral for `ESC_ARMING_DURATION_MS` (2000 ms),
+      the vendor's two-second rule, once at controller boot, not when the ESC powers
+      up. ESC
+      switched on after the controller: it comes up into a steady 1500 us stream,
+      fine. ESC powered first: it reports Receiver Lost through the boot window, then
+      gets its two seconds. ESC power-cycled mid-session: the boot hold does not
+      repeat, so it gets no fresh hold. Reboot the controller after power-cycling the ESC, or
+      clear the error from the app.
+
+      Board wiring:
+      - FireBeetle 2: the DFR1237 field is a row per GPIO with IO / 3V3 / GND columns,
+        and its plug-and-go ergonomics make the mistake easy. Push the ESC's 3-pin wire
+        onto row 48 (`PIN_DOME_ESC`) and the BEC's 5-7.5 V lands on the 3.3 V plane.
+        Wire signal and ground only.
+      - artoo-esp32: what the Artoo PCB's dome header power pin carries is UNKNOWN
+        (unpowered, 5 V, or the logic rail). A meter on the header with the board
+        powered settles it; until then, wire signal and ground only there too. This is
+        the highest-value open item for this part.
+      - Proven on artoo-esp32 only (GPIO 25, 2026-03-21/22): the 3.3 V LEDC path
+        reaches the ESC, the app reports back the commanded throttle, the motor turns
+        at 50 / 70 / 90 % unloaded, and the ring moves under load ("friction sectors
+        and direction flip resistance noted"). Not proven: anything on FireBeetle 2 /
+        ESP32-P4, where GPIO 48 also sits on the `VDD_IO_5` LDO rail that
+        docs/pin_map.md flags as an unquantified risk to edge quality (the symptom
+        would be erratic dome throttle and would never appear in a log); the arming
+        hold against a real ESC power-cycle; sustained thermal behaviour; the deadband
+        floor; any protection firing. confirmed_on_droid rests on #455.
+
+      Command sources. Every source of dome motion posts one normalised speed to
+      `domeCmdQueue`, and DomeTask (Core 1) is the only writer of the dome channel:
+      the web slider / REST handler, the RC dispatcher (PWM or SBUS binding), the
+      sequence dispatcher's `SEQ_ACT_DOME_ROTATE`, the dome link's rotation cue, the
+      console direct action, the RC signal-loss stop, and the random idle machine
+      inside DomeTask.
+
+      Why the droid uses an RC ESC on LEDC: configuration moves out of the firmware
+      onto a phone, and the runtime driver is a PWM write on a pin the board already
+      has. A SyRen in packet serial would move configuration into the firmware and
+      cost a UART artoo-esp32 does not have spare; a SyRen in R/C mode plugs into the
+      same pin with no new code. The hobby practices the sheet records have droid
+      equivalents: the SBUS neutral band and confirm-frames filter in
+      `dome_input_filter.h` (a stricter host-side deadzone), `dome_speed_limit_pct`
+      (a configurable cap), and the 500 ms `DOME_COMMAND_TIMEOUT_MS` standing in for
+      the hardware timeout the SyRen has and the ESC70 does not.
+
+      DomeTask logged its speed with `%.2f` once (2026-03-21); on ESP32 newlib that
+      routes through `_dtoa_r` and `malloc` on a Core 1 real-time task and produced a
+      "Stack canary watchpoint triggered (DomeTask)" panic loop. That is why the dome
+      log lines use integer percent.
+
+      Findings against the code (2026-09-12 research, re-checked 2026-10-06):
+      - The brushless comment: `include/ledc_pwm.h` was fixed and now says a BRUSHED
+        ESC, but `include/config.h` (the DOME channel comment, "drives brushless
+        motor") and `include/servo_backend.h` ("LEDC_CH_DOME (a brushless ESC") still
+        say brushless. The ESC70 is brushed only and cannot run a brushless motor.
+      - Stack sizes (resolved): docs/failsafe.md once carried a Chip-Specific column
+        reading No for DomeTask at 3072 B, while config.h had 3072 B on artoo-esp32
+        and 4608 B on P4, with an 80 B lower-bound floor recorded on artoo-esp32 as a
+        known exposure; the same mismatch sat on DriveTask, ServoTask and
+        DomeLinkTask. The column is gone: stack sizes now live in
+        `tools/task_stack_recipes.json`, generated into `include/task_stack_figures.h`
+        (ADR 0040), and DomeTask has headroom on both chips. Re-check the dome chain
+        before adding anything to the DomeTask loop on either chip.
+      - Nothing ramps. A `-1.0` DomeCommand right after a `+1.0` is one PWM frame at
+        1000 us with the motor still spinning forward, and in mode (c) the ESC obeys
+        at once. The ESC has no ramp setting, and the SyRen's EEPROM ramping persists
+        and leaks into other modes. A host-side slew limit in DomeTask is the natural
+        home, and it is a behaviour change to a Core 1 task that would also change how
+        the random idle machine and sequence steps feel: a decision, not a correction.
+        Open.
+      - The dome is write-only. `robotState.domeTargetSpeed` is what was commanded,
+        not what the dome is doing. The Dome ESC health row (`data/health_signals.js`)
+        now reads Idle or Spinning in grey as a commanded word, never green. The Dome page's own
+        rotation-state word still reads Idle / Spinning from the commanded target, so a
+        dome whose ESC is in protection, unpowered, uncalibrated or in the wrong
+        running mode shows the same page as a turning dome: the same shape as the old
+        optimistic audio "Playing" badge, with no wire to read. Open: word that state
+        as commanded on the Dome page (operator's call on wording), and whether a
+        sensed dome input (a rotation sensor or a current shunt) is worth a GPIO.
 
   - value: 12
     id: syren10
@@ -440,7 +1111,38 @@ products:
     gate: null
     included: 0
     sheet: sabertooth-syren-packet-serial.md
-    notes: ""
+    notes: |
+      Two ways onto the Dome Rotation lane (#309):
+      - R/C mode (SW1 down, SW2 up) takes a 1000-2000 us servo pulse, the shape
+        PIN_DOME_ESC already puts out for the ISDT ESC70 on both boards. #309
+        observes that a SyRen in R/C mode needs no new code there; not tried on
+        this project's hardware.
+      - Packet serial needs a UART. artoo-esp32 has none spare; the other route is
+        a share of the drive lane, which works only if the Foot Drive is a
+        Sabertooth on the same line (SyRen at 129, Sabertooth at 128).
+
+      No documented serial failsafe. The SyRen 10 manual documents commands 0-3
+      only, so whether it honours command 14 is UNKNOWN (the sheet's Open Item 1).
+      The Foot Drive seam's line that a packet-serial controller "is opt-in and
+      starving it makes the wheels STOP" (include/drive_backend.h) must not be read
+      across to the SyRen: an unarmed one holds its last command, and the dome
+      keeps turning.
+
+      It is a V1 autobaud device. A packet-serial driver waits 2 s after the SyRen
+      powers up and sends 0xAA before any command; boot noise on the TX line can
+      mis-baud it until a power cycle, so the 10k pull-down from S1 to 0V is
+      required wiring. On a line shared with a V2 Sabertooth, move the Sabertooth's
+      baud first (command 15), then the host, and let the SyRen autobaud.
+
+      S2 e-stop proposal: S2 is an active-low emergency stop on the SyRen and the
+      Sabertooth alike. Routing the Latching Estop to one shared S2 line would stop
+      dome and feet in hardware, independent of serial state or a hung MCU. A
+      design proposal for #308 and #309; not decided.
+
+      Baud: on a shared line run 38400 rather than 9600 (see sabertooth_2x25): drive
+      plus dome takes 3.13 ms of the 20 ms drive tick instead of 12.5 ms.
+
+      The product has not run on this project's hardware.
 
   # ---------------------------------------------------------------------------
   # Dome Controller
@@ -470,8 +1172,83 @@ products:
         - "V on the dome header stays unconnected. Two supplies joined through the slip ring feed each other."
         - "A freshly flashed dome talks 2400 and the body talks 9600. Set mserial2 to 9600 on the dome's Setup page, or the link stays silent."
         - "The USB port on its ESP32 is fragile. Power a fitted dome from the screw terminal."
-      source: "5.1, 7.1, 7.2, 13.5"
-    notes: ""
+      source: "4.1, 6.1, 6.2, 10.5"
+    notes: |
+      The droid talks protoR2link to the AstroPixelsPlus fork (mattiasbrandt/AstroPixelsPlus)
+      running on an AstroPixels set. The stock vendor builds, `standard-md` and upstream
+      AstroPixelsPlus have no body link and no `DV:` / `DL:` / `DT:` / `DH:` layer: on any
+      of them the structured commands match nothing and are dropped in silence, so an
+      AstroPixels set with other firmware gets the raw Marcduino families at best.
+
+      The registry row names the firmware, not the product. Part 13 is called
+      "AstroPixels Plus" on the Component Picker card, but a builder buys an AstroPixels
+      set and then flashes AstroPixelsPlus onto it. Recorded as drift, not corrected: the
+      `astropixels_plus` id is persisted in NVS and never renamed, and the visible name is
+      an operator decision. GLOSSARY.md, docs/topology.md, docs/goal.md and
+      docs/terminology.md make the same substitution ("AstroPixelsPlus-class board").
+
+      Baud: the body is fixed at 9600 and cannot tell "no dome" from "dome at 2400". A dome
+      flashed from scratch, or after `#APZERO`, is at 2400 until `mserial2` is set. Idea,
+      not built: after N failed 9600 probes, probe at 2400 and report "dome found at 2400,
+      set mserial2 to 9600" instead of "no dome".
+
+      Health: the fork publishes `body_link` and `visual_authoring` telemetry on its own
+      `/api/health`, over HTTP. The body never reads it; its view of dome health is one
+      bit, a heartbeat inside 5 s.
+
+      Gaps and findings against the fork, outside this repo:
+      - `*RD00` has no handler. The fork has `*RD01`-`*RD03` but not the all-holos form
+        from the standard ShadowMD button table; `*ON00`, `*OF00` and `*ST00` exist, so it
+        is a one-registration gap.
+      - `DH:` color tokens ORANGE and YELLOW look swapped. The fork's
+        `parseVisualHoloColor` sends ORANGE as HP color 2 and YELLOW as 7, and Reeltwo
+        23.5.3 numbers HP 2 Yellow and 7 Orange; PURPLE goes out as 6, Magenta. Read from
+        source, not seen on a dome.
+      - `DL:...:WHITE` is not white. ReelTwo logics have no white, so the fork maps WHITE
+        to the palette default, while the authoring contract lists WHITE as valid and
+        telemetry reports the requested color: `/api/health` says WHITE for a display
+        that is not white. `DH:` WHITE is real white (HP 9).
+      - `DH:` names holos by letter (F/R/T/A), which keeps it clear of the fork's
+        `@7` = top / `@8` = rear swap; raw `@7`/`@8` from a JawaLite table move the wrong
+        holo.
+
+      The structured layer ran on a dome on 2026-06-22, one case per family:
+      `DL:LOGIC:MARCH:RED:5`, `DT:FLD:DEFAULT:5:0:TEST%0ATEXT`, `DH:A:FLASH:RED:5` and
+      `DV:RESET_VISUALS`, all applied with `reject_count` 0.
+
+      Logic settings do not survive a dome reboot (the sheet, "Brightness is the current
+      knob"), which is why `DV:` / `DL:` re-assert visual state at the start of a sequence
+      rather than assuming it.
+
+      Panels: the sheet's panel map is read from the fork's source. docs/droid-parts.yaml
+      keeps `dome_link_panel` TBD until a hardware check that each `:OPnn` moves the named
+      panel on the droid; #386 carries the proposed values.
+
+      The fork's `DM:` vocabulary is 40 names, ported from Jessica Janiuk's
+      `thePunderWoman/AstroPixelsPlus` fork and adapted. docs/sequence-parity.md lists all
+      of them except `DM:RANDOM`.
+
+      Command length: DomeTxCmd holds 64 bytes and `domeQueueTx()` truncates silently, and
+      the SEQ_FALLBACK path forwards unvalidated `DM:*` names. Whether the body ever emits
+      a line over 63 characters is unchecked: a length assertion in `domeQueueTx()`, or a
+      native test over every emitted string, would settle it. Raw `*` commands are
+      forwarded uninterpreted, so an operator can reach `*HPS303` (the sheet's crash Open
+      Item).
+
+      Costs of the fork:
+      - A second firmware with its own release cycle, web UI, NVS and update path: two OTA
+        stories, not one.
+      - It rewrites the control layer rather than patching it, is far ahead of upstream,
+        and is not headed upstream. The divergence is a maintenance obligation.
+      - A sequence that uses fork-only commands (`@nT12`/`15`/`22`/`24`, `DV:` / `DL:` / `DT:` / `DH:`)
+        is not portable to another droid's dome.
+
+      The fork finds the body by mDNS at `protoartoo.local`, with a manual `bodypeerip`
+      override. The WiFi fallback needs dome and body on the same network, which an
+      AP-mode dome is not.
+
+      Current draw has not been measured on this droid: an inline meter on the dome 5 V
+      feed, idle and during `DV:SCREAM`, would settle it.
 
   - value: 14
     id: teeces
@@ -484,7 +1261,84 @@ products:
     gate: null
     included: 0
     sheet: teeces-dome-lighting.md
-    notes: ""
+    notes: |
+      Teeces is roadmap: no driver ships, and the registry's protocol stays `tbd`
+      until #313 decides. AstroPixels Plus is the Dome Controller this project
+      reaches today because it is the kit the operator installed (#303,
+      2026-09-07); that is project history, not a verdict on either product. A
+      Teeces does not speak protoR2link: it is a light kit with a small
+      serial-commanded microcontroller, and that difference is the whole
+      integration problem.
+
+      Component Protocol: the research of 2026-09-10 resolves `tbd` to JawaLite. It
+      changes the driver, so by #303's test it is a protocol, not configuration.
+      JEDI Display and the R-Series Logic Engine speak it too; if either joins the
+      lineup, JawaLite earns its own protocol sheet beside the product sheet, the
+      split the SBUS protocol sheet and the HotRC sheet already model.
+
+      The dome link already matches JawaLite on the wire: 9600 8N1, one ASCII
+      command per line ending in `\r`, a 64-byte queue message that equals the
+      Teeces command buffer, and the raw `@` family already reaches the dome.
+
+      What would have to change. The gap is narrow; the first item is the whole of
+      the framing work:
+      1. Strip the `@`. The body forwards `@...` verbatim, which is right for
+         AstroPixels Plus (it emulates a MarcDuino) and wrong for a Teeces, which
+         expects what a MarcDuino slave emits. Supporting Teeces means the body
+         performs the slave's hop.
+      2. Widen the accepted letter set. The protocol check accepts only `T`, `P`
+         and `M` after the address digit; Teeces needs `S` (PSI state) and
+         optionally `R` (random style). `@0S1` is rejected today.
+      3. Re-target the reset pair. The sequence engine, the dispatcher and the
+         catalog's terminal steps emit `@0T1` / `@0P1`. `@0T1` is right on both
+         products; `@0P1` is a silent no-op on a Teeces, whose PSI reset is `0S1`.
+      4. Decide what `DL:` means on a monochrome dome. Its color argument and the
+         `RAINBOW` and `FLASHCOLOR` modes have no Teeces meaning. ADR 0045's
+         intent-not-truth rule gives the answer shape: the model records what was
+         commanded, never what the device shows, so a color can be accepted and
+         reported while the device ignores it. That is a decision for #313. Our
+         AstroPixelsPlus fork already has a one-value version of the problem: it
+         maps `WHITE` to `kDefault` because Reeltwo logics have no white.
+      5. Map `DL:` targets onto the real address map. `DL:`'s `FLD` is singular;
+         JawaLite has two front displays at addresses 1 and 2. The droid parts
+         catalog already says "Front Logic Displays", plural.
+      6. Rate-limit: 100 ms between commands, 250 ms after a text set. The dome
+         link has no such spacing today.
+      7. Do not parse the return path. A Teeces echoes and acknowledges about 40
+         bytes per command and sends a bare `0x07` on rejection; the dome RX parser
+         must not take any of it as a dome line.
+
+      Board Capability Gate: almost certainly none. A Teeces reaches the body over
+      the same single UART lane at the same baud as AstroPixels Plus, so any board
+      wired for one can be wired for the other. It is a Component Member question:
+      under ADR 0042 a member setting appears because the family would then hold two
+      selectable products.
+
+      The other product shape, open on #313: our AstroPixelsPlus dome fork already
+      compiles Reeltwo's MAX7219 chain driver. It includes `TeecesPSI.h` and
+      `TeecesLogics.h` and instantiates a `LedControlMAX7221<5>` chain, bound to the
+      Charge Bay Indicator and Data Panel rather than to any Teeces object. So an
+      AstroPixels-class ESP32 could run Teeces boards directly, as Reeltwo's
+      `teecesLogics` example does, and JawaLite would then live on the dome side of
+      protoR2link. Reeltwo's Teeces logic classes use their own command grammar,
+      not JawaLite; only `TeecesPSI` is JawaLite-addressable. Whether the body
+      speaks JawaLite or a dome-side board does is the design decision #313 makes
+      before the framing work is scoped.
+
+      ShadowMD binds logic-display types 5, 7 and 8 to `@0T10`, `@0T92` and
+      `@0T100` + `@0M<text>`: inert on AstroPixels Plus, live on a Teeces. ADR
+      0045's reason for keeping the raw families forwarding - a builder's bindings
+      are worth more than our internal tidiness - points straight at this.
+
+      Baud per unit: a Teeces bought from Printed Droid today is 9600 and matches
+      the dome lane; a second-hand board on the CuriousMarc default is 2400 and
+      needs reflashing or a lane change. Confirm per unit.
+
+      Licence: the boards, the classic sketch and Teeces-ESP32 carry no licence
+      identifier. It matters only if this project vendors their code or board files.
+
+      No Teeces has run on this project's hardware, and no bench measurement of one
+      exists.
 
   # ---------------------------------------------------------------------------
   # Foot Drive
@@ -515,8 +1369,268 @@ products:
         - "With a 6-wire hall cable, the right sensor cable carries battery voltage, 36-42 V."
         - "Nothing isolates the two sides. A fault on the 36 V side reaches the Body Controller through ground."
         - "The battery reading is not good to a tenth of a volt until that hoverboard is calibrated."
-      source: "The configuration that has to be right on the board, 9.2, 9.3, 9.4, 12.1, 15"
-    notes: ""
+      source: "7.4, 8.2, 8.3, 8.4, 10.1, 12"
+    notes: |
+      The droid's side is fixed: 115200 8N1, the 8-byte `0xABCD` command frame with
+      an XOR checksum, 50 times a second, on the drive lane. That is EFeru's Gen1
+      wire; RoboDurden's `REMOTE_ROS2` borrows it. Everything that can go wrong goes
+      wrong on the board, at build time, in a file the builder edits before
+      flashing. Get one line wrong and the droid is silent with no error. The
+      operator's own board runs RoboDurden firmware, built with `REMOTE_ROS2`.
+
+      Builder settings, EFeru FOC (Gen 1, one mainboard), all in `Inc/config.h` of
+      `EFeru/hoverboard-firmware-hack-FOC`. Required:
+      - `#define VARIANT_USART` uncommented, and every other `VARIANT_*` commented
+        out. PlatformIO offers it as the `VARIANT_USART` environment.
+      - `CONTROL_SERIAL_USART2 0` and `FEEDBACK_SERIAL_USART2`, both, for the left
+        cable; or `CONTROL_SERIAL_USART3 0` and `FEEDBACK_SERIAL_USART3`, both, for
+        the right cable. `CONTROL_` is the droid commanding the board, `FEEDBACK_` is
+        the board answering. Without the second one the droid drives fine and the
+        Drive page never shows telemetry. The right cable is the 5 V-tolerant one and
+        the one EFeru's own example recommends; either works with a 3.3 V ESP32.
+        Pick one cable and set both defines for it.
+      - `USART2_BAUD` / `USART3_BAUD` left at 115200: the droid's drive lane is fixed
+        at 115200.
+      - `PRI_INPUT1` and `PRI_INPUT2` left at `3, -1000, 0, 1000, 0`. `TYPE 3` is
+        auto-detect, the range is +/-1000 (which the droid's +/-600 cap is a fraction
+        of), and `DEADBAND 0` leaves deadband to the droid, which already has one.
+      Must NOT be set:
+      - `ENABLE_ODOMETRY`: the feedback frame becomes 22 bytes and the droid can
+        decode neither it nor anything after it; telemetry silently never appears
+        (finding 3 below).
+      - `DEBUG_SERIAL_USART2` / `_USART3` on the same cable: the board prints ASCII
+        debug over the lane instead of frames.
+      - `TANK_STEERING`: bypasses the mixer and maps `steer` to left, `speed` to
+        right; the droid would spin where it should drive.
+      - `DUAL_INPUTS`: adds a second input with priority switching; only set this if
+        you know which input you are on.
+      - a second `VARIANT_*`: the file `#error`s, or worse, two variants claim the
+        same cable.
+      Leave alone unless you know why: `CTRL_TYP_SEL` (`FOC_CTRL`), `CTRL_MOD_REQ`
+      (`VLT_MODE`), `SPEED_COEFFICIENT` (1.0), `STEER_COEFFICIENT` (0.5), `RATE`,
+      `FILTER`. Changing `CTRL_MOD_REQ` to `SPD_MODE` silently changes what the
+      droid's speed presets mean.
+      Worth setting for a droid: `I_MOT_MAX` and `N_MOT_MAX` are the board's own
+      ceilings (15 A, 1000 rpm by default). Lowering `N_MOT_MAX` is the one place a
+      builder can cap the droid's top speed below the droid's own `SPEED_LIMIT_MAX`,
+      a belt-and-braces limit the droid cannot be talked out of.
+
+      Builder settings, RoboDurden Gen2.x (Gen 2, two boards, one per wheel), all in
+      `HoverBoardGigaDevice/Inc/config.h` of
+      `RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32` (not the `Gen2.x`
+      repository, which no longer has the code). Required:
+      - `#define REMOTE_ROS2` uncommented, and every other `REMOTE_*` commented out.
+        It is the only remote that speaks the droid's protocol. `REMOTE_UART`, the
+        obvious-sounding one and the one the prebuilt binaries are built with, is
+        `'/'`-framed, CRC-16, 19200 baud, and the droid cannot speak it.
+      - `#define DRIVING_MODE 1` (speed mode). `RemoteROS2.c` refuses to build
+        otherwise, and it is why the units are RPM.
+      - `#define SPEED_AsRevsPerSec`, also enforced by `#error`.
+      - `#define LAYOUT <n>` (and `LAYOUT_SUB` where the layout has one) matching the
+        physical board. A wrong layout can short the battery and kill the MOSFETs.
+        Identify the board with the interactive finder in the `Gen2.x` wiki first.
+      - `#define MASTER` on one board, `#define SLAVE` on the other, one image each.
+        The MASTER talks to the droid; the SLAVE talks only to the master. A `SINGLE`
+        build drives one wheel and reports zeros for the other.
+      - Keil target: 1 = GD32F130, 2 = GD/STM32F103, 3 = GD32E230, 4 = MM32SPIN0x,
+        5 = LKS32, selected in the Keil dropdown, not in the config file.
+      `REMOTE_BAUD` is 115200 inside `Inc/RemoteROS2.h` and needs no edit.
+      Wire the droid to `REMOTE_USART 0`, PB6/PB7, the empty header near the flash
+      header; not the 4-pin master-slave header (PA2/PA3), which carries the link
+      between the two motor boards.
+      You have to build this yourself: there is no prebuilt `REMOTE_ROS2` binary in
+      either RoboDurden repository (`BinariesReadyToFlash/` carries `master Dummy`,
+      `master Uart`, `slave` and `single uartBus`). Flashing `master Uart` because
+      the droid talks over UART is the single most likely way to end up with a board
+      that looks dead. Building means Keil MDK v6; there is no PlatformIO or GCC path.
+
+      What to check once it is flashed, in order:
+      1. The board powers on and beeps. EFeru beeps twice when it arms the motors,
+         and only arms them if both inputs are near zero at boot, which the droid's
+         zero frames satisfy.
+      2. `GET /api/status` contains a `hoverboard` object. If it does not, nothing
+         valid has been decoded. That one check separates "wrong firmware or wrong
+         wiring" from every other problem.
+      3. `speedR` / `speedL` move when you spin a wheel by hand. These are hall
+         readings and do not need the droid to be commanding anything.
+      4. Battery reads plausibly against a multimeter (both firmwares need a
+         per-board voltage calibration).
+      5. Board temperature is not evidence of anything. On RoboDurden it is
+         hardcoded to 25.0 degC. Do not use it to conclude the link works or does not.
+
+      The five ways this goes wrong, and what each looks like:
+      - Droid drives, no telemetry ever: `FEEDBACK_SERIAL_*` not defined (EFeru), or
+        `ENABLE_ODOMETRY` is on.
+      - No telemetry, no movement, no error: wrong remote (`REMOTE_UART` not
+        `REMOTE_ROS2`), or wrong baud, or TX/RX swapped.
+      - Telemetry fine, wheels do not move: motors never armed (a non-zero input at
+        boot), or a motor fault, or the board is in its 8-minute inactivity poweroff.
+      - Droid spins instead of driving: `TANK_STEERING` set, or the two motor phase
+        sets swapped.
+      - Much faster than expected: a RoboDurden board, where the presets are RPM, not
+        percent.
+      The droid reports none of these distinctly today; every one presents as the
+      Drive page's empty wheel-controller state or as nothing at all (finding 6).
+
+      What the 600 speed cap means per firmware. The droid clamps every command to
+      `SPEED_LIMIT_MAX = 600` of the protocol's +/-1000, with default presets at 200
+      (slow), 350 (normal) and 600 (turbo). The same droid setting is a different
+      droid on the two firmwares:
+      - `SPEED_PRESET_SLOW` = 200: EFeru `VLT_MODE` 20 % voltage, ~130 rpm, ~4 km/h;
+        RoboDurden `REMOTE_ROS2` 200 rpm commanded, ~6 km/h.
+      - `SPEED_PRESET_NORMAL` = 350: EFeru 35 % voltage, ~220 rpm, ~7 km/h;
+        RoboDurden 350 rpm commanded, ~11 km/h.
+      - `SPEED_LIMIT_MAX` = 600: EFeru 60 % voltage, ~380 rpm, ~12 km/h; RoboDurden
+        600 rpm commanded, ~19 km/h.
+      Speeds assume a 6.5" wheel. On a RoboDurden board turbo is approximately the
+      motor's no-load ceiling: 600 rpm against a ~640 rpm motor is a ~94 % setting,
+      and the closed loop will try to hold it. A builder moving a droid from an EFeru
+      board to a RoboDurden board with the same saved configuration gets a materially
+      faster droid. The droid does not know which firmware is on the other end and
+      cannot warn about this today (finding 4). On EFeru the slow preset is the
+      walking-pace setting.
+
+      The 20 ms deadline. Both firmwares hold the last command for 500-800 ms before
+      their own timeout, so the droid feeds the board 25x to 40x more often than
+      either requires. That is not waste: the deadline is what makes an estop
+      instantaneous rather than "within 800 ms", since a zero frame at 50 Hz reaches
+      the wheels in one tick. The `DriveStarvation::Drifts` classification and the
+      20 ms deadline are right; the reason written beside them is not (finding 4).
+
+      Code review result: the frame encoding, the checksum, the parser state machine
+      and the byte offsets were checked field by field against both upstreams and are
+      correct; the 26-byte offsets the parser reads (speedR at 6, speedL at 8,
+      currents at 14 and 16, battery at 18, temperature at 20) match
+      `RemoteROS2.c`. Reference hosts send at 10 Hz; the droid sends at 50 Hz.
+
+      Findings against the code (reported, not fixed):
+
+      1. The Component Protocol is spelled two ways and neither is accurate. The
+         Component Registry row declares `hoverboard_gen2_uart`; the drive backend
+         profile in `include/drive_backend.h` declares `hoverboard_gen2x`. Both reach
+         operators: the first through `/api/identity`, the second through DriveTask's
+         startup log line. Two spellings of one protocol is drift by itself. Worse,
+         both say "Gen2", and the wire is EFeru's Gen1 protocol that RoboDurden's Gen2
+         firmware borrows for one build option. A builder on an EFeru Gen 1 board,
+         the common case, is told their supported, working controller speaks
+         `hoverboard_gen2_uart`. Naming is a Component Protocol decision and belongs
+         to #303's vocabulary. A candidate: `hoverboard_serial_abcd`, which names what
+         is on the wire and is true of both firmwares. Recorded, not chosen.
+
+      2. The driver cites a repository that no longer holds the code. Still unfixed:
+         `include/hoverboard_uart.h` and `src/drivers/hoverboard_uart.cpp` both say
+         `// Reference: https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x`.
+         That repository's README says "code moved to
+         Hoverboard-Firmware-Hack-Gen2.x-GD32 !!". The citation should be
+         `.../Hoverboard-Firmware-Hack-Gen2.x-GD32`, and ideally the file
+         (`HoverBoardGigaDevice/Src/RemoteROS2.c`) rather than the repository, since
+         the repository has eight remotes and only one of them is this protocol. An
+         agent that follows the comment to check the protocol finds no protocol there.
+
+      3. An EFeru board built with `ENABLE_ODOMETRY` is silently undecodable.
+         `ENABLE_ODOMETRY` inserts `wheelR_cnt` and `wheelL_cnt` into the feedback
+         struct, producing a 22-byte frame. It is off by default but it is exactly
+         what a builder enables for wheel distance, and every ROS integration guide
+         turns it on. `feedHoverboardFeedbackByte()` accepts only 18 and 26. A 22-byte
+         frame fails the 18-byte check, keeps accumulating into the next frame's
+         bytes, fails the 26-byte check, resets, and repeats forever. The result is
+         not an error: it is `driveFeedbackValid` never becoming true and the Drive
+         page waiting indefinitely, with a board that is driving perfectly. Adding the
+         format costs one length constant, one offset table and one branch, and it
+         would close finding 5 for EFeru boards at the same time.
+
+      4. Three operator-facing statements are true of only one firmware. The project
+         supports two firmware families and treats them as one everywhere above the
+         parser:
+         - `include/drive_backend.h`, beside the backend profile, and the
+           zero-frame comment in `src/tasks/drive.cpp` say the mainboard "holds its
+           last command when the stream stops". That is true for 800 ms (EFeru) or
+           500 ms (RoboDurden), after which one coasts and the other soft-brakes.
+         - `docs/topology.md` safety layer 5 says the hoverboard firmware "stops its
+           motors after about 500 ms without a valid frame". That is RoboDurden's
+           figure and its soft brake; EFeru holds 800 ms and then coasts. As a layer it
+           is 0.5-0.8 s of continued motion followed by a coast or a ramp, the
+           opposite of what "safety layer" implies in a list whose other entries zero
+           the output. Either qualify it or drop it.
+         - The Drive page "Board temp" row shows a hardcoded 25.0 degC on RoboDurden
+           and an uncalibrated MCU-die reading on EFeru. The
+           `research-r2d2-sim-2026-09-09-ticket-digest.md` queues this string for a
+           rename to "Hoverboard Temp"; worth doing with whatever honesty treatment
+           the value gets, since renaming it without qualifying it makes a fabricated
+           number look more authoritative.
+         None of these is a code defect. All three have one root cause: the droid
+         does not know which firmware is on the far end, and the copy was written as
+         though it did.
+
+      5. The only odometry this project can reach is parsed past. Offsets 10 and 12
+         of the RoboDurden frame are `wheelR_cnt` / `wheelL_cnt`, hall-step counters
+         wrapping at `ENCODER_MAX` = 9000. `parseGen2xFrame()` skips them and
+         `HoverboardFeedback` has no field for them. They are the only distance
+         measurement available to this project on any backend. This is not an
+         oversight to fix blindly: ADR 0051 was explicit that a sensed bearing is a
+         roadmap correction, "not delivered, not promised" ("differential odometry off
+         hoverboard wheel speeds exists as a path, on feedback-capable drives only").
+         It is recorded because capturing the field (two `int16_t`s in a struct, two
+         `memcpy`s) costs far less than the feature that would use it, and a future
+         ticket asking how far the droid has travelled should find this rather than
+         re-derive it. Gen 2 only unless finding 3 is also done.
+         ADR 0053 ("a Reaction is a binding the droid triggers itself") depends on
+         this feedback: "on a hoverboard, handling is detectable with no new
+         hardware -- a pushed droid back-drives its wheels, a held one loads its
+         motors." The load half, motor current, exists only on RoboDurden boards. On
+         an EFeru board `currentL`/`currentR` are structurally zero, so a Reaction
+         bound to "the droid is being held" would never fire and would never say why.
+
+      6. A silent wire looks identical to a disabled drive. If the far end is on the
+         wrong firmware, build option, baud or cable, the droid sends 50 frames a
+         second forever, never decodes a reply, and the Drive page shows its empty
+         wheel-controller state ("Nothing from the wheel controller yet."). That
+         message is also correct for a board still booting. What the firmware makes
+         distinguishable that the droid does not use:
+         - bytes arriving that never validate: something is talking at this baud, but
+           not this protocol;
+         - no bytes at all: wrong cable, wrong baud, board off, or TX/RX swapped;
+         - valid frames of an unexpected length: the 22-byte case in finding 3.
+         A counter of unparseable bytes since boot, beside the existing feedback
+         state, would separate "no hoverboard" from "a hoverboard I cannot
+         understand". The diagnostic contract in `tasks/rc_diagnostics_contract.md`
+         is the precedent for the shape.
+
+      7. The 8-minute inactivity poweroff is not written down anywhere. Both
+         firmwares power the board off after 8 minutes without motor command.
+         `docs/goal.md` names static-display operation a first-class use case, and
+         `docs/troubleshooting.md` has no entry for a droid whose feet stop answering
+         after a long stand. A documentation gap, not a code one: the droid cannot
+         prevent it, since the trigger is the board's own PWM output and the droid is
+         deliberately sending zeros. Worth a line in troubleshooting and a sentence in
+         a builder-facing hoverboard setup guide.
+
+      Still open from the `hb_` rename (#346): the RobotState fields are
+      `driveFeedback*`, but the published `/api/status` key is still `hoverboard`. It
+      has a consumer (`renderHoverboard` on the Drive page) and a documented contract
+      in `docs/api.md`, so renaming it is an API change with callers to move. It
+      belongs to whichever ticket lands the second Foot Drive backend.
+
+      Open Items:
+      1. Low-speed cogging on a real droid at walking pace. Bench: drive a loaded
+         droid at `SPEED_PRESET_SLOW` and observe. Cannot be settled by reading.
+      2. Whether the 8-minute poweroff announces itself. Bench: leave a powered board
+         idle 9 minutes with the console attached.
+      3. Sensor-cable connector part number. UNKNOWN; no source names one. Needs a
+         caliper and a connector catalogue.
+      4. Whether the operator's board reports plausible battery voltage. Compare
+         `/api/status` `hoverboard.batteryV` against a multimeter on the pack.
+      5. Measured no-load rpm on the operator's wheels. Read `hoverboard.speedR/L` at
+         a known command with the wheels off the ground; settles the 14-vs-16 rpm/V
+         band for this droid.
+      6. Whether `boardTemp` on the operator's board reads exactly 250. One
+         `/api/status` read; confirms finding 4's Board temp case on hardware.
+      7. Whether the droid should detect the far firmware and say so. A decision, not
+         a measurement; depends on finding 6.
+      8. Photograph / line drawing obligations for #390. Owned by #316 and ADR 0065.
+      Items 4, 5 and 6 are three readings of one endpoint and would be one bench row.
+
+      The hoverboard has not been confirmed turning wheels on an assembled droid.
 
   - value: 16
     id: sabertooth_2x25
@@ -529,7 +1643,86 @@ products:
     gate: null
     included: 0
     sheet: sabertooth-syren-packet-serial.md
-    notes: ""
+    notes: |
+      Which Sabertooth the entry names is open (#308). Dimension Engineering marks
+      the 2x25 discontinued and points at the 2x32, and Printed Droid steers
+      builders the same way. The packet-serial protocol is identical, so one driver
+      serves both; the entry, the price and the builder documentation differ.
+
+      Starving it does not reliably stop it. #308 records that the serial timeout
+      "stops the motors when starved -- unlike the hoverboard, which drifts", and
+      include/drive_backend.h says today: "A packet-serial controller's (Sabertooth
+      setTimeout(), 100 ms granularity, 100 ms minimum) is opt-in and starving it
+      makes the wheels STOP." That holds only for a 2x25 V2 (or newer) on which
+      command 14 was sent since its last power-up:
+      - the timeout is off by default and does not survive a controller power
+        cycle or brownout, which the host cannot detect on a one-way bus;
+      - the 2x25 V1 manual documents commands 0-13 only, so a V1 may have no
+        serial timeout at all;
+      - an unarmed or V1 controller holds its last command, which is what the
+        header's DriveStarvation::Drifts means ("holds the last command it was
+        given"), not Stops. A held throttle does not decay the way a drift does.
+      So a Sabertooth profile cannot declare Stops unconditionally, and its
+      continuity deadline means something only while the timeout is armed. The
+      header comment is not corrected yet.
+
+      What the driver's begin() has to do:
+      - send 0xAA at the target baud, 2 s after the controller powers up (needed
+        by V1 devices such as a SyRen on the same line; harmless on a V2);
+      - send command 14 to arm the serial timeout, and re-arm it, because it does
+        not persist and cannot be read back;
+      - never send ramping (16) or deadband (17): both persist in EEPROM and apply
+        in R/C and analog mode too, so a value written here follows the board out
+        of this firmware. Ramp in software, as the SHADOW lineage does;
+      - prime both mixed values (drive and turn) before expecting motion, and use
+        either the mixed or the independent commands, never both. The library's
+        stop() sends independent commands, so it forces a mode switch.
+
+      The zero-frame rule keeps a different reason. With the timeout armed, the
+      50 Hz zero frames and the controller's timeout are defence in depth. With it
+      unavailable or unarmed (V1, after a brownout), the zero frames are the only
+      thing between a hung controller board and a held throttle. The rule stays,
+      and the driver should report whether it believes the timeout is armed, which
+      it can believe and never verify.
+
+      S2 e-stop proposal: in packet serial, S2 is an active-low emergency stop on
+      the Sabertooth and the SyRen alike, and the vendor says to tie all S2 inputs
+      together. Routing the Latching Estop to one shared S2 line would stop feet
+      and dome in hardware, independent of serial state, an armed timeout or a hung
+      MCU, and make that invariant true in hardware rather than only in firmware.
+      A design proposal for #308 and #309; not decided.
+
+      Baud: run 38400, not the hobby's 9600. The drive tick is 20 ms. At 9600 a
+      drive update (two packets) plus a dome update (one) takes 12.5 ms, 62 % of
+      the tick; at 38400 it takes 3.13 ms. For comparison the hoverboard's 8-byte
+      frame at 115200 takes 0.69 ms, so 9600 packet serial is about 18 times the bus
+      time of the drive fitted today. ShadowMD's fix for the same congestion
+      (serialLatency 25 ms, feet at 40 Hz) is slower than the 50 Hz zero-frame
+      continuity requires. The cost of 38400 is the baud order on a shared line:
+      talk to the V2 Sabertooth at 9600, send command 15, then change the host, and
+      let an autobauding SyRen follow.
+
+      Telemetry: the bus is write-only, so nothing comes back - no battery, no
+      temperature, no current, no fault, not even presence. Faults show on the
+      controller's LED only. The row's capability word is 0, and for this product
+      that is the answer the registry comment leaves open under #304, not a
+      placeholder. The operator UI has to say there are no drive readings rather
+      than show stale ones.
+
+      Open question for #308: can artoo-esp32's S1 carry a Sabertooth in place of
+      the hoverboard? ADR 0029 forces that board's drive set to {hoverboard} for
+      want of a spare UART, and ADR 0042 repeats it with no selector. But "no spare
+      UART" argues against appending a second controller, and ADR 0029's own rule
+      is "replace, never append". The sound family in ADR 0042 gets a selector
+      because all its members wire to one pin; a Sabertooth wired to S1 instead of
+      a hoverboard is the same shape. Electrically it is 3.3 V TTL serial on the
+      same header and needs only TX. If it can, artoo-esp32 gets a drive Component
+      Member and the ADR 0042 table row reverses. Not resolved.
+
+      Builder provisioning is new work for the docs, not the code: DIP switches,
+      address 128, the battery-type switch, and the baud order above.
+
+      The product has not run on this project's hardware.
 
   - value: 17
     id: flipsky_mini_v6_vesc
@@ -542,7 +1735,109 @@ products:
     gate: null
     included: 0
     sheet: flipsky-vesc-foot-drive.md
-    notes: ""
+    notes: |
+      Which protocol #310 is about is an operator decision, not a detail. #303
+      recorded this product's Component Protocol as VESC UART (vesc_uart); every
+      astromech build that runs a Flipsky does it by R/C servo PWM, one pin per
+      foot, mixed in software, and none speaks VESC UART. The choice changes the
+      board budget, the capability bits, and whether the part is a driver's worth
+      of work or two LEDC outputs.
+
+      Which product the entry names is also open (#310): the literal Mini V6 is
+      the MK5 (USD 67, firmware 6.02); the part builders call a "mini V6" is the
+      Mini FSESC6.7 PRO (USD 57, firmware 5.2). One driver serves both; the entry,
+      the price, the builder docs and the VESC Tool version differ. Flipsky tells
+      6.7 PRO owners not to update, so a driver must not need anything added after
+      firmware 5.2.
+
+      The seam (include/drive_backend.h) holds, with one amendment. Its
+      driveBackendBegin() says "A backend that programs a hardware timeout of its
+      own does it here." A VESC backend cannot: the timeout lives in the app
+      config and no serial command sets it. begin() can only read the app config
+      (COMM_GET_APPCONF) and report what it found, or not look. A starved VESC
+      releases the motor after timeout_msec (1000 ms by default) unless the builder
+      set a brake current, so its profile must not declare Stops.
+
+      The frame does not fit today's seam buffer: one COMM_SET_DUTY is 10 bytes on
+      the wire, above DRIVE_BACKEND_FRAME_MAX_BYTES (8), and a COMM_FORWARD_CAN to
+      a second ESC is longer again.
+
+      Units. DriveOutput's speed and steer are the hoverboard's units, clamped to
+      SPEED_LIMIT_MAX (600 of its +/-1000). A VESC takes duty, amps or ERPM, and
+      the mapping is a driver decision with a safety consequence, not a scale
+      factor:
+      - duty: honest and open loop, so 600/1000 is 60 % duty; torque falls off at
+        low speed, where a droid needs it;
+      - current: torque control; a lifted foot spins up to the ERPM limit, the
+        wrong default for a droid that gets picked up;
+      - ERPM: closed loop and the best behaved, once the builder's motor model in
+        VESC Tool is right.
+      The clamp stays above the driver, which maps a clamped number. Which one is
+      right needs a motor on the ESC, not a document.
+
+      Mixing. driveArbiterResolve() gives one (speed, steer) pair; two independent
+      VESCs each need their own value. #304's follow-up asked whether mixing sits
+      above or below the seam and did not answer. The evidence favours below, in
+      the driver: the one Flipsky droid code mixes in software, the arbiter stays
+      pure decision logic, and a second per-wheel contract would double the seam.
+      A Dual FSESC6.7 Plus (two motors, one board) keeps the (speed, steer) shape
+      exactly.
+
+      Two ESCs and the board budget:
+      - two UARTs: artoo-esp32 has no spare; firebeetle2 has UART4 unclaimed, one
+        not two;
+      - one UART plus COMM_FORWARD_CAN: a CAN wire between the ESCs and a CAN id
+        each;
+      - a Dual FSESC6.7 Plus: one board, one UART, USD 153.
+      Neither board can be wired for two serial VESCs today. Under ADR 0029's
+      "replace, never append", a serial VESC foot drive on firebeetle2 means one
+      UART, so CAN forwarding or a dual controller. R/C PPM needs two GPIOs and two
+      LEDC channels instead.
+
+      The zero-frame rule stays, for a stronger reason: the ESC lets go one second
+      after the host goes quiet, so the 50 Hz cadence is what keeps it held, and
+      silence means coast. Whether a zero setpoint holds or releases depends on the
+      mapping above (a zero current setpoint also releases). Bandwidth is no
+      constraint: a 10-byte duty frame is under 0.9 ms at 115200, two per tick at
+      50 Hz is about 9 % of the link.
+
+      Feedback. Over UART a VESC reports a superset of today's drive feedback:
+      battery voltage, FET temperature, per-wheel RPM and current map onto existing
+      fields; motor temperature, the fault code, and its timeout and kill-switch
+      state have none. Over PPM it reports nothing and its presence cannot be
+      detected. The row's capability word is 0 pending #304's follow-up; the
+      answer differs by protocol.
+
+      Kill switch and the estop chain (open): KILL_SW_MODE is the only stop the
+      ESC itself enforces, independent of the serial link, and the nearest thing in
+      the Foot Drive family to a Latching Estop in hardware. It costs a GPIO per ESC
+      and one VESC Tool setting. Decide before designing the harness, because it is
+      a wire.
+
+      FAULT_CODE_BOOTING_FROM_WATCHDOG_RESET is the ESC's own version of ADR 0031's
+      rule; treat it as the firmware treats its own TWDT reset.
+
+      The library's receive path is not usable here. SolidGeek/VescUart busy-waits
+      up to 100 ms per unanswered read: five drive ticks, and 30 in a row exceed the
+      3 s TWDT. The plan is a byte-at-a-time receive state machine fed from a
+      non-blocking drain, mirroring packet_process_byte(); the framing is about 40
+      lines.
+
+      Costs to state plainly:
+      - the largest provisioning step of any Foot Drive product: motor detection,
+        pole count, current limits, app_to_use (APP_UART, or APP_PPM_UART /
+        APP_ADC_UART, documented beside the baud), the timeout and its brake
+        current, the kill switch, all in VESC Tool before the droid moves;
+      - VESC Tool must match the firmware (5.2 for a 6.7 PRO, 6.02 for an MK5);
+      - a 4S (14 V) minimum pack, which may not be the droid's battery;
+      - one UART per ESC, CAN, or a dual controller;
+      - a driver that must not block on a request/response protocol;
+      - the timeout stays the builder's setting, not the firmware's.
+
+      No documented astromech build uses a V6 (the one filmed brushless R2 uses a
+      Flipsky 4.2), so every integration claim above is reasoned from the protocol
+      and this project's drive path. The product has not run on this project's
+      hardware.
 
   # ---------------------------------------------------------------------------
   # Sound
@@ -576,8 +1871,72 @@ products:
       hazards:
         - "Neither Speaker pad is ground. Never wire one to ground or to an amplifier input."
         - "The 5 W on the box is about 3 W. A loud sound on a shared 5 V regulator browns the droid out."
-      source: "5.1, 5.2, 5.3, 5.4"
-    notes: ""
+      source: "4.1, 4.2, 4.3, 4.4"
+    notes: |
+      The protocol token `soft_uart_binary` names the wire, not the contract.
+      GLOSSARY.md's Component Protocol says to avoid "transport (that names the wire,
+      not the contract spoken over it)", and the three sibling tokens
+      (`mp3trigger_serial`, `chirp_ascii_uart`, `dfplayer_serial`) all name the
+      contract. It is also false on FireBeetle 2, where audio has a hardware UART of
+      its own and nothing is bit-banged. The token travels in the identity manifest
+      to the browser, so a rename (`dy_uart` or `dy_serial` would match the siblings)
+      is a decision with a compatibility question attached, not a typo fix. Not
+      changed.
+
+      Reply checksum: `sendQuery()` callers check the start byte, the command byte and
+      (in `queryModuleState()`) the length byte, then use the payload; the trailing
+      `SM` is read and thrown away, so a corrupted payload byte in a reply is
+      believed. `Lenoirio/dy-sv5w` makes the same call; `SnijderC/dyplayer` checks
+      it. Cheap to add and testable natively with the recording IO, but it is a
+      behaviour change to a shipping driver. The queries inside `begin()` check only
+      the start and command bytes, not the length byte. Not changed.
+
+      `begin()`'s queries are not arbitrated. Every other query AudioTask makes is
+      wrapped in `audioUartClaim()`; the four inside `begin()` are not. On
+      artoo-esp32, `begin()` opens the dome link's UART RX-only and sleeps 1.5 s,
+      while DomeLinkTask on Core 1 can re-open the same controller on the dome's pins
+      in that window. If it wins, all four queries get zero bytes: no device, no
+      `switchDrive` (the safe branch), zero tracks, and the cached state the Sound
+      page seeds from says no link. Reasoned from the code, not measured. Against it:
+      the 2026-03 bench record shows the pre-init queries answering on that board.
+      For it: that record predates the current transport arrangement. The outcome is
+      safe either way: a cached "no response" that Poll clears, never a droid that
+      will not play. FireBeetle 2 is unaffected (nothing is shared). The settling
+      check is one boot with the dome link on serial: does the log say
+      `pre-init: device online = ...` or `no response`? If the latter, claim the UART
+      around `begin()` or move detection to the first poll.
+
+      `begin()` always returns true, so a module that answers nothing is reported
+      through the link state, never through the init retry; for this driver the
+      Audio Step Core's begin retries never fire.
+
+      Drive select: a hardcoded `switchDrive(SD)` on a FLASH module silenced its
+      replies (2026-03-22, 3e45db4b; the sheet keeps the module fact). A later change
+      that forced FLASH when detection failed (364cd9ff) was reverted (50e72c76):
+      send nothing when detection fails.
+
+      Ideas recorded, not scheduled:
+      - Compare the module's `0x0C` track count at boot with the highest configured
+        track, and log or surface a mismatch. The driver already reads the count and
+        nothing compares it; it is the cheapest detection of a card rebuilt in the
+        wrong order.
+      - Play-by-path (`0x08`) as an escape from enumeration-order addressing. The
+        driver plays by index. Prototype against a card with 8.3 names and decide
+        whether name-stable addressing is worth the variable-length frame, the 8.3
+        naming and the break with the community's numbered cards. Only if
+        enumeration order becomes a real operator complaint.
+      - Interlude (`0x16`) is not a Background Track. GLOSSARY.md records the DY-SV5W
+        as one of the single-track modules a Background Track contrasts itself with;
+        the vendor's "level 1 only" note (sheet, Setting commands) says one interlude
+        covers the previous one, with no volume of its own. Read both before anyone
+        proposes this module can mix. Expected answer: it cannot.
+
+      Not yet proven on hardware:
+      - The module has never run on FireBeetle 2 (ESP32-P4). Everything about that
+        board's audio lane is read from the code and the pin map.
+      - The phase 5 audio edge cases HW1.5-HW1.14, and the disconnected-module "No
+        response" badge check, are open: the module was not installed during that
+        bench session.
 
   - value: 19
     id: mp3_trigger
@@ -606,8 +1965,56 @@ products:
         - "A new module talks 38400 and the droid talks 9600. Without MP3TRIGR.INI holding '#BAUD 9600' on the card, it never answers."
         - "The card is read at power-up only. Change the card, then power the module off and on."
         - "The audio output carries a DC offset. Static from a long cable can kill the decoder chip."
-      source: "2.1, 6.1, 6.2, 6.3, 13, 15"
-    notes: ""
+      source: "2.1, 5.1, 5.2, 5.3, 8.3, 9"
+    notes: |
+      The droid talks 9600, so the card needs MP3TRIGR.INI holding `#BAUD 9600`;
+      a module without it never answers. The driver's stop plays the blank track
+      254, so `254XXXX.MP3` must be in the card root or a stop leaves the sound
+      playing.
+
+      Volume: the operator's 0-30 maps onto the vendor-audible 0-64 of the
+      inverted register, never the full 0-255 (#396). AstroPixelsPlus measured
+      the floor at 100; the grill of 2026-09-13 chose the vendor's 64. A builder
+      who finds 64 too quiet is a community report, not a ticket.
+
+      Wire behaviour of the driver that the code does not say on its face:
+      - Play-state follows the module's unsolicited `X` / `x` / `E` bytes;
+        `E` records the missing clip and the Sound page names it. There is no
+        play-state query, and the current track is the last one the driver
+        sent, cached, not asked.
+      - The status reply's terminator is unproven (the sheet's Open Item 1). If
+        the module sends none, every status query runs to the read timeout: the
+        boot queries take about 2 s and a Poll about 1 s. Nothing fails, it is
+        only slow.
+      - The driver posts no gap between commands. Whether back-to-back commands
+        drop is the sheet's Open Item 3.
+      - Two-byte commands are the cheapest in the Sound family on Core 0: about
+        2.1 ms of bit-banged TX each, with Core 0 non-preemptible.
+      - On artoo-esp32 RX is GPIO-sampled and does not take the dome UART; Poll
+        still goes through the audio UART claim, a leftover from when audio RX
+        shared UART2. FireBeetle 2 reads on its dedicated audio UART, and that
+        path has not run against a module.
+
+      Levels: the sound RX pin is not 5 V tolerant on either board and the
+      module's TX swing is UNKNOWN. Measure it, or power the module from its
+      3.3 V jumper, before wiring TX back.
+
+      The config layer does not know the 255 ceiling. Category and random ranges
+      save 0-65535: a range above 255 plays silence, one spanning 254 plays the
+      blank, one spanning 255 replays the startup sound. The Sound page warns on
+      a saved range that includes 254 or 255 and does not refuse it; a
+      member-aware validator was the rejected alternative (#396).
+
+      The named-track defaults are the community's 25-track banks, so they need
+      no remapping on this module. `AUDIO_TRACK_HAPPY = 3` sits in the general
+      band, not the happy band: which clip answers `$H` is an operator decision.
+
+      Test gaps: the driver's mirror suite copies the formula and the guards, so
+      it can pass while the driver is wrong; the IO-seam tests drive the real
+      driver and pin the wire bytes. No test drives `queryModuleState()`, and no
+      web test pins the Device row hidden for a module without DEVICE_TYPE.
+
+      The module has not run on this project's hardware.
 
   - value: 20
     id: chirp
@@ -640,8 +2047,76 @@ products:
         - { from: "3.5 mm jack", to: "an amplifier", note: "no amplifier on the module" }
       hazards:
         - "The droid talks 9600 only, and the stock firmware talks 115200. Hold Prev and press Play/Stop until the module says 9600."
-      source: "2.1, 2.2, 6.1, 6.2"
-    notes: ""
+      source: "2.1, 2.2, 5.1, 5.2"
+    notes: |
+      The droid talks 9600, and the stock firmware talks 115200. The module in this
+      droid runs a build from a local clone whose default is already 9600; a stock
+      module needs `#BAUD_RATE 9600` in CHIRP.INI or Prev + Play/Stop until it says
+      9600.
+
+      The local clone (~/Documents/GitHub/CHIRP, upstream 3adcc0d) is a fork in both
+      directions:
+      - Local, not upstream: platformio.ini, variants/chirp_revb/pins_arduino.h,
+        protoArtoo-config.md, platformio-psram-issue.md and
+        sound-bank-page-detection.md are untracked additions, and CHIRP_Audio.ino and
+        config.h are modified. The substance (boot hardening, the PSRAM linker fix,
+        the 9600-baud default, pmalloc() null guards) is recorded in
+        protoArtoo-config.md; the sheet's build contract and cold-boot fix come from
+        it.
+      - Upstream, not local: origin/main has moved on and carries
+        CHIRP_Droid_Control/ plus its own platformio.ini and main.cpp, which the local
+        HEAD predates.
+      - ~/Dropbox/R2-CHIRP/protoArtoo-chirp-changes.md is an older copy of
+        protoArtoo-config.md and is stale where they disagree (it says
+        `board = pimoroni_pico_plus_2`; the cold-boot fix is `board = rpipico2`). Read
+        the in-tree copy.
+      - The droid's card is ~/Dropbox/R2-CHIRP/CHIRP-SD.zip: 1A_general plus 13 Bank
+        2-6 directories, which is past the module's 12-directory GMAN limit. The
+        driver recovers Bank 1's count from LIST when BANK:1 is lost; whether the
+        loss happens on the wire is the sheet's Open Item 1.
+
+      Upstream change request: sound-bank-page-detection.md, in the local clone, is
+      this project's request to the author. It asks that GMAN report every valid
+      Bank 1 page, not only the active one; that `GNME:1,<page>,<index>` honour the
+      page; and that `PLAY:<index>,1,<page>` play from it. Today only the active
+      `#BANK1_PAGE` is scanned, so a second Bank 1 personality (1A_R2D2 beside
+      1B_R5D4) needs an INI edit or a button combo and a reboot. The driver now
+      accepts the empty Bank 1 page instead of reading it as `A`, so names no longer
+      degrade to index_N on page B; the request still matters for more than one Bank
+      1 page. The author is reachable and has acted on this project's findings before:
+      the cold-boot bug was diagnosed jointly, the author reproducing it under
+      PlatformIO and not under the Arduino IDE. The announcement the sheet quotes
+      (the five complaints) is quoted on #387.
+
+      Open decisions carried from the sheet:
+      - What the Component Picker card says about a part nobody can buy. Every other
+        card names a purchasable product; a greyed roadmap treatment would be wrong,
+        since it ships and works. An operator decision with #316's photograph; it
+        also decides what #387's image-provenance record says.
+      - Whether to expose `CHRP:`. A synthesised sweep needs no card, no catalog and
+        no binding, so it is the one sound that always plays, a natural boot or error
+        signal on an empty card. Nothing sends it today. Cheap to try:
+        `CHRP:500,100,500,50` from the Controller Console.
+      - Whether `chirp_bindings` and the `chr_*` NVS keys become capability-shaped.
+        They name a product where a capability belongs, so any future member
+        declaring AUDIO_CAP_CATALOG would inherit the CHIRP Audio Trigger's name in its
+        own config. Recorded on #175 and deliberately not ticketed: renaming stored NVS
+        keys and a public API field is the cost.
+      - Whether this droid wants more than one Bank 1 personality. If it does, the
+        change request above is the fix.
+
+      Settled since the sheet was written, recorded so nobody re-opens them:
+      - The capability rows: device type is the constant Flash+SD (3, now in the
+        enumeration) and current track is parsed from what STAT says is playing.
+      - MSUM is saved beside the bindings as chr_msum and compared at boot and after
+        each refresh; the Sound page warns when the card's sound list changed (#397).
+        The sheet's old Finding 13.5, "MSUM is thrown away", is stale.
+      - One stream can be stopped: the Background Track (ADR 0054, built in #447)
+        sends STOP:<n>.
+      - The soft UART's cost note now covers CHIRP's ASCII commands.
+      - A zero-page Banks 2-6 NAME reply is rejected by the parser and the entry
+        falls back to index_N, rather than storing a shifted name. No card in use
+        has a pageless directory.
 
   - value: 21
     id: dfplayer_mini
@@ -654,4 +2129,106 @@ products:
     gate: null
     included: 0
     sheet: dfplayer-mini-sound.md
-    notes: ""
+    notes: |
+      Roadmap: no driver exists. #305 (minted from #303) builds it and declares the
+      capability bits; until then the row declares none. The `#error` for
+      `AUDIO_DFPLAYER` in src/component_registry.cpp only stops it being a build's
+      default Sound member.
+
+      Our own dome already runs one. The operator's AstroPixelsPlus fork commands a
+      DFPlayer through `MarcduinoSound.h` and shows three things a protoArtoo driver
+      should not copy (the sheet's AstroPixelsPlus section has the code facts): it
+      plays with `0x03` while its own setup guide documents the `/mp3/NNNN.mp3`
+      layout of `0x12`; its `begin()` runs the DFRobot library's 2.2 s
+      reset-and-wait and treats failure as fatal for the session; and it calls the
+      library in ACK mode without draining track-finished frames, which is the
+      library's unbounded-loop path. The dome's DFPlayer also takes `Serial1` and
+      excludes FireStrip and BadMotivator: the same UART scarcity artoo-esp32 has,
+      reached independently on another board.
+
+      A card moved from a MarcDuino-family droid keeps its file numbers and loses
+      the bank semantics: protoArtoo maps `$nnn` straight to `playTrack(nnn)` with
+      named slots in NVS, not the 9x25 bank grid. A documentation point, not a code
+      one.
+
+      The seam fits without changes:
+      - `AUDIO_DFPLAYER = 2` is reserved in include/audio_driver.h.
+      - Volume: `0x06` takes 0-30 ascending, the interface's normalised range. No
+        scaling.
+      - `playTrack()` is "1-based index (maps directly to SD card file number)".
+        Only `0x12` with `/mp3/NNNN.mp3` delivers that; `0x03` addresses by write
+        order. Use `0x12`.
+      - `AudioModuleState`'s four fields map onto four queries: play state `0x42`,
+        device `0x3F`, total tracks `0x48`, current track `0x4C` (the `0x47`/`0x48`
+        and `0x4B`/`0x4C` choice is the sheet's Open Item 2).
+      - `begin(vol)` already receives the NVS volume. Send `0x06` before the first
+        play: the module powers up at 30, its maximum.
+
+      What has to be written: one driver pair (include/audio_dfplayer.h,
+      src/drivers/audio_dfplayer.cpp) shaped like the DY-SV5W driver - a send
+      routine, a query with a bounded timeout, a `begin()` that runs a couple of
+      queries, `queryModuleState()` - on the existing `AudioSerialIO` transport
+      unchanged. Then an instance in `kSoundMemberDrivers`
+      (src/tasks/audio_sound_member.cpp; its `static_assert` fails the build if a
+      selectable Sound row has no driver), and the registry row moved to supported
+      with its capability word. No Board Capability Gate: it bolts to the same
+      `PIN_AUDIO_TX` at the same 9600 baud as the other Sound members (ADR 0042).
+      `BUSY` on a spare GPIO would be an optional capability, not a gate.
+
+      Driver rules the sheet's findings force:
+      - The frame builder emits with or without the two checksum bytes, chosen by a
+        setting: some clones reject checksummed frames and nothing on the wire says
+        which silicon a builder fitted.
+      - The frame builder is a pure function with no static state, and every
+        constant it emits is asserted in a native test. Never copy a byte sequence
+        from the vendor datasheet; all three of its worked examples are wrong.
+      - Do not use the DFRobot library. Its ACK-mode `sendStack()` can spin forever
+        on `delay(0)`, which on ESP32 never lets the idle task run; the Task Watchdog
+        then resets the controller, and TWDT reset -> estop on boot is a safety
+        invariant. Wait through the `delayMs` hook of `AudioSerialIO` (yield-safe in
+        production).
+      - `begin()` bounds its own wait and returns false, so AudioTask's init retry
+        owns recovery. No 2.2 s reset-and-hope, and no reset on every retry (the reset
+        is audible).
+      - Match replies on CMD; unsolicited `0x3A`-`0x3F` frames arrive between a query
+        and its answer.
+      - Translate the device code explicitly. `AudioModuleState.device` is
+        0=USB 1=SD/TF 2=FLASH 3=Flash+SD 0xFF=unknown; the module's library codes are
+        1=U-disk 2=SD 5=FLASH over a `0x3F` bitmask of 0x01/0x02/0x08. Passed straight
+        through, an SD card reads as FLASH. Assert the translation in a native test.
+      - Read `0x46` (software version) at `begin()` and log it, so a field report
+        carries the one identifying number a clone offers.
+      - Read the total-file count at `begin()` and compare it with the configuration:
+        the cheapest detection of a card rebuilt wrong.
+      - Say "no card" rather than "module missing" when `0x3F` never arrives: an
+        exFAT card looks exactly like an absent one.
+      - Watch for `0x3A` (card inserted) and answer with a pause about 100 ms later,
+        or a card swap makes the droid play track 1.
+
+      Board cost: TX is the existing bit-banged soft UART at 9600. A 10-byte frame
+      is about 10.4 ms of nominal wire time on Core 0 against 4-6 bytes for a
+      DY-SV5W play; at a few commands per second that stays inside the soft UART's
+      "infrequent" assumption, so no new transport is needed.
+
+      Read path on artoo-esp32: this sheet's research (2026-09-11) predates #396 and
+      assumed audio RX shares UART2 with DomeLink, so that pushed `0x3D`/`0x3A`
+      frames would be missed whenever the dome holds the bus and `BUSY` would be the
+      only always-available play state. Since #396 the GPIO-sampled soft RX takes
+      bytes while the dome owns UART2, and the MP3 Trigger driver is the pattern.
+      Whether a DFPlayer driver still needs a `classifyRxStatus()` override depends on
+      how its queries go through `audioUartClaim()`; re-check against the code when
+      the driver is written. FireBeetle 2 has a dedicated audio UART.
+
+      Verification: the protocol half - frame bytes, checksums, `0x12` addressing,
+      unsolicited-frame handling, reply matching, the device-code translation - is
+      natively testable through an injected `AudioSerialIO`, on a laptop. This
+      corrects #305's "this needs a signal on a pin, so it is droid-gate work": only
+      the audible half is droid-gate (a speaker, a card and a listener).
+
+      `AUDIO_CAP_QUERY_SAFE_PLAYING` is set only after the sheet's Open Item 5 is
+      measured. CHIRP declares it; DY-SV5W does not.
+
+      Builder documentation should name the idle-hiss solder bridge (hiss when idle,
+      or a click at each file's start and end) and the FAT32, 32 GB card limit.
+
+      The module has not run on this project's hardware.

@@ -1,34 +1,12 @@
 # ESP32 RMT on ESP-IDF 5.x
 
-## 0. Authority Contract
-
-This document is an implementation authority for ESP-IDF 5.x RMT driver usage patterns.
-
-Authority order for agent decisions:
-
-1. Espressif API and migration documentation in Sources.
-2. This document.
-3. Community examples.
-
-Conflict policy:
-
-- If community examples conflict with Espressif docs, follow Espressif docs.
-- If Espressif docs are ambiguous for a required behavior, mark as `UNKNOWN` and stop making dependent code changes.
-- Do not resolve ambiguity by trial-and-error loops.
-
-Agent requirements when using this document:
-
-- MUST separate normative behavior from examples.
-- MUST NOT rely on direct legacy register/RMTMEM ownership tricks in IDF5 code paths.
-- MUST NOT assume undocumented callback, buffering, or timing behavior.
-- MUST include a verification step for every behavior change touching RX/TX lifecycle.
-
 ## 1. Scope
 
 This document summarizes the ESP32 RMT (Remote Control Transceiver) peripheral model in ESP-IDF 5.x, with focus on the modern RMT v2 driver APIs and migration from legacy RMT usage.
 
-Normative behavior in this document comes from Espressif documentation.
-Community projects are included as implementation examples, not as protocol authority.
+The API behaviour below comes from Espressif documentation. Community projects
+appear in Section 10 as implementation examples; where one disagrees with
+Espressif's documentation, the documentation describes the driver.
 
 ## 2. RMT Data Model
 
@@ -78,11 +56,10 @@ Critical config parameters:
 - `signal_range_min_ns`: pulses shorter than this are treated as glitches.
 - `signal_range_max_ns`: pulses longer than this terminate the receive transaction.
 
-Normative RX contract:
+Received data:
 
-- MUST treat `rmt_receive()` as transaction-scoped and reissue it for each new receive window.
-- MUST handle partial receive callback semantics correctly when enabled.
-- MUST enforce callback-lifetime handling for callback event data pointers.
+- The `edata` pointer is valid only during the callback. Espressif: *"please do not try to save this pointer and use that outside of the callback function."*
+- The receive buffer may be overwritten by later data; copy what is to be kept or processed later.
 
 ## 5. TX Transaction Model
 
@@ -104,11 +81,11 @@ Operational notes:
 - `rmt_transmit()` queues work and may return before physical transmission starts.
 - Payload must remain valid until transaction completion.
 
-Normative TX contract:
+Encoder state:
 
-- MUST model TX as encoder-driven symbol generation, not raw byte streaming.
-- MUST keep payload storage valid until completion callback or explicit completion confirmation.
-- MUST ensure encoder state reset behavior is correct across repeated transactions.
+- RMT encoders are stateful. `rmt_encoder_t::reset` *"should reset the encoder state back to the initial state"*.
+- Espressif: *"If the RMT transmitter is manually stopped without resetting its corresponding encoder, subsequent encoding session can be erroneous."*
+- `rmt_disable()` calls the encoder reset implicitly.
 
 ## 6. ISR, IRAM, and Cache-Safe Constraints
 
@@ -132,12 +109,10 @@ Related Kconfig options:
 - `CONFIG_RMT_RX_ISR_CACHE_SAFE`
 - `CONFIG_RMT_RECV_FUNC_IN_IRAM`
 
-Normative ISR safety rules:
-
-- MUST avoid blocking APIs in callbacks.
-- MUST restrict callback RTOS calls to ISR-safe variants.
-- MUST verify IRAM/DRAM residency of reachable ISR code/data when cache-safe behavior is required.
-- MUST NOT set IRAM interrupt flags unless residency requirements are met.
+With `CONFIG_RMT_TX_ISR_CACHE_SAFE` or `CONFIG_RMT_RX_ISR_CACHE_SAFE` enabled, the
+documentation requires every function the ISR uses to be in IRAM and the driver
+object to be in DRAM. A custom encoder's functions must also be in IRAM; the
+documentation decorates them with `RMT_ENCODER_FUNC_ATTR`.
 
 ## 7. Memory and Throughput Considerations
 
@@ -184,7 +159,7 @@ Common API migrations:
 - `rmt_wait_tx_done` -> `rmt_tx_wait_all_done`
 - translator API model -> encoder API model
 
-Normative migration rule:
+Migration consequence:
 
 - Any implementation that depends on `rmt_isr_register`, direct `RMTMEM` mutation, or runtime pin/channel ownership patterns from legacy APIs is not IDF5-compliant without explicit low-level HAL redesign.
 
@@ -196,7 +171,7 @@ Observed migration-impact highlights:
 - 5.3 introduces peripheral driver component split including `esp_driver_rmt`.
 - Later 5.x migration pages reviewed here did not introduce major new RMT architecture shifts comparable to 5.0.
 
-## 10. Community Example Patterns (Non-Normative)
+## 10. Community Example Patterns
 
 ### 10.1 UART-over-RMT component example
 
@@ -210,7 +185,7 @@ Useful takeaways:
 
 Caution:
 
-- Treat limits and coverage as project-specific unless corroborated by Espressif docs and target TRM.
+- Its limits and chip coverage are the author's findings; they are not corroborated by Espressif docs or the target TRM.
 
 ### 10.2 FastAccelStepper IDF5 RMT backend
 
@@ -224,7 +199,7 @@ Useful takeaways:
 
 Caution:
 
-- DeepWiki is an indexed secondary view. Verify against upstream source when implementing safety/latency critical behavior.
+- DeepWiki is an indexed secondary view of the code, not the upstream source.
 
 ### 10.3 Forum migration pain point example
 
@@ -236,7 +211,7 @@ Useful takeaway:
 
 Caution:
 
-- The linked thread content captured here is a question post and should not be treated as authoritative API guidance.
+- The linked thread is a question post, not API guidance.
 
 ## 11. Practical Migration Checklist
 
@@ -248,27 +223,23 @@ Caution:
 6. Validate callback IRAM/data placement for cache-disabled latency cases.
 7. Re-size symbol/user buffers to avoid truncation under worst-case traffic.
 
-## 12. Agent Lookup Quick Reference
+## 12. Quick Reference
 
-Use this table first when implementing or reviewing RMT behavior.
-
-- Topic: TX channel allocation. Required API: `rmt_new_tx_channel()`.
-- Topic: RX channel allocation. Required API: `rmt_new_rx_channel()`.
-- Topic: Channel lifecycle start/stop. Required API: `rmt_enable()` / `rmt_disable()`.
-- Topic: RX transaction start. Required API: `rmt_receive()`.
-- Topic: TX transaction start. Required API: `rmt_transmit()`.
-- Topic: TX completion wait. Required API: `rmt_tx_wait_all_done()`.
-- Topic: Channel teardown. Required API: `rmt_del_channel()`.
-- Topic: RX glitch threshold. Required config field: `signal_range_min_ns`.
-- Topic: RX stop threshold. Required config field: `signal_range_max_ns`.
+- Topic: TX channel allocation. API: `rmt_new_tx_channel()`.
+- Topic: RX channel allocation. API: `rmt_new_rx_channel()`.
+- Topic: Channel lifecycle start/stop. API: `rmt_enable()` / `rmt_disable()`.
+- Topic: RX transaction start. API: `rmt_receive()`.
+- Topic: TX transaction start. API: `rmt_transmit()`.
+- Topic: TX completion wait. API: `rmt_tx_wait_all_done()`.
+- Topic: Channel teardown. API: `rmt_del_channel()`.
+- Topic: RX glitch threshold. Config field: `signal_range_min_ns`.
+- Topic: RX stop threshold. Config field: `signal_range_max_ns`.
 - Topic: Legacy ISR registration in IDF5. Status: not part of modern public driver flow.
 - Topic: Direct RMTMEM ownership control in IDF5. Status: not part of modern public driver flow.
 
-If a required item above cannot be proven for the target, mark as `UNKNOWN` and block dependent code changes until clarified.
-
 ## 13. Sources
 
-Normative (primary):
+Primary (Espressif):
 
 - ESP-IDF RMT API reference (latest):
   - https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/rmt.html

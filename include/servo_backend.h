@@ -172,7 +172,7 @@ constexpr ServoOutputAddress boardOutputAddress(size_t boardIndex) {
 }
 
 // Which of the board's Outputs this address is, or BOARD_OUTPUT_COUNT when it
-// is none of them: another driver's address, LEDC_CH_DOME (a brushless ESC,
+// is none of them: another driver's address, LEDC_CH_DOME (a brushed ESC,
 // not an Output), SERVO_OUTPUT_BOTH_ARMS (two of them) or SERVO_OUTPUT_NONE.
 constexpr size_t boardOutputIndexOf(ServoOutputAddress output) {
     if (output.driver != SERVO_DRIVER_LEDC) {

@@ -80,9 +80,10 @@ them: naming an unbuilt module as a build's default is a build error.
 **Files:** `src/drivers/audio_dy_sv5w.cpp`, `include/audio_dy_sv5w.h`
 
 **Full protocol reference: [`docs/spec-sheets/dy-sv5w-sound.md`](spec-sheets/dy-sv5w-sound.md)** —
-the source of truth for this module: every command and query frame with its
-computed checksum, the DIP mode table, the electrical contract, the storage
-rules, and what our own hardware has proven.
+the module's facts: every command and query frame with its computed checksum,
+the DIP mode table, the electrical contract, the storage rules, and the
+module's behaviour measured on a bench. Project notes on it are in
+[`docs/products.yaml`](products.yaml).
 
 Binary command frames at 9600 baud 8-N-1, in the format
 `0xAA [CMD] [LEN] [DATA...] [SM]`, where `SM` is the low 8 bits of the sum of all
@@ -560,6 +561,6 @@ Configuration; Maintenance shows the sound serial link's state.
 3. [CHIRP Audio Trigger GitHub](https://github.com/joymonkey/CHIRP)
 4. [R2D2 Sounds — Printed Droid](https://www.printed-droid.com/kb/r2d2-sounds)
 5. [DY-SV5W — Arduino Forum](https://forum.arduino.cc/t/how-to-use-dy-sv5w-mp3-player/1218247)
-6. [DY-SV5W spec sheet](spec-sheets/dy-sv5w-sound.md) — this project's protocol and hardware research for the DY-SV5W
-7. [MP3 Trigger spec sheet](spec-sheets/mp3-trigger-sound.md) — protocol, card layout, electricals, and what the driver actually sends
+6. [DY-SV5W spec sheet](spec-sheets/dy-sv5w-sound.md) — protocol and hardware facts for the DY-SV5W
+7. [MP3 Trigger spec sheet](spec-sheets/mp3-trigger-sound.md) — protocol, card layout and electricals
 8. [DFPlayer Mini spec sheet](spec-sheets/dfplayer-mini-sound.md) - on the Roadmap
