@@ -124,12 +124,12 @@ operations type=action
 
 ### 2.1 Operations listing output volume - no paging (decided, #219 R1)
 
-The `operations` command lists all 217 catalog entries. Measured, not
+The `operations` command lists every catalog entry. Measured, not
 estimated, by summing each entry's rendered item line against the shipped
 catalog table (`src/console/console_catalog.cpp`) and `artoo_esp32`'s actual
-macro values: four profiler/admission-trace entries answer `not-in-this-build`
-on that board, two WiFi-module entries answer `not-on-this-board`, and fifteen
-entries answer `not-on-console` (#474), each with a longer item line. Line
+macro values: the profiler/admission-trace entries answer `not-in-this-build`
+on that board, the WiFi-module entries answer `not-on-this-board`, and the
+`not-on-console` entries (#474) carry that reason, each with a longer item line. Line
 shape is `< id=<n> type=item value=<name> (<type>[, <reason>])` plus the CR LF
 terminator (#267), with a single-digit request id.
 
@@ -139,10 +139,8 @@ bytes on the wire: 13004
 seconds @115200 8N1 (10 bits/byte): 1.13
 ```
 
-Re-measured 2026-10-06 (#475). The figures before it were 194 entries,
-11436 B, 0.99 s at #243, and 190 entries, 10985 B, 0.95 s at #219 - the
-second taken before #267 replaced the bare LF terminator with CR LF, so it
-understated the wire cost on two counts.
+Measured 2026-10-06 (#475). The figure moves with every catalog row; what the
+decision below rests on is its order of magnitude, about a second.
 
 **Decision: no paging.** On both serial and web transports the listing is
 emitted in full, in one request. Justification:
@@ -171,7 +169,7 @@ emitted in full, in one request. Justification:
 
 **What "no paging" does NOT mean:** it does not mean the listing is atomic on
 the wire. Per section 3.1, records of one request may be separated by other
-lines - `operations`' 217 `item` records can have log lines from other tasks
+lines - `operations`' `item` records can have log lines from other tasks
 land between them, and a reader reassembles the group by Request ID, not by
 assuming contiguity. The invariant that does hold, unconditionally, is
 section 6's "no line is ever interleaved inside another": every record and
@@ -367,9 +365,8 @@ occur on a normal path).
 
 **A prose field that is present but shortened says so, separately.** The three
 file-resident fields are copied into fixed buffers - 255 bytes for
-`description`, 63 for `display_name` and `executor`. No row is longer than
-that today (2026-10-06: the longest of the 217 descriptions is 243 bytes),
-but a row that grows past its buffer is not refused. The value is emitted
+`description`, 63 for `display_name` and `executor`. A row longer than its
+buffer is not refused. The value is emitted
 clamped, and a clamped field is followed by a `<name>_truncated` field with
 value `true`: `description_truncated`, `display_name_truncated`,
 `executor_truncated`. The marker is absent when nothing was cut, so a reader
@@ -389,9 +386,9 @@ two senses, and a transcript shows both as `truncated=true`:
 | | `<name>_truncated` (this section) | `"truncated": true` on the envelope |
 |---|---|---|
 | Scope | one prose **field**, clamped to its buffer | the **number of items** in the answer - the bounded sink skipped or refused some (`system.status.logs` on a near-full ring, #239/#240) |
-| Where | a Console Record: `type=field name=description_truncated value=true` | a key on the JSON response body, beside `records` (`src/web/api_console.cpp:507`) |
+| Where | a Console Record: `type=field name=description_truncated value=true` | a key on the JSON response body, beside `records` (`src/web/api_console.cpp`) |
 | Adapter | both | browser only - serial has no envelope at all |
-| Consequence | the answer is complete; no catalog row trips it today, a longer one would | `tools/console_client.py` reports `[ADAPTER-CAPPED]` and exits **4**: a bench sheet stops there |
+| Consequence | the answer is complete; only that field was clamped | `tools/console_client.py` reports `[ADAPTER-CAPPED]` and exits **4**: a bench sheet stops there |
 
 Reading one as the other inverts what the run means, so it is worth being
 explicit that **a machine reader cannot confuse them**: they live in different
