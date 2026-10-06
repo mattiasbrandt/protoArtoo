@@ -66,8 +66,8 @@
   // last restart, so after any page load it reads low until a reboot with
   // nothing failing. That is the plain image's meaning; on a _profiler build
   // it is a window that restarts on every stream connect
-  // (docs/troubleshooting.md). Both are history and reading, shown as numbers
-  // and never coloured.
+  // (docs/troubleshooting.md). Both are readings, shown as numbers and never
+  // coloured.
   const HEAP_FLOORS = Object.freeze({
     largestCritical: 12000,
     largestWarn: 16000,
