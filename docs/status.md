@@ -28,7 +28,7 @@ session.
 
 `v1.1.0` adds the DFRobot FireBeetle 2 ESP32-P4 as a Body Controller. The full
 feature set builds for it and is confirmed on the board over USB, and the
-release ships an image for it. It is supported for developers; it is not yet a
+release ships an image for it. It is Supported; it is not yet a
 board to buy for a droid, for the reasons in the
 [spec sheet](spec-sheets/firebeetle2-esp32-p4-spec-sheet.md#before-you-buy-one).
 The artoo-esp32 image behaves as it did in `v1.0.0`.
@@ -88,7 +88,7 @@ for it.
 
 ## FireBeetle 2 ESP32-P4
 
-A Body Controller, supported for developers.
+A Body Controller, Supported.
 
 **Confirmed on the board (over USB, no droid attached):**
 
@@ -151,7 +151,7 @@ A Body Controller, supported for developers.
 | `v0.3.0` | Arm servos, dome motor, RC diagnostics and channel mapping |
 | `v0.4.0` | Audio system, two-way link to the dome (now protoR2link), web UI improvements |
 | `v1.0.0` | First stable release: reliable page loads on a rebuilt web server, WiFi setup from the browser with a recovery mode, ready-to-flash release downloads per audio module, four log levels, and per-component enable toggles. Full Foot Drive validation follows as a separate, documented pass. |
-| `v1.1.0` | The DFRobot FireBeetle 2 ESP32-P4 joins as a Body Controller, for developers, with WiFi through its ESP32-C6 module and a release image of its own; component switches named for what they control; memory sized per chip; build-size budgets on every pull request; a soak harness. artoo-esp32 behaviour unchanged. |
+| `v1.1.0` | The DFRobot FireBeetle 2 ESP32-P4 joins as a Body Controller, with WiFi through its ESP32-C6 module and a release image of its own; component switches named for what they control; memory sized per chip; build-size budgets on every pull request; a soak harness. artoo-esp32 behaviour unchanged. |
 | `v1.2.0` | A command console: type anything the controller can do, in the dashboard or over a serial cable, in the same words either way and through the same safety layers. Answers come back one field per line with a plain word for what happened. Tab completion and history built from the droid's own command list. The console keeps answering over the cable when the web pages have gone quiet. A console tool for your computer replays written sheets of commands and keeps the transcript. |
 | `v1.2.1`, `v1.2.2` | Fixes, no images. `help` no longer drops a long description: it shortens it and says so with a `_truncated` field. |
 | `v1.3.0` | A merge to `main` publishes a release on its own: a fix ships as a patch release, a feature as a full release with images. |
