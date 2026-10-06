@@ -449,8 +449,99 @@ products:
       wires: []
       hazards:
         - "The droid does not read ELRS yet. With it picked, the sticks do nothing."
-      source: "Where this sits in the lineup, 5.1, 12"
-    notes: ""
+      source: "4.1"
+    notes: |
+      ELRS is Roadmap in public wording (operator, 2026-10-06); the registry row
+      still says supported and follows in #477. The controller reads no ELRS input
+      yet. Picking it stores the `elrs` RC input mode, and the RC path then behaves
+      exactly as with no receiver fitted: no decoder and no RC task start, and the
+      feet are held by the stale web drive command and the estop. That is the
+      Wiring card's hazard ("the sticks do nothing"), and the only proof of it is
+      the code, not the spec sheet.
+
+      The safety model inverts. The two radio Failsafe Layers are the receiver
+      hardware failsafe flag and the SBUS timeout (`SBUS_TIMEOUT_MS`, 200 ms). CRSF
+      has no flag: on link loss the receiver stops sending. The first layer has
+      nothing to read and the timeout becomes the only radio protection. The TBS
+      specification advises waiting a second before failsafe; that is aircraft
+      advice. The recommendation is to keep 200 ms for CRSF and record that the
+      second was declined on purpose, not by oversight.
+
+      What protoArtoo would have to do:
+
+      The UART. SBUS costs no UART because it is decoded on RMT; CRSF at 420 kbaud
+      is UART work. artoo-esp32's three UARTs are all committed (console, drive, and
+      one shared by the dome link and the audio RX, with audio TX already
+      bit-banged). firebeetle2's UART4 is unclaimed. So the Board Capability Gate is
+      probably {firebeetle2}, but say it honestly: "no spare UART for CRSF on
+      artoo-esp32, and freeing one would cost the dome link or the console", not
+      "impossible". ShadyRC runs CRSF on a classic ESP32's three UARTs by moving the
+      slow devices to software serial, which is what artoo-esp32 already does for
+      audio TX. It still does not fit: UART0 is a real console, the dome link is
+      bidirectional and timing-sensitive, and a 420 kbaud stream is the least
+      suitable thing on the board to bit-bang. Open question: can artoo-esp32 free
+      a UART, which decides whether the Gate is a fact or an assumption.
+
+      The decoder is small, because CRSF's channel values are SBUS's
+      (172 / 992 / 1811):
+      - New: frame sync, length and CRC-8 (`0xD5`); the 11-bit unpack into 16
+        channels.
+      - Unchanged: the value domain, RC bindings, calibration, deadband and
+        reverse, and the per-channel raw / normalized / mapped diagnostics (raw is
+        already this domain).
+      - Failsafe: the receiver-flag layer goes; the timeout becomes the only radio
+        layer.
+      - The `elrs` input mode already exists as a stored answer; the decoder is what
+        is missing.
+      Extended limits on the handset widen the range to 0-1984, outside the SBUS
+      defaults; per-channel min/max calibration already allows for that.
+
+      The failsafe design, which is the real work:
+      1. Keep the 200 ms timeout and record the declined one-second advice.
+      2. Zero the cached channel values on link loss, not merely stop acting on
+         them (ShadyRC does this). It covers the unknown window where a receiver
+         may repeat stale data before going silent.
+      3. Require an arm channel: a switch position read every tick, not a toggle.
+         With no failsafe flag the arming gate does safety work.
+      4. Come back disarmed and slow; a reconnect never resumes at speed.
+      5. Feed the existing `FailsafeGate` rather than a parallel path; an ELRS link
+         loss is the same class of event as an SBUS timeout.
+
+      Library: `AlfredoCRSF` is sound for a real-time path. Read
+      `getChannelsPacked()` for the raw domain (`getChannel()` converts to
+      microseconds), and keep our own 200 ms timeout rather than the library's
+      300 ms `checkLinkDown()`.
+
+      Link quality: channel 15 carries uplink link quality for free in every mode
+      except full-resolution 16-channel, readable through the binding model with no
+      telemetry parsing; parsing frame `0x14` adds RSSI, SNR, antenna and RF mode.
+      Either way this is the first RC member that can say the link is getting worse,
+      not only that it failed, and the Status Plate's RC-link chip is where that
+      belongs.
+
+      Telemetry, out of scope for a first driver: CRSF is full duplex, so the droid
+      could report to the operator's handset. The frames fit state the droid
+      already holds: battery (`0x08`) from the drive feedback battery reading,
+      temperature (`0x0D`) from the board temperature, RPM (`0x0C`) from the
+      left and right speeds, and a short status string (`0x21`) for estop, armed and
+      speed preset. Whether a first implementation sends any of it is scope, not
+      research.
+
+      Costs to state plainly: a UART (firebeetle2 only); a small new decoder; a
+      failsafe redesign, because the receiver-flag layer stops existing; an arm
+      channel, which changes how a builder drives the droid; and a builder-side
+      provisioning story (binding phrase, packet rate, switch mode, telemetry ratio,
+      receiver baud), all set outside protoArtoo.
+
+      Interference with our own AP: ELRS at 2.4 GHz and the droid's WiFi AP share
+      the band on one droid; nobody has measured what the receiver does to the AP.
+      Bench test: run both and watch link quality and AP throughput together.
+
+      The hobby's own ELRS droid control has been announced three times and built
+      once (ShadyRC Crossfire). protoArtoo would not be following a finished peer;
+      it would arrive at about the same time as CHIRP Droid Control.
+
+      No ELRS receiver has run on this project's hardware.
 
   # ---------------------------------------------------------------------------
   # Body servo controller
@@ -787,7 +878,84 @@ products:
     gate: null
     included: 0
     sheet: teeces-dome-lighting.md
-    notes: ""
+    notes: |
+      Teeces is roadmap: no driver ships, and the registry's protocol stays `tbd`
+      until #313 decides. AstroPixels Plus is the Dome Controller this project
+      reaches today because it is the kit the operator installed (#303,
+      2026-09-07); that is project history, not a verdict on either product. A
+      Teeces does not speak protoR2link: it is a light kit with a small
+      serial-commanded microcontroller, and that difference is the whole
+      integration problem.
+
+      Component Protocol: the research of 2026-09-10 resolves `tbd` to JawaLite. It
+      changes the driver, so by #303's test it is a protocol, not configuration.
+      JEDI Display and the R-Series Logic Engine speak it too; if either joins the
+      lineup, JawaLite earns its own protocol sheet beside the product sheet, the
+      split the SBUS protocol sheet and the HotRC sheet already model.
+
+      The dome link already matches JawaLite on the wire: 9600 8N1, one ASCII
+      command per line ending in `\r`, a 64-byte queue message that equals the
+      Teeces command buffer, and the raw `@` family already reaches the dome.
+
+      What would have to change. The gap is narrow; the first item is the whole of
+      the framing work:
+      1. Strip the `@`. The body forwards `@...` verbatim, which is right for
+         AstroPixels Plus (it emulates a MarcDuino) and wrong for a Teeces, which
+         expects what a MarcDuino slave emits. Supporting Teeces means the body
+         performs the slave's hop.
+      2. Widen the accepted letter set. The protocol check accepts only `T`, `P`
+         and `M` after the address digit; Teeces needs `S` (PSI state) and
+         optionally `R` (random style). `@0S1` is rejected today.
+      3. Re-target the reset pair. The sequence engine, the dispatcher and the
+         catalog's terminal steps emit `@0T1` / `@0P1`. `@0T1` is right on both
+         products; `@0P1` is a silent no-op on a Teeces, whose PSI reset is `0S1`.
+      4. Decide what `DL:` means on a monochrome dome. Its color argument and the
+         `RAINBOW` and `FLASHCOLOR` modes have no Teeces meaning. ADR 0045's
+         intent-not-truth rule gives the answer shape: the model records what was
+         commanded, never what the device shows, so a color can be accepted and
+         reported while the device ignores it. That is a decision for #313. Our
+         AstroPixelsPlus fork already has a one-value version of the problem: it
+         maps `WHITE` to `kDefault` because Reeltwo logics have no white.
+      5. Map `DL:` targets onto the real address map. `DL:`'s `FLD` is singular;
+         JawaLite has two front displays at addresses 1 and 2. The droid parts
+         catalog already says "Front Logic Displays", plural.
+      6. Rate-limit: 100 ms between commands, 250 ms after a text set. The dome
+         link has no such spacing today.
+      7. Do not parse the return path. A Teeces echoes and acknowledges about 40
+         bytes per command and sends a bare `0x07` on rejection; the dome RX parser
+         must not take any of it as a dome line.
+
+      Board Capability Gate: almost certainly none. A Teeces reaches the body over
+      the same single UART lane at the same baud as AstroPixels Plus, so any board
+      wired for one can be wired for the other. It is a Component Member question:
+      under ADR 0042 a member setting appears because the family would then hold two
+      selectable products.
+
+      The other product shape, open on #313: our AstroPixelsPlus dome fork already
+      compiles Reeltwo's MAX7219 chain driver. It includes `TeecesPSI.h` and
+      `TeecesLogics.h` and instantiates a `LedControlMAX7221<5>` chain, bound to the
+      Charge Bay Indicator and Data Panel rather than to any Teeces object. So an
+      AstroPixels-class ESP32 could run Teeces boards directly, as Reeltwo's
+      `teecesLogics` example does, and JawaLite would then live on the dome side of
+      protoR2link. Reeltwo's Teeces logic classes use their own command grammar,
+      not JawaLite; only `TeecesPSI` is JawaLite-addressable. Whether the body
+      speaks JawaLite or a dome-side board does is the design decision #313 makes
+      before the framing work is scoped.
+
+      ShadowMD binds logic-display types 5, 7 and 8 to `@0T10`, `@0T92` and
+      `@0T100` + `@0M<text>`: inert on AstroPixels Plus, live on a Teeces. ADR
+      0045's reason for keeping the raw families forwarding - a builder's bindings
+      are worth more than our internal tidiness - points straight at this.
+
+      Baud per unit: a Teeces bought from Printed Droid today is 9600 and matches
+      the dome lane; a second-hand board on the CuriousMarc default is 2400 and
+      needs reflashing or a lane change. Confirm per unit.
+
+      Licence: the boards, the classic sketch and Teeces-ESP32 carry no licence
+      identifier. It matters only if this project vendors their code or board files.
+
+      No Teeces has run on this project's hardware, and no bench measurement of one
+      exists.
 
   # ---------------------------------------------------------------------------
   # Foot Drive
