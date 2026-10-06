@@ -9,8 +9,9 @@ being left to a reading of the YAML.
 
 The three properties that together close the loop:
 
-1. `auto-release.yml` triggers on a push to `main` and on nothing else, so the
-   tag it pushes cannot re-enter it -- a tag is not a branch.
+1. `auto-release.yml` triggers on a push to `main` and on a completed
+   Verification of `main` (the minor/major tag gate, #473), so the tag it
+   pushes cannot re-enter it -- a tag is not a branch.
 2. Its job skips any commit authored by github-actions[bot], which is both
    `version-sync.yml`'s version-JSON commit and `auto-release.yml`'s own
    CHANGELOG promotion. All three workflows must spell that bot identically,
@@ -52,8 +53,22 @@ class AutoReleaseTriggerTest(unittest.TestCase):
         self.triggers = _triggers(self.workflow)
 
     def test_triggers_on_a_push_to_main_only(self):
-        self.assertEqual(list(self.triggers), ["push"])
+        """A push to main, and a completed Verification of main: the run
+        that may cut a minor or major tag (#473)."""
+        self.assertEqual(sorted(self.triggers), ["push", "workflow_run"])
         self.assertEqual(self.triggers["push"]["branches"], ["main"])
+        run = self.triggers["workflow_run"]
+        self.assertEqual(run["workflows"], ["Verification"])
+        self.assertEqual(run["types"], ["completed"])
+        self.assertEqual(run["branches"], ["main"])
+        guard = self.workflow["jobs"]["release"]["if"]
+        for term in [
+            "github.event.workflow_run.conclusion == 'success'",
+            "github.event.workflow_run.head_branch == 'main'",
+            "github.event.workflow_run.head_repository.full_name == github.repository",
+        ]:
+            with self.subTest(term=term):
+                self.assertIn(term, guard)
 
     def test_does_not_trigger_on_a_tag(self):
         """The tag this workflow pushes must not re-enter it."""

@@ -18,6 +18,24 @@ name: Auto Release
 # docs/chore-only merge decides "none" and exits green; it is not a failure for
 # a merge to not be a release.
 #
+# When it tags (#473, operator decision on #285's two tiers):
+#
+#   * A patch tags immediately, on the push to main. A fix should reach
+#     people quickly, and a patch release ships no images.
+#   * A minor or major waits for a green Verification of the commit it would
+#     tag. The push run only says so; the tag is cut by the run that
+#     `workflow_run` starts when Verification completes on main. That run
+#     follows GitHub's workflow_run contract: the Verification run concluded
+#     success, was for this repository (not a fork), on main, from a push or
+#     a dispatch, and its `verification` job itself passed (a bot commit's
+#     run skips every job). This file runs from the default branch and
+#     checks out main, never the run's own tree. main's tip is tagged only
+#     when it is the verified commit or every commit after it is release
+#     machinery (tools/release_plan.py `verified`: a bot commit touching only
+#     the version JSON or CHANGELOG.md); main having moved on with code means
+#     waiting for that commit's own run. While main's Verification is red, no
+#     minor or major is cut.
+#
 # The push authenticates via the write deploy key (VERSION_SYNC_DEPLOY_KEY),
 # not GITHUB_TOKEN, for the reason version-sync.yml's header gives: the main
 # ruleset requires pull requests, GITHUB_TOKEN cannot be a ruleset bypass actor
@@ -42,13 +60,24 @@ on:
   push:
     branches:
       - main
+  workflow_run:
+    workflows:
+      - Verification
+    types:
+      - completed
+    branches:
+      - main
 
 permissions:
   contents: read
 
 # One release decision at a time. Never cancel one in flight: a cancelled run
 # between the CHANGELOG push and the tag push is exactly the half-done state
-# the promotion step is written to be re-runnable through.
+# the promotion step is written to be re-runnable through. GitHub still
+# replaces a PENDING run in this group when a newer one queues; every run
+# recomputes the whole decision from main and the last tag, so the newer one
+# decides in its place. A Verification signal lost that way returns with the
+# next run on main, or by re-running that Verification run.
 concurrency:
   group: auto-release-main
   cancel-in-progress: false
@@ -59,8 +88,23 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     # Skip this workflow's own CHANGELOG commit and version-sync.yml's version
-    # JSON commit. See the loop-safety note in the header.
-    if: github.event.head_commit.author.email != '41898282+github-actions[bot]@users.noreply.github.com'
+    # JSON commit. See the loop-safety note in the header. A workflow_run must
+    # be a successful Verification of a push to (or dispatch on) main in this
+    # repository, and not of a bot commit, whose run skips every job.
+    if: >-
+      (github.event_name == 'push' &&
+       github.event.head_commit.author.email != '41898282+github-actions[bot]@users.noreply.github.com') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch') &&
+       github.event.workflow_run.repository.full_name == github.repository &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_commit.author.email != '41898282+github-actions[bot]@users.noreply.github.com')
+    permissions:
+      contents: read
+      # Reading the Verification run's jobs (the gate below).
+      actions: read
     steps:
       - name: ⬇️ Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -93,9 +137,46 @@ jobs:
           echo "No feat:, fix: or breaking change since ${{ steps.plan.outputs.current }}."
           echo "Nothing to release, which is a normal outcome for a docs or chore merge."
 
+      - name: 🚦 Decide whether to tag now
+        # push: a patch tags now, a minor or major waits for Verification.
+        # workflow_run: tag when that Verification run's own `verification`
+        # job passed and main's tip is its commit or release machinery after it.
+        id: gate
+        if: steps.plan.outputs.bump != 'none'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          BUMP: ${{ steps.plan.outputs.bump }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ "$EVENT" = "push" ]; then
+            if [ "$BUMP" = "patch" ]; then
+              echo "go=true" >> "$GITHUB_OUTPUT"
+              echo "A patch tags immediately."
+            else
+              echo "go=false" >> "$GITHUB_OUTPUT"
+              echo "A $BUMP release waits for a green Verification of $(git rev-parse --short HEAD)."
+            fi
+            exit 0
+          fi
+          job=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate \
+            --jq '.jobs[] | select(.name == "verification") | .conclusion')
+          if [ "$job" != "success" ]; then
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            echo "Verification run $RUN_ID's verification job ended '${job:-absent}', not success."
+            exit 0
+          fi
+          result=$(python3 tools/release_plan.py verified "$HEAD_SHA")
+          echo "$result"
+          verified=$(printf '%s' "$result" | python3 -c 'import json, sys; print(str(json.load(sys.stdin)["verified"]).lower())')
+          echo "go=$verified" >> "$GITHUB_OUTPUT"
+          [ "$verified" = true ] || echo "Not tagging: main moved on with code; waiting for that commit's own Verification run."
+
       - name: 🔍 Check the tag is not already published
         id: exists
-        if: steps.plan.outputs.bump != 'none'
+        if: steps.gate.outputs.go == 'true'
         env:
           TAG: ${{ steps.plan.outputs.tag }}
         run: |
@@ -117,6 +198,7 @@ jobs:
         # there, so a run that dies between this push and the tag push is fixed
         # by the next run rather than wedging main.
         if: >-
+          steps.gate.outputs.go == 'true' &&
           steps.exists.outputs.published == 'false' &&
           (steps.plan.outputs.bump == 'minor' || steps.plan.outputs.bump == 'major')
         env:
@@ -134,7 +216,7 @@ jobs:
           git push
 
       - name: 🏷️ Tag the release
-        if: steps.exists.outputs.published == 'false'
+        if: steps.gate.outputs.go == 'true' && steps.exists.outputs.published == 'false'
         env:
           TAG: ${{ steps.plan.outputs.tag }}
           BUMP: ${{ steps.plan.outputs.bump }}
@@ -164,6 +246,7 @@ jobs:
           TAG: ${{ steps.plan.outputs.tag }}
           TIER: ${{ steps.plan.outputs.tier }}
           COMMITS: ${{ steps.plan.outputs.commits }}
+          GO: ${{ steps.gate.outputs.go }}
         run: |
           {
             echo "## Auto Release"
@@ -180,7 +263,10 @@ jobs:
               echo "| New tag | \`$TAG\` |"
               echo "| Tier | \`$TIER\` |"
               echo
-              if [ "$TIER" = "patch" ]; then
+              if [ "$GO" != "true" ]; then
+                echo "Not tagged by this run. A minor or major tag waits for a green"
+                echo "Verification of the commit it tags; the gate step's log says which."
+              elif [ "$TIER" = "patch" ]; then
                 echo "A patch release: generated notes and the source tag, no images."
               else
                 echo "A full release: the curated CHANGELOG section and each board's images."
