@@ -1329,7 +1329,8 @@ static bool equalsIgnoringCase(const char* a, const char* b) {
 // A name with its last extension removed. Bank 1 catalog names carry the
 // module's forced ".wav" whatever the file on the card really is: handleGnme()
 // prints "%s.wav" over a basename whose real extension was already stripped
-// (finding 13.4), so this droid's "general01.wav" is a .mp3 on the card.
+// (docs/spec-sheets/chirp-audio-trigger-sound.md 6.3), so this droid's
+// "general01.wav" is a .mp3 on the card.
 static void nameWithoutExtension(const char* name, char* out, size_t outLen) {
     size_t len = strlen(name);
     const char* dot = strrchr(name, '.');

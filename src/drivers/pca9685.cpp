@@ -4,7 +4,7 @@
 // The PCA9685 body servo expander: its bring-up, the mailbox ServoTask writes
 // into, and the Core 0 task that does the bus writes. Contract and rationale:
 // include/pca9685.h. Register values: docs/spec-sheets/pca9685-servo-expander.md
-// section 7.
+// section 6.
 // =============================================================================
 
 #include "pca9685.h"
@@ -106,7 +106,7 @@ bool pca9685Begin(uint8_t address) {
         return false;
     }
 
-    // The bus, at a clock set here rather than inherited (spec sheet 9.4). This
+    // The bus, at a clock set here rather than inherited (spec sheet 8.4). This
     // is where the I2C driver takes its buffers and creates the bus, once.
     if (!Wire.begin((int)PIN_I2C_SDA, (int)PIN_I2C_SCL, PCA9685_I2C_CLOCK_HZ)) {
         PA_LOG_ERROR(TAG, "the I2C bus did not start (SDA %u, SCL %u) - %s will not move",
@@ -118,19 +118,19 @@ bool pca9685Begin(uint8_t address) {
     // The bring-up, in this order, and each write's answer checked:
     //
     //   1. Every channel full-OFF, FIRST. A fresh power-up already leaves every
-    //      channel full-OFF (spec sheet 7.3), but this controller restarting is
+    //      channel full-OFF (spec sheet 6.3), but this controller restarting is
     //      not the expander losing power: after a reboot the chip is still
     //      driving whatever the last session left on it. Writing ALL_LED_OFF_H
     //      before anything else is what makes "limp at start" true across a
     //      restart as well as a power-up. It is also the first write to the
     //      address, which is where the I2C driver adds its device handle.
     //   2. SLEEP, with auto-increment, and ALLCALL and the sub-addresses off.
-    //   3. PRE_SCALE, which the chip only takes while asleep (spec sheet 7.4) -
+    //   3. PRE_SCALE, which the chip only takes while asleep (spec sheet 6.4) -
     //      a write while running is silently ignored, which is why this order.
     //   4. MODE2: totem-pole outputs, the chip's own default, stated.
     //   5. Wake, and let the oscillator settle at least 500 us.
     //   6. RESTART, only if the chip says it has PWM to restart (spec sheet
-    //      7.6) - never sooner than 500 us after SLEEP went to 0.
+    //      6.6) - never sooner than 500 us after SLEEP went to 0.
     const uint8_t allOff = PCA9685_LED_FULL;
     uint8_t mode1 = 0;
     const bool answered =

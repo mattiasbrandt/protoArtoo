@@ -104,7 +104,7 @@ static constexpr const char* kDefaultSoundMemberId = "chirp";
 #elif PA_AUDIO_DRIVER == AUDIO_MP3TRIGGER
 static constexpr const char* kDefaultSoundMemberId = "mp3_trigger";
 #elif PA_AUDIO_DRIVER == AUDIO_DFPLAYER
-#error "AUDIO_DFPLAYER is a roadmap row with no driver - it cannot be a build's default sound member (see #305, docs/spec-sheets/dfplayer-mini-sound.md and include/component_registry.inc)"
+#error "AUDIO_DFPLAYER is a roadmap row with no driver - it cannot be a build's default sound member (see #305, docs/products.yaml dfplayer_mini and include/component_registry.inc)"
 #else
 #error "PA_AUDIO_DRIVER build flag is not set or has an unknown value"
 #endif

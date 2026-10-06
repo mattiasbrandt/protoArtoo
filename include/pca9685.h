@@ -4,7 +4,7 @@
 // The PCA9685 body servo expander (#444, from #306): sixteen more Servo
 // Outputs on the I2C header the board already breaks out, `pca:0`-`pca:15`.
 // The programming contract is docs/spec-sheets/pca9685-servo-expander.md
-// section 7, and every register value below is read from it.
+// section 6, and every register value below is read from it.
 //
 // ONE BOARD, AT ONE ADDRESS, NO SCAN (#300 decision 3, "expect one board"). The
 // address is a stored Setting defaulting to 0x40, and 0x70-0x73 are refused at
@@ -18,7 +18,7 @@
 //
 // CHANNELS ARE THE SILKSCREEN, 0-BASED. `pca:3` is the header the board prints
 // 3 beside, written down once here. Three numbering conventions exist and our
-// own dome is the 1-based one (spec sheet 9.3); the channel number below is the
+// own dome is the 1-based one (spec sheet 8.3); the channel number below is the
 // silkscreen's and nothing in this firmware adds or subtracts one.
 //
 // THE CORE 1 LOOP NEVER WAITS ON THE BUS. ServoTask puts a width on an Output
@@ -35,7 +35,7 @@
 //
 // FULL-OFF IS THE RELEASE. A channel let go is written with the full-OFF bit
 // (LEDn_OFF_H bit 4), never a 0 % duty: "A channel at 0 % duty is still being
-// driven; a channel with full-OFF set is not driven at all" (spec sheet 7.3).
+// driven; a channel with full-OFF set is not driven at all" (spec sheet 6.3).
 // When every channel is to be off - the estop and Sleep Mode release every
 // Output in one frame - the sender writes ALL_LED_OFF_H once, which sets that
 // bit on all sixteen in one transaction.
@@ -64,7 +64,7 @@
 // -----------------------------------------------------------------------------
 constexpr uint8_t PCA9685_CHANNEL_COUNT = 16;
 
-// The bus clock, set explicitly rather than inherited (spec sheet 9.4, 12.1):
+// The bus clock, set explicitly rather than inherited (spec sheet 8.4):
 // at 400 kHz one channel's write is ~140 us, so all sixteen fit in ~2.2 ms of
 // a 20 ms ServoTask frame (#306, decided 2026-09-30).
 constexpr uint32_t PCA9685_I2C_CLOCK_HZ = 400000;
@@ -83,31 +83,31 @@ constexpr uint32_t PCA9685_LIVENESS_PROBE_MS = 1000;
 
 // The oscillator the prescale is computed against: 25 MHz is the datasheet's
 // TYPICAL figure, and the chip may run anywhere from about 23 to 27 MHz (spec
-// sheet 7.5). No trim (#306, decided 2026-09-30): a calibrated Output's ends
+// sheet 6.5). No trim (#306, decided 2026-09-30): a calibrated Output's ends
 // were measured against the linkage through this same chip, so its error is in
 // the numbers the builder recorded. An uncalibrated `safe range` width can be
 // up to ~8 % off.
 constexpr uint32_t PCA9685_OSC_HZ = 25000000;
 constexpr uint32_t PCA9685_FRAME_HZ = 50;
 
-// prescale = round(osc / (4096 * rate)) - 1 (spec sheet 7.4); 121 at 50 Hz.
+// prescale = round(osc / (4096 * rate)) - 1 (spec sheet 6.4); 121 at 50 Hz.
 constexpr uint8_t PCA9685_PRESCALE =
     (uint8_t)((PCA9685_OSC_HZ + (4096u * PCA9685_FRAME_HZ) / 2u) / (4096u * PCA9685_FRAME_HZ) - 1u);
-static_assert(PCA9685_PRESCALE == 121, "spec sheet 7.4: the 50 Hz prescale is 121");
+static_assert(PCA9685_PRESCALE == 121, "spec sheet 6.4: the 50 Hz prescale is 121");
 
 // One count of the 12-bit counter: (prescale + 1) oscillator cycles, 4.88 us.
 // What the servo backend's catalogue reports as this member's resolution.
 constexpr uint16_t PCA9685_TICK_NS =
     (uint16_t)(((uint32_t)PCA9685_PRESCALE + 1u) * 1000000u / (PCA9685_OSC_HZ / 1000u));
 
-// The register map (spec sheet 7.1).
+// The register map (spec sheet 6.1).
 constexpr uint8_t PCA9685_REG_MODE1 = 0x00;
 constexpr uint8_t PCA9685_REG_MODE2 = 0x01;
 constexpr uint8_t PCA9685_REG_LED0_ON_L = 0x06;  // LEDn_ON_L = 06h + 4n
 constexpr uint8_t PCA9685_REG_ALL_LED_OFF_H = 0xFD;
 constexpr uint8_t PCA9685_REG_PRE_SCALE = 0xFE;
 
-// MODE1 and MODE2 bits (spec sheet 7.2). ALLCALL is left clear in every MODE1
+// MODE1 and MODE2 bits (spec sheet 6.2). ALLCALL is left clear in every MODE1
 // this driver writes, so after bring-up the board no longer answers 0x70 at
 // all; SUB1-3 stay clear for the same reason.
 constexpr uint8_t PCA9685_MODE1_RESTART = 0x80;
@@ -115,33 +115,33 @@ constexpr uint8_t PCA9685_MODE1_AI = 0x20;
 constexpr uint8_t PCA9685_MODE1_SLEEP = 0x10;
 constexpr uint8_t PCA9685_MODE2_OUTDRV = 0x04;  // totem pole, the chip's default
 
-// Bit 4 of LEDn_ON_H / LEDn_OFF_H: full-ON / full-OFF (spec sheet 7.3).
+// Bit 4 of LEDn_ON_H / LEDn_OFF_H: full-ON / full-OFF (spec sheet 6.3).
 constexpr uint8_t PCA9685_LED_FULL = 0x10;
 
 // The largest count a pulse may end on. 4096 sets the full-OFF bit - the
 // channel switches off instead of driving a long pulse, Adafruit
-// writeMicroseconds()'s unclamped trap (spec sheet 8.1) - so a count is never
+// writeMicroseconds()'s unclamped trap (spec sheet 7.1) - so a count is never
 // allowed to reach it.
 constexpr uint16_t PCA9685_TICKS_MAX = 4095;
 
 // "The SLEEP bit must be logic 0 for at least 500 us, before a logic 1 is
-// written into the RESTART bit" (spec sheet 7.6). The wait is longer than the
+// written into the RESTART bit" (spec sheet 6.6). The wait is longer than the
 // rule by a margin, because it is the oscillator settling and a wait that only
 // just meets it is one a slow chip misses.
 constexpr uint32_t PCA9685_RESTART_WAIT_US = 1000;
-static_assert(PCA9685_RESTART_WAIT_US >= 500, "spec sheet 7.6: at least 500 us before RESTART");
+static_assert(PCA9685_RESTART_WAIT_US >= 500, "spec sheet 6.6: at least 500 us before RESTART");
 
 // -----------------------------------------------------------------------------
 // The address
 // -----------------------------------------------------------------------------
-// Slave address is `1 A5 A4 A3 A2 A1 A0` (spec sheet 7.8): base 0x40, plus the
+// Slave address is `1 A5 A4 A3 A2 A1 A0` (spec sheet 6.8): base 0x40, plus the
 // six jumpers.
 constexpr uint8_t PCA9685_ADDRESS_DEFAULT = 0x40;
 constexpr uint8_t PCA9685_ADDRESS_FIRST = 0x40;
 constexpr uint8_t PCA9685_ADDRESS_LAST = 0x7F;
 
 // The addresses one board may not be strapped to: 0x70 is LED All Call, which
-// every PCA9685 on the bus acknowledges from power-up (spec sheet 7.2, 7.8),
+// every PCA9685 on the bus acknowledges from power-up (spec sheet 6.2, 6.8),
 // and 0x71-0x73 are the three sub-addresses - off by default, so no board
 // answers them unless told to, and kept clear as a margin by the operator's
 // decision (#306, 2026-09-30). The rule is the reference project's own
@@ -167,7 +167,7 @@ constexpr uint16_t PCA9685_OFF = 0;
 
 // A servo width in microseconds as the count its pulse ends on, rounded to the
 // nearest. The width is clamped into what a servo takes first, by this driver
-// itself (spec sheet section 12, step 5: convert to ticks yourself, and clamp), so no width
+// itself (spec sheet 7.1: convert to ticks yourself, and clamp), so no width
 // can reach PCA9685_TICKS_MAX - 2500 us is 512 counts - and none rounds down
 // to PCA9685_OFF: 500 us is 102.
 constexpr uint16_t pca9685PulseUsToTicks(uint16_t pulseUs) {

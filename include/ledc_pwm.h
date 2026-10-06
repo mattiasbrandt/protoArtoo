@@ -183,7 +183,8 @@ bool ledcPwmSetPulseWidth(uint8_t channel, uint16_t pulseUs);
 // documented brownout. The dome ESC is the deliberate exception and is not
 // released: a floating signal line reads as Receiver Lost to an ESC70, so
 // dome_task.cpp drives it to its CONFIGURED neutral instead
-// (setDomeNeutral(), docs/spec-sheets/isdt-esc70-dome-esc.md s.12.3).
+// (setDomeNeutral(); docs/spec-sheets/isdt-esc70-dome-esc.md, "What the ESC
+// watches, and what it says").
 bool ledcPwmRelease(uint8_t channel);
 
 // Attach one servo channel left out at init, with no pulse on it (duty 0), so

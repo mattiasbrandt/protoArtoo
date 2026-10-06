@@ -198,7 +198,7 @@ constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)
 // ARM3 = Servo output that can carry the LED strip (GPIO 19)
 // ARM4 = Servo output that can carry the LED strip (GPIO 18)
 // ARM5 = Servo output that can carry the LED strip (GPIO 32)
-// DOME = Dome rotation ESC (GPIO 25)  --  drives brushless motor, not a servo
+// DOME = Dome rotation ESC (GPIO 25)  --  a brushed-motor ESC, not a servo
 // -----------------------------------------------------------------------------
 constexpr uint8_t PIN_ARM1_SERVO = 23;
 constexpr uint8_t PIN_ARM2_SERVO = 5;

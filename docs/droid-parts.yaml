@@ -467,7 +467,7 @@ body_lights:              # what the body carries that lights up — parts, not 
   # `control: none` on the two indicators is measured, not assumed: the
   # AstroPixelsPlus image protoArtoo talks to compiles both out
   # (`AP_ENABLE_CBI=0`, `AP_ENABLE_DATAPANEL=0`, docs/spec-sheets/
-  # astropixels-dome-controller.md:440-443), and nothing on the body drives
+  # astropixels-dome-controller.md section 4.4), and nothing on the body drives
   # them yet either. It says what is DRIVABLE and never what is NAMEABLE.
   #
   # `cad_name: null` on every row: a body light is a Common Addition, offered
