@@ -100,12 +100,16 @@ const state = (page, fn) => page.evaluate(fn);
     `focus after panel appeared: ${f0.el} (inside=${f0.inside}, focusables=${f0.focusables})`);
 
   // The panel can be up before the shell has attached the surface's node
-  // beside it, and the view marks a node inert on its next render, not as it
-  // arrives (holdSurfacesInert). Read until there is a surface and it is
-  // held, up to 5 s; a surface that never is still fails.
+  // beside it: 5 runs in 40 on the fixture, 4 at a time, read #shell-content
+  // with no surface at first and attached and inert 23-28 ms later. The view
+  // marks a node inert on its next render, not as it arrives
+  // (holdSurfacesInert; a render tick is TICK_MS 250 in data/page_bootstrap.js).
+  // So read for up to 500 ms: past that delay and one tick, and short of the
+  // first retry (2 s, NO_RESPONSE_BASE_BACKOFF_MS), so a surface held only
+  // when a retry rebuilds the panel still fails.
   let held = await surfaceInert();
-  for (let i = 0; i < 20 && !(held.count > 0 && held.inert === held.count); i++) {
-    await page.waitForTimeout(250);
+  for (let i = 0; i < 10 && !(held.count > 0 && held.inert === held.count); i++) {
+    await page.waitForTimeout(50);
     held = await surfaceInert();
   }
   record("surface-inert", held.count > 0 && held.inert === held.count ? "PASS" : "FAIL",
