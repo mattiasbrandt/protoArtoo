@@ -2059,7 +2059,7 @@ Returns current config snapshot.
   it reads `false`. Which steps EXIST is the browser's, not the
   firmware's — the run is drawn in `data/setup.js` and its list grows, so
   firmware stores the keys it is handed and checks their form alone.
-- `wifi`: Device WiFi Settings (ADR 0015) — `provisioned`, `mode` (`client`|`standalone_ap`), `staSsid`, `staPasswordSet`, `apSsid`, `apPasswordSet`, `pendingApply` (true when persisted settings differ from what is currently applied to WiFi hardware — a Staged Network Switch awaiting reboot/restart), `networkRecovery` (true when Network Recovery Mode is the posture this boot entered; see `GET /api/wifi`). Plaintext passwords are never returned.
+- `wifi`: Device WiFi Settings (ADR 0015) - `provisioned`, `mode` (`client`|`standalone_ap`), `staSsid`, `staPasswordSet`, `apSsid`, `apPasswordSet`, `pendingApply` (true when persisted settings differ from what is currently applied to WiFi hardware - a Staged Network Switch awaiting reboot/restart), `networkRecovery` (true when Network Recovery Mode is the posture this boot entered; see `GET /api/wifi`). Plaintext passwords are never returned.
 
 #### Example request
 

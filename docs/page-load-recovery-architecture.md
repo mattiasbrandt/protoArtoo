@@ -224,7 +224,7 @@ A section loader concludes in success or one of three failure outcome kinds
 - Network loss / connection timeout / truncated JSON → `no-response` (retryable backoff)
 - HTTP 404 or 2xx with missing/invalid required keys → `failed-terminal` (incompatible)
 - HTTP 503 → `busy` (honor Retry-After)
-- Deterministic HTTP 500 (e.g., `GET /api/identity`'s "identity response overflow") → `failed-terminal` (device-error)
+- Deterministic HTTP 500 (e.g., `GET /api/identity`'s "identity response overflow") -> `failed-terminal` (device-error)
 
 **Fault-Injection Coverage:**
 Page bootstrap behavior is verified via deterministic fault-injection fixtures in the web

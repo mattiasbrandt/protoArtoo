@@ -126,7 +126,7 @@ The web layer (HTTP REST handlers, SSE) uses a separate wire contract ([api.md](
 - **Wire shape:** `{"ok":false,"error":"<token>"}` with optional `hint` and `field` fields. An Apply Core's refusal (ADR 0011, amended 2026-09-25) carries more: `{"ok":false,"error":"<sentence>","field":"...","reason":"...","accepts":"..."}`, `field` and `accepts` only where the refusal has them
 - **Status codes:** 400 (invalid input), 404 (not found), 409 (state conflict), 413 (body too large), 423 (sleeping), 429 (rate limited), 500 (server error), 503 (unavailable: queue full, link down, config write busy)
 
-**Alignment rule:** When a core failure (types 1–3 above) propagates through a web route handler, map the result to the appropriate HTTP status code and error token. The internal signalling (return struct, bool + log) crosses the seam at the handler boundary via `webSendJsonError()`, or `webSendApplyRefusal()` for an Apply Core's refusal (`include/api_json_response.h`).
+**Alignment rule:** When a core failure (types 1-3 above) propagates through a web route handler, map the result to the appropriate HTTP status code and error token. The internal signalling (return struct, bool + log) crosses the seam at the handler boundary via `webSendJsonError()`, or `webSendApplyRefusal()` for an Apply Core's refusal (`include/api_json_response.h`).
 
 **Example:**
 ```cpp
