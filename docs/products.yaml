@@ -1397,7 +1397,7 @@ products:
       Must NOT be set:
       - `ENABLE_ODOMETRY`: the feedback frame becomes 22 bytes and the droid can
         decode neither it nor anything after it; telemetry silently never appears
-        (finding 3 below).
+        (finding 2 below).
       - `DEBUG_SERIAL_USART2` / `_USART3` on the same cable: the board prints ASCII
         debug over the lane instead of frames.
       - `TANK_STEERING`: bypasses the mixer and maps `steer` to left, `speed` to
@@ -1470,7 +1470,7 @@ products:
       - Much faster than expected: a RoboDurden board, where the presets are RPM, not
         percent.
       The droid reports none of these distinctly today; every one presents as the
-      Drive page's empty wheel-controller state or as nothing at all (finding 6).
+      Drive page's empty wheel-controller state or as nothing at all (finding 5).
 
       What the 600 speed cap means per firmware. The droid clamps every command to
       `SPEED_LIMIT_MAX = 600` of the protocol's +/-1000, with default presets at 200
@@ -1487,7 +1487,7 @@ products:
       and the closed loop will try to hold it. A builder moving a droid from an EFeru
       board to a RoboDurden board with the same saved configuration gets a materially
       faster droid. The droid does not know which firmware is on the other end and
-      cannot warn about this today (finding 4). On EFeru the slow preset is the
+      cannot warn about this today (finding 3). On EFeru the slow preset is the
       walking-pace setting.
 
       The 20 ms deadline. Both firmwares hold the last command for 500-800 ms before
@@ -1495,7 +1495,7 @@ products:
       either requires. That is not waste: the deadline is what makes an estop
       instantaneous rather than "within 800 ms", since a zero frame at 50 Hz reaches
       the wheels in one tick. The `DriveStarvation::Drifts` classification and the
-      20 ms deadline are right; the reason written beside them is not (finding 4).
+      20 ms deadline are right; the reason written beside them is not (finding 3).
 
       Code review result: the frame encoding, the checksum, the parser state machine
       and the byte offsets were checked field by field against both upstreams and are
@@ -1517,17 +1517,7 @@ products:
          to #303's vocabulary. A candidate: `hoverboard_serial_abcd`, which names what
          is on the wire and is true of both firmwares. Recorded, not chosen.
 
-      2. The driver cites a repository that no longer holds the code. Still unfixed:
-         `include/hoverboard_uart.h` and `src/drivers/hoverboard_uart.cpp` both say
-         `// Reference: https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x`.
-         That repository's README says "code moved to
-         Hoverboard-Firmware-Hack-Gen2.x-GD32 !!". The citation should be
-         `.../Hoverboard-Firmware-Hack-Gen2.x-GD32`, and ideally the file
-         (`HoverBoardGigaDevice/Src/RemoteROS2.c`) rather than the repository, since
-         the repository has eight remotes and only one of them is this protocol. An
-         agent that follows the comment to check the protocol finds no protocol there.
-
-      3. An EFeru board built with `ENABLE_ODOMETRY` is silently undecodable.
+      2. An EFeru board built with `ENABLE_ODOMETRY` is silently undecodable.
          `ENABLE_ODOMETRY` inserts `wheelR_cnt` and `wheelL_cnt` into the feedback
          struct, producing a 22-byte frame. It is off by default but it is exactly
          what a builder enables for wheel distance, and every ROS integration guide
@@ -1537,9 +1527,9 @@ products:
          not an error: it is `driveFeedbackValid` never becoming true and the Drive
          page waiting indefinitely, with a board that is driving perfectly. Adding the
          format costs one length constant, one offset table and one branch, and it
-         would close finding 5 for EFeru boards at the same time.
+         would close finding 4 for EFeru boards at the same time.
 
-      4. Three operator-facing statements are true of only one firmware. The project
+      3. Three operator-facing statements are true of only one firmware. The project
          supports two firmware families and treats them as one everywhere above the
          parser:
          - `include/drive_backend.h`, beside the backend profile, and the
@@ -1562,7 +1552,7 @@ products:
          does not know which firmware is on the far end, and the copy was written as
          though it did.
 
-      5. The only odometry this project can reach is parsed past. Offsets 10 and 12
+      4. The only odometry this project can reach is parsed past. Offsets 10 and 12
          of the RoboDurden frame are `wheelR_cnt` / `wheelL_cnt`, hall-step counters
          wrapping at `ENCODER_MAX` = 9000. `parseGen2xFrame()` skips them and
          `HoverboardFeedback` has no field for them. They are the only distance
@@ -1573,7 +1563,7 @@ products:
          It is recorded because capturing the field (two `int16_t`s in a struct, two
          `memcpy`s) costs far less than the feature that would use it, and a future
          ticket asking how far the droid has travelled should find this rather than
-         re-derive it. Gen 2 only unless finding 3 is also done.
+         re-derive it. Gen 2 only unless finding 2 is also done.
          ADR 0053 ("a Reaction is a binding the droid triggers itself") depends on
          this feedback: "on a hoverboard, handling is detectable with no new
          hardware -- a pushed droid back-drives its wheels, a held one loads its
@@ -1581,7 +1571,7 @@ products:
          an EFeru board `currentL`/`currentR` are structurally zero, so a Reaction
          bound to "the droid is being held" would never fire and would never say why.
 
-      6. A silent wire looks identical to a disabled drive. If the far end is on the
+      5. A silent wire looks identical to a disabled drive. If the far end is on the
          wrong firmware, build option, baud or cable, the droid sends 50 frames a
          second forever, never decodes a reply, and the Drive page shows its empty
          wheel-controller state ("Nothing from the wheel controller yet."). That
@@ -1590,13 +1580,13 @@ products:
          - bytes arriving that never validate: something is talking at this baud, but
            not this protocol;
          - no bytes at all: wrong cable, wrong baud, board off, or TX/RX swapped;
-         - valid frames of an unexpected length: the 22-byte case in finding 3.
+         - valid frames of an unexpected length: the 22-byte case in finding 2.
          A counter of unparseable bytes since boot, beside the existing feedback
          state, would separate "no hoverboard" from "a hoverboard I cannot
          understand". The diagnostic contract in `tasks/rc_diagnostics_contract.md`
          is the precedent for the shape.
 
-      7. The 8-minute inactivity poweroff is not written down anywhere. Both
+      6. The 8-minute inactivity poweroff is not written down anywhere. Both
          firmwares power the board off after 8 minutes without motor command.
          `docs/goal.md` names static-display operation a first-class use case, and
          `docs/troubleshooting.md` has no entry for a droid whose feet stop answering
@@ -1624,9 +1614,9 @@ products:
          a known command with the wheels off the ground; settles the 14-vs-16 rpm/V
          band for this droid.
       6. Whether `boardTemp` on the operator's board reads exactly 250. One
-         `/api/status` read; confirms finding 4's Board temp case on hardware.
+         `/api/status` read; confirms finding 3's Board temp case on hardware.
       7. Whether the droid should detect the far firmware and say so. A decision, not
-         a measurement; depends on finding 6.
+         a measurement; depends on finding 5.
       8. Photograph / line drawing obligations for #390. Owned by #316 and ADR 0065.
       Items 4, 5 and 6 are three readings of one endpoint and would be one bench row.
 

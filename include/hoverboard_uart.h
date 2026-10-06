@@ -3,7 +3,7 @@
 //
 // Gen2.x hoverboard UART frame builder interface.
 // Protocol: 8-byte frame  --  [0xABCD start][int16 steer][int16 speed][uint16 XOR checksum]
-// Reference: https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x
+// Reference: https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32/blob/main/HoverBoardGigaDevice/Src/RemoteROS2.c
 // =============================================================================
 #pragma once
 #include <stdint.h>
