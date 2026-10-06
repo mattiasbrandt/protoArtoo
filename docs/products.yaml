@@ -726,7 +726,180 @@ products:
     gate: null
     included: 0
     sheet: pololu-maestro-servo-controller.md
-    notes: ""
+    notes: |
+      Not built. No Maestro has been attached to this project's hardware; everything
+      below is design from the sheet's vendor facts (#307, minted from #303, which
+      assigned the Maestro serial Component Protocol).
+
+      Architecture, decided in #307's research: dumb output, not sequencer. Firmware
+      keeps the Motion Profile ramp and streams positions; the Maestro's speed and
+      acceleration stay at 0 so its engine cannot fight the ramp firmware computed;
+      the script engine goes unused. The sequencer model collides with five
+      decisions, and the last one decides it:
+      - ADR 0052 easing (`none`, `soft`, `overshoot`): the device has only the
+        trapezoid, which is `none`; the other two exist only if firmware streams.
+      - ADR 0052 speed and acceleration are times: a script stores rates, authored
+        on a PC, on a device whose servo period firmware cannot read.
+      - The Cadence Floor would move into a Maestro script, where the Sequence
+        Coordinator cannot hold it.
+      - ADR 0043 schedules an Output Release from arrival: firmware stops knowing
+        when arrival is; Get Moving State is global and Mini-only.
+      - #301 / #318: the builder edits Outputs in protoArtoo's UI. A sequencer
+        Maestro moves authorship into an XML on a PC: two editors, one droid, no
+        sync.
+      The hobby's reason for a co-processor (a single-threaded AVR loop stalls the
+      animation) does not apply: ServoTask is its own 50 Hz task and the drive lane
+      is fenced onto Core 1. One exception left open: the device engine is the right
+      tool for a move that must complete while the host is not talking, such as a
+      slow return during a fault. Nothing asks for that today; if something does,
+      the sheet's travel-time-to-rate conversion applies, per Output rather than
+      per droid.
+
+      Motion Profile on a Maestro, if the engine is ever used: ADR 0052 rejects
+      storing Maestro units, so firmware converts the stored times with the sheet's
+      "Converting a travel time into speed and acceleration". Recalibrating an
+      Endpoint Pair changes D, so S and A are recomputed and re-sent whenever an
+      endpoint moves (free on LEDC). S and A are lost on any Maestro reset: re-send
+      the whole per-channel profile after one. An acceleration clamped at 255 gives
+      a slower move than stored, and the surface says so, as a degraded overshoot
+      does.
+
+      Driver rules the sheet's facts imply:
+      - Use the Pololu protocol (pay two bytes a command, 0xAA on every packet), or
+        open with one complete Pololu-protocol command and then go compact. Never
+        depend on a fixed baud set over USB: a driver that works only against a
+        pre-configured device fails in the field with no diagnosis.
+      - Any reply decoder abandons a packet on a high-bit byte (the protocol's
+        self-resync).
+      - Do not use pololu/maestro-arduino's read path: its reads are unbounded
+        spins, and no task in this firmware may spin on a read. The write side is
+        small enough to own.
+      - If this project ever presents a Maestro-compatible interface (a reader),
+        refuse an oversized Set Multiple Targets count, never clamp it.
+      - If this project ever ships Maestro builder documentation, its first line is
+        the sequencer-export fix: replace the trailing `return` with `quit`.
+
+      Factory defaults against this project:
+      - A factory Maestro limits pulses to 992-2000 us; LEDC's range is 500-2500 us
+        (include/ledc_pwm.h). Most of what Endpoint Pair calibration can record is
+        unreachable until the settings file widens Min / Max (on the 16 us grid).
+      - The factory startup/error mode, Off, is already ADR 0052's limp by default
+        and ADR 0043's Output Release. Keep it Off, except per channel for a part
+        held against gravity (Ignore). Go to turns every Maestro error into a mass
+        servo move, the overlapping inrush the Cadence Floor exists to prevent.
+
+      Release and the first move: Output Release is Set Target 0 per channel, and
+      ADR 0043's "a bus drop is reported, not escalated" applies with the UART in
+      place of the I2C bus. For estop use explicit Set Target 0 (or one Set Multiple
+      Targets with every target 0 on a Mini), never Go Home, whose effect depends on
+      a setting firmware cannot read. A released channel has no position, so its
+      next Set Target is a jump at full speed. After a release firmware
+      re-establishes the position before ramping: command the last commanded
+      target, let it snap, then ramp. SERVO_PULSE_NEUTRAL_US is not a safe
+      re-establish value.
+
+      Keep-alive: with the serial timeout armed, a quiet link is a fault. The driver
+      keeps the link alive inside the timeout window (Get Errors qualifies) rather
+      than lengthening the timeout. Same shape as the drive lane's zero-frame rule.
+
+      Frame budget, streaming every Output at the 50 Hz ServoTask tick with Set
+      Multiple Targets (Mini only; 3 header bytes plus 2 per channel): for 23
+      channels that is 49 bytes, 51 ms at
+      9600 baud (does not fit a 20 ms tick), 12.8 ms at 38400, 4.3 ms at 115200,
+      2.5 ms at 200000. Run 115200 or faster. A dedupe against the last sent value
+      drops a resting droid's traffic to the keep-alive. The hobby's 9600 cannot
+      carry a streamed body.
+
+      UART:
+      - artoo-esp32 has no spare UART (console, drive, dome; audio shares the
+        dome's controller), and freeing one costs the dome link or the console. The
+        drive lane's "replace, never append" escape does not apply: LEDC, the Body
+        servo controller's supported member, costs no UART, so there is nothing for
+        a Maestro to replace.
+      - FireBeetle 2: UART4 is unclaimed by the firmware (include/config.h). The
+        ELRS sheet claims UART4 for CRSF, which must be a real UART at 420 kbaud; a
+        Maestro link is one-way, slow and tolerant. If a builder wants both, CRSF
+        takes UART4 and the Maestro goes elsewhere. Open: which of #311 and #307
+        gets UART4 is a decision for the two tickets, not a measurement.
+
+      Three ways to reach it:
+      - A hardware UART: FireBeetle 2's UART4, if CRSF has not taken it.
+      - The existing soft-UART TX (src/drivers/audio_soft_uart_tx.h, 9600 baud,
+        about 1.04 ms per byte in a Core 0 critical section). Fine for
+        gesture-triggered traffic (a compact restartScript, 2 bytes, 2.1 ms; one
+        Set Target, 4 bytes, 4.2 ms); impossible for streaming (a 49-byte frame
+        blocks Core 0 for 51 ms, 2.55 s per second at 50 Hz). So it supports only
+        the sequencer model the decision above closed.
+      - Freeing a second hardware UART by a trade: on artoo-esp32 it costs the
+        console or the dome link. Not acceptable.
+
+      Pins, if a link is wired:
+      - artoo-esp32: GPIO 2, 4, 12 and 27 are unused in SBUS modes (the CH3-CH6
+        headers, docs/pin_map.md); one can carry TX. Open: which of them are
+        boot-strapping pins? The research expects two are; the pin map does not
+        flag them, and a pin held low at boot by an attached device changes how the
+        chip starts. Check GPIO 4 and 27 first; read all four against the ESP32
+        datasheet and record the answer in docs/pin_map.md.
+      - FireBeetle 2: one spare GPIO, itself an avoid-list pin (docs/pin_map.md). A
+        write-only link fits it. A return path needs a GPIO that does not exist, so
+        reading the Maestro back on this board is a design change, not a wiring
+        choice.
+
+      Level shifter: at the research date, the first part this project lists that
+      needs one. A
+      write-only link needs one shifter channel, or none if the builder accepts
+      Pololu's "not guaranteed" on 3.3 V RX, as the only ESP32 precedent does (out
+      of specification). A bidirectional link needs a real shifter both ways; a
+      divider cannot raise a voltage. The Maestro's 5 V out can power the shifter.
+      Builder documentation that says "wire the signal and a ground" is wrong for
+      this part. The FireBeetle 2's servo field advice in docs/pin_map.md (servos
+      and ESCs from a separate BEC) still holds; joining VSRV=VIN only moves where
+      the servo rail terminates.
+
+      Provisioning, made checkable: author the settings in the Control Center,
+      export the XML, commit it to this repository (one file per variant),
+      `UscCmd --configure` it, then `--getconf` and diff to prove it took. The
+      serial timeout makes that file a safety artefact; treat it like
+      docs/droid-parts.yaml, not a wiki page.
+      - Serial mode: UART, fixed baud (or detect, with a Pololu-protocol driver).
+      - Baud: 115200 or higher (frame budget above).
+      - Serial timeout: non-zero. It is the servo failsafe, and firmware cannot arm
+        or read it.
+      - Min / Max per channel: widened to the LEDC range, on the 16 us grid.
+      - Startup / error: Off, except parts held against gravity.
+      - Startup speed / acceleration: 0 (firmware owns the ramp).
+      - Period: 20 ms (changing it rescales the motion units invisibly).
+      - CRC: off.
+
+      Registry, Gate, Member:
+      - Component Protocol: Maestro serial stands. A different wire format, a
+        different transport class from both peers, and a device holding state
+        firmware cannot read.
+      - Board Capability Gate: needed, and a real board fact (does this board have
+        a UART, or a spare GPIO, to reach a Maestro), entangled with #311. #311 and
+        #307 should agree on one gate rather than mint two.
+      - Component Member: the servo backend seam exists (include/servo_backend.h,
+        #444 from #306). A Maestro is a third backend row beside LEDC and the
+        PCA9685. Like the PCA9685, its writes leave Core 1: ServoTask hands a
+        frame's changes over in servoBackendCommit() and a Core 0 task does the
+        UART writes. It sits on a link that can drop, so its Outputs are reported
+        unreachable when the link fails.
+
+      Costs to state plainly to a builder:
+      - A level shifter enters the bill of materials.
+      - A PC provisioning step becomes mandatory, on Windows or x86 Linux. macOS
+        cannot do it; a Raspberry Pi probably cannot run the GUI.
+      - The scarcest bus on the board is spent, and on FireBeetle 2 it is contested
+        with ELRS.
+      - Reading the device back is unaffordable on FireBeetle 2, so Get Errors, Get
+        Position and Get Moving State, and every diagnostic the device offers, are
+        out in the realistic wiring. A Mini's ERR pin is the one cheap substitute.
+      - The serial timeout and the channel limits are invisible to firmware, so the
+        operator UI cannot honestly report whether the servo failsafe is armed, only
+        that the settings file says it should be.
+      - The motion engine is bought and not used. What a builder paying USD 2.29 to
+        4.66 per channel gets: channel count off a single wire, a hardware failsafe,
+        and per-channel startup behaviour.
 
   # ---------------------------------------------------------------------------
   # Dome Rotation
