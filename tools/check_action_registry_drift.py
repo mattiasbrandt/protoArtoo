@@ -888,12 +888,13 @@ def check_param_explanations(doc: dict, errors: list[str]) -> None:
 
 
 def check_inventory_registry_alignment(doc: dict, errors: list[str]) -> None:
-    """Validate one-to-one mapping: registry entries <-> inventory rows.
+    """Validate one-to-one mapping: registry entries <-> inventory rows, by name.
 
-    Each registry entry must have a matching row in the inventory files with
-    matching executor_or_core value.
+    A row carries only what the registry does not: its anchor kind, evidence and
+    notes. It used to mirror the registry's executor too, and this check compared
+    the two; the mirror is gone, because the registry already holds it (ADR 0037
+    Amendment 2026-10-06, #474).
     """
-    import subprocess
     inventory_dir = ROOT / "tools" / "console_inventory"
 
     # Load all inventory rows
@@ -915,17 +916,9 @@ def check_inventory_registry_alignment(doc: dict, errors: list[str]) -> None:
     registry_entries = {e['name']: e for e in doc.get('entries', [])}
 
     # Check bidirectional mapping
-    for name, inv_row in inventory_rows.items():
+    for name in inventory_rows:
         if name not in registry_entries:
             errors.append(f"{name} in inventory but missing from registry")
-        else:
-            inv_executor = inv_row.get('executor_or_core')
-            reg_executor = registry_entries[name].get('executor')
-            if inv_executor != reg_executor:
-                errors.append(
-                    f"{name} executor mismatch: inventory={inv_executor!r}, "
-                    f"registry={reg_executor!r}"
-                )
 
     for name in registry_entries:
         if name not in inventory_rows:

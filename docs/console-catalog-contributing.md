@@ -10,24 +10,26 @@ comment — read that first.
 ## Where a registry entry ends up
 
 `tools/generate_console_catalog.py` reads `docs/action-registry.yaml` and
-writes `src/console/console_catalog.cpp` (a flash-resident C table, one
-`ConsoleCatalogEntry` per operation) and `data/console_help.txt` (the prose
-half — description, display name, executor — read from LittleFS at
-runtime, addressed by offset and length). Both are generated, checked-in
-files: run the generator after editing the registry, and treat the two
-generated files as **DO NOT EDIT MANUALLY**, exactly as their own header
-comments say. Neither `pio run` nor `make check-action-drift` regenerates
-them for you.
+writes `include/console_catalog.h`, `src/console/console_catalog.cpp` (a
+flash-resident C table, one `ConsoleCatalogEntry` per operation) and
+`data/console_help.txt` (the prose half — description, display name,
+executor — read from LittleFS at runtime, addressed by offset and length).
+All three are generated, checked-in files: run the generator after editing
+the registry, and treat them as **DO NOT EDIT MANUALLY**, exactly as their
+own header comments say. Neither `pio run` nor `make check-action-drift`
+regenerates them for you, but `make check-action-drift` fails when any of
+the three is not byte for byte what the generator makes of the registry
+today (`tools/check_console_catalog_drift.py`, also
+`make check-console-catalog-drift`, #474) — a stale catalog and a hand edit
+both show up there.
 
 ## Fields the Console reads that a plain RC/REST entry might not carry
 
 - **`executor`** — the function or core name the Console's `help <op>`
-  reply shows as its `executor` field. Every entry needs a matching row in
-  `tools/console_inventory/` (below) whose `executor_or_core` names the
-  same thing — `make check-action-drift` checks this by name matching
-  against that inventory, never against the C++ source directly, so it
-  cannot verify the named function actually exists, only that the two data
-  sources agree on it.
+  reply shows as its `executor` field. The registry is its one home:
+  `make check-action-drift` requires the name to appear in `src/` or
+  `include/` (`check_executor_symbols()`), and `executor: none` to be
+  justified by the operation's inventory row (below).
 - **`board_capability`** / **`build_flag`** — each names at most one
   declaration from `include/board_capabilities.inc` /
   `include/build_flags.inc`. Absent means universal for that tier (ADR
@@ -66,14 +68,61 @@ them for you.
   is an error the drift check catches on purpose — it is the one case the
   checker cannot tell apart from an entry someone forgot to finish.
 
+## An operation that is never on the Console: `console:`
+
+Some operations exist on the droid and will never run from the Console:
+moving a whole file, a step that belongs to the Sequences editor, an act
+that only orders a browser page, the browser Console Adapter itself. Such a
+row says so, and says where the builder does it instead (ADR 0037 Amendment
+2026-10-06):
+
+```yaml
+  console:
+    excluded: file-transfer      # file-transfer | editor-only | browser-only | console-itself
+    page: seq                    # a SURFACES page id from data/shell.js
+```
+
+The Console then lists it `(action, not-on-console)`, answers running it
+`unavailable reason=not-on-console` before any executor is looked up, and
+`help` names the page by the name the nav shows (`console_page=Sequences`).
+
+Pick the reason by what the operation is, not by what is missing:
+
+- **`file-transfer`** — the transfer is the operation: a document or an
+  image that moves whole (a sequence file, the RC map, the dome layout, a
+  firmware or filesystem image, a crash dump). The Console's one-line
+  `key=value` grammar has no shape for it.
+- **`editor-only`** — a step of an editor that only means something with the
+  editor open around it (a take, whose receipt the Sequences page places as
+  steps).
+- **`browser-only`** — it changes nothing on the droid but how a page shows
+  it (the Dashboard's pinned Sequences).
+- **`console-itself`** — the browser Console Adapter's own route.
+
+The page must be one the shell can open today: a `page:` in `SURFACES`
+(`data/shell.js`) whose screen actually does the act. Check that it does
+before you name it — the "change it elsewhere" answer promises the
+destination exists. If no page does it yet, the row is not ready to carry
+`console:`. The generator refuses a reason outside the four above and a
+page `SURFACES` does not list, and so does `make check-action-drift`.
+
+`console:` is not for an operation that could run on the Console and is
+merely not wired yet. That row carries nothing and answers
+`executor-not-ready`, because it is work, not scope; marking it would hide
+the work.
+
 ## `tools/console_inventory/*.yaml`
 
 Four files (`dome.yaml`, `sound.yaml`, `system.yaml`,
-`drive-servo-aux-rc.yaml`), one row per registry entry in that domain group,
-each citing `anchor_kind` (`api` | `rc_internal` | `event` | `config` |
-`aggregate-field` | `none`), `executor_or_core`, and `evidence` for that
-citation: the file, then what it shows, with what the file must contain in
-backticks. They were written by hand during the epic's inventory pass
+`drive-servo-aux-rc.yaml`), one row per registry entry in that domain group.
+A row holds four keys and nothing else: `name`, `anchor_kind` (`api` |
+`rc_internal` | `event` | `config` | `aggregate-field` |
+`console_direct_action` | `none`), `evidence` for that anchor — the file,
+then what it shows, with what the file must contain in backticks — and
+`notes`. What the operation is (its type, route, executor, params, whether
+it is on the Console) is the registry's, and is never copied into a row:
+the copied `registry_*` fields, the `executor_or_core` mirror of `executor`,
+`type` and `missing_metadata` left the rows in #474. They were written by hand during the epic's inventory pass
 (#208–#212) as a one-time cross-check that every registry entry really does
 reach a real executor and not just an HTTP adapter — they do not regenerate
 themselves when you edit the registry, so **adding a registry entry means
@@ -84,9 +133,8 @@ four files matches its domain.
 this both ways, by three separate checks:
 
 - `check_inventory_registry_alignment()` requires a strict one-to-one
-  match: every registry entry needs a same-named inventory row citing the
-  identical `executor` value in its `executor_or_core` field, and every
-  inventory row needs a matching registry entry. A registry entry with no
+  match by name: every registry entry needs a same-named inventory row, and
+  every inventory row needs a matching registry entry. A registry entry with no
   inventory row (`"<name> in registry but missing from inventory"`), an
   inventory row with no registry entry, or a name present in more than one
   of the four files, are all reported as drift — this is not an optional
@@ -130,9 +178,10 @@ C++ dispatch tables: a second source of truth about readiness is the shape
 that produced the defect, and it breaks silently every time a table moves.
 
 So a registry entry gets no say in whether its executor is wired, and neither
-`help <op>` nor `operations` claims to know. They report the two facts that
-are genuinely knowable without running anything — `available_on_board` and
-`available_in_build`, both compile-time expressions. To find out whether an
+`help <op>` nor `operations` claims to know. They report the facts that are
+genuinely knowable without running anything — `available_on_board` and
+`available_in_build`, both compile-time expressions, and the row's own
+`console:` declaration (above), which a person writes and nothing infers. To find out whether an
 operation is dispatchable today, run it and read the `outcome`/`reason` it
 answers with; `executor-not-ready` is still a reason in the vocabulary,
 because it is an execution-time answer and always was. Whether a given
