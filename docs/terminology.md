@@ -166,8 +166,7 @@ What it contains:
 - Live runtime state: drive commands, failsafe state, timing, heartbeat counters
 
 Persisted config is not in `RobotState`. It lives in the config cache and tasks
-read it as a `ConfigSnapshot` through `configCacheRead()` (for example
-`src/main.cpp:89-91`).
+read it as a `ConfigSnapshot` through `configCacheRead()`.
 
 Why it matters:
 
@@ -215,9 +214,9 @@ In practical terms:
 Where it shows up:
 
 - Mentioned in project docs and WiFi/status APIs
-- Credentials are the Device WiFi Settings saved on the controller from the WiFi page
-  or WiFi provisioning (ADR 0015); `src/secrets.h` is only the Developer WiFi
-  Shortcut for a self-build
+- Credentials are the Device WiFi Settings saved on the controller through WiFi
+  provisioning (ADR 0015); `src/secrets.h` is only the Developer WiFi Shortcut
+  for a self-build
 
 Why it matters:
 
