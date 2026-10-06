@@ -771,18 +771,19 @@ release-versioning role of its own.
 `main` releases itself: `.github/workflows/auto-release.yml` reads the
 Conventional Commits since the last release tag, applies CONTRIBUTING.md's type
 table (`feat` -> MINOR, `fix` -> PATCH, `feat!`/`fix!` or a `BREAKING CHANGE:`
-footer -> MAJOR, everything else -> no release) and tags `main` itself. Nobody
-tags by hand, and a merge that releases nothing is a normal outcome rather than
-a failed run.
+footer -> MAJOR, everything else -> no release) and tags `main` itself: a patch
+on the push, a minor or major only after a green Verification of the commit it
+tags. Nobody tags by hand, and a merge that releases nothing is a normal outcome
+rather than a failed run.
 
 Two tiers: a **patch** ships generated notes and the source tag only; a **minor
-or major** ships the curated `CHANGELOG.md` section and all eight images, as
-before. An epic merge therefore still lands as a minor release — what changed is
+or major** ships the curated `CHANGELOG.md` section and, for each board, the
+update images, the blank-board parts and their manifest. An epic merge therefore still lands as a minor release — what changed is
 that the fixes between epics no longer wait for one.
 
 The obligation this puts on an agent: **write the `[Unreleased]` section of
 `CHANGELOG.md` in the same change as any `feat`.** Merging it cuts a minor
-release within seconds, CI renames that heading to the version, and an empty
+release once Verification of that commit is green, CI renames that heading to the version, and an empty
 `[Unreleased]` fails the release rather than publishing a bare heading. A `fix`
 needs no entry — its release note is its commit subject, so write the subject
 accordingly. Full detail in CONTRIBUTING.md "Versioning and releases".
