@@ -719,8 +719,268 @@ products:
         - "With a 6-wire hall cable, the right sensor cable carries battery voltage, 36-42 V."
         - "Nothing isolates the two sides. A fault on the 36 V side reaches the Body Controller through ground."
         - "The battery reading is not good to a tenth of a volt until that hoverboard is calibrated."
-      source: "The configuration that has to be right on the board, 9.2, 9.3, 9.4, 12.1, 15"
-    notes: ""
+      source: "7.4, 8.2, 8.3, 8.4, 10.1, 12"
+    notes: |
+      The droid's side is fixed: 115200 8N1, the 8-byte `0xABCD` command frame with
+      an XOR checksum, 50 times a second, on the drive lane. That is EFeru's Gen1
+      wire; RoboDurden's `REMOTE_ROS2` borrows it. Everything that can go wrong goes
+      wrong on the board, at build time, in a file the builder edits before
+      flashing. Get one line wrong and the droid is silent with no error. The
+      operator's own board runs RoboDurden firmware, built with `REMOTE_ROS2`.
+
+      Builder settings, EFeru FOC (Gen 1, one mainboard), all in `Inc/config.h` of
+      `EFeru/hoverboard-firmware-hack-FOC`. Required:
+      - `#define VARIANT_USART` uncommented, and every other `VARIANT_*` commented
+        out. PlatformIO offers it as the `VARIANT_USART` environment.
+      - `CONTROL_SERIAL_USART2 0` and `FEEDBACK_SERIAL_USART2`, both, for the left
+        cable; or `CONTROL_SERIAL_USART3 0` and `FEEDBACK_SERIAL_USART3`, both, for
+        the right cable. `CONTROL_` is the droid commanding the board, `FEEDBACK_` is
+        the board answering. Without the second one the droid drives fine and the
+        Drive page never shows telemetry. The right cable is the 5 V-tolerant one and
+        the one EFeru's own example recommends; either works with a 3.3 V ESP32.
+        Pick one cable and set both defines for it.
+      - `USART2_BAUD` / `USART3_BAUD` left at 115200: the droid's drive lane is fixed
+        at 115200.
+      - `PRI_INPUT1` and `PRI_INPUT2` left at `3, -1000, 0, 1000, 0`. `TYPE 3` is
+        auto-detect, the range is +/-1000 (which the droid's +/-600 cap is a fraction
+        of), and `DEADBAND 0` leaves deadband to the droid, which already has one.
+      Must NOT be set:
+      - `ENABLE_ODOMETRY`: the feedback frame becomes 22 bytes and the droid can
+        decode neither it nor anything after it; telemetry silently never appears
+        (finding 3 below).
+      - `DEBUG_SERIAL_USART2` / `_USART3` on the same cable: the board prints ASCII
+        debug over the lane instead of frames.
+      - `TANK_STEERING`: bypasses the mixer and maps `steer` to left, `speed` to
+        right; the droid would spin where it should drive.
+      - `DUAL_INPUTS`: adds a second input with priority switching; only set this if
+        you know which input you are on.
+      - a second `VARIANT_*`: the file `#error`s, or worse, two variants claim the
+        same cable.
+      Leave alone unless you know why: `CTRL_TYP_SEL` (`FOC_CTRL`), `CTRL_MOD_REQ`
+      (`VLT_MODE`), `SPEED_COEFFICIENT` (1.0), `STEER_COEFFICIENT` (0.5), `RATE`,
+      `FILTER`. Changing `CTRL_MOD_REQ` to `SPD_MODE` silently changes what the
+      droid's speed presets mean.
+      Worth setting for a droid: `I_MOT_MAX` and `N_MOT_MAX` are the board's own
+      ceilings (15 A, 1000 rpm by default). Lowering `N_MOT_MAX` is the one place a
+      builder can cap the droid's top speed below the droid's own `SPEED_LIMIT_MAX`,
+      a belt-and-braces limit the droid cannot be talked out of.
+
+      Builder settings, RoboDurden Gen2.x (Gen 2, two boards, one per wheel), all in
+      `HoverBoardGigaDevice/Inc/config.h` of
+      `RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32` (not the `Gen2.x`
+      repository, which no longer has the code). Required:
+      - `#define REMOTE_ROS2` uncommented, and every other `REMOTE_*` commented out.
+        It is the only remote that speaks the droid's protocol. `REMOTE_UART`, the
+        obvious-sounding one and the one the prebuilt binaries are built with, is
+        `'/'`-framed, CRC-16, 19200 baud, and the droid cannot speak it.
+      - `#define DRIVING_MODE 1` (speed mode). `RemoteROS2.c` refuses to build
+        otherwise, and it is why the units are RPM.
+      - `#define SPEED_AsRevsPerSec`, also enforced by `#error`.
+      - `#define LAYOUT <n>` (and `LAYOUT_SUB` where the layout has one) matching the
+        physical board. A wrong layout can short the battery and kill the MOSFETs.
+        Identify the board with the interactive finder in the `Gen2.x` wiki first.
+      - `#define MASTER` on one board, `#define SLAVE` on the other, one image each.
+        The MASTER talks to the droid; the SLAVE talks only to the master. A `SINGLE`
+        build drives one wheel and reports zeros for the other.
+      - Keil target: 1 = GD32F130, 2 = GD/STM32F103, 3 = GD32E230, 4 = MM32SPIN0x,
+        5 = LKS32, selected in the Keil dropdown, not in the config file.
+      `REMOTE_BAUD` is 115200 inside `Inc/RemoteROS2.h` and needs no edit.
+      Wire the droid to `REMOTE_USART 0`, PB6/PB7, the empty header near the flash
+      header; not the 4-pin master-slave header (PA2/PA3), which carries the link
+      between the two motor boards.
+      You have to build this yourself: there is no prebuilt `REMOTE_ROS2` binary in
+      either RoboDurden repository (`BinariesReadyToFlash/` carries `master Dummy`,
+      `master Uart`, `slave` and `single uartBus`). Flashing `master Uart` because
+      the droid talks over UART is the single most likely way to end up with a board
+      that looks dead. Building means Keil MDK v6; there is no PlatformIO or GCC path.
+
+      What to check once it is flashed, in order:
+      1. The board powers on and beeps. EFeru beeps twice when it arms the motors,
+         and only arms them if both inputs are near zero at boot, which the droid's
+         zero frames satisfy.
+      2. `GET /api/status` contains a `hoverboard` object. If it does not, nothing
+         valid has been decoded. That one check separates "wrong firmware or wrong
+         wiring" from every other problem.
+      3. `speedR` / `speedL` move when you spin a wheel by hand. These are hall
+         readings and do not need the droid to be commanding anything.
+      4. Battery reads plausibly against a multimeter (both firmwares need a
+         per-board voltage calibration).
+      5. Board temperature is not evidence of anything. On RoboDurden it is
+         hardcoded to 25.0 degC. Do not use it to conclude the link works or does not.
+
+      The five ways this goes wrong, and what each looks like:
+      - Droid drives, no telemetry ever: `FEEDBACK_SERIAL_*` not defined (EFeru), or
+        `ENABLE_ODOMETRY` is on.
+      - No telemetry, no movement, no error: wrong remote (`REMOTE_UART` not
+        `REMOTE_ROS2`), or wrong baud, or TX/RX swapped.
+      - Telemetry fine, wheels do not move: motors never armed (a non-zero input at
+        boot), or a motor fault, or the board is in its 8-minute inactivity poweroff.
+      - Droid spins instead of driving: `TANK_STEERING` set, or the two motor phase
+        sets swapped.
+      - Much faster than expected: a RoboDurden board, where the presets are RPM, not
+        percent.
+      The droid reports none of these distinctly today; every one presents as the
+      Drive page's empty wheel-controller state or as nothing at all (finding 6).
+
+      What the 600 speed cap means per firmware. The droid clamps every command to
+      `SPEED_LIMIT_MAX = 600` of the protocol's +/-1000, with default presets at 200
+      (slow), 350 (normal) and 600 (turbo). The same droid setting is a different
+      droid on the two firmwares:
+      - `SPEED_PRESET_SLOW` = 200: EFeru `VLT_MODE` 20 % voltage, ~130 rpm, ~4 km/h;
+        RoboDurden `REMOTE_ROS2` 200 rpm commanded, ~6 km/h.
+      - `SPEED_PRESET_NORMAL` = 350: EFeru 35 % voltage, ~220 rpm, ~7 km/h;
+        RoboDurden 350 rpm commanded, ~11 km/h.
+      - `SPEED_LIMIT_MAX` = 600: EFeru 60 % voltage, ~380 rpm, ~12 km/h; RoboDurden
+        600 rpm commanded, ~19 km/h.
+      Speeds assume a 6.5" wheel. On a RoboDurden board turbo is approximately the
+      motor's no-load ceiling: 600 rpm against a ~640 rpm motor is a ~94 % setting,
+      and the closed loop will try to hold it. A builder moving a droid from an EFeru
+      board to a RoboDurden board with the same saved configuration gets a materially
+      faster droid. The droid does not know which firmware is on the other end and
+      cannot warn about this today (finding 4). On EFeru the slow preset is the
+      walking-pace setting.
+
+      The 20 ms deadline. Both firmwares hold the last command for 500-800 ms before
+      their own timeout, so the droid feeds the board 25x to 40x more often than
+      either requires. That is not waste: the deadline is what makes an estop
+      instantaneous rather than "within 800 ms", since a zero frame at 50 Hz reaches
+      the wheels in one tick. The `DriveStarvation::Drifts` classification and the
+      20 ms deadline are right; the reason written beside them is not (finding 4).
+
+      Code review result: the frame encoding, the checksum, the parser state machine
+      and the byte offsets were checked field by field against both upstreams and are
+      correct; the 26-byte offsets the parser reads (speedR at 6, speedL at 8,
+      currents at 14 and 16, battery at 18, temperature at 20) match
+      `RemoteROS2.c`. Reference hosts send at 10 Hz; the droid sends at 50 Hz.
+
+      Findings against the code (reported, not fixed):
+
+      1. The Component Protocol is spelled two ways and neither is accurate. The
+         Component Registry row declares `hoverboard_gen2_uart`; the drive backend
+         profile in `include/drive_backend.h` declares `hoverboard_gen2x`. Both reach
+         operators: the first through `/api/identity`, the second through DriveTask's
+         startup log line. Two spellings of one protocol is drift by itself. Worse,
+         both say "Gen2", and the wire is EFeru's Gen1 protocol that RoboDurden's Gen2
+         firmware borrows for one build option. A builder on an EFeru Gen 1 board,
+         the common case, is told their supported, working controller speaks
+         `hoverboard_gen2_uart`. Naming is a Component Protocol decision and belongs
+         to #303's vocabulary. A candidate: `hoverboard_serial_abcd`, which names what
+         is on the wire and is true of both firmwares. Recorded, not chosen.
+
+      2. The driver cites a repository that no longer holds the code. Still unfixed:
+         `include/hoverboard_uart.h` and `src/drivers/hoverboard_uart.cpp` both say
+         `// Reference: https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x`.
+         That repository's README says "code moved to
+         Hoverboard-Firmware-Hack-Gen2.x-GD32 !!". The citation should be
+         `.../Hoverboard-Firmware-Hack-Gen2.x-GD32`, and ideally the file
+         (`HoverBoardGigaDevice/Src/RemoteROS2.c`) rather than the repository, since
+         the repository has eight remotes and only one of them is this protocol. An
+         agent that follows the comment to check the protocol finds no protocol there.
+
+      3. An EFeru board built with `ENABLE_ODOMETRY` is silently undecodable.
+         `ENABLE_ODOMETRY` inserts `wheelR_cnt` and `wheelL_cnt` into the feedback
+         struct, producing a 22-byte frame. It is off by default but it is exactly
+         what a builder enables for wheel distance, and every ROS integration guide
+         turns it on. `feedHoverboardFeedbackByte()` accepts only 18 and 26. A 22-byte
+         frame fails the 18-byte check, keeps accumulating into the next frame's
+         bytes, fails the 26-byte check, resets, and repeats forever. The result is
+         not an error: it is `driveFeedbackValid` never becoming true and the Drive
+         page waiting indefinitely, with a board that is driving perfectly. Adding the
+         format costs one length constant, one offset table and one branch, and it
+         would close finding 5 for EFeru boards at the same time.
+
+      4. Three operator-facing statements are true of only one firmware. The project
+         supports two firmware families and treats them as one everywhere above the
+         parser:
+         - `include/drive_backend.h`, beside the backend profile, and the
+           zero-frame comment in `src/tasks/drive.cpp` say the mainboard "holds its
+           last command when the stream stops". That is true for 800 ms (EFeru) or
+           500 ms (RoboDurden), after which one coasts and the other soft-brakes.
+         - `docs/topology.md` safety layer 5 says the hoverboard firmware "stops its
+           motors after about 500 ms without a valid frame". That is RoboDurden's
+           figure and its soft brake; EFeru holds 800 ms and then coasts. As a layer it
+           is 0.5-0.8 s of continued motion followed by a coast or a ramp, the
+           opposite of what "safety layer" implies in a list whose other entries zero
+           the output. Either qualify it or drop it.
+         - The Drive page "Board temp" row shows a hardcoded 25.0 degC on RoboDurden
+           and an uncalibrated MCU-die reading on EFeru. The
+           `research-r2d2-sim-2026-09-09-ticket-digest.md` queues this string for a
+           rename to "Hoverboard Temp"; worth doing with whatever honesty treatment
+           the value gets, since renaming it without qualifying it makes a fabricated
+           number look more authoritative.
+         None of these is a code defect. All three have one root cause: the droid
+         does not know which firmware is on the far end, and the copy was written as
+         though it did.
+
+      5. The only odometry this project can reach is parsed past. Offsets 10 and 12
+         of the RoboDurden frame are `wheelR_cnt` / `wheelL_cnt`, hall-step counters
+         wrapping at `ENCODER_MAX` = 9000. `parseGen2xFrame()` skips them and
+         `HoverboardFeedback` has no field for them. They are the only distance
+         measurement available to this project on any backend. This is not an
+         oversight to fix blindly: ADR 0051 was explicit that a sensed bearing is a
+         roadmap correction, "not delivered, not promised" ("differential odometry off
+         hoverboard wheel speeds exists as a path, on feedback-capable drives only").
+         It is recorded because capturing the field (two `int16_t`s in a struct, two
+         `memcpy`s) costs far less than the feature that would use it, and a future
+         ticket asking how far the droid has travelled should find this rather than
+         re-derive it. Gen 2 only unless finding 3 is also done.
+         ADR 0053 ("a Reaction is a binding the droid triggers itself") depends on
+         this feedback: "on a hoverboard, handling is detectable with no new
+         hardware -- a pushed droid back-drives its wheels, a held one loads its
+         motors." The load half, motor current, exists only on RoboDurden boards. On
+         an EFeru board `currentL`/`currentR` are structurally zero, so a Reaction
+         bound to "the droid is being held" would never fire and would never say why.
+
+      6. A silent wire looks identical to a disabled drive. If the far end is on the
+         wrong firmware, build option, baud or cable, the droid sends 50 frames a
+         second forever, never decodes a reply, and the Drive page shows its empty
+         wheel-controller state ("Nothing from the wheel controller yet."). That
+         message is also correct for a board still booting. What the firmware makes
+         distinguishable that the droid does not use:
+         - bytes arriving that never validate: something is talking at this baud, but
+           not this protocol;
+         - no bytes at all: wrong cable, wrong baud, board off, or TX/RX swapped;
+         - valid frames of an unexpected length: the 22-byte case in finding 3.
+         A counter of unparseable bytes since boot, beside the existing feedback
+         state, would separate "no hoverboard" from "a hoverboard I cannot
+         understand". The diagnostic contract in `tasks/rc_diagnostics_contract.md`
+         is the precedent for the shape.
+
+      7. The 8-minute inactivity poweroff is not written down anywhere. Both
+         firmwares power the board off after 8 minutes without motor command.
+         `docs/goal.md` names static-display operation a first-class use case, and
+         `docs/troubleshooting.md` has no entry for a droid whose feet stop answering
+         after a long stand. A documentation gap, not a code one: the droid cannot
+         prevent it, since the trigger is the board's own PWM output and the droid is
+         deliberately sending zeros. Worth a line in troubleshooting and a sentence in
+         a builder-facing hoverboard setup guide.
+
+      Still open from the `hb_` rename (#346): the RobotState fields are
+      `driveFeedback*`, but the published `/api/status` key is still `hoverboard`. It
+      has a consumer (`renderHoverboard` on the Drive page) and a documented contract
+      in `docs/api.md`, so renaming it is an API change with callers to move. It
+      belongs to whichever ticket lands the second Foot Drive backend.
+
+      Open Items:
+      1. Low-speed cogging on a real droid at walking pace. Bench: drive a loaded
+         droid at `SPEED_PRESET_SLOW` and observe. Cannot be settled by reading.
+      2. Whether the 8-minute poweroff announces itself. Bench: leave a powered board
+         idle 9 minutes with the console attached.
+      3. Sensor-cable connector part number. UNKNOWN; no source names one. Needs a
+         caliper and a connector catalogue.
+      4. Whether the operator's board reports plausible battery voltage. Compare
+         `/api/status` `hoverboard.batteryV` against a multimeter on the pack.
+      5. Measured no-load rpm on the operator's wheels. Read `hoverboard.speedR/L` at
+         a known command with the wheels off the ground; settles the 14-vs-16 rpm/V
+         band for this droid.
+      6. Whether `boardTemp` on the operator's board reads exactly 250. One
+         `/api/status` read; confirms finding 4's Board temp case on hardware.
+      7. Whether the droid should detect the far firmware and say so. A decision, not
+         a measurement; depends on finding 6.
+      8. Photograph / line drawing obligations for #390. Owned by #316 and ADR 0065.
+      Items 4, 5 and 6 are three readings of one endpoint and would be one bench row.
+
+      The hoverboard has not been confirmed turning wheels on an assembled droid.
 
   - value: 16
     id: sabertooth_2x25
