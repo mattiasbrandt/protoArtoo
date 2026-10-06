@@ -19,7 +19,9 @@ This document defines the durable technical direction for protoArtoo.
 
 ## Objective
 
-protoArtoo targets a complete open-source ESP32 body-controller firmware stack for MK4 astromech droids, with predictable control behavior, explicit subsystem ownership, and maintainable long-term operation.
+protoArtoo targets a complete open-source ESP32 body-controller firmware stack for R2D2 (astromech) droids, with predictable control behavior, explicit subsystem ownership, and maintainable long-term operation. Each subsystem is a Component Family whose products are peers: the builder fits the one they own, and the firmware supports it through one interface rather than through a board- or vendor-specific build.
+
+The Component Registry (`include/component_registry.inc`) is the source for what is supported: **supported** means a driver ships, **roadmap** means planned with no driver yet, and **Confirmed on a Droid** records a supported product that has run on a real droid.
 
 It also explicitly targets builders whose droids are primarily static display pieces for day-to-day use, where control from tablet or computer browser workflows is preferred over convention-style roaming with large RC radios.
 
@@ -34,20 +36,24 @@ It also explicitly targets builders whose droids are primarily static display pi
 
 ## Target Hardware Profile
 
-| Domain | Primary target | Compatibility direction |
+| Family | Supported today | Direction |
 |---|---|---|
-| Body controller | Artoo Controller PCB family (v1.x), dual-header ESP32 clone form factor | keep board-profile logic extensible where safe |
-| Drive subsystem | hoverboard integrations accepting Gen2.x-style UART frames at 115200 baud | protocol-contract compatibility over vendor lock |
-| Dome integration | bidirectional serial coordination with AstroPixelsPlus-class dome stacks | explicit command/status ownership boundaries |
-| Audio subsystem | body-side ownership; DY-SV5W as primary module | CHIRP Audio Trigger and SparkFun MP3 Trigger via driver abstraction |
-| Actuators | the board's Outputs (each a servo or an LED strip, named by what the board prints), dome ESC path | servo/LED role flexibility without architecture fork |
+| Body Controller | Artoo PCB (artoo.uk, a generic ESP32 clone; confirmed on a droid); FireBeetle 2 (ESP32-P4) | a new board is a Board Variant: pin map, build environment and size budget, not a fork |
+| Radio Controller | HotRC DS-650 (confirmed on a droid); RC Radio; RC Receiver - PWM, SBUS and ELRS; or none fitted, driving from the web | roadmap: Xbox Controller |
+| Body servo controller | Body controller board GPIO (confirmed on a droid); PCA9685 | roadmap: Pololu Maestro |
+| Foot Drive | Hoverboard, hacked firmware | roadmap: Sabertooth 2x25, Flipsky Mini V6 VESC; protocol-contract compatibility over vendor lock |
+| Dome Rotation | ISDT ESC70 RC ESC (confirmed on a droid) | roadmap: SyRen 10 |
+| Dome Controller | AstroPixels Plus over protoR2link (confirmed on a droid) | roadmap: Teeces; explicit command/status ownership boundaries |
+| Sound | body-side ownership; DY-SV5W, CHIRP Audio Trigger (both confirmed on a droid) and MP3 Trigger behind one driver interface, picked at runtime | roadmap: DFPlayer Mini |
+| Actuators | the board's Outputs (each a servo or an LED strip, named by what the board prints) | servo/LED role flexibility without architecture fork |
 
 ## Technical Support Intent
 
 | Support dimension | Intent |
 |---|---|
-| RC modes | standard_pwm, single_sbus, dual_sbus |
-| Usage focus | static-display-first operation with convenient tablet/computer control for regular use |
+| RC modes | standard_pwm, single_sbus, dual_sbus, elrs; or no Radio Controller fitted |
+| Usage focus | static-display-first operation with convenient tablet/computer control for regular use, and RC driving for roaming |
+| Hardware model | each subsystem a Component Family of peer products, picked at runtime on Configuration; one firmware image per board carries every supported driver |
 | Configuration model | runtime configuration for normal workflows, persisted state, validated API boundaries |
 | Compatibility model | protocol/interface contract first, not binary-vendor lock |
 | Integration stability | component variation is expected; external integration surfaces should remain stable |
@@ -101,7 +107,7 @@ Positioning:
 The following baseline captures what protoArtoo is expected to provide in normal operation.
 
 Control and safety baseline:
-- RC control supports standard_pwm, single_sbus, and dual_sbus modes
+- RC control supports standard_pwm, single_sbus, dual_sbus and elrs modes, and a droid with no Radio Controller fitted drives from the web
 - drive output paths enforce safety limits before transmit
 - estop behavior remains latching and explicit-clear
 - failsafe status is visible in diagnostics and API surfaces
@@ -117,7 +123,8 @@ Audio and body-dome baseline:
 - dome link behavior supports coordinated command routing with explicit responsibility boundaries
 
 Hardware support baseline:
-- target profile remains Artoo PCB + dual-header ESP32 clone form factor
+- supported hardware is what the Component Registry marks `supported`: two Body Controllers (Artoo PCB, FireBeetle 2), and at least one product in every other family
+- a roadmap product is never described as supported
 - drive integration on the artoo-esp32 Board Variant remains hoverboard UART contract based, forced by that PCB's fixed wiring (one UART, no spare); other Board Variants may default to a different drive backend where their wiring allows it (ADR 0029)
 - component-level compatibility remains contract-driven and documented
 
@@ -129,7 +136,7 @@ This table captures stack posture and typical hardware assumptions.
 
 | Stack | Typical controller hardware profile | Typical control input profile | Typical drive/audio profile | Source and distribution posture |
 |---|---|---|---|---|
-| protoArtoo | ESP32 body controller on Artoo PCB profile | RC receiver modes (PWM/SBUS) plus browser UI | Hoverboard UART drive focus (artoo-esp32's default; other Board Variants may differ, ADR 0029) plus body-owned audio modules (DY-SV5W primary) | fully open repository target (firmware + web + docs) with no binary-only paywall goal |
+| protoArtoo | ESP32 Body Controller (Artoo PCB, FireBeetle 2 ESP32-P4) | RC receivers (PWM/SBUS/ELRS) plus browser UI, or browser only | pluggable Foot Drive (hoverboard today; artoo-esp32's default, forced by its wiring, ADR 0029) plus body-owned audio modules (DY-SV5W, CHIRP Audio Trigger, MP3 Trigger) | fully open repository target (firmware + web + docs) with no binary-only paywall goal |
 | Padawan360 | Arduino 2560 or Mega ADK (UNO possible) plus USB Host Shield | Xbox 360 wireless controller plus Xbox wireless USB receiver | Sabertooth (feet), SyRen (dome), MP3 Trigger audio; I2C-centric peripheral control model | public code and long-running community documentation are available |
 | ShadowMD | Arduino 2560/Mega ADK plus USB Host Shield as a master coordinating MarcDuino/Benduino nodes | 1-2 PS3 Move Navigation controllers via CSR-class BT dongle | Sabertooth 2x32A (feet), SyRen 10 (dome), MP3 Trigger-class audio, XBee integration, sequence/animation routing to dependent nodes | ◐ public implementations/docs exist, but maintenance and exact architecture vary by fork/build |
 | ShadowRC (Printed-Droid fork lineage) | Arduino Mega 2560/Mega ADK as main controller with MarcDuino integration path | RC radio/receiver model (Turnigy Evolution plus iBus-class receivers documented) | Sabertooth (feet), SyRen 10 (dome), direct MP3 Trigger plus parallel MarcDuino sound/panel control | ◐ public documentation and source publication are documented for this fork lineage; name now overlaps with unrelated closed-source software |
