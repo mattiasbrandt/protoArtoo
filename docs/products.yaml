@@ -1501,4 +1501,106 @@ products:
     gate: null
     included: 0
     sheet: dfplayer-mini-sound.md
-    notes: ""
+    notes: |
+      Roadmap: no driver exists. #305 (minted from #303) builds it and declares the
+      capability bits; until then the row declares none. The `#error` for
+      `AUDIO_DFPLAYER` in src/component_registry.cpp only stops it being a build's
+      default Sound member.
+
+      Our own dome already runs one. The operator's AstroPixelsPlus fork commands a
+      DFPlayer through `MarcduinoSound.h` and shows three things a protoArtoo driver
+      should not copy (the sheet's AstroPixelsPlus section has the code facts): it
+      plays with `0x03` while its own setup guide documents the `/mp3/NNNN.mp3`
+      layout of `0x12`; its `begin()` runs the DFRobot library's 2.2 s
+      reset-and-wait and treats failure as fatal for the session; and it calls the
+      library in ACK mode without draining track-finished frames, which is the
+      library's unbounded-loop path. The dome's DFPlayer also takes `Serial1` and
+      excludes FireStrip and BadMotivator: the same UART scarcity artoo-esp32 has,
+      reached independently on another board.
+
+      A card moved from a MarcDuino-family droid keeps its file numbers and loses
+      the bank semantics: protoArtoo maps `$nnn` straight to `playTrack(nnn)` with
+      named slots in NVS, not the 9x25 bank grid. A documentation point, not a code
+      one.
+
+      The seam fits without changes:
+      - `AUDIO_DFPLAYER = 2` is reserved in include/audio_driver.h.
+      - Volume: `0x06` takes 0-30 ascending, the interface's normalised range. No
+        scaling.
+      - `playTrack()` is "1-based index (maps directly to SD card file number)".
+        Only `0x12` with `/mp3/NNNN.mp3` delivers that; `0x03` addresses by write
+        order. Use `0x12`.
+      - `AudioModuleState`'s four fields map onto four queries: play state `0x42`,
+        device `0x3F`, total tracks `0x48`, current track `0x4C` (the `0x47`/`0x48`
+        and `0x4B`/`0x4C` choice is the sheet's Open Item 2).
+      - `begin(vol)` already receives the NVS volume. Send `0x06` before the first
+        play: the module powers up at 30, its maximum.
+
+      What has to be written: one driver pair (include/audio_dfplayer.h,
+      src/drivers/audio_dfplayer.cpp) shaped like the DY-SV5W driver - a send
+      routine, a query with a bounded timeout, a `begin()` that runs a couple of
+      queries, `queryModuleState()` - on the existing `AudioSerialIO` transport
+      unchanged. Then an instance in `kSoundMemberDrivers`
+      (src/tasks/audio_sound_member.cpp; its `static_assert` fails the build if a
+      selectable Sound row has no driver), and the registry row moved to supported
+      with its capability word. No Board Capability Gate: it bolts to the same
+      `PIN_AUDIO_TX` at the same 9600 baud as the other Sound members (ADR 0042).
+      `BUSY` on a spare GPIO would be an optional capability, not a gate.
+
+      Driver rules the sheet's findings force:
+      - The frame builder emits with or without the two checksum bytes, chosen by a
+        setting: some clones reject checksummed frames and nothing on the wire says
+        which silicon a builder fitted.
+      - The frame builder is a pure function with no static state, and every
+        constant it emits is asserted in a native test. Never copy a byte sequence
+        from the vendor datasheet; all three of its worked examples are wrong.
+      - Do not use the DFRobot library. Its ACK-mode `sendStack()` can spin forever
+        on `delay(0)`, which on ESP32 never lets the idle task run; the Task Watchdog
+        then resets the controller, and TWDT reset -> estop on boot is a safety
+        invariant. Wait through the `delayMs` hook of `AudioSerialIO` (yield-safe in
+        production).
+      - `begin()` bounds its own wait and returns false, so AudioTask's init retry
+        owns recovery. No 2.2 s reset-and-hope, and no reset on every retry (the reset
+        is audible).
+      - Match replies on CMD; unsolicited `0x3A`-`0x3F` frames arrive between a query
+        and its answer.
+      - Translate the device code explicitly. `AudioModuleState.device` is
+        0=USB 1=SD/TF 2=FLASH 3=Flash+SD 0xFF=unknown; the module's library codes are
+        1=U-disk 2=SD 5=FLASH over a `0x3F` bitmask of 0x01/0x02/0x08. Passed straight
+        through, an SD card reads as FLASH. Assert the translation in a native test.
+      - Read `0x46` (software version) at `begin()` and log it, so a field report
+        carries the one identifying number a clone offers.
+      - Read the total-file count at `begin()` and compare it with the configuration:
+        the cheapest detection of a card rebuilt wrong.
+      - Say "no card" rather than "module missing" when `0x3F` never arrives: an
+        exFAT card looks exactly like an absent one.
+      - Watch for `0x3A` (card inserted) and answer with a pause about 100 ms later,
+        or a card swap makes the droid play track 1.
+
+      Board cost: TX is the existing bit-banged soft UART at 9600. A 10-byte frame
+      is about 10.4 ms of nominal wire time on Core 0 against 4-6 bytes for a
+      DY-SV5W play; at a few commands per second that stays inside the soft UART's
+      "infrequent" assumption, so no new transport is needed.
+
+      Read path on artoo-esp32: this sheet's research (2026-09-11) predates #396 and
+      assumed audio RX shares UART2 with DomeLink, so that pushed `0x3D`/`0x3A`
+      frames would be missed whenever the dome holds the bus and `BUSY` would be the
+      only always-available play state. Since #396 the GPIO-sampled soft RX takes
+      bytes while the dome owns UART2, and the MP3 Trigger driver is the pattern.
+      Whether a DFPlayer driver still needs a `classifyRxStatus()` override depends on
+      how its queries go through `audioUartClaim()`; re-check against the code when
+      the driver is written. FireBeetle 2 has a dedicated audio UART.
+
+      Verification: the protocol half - frame bytes, checksums, `0x12` addressing,
+      unsolicited-frame handling, reply matching, the device-code translation - is
+      natively testable through an injected `AudioSerialIO`, on a laptop. This
+      corrects #305's "this needs a signal on a pin, so it is droid-gate work": only
+      the audible half is droid-gate (a speaker, a card and a listener).
+
+      `AUDIO_CAP_QUERY_SAFE_PLAYING` is set only after the sheet's Open Item 5 is
+      measured. CHIRP declares it; DY-SV5W does not.
+
+      Builder documentation should name the idle-hiss solder bridge (hiss when idle,
+      or a click at each file's start and end) and the FAT32, 32 GB card limit.
+
+      The module has not run on this project's hardware.
