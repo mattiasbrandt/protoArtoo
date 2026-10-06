@@ -9,8 +9,8 @@ Base URL: `http://artoo.local` — the artoo-esp32 controller's default mDNS nam
 (or the device IP — `GET /api/wifi` → `staIp`, or `10.0.0.22` if mDNS is
 flaky). A FireBeetle 2 controller answers at `http://firebeetle2.local`
 instead; the two boards default to different names so they never contest each
-other on the same LAN (#242). All HTTP probes work on the **seated**
-controller; esptool flash/write operations do **not**. USB serial monitoring
+other on the same LAN (#242). On the Artoo PCB, all HTTP probes work on the
+**seated** controller; esptool flash/write operations do **not**. USB serial monitoring
 remains readable with the reset caveat below.
 
 ---
@@ -77,8 +77,8 @@ reset, not a crash). A clean reset has no coredump.
 
 Symptom: PANIC under load, or OTA failing mid-transfer, or sluggish HTTP. Root
 class on this board is **internal-heap exhaustion** → failed allocation →
-(exceptions-disabled) `abort()` → PANIC. See issue #8 and
-[tasks/heap-exhaustion-and-flash-findings-2026-06-19.md].
+(exceptions-disabled) `abort()` -> PANIC. See issue
+[#8](https://github.com/mattiasbrandt/protoArtoo/issues/8).
 
 ### Quick read (any build, over HTTP)
 
@@ -214,8 +214,9 @@ To see what a run of tests does to the heap, do not poll `/api/status` with
 pressures of its own:
 
 - connection churn is the heap pressure ADR 0023 measured;
-- the admission guard refreshes its cached heap sample on every accept
-  (`src/web/web_admission.cpp:335`).
+- the admission guard walks the heap to refresh its cached sample on an
+  accept once the sample interval has passed
+  (`sessionCachedSample()`, `src/web/web_admission.cpp:307-314`).
 
 Measured on artoo `f0c4d037`, 2026-09-29 (#355):
 
@@ -263,7 +264,7 @@ Two things make this build different from the one you ship, so use it to learn
   and while one is open every minimum reading, `/api/status` `heapMin` included,
   is that window's (`esp_heap_caps.h`). A new window opens on every dome, RC,
   audio or live-update stream connect and disconnect
-  (`src/tasks/safety.cpp:152,158`, `src/web/api_profiler.cpp:341,347`), so in
+  (`src/tasks/safety.cpp:152,158`, `src/web/api_profiler.cpp:342,348`), so in
   practice on nearly every page load. `heapMin` can go **up** between two
   readings.
 
@@ -343,11 +344,11 @@ compare that value separately when diagnosing remote dome ingress drops.
 
 ## 3. Flashing constraint (READ before collecting USB evidence)
 
-**The seated controller cannot be USB-flashed or have flash memory read by
-esptool.** GPIO15 is `PIN_SBUS1_RX`, a strapping pin; the SBUS receiver fights
+**On the Artoo PCB, the seated controller cannot be USB-flashed or have flash
+memory read by esptool.** GPIO15 is `PIN_SBUS1_RX`, a strapping pin; the SBUS receiver fights
 download-mode strapping and the PCB loads the EN/GPIO0 auto-reset circuit, so
 esptool reports *"Download mode detected, but no sync reply / TX path seems
-down"* (`tasks/lessons.md:549`). USB serial monitoring is a separate read path
+down"*. USB serial monitoring is a separate read path
 and remains available as described below.
 
 - **Seated → use OTA** (`make ota OTA_IP=...`) and **HTTP** for all evidence
@@ -379,8 +380,8 @@ log means the device could not open the TCP connection *back*, i.e.
 dropped, and by default espota chooses a **random** host port each run, so
 there is no single rule to add ahead of time.
 
-Fix: `make ota` (and every other `make *-ota` target, plus the `make`
-interactive wizard) pins that host port to a fixed value —
+Fix: `make ota`, the OTA path of `make uploadfs`, and the interactive wizard
+(bare `make`) pin that host port to a fixed value -
 `OTA_HOST_PORT`, default **32320** — via `tools/ota_upload.py --host-port`.
 Allow it once on your host:
 
@@ -400,7 +401,7 @@ Every image carries **two** version strings, and they disagree by design:
 
 | String | Source | Reported by |
 | --- | --- | --- |
-| `PA_FIRMWARE_VERSION` | `tools/extract_version.py`, at project build time | `/api/status` `firmwareVersion` (`src/web/web_server.cpp:400`), `data/fw-version.json` |
+| `PA_FIRMWARE_VERSION` | `tools/extract_version.py`, at project build time | `/api/status` `firmwareVersion` (`src/web/web_server.cpp:280`), `data/fw-version.json` |
 | ESP-IDF app descriptor | baked into `libesp_app_format.a` in the **framework-libs pool**, at *framework-lib compile* time | `esptool image_info`, `esp_app_get_description()`, OTA tooling that inspects the descriptor |
 
 Two consequences, both of which have cost time:
@@ -414,7 +415,7 @@ Two consequences, both of which have cost time:
   `git describe --dirty`. `data/fw-version.json` and `data/fs-version.json` are
   tracked, rewritten by every build, and their committed content is hundreds of
   commits stale, so the tree is never clean at build time.
-  `tools/extract_version.py:64` excludes exactly those two files for exactly
+  `tools/extract_version.py:80-81` excludes exactly those two files for exactly
   this reason; IDF has no such exclusion and cannot be told about one.
 
 **Trust `/api/status` `firmwareVersion` (or `data/fw-version.json`). Do not read
@@ -668,14 +669,16 @@ Clearing estop (`POST /api/estop/clear`) makes the body **resync the dome to a
 known safe state**. You will hear the dome **ring panels "park" (drive closed)**,
 even if they were already closed. This is by design, not a reboot or crash.
 
-On the estop-clear edge, `src/tasks/sequence_dispatcher.cpp` emits, over the body
-link:
+On the estop-clear edge, `src/tasks/sequence_dispatcher.cpp` emits, over
+protoR2link:
 
 ```
-#PAWU                              # wake state re-sent (sleep-sync arbiter)
-@0T1  @0P1                         # logic + PSI reset (immediate, non-servo)
+@0T1  @0P1  *ST00                  # logic, PSI and holo reset (immediate, non-servo)
 :CL01 :CL02 :CL03 :CL04 :CL07 :CL11 :CL13   # staggered ring close, 500 ms apart
 ```
+
+Clearing the estop sends no `#PAWU`. The body sends `#PAWU`/`#PASL` only on a
+fresh dome connect or a sleep-mode change (`src/dome_link_arbiter.cpp`).
 
 Why: after an estop the dome's panel state is **unknown**, so the body assumes
 closed and resyncs to a safe state (same pattern as the dome-reconnect resync,
@@ -686,7 +689,7 @@ are never auto-closed on resync.
 
 Verify it was the resync and not a fault: dome `/api/health` `reset_reason` stays
 `POWERON`, `coredump_present=false`, and the dome RX log shows the inbound
-`#PAWU`/`@0T1`/`@0P1`/`:CLnn` above with **no** group close. The dome has no
+`@0T1`/`@0P1`/`*ST00`/`:CLnn` above with **no** group close. The dome has no
 internal panel-home/park handler — panel servos move only on actual inbound
 `:OP`/`:CL`/`:OF`/`:SM`/DM commands (confirmed body + dome 2026-06-29).
 
@@ -724,14 +727,14 @@ deliberate: a command shortened halfway through a value is not the command you
 typed, so it never runs. Backspacing back under the limit does not help — the
 characters that were dropped were never stored, so the line is still refused.
 
-Retype the command in the dashboard's Live Logs command box, where the limit is
+Retype the command in the dashboard's Console command box, where the limit is
 255 bytes, or keep serial commands short.
 
 ### An action answers `blocked reason=blocked-by-state` or `unavailable reason=temporarily-unavailable`
 
 - `blocked reason=blocked-by-state` on an action almost always means **Web
-  control** is off — turn it on with the **✓ Enable Web Control** button
-  under Safety Controls on the Drive page, `POST /api/web-control/enable`,
+  control** is off - turn it on with the **Enable web control** button
+  in the Drive card on the **Foot Drive** page, `POST /api/web-control/enable`,
   or the Console command `system.action.enable-web-control` (works from
   serial, needs no network, and needs no Web control of its own), then
   retry. `system.action.estop` always answers this way, on purpose; use the
@@ -789,6 +792,6 @@ only its `--json`).
 - Controller Console: [console.md](console.md), [console-protocol.md](console-protocol.md),
   [console-client.md](console-client.md) (`tools/console_client.py`).
 - WiFi setup, mode switching, recovery: [wifi-provisioning.md](wifi-provisioning.md) (ADR 0015).
-- Heap root-cause + fixes: GitHub issue #8 and `tasks/heap-exhaustion-and-flash-findings-2026-06-19.md`.
-- In-PCB USB flash limitation: `tasks/lessons.md` (2026-03-15 entry).
+- Heap root-cause + fixes: GitHub issue [#8](https://github.com/mattiasbrandt/protoArtoo/issues/8).
+- In-PCB USB flash limitation: [section 3](#3-flashing-constraint-read-before-collecting-usb-evidence) above.
 - ESP-IDF coredump guide: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/core_dump.html>
