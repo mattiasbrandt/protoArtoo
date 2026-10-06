@@ -59,7 +59,7 @@ The drive watchdog follows the receiver that carries drive: SBUS #1, or SBUS #2
 when the drive channels are routed to it (`include/rc_input_step.h`). A
 separate dome-spin receiver has its own watchdog: losing it records
 `FS_SBUS2_TIMEOUT` and stops the dome while drive continues
-(`include/robot_state.h:35`, `src/tasks/rc_input.cpp`). That is not a drive
+(`src/tasks/rc_input.cpp`). That is not a drive
 layer.
 
 ## Layer 3 - Web drive command timeout
@@ -88,7 +88,7 @@ timeout like any other.
 
 - Source: the chip's watchdogs (task watchdog, interrupt watchdog, or RTC watchdog)
 - Implementation: `src/tasks/drive.cpp` feeds the task watchdog; the boot
-  decision is `src/failsafe_boot_twdt.cpp`, called from `src/main.cpp:516`
+  decision is `src/failsafe_boot_twdt.cpp`, called from `src/main.cpp`
 - Trigger: `DriveTask` stops reaching `esp_task_wdt_reset()` within
   `WATCHDOG_TIMEOUT_S` (3 s), or any other watchdog reset (interrupt WDT,
   RTC WDT, super WDT) that defeats the panic handler
@@ -108,9 +108,9 @@ something was wrong.
 - Source: the operator
 - Implementation: `src/failsafe_gate.cpp` (`failsafeClearEstop()` is the only
   path that clears it)
-- Trigger: `POST /api/estop`, or the STOP button on the top bar
+- Trigger: `POST /api/estop`, or STOP in the web interface
 - Result: `estop=true`, `failsafeSource=FS_ESTOP_CMD`
-- Cleared by: the top-bar estop button's release, `POST /api/estop/clear`,
+- Cleared by: releasing STOP in the web interface, `POST /api/estop/clear`,
   `POST /api/manual-command` with `command=clear_estop`, or the Console's
   `system.action.estop-clear`
 
@@ -137,13 +137,12 @@ The system boots with conservative defaults:
 
 - when the receiver mode reads drive from SBUS, the SBUS watchdog layer is set
   at boot (`sbusSignalLost = true`) and clears after valid drive-receiver
-  traffic is seen (`src/main.cpp:509-511`); with no Radio Controller fitted
+  traffic is seen; with no Radio Controller fitted
   there is no radio layer to set
 - watchdog-reset reboot sets `estop = true`
 - the persisted Settings (`speedLimitMax`, `sbusTimeoutMs`,
   `webDriveTimeoutMs`) are loaded into the config cache before tasks start;
   tasks read them as a `ConfigSnapshot` through `configCacheRead()`
-  (`src/main.cpp:89-91`, `src/drive_arbiter.cpp:147`)
 
 ## Implementation notes
 
@@ -168,48 +167,47 @@ protoArtoo runs on dual-core processors (ESP32 classic or ESP32-P4). Real-time
 drive control and SBUS input processing are pinned to Core 1 to avoid
 contention with WiFi, web API, and housekeeping tasks.
 
-Stack sizes differ per chip. The tables below give the artoo-esp32 (ESP32)
-value and the firebeetle2 (ESP32-P4) value. The measured call chain each one is
-sized from lives in `tools/task_stack_recipes.json`, generated into
-`include/task_stack_figures.h` (ADR 0040).
+Stack sizes differ per chip and move with the code: they live in
+`tools/task_stack_recipes.json`, with the measured call chain each one is sized
+from, generated into `include/task_stack_figures.h` (ADR 0040).
 
 **Core 1 (Real-Time Control Loop - 50 Hz drive frame rate):**
 - All tasks in this section must not allocate memory after startup.
 - Priorities are relative within Core 1; lower priority tasks yield to higher.
 
-| Task | Priority | Stack (ESP32 / ESP32-P4) | Rationale |
-|------|----------|-------|---|
-| **DriveTask** | 5 | 5632 / 6656 B | 50 Hz Foot Drive frame transmission + TWDT reset. Core-critical. Runs every 20 ms. Must complete within period or the hoverboard coasts. |
-| **RCInputTask** | 5 | 6656 / 7168 B | ~200 Hz RC poll (SBUS or PWM). Decodes frames and routes to failsafe/arbiter. Core-critical. Not created when the receiver mode reads no input (`elrs`, `not_fitted`). |
-| **ServoTask** | 4 | 4096 / 5120 B | 50 Hz servo/ESC PWM updates for arms and dome ESC. Processes queue without blocking. |
-| **DomeTask** | 4 | 4096 / 5632 B | 50 Hz dome ESC command application. Processes queue, applies speed presets, respects estop. Not created when the Dome ESC is off at boot. |
-| **DomeLinkTask** | 3 | 6144 / 10240 B | protoR2link to the Dome Controller (AstroPixelsPlus) over UART2. Runs the protoR2link Arbiter (UART slip ring vs WiFi fallback). Non-blocking I/O. |
+| Task | Priority | Role |
+|------|----------|------|
+| **DriveTask** | 5 | 50 Hz Foot Drive frame transmission + TWDT reset. Core-critical. Must complete within its 20 ms period or the hoverboard coasts. |
+| **RCInputTask** | 5 | RC poll (SBUS or PWM). Decodes frames and routes to failsafe/arbiter. Core-critical. Not created when the receiver mode reads no input (`elrs`, `not_fitted`). |
+| **ServoTask** | 4 | 50 Hz servo/ESC PWM updates for arms and dome ESC. Processes its queue without blocking. |
+| **DomeTask** | 4 | 50 Hz dome ESC command application. Applies speed presets, respects estop. Not created when the Dome ESC is off at boot. |
+| **DomeLinkTask** | 3 | protoR2link to the Dome Controller over UART2, including the protoR2link Arbiter (UART slip ring vs WiFi fallback). Non-blocking I/O. |
 
 **Core 0 (Housekeeping, Web, OTA):**
 - Non-real-time tasks that handle WiFi, HTTP, SSE, OTA, audio, and logging.
 - May allocate and free memory per-request.
 - Do not block Core 1 RT loops.
 
-| Task | Priority | Stack (ESP32 / ESP32-P4) | Rationale |
-|------|----------|-------|---|
-| **Pca9685Task** | 6 | 3584 / 5120 B | Sends PCA9685 servo frames over I2C, so a release is never queued behind a page load. Not on the task watchdog (`src/drivers/pca9685.cpp:287`). |
-| **AudioTask** | 3 | 6144 / 9216 B | Commands to the sound module. On artoo-esp32 TX is a software bit-bang (blocking ~6 ms per command); on firebeetle2 the module has its own hardware UART. Kept off Core 1 to avoid timing interaction with DriveTask/ServoTask (`src/main.cpp:598-607`). Not created when audio is off at boot. |
-| **SequenceDispatcherTask** | 3 | 5120 / 7680 B | 10 ms body-side DM:* coordinator. Routes to queues without holding Core 1 (ADR 0004). |
-| **AuxLedTask** | 2 | 4096 / 7168 B | WS2812B effects. Independent of Core 1. Conditional on presence of LED channels. |
-| **SafetyMonitorTask** | 2 | 4608 / 5120 B | 10 Hz audit loop. Logs failsafe transitions and heap diagnostics. Low priority observer. |
-| **Console** | 2 | 11264 / 14848 B | Controller Console serial adapter (ADR 0036). Needs no network. |
-| **ReactionTask** | 2 | 5632 / 6656 B | 20 Hz. Fires the Reactions bound to the droid's own conditions (ADR 0053). Reads the resolved drive output from `RobotState`; adds nothing to DriveTask and is not on the task watchdog. |
-| **HostedRecovery** | 2 | - / 6144 B | ESP32-P4 only: recovers the link to the WiFi Module (`src/web/web_network_manager_hosted.cpp:965`). |
-| **WebEvents** | 1 | 6144 / 9216 B | SSE event-stream manager. Broadcasts status to connected clients. Background task. |
-| **ArduinoOTA** | 1 | 4096 / 8192 B | OTA firmware/filesystem updates. Started from WiFi event callback, runs in background. |
+| Task | Priority | Role |
+|------|----------|------|
+| **Pca9685Task** | 6 | Sends PCA9685 servo frames over I2C, so a release is never queued behind a page load. Not on the task watchdog. |
+| **AudioTask** | 3 | Commands to the sound module. On artoo-esp32 TX is a software bit-bang (blocking ~6 ms per command); on firebeetle2 the module has its own hardware UART. Kept off Core 1 to avoid timing interaction with DriveTask/ServoTask. Not created when audio is off at boot. |
+| **SequenceDispatcherTask** | 3 | Body-side DM:* coordinator. Routes to queues without holding Core 1 (ADR 0004). |
+| **AuxLedTask** | 2 | WS2812B effects. Independent of Core 1. |
+| **SafetyMonitorTask** | 2 | Audit loop. Logs failsafe transitions and heap diagnostics. Observer only. |
+| **Console** | 2 | Controller Console serial adapter (ADR 0036). Needs no network. |
+| **ReactionTask** | 2 | Fires the Reactions bound to the droid's own conditions (ADR 0053). Reads the resolved drive output from `RobotState`; adds nothing to DriveTask and is not on the task watchdog. |
+| **HostedRecovery** | 2 | ESP32-P4 only: recovers the link to the WiFi Module. |
+| **WebEvents** | 1 | SSE event-stream manager. Broadcasts status to connected clients. |
+| **ArduinoOTA** | 1 | OTA firmware/filesystem updates. Started from the WiFi event callback. |
 
 **Pinning Mechanism Validity on ESP32-P4:**
-- Dual-core verified: `SOC_CPU_CORES_NUM = 2U` (components/soc/esp32p4/include/soc/soc_caps.h:179)
+- Dual-core verified: `SOC_CPU_CORES_NUM = 2U` (components/soc/esp32p4/include/soc/soc_caps.h)
 - `xTaskCreatePinnedToCore()` signature and semantics identical on P4 RISC-V
   (components/freertos/esp_additions/include/freertos/idf_additions.h)
 - `CONFIG_FREERTOS_UNICORE` not set (dual-core SMP enabled by default)
 - Core IDs (0, 1) are valid on both classic ESP32 and ESP32-P4 RISC-V
-- TWDT configuration (`esp_task_wdt_config_t`) unchanged on P4 (components/esp_system/include/esp_task_wdt.h:22-25)
+- TWDT configuration (`esp_task_wdt_config_t`) unchanged on P4 (components/esp_system/include/esp_task_wdt.h)
 
 **What Breaks If A Task Moves:**
 - Move **DriveTask** off Core 1: WiFi ISRs on Core 0 may preempt the 50 Hz loop, causing frame continuity loss. Safety invariant violated.
