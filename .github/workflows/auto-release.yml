@@ -56,7 +56,7 @@ concurrency:
 jobs:
   release:
     name: decide and tag
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     # Skip this workflow's own CHANGELOG commit and version-sync.yml's version
     # JSON commit. See the loop-safety note in the header.

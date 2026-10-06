@@ -35,7 +35,7 @@ jobs:
   # No history lookup, and no table to keep in step with anything.
   classify:
     name: classify the tag
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       tier: ${{ steps.tier.outputs.tier }}
@@ -60,7 +60,7 @@ jobs:
     # A patch release ships no images, so the four builds are skipped outright
     # rather than run and thrown away.
     if: needs.classify.outputs.tier == 'full'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -147,7 +147,7 @@ jobs:
       always() &&
       needs.classify.result == 'success' &&
       (needs.build.result == 'success' || needs.build.result == 'skipped')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: write
