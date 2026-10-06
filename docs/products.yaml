@@ -1152,8 +1152,76 @@ products:
         - { from: "3.5 mm jack", to: "an amplifier", note: "no amplifier on the module" }
       hazards:
         - "The droid talks 9600 only, and the stock firmware talks 115200. Hold Prev and press Play/Stop until the module says 9600."
-      source: "2.1, 2.2, 6.1, 6.2"
-    notes: ""
+      source: "2.1, 2.2, 5.1, 5.2"
+    notes: |
+      The droid talks 9600, and the stock firmware talks 115200. The module in this
+      droid runs a build from a local clone whose default is already 9600; a stock
+      module needs `#BAUD_RATE 9600` in CHIRP.INI or Prev + Play/Stop until it says
+      9600.
+
+      The local clone (~/Documents/GitHub/CHIRP, upstream 3adcc0d) is a fork in both
+      directions:
+      - Local, not upstream: platformio.ini, variants/chirp_revb/pins_arduino.h,
+        protoArtoo-config.md, platformio-psram-issue.md and
+        sound-bank-page-detection.md are untracked additions, and CHIRP_Audio.ino and
+        config.h are modified. The substance (boot hardening, the PSRAM linker fix,
+        the 9600-baud default, pmalloc() null guards) is recorded in
+        protoArtoo-config.md; the sheet's build contract and cold-boot fix come from
+        it.
+      - Upstream, not local: origin/main has moved on and carries
+        CHIRP_Droid_Control/ plus its own platformio.ini and main.cpp, which the local
+        HEAD predates.
+      - ~/Dropbox/R2-CHIRP/protoArtoo-chirp-changes.md is an older copy of
+        protoArtoo-config.md and is stale where they disagree (it says
+        `board = pimoroni_pico_plus_2`; the cold-boot fix is `board = rpipico2`). Read
+        the in-tree copy.
+      - The droid's card is ~/Dropbox/R2-CHIRP/CHIRP-SD.zip: 1A_general plus 13 Bank
+        2-6 directories, which is past the module's 12-directory GMAN limit. The
+        driver recovers Bank 1's count from LIST when BANK:1 is lost; whether the
+        loss happens on the wire is the sheet's Open Item 1.
+
+      Upstream change request: sound-bank-page-detection.md, in the local clone, is
+      this project's request to the author. It asks that GMAN report every valid
+      Bank 1 page, not only the active one; that `GNME:1,<page>,<index>` honour the
+      page; and that `PLAY:<index>,1,<page>` play from it. Today only the active
+      `#BANK1_PAGE` is scanned, so a second Bank 1 personality (1A_R2D2 beside
+      1B_R5D4) needs an INI edit or a button combo and a reboot. The driver now
+      accepts the empty Bank 1 page instead of reading it as `A`, so names no longer
+      degrade to index_N on page B; the request still matters for more than one Bank
+      1 page. The author is reachable and has acted on this project's findings before:
+      the cold-boot bug was diagnosed jointly, the author reproducing it under
+      PlatformIO and not under the Arduino IDE. The announcement the sheet quotes
+      (the five complaints) is quoted on #387.
+
+      Open decisions carried from the sheet:
+      - What the Component Picker card says about a part nobody can buy. Every other
+        card names a purchasable product; a greyed roadmap treatment would be wrong,
+        since it ships and works. An operator decision with #316's photograph; it
+        also decides what #387's image-provenance record says.
+      - Whether to expose `CHRP:`. A synthesised sweep needs no card, no catalog and
+        no binding, so it is the one sound that always plays, a natural boot or error
+        signal on an empty card. Nothing sends it today. Cheap to try:
+        `CHRP:500,100,500,50` from the Controller Console.
+      - Whether `chirp_bindings` and the `chr_*` NVS keys become capability-shaped.
+        They name a product where a capability belongs, so any future member
+        declaring AUDIO_CAP_CATALOG would inherit the CHIRP Audio Trigger's name in its
+        own config. Recorded on #175 and deliberately not ticketed: renaming stored NVS
+        keys and a public API field is the cost.
+      - Whether this droid wants more than one Bank 1 personality. If it does, the
+        change request above is the fix.
+
+      Settled since the sheet was written, recorded so nobody re-opens them:
+      - The capability rows: device type is the constant Flash+SD (3, now in the
+        enumeration) and current track is parsed from what STAT says is playing.
+      - MSUM is saved beside the bindings as chr_msum and compared at boot and after
+        each refresh; the Sound page warns when the card's sound list changed (#397).
+        The sheet's old Finding 13.5, "MSUM is thrown away", is stale.
+      - One stream can be stopped: the Background Track (ADR 0054, built in #447)
+        sends STOP:<n>.
+      - The soft UART's cost note now covers CHIRP's ASCII commands.
+      - A zero-page Banks 2-6 NAME reply is rejected by the parser and the entry
+        falls back to index_N, rather than storing a shifted name. No card in use
+        has a pageless directory.
 
   - value: 21
     id: dfplayer_mini
