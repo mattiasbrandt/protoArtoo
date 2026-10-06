@@ -197,8 +197,8 @@ make help             # List all named targets
 **Building for the FireBeetle 2:** the same targets take `BUILD_ENV=firebeetle2`
 (`make build BUILD_ENV=firebeetle2`, `make flash BUILD_ENV=firebeetle2 UPLOAD_PORT=/dev/ttyACM0`),
 and `make` selects the ESP32-P4 toolchain for it. Its release images are
-`firebeetle2-firmware.bin` and `firebeetle2-filesystem.bin`, built for the DY-SV5W
-audio module. Wiring and both boards' pin maps are in
+`firebeetle2-firmware.bin` and `firebeetle2-filesystem.bin`; the sound module is
+picked on Configuration, not built in. Wiring and both boards' pin maps are in
 [`docs/pin_map.md`](./docs/pin_map.md); the chip revision, allocation tables and
 known issues are in the
 [spec sheet](./docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md).
