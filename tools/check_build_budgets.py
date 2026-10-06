@@ -30,8 +30,15 @@ After each env's firmware build, and again after its `buildfs`, the env's
 framework envelope is checked (tools/check_framework_envelope.py): a `buildfs`
 can half-run the shared pool's rebuild and exit 0 with the budget still
 passing, which is how the 2026-08-29 image went out pristine.
+
+`--env <name>` (repeatable) builds only the named envs, so each CI board job
+builds its own. `--summary <path>` writes every row as a Markdown table --
+flash and filesystem headroom, the boot heap against its limit, the envelope
+-- for the Verification summary and pull request comment. It is written
+whatever the verdict, a failed build included.
 """
 
+import argparse
 import contextlib
 import json
 import os
@@ -57,6 +64,16 @@ FAILURE_TAIL_LINES = 100
 # measured on main, 40 files totalling 299,320 B occupy 397,312 B of blocks.
 LITTLEFS_BLOCK_SIZE = 4096
 ERASED_BLOCK = b"\xff" * LITTLEFS_BLOCK_SIZE
+
+
+def _bytes(n):
+    return f"{n:,} B"
+
+
+def summary_row(label, ok, measured="", limit="", headroom=""):
+    """One row of the --summary table: what was measured, against what, and
+    how much room is left. Every check_* function appends exactly one."""
+    return (label, ok, measured, limit, headroom)
 
 
 def load_budgets():
@@ -232,14 +249,17 @@ def check_one(kind, env_name, actual, budget, ceiling, results):
 
     if actual is None:
         print(f"\u2717 {label}: BUILD FAILED", file=sys.stderr)
-        results.append((label, None, budget, False))
+        results.append(summary_row(label, False, "build failed", _bytes(budget)))
         return False
 
     over_ceiling = actual > ceiling
     over_budget = actual > budget
     ok = not over_ceiling and not over_budget
     status = "\u2713" if ok else "\u2717"
-    results.append((label, actual, budget, ok))
+    measured = _bytes(actual)
+    if kind == "fs":
+        measured += f" ({actual // LITTLEFS_BLOCK_SIZE} blocks)"
+    results.append(summary_row(label, ok, measured, _bytes(budget), f"{budget - actual:,} B"))
 
     if over_ceiling:
         pct = (actual / ceiling) * 100
@@ -270,7 +290,7 @@ def check_envelope(env_name, after, results):
     except Exception as e:
         print(f"  FAILED: envelope check for {env_name}: {e}", file=sys.stderr)
         ok = False
-    results.append((label, None, None, ok))
+    results.append(summary_row(label, ok, "held" if ok else "did not hold"))
     status = "\u2713" if ok else "\u2717"
     print(f"{status} {label}", file=sys.stderr)
     return ok
@@ -294,10 +314,18 @@ def check_boot_heap(env_name, env_budget, figure, results):
     label = f"{env_name} boot heap"
     if figure is None:
         print(f"\u2717 {label}: NOT MEASURED", file=sys.stderr)
-        results.append((label, None, None, False))
+        results.append(summary_row(label, False, "not measured"))
         return False
     ok, detail, notes = slice_verify.boot_heap_verdict(figure, env_budget, None)
-    results.append((label, figure, env_budget.get("boot_heap_baseline_bytes"), ok))
+    # The limit is the baseline plus its threshold: growth up to the threshold
+    # passes (slice_verify.boot_heap_verdict), so that is where the room ends.
+    baseline = env_budget.get("boot_heap_baseline_bytes")
+    threshold = env_budget.get("boot_heap_threshold_bytes")
+    if baseline is not None and threshold is not None:
+        limit = baseline + threshold
+        results.append(summary_row(label, ok, _bytes(figure), _bytes(limit), f"{limit - figure:,} B"))
+    else:
+        results.append(summary_row(label, ok, _bytes(figure), "no baseline"))
     status = "\u2713" if ok else "\u2717"
     print(f"{status} {label}: {detail}", file=sys.stderr)
     for note in notes:
@@ -308,13 +336,44 @@ def check_boot_heap(env_name, env_budget, figure, results):
     return ok
 
 
-def main():
+def write_summary(path, results):
+    """Write the rows as a Markdown table, the way the Verification summary
+    and pull request comment show them."""
+    lines = ["| | Check | Measured | Limit | Headroom |", "|---|---|---|---|---|"]
+    for label, ok, measured, limit, headroom in results:
+        mark = "\u2705" if ok else "\u274c"
+        lines.append(f"| {mark} | {label} | {measured} | {limit} | {headroom} |")
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--env", action="append", dest="envs", metavar="NAME",
+                        help="build only this env (repeatable); default every env in "
+                             "tools/build_budgets.json")
+    parser.add_argument("--summary", metavar="PATH",
+                        help="also write every row as a Markdown table to PATH")
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
     budgets = load_budgets()
     envs = budgets.get("envs", {})
 
     if not envs:
         print("ERROR: No environments in budgets file", file=sys.stderr)
         sys.exit(1)
+
+    if args.envs:
+        # An env with no budget would build nothing and pass, so a misspelt
+        # --env in a workflow must fail rather than turn the job green.
+        unknown = sorted(set(args.envs) - set(envs))
+        if unknown:
+            print(f"ERROR: no budget for {', '.join(unknown)} in {BUDGETS_FILE.name}; "
+                  f"budgeted envs: {', '.join(sorted(envs))}", file=sys.stderr)
+            return 2
+        envs = {name: envs[name] for name in args.envs}
 
     print(f"Checking {len(envs)} environments...\n", file=sys.stderr)
 
@@ -370,9 +429,11 @@ def main():
             all_ok = False
 
     print("", file=sys.stderr)
-    print(f"Summary: {len([r for r in results if r[3]])} passed, "
-          f"{len([r for r in results if not r[3]])} failed",
+    print(f"Summary: {len([r for r in results if r[1]])} passed, "
+          f"{len([r for r in results if not r[1]])} failed",
           file=sys.stderr)
+    if args.summary:
+        write_summary(args.summary, results)
 
     return 0 if all_ok else 1
 
