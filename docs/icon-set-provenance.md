@@ -96,6 +96,25 @@ and its fate is #364's, so the shipped nav needed an icon the reference had no
 row for. It was picked from the twenty-two already taken rather than adding a
 twenty-third from an unread source.
 
+## The README's family icons
+
+The README's support cards (#475) carry one icon per Component Family, as
+standalone files under `docs/images/families/`. Each is the unmodified path data
+of a symbol the sprite above already carries, copied from `data/shell.js`, in a
+24x24 SVG filled `#8b949e`, a mid grey that reads on GitHub's light and dark
+backgrounds. They are repository documentation, not part of the filesystem
+image.
+
+| File | MDI name | The same symbol in the sprite |
+|---|---|---|
+| `body-controller.svg` | `chip` | Firmware, in the nav rail |
+| `radio-controller.svg` | `controller-classic-outline` | RC Control, in the nav rail |
+| `body-servo-controller.svg` | `robot-outline` | Servos, in the nav rail |
+| `dome-rotation.svg` | `rotate-360` | Dome, in the nav rail |
+| `dome-controller.svg` | `lightbulb-outline` | Lights, in the nav rail |
+| `foot-drive.svg` | `steering` | Foot Drive, in the nav rail |
+| `sound.svg` | `volume-high` | Sound, in the nav rail |
+
 ## One act, one icon
 
 Every action button on an operator surface wears the icon of its act (#460),
