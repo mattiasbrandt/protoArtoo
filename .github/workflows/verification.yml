@@ -167,9 +167,6 @@ jobs:
           fi
           exit "$code"
 
-      - name: Deliberate failure (#473 proof, reverted next commit)
-        run: exit 1
-
       # The budget script keeps every pio run's whole output in build-logs/
       # and prints only the tail of a failed one; a link error can start
       # above it.
