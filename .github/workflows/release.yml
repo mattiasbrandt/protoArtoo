@@ -76,17 +76,17 @@ jobs:
         # different upload_protocol).
         #
         # Each chip target has its own PlatformIO core dir, as in the
-        # Makefile and verification.yml: the classic ESP32 toolchain lives in
-        # ~/.platformio, the ESP32-P4 one (a different pioarduino platform
-        # version) in ~/.platformio-p4. `pool` names the cache, `core_dir`
-        # the directory under $HOME.
+        # Makefile and verification.yml: `pool` picks it in the shared setup
+        # (classic ~/.platformio, p4 ~/.platformio-p4, a different pioarduino
+        # platform version), and `cache` names Verification's board job whose
+        # cache entry this build restores.
         include:
           - env: artoo_esp32
             pool: classic
-            core_dir: .platformio
+            cache: artoo
           - env: firebeetle2
             pool: p4
-            core_dir: .platformio-p4
+            cache: firebeetle2
     steps:
       # Default depth-1 checkout is enough for the version stamp: on a tag
       # push the tag ref itself is fetched, so git describe resolves it at
@@ -94,65 +94,32 @@ jobs:
       - name: ⬇️ Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      # Python, PlatformIO 6.1.19, the Python tools, Node with esbuild on
+      # PATH, zopfli, the cache and, for the P4, the penv pin: the same setup
+      # Verification builds on (#473). `cache` matches Verification's board
+      # job, so a tag build restores the cache that job saved.
+      - name: 🧰 Set up the build
+        id: setup
+        uses: ./.github/actions/setup
         with:
-          python-version: '3.x'
-          cache: pip
-          cache-dependency-path: tools/requirements.txt
-
-      - name: 📦 Install PlatformIO and Python tools
-        # Pinned to the core the tree is verified with. An unpinned install
-        # picked up PlatformIO 6.2.0 on 2026-09-06, whose tool-scons 4.11
-        # fails every env at the link step with "No module named
-        # 'SCons.Tool.FortranCommon'"; 6.1.19 with tool-scons 4.8 links all
-        # of them. Bump deliberately, with a green run, not by drift.
-        run: pip install platformio==6.1.19 && pip install -r tools/requirements.txt
-
-      - name: 💾 Cache PlatformIO packages and toolchains
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          # Cache the whole core-dir tree for this chip target. The key
-          # matches verification.yml's, so a tag build restores the cache
-          # the PR gate already filled instead of re-downloading and
-          # re-unpacking the ESP-IDF toolchain.
-          path: ~/${{ matrix.core_dir }}
-          key: ${{ runner.os }}-pio-${{ matrix.pool }}-${{ hashFiles('platformio.ini') }}
-          restore-keys: ${{ runner.os }}-pio-${{ matrix.pool }}-
+          pool: ${{ matrix.pool }}
+          cache-name: ${{ matrix.cache }}
 
       # No secrets.h is provisioned here on purpose: release binaries must be
       # built without one so the Developer WiFi Shortcut (ADR 0015) stays
       # unavailable and a fresh controller boots into WiFi Provisioning.
       # Even the placeholder secrets.h.example defines the shortcut macros.
-      # esbuild minifies the web UI inside every pio build (tools/gzip_fsdata.py,
-      # #382) and the build refuses to run without it. npm ci installs the
-      # version package-lock.json pins; its bin directory goes on PATH.
-      - name: 🟢 Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
-        with:
-          node-version: lts/*
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: 📦 Install esbuild
-        run: |
-          npm ci
-          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
-
-      # zopfli gzips the web UI inside every pio build (tools/gzip_fsdata.py,
-      # #461), and the build refuses to run without it.
-      - name: 🗜️ Install zopfli
-        run: sudo apt-get install -y --no-install-recommends zopfli
 
       - name: 🏗️ Build firmware
+        env:
+          PLATFORMIO_CORE_DIR: ${{ steps.setup.outputs.core-dir }}
         run: |
-          export PLATFORMIO_CORE_DIR="$HOME/${{ matrix.core_dir }}"
-          mkdir -p "$PLATFORMIO_CORE_DIR"
           pio run -e ${{ matrix.env }}
 
       - name: 🗂️ Build filesystem image
+        env:
+          PLATFORMIO_CORE_DIR: ${{ steps.setup.outputs.core-dir }}
         run: |
-          export PLATFORMIO_CORE_DIR="$HOME/${{ matrix.core_dir }}"
           pio run -e ${{ matrix.env }} -t buildfs
 
       - name: 📦 Stage release artifacts
