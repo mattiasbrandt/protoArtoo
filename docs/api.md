@@ -174,8 +174,7 @@ routes each signal over.
     rides that controller - read the lane and the capability together.
     A lane whose wire contract is the lane's own also carries `baud` and
     `protocol` (`include/board_lane_wire.h`): today only `protor2link`, at
-    `9600` and `"marcduino"`, which Configuration's Dome Controller card
-    states. `drive` and `audio` carry neither, because their contract is the
+    `9600` and `"marcduino"`. `drive` and `audio` carry neither, because their contract is the
     fitted Component Member's.
   - `build_flags`: an object containing every Build Feature Flag from
     `include/build_flags.inc`, with boolean values
@@ -268,8 +267,7 @@ this one runs to roughly 5.5 KB; it is sent chunked.
       bitmask. `0` where the family has no vocabulary yet. Sound's bits are
       the `AUDIO_CAP_*` words (`include/audio_driver.h`); the Foot Drive's are
       `DRIVE_CAP_*` (`include/drive_capabilities.h`), where `1` says the Foot
-      Drive reports readings back and the Foot Drive page shows the wheel
-      controller's card only then.
+      Drive reports readings back.
     - `included`: whether this image carries a driver for it. A controller
       fact, not a project one: a `supported` part can read `false`.
     - `board_capability`: the `PA_CAP_*` gate it requires, or `null` for a part
@@ -2100,9 +2098,8 @@ Updates supported config fields and persists to NVS.
   `{"ok":false,"error":"soundMember is not a sound module this firmware can drive"}`.
   Independent of `enableAudio`: the toggle says a sound module is fitted, the
   member says which product it is. Saved immediately, **takes effect at the next
-  reboot** like a component toggle. Configuration's Component Picker writes
-  it from the Sound family's cards, which guided Setup shows as its step; its
-  "Not fitted" card is `enableAudio=false` (#369).
+  reboot** like a component toggle. Configuration writes it; "not fitted" is
+  `enableAudio=false` (#369).
 - components (Component Member): `bodyServoMember` — the body servo controller,
   a Component Registry part id from the `body_servo_controller` category:
   `esp32_gpio_ledc` (the board's GPIO, the default) or `pca9685`. Anything else
@@ -3212,13 +3209,11 @@ curl -s http://artoo.local/api/coredump/status
 Streams the raw ELF coredump from flash (chunked, no large heap buffer). When no
 coredump is stored it answers `404` instead (below). Retrieval works on the seated
 controller over WiFi — USB read is blocked when the ESP32 is in the PCB
-(GPIO15/SBUS strapping). Maintenance downloads it: its Crash dump card asks
-`/api/coredump/status` and offers this route as a link only when one is stored
-(#474).
+(GPIO15/SBUS strapping). Maintenance offers it for download when
+`/api/coredump/status` reports one (#474).
 
 - Success: `200` `application/octet-stream` (ELF). No `Content-Disposition` header is
-  sent; name the file yourself (`-o coredump.elf`), as Maintenance's link does with
-  its `download` attribute.
+  sent; name the file yourself (`-o coredump.elf`).
 - Errors:
 - `404` `{"ok":false,"error":"no coredump"}` — no coredump is stored
 - `500` `{"ok":false,"error":"no coredump partition"}`
