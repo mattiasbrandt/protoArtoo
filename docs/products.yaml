@@ -1123,10 +1123,9 @@ products:
 
       No documented serial failsafe. The SyRen 10 manual documents commands 0-3
       only, so whether it honours command 14 is UNKNOWN (the sheet's Open Item 1).
-      The Foot Drive seam's line that a packet-serial controller "is opt-in and
-      starving it makes the wheels STOP" (include/drive_backend.h) must not be read
-      across to the SyRen: an unarmed one holds its last command, and the dome
-      keeps turning.
+      The Foot Drive seam's packet-serial case (include/drive_backend.h: a 2x25 V2
+      armed with command 14 stops when starved) must not be read across to the
+      SyRen: an unarmed one holds its last command, and the dome keeps turning.
 
       It is a V1 autobaud device. A packet-serial driver waits 2 s after the SyRen
       powers up and sends 0xAA before any command; boot noise on the TX line can
@@ -1495,7 +1494,8 @@ products:
       either requires. That is not waste: the deadline is what makes an estop
       instantaneous rather than "within 800 ms", since a zero frame at 50 Hz reaches
       the wheels in one tick. The `DriveStarvation::Drifts` classification and the
-      20 ms deadline are right; the reason written beside them is not (finding 3).
+      20 ms deadline are right, and the comments beside them in
+      `include/drive_backend.h` and `src/tasks/drive.cpp` give that reason.
 
       Code review result: the frame encoding, the checksum, the parser state machine
       and the byte offsets were checked field by field against both upstreams and are
@@ -1529,28 +1529,17 @@ products:
          format costs one length constant, one offset table and one branch, and it
          would close finding 4 for EFeru boards at the same time.
 
-      3. Three operator-facing statements are true of only one firmware. The project
+      3. An operator-facing reading is true of only one firmware. The project
          supports two firmware families and treats them as one everywhere above the
-         parser:
-         - `include/drive_backend.h`, beside the backend profile, and the
-           zero-frame comment in `src/tasks/drive.cpp` say the mainboard "holds its
-           last command when the stream stops". That is true for 800 ms (EFeru) or
-           500 ms (RoboDurden), after which one coasts and the other soft-brakes.
-         - `docs/topology.md` safety layer 5 says the hoverboard firmware "stops its
-           motors after about 500 ms without a valid frame". That is RoboDurden's
-           figure and its soft brake; EFeru holds 800 ms and then coasts. As a layer it
-           is 0.5-0.8 s of continued motion followed by a coast or a ramp, the
-           opposite of what "safety layer" implies in a list whose other entries zero
-           the output. Either qualify it or drop it.
-         - The Drive page "Board temp" row shows a hardcoded 25.0 degC on RoboDurden
-           and an uncalibrated MCU-die reading on EFeru. The
-           `research-r2d2-sim-2026-09-09-ticket-digest.md` queues this string for a
-           rename to "Hoverboard Temp"; worth doing with whatever honesty treatment
-           the value gets, since renaming it without qualifying it makes a fabricated
-           number look more authoritative.
-         None of these is a code defect. All three have one root cause: the droid
+         parser. The Drive page "Board temp" row shows a hardcoded 25.0 degC on
+         RoboDurden and an uncalibrated MCU-die reading on EFeru. The
+         `research-r2d2-sim-2026-09-09-ticket-digest.md` queues this string for a
+         rename to "Hoverboard Temp"; worth doing with whatever honesty treatment the
+         value gets, since renaming it without qualifying it makes a fabricated number
+         look more authoritative. Not a code defect. The root cause is that the droid
          does not know which firmware is on the far end, and the copy was written as
-         though it did.
+         though it did. (The drive starvation comments and the Failsafe Layer docs
+         had the same root cause; they now name both firmwares.)
 
       4. The only odometry this project can reach is parsed past. Offsets 10 and 12
          of the RoboDurden frame are `wheelR_cnt` / `wheelL_cnt`, hall-step counters
@@ -1641,9 +1630,8 @@ products:
 
       Starving it does not reliably stop it. #308 records that the serial timeout
       "stops the motors when starved -- unlike the hoverboard, which drifts", and
-      include/drive_backend.h says today: "A packet-serial controller's (Sabertooth
-      setTimeout(), 100 ms granularity, 100 ms minimum) is opt-in and starving it
-      makes the wheels STOP." That holds only for a 2x25 V2 (or newer) on which
+      include/drive_backend.h used to say that starving a packet-serial controller
+      "makes the wheels STOP". That holds only for a 2x25 V2 (or newer) on which
       command 14 was sent since its last power-up:
       - the timeout is off by default and does not survive a controller power
         cycle or brownout, which the host cannot detect on a one-way bus;
@@ -1654,7 +1642,7 @@ products:
         given"), not Stops. A held throttle does not decay the way a drift does.
       So a Sabertooth profile cannot declare Stops unconditionally, and its
       continuity deadline means something only while the timeout is armed. The
-      header comment is not corrected yet.
+      header comment says so.
 
       What the driver's begin() has to do:
       - send 0xAA at the target baud, 2 s after the controller powers up (needed
