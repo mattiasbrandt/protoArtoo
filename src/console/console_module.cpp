@@ -432,9 +432,9 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
     // Aliases: comma-joined into one field value. Neither adapter's record
     // emitter quotes values itself (docs/console-protocol.md s.7 asks for it);
     // a caller quotes a value that needs it with consoleQuoteValue(), as the
-    // Output words and console_page above do. This stays comma-joined rather
-    // than space-separated so the value is one whitespace-free token and
-    // needs no quoting.
+    // Output words below and console_page above do. This stays comma-joined
+    // rather than space-separated so the value is one whitespace-free token
+    // and needs no quoting.
     if (entry->aliases != nullptr) {
         char aliasesBuf[128] = {};
         size_t used = 0;
