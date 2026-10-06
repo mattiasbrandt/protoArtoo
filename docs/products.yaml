@@ -1111,7 +1111,38 @@ products:
     gate: null
     included: 0
     sheet: sabertooth-syren-packet-serial.md
-    notes: ""
+    notes: |
+      Two ways onto the Dome Rotation lane (#309):
+      - R/C mode (SW1 down, SW2 up) takes a 1000-2000 us servo pulse, the shape
+        PIN_DOME_ESC already puts out for the ISDT ESC70 on both boards. #309
+        observes that a SyRen in R/C mode needs no new code there; not tried on
+        this project's hardware.
+      - Packet serial needs a UART. artoo-esp32 has none spare; the other route is
+        a share of the drive lane, which works only if the Foot Drive is a
+        Sabertooth on the same line (SyRen at 129, Sabertooth at 128).
+
+      No documented serial failsafe. The SyRen 10 manual documents commands 0-3
+      only, so whether it honours command 14 is UNKNOWN (the sheet's Open Item 1).
+      The Foot Drive seam's line that a packet-serial controller "is opt-in and
+      starving it makes the wheels STOP" (include/drive_backend.h) must not be read
+      across to the SyRen: an unarmed one holds its last command, and the dome
+      keeps turning.
+
+      It is a V1 autobaud device. A packet-serial driver waits 2 s after the SyRen
+      powers up and sends 0xAA before any command; boot noise on the TX line can
+      mis-baud it until a power cycle, so the 10k pull-down from S1 to 0V is
+      required wiring. On a line shared with a V2 Sabertooth, move the Sabertooth's
+      baud first (command 15), then the host, and let the SyRen autobaud.
+
+      S2 e-stop proposal: S2 is an active-low emergency stop on the SyRen and the
+      Sabertooth alike. Routing the Latching Estop to one shared S2 line would stop
+      dome and feet in hardware, independent of serial state or a hung MCU. A
+      design proposal for #308 and #309; not decided.
+
+      Baud: on a shared line run 38400 rather than 9600 (see sabertooth_2x25): drive
+      plus dome takes 3.13 ms of the 20 ms drive tick instead of 12.5 ms.
+
+      The product has not run on this project's hardware.
 
   # ---------------------------------------------------------------------------
   # Dome Controller
@@ -1612,7 +1643,86 @@ products:
     gate: null
     included: 0
     sheet: sabertooth-syren-packet-serial.md
-    notes: ""
+    notes: |
+      Which Sabertooth the entry names is open (#308). Dimension Engineering marks
+      the 2x25 discontinued and points at the 2x32, and Printed Droid steers
+      builders the same way. The packet-serial protocol is identical, so one driver
+      serves both; the entry, the price and the builder documentation differ.
+
+      Starving it does not reliably stop it. #308 records that the serial timeout
+      "stops the motors when starved -- unlike the hoverboard, which drifts", and
+      include/drive_backend.h says today: "A packet-serial controller's (Sabertooth
+      setTimeout(), 100 ms granularity, 100 ms minimum) is opt-in and starving it
+      makes the wheels STOP." That holds only for a 2x25 V2 (or newer) on which
+      command 14 was sent since its last power-up:
+      - the timeout is off by default and does not survive a controller power
+        cycle or brownout, which the host cannot detect on a one-way bus;
+      - the 2x25 V1 manual documents commands 0-13 only, so a V1 may have no
+        serial timeout at all;
+      - an unarmed or V1 controller holds its last command, which is what the
+        header's DriveStarvation::Drifts means ("holds the last command it was
+        given"), not Stops. A held throttle does not decay the way a drift does.
+      So a Sabertooth profile cannot declare Stops unconditionally, and its
+      continuity deadline means something only while the timeout is armed. The
+      header comment is not corrected yet.
+
+      What the driver's begin() has to do:
+      - send 0xAA at the target baud, 2 s after the controller powers up (needed
+        by V1 devices such as a SyRen on the same line; harmless on a V2);
+      - send command 14 to arm the serial timeout, and re-arm it, because it does
+        not persist and cannot be read back;
+      - never send ramping (16) or deadband (17): both persist in EEPROM and apply
+        in R/C and analog mode too, so a value written here follows the board out
+        of this firmware. Ramp in software, as the SHADOW lineage does;
+      - prime both mixed values (drive and turn) before expecting motion, and use
+        either the mixed or the independent commands, never both. The library's
+        stop() sends independent commands, so it forces a mode switch.
+
+      The zero-frame rule keeps a different reason. With the timeout armed, the
+      50 Hz zero frames and the controller's timeout are defence in depth. With it
+      unavailable or unarmed (V1, after a brownout), the zero frames are the only
+      thing between a hung controller board and a held throttle. The rule stays,
+      and the driver should report whether it believes the timeout is armed, which
+      it can believe and never verify.
+
+      S2 e-stop proposal: in packet serial, S2 is an active-low emergency stop on
+      the Sabertooth and the SyRen alike, and the vendor says to tie all S2 inputs
+      together. Routing the Latching Estop to one shared S2 line would stop feet
+      and dome in hardware, independent of serial state, an armed timeout or a hung
+      MCU, and make that invariant true in hardware rather than only in firmware.
+      A design proposal for #308 and #309; not decided.
+
+      Baud: run 38400, not the hobby's 9600. The drive tick is 20 ms. At 9600 a
+      drive update (two packets) plus a dome update (one) takes 12.5 ms, 62 % of
+      the tick; at 38400 it takes 3.13 ms. For comparison the hoverboard's 8-byte
+      frame at 115200 takes 0.69 ms, so 9600 packet serial is about 18 times the bus
+      time of the drive fitted today. ShadowMD's fix for the same congestion
+      (serialLatency 25 ms, feet at 40 Hz) is slower than the 50 Hz zero-frame
+      continuity requires. The cost of 38400 is the baud order on a shared line:
+      talk to the V2 Sabertooth at 9600, send command 15, then change the host, and
+      let an autobauding SyRen follow.
+
+      Telemetry: the bus is write-only, so nothing comes back - no battery, no
+      temperature, no current, no fault, not even presence. Faults show on the
+      controller's LED only. The row's capability word is 0, and for this product
+      that is the answer the registry comment leaves open under #304, not a
+      placeholder. The operator UI has to say there are no drive readings rather
+      than show stale ones.
+
+      Open question for #308: can artoo-esp32's S1 carry a Sabertooth in place of
+      the hoverboard? ADR 0029 forces that board's drive set to {hoverboard} for
+      want of a spare UART, and ADR 0042 repeats it with no selector. But "no spare
+      UART" argues against appending a second controller, and ADR 0029's own rule
+      is "replace, never append". The sound family in ADR 0042 gets a selector
+      because all its members wire to one pin; a Sabertooth wired to S1 instead of
+      a hoverboard is the same shape. Electrically it is 3.3 V TTL serial on the
+      same header and needs only TX. If it can, artoo-esp32 gets a drive Component
+      Member and the ADR 0042 table row reverses. Not resolved.
+
+      Builder provisioning is new work for the docs, not the code: DIP switches,
+      address 128, the battery-type switch, and the baud order above.
+
+      The product has not run on this project's hardware.
 
   - value: 17
     id: flipsky_mini_v6_vesc
@@ -1625,7 +1735,109 @@ products:
     gate: null
     included: 0
     sheet: flipsky-vesc-foot-drive.md
-    notes: ""
+    notes: |
+      Which protocol #310 is about is an operator decision, not a detail. #303
+      recorded this product's Component Protocol as VESC UART (vesc_uart); every
+      astromech build that runs a Flipsky does it by R/C servo PWM, one pin per
+      foot, mixed in software, and none speaks VESC UART. The choice changes the
+      board budget, the capability bits, and whether the part is a driver's worth
+      of work or two LEDC outputs.
+
+      Which product the entry names is also open (#310): the literal Mini V6 is
+      the MK5 (USD 67, firmware 6.02); the part builders call a "mini V6" is the
+      Mini FSESC6.7 PRO (USD 57, firmware 5.2). One driver serves both; the entry,
+      the price, the builder docs and the VESC Tool version differ. Flipsky tells
+      6.7 PRO owners not to update, so a driver must not need anything added after
+      firmware 5.2.
+
+      The seam (include/drive_backend.h) holds, with one amendment. Its
+      driveBackendBegin() says "A backend that programs a hardware timeout of its
+      own does it here." A VESC backend cannot: the timeout lives in the app
+      config and no serial command sets it. begin() can only read the app config
+      (COMM_GET_APPCONF) and report what it found, or not look. A starved VESC
+      releases the motor after timeout_msec (1000 ms by default) unless the builder
+      set a brake current, so its profile must not declare Stops.
+
+      The frame does not fit today's seam buffer: one COMM_SET_DUTY is 10 bytes on
+      the wire, above DRIVE_BACKEND_FRAME_MAX_BYTES (8), and a COMM_FORWARD_CAN to
+      a second ESC is longer again.
+
+      Units. DriveOutput's speed and steer are the hoverboard's units, clamped to
+      SPEED_LIMIT_MAX (600 of its +/-1000). A VESC takes duty, amps or ERPM, and
+      the mapping is a driver decision with a safety consequence, not a scale
+      factor:
+      - duty: honest and open loop, so 600/1000 is 60 % duty; torque falls off at
+        low speed, where a droid needs it;
+      - current: torque control; a lifted foot spins up to the ERPM limit, the
+        wrong default for a droid that gets picked up;
+      - ERPM: closed loop and the best behaved, once the builder's motor model in
+        VESC Tool is right.
+      The clamp stays above the driver, which maps a clamped number. Which one is
+      right needs a motor on the ESC, not a document.
+
+      Mixing. driveArbiterResolve() gives one (speed, steer) pair; two independent
+      VESCs each need their own value. #304's follow-up asked whether mixing sits
+      above or below the seam and did not answer. The evidence favours below, in
+      the driver: the one Flipsky droid code mixes in software, the arbiter stays
+      pure decision logic, and a second per-wheel contract would double the seam.
+      A Dual FSESC6.7 Plus (two motors, one board) keeps the (speed, steer) shape
+      exactly.
+
+      Two ESCs and the board budget:
+      - two UARTs: artoo-esp32 has no spare; firebeetle2 has UART4 unclaimed, one
+        not two;
+      - one UART plus COMM_FORWARD_CAN: a CAN wire between the ESCs and a CAN id
+        each;
+      - a Dual FSESC6.7 Plus: one board, one UART, USD 153.
+      Neither board can be wired for two serial VESCs today. Under ADR 0029's
+      "replace, never append", a serial VESC foot drive on firebeetle2 means one
+      UART, so CAN forwarding or a dual controller. R/C PPM needs two GPIOs and two
+      LEDC channels instead.
+
+      The zero-frame rule stays, for a stronger reason: the ESC lets go one second
+      after the host goes quiet, so the 50 Hz cadence is what keeps it held, and
+      silence means coast. Whether a zero setpoint holds or releases depends on the
+      mapping above (a zero current setpoint also releases). Bandwidth is no
+      constraint: a 10-byte duty frame is under 0.9 ms at 115200, two per tick at
+      50 Hz is about 9 % of the link.
+
+      Feedback. Over UART a VESC reports a superset of today's drive feedback:
+      battery voltage, FET temperature, per-wheel RPM and current map onto existing
+      fields; motor temperature, the fault code, and its timeout and kill-switch
+      state have none. Over PPM it reports nothing and its presence cannot be
+      detected. The row's capability word is 0 pending #304's follow-up; the
+      answer differs by protocol.
+
+      Kill switch and the estop chain (open): KILL_SW_MODE is the only stop the
+      ESC itself enforces, independent of the serial link, and the nearest thing in
+      the Foot Drive family to a Latching Estop in hardware. It costs a GPIO per ESC
+      and one VESC Tool setting. Decide before designing the harness, because it is
+      a wire.
+
+      FAULT_CODE_BOOTING_FROM_WATCHDOG_RESET is the ESC's own version of ADR 0031's
+      rule; treat it as the firmware treats its own TWDT reset.
+
+      The library's receive path is not usable here. SolidGeek/VescUart busy-waits
+      up to 100 ms per unanswered read: five drive ticks, and 30 in a row exceed the
+      3 s TWDT. The plan is a byte-at-a-time receive state machine fed from a
+      non-blocking drain, mirroring packet_process_byte(); the framing is about 40
+      lines.
+
+      Costs to state plainly:
+      - the largest provisioning step of any Foot Drive product: motor detection,
+        pole count, current limits, app_to_use (APP_UART, or APP_PPM_UART /
+        APP_ADC_UART, documented beside the baud), the timeout and its brake
+        current, the kill switch, all in VESC Tool before the droid moves;
+      - VESC Tool must match the firmware (5.2 for a 6.7 PRO, 6.02 for an MK5);
+      - a 4S (14 V) minimum pack, which may not be the droid's battery;
+      - one UART per ESC, CAN, or a dual controller;
+      - a driver that must not block on a request/response protocol;
+      - the timeout stays the builder's setting, not the firmware's.
+
+      No documented astromech build uses a V6 (the one filmed brushless R2 uses a
+      Flipsky 4.2), so every integration claim above is reasoned from the protocol
+      and this project's drive path. The product has not run on this project's
+      hardware.
 
   # ---------------------------------------------------------------------------
   # Sound
