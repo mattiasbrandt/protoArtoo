@@ -3,7 +3,7 @@
 The Controller Console lets you type commands straight at the controller and
 read back what happened, in plain `key=value` lines. It is the same command
 language in two places: a **serial terminal** plugged into the controller's
-USB port, and the **Console** command box on the dashboard. Whichever one
+USB port, and the Console on the Dashboard. Whichever one
 you use, you type the same commands and get the same answers back.
 
 This page is for a builder at the bench: how to open a terminal, what to
@@ -17,14 +17,14 @@ anyone extending the firmware) is [console-protocol.md](console-protocol.md).
 > Stick-style motion (the speed, steer and dome-speed axes) does not run
 > through the Console - see
 > [What doesn't work here yet](#what-doesnt-work-here-yet), which also says
-> which `config` settings are wired up and which still route through the
-> **Configuration** page instead.
+> which `config` settings are wired up and which still route through
+> Configuration instead.
 
 ## Two ways in
 
 | | Serial terminal | Dashboard Console |
 |---|---|---|
-| Where | USB cable + a terminal program | The **Console** panel on the dashboard, directly under Controls, in the command box below the log |
+| Where | USB cable + a terminal program | The Console on the Dashboard |
 | Needs the network up? | No | Yes |
 | Leaves a session history? | Only for this session (Up/Down) | Yes — saved in the browser, survives a page reload |
 | How you leave | Ctrl-C | Just navigate away or close the tab |
@@ -103,8 +103,8 @@ go by — because the seated board's USB path shares a pin with the SBUS
 receiver
 ([troubleshooting.md](troubleshooting.md#3-flashing-constraint-read-before-collecting-usb-evidence)).
 Whether a seated controller takes commands you type has never been measured,
-so don't plan around it: unseat the board, or use the dashboard's
-**Console** command box, which needs no cable at all.
+so don't plan around it: unseat the board, or use the Console on the
+Dashboard, which needs no cable at all.
 
 **The line you type is 62 bytes long.** That cap belongs to this transport,
 not to the Console — the dashboard's command box takes 255. Go over it and the
@@ -120,12 +120,6 @@ up from 1 when it boots and **keeps counting across a detach**. Unplug the
 terminal, attach again, type a command, and the answer carries the next number
 along, not `id=1`. A counter that has started over means the board restarted
 while you were away.
-
-Measured on an unseated artoo-esp32 over the bridge on 2026-09-04, running
-firmware and filesystem `v1.0.0-656-g48a26523+epic-serial-console`: one sheet
-of commands replayed twice with a detach in between ran ids 1 to 19 and then
-20 to 38, `uptimeMs` climbed from 54 817 to 102 537, and `resetReason` stayed
-`SOFTWARE` across both attaches.
 
 ### Don't reset the board by attaching
 
@@ -159,24 +153,15 @@ than assuming the board itself is unwell.
 
 ## Use the Console from the dashboard
 
-Open the dashboard and find the **Console** panel. Type into the command
-box under the log and press Enter — the reply prints inline in the same log,
-in the same `< id=... type=...` shape a serial terminal would show, with an
-error record shown in red. Up/Down cycles through commands you've sent this
+Type a command into the Console on the Dashboard and press Enter. The reply
+prints inline in the same log, in the same `< id=... type=...` shape a serial
+terminal would show. Up/Down cycles through commands you've sent this
 session, and that history is saved in your browser, so it survives a reload.
 Tab completes the same way it does on serial (below).
 
 An unusually long reply — [`system.status.logs`](#reading-the-log-ring) is
 the one likely to produce one — can come back shorter than the full answer
-here. When it does, the log says so in amber on the line under the reply it
-belongs to:
-
-```text
-< id=12 type=end status=ok outcome=completed
-[CUT] The Body Controller could not fit the whole answer — some lines are missing from the reply above.
-```
-
-The lines you do get are the newest ones; see [api.md](api.md) for exactly
+here. When it does, a `[CUT]` line under the reply says so. The lines you do get are the newest ones; see [api.md](api.md) for exactly
 when that happens. Read `/api/logs` directly if you need the whole thing.
 
 ## Typing a command
@@ -191,7 +176,7 @@ dome.action.marcduino-sequence value=30
 ```
 
 - **Operation names** are lowercase and dotted: `<domain>.<type>.<verb-noun>`
-  (for example `sound.action.random-humming`). Whatever the RC mapping page
+  (for example `sound.action.random-humming`). Whatever RC Control
   calls a short token for the same action (`sound_rand_humming`, `seq`,
   `cmd`, `drive_speed`, …) still works too, typed exactly as it appears
   there — it runs the identical command, never a different one. `help` and
@@ -317,7 +302,7 @@ never carries one. The tokens are stable — safe to match on in a script:
 
 | Reason | What it means |
 |---|---|
-| `not-in-this-build` | Not included in this firmware image (shown on the dashboard as "Not included") |
+| `not-in-this-build` | Not included in this firmware image |
 | `not-on-this-board` | This board's hardware can't do this |
 | `component-disabled` | The subsystem this needs is switched off |
 | `blocked-by-state` | Estop, sleep, or another safety/state rule is holding it — see [Web control](#web-control-what-actions-need) if it's an action |
@@ -337,7 +322,7 @@ never carries one. The tokens are stable — safe to match on in a script:
 | `read-only` | A write to a setting that can only be read here; its `help` says `read_only=true` and its description says where to set it |
 | `part-not-assigned` | The Part this needs has no Output claiming it on Wiring, so it does not move; the rest of a Sequence carries on |
 | `dome-not-calibrated` | A dome bearing move with no dome calibration saved |
-| `bearing-unknown` | A dome bearing move while where the dome points is unknown: turn it to front and press Front is here |
+| `bearing-unknown` | A dome bearing move while where the dome points is unknown: turn it to front and set front on the Dome page |
 | `module-cannot-mix` | A Background Track the fitted sound module cannot play under other sounds |
 
 ## While the log is printing
@@ -386,7 +371,7 @@ then simply absent. `/api/logs` still has that one — so when a log line looks
 missing and no marker says it was dropped, that is where to look. When that
 keeps happening — a terminal plugged in but not reading, so line after line is
 dropped — the log says so where you are already looking: a `serial
-backpressure` warning appears in the dashboard's **Console** (and in `/api/logs`), and a
+backpressure` warning appears in the Dashboard's Console (and in `/api/logs`), and a
 line carrying `dropped=<n>` follows once the terminal is reading again,
 counting how many lines were lost.
 
@@ -403,43 +388,15 @@ the ring still holds, preceded by a `[log] dropped=<n>` for what wrapped while
 you were away. The artoo-esp32 has no such state — its port is live from
 startup — so it prints as it goes whether or not anyone is listening.
 
-> [!NOTE]
-> **The FireBeetle 2's serial console now survives a USB unplug.** Pull the
-> cable and plug it back in with the board still powered, and the console comes
-> back on its own — banner, prompt, and the backlog it held while you were
-> away, just as above. It settles the fresh connection for about a second
-> before it speaks, so give it a moment after you plug in.
->
-> Older firmware could not do this: before this fix a FireBeetle 2 went silent
-> after a replug and only a reset brought the serial side back, while what you
-> typed on the silent link still ran. If you meet a FireBeetle 2 that stays
-> quiet after a replug and never recovers, it is running that older firmware —
-> read `/api/logs` and reflash. What that fault looked like and why it happened:
-> [#274, defect comment](https://github.com/mattiasbrandt/protoArtoo/issues/274#issuecomment-5551336476)
-> and [#275](https://github.com/mattiasbrandt/protoArtoo/issues/275).
+**The FireBeetle 2's serial console survives a USB unplug.** Pull the cable
+and plug it back in with the board still powered, and the console comes back on
+its own: banner, prompt, and the backlog it held while you were away. It settles
+the fresh connection for about a second before it speaks, so give it a moment.
 
 **Heavy log traffic can't slow the droid down.** Driving, RC and the dome
 never wait for your terminal — they drop their line in the ring and carry
 straight on. A slow terminal, a link that has gone quiet, or no terminal at
 all costs the moving parts of the droid nothing.
-
-Measured on both boards on 2026-09-05, running firmware and filesystem
-`v1.0.0-684-g017b168d+epic-serial-console`: with the log at `debug`, eighteen
-whole log lines arrived on the artoo-esp32 while a command sat half-typed, and
-the line that finally ran was still exactly the `system.status.health` that
-had been typed; the FireBeetle 2 redrew the prompt four times through the same
-row with every log line intact. Five `system.status.health` queries
-back-to-back on the FireBeetle 2 all completed with no `dropped=`; both
-boards' whole command sheets replayed with no dropped records and no
-timeouts; and nothing on the moving side of the droid registered a hiccup
-through any of it — `failsafeCount` and `queueOverflowCount` both stayed at 0.
-An over-length line doesn't disturb the session either: a 70-byte line on both
-boards, and a 260-byte one on the FireBeetle 2, were each refused
-`invalid reason=line-too-long` and the very next command answered normally.
-Those rows are replayable — `229 concurrency-and-overflow` and
-`274 guards-and-typing` on the artoo-esp32, `229 sustained-traffic-and-overflow`
-and `265 p4-sink-reliability` on the FireBeetle 2, in `tools/bench_rows/`; see
-[console-client.md](console-client.md).
 
 ## Two sessions at once
 
@@ -453,12 +410,9 @@ the same time, neither locks the other out, and the answers are the same.
 - **Answers go back to whoever asked.** A command run in the dashboard does
   not print on the serial terminal, and vice versa. What both surfaces *do*
   share is the log: anything the firmware logs on the way lands in the ring,
-  so it reaches the serial terminal and the dashboard's **Console** panel
-  alike.
-- **The same question gets the same answer on both.** Measured on 2026-09-05
-  on an artoo-esp32: `system.status.health` asked over serial and from the
-  dashboard's command box returned an identical set of fields, in the same
-  order. The one deliberate difference is `help`, whose `detach_key` field
+  so it reaches the serial terminal and the Dashboard's Console alike.
+- **The same question gets the same answer on both**, the same fields in the
+  same order. The one deliberate difference is `help`, whose `detach_key` field
   only exists on serial — there is no terminal to detach from in a browser.
 - **Two settings writes can't overwrite each other.** Every writer — this
   Console, the Configuration and Maintenance forms, and the API behind them - goes through
@@ -470,8 +424,8 @@ the same time, neither locks the other out, and the answers are the same.
 
 ## Web control: what actions need
 
-Enable **Web control** (the **Enable web control** button in the Drive card
-on the **Foot Drive** page, `POST /api/web-control/enable`, or the command
+Enable **Web control** (on the Foot Drive page, `POST /api/web-control/enable`,
+or the command
 `system.action.enable-web-control`) before running an action-type command —
 this applies from serial too, not just the dashboard. Until it's on, an
 action answers `blocked reason=blocked-by-state`:
@@ -489,12 +443,12 @@ arguments, no Web control needed, and it restarts the firmware straight
 away.
 
 `system.action.estop` always answers `blocked` this way, on purpose — this
-interface never triggers an estop; use the STOP button on the top bar, which
-is on every screen, or `POST /api/estop` for that.
+interface never triggers an estop; use STOP, which is on every page, or
+`POST /api/estop` for that.
 
 `system.action.estop-clear` does the other half: it releases a latched estop,
 needs no Web control, and answers `applied` (the same release as
-`POST /api/estop/clear` and the top bar's STOP toggle).
+`POST /api/estop/clear` and releasing STOP).
 
 ## WiFi settings, as one command
 
@@ -575,8 +529,7 @@ clear the browser's site data (dashboard).
 ## Setting the log level
 
 `system.config.log-level` reads and changes how much detail the controller
-writes to its log - over serial and on the dashboard's Console panel
-alike. Read it with no arguments; write it with either the plain number or
+writes to its log - over serial and on the Dashboard's Console alike. Read it with no arguments; write it with either the plain number or
 the word, either case — `value=4` and `value=debug` set the same thing:
 
 | Number | Word |
@@ -599,7 +552,7 @@ across a reboot too.
 ## Reading the log ring
 
 `system.status.logs` prints the controller's own recent log lines back to
-you - the same lines the dashboard's **Console** panel shows - one line
+you - the same lines the Dashboard's Console shows - one line
 per `item` record, oldest first, no arguments needed:
 
 ```text
@@ -614,9 +567,8 @@ depends on the board and the current log level — so a long gap between
 checks pushes older lines out before you read them. For a record that needs
 to survive that, or a wider window than the ring holds, pull `/api/logs`
 instead ([api.md](api.md)); it reads the same ring over HTTP. On the
-dashboard, a reply this long can also come back shorter than the full ring —
-you get the newest lines, and the log prints a `[CUT]` line under the reply
-to say so; see
+dashboard, a reply this long can also come back shorter than the full ring:
+you get the newest lines and a `[CUT]` line under the reply; see
 [Use the Console from the dashboard](#use-the-console-from-the-dashboard).
 
 ## Rebooting the WiFi module
@@ -665,7 +617,7 @@ listed and answers `unavailable reason=not-on-this-board`.
   know is to run one. Run it with the value you actually want — if it works
   it has already taken effect, and if it doesn't you get
   `executor-not-ready` back, meaning the Console knows the command but has
-  nothing behind it yet. Change that setting from the **Configuration** page in the
+  nothing behind it yet. Change that setting on Configuration in the
   meantime. Among the ones that work, a Component Toggle
   (`system.config.enable_*`) always answers `staged-until-reboot` — saved,
   but only takes effect at the next restart;
