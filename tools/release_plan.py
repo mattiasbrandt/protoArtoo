@@ -507,6 +507,12 @@ def _cmd_notes(args):
 
 
 def _cmd_verified(args):
+    """Print {"verified", "reason"} as JSON and exit 0 either way.
+
+    A "not yet" is an answer, not a failure: auto-release.yml's gate reads the
+    JSON's `verified` and logs its `reason`. A non-zero exit means the
+    question itself could not be asked (git failed).
+    """
     reasons = unverified_commits(args.repo, args.sha, args.to)
     verified = not reasons
     if verified:
