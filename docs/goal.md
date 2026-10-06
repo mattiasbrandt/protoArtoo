@@ -44,7 +44,7 @@ It also explicitly targets builders whose droids are primarily static display pi
 | Foot Drive | Hoverboard, hacked firmware | roadmap: Sabertooth 2x25, Flipsky Mini V6 VESC; protocol-contract compatibility over vendor lock |
 | Dome Rotation | ISDT ESC70 RC ESC (confirmed on a droid) | roadmap: SyRen 10 |
 | Dome Controller | AstroPixels Plus over protoR2link (confirmed on a droid) | roadmap: Teeces; explicit command/status ownership boundaries |
-| Sound | body-side ownership; DY-SV5W, CHIRP Audio Trigger (both confirmed on a droid) and MP3 Trigger behind one driver interface, picked at runtime | roadmap: DFPlayer Mini |
+| Sound | body-side ownership; DY-SV5W (confirmed on a droid), MP3 Trigger and CHIRP Audio Trigger (confirmed on a droid) behind one driver interface, picked at runtime | roadmap: DFPlayer Mini |
 | Actuators | the board's Outputs (each a servo or an LED strip, named by what the board prints) | servo/LED role flexibility without architecture fork |
 
 ## Technical Support Intent
