@@ -150,7 +150,7 @@ and the reason are in
 
 ```
 include/        Headers; config.h holds the pins, component_registry.inc the
-                supported products
+                products (generated from docs/products.yaml)
 src/            Firmware: tasks/ (FreeRTOS tasks), drivers/ (hardware), web/
                 (REST API handlers)
 data/           The web pages, uploaded to the board's filesystem

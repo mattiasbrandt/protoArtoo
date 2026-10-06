@@ -38,6 +38,10 @@ The shell on this bench is zsh. Quote a glob (`--include='*.cpp'`). An unquoted 
 - Shared state truth: `include/robot_state.h`
 - Action registry: `docs/action-registry.yaml`
 - Droid parts catalog: `docs/droid-parts.yaml`
+- Component Registry and each product's project facts (its spec sheet, wiring
+  card, notes): `docs/products.yaml`. It generates
+  `include/component_registry.inc` and Wiring's product cards; edit the YAML,
+  never the generated files
 - Operator-facing copy voice: `docs/ui-copy-voice.md`
 - REST API contracts: `docs/api.md`
 - Core error-signalling conventions: `docs/core-error-signalling.md`

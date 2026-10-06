@@ -21,7 +21,7 @@ This document defines the durable technical direction for protoR2.
 
 protoR2 targets a complete open-source ESP32 body-controller firmware stack for R2D2 (astromech) droids, with predictable control behavior, explicit subsystem ownership, and maintainable long-term operation. Each subsystem is a Component Family whose products are peers: the builder fits the one they own, and the firmware supports it through one interface rather than through a board- or vendor-specific build.
 
-The Component Registry (`include/component_registry.inc`) is the source for each product's state, in three words: **Supported** (it is in the project and works), **Tested** (it has run on a real droid), and **Roadmap** (planned).
+The Component Registry (`docs/products.yaml`) is the source for each product's state, in three words: **Supported** (it is in the project and works), **Tested** (it has run on a real droid), and **Roadmap** (planned).
 
 It also explicitly targets builders whose droids are primarily static display pieces for day-to-day use, where control from tablet or computer browser workflows is preferred over convention-style roaming with large RC radios.
 

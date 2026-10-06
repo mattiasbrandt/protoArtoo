@@ -25,7 +25,7 @@ and subsystem responsibility in one place.
 Use the following precedence when topology details are needed:
 1. docs/pin_map.md
 2. include/config.h
-3. include/component_registry.inc (each product's state: Supported, Tested, Roadmap)
+3. docs/products.yaml, the Component Registry (each product's state: Supported, Tested, Roadmap)
 4. docs/failsafe.md
 5. docs/goal.md
 
@@ -59,7 +59,7 @@ Body Controller (protoR2 on the Artoo PCB or the FireBeetle 2)
 
 ## Component Families
 
-From `include/component_registry.inc`. **Supported**: in the project and works.
+From the Component Registry, `docs/products.yaml`. **Supported**: in the project and works.
 **Tested**: has run on a real droid. **Roadmap**: planned. Products in a family are peers.
 
 | Family | Supported | Roadmap | How the Body Controller reaches it |
