@@ -18,11 +18,18 @@
 //
 // WHY THE SEAM EXISTS AT ALL. Every drive controller has some version of
 // "keep talking to me", and they are not the same rule twice. A hoverboard's
-// is mandatory, 20 ms, and starving it makes the wheels DRIFT. A packet-serial
-// controller's (Sabertooth setTimeout(), 100 ms granularity, 100 ms minimum)
-// is opt-in and starving it makes the wheels STOP. Same class of rule,
-// opposite failure mode, so it can never be one shared constant - and the
-// generic emitter cannot pick a cadence without asking the backend.
+// timeout is always on, and starving it keeps the wheels turning on the last
+// command before the board acts: EFeru firmware holds it 800 ms and then
+// coasts; RoboDurden firmware holds it 500 ms and then soft-brakes and
+// releases the bridge. A packet-serial controller's (Sabertooth setTimeout(),
+// 100 ms granularity, 100 ms minimum) is opt-in: only a 2x25 V2 or newer on
+// which command 14 was sent since its last power-up stops when starved. A V1,
+// or one that was never armed or has browned out since, holds its last
+// command for as long as it is starved. Same class of rule, different windows
+// and different ends, so it can never be one shared constant - and the
+// generic emitter cannot pick a cadence without asking the backend. None of
+// these far ends can be trusted to stop the wheels in time on its own, which
+// is why zero-frame continuity sits above the seam and is unconditional.
 // =============================================================================
 #pragma once
 
@@ -50,7 +57,8 @@ struct DriveBackendProfile {
     const char* id;                 // Component Member identifier
     const char* protocol;           // Component Protocol spoken on the wire
     uint32_t baud;
-    uint16_t continuityDeadlineMs;  // longest gap the far end tolerates
+    uint16_t continuityDeadlineMs;  // longest gap allowed between frames to the far end;
+                                    // can be shorter than the far end's own timeout
     DriveStarvation starvation;     // what that far end does once starved
     bool reportsFeedback;           // false -> pollFeedback() never reports
 };
@@ -71,10 +79,14 @@ static_assert(componentPartExists(kHoverboardRegistryId),
               "the drive backend cites a product id no Component Registry row declares; a typo"
               " here would otherwise read as a Foot Drive that reports nothing");
 
-// RoboDurden Gen2.x hoverboard mainboard, 8-byte command frames over UART.
-// The 20 ms deadline is the protocol's, not a preference: the mainboard holds
-// its last command when the stream stops, which is why zero-frame continuity
-// is unconditional above this line.
+// Hoverboard mainboard on EFeru FOC or RoboDurden Gen2.x (REMOTE_ROS2)
+// firmware, 8-byte command frames over UART. The 20 ms deadline is the
+// droid's, not the board's: starved, the board holds its last command for
+// 800 ms (EFeru, then a coast) or 500 ms (RoboDurden, then a soft brake), so a
+// frame every tick is what lets a zero command, an estop included, reach the
+// wheels in one tick instead of after that window. Drifts is the honest class
+// for both firmwares: the held window is motion nobody commanded. That is why
+// zero-frame continuity is unconditional above this line.
 inline constexpr DriveBackendProfile kDriveBackend = {
     .id = kHoverboardRegistryId,
     .protocol = "hoverboard_gen2x",
@@ -88,9 +100,9 @@ inline constexpr DriveBackendProfile kDriveBackend = {
 #endif
 
 // The generic tick is fixed and the backend declares what it needs; this is
-// the guard that stops the two drifting apart. A backend whose far end wants
-// to hear from us more often than the emitter speaks is a build error, not a
-// droid that coasts on the bench.
+// the guard that stops the two drifting apart. A backend that declares a
+// deadline shorter than the emitter's tick is a build error, not a droid that
+// misses its own deadline on the bench.
 static_assert(DRIVE_FRAME_PERIOD_MS <= kDriveBackend.continuityDeadlineMs,
     "the generic drive tick is slower than this backend's continuity deadline:"
     " raise DRIVE_FREQ_HZ or the backend cannot be fed in time");
