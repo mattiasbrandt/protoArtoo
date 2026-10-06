@@ -50,3 +50,46 @@ which #224 already made truthful.
 - An audit must not read readiness from `operations` output. The executor-not-ready
   count is measured from the native suite
   (`pio test -e native -f test_native/test_console_module -v | grep '#220 report'`).
+
+## Amendment (2026-10-06, under #321): a row that is never on the Console says so up front
+
+Readiness stays out of discovery. A different fact joins it there: some
+operations are **never** on the Console - a file transfer, a step that belongs
+to the Sequences editor, an act that only orders a browser page, the browser
+Console Adapter itself. Fifteen such rows answered `executor-not-ready`, the
+same word as the three operations that are simply not wired yet, and the only
+record of which was which was a name list kept twice, in
+`console_module.cpp`'s dispatch comment and in a native test.
+
+**We decided the registry declares it.** A row that is never on the Console
+carries one reason from a fixed list (`file-transfer`, `editor-only`,
+`browser-only`, `console-itself`) and the page where the builder does it
+instead. The generator emits both into the Operation Catalog row. The Console
+answers such a row with the Availability Reason `not-on-console`, in the
+**change it elsewhere** family: `operations` lists it the way it lists
+`not-on-this-board`, running it answers with it, and `help` names the page.
+
+This does not reopen the decision above. `executor_ready` was removed because
+it was a claim the generator could not know and got wrong. A declared
+exclusion is written by a person on the registry row and read from there, the
+same kind of fact as `not-on-this-board`; a row that is merely unwired still
+answers `executor-not-ready`, at execution only.
+
+**Considered:** reusing `not-executable` (rejected - it means a row that only
+describes a field of another query, and the operation here does exist on the
+droid); a free-text reason (rejected - the drift check cannot hold it, and
+grouping is what `help` shows); marking the unwired rows too (rejected - they
+are work, not scope, and would hide it).
+
+**Consequences:**
+
+- The Operation Catalog is the one record of Console scope. The test that pinned
+  eighteen names asserts an invariant over the catalog instead, and the three
+  unwired rows stay named in that test until they are wired.
+- The pinned catalog counts give way to counts derived from the catalog, and a
+  byte-compare of the regenerated catalog joins `make check-action-drift`, as
+  `check-parts-drift` does for the parts catalog.
+- ADR 0036's `tools/console_inventory/*.yaml` keeps one row per registry entry,
+  holding anchor kind, evidence and notes only; the copied `registry_*` fields
+  and the executor-name mirror leave it, because the registry already holds
+  them.
