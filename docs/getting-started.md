@@ -117,6 +117,20 @@ network, or `make ota` fails with `[ERROR]: No response from device`. The rule
 and the reason are in
 [Troubleshooting](troubleshooting.md#ota-fails-with-error-no-response-from-device-host-firewall).
 
+### Repository layout
+
+```
+include/        Headers; config.h holds the pins, component_registry.inc the
+                supported products
+src/            Firmware: tasks/ (FreeRTOS tasks), drivers/ (hardware), web/
+                (REST API handlers)
+data/           The web pages, uploaded to the board's filesystem
+test/           test_native/ (logic, no hardware), test_web/ (page scripts),
+                test_tools/, playwright/, stubs/, fixtures/
+tools/          Setup and deploy wizards, the Console Client, drift checks
+docs/           Guides, spec sheets, ADRs (docs/adr/)
+```
+
 ### Tests, commit format and releases
 
 The test and static-analysis commands, the commit format, the branch rules and
