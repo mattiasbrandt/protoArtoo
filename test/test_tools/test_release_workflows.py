@@ -9,13 +9,15 @@ being left to a reading of the YAML.
 
 The three properties that together close the loop:
 
-1. `auto-release.yml` triggers on a push to `main` and on nothing else, so the
-   tag it pushes cannot re-enter it -- a tag is not a branch.
+1. `auto-release.yml` triggers on a push to `main` and on a completed
+   Verification of `main` (the minor/major tag gate, #473), so the tag it
+   pushes cannot re-enter it -- a tag is not a branch.
 2. Its job skips any commit authored by github-actions[bot], which is both
    `version-sync.yml`'s version-JSON commit and `auto-release.yml`'s own
    CHANGELOG promotion. All three workflows must spell that bot identically,
    so the address is compared across the files rather than trusted.
-3. `release.yml` triggers only on a tag and pushes nothing back to `main`.
+3. `release.yml` triggers only on a tag (and a manual dry run, which never
+   publishes) and pushes nothing back to `main`.
 
 The tier wiring is asserted for the same reason: `build` is skipped for a
 patch tag, and in GitHub Actions a skipped dependency skips its dependants
@@ -50,9 +52,23 @@ class AutoReleaseTriggerTest(unittest.TestCase):
         self.workflow = _load("auto-release.yml")
         self.triggers = _triggers(self.workflow)
 
-    def test_triggers_on_a_push_to_main_only(self):
-        self.assertEqual(list(self.triggers), ["push"])
+    def test_triggers_on_main_and_its_verification(self):
+        """A push to main, and a completed Verification of main: the run
+        that may cut a minor or major tag (#473)."""
+        self.assertEqual(sorted(self.triggers), ["push", "workflow_run"])
         self.assertEqual(self.triggers["push"]["branches"], ["main"])
+        run = self.triggers["workflow_run"]
+        self.assertEqual(run["workflows"], ["Verification"])
+        self.assertEqual(run["types"], ["completed"])
+        self.assertEqual(run["branches"], ["main"])
+        guard = self.workflow["jobs"]["release"]["if"]
+        for term in [
+            "github.event.workflow_run.conclusion == 'success'",
+            "github.event.workflow_run.head_branch == 'main'",
+            "github.event.workflow_run.head_repository.full_name == github.repository",
+        ]:
+            with self.subTest(term=term):
+                self.assertIn(term, guard)
 
     def test_does_not_trigger_on_a_tag(self):
         """The tag this workflow pushes must not re-enter it."""
@@ -76,6 +92,13 @@ class AutoReleaseTriggerTest(unittest.TestCase):
         self.assertIn(BOT_EMAIL, job["if"])
         self.assertIn("head_commit.author.email", job["if"])
         self.assertIn("!=", job["if"])
+
+    def test_promotion_and_tag_wait_for_the_gate(self):
+        """Neither writes to main nor tags unless the Verification gate said go."""
+        steps = {step.get("name"): step for step in self.workflow["jobs"]["release"]["steps"]}
+        for name in ["📝 Promote the Unreleased CHANGELOG section", "🏷️ Tag the release"]:
+            with self.subTest(step=name):
+                self.assertIn("steps.gate.outputs.go == 'true'", steps[name]["if"])
 
 
 class BotIdentityTest(unittest.TestCase):
@@ -110,9 +133,10 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.workflow = _load("release.yml")
         self.jobs = self.workflow["jobs"]
 
-    def test_triggers_on_a_tag_only(self):
+    def test_triggers_on_a_tag_or_a_dry_run(self):
+        """A tag, or the manual dry run (#473); never a branch push."""
         triggers = _triggers(self.workflow)
-        self.assertEqual(list(triggers), ["push"])
+        self.assertEqual(sorted(triggers), ["push", "workflow_dispatch"])
         self.assertIn("tags", triggers["push"])
         self.assertNotIn("branches", triggers["push"])
 
@@ -126,18 +150,23 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("tier == 'full'", self.jobs["build"]["if"])
 
     def test_publish_survives_a_skipped_build(self):
-        """A patch tag skips `build`, and a skipped need skips its dependants
-        by default -- so publish has to state the condition itself."""
+        """A patch tag skips `build` and `stage`, and a skipped need skips its
+        dependants by default -- so publish has to state the condition itself.
+        Only a tag publishes: the dispatch is a dry run (#473)."""
         publish = self.jobs["publish"]
-        self.assertEqual(publish["needs"], ["classify", "build"])
+        self.assertEqual(publish["needs"], ["classify", "stage"])
+        self.assertEqual(self.jobs["stage"]["needs"], "build")
         self.assertIn("always()", publish["if"])
-        self.assertIn("needs.build.result == 'skipped'", publish["if"])
+        self.assertIn("github.event_name == 'push'", publish["if"])
+        self.assertIn("needs.classify.outputs.tier == 'patch'", publish["if"])
         self.assertIn("needs.classify.result == 'success'", publish["if"])
 
     def test_publish_does_not_run_on_a_failed_build(self):
+        """A failed full-tier build skips `stage`; that skip must not pass."""
         publish_if = self.jobs["publish"]["if"]
-        self.assertNotIn("needs.build.result == 'failure'", publish_if)
-        self.assertIn("needs.build.result == 'success'", publish_if)
+        self.assertNotIn("needs.stage.result == 'skipped'", publish_if)
+        self.assertNotIn("needs.build.result", publish_if)
+        self.assertIn("needs.stage.result == 'success'", publish_if)
 
     def test_each_tier_takes_its_own_notes_path(self):
         steps = {step.get("name"): step for step in self.jobs["publish"]["steps"]}
@@ -149,13 +178,12 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("release_plan.py notes", generated["run"])
 
     def test_images_and_checksums_are_full_tier_only(self):
+        """Checksums are written in `stage`, which runs only after the
+        full-tier builds; publish fetches the staged set for a full tier only."""
         steps = {step.get("name"): step for step in self.jobs["publish"]["steps"]}
-        for name in [
-            "⬇️ Download all build artifacts",
-            "🔏 Generate SHA256 checksums",
-        ]:
-            with self.subTest(step=name):
-                self.assertIn("tier == 'full'", steps[name]["if"])
+        self.assertIn("tier == 'full'", steps["⬇️ Download the staged release assets"]["if"])
+        stage_steps = {step.get("name"): step for step in self.jobs["stage"]["steps"]}
+        self.assertIn("SHA256SUMS.txt", stage_steps["🔏 Generate SHA256 checksums"]["run"])
 
     def test_publish_checks_out_full_history(self):
         """Generated patch notes read a commit range; a shallow clone has none."""

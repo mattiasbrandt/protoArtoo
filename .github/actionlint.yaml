@@ -1,0 +1,12 @@
+# actionlint configuration, read from this path by the binary the `checks`
+# job runs (verification.yml).
+#
+# ubuntu-26.04 is a GitHub-hosted runner label (Ubuntu 26.04 GA,
+# actions/runner-images#14748), but actionlint 1.7.12 -- the latest release,
+# and its main branch on 2026-10-06 -- does not list it yet and reports
+# every job that uses it as an unknown label. Declaring it here is
+# actionlint's own mechanism for a label it does not know. Delete this file
+# once an actionlint release lists ubuntu-26.04 and the pin moves to it.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04

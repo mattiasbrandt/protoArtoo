@@ -235,10 +235,13 @@ merged, your branch will be deleted.
 Pushing a branch you own (`feature/`, `fix/`, `refactor/`, `chore/`, `docs/`,
 `test/`, `exp/`, or a `gh issue develop` branch) needs no approval, and is
 encouraged: commits that exist only in one local worktree have no backup, and
-origin is the backup. No workflow triggers on a branch push — `verification` and
-`dependency-review` run on pull requests into `main`, `verification`,
-`version-sync` and `auto-release` additionally on pushes to `main`, `release` on
-`v*.*.*` tags — so a branch push consumes no CI and publishes no project state.
+origin is the backup. A push to a branch you own triggers no workflow —
+`verification` and `dependency-review` run on pull requests into `main`,
+`verification` also on pushes to `main` and to `epic/**` branches, `version-sync`
+and `auto-release` on pushes to `main`, `release` on `v*.*.*` tags — so it
+consumes no CI and publishes no project state. `verification` and `release` can
+also be dispatched by hand on any branch; a dispatched `release` is a dry run
+that builds and stages the images and never publishes.
 Pushing to a shared integration branch, opening or merging a PR, and pushing a
 tag by hand each need explicit operator approval; pushing to `main` or
 self-merging a PR never happens. CI tagging `main` after an approved merge is
@@ -403,7 +406,9 @@ protoArtoo uses [Semantic Versioning 2.0.0](https://semver.org/).
 **A merge to `main` releases itself.** Nobody tags by hand.
 `.github/workflows/auto-release.yml` runs on every push to `main`, reads the
 Conventional Commits since the last release tag, and applies the "Version
-effect" column of the type table above:
+effect" column of the type table above. A patch is tagged on the push. A minor
+or major waits for a green Verification of the commit it tags, and is tagged
+when that run completes; while Verification on `main` is red, none is cut:
 
 | What landed | What happens |
 |---|---|
@@ -427,7 +432,7 @@ reached `main` and stopped there (#285).
 | Tier | Tag shape | Release notes | Artifacts |
 |---|---|---|---|
 | **Patch** | `vX.Y.Z` with `Z > 0` | Generated from the commit subjects in the range. Terse and clearly machine-written. | None. The source tag only. |
-| **Minor / major** | `vX.Y.0` | The curated `CHANGELOG.md` section, in maker voice. | A firmware and a filesystem image per board plus `SHA256SUMS.txt`. |
+| **Minor / major** | `vX.Y.0` | The curated `CHANGELOG.md` section, in maker voice. | Per board: the firmware and filesystem images an update uses, the blank-board parts (bootloader, partition table, `boot_app0`) and a manifest of every file's flash address, size and SHA-256. `SHA256SUMS.txt` over all of them. |
 
 A fix should reach people quickly, and rebuilding every board's image for a
 one-line change should not gate that. A patch release therefore carries no

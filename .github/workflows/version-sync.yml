@@ -25,7 +25,7 @@ permissions:
 jobs:
   sync-version:
     name: sync version JSON
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     # Skip runs triggered by this job's own bot commit, to avoid an infinite loop.
     if: github.event.head_commit.author.email != '41898282+github-actions[bot]@users.noreply.github.com'

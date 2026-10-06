@@ -63,7 +63,7 @@ concurrency:
 jobs:
   changes:
     name: changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     # Version-sync's bot commit pushes via a deploy key, and deploy-key
     # pushes (unlike GITHUB_TOKEN pushes) trigger on:push workflows. A
@@ -128,7 +128,7 @@ jobs:
     name: artoo
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # A warm run builds in ~10 min (profiler build, firmware, buildfs); a
     # cold one adds the toolchain download. Without a limit a hung pio holds
     # the runner for GitHub's 6 h default.
@@ -199,7 +199,7 @@ jobs:
     name: firebeetle2
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # A cold ESP32-P4 build is ~7.5 min (2026-10-06), plus the penv pin and
     # the toolchain download.
     timeout-minutes: 40
@@ -259,7 +259,7 @@ jobs:
   checks:
     name: checks
     needs: changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Native tests ~3 min, static analysis ~2 min, the rest seconds each,
     # plus a cold classic platform and the native toolchain.
     timeout-minutes: 40
@@ -506,7 +506,7 @@ jobs:
     # guard repeats the one on `changes`, since always() would otherwise run
     # this job on version-sync's commit.
     if: always() && (github.event_name != 'push' || github.event.head_commit.author.email != '41898282+github-actions[bot]@users.noreply.github.com')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
