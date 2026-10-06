@@ -1,8 +1,8 @@
 # Dome Visual-Authoring Contract (`DL` / `DH` / `DT`)
 
-Status: **shipped.** Agreed between the body and the dome 2026-06-21; the body's
-sequence editor and Protocol Check and AstroPixelsPlus all implement it.
-Scope: GitHub issue #11. Extends ADR 0008 (dome owns visual rendering) and
+Status: **shipped.** The body's sequence editor, both Protocol Checks and
+AstroPixelsPlus implement it, and each command family has run on a droid.
+Extends ADR 0008 (dome owns visual rendering) and
 `docs/dome-visual-presets.md` from named Factory presets (`DV:`) to **custom**
 structured authoring in the body sequence editor.
 
@@ -27,12 +27,12 @@ length caps rather than being a general message transport.
 
 ## Body-only vs. requires-dome-support (AC requirement)
 
-| Feature | Owner | Status |
-|---|---|---|
-| `DV:<NAME>` Visual Preset | **body-only** wrapper (closed whitelisted name set) | shipped; both Protocol Checks refuse an unknown name (`kDvPresets`, `src/protocol_check.cpp`) |
-| `DL:` Logic/PSI Mode | requires AstroPixelsPlus support | shipped (body + dome), run on a droid 2026-06-22 |
-| `DH:` Holo Effect | requires AstroPixelsPlus support | shipped (body + dome), run on a droid 2026-06-22; strict effect/color matrix below |
-| `DT:` Logic Text (multi-line) | requires AstroPixelsPlus support | shipped (body + dome), run on a droid 2026-06-22 |
+| Feature | Owner |
+|---|---|
+| `DV:<NAME>` Visual Preset | **body-only** wrapper (closed whitelisted name set; both Protocol Checks refuse an unknown name) |
+| `DL:` Logic/PSI Mode | requires AstroPixelsPlus support |
+| `DH:` Holo Effect | requires AstroPixelsPlus support; strict effect/color matrix below |
+| `DT:` Logic Text (multi-line) | requires AstroPixelsPlus support |
 
 None of `DL:`/`DH:`/`DT:` are body-only: the body validates + serializes + forwards
 the typed command, but **AstroPixelsPlus renders it**. On a dome without this build
@@ -47,16 +47,12 @@ DH:<target>:<effect>[:<color>[:<durationOrCount>]]
 DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
 ```
 
-General validation (server `src/protocol_check.cpp` `percentDecode`,
-`protocolCheckNesting`, and the `closeSteps` branch of `protocolCheck`; client
-`data/seq_protocol_check.js` `SeqProtocolCheck.validateSequence` and
-`decodeTextBytes`). The sampled rows in `test/fixtures/protocol_mirror.json`
-are what those two are checked against: `make check-protocol-mirror` runs the
-browser half, and `test_protocol_mirror` runs the firmware half on the same
-`expect` flag. The file does not cover every rule on this page. Where the two
-verdicts on a row disagree, the firmware verdict is the one `expect` should
-name:
-- uppercase command family and enum tokens; no lowercase aliases (first slice)
+General validation, in both Protocol Checks (firmware `src/protocol_check.cpp`,
+browser `data/seq_protocol_check.js`). The sampled rows in
+`test/fixtures/protocol_mirror.json` are what those two are checked against
+(`make check-protocol-mirror`); it does not cover every rule on this page. Where
+the two verdicts disagree, the firmware verdict stands:
+- uppercase command family and enum tokens; no lowercase aliases
 - full-string match only; no extra fields
 - total command length `<= 63`
 - unknown enum => reject
@@ -122,11 +118,11 @@ DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
 ```
 - **Targets:** `FLD`, `RLD`, `LOGIC` (both)
 - **Encoding:** **percent-encoding** (not base64). Required escapes: newline=`%0A`, percent=`%25`, colon=`%3A`. Carriage return rejected; non-printable ASCII rejected. Spaces literal or `%20` (Protocol Check normalizes/allows both).
-- **Length caps (first slice):** encoded text `<= 40` chars; decoded text `<= 32` chars; max one newline; reject if final command length `> 63`; reject decoded control chars except newline; reject empty decoded text.
+- **Length caps:** encoded text `<= 40` chars; decoded text `<= 32` chars; max one newline; reject if final command length `> 63`; reject decoded control chars except newline; reject empty decoded text.
 - **Color:** same set as `DL`; `DEFAULT` allowed.
 - **Duration:** `0..99` seconds.
 - **Speed:** `0..9` (renderer scale); default `0`/`1` pending what AstroPixelsPlus expects (native calls often pass `0`).
-- **Direction/effect:** first slice **scroll-left only** (`selectScrollTextLeft`); no direction arg until needed.
+- **Direction/effect:** **scroll-left only** (`selectScrollTextLeft`); no direction arg until needed.
 - **Examples:** `DT:FLD:DEFAULT:10:0:You're%0AWonderful`, `DT:RLD:BLUE:8:0:General%20Kenobi`
 - **Dome behavior:** decode percent-encoding, call `selectScrollTextLeft(decodedText, color, speed, duration)`. No panels/audio/`DM`/seqon.
 
@@ -145,22 +141,6 @@ Dome exposes per-step-type applied state + counters, parallel to the existing
 
 Dome logs: `[DL] applied …`, `[DT] applied …`, `[DH] applied …`, and
 `[DL][reject] reason …` / `[DT][reject] …` / `[DH][reject] …`.
-
-## Implementation record (2026-06-22)
-
-1. **Body** structured UI model and command serialization (editor steps for DV/DL/DT/DH).
-2. **Dome** implements `DL`/`DT`/`DH` with telemetry (AstroPixelsPlus).
-3. **Body** Protocol Check whitelist and strict grammar; `DH` effect/color matrix mirrored.
-4. One case per family run on a droid through a body-side test sequence
-   (since removed), 2026-06-22:
-   - `DL:LOGIC:MARCH:RED:5` - applied, reject 0
-   - `DT:FLD:DEFAULT:5:0:TEST%0ATEXT` - applied, reject 0
-   - `DH:A:FLASH:RED:5` - applied, reject 0
-   - `DV:RESET_VISUALS` - applied (cleanup)
-
-   The body sent every command over protoR2link (`overflow=0`); the dome's
-   `visual_authoring` apply counts rose with `reject_count` 0, the operator saw
-   the FLD logic and text, and the dome log showed `[DL]/[DT]/[DH]/[DV] applied`.
 
 ## Open items
 - `DT` default `speed` (0 vs 1) — confirm against AstroPixelsPlus renderer.
