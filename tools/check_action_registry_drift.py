@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from registry_yaml import load_registry_yaml
 import check_setting_words  # noqa: E402  (after the path insert above)
 import check_wiring_cards_drift  # noqa: E402
+import check_console_catalog_drift  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1123,6 +1124,9 @@ def main() -> int:
     # Wiring's product cards are what the spec sheets' wiring_card blocks
     # generate today (#458): run here so the slice gate's drift stage carries it.
     check_wiring_cards_drift.check(errors)
+    # The Operation Catalog is what the registry generates today, byte for
+    # byte, and every `console:` row names a known reason and page (#474).
+    check_console_catalog_drift.check(errors)
 
     if errors:
         print("Action registry drift detected:", file=sys.stderr)

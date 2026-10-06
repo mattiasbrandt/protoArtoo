@@ -103,7 +103,7 @@ FLOCK := python3 tools/pio_lock.py
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift check-setting-words check-parts-drift check-wiring-cards-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-servo-motion-drift check-build-budgets check-protocol-mirror pw-fixture flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift check-setting-words check-parts-drift check-wiring-cards-drift check-console-catalog-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-servo-motion-drift check-build-budgets check-protocol-mirror pw-fixture flash ota uploadfs \
         flash-monitor \
         setup setup-wifi clean monitor console bench-rows bench-auto check-deps
 
@@ -181,8 +181,15 @@ check-parts-drift: ## Ad hoc check that the parts catalog and its generated outp
 check-wiring-cards-drift: ## Check Wiring's product cards against the spec sheets' wiring_card blocks
 	python3 tools/check_wiring_cards_drift.py
 
-# The registry's own report-never-rewrite check, beside the two above so an
-# operator reads all three the same way (#340).
+# The Operation Catalog against the registry it is generated from (#474), in the
+# same report-never-rewrite shape: the real generator's render functions,
+# byte-compared. check-action-drift runs it too, which is how the slice gate
+# carries it. To regenerate: python3 tools/generate_console_catalog.py
+check-console-catalog-drift: ## Check the Console's Operation Catalog against the action registry
+	python3 tools/check_console_catalog_drift.py
+
+# The Component Registry's own report-never-rewrite check, beside the ones above so an
+# operator reads them all the same way (#340).
 check-component-drift: ## Check the Component Registry manifest against the firmware and the browser
 	python3 tools/check_component_registry_drift.py
 
