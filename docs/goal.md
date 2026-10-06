@@ -21,7 +21,7 @@ This document defines the durable technical direction for protoR2.
 
 protoR2 targets a complete open-source ESP32 body-controller firmware stack for R2D2 (astromech) droids, with predictable control behavior, explicit subsystem ownership, and maintainable long-term operation. Each subsystem is a Component Family whose products are peers: the builder fits the one they own, and the firmware supports it through one interface rather than through a board- or vendor-specific build.
 
-The Component Registry (`include/component_registry.inc`) is the source for what is supported: **supported** means a driver ships, **roadmap** means planned with no driver yet, and **Confirmed on a Droid** records a supported product that has run on a real droid.
+The Component Registry (`include/component_registry.inc`) is the source for each product's state, in three words: **Supported** (it is in the project and works), **Tested** (it has run on a real droid), and **Roadmap** (planned).
 
 It also explicitly targets builders whose droids are primarily static display pieces for day-to-day use, where control from tablet or computer browser workflows is preferred over convention-style roaming with large RC radios.
 
@@ -36,15 +36,15 @@ It also explicitly targets builders whose droids are primarily static display pi
 
 ## Target Hardware Profile
 
-| Family | Supported today | Direction |
+| Family | Supported | Direction |
 |---|---|---|
-| Body Controller | Artoo PCB (artoo.uk, a generic ESP32 clone; confirmed on a droid); FireBeetle 2 (ESP32-P4) | a new board is a Board Variant: pin map, build environment and size budget, not a fork |
-| Radio Controller | HotRC DS-650 (confirmed on a droid); RC Radio; RC Receiver - PWM, SBUS and ELRS (ELRS selectable, not read yet, #369); or none fitted, driving from the web | roadmap: Xbox Controller |
-| Body servo controller | Body controller board GPIO (confirmed on a droid); PCA9685 | roadmap: Pololu Maestro |
-| Foot Drive | Hoverboard, hacked firmware | roadmap: Sabertooth 2x25, Flipsky Mini V6 VESC; protocol-contract compatibility over vendor lock |
-| Dome Rotation | ISDT ESC70 RC ESC (confirmed on a droid) | roadmap: SyRen 10 |
-| Dome Controller | AstroPixels Plus over protoR2link (confirmed on a droid) | roadmap: Teeces; explicit command/status ownership boundaries |
-| Sound | body-side ownership; DY-SV5W (confirmed on a droid), MP3 Trigger and CHIRP Audio Trigger (confirmed on a droid) behind one driver interface, picked at runtime | roadmap: DFPlayer Mini |
+| Body Controller | Artoo PCB (artoo.uk, a generic ESP32 clone; Tested); FireBeetle 2 (ESP32-P4) | a new board is a Board Variant: pin map, build environment and size budget, not a fork |
+| Radio Controller | HotRC DS-650 (Tested); RC Radio; RC Receiver - PWM, SBUS and ELRS (ELRS selectable, not read yet, #369); or none fitted, driving from the web | Roadmap: Xbox Controller |
+| Body servo controller | Body controller board GPIO (Tested); PCA9685 | Roadmap: Pololu Maestro |
+| Foot Drive | Hoverboard, hacked firmware | Roadmap: Sabertooth 2x25, Flipsky Mini V6 VESC; protocol-contract compatibility over vendor lock |
+| Dome Rotation | ISDT ESC70 RC ESC (Tested) | Roadmap: SyRen 10 |
+| Dome Controller | AstroPixels Plus over protoR2link (Tested) | Roadmap: Teeces; explicit command/status ownership boundaries |
+| Sound | body-side ownership; DY-SV5W (Tested), MP3 Trigger and CHIRP Audio Trigger (Tested) behind one interface, picked at runtime | Roadmap: DFPlayer Mini |
 | Actuators | the board's Outputs (each a servo or an LED strip, named by what the board prints) | servo/LED role flexibility without architecture fork |
 
 ## Technical Support Intent
@@ -53,7 +53,7 @@ It also explicitly targets builders whose droids are primarily static display pi
 |---|---|
 | RC modes | standard_pwm, single_sbus, dual_sbus; elrs is selectable and not read yet (#369); or no Radio Controller fitted |
 | Usage focus | static-display-first operation with convenient tablet/computer control for regular use, and RC driving for roaming |
-| Hardware model | each subsystem a Component Family of peer products, picked at runtime on Configuration; one firmware image per board carries every supported driver |
+| Hardware model | each subsystem a Component Family of peer products, picked at runtime on Configuration; one firmware image per board works with every Supported product |
 | Configuration model | runtime configuration for normal workflows, persisted state, validated API boundaries |
 | Compatibility model | protocol/interface contract first, not binary-vendor lock |
 | Integration stability | component variation is expected; external integration surfaces should remain stable |
@@ -123,8 +123,8 @@ Audio and body-dome baseline:
 - dome link behavior supports coordinated command routing with explicit responsibility boundaries
 
 Hardware support baseline:
-- supported hardware is what the Component Registry marks `supported`: two Body Controllers (Artoo PCB, FireBeetle 2), and at least one product in every other family
-- a roadmap product is never described as supported
+- Supported hardware is what the Component Registry marks `supported`: two Body Controllers (Artoo PCB, FireBeetle 2), and at least one product in every other family
+- a Roadmap product is never described as Supported
 - drive integration on the artoo-esp32 Board Variant remains hoverboard UART contract based, forced by that PCB's fixed wiring (one UART, no spare); other Board Variants may default to a different drive backend where their wiring allows it (ADR 0029)
 - component-level compatibility remains contract-driven and documented
 

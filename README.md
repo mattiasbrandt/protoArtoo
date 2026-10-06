@@ -63,7 +63,7 @@ it from any web browser, with no app and no rebuild. Every source line is open.
 ### Sound
 
 - **Pick your sound module on Configuration.** One firmware carries every
-  supported driver; the choice takes effect at the next start.
+  Supported module; the choice takes effect at the next start.
 - **Named Tracks**, random chatter that follows the Mood, and ShadowMD's
   bank-and-sound numbering. [Sound reference](docs/sound_playback.md)
 
@@ -81,25 +81,27 @@ it from any web browser, with no app and no rebuild. Every source line is open.
 
 ## What it supports
 
-The products in each family are peers: fit the one you own.
+The products in each family are peers: fit the one you own. Every product on a
+card is **Supported**; **Tested** marks the ones that have run on a real droid,
+and **Roadmap** names what is planned.
 
 <table>
 <tr>
 <td width="33%" valign="top">
 <img src="docs/images/families/body-controller.svg" width="28" height="28" alt=""><br>
 <b>Body Controller</b><br>
-<a href="https://www.artoo.uk/">Artoo PCB</a><br><a href="docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md">FireBeetle 2 (ESP32-P4)</a>
+<a href="https://www.artoo.uk/">Artoo PCB</a> <sub><b>Tested</b></sub><br><a href="docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md">FireBeetle 2 (ESP32-P4)</a>
 </td>
 <td width="33%" valign="top">
 <img src="docs/images/families/radio-controller.svg" width="28" height="28" alt=""><br>
 <b>Radio Controller</b><br>
-<a href="docs/spec-sheets/hotrc-ds650-radio.md">HotRC DS-650</a><br>RC Radio<br><a href="docs/spec-sheets/rc-receiver-spec.md">RC Receiver - PWM</a><br><a href="docs/spec-sheets/sbus-protocol.md">RC Receiver - SBUS</a><br><a href="docs/spec-sheets/elrs-crsf-radio.md">RC Receiver - ELRS</a>
+<a href="docs/spec-sheets/hotrc-ds650-radio.md">HotRC DS-650</a> <sub><b>Tested</b></sub><br>RC Radio<br><a href="docs/spec-sheets/rc-receiver-spec.md">RC Receiver - PWM</a><br><a href="docs/spec-sheets/sbus-protocol.md">RC Receiver - SBUS</a><br><a href="docs/spec-sheets/elrs-crsf-radio.md">RC Receiver - ELRS</a>
 <br><sub>Roadmap: <a href="docs/spec-sheets/xbox-controller-input.md">Xbox Controller</a></sub>
 </td>
 <td width="33%" valign="top">
 <img src="docs/images/families/body-servo-controller.svg" width="28" height="28" alt=""><br>
 <b>Body servo controller</b><br>
-<a href="docs/spec-sheets/servo-communication.md">Body controller board GPIO</a><br><a href="docs/spec-sheets/pca9685-servo-expander.md">PCA9685</a>
+<a href="docs/spec-sheets/servo-communication.md">Body controller board GPIO</a> <sub><b>Tested</b></sub><br><a href="docs/spec-sheets/pca9685-servo-expander.md">PCA9685</a>
 <br><sub>Roadmap: <a href="docs/spec-sheets/pololu-maestro-servo-controller.md">Pololu Maestro</a></sub>
 </td>
 </tr>
@@ -107,13 +109,13 @@ The products in each family are peers: fit the one you own.
 <td width="33%" valign="top">
 <img src="docs/images/families/dome-rotation.svg" width="28" height="28" alt=""><br>
 <b>Dome Rotation</b><br>
-<a href="docs/spec-sheets/isdt-esc70-dome-esc.md">ISDT ESC70 (RC ESC)</a>
+<a href="docs/spec-sheets/isdt-esc70-dome-esc.md">ISDT ESC70 (RC ESC)</a> <sub><b>Tested</b></sub>
 <br><sub>Roadmap: <a href="docs/spec-sheets/sabertooth-syren-packet-serial.md">SyRen 10</a></sub>
 </td>
 <td width="33%" valign="top">
 <img src="docs/images/families/dome-controller.svg" width="28" height="28" alt=""><br>
 <b>Dome Controller</b><br>
-<a href="docs/spec-sheets/astropixels-dome-controller.md">AstroPixels Plus</a>
+<a href="docs/spec-sheets/astropixels-dome-controller.md">AstroPixels Plus</a> <sub><b>Tested</b></sub>
 <br><sub>Roadmap: <a href="docs/spec-sheets/teeces-dome-lighting.md">Teeces</a></sub>
 </td>
 <td width="33%" valign="top">
@@ -127,7 +129,7 @@ The products in each family are peers: fit the one you own.
 <td width="33%" valign="top">
 <img src="docs/images/families/sound.svg" width="28" height="28" alt=""><br>
 <b>Sound</b><br>
-<a href="docs/spec-sheets/dy-sv5w-sound.md">DY-SV5W</a><br><a href="docs/spec-sheets/mp3-trigger-sound.md">MP3 Trigger</a><br><a href="docs/spec-sheets/chirp-audio-trigger-sound.md">CHIRP Audio Trigger</a>
+<a href="docs/spec-sheets/dy-sv5w-sound.md">DY-SV5W</a> <sub><b>Tested</b></sub><br><a href="docs/spec-sheets/mp3-trigger-sound.md">MP3 Trigger</a><br><a href="docs/spec-sheets/chirp-audio-trigger-sound.md">CHIRP Audio Trigger</a> <sub><b>Tested</b></sub>
 <br><sub>Roadmap: <a href="docs/spec-sheets/dfplayer-mini-sound.md">DFPlayer Mini</a></sub>
 </td>
 </tr>

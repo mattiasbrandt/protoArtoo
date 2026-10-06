@@ -25,7 +25,7 @@ and subsystem responsibility in one place.
 Use the following precedence when topology details are needed:
 1. docs/pin_map.md
 2. include/config.h
-3. include/component_registry.inc (which products are supported)
+3. include/component_registry.inc (each product's state: Supported, Tested, Roadmap)
 4. docs/failsafe.md
 5. docs/goal.md
 
@@ -59,18 +59,18 @@ Body Controller (protoR2 on the Artoo PCB or the FireBeetle 2)
 
 ## Component Families
 
-From `include/component_registry.inc`. **supported** = a driver ships; **roadmap** =
-planned, no driver yet. Products in a family are peers.
+From `include/component_registry.inc`. **Supported**: in the project and works.
+**Tested**: has run on a real droid. **Roadmap**: planned. Products in a family are peers.
 
 | Family | Supported | Roadmap | How the Body Controller reaches it |
 |---|---|---|---|
-| Body Controller | Artoo PCB; FireBeetle 2 (ESP32-P4) | | the running image is the answer |
-| Radio Controller | HotRC DS-650; RC Radio; RC Receiver - PWM; RC Receiver - SBUS; RC Receiver - ELRS (selectable, not read yet) | Xbox Controller | PWM or SBUS receiver input; none fitted is also an answer |
-| Body servo controller | Body controller board GPIO; PCA9685 | Pololu Maestro | LEDC PWM on the board's Outputs; I2C |
-| Dome Rotation | ISDT ESC70 (RC ESC) | SyRen 10 | LEDC PWM |
-| Dome Controller | AstroPixels Plus | Teeces | protoR2link |
+| Body Controller | Artoo PCB (Tested); FireBeetle 2 (ESP32-P4) | | the running image is the answer |
+| Radio Controller | HotRC DS-650 (Tested); RC Radio; RC Receiver - PWM; RC Receiver - SBUS; RC Receiver - ELRS (selectable, not read yet) | Xbox Controller | PWM or SBUS receiver input; none fitted is also an answer |
+| Body servo controller | Body controller board GPIO (Tested); PCA9685 | Pololu Maestro | LEDC PWM on the board's Outputs; I2C |
+| Dome Rotation | ISDT ESC70 (RC ESC) (Tested) | SyRen 10 | LEDC PWM |
+| Dome Controller | AstroPixels Plus (Tested) | Teeces | protoR2link |
 | Foot Drive | Hoverboard, hacked firmware | Sabertooth 2x25; Flipsky Mini V6 VESC | UART (Gen2.x 8-byte frames for the hoverboard) |
-| Sound | DY-SV5W; MP3 Trigger; CHIRP Audio Trigger | DFPlayer Mini | UART |
+| Sound | DY-SV5W (Tested); MP3 Trigger; CHIRP Audio Trigger (Tested) | DFPlayer Mini | UART |
 
 ## Classic Baseline vs protoR2
 
@@ -79,7 +79,7 @@ planned, no driver yet. Products in a family are peers.
 | Body controller class | ATmega/Arduino body master patterns | ESP32 Body Controller: the Artoo PCB or the FireBeetle 2 |
 | Dome serial model | Primarily one-way body-to-dome command direction | Bidirectional body-dome command and status flow (protoR2link) |
 | Sound ownership | Commonly dome-side module ownership | Body-side audio authority |
-| Drive transport | Sabertooth/SyRen ecosystems are common | A pluggable Foot Drive behind one interface; the hoverboard ships today, Sabertooth and VESC are on the roadmap |
+| Drive transport | Sabertooth/SyRen ecosystems are common | A pluggable Foot Drive behind one interface; the hoverboard is Supported, Sabertooth and VESC are Roadmap |
 | RC/control posture | Gamepad-centric and mixed legacy patterns | RC receivers plus browser-first operation, or the browser alone |
 
 ## Physical Topology
