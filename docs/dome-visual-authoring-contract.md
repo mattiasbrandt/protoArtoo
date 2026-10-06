@@ -1,6 +1,7 @@
 # Dome Visual-Authoring Contract (`DL` / `DH` / `DT`)
 
-Status: **draft, agreed body↔dome (codex) 2026-06-21** — implementation pending.
+Status: **shipped.** Agreed between the body and the dome 2026-06-21; the body's
+sequence editor and Protocol Check and AstroPixelsPlus all implement it.
 Scope: GitHub issue #11. Extends ADR 0008 (dome owns visual rendering) and
 `docs/dome-visual-presets.md` from named Factory presets (`DV:`) to **custom**
 structured authoring in the body sequence editor.
@@ -8,8 +9,8 @@ structured authoring in the body sequence editor.
 ## Decision
 
 For normal structured editor authoring, the body does **not** emit raw
-`@`/`*`/`HPA` Marcduino strings. Those remain an Advanced/manual escape hatch
-only. Structured editor steps generate **typed visual-intent commands** so the
+`@`/`*`/`HPA` Marcduino strings. A raw string stays available only as the
+editor's **Dome command** step. Structured editor steps generate **typed visual-intent commands** so the
 dome can apply color, duration, multi-line text, and report telemetry.
 
 The earlier "MVP: body generates raw `@0T`/`@0P` for simple logic/PSI" shortcut
@@ -28,10 +29,10 @@ length caps rather than being a general message transport.
 
 | Feature | Owner | Status |
 |---|---|---|
-| `DV:<NAME>` Visual Preset | **body-only** wrapper (closed whitelisted name set) | done, frontend-only |
-| `DL:` Logic/PSI Mode | requires AstroPixelsPlus support | implemented (body + dome), hardware-verified |
-| `DH:` Holo Effect | requires AstroPixelsPlus support | implemented (body + dome), hardware-verified; strict effect/color matrix below |
-| `DT:` Logic Text (multi-line) | requires AstroPixelsPlus support | implemented (body + dome), hardware-verified |
+| `DV:<NAME>` Visual Preset | **body-only** wrapper (closed whitelisted name set) | shipped; both Protocol Checks refuse an unknown name (`kDvPresets`, `src/protocol_check.cpp`) |
+| `DL:` Logic/PSI Mode | requires AstroPixelsPlus support | shipped (body + dome), run on a droid 2026-06-22 |
+| `DH:` Holo Effect | requires AstroPixelsPlus support | shipped (body + dome), run on a droid 2026-06-22; strict effect/color matrix below |
+| `DT:` Logic Text (multi-line) | requires AstroPixelsPlus support | shipped (body + dome), run on a droid 2026-06-22 |
 
 None of `DL:`/`DH:`/`DT:` are body-only: the body validates + serializes + forwards
 the typed command, but **AstroPixelsPlus renders it**. On a dome without this build
@@ -145,22 +146,23 @@ Dome exposes per-step-type applied state + counters, parallel to the existing
 Dome logs: `[DL] applied …`, `[DT] applied …`, `[DH] applied …`, and
 `[DL][reject] reason …` / `[DT][reject] …` / `[DH][reject] …`.
 
-## Implementation order (agreed) — COMPLETE
+## Implementation record (2026-06-22)
 
-1. ✅ **Body** structured UI model + command serialization (editor cards for DV/DL/DT/DH).
-2. ✅ **Dome** implements `DL`/`DT`/`DH` with telemetry (AstroPixelsPlus).
-3. ✅ **Body** Protocol Check whitelist + strict grammar; `DH` effect/color matrix mirrored.
-4. ✅ **Hardware-verified** one case per family via body-driven `DM:VISTEST` (2026-06-22):
-   - `DL:LOGIC:MARCH:RED:5` — applied, reject 0
-   - `DT:FLD:DEFAULT:5:0:TEST%0ATEXT` — applied, reject 0
-   - `DH:A:FLASH:RED:5` — applied, reject 0
-   - `DV:RESET_VISUALS` — applied (cleanup)
+1. **Body** structured UI model and command serialization (editor steps for DV/DL/DT/DH).
+2. **Dome** implements `DL`/`DT`/`DH` with telemetry (AstroPixelsPlus).
+3. **Body** Protocol Check whitelist and strict grammar; `DH` effect/color matrix mirrored.
+4. One case per family run on a droid through a body-side test sequence
+   (since removed), 2026-06-22:
+   - `DL:LOGIC:MARCH:RED:5` - applied, reject 0
+   - `DT:FLD:DEFAULT:5:0:TEST%0ATEXT` - applied, reject 0
+   - `DH:A:FLASH:RED:5` - applied, reject 0
+   - `DV:RESET_VISUALS` - applied (cleanup)
 
-   Body emitted all cmds over body-link UART (`overflow=0`), dome `visual_authoring`
-   apply counts incremented with `reject_count` 0; operator visually confirmed FLD
-   logic + text; codex confirmed dome-side `[DL]/[DT]/[DH]/[DV] applied`.
+   The body sent every command over protoR2link (`overflow=0`); the dome's
+   `visual_authoring` apply counts rose with `reject_count` 0, the operator saw
+   the FLD logic and text, and the dome log showed `[DL]/[DT]/[DH]/[DV] applied`.
 
-## Open items to confirm during implementation
+## Open items
 - `DT` default `speed` (0 vs 1) — confirm against AstroPixelsPlus renderer.
 - Whether spaces are kept literal or normalized to `%20` in the mirror.
 - Later additions gated on confirmed source support: `DL` `FIRE`/`PULSE`, `DT` direction arg.
