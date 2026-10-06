@@ -48,13 +48,16 @@ on:
 permissions:
   contents: read
 
-# One run per pull request or branch. A newer push to a pull request or an
-# epic branch supersedes the run in flight, which otherwise keeps a 20-minute
-# build alive for a commit nobody is waiting on any more. Runs on main are
-# never cancelled: main's history keeps a result for every commit. A manual
-# dispatch never cancels the run ahead of it either; it queues.
+# One run per pull request or epic branch: a newer push supersedes the run in
+# flight, which otherwise keeps a 20-minute build alive for a commit nobody is
+# waiting on any more. A run on main and a manual dispatch each get a group of
+# their own (the run id), because cancel-in-progress: false only spares the
+# run in progress: GitHub still cancels a PENDING run in the same group when a
+# newer one queues. Shared, version-sync's bot push would cancel a merge's
+# pending run on main, and an epic push would cancel a dispatch. main keeps a
+# result for every commit.
 concurrency:
-  group: verification-${{ github.event.pull_request.number || github.ref }}
+  group: verification-${{ github.event.pull_request.number || ((github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && github.run_id) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/epic/')) }}
 
 jobs:
@@ -394,9 +397,26 @@ jobs:
         continue-on-error: true
         run: make test-tools
 
-      # Lints every workflow and the shared setup action, with ShellCheck on
-      # each run: block. A pinned release binary, checked against the digest
-      # actionlint's own checksums file lists for it, rather than an action.
+      # Each budgeted env is one board job above. A board added to
+      # tools/build_budgets.json and not to this workflow would never be built
+      # here, so the set is held to the two jobs that exist.
+      - name: 🧮 Board jobs cover the budgets
+        id: board-jobs
+        continue-on-error: true
+        run: |
+          envs=$(python3 -c 'import json; print(" ".join(sorted(json.load(open("tools/build_budgets.json"))["envs"])))')
+          if [ "$envs" != "artoo_esp32 firebeetle2" ]; then
+            echo "tools/build_budgets.json budgets: $envs" >&2
+            echo "verification.yml has board jobs for: artoo_esp32 firebeetle2" >&2
+            echo "Add a board job for each new env in .github/workflows/verification.yml (and its row here)." >&2
+            exit 1
+          fi
+
+      # Lints every workflow, with ShellCheck on each workflow run: block, and
+      # checks the inputs each workflow passes the shared setup action. It does
+      # not lint the composite action's own run: blocks. A pinned release
+      # binary, checked against the digest actionlint's own checksums file
+      # lists for it, rather than an action.
       - name: 🧹 actionlint
         id: actionlint
         continue-on-error: true
@@ -433,6 +453,7 @@ jobs:
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
           TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
           ACTIONLINT_OUTCOME: ${{ steps.actionlint.outcome }}
+          BOARD_JOBS_OUTCOME: ${{ steps.board-jobs.outcome }}
         run: |
           row() { printf '%s\t%s\t%s\n' "$1" "$2" "$3"; }
           {
@@ -450,21 +471,23 @@ jobs:
             row "$PROTOCOL_MIRROR_OUTCOME" "Protocol mirror"          "make check-protocol-mirror"
             row "$WEB_OUTCOME"             "Web logic tests"          "node --test test/test_web/*.js"
             row "$TOOLING_OUTCOME"         "Tooling tests"            "make test-tools"
+            row "$BOARD_JOBS_OUTCOME"      "Board jobs cover the budgets" "tools/build_budgets.json envs"
             row "$ACTIONLINT_OUTCOME"      "Workflow lint"            "actionlint"
           } > "$RUNNER_TEMP/rows.tsv"
           { echo 'rows<<ROWS_EOF'; cat "$RUNNER_TEMP/rows.tsv"; echo 'ROWS_EOF'; } >> "$GITHUB_OUTPUT"
 
-      # A skipped check passes ONLY when this change touched nothing but
-      # documentation -- the one condition under which it was deliberately
-      # not run. Skipped for any other reason is a failure, so a step that
-      # never executes can never quietly satisfy the gate.
+      # A skipped check passes ONLY when `changes` positively said this change
+      # touched nothing but documentation -- the one condition under which it
+      # was deliberately not run; an empty answer fails closed. Skipped for
+      # any other reason is a failure, so a step that never executes can
+      # never quietly satisfy the gate.
       - name: 🚦 Fail if any check failed
         if: always()
         run: |
           failed=()
           while IFS=$'\t' read -r outcome label _; do
             [ "$outcome" = success ] && continue
-            [ "$outcome" = skipped ] && [ "$CODE_CHANGED" != true ] && continue
+            [ "$outcome" = skipped ] && [ "$CODE_CHANGED" = false ] && continue
             failed+=("$label ($outcome)")
           done < "$RUNNER_TEMP/rows.tsv"
           if [ ${#failed[@]} -gt 0 ]; then
@@ -519,7 +542,7 @@ jobs:
           {
             echo "## 🤖 Verification"
             echo ""
-            if [ "$CODE_CHANGED" != "true" ]; then
+            if [ "$CODE_CHANGED" = "false" ]; then
               echo "This change touches documentation only, so the board builds,"
               echo "budgets, native tests and static analysis were skipped. They run"
               echo "again on the first commit that touches anything else."
@@ -551,15 +574,18 @@ jobs:
           } | tee .ci-summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: 💬 Post PR comment
-        if: always() && github.event_name == 'pull_request'
+        # Not on a cancelled run: a superseded run must not post its partial
+        # table over the newer one. The gate below keeps always().
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3.0.5
         with:
           header: verification
           path: .ci-summary.md
 
-      # A skipped job passes only when this change touched nothing but
-      # documentation, which skips the two board jobs. Skipped, failed or
-      # cancelled for any other reason fails the required check.
+      # A skipped job passes only when `changes` positively said "false"
+      # (documentation only), which skips the two board jobs. An empty answer
+      # fails closed. Skipped, failed or cancelled for any other reason fails
+      # the required check.
       - name: 🚦 Gate - fail if any job did not succeed
         if: always()
         env:
@@ -567,7 +593,7 @@ jobs:
         run: |
           for r in $RESULTS; do
             [ "$r" = success ] && continue
-            [ "$r" = skipped ] && [ "$CODE_CHANGED" != true ] && continue
+            [ "$r" = skipped ] && [ "$CODE_CHANGED" = false ] && continue
             echo "a required job ended $r (changes, artoo, firebeetle2, checks: $RESULTS)"
             exit 1
           done
