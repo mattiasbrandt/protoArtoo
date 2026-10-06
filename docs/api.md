@@ -3,13 +3,10 @@
 This document describes the currently exposed HTTP and SSE API in protoArtoo,
 including request shape, accepted parameters, and observed response contracts.
 
-**Route Coverage (for drift detection):** 74 routes registered in every build,
-counted from `src/web/web_seam_routes.cpp` (2026-10-06): 70 core API routes + 3
-multipart upload routes (`/upload/firmware`, `/upload/filesystem`,
-`/api/take/file`) + 1 SSE stream (`/api/events`). Four more exist only on
-builds that carry them: `/api/admission/trace` (`PA_ADMISSION_TRACE`),
+Every route `src/web/web_seam_routes.cpp` registers is documented here or
+listed under "Internal Routes". `/api/admission/trace` (`PA_ADMISSION_TRACE`),
 `/api/profiler` (`PA_HEAP_PROFILE`) and the two `/api/profiler/trace` routes
-(`PA_HEAP_TRACING`). All are documented here or listed under "Internal Routes".
+(`PA_HEAP_TRACING`) exist only on builds that carry them.
 
 ## Table of Contents
 
@@ -522,7 +519,7 @@ Sends a raw dome command or a factory sequence (DM:* name).
 
 The command is routed based on its prefix:
 - Starts with `DM:` — queued as a Learned Sequence or factory sequence (same as `POST /api/seq/test`)
-- Otherwise — queued as a raw command to the dome link
+- Otherwise - queued as a raw command to protoR2link
 
 - Body fields:
 - `cmd`: required; raw string or `DM:*` factory sequence name; max 127 characters, and a raw
@@ -565,12 +562,12 @@ curl -s -X POST http://artoo.local/api/dome/cmd \
 
 Fetches cached dome layout JSON from WiFi transport.
 
-The controller makes no HTTPS connections. The dome link's WiFi (fallback)
+The controller makes no HTTPS connections. protoR2link's WiFi (fallback)
 transport and OTA both use plain `http://` on the local network, and the
 firmware is built without an HTTPS client, so an `https://` peer address
 will not connect.
 
-The layout is cached by the dome link task. This endpoint streams the cached bytes from a chunked response, so no per-request buffer allocation is needed.
+The layout is cached by the protoR2link task. This endpoint streams the cached bytes from a chunked response, so no per-request buffer allocation is needed.
 
 If transport is not WiFi, returns `503` and does nothing else. If the cache
 is empty, returns `503` and sets a flag for the background task to fetch on
@@ -1671,7 +1668,7 @@ The request names the sequence and the instant, and nothing else. The firmware w
 - Then each dome panel and body Part goes to where the last step before that instant left it, one at a time. Consecutive motions are at least the Cadence Floor apart, a body Output also holds the next one off for its own throw, and nothing is ever sent as a group command.
 - A Part the routine has not yet moved is not commanded, and neither is a dome panel's flutter, a random step's pick, a dome turn or a raw light code. A body Part whose last word is a flutter goes to its closed end, where a flutter leaves it; a pose swings nothing.
 - Past the end, the pose is what the routine's own ending leaves: ring panels closed, pies and body Parts where they were.
-- The later word wins. A sequence started, or `POST /api/seq/stop`, after the press cancels a pose the controller has not taken yet. A second press replaces the first, and its first motion still waits out the first one's spacing. A dome resync (after an estop clears, or when the dome link comes up) ends a pose being reached, and a pose that starts ends a resync's panel-by-panel close.
+- The later word wins. A sequence started, or `POST /api/seq/stop`, after the press cancels a pose the controller has not taken yet. A second press replaces the first, and its first motion still waits out the first one's spacing. A dome resync (after an estop clears, or when protoR2link comes up) ends a pose being reached, and a pose that starts ends a resync's panel-by-panel close.
 
 No Non-RC Control consent is asked: it commands what a normal run commands at that instant.
 
@@ -2106,8 +2103,7 @@ Updates supported config fields and persists to NVS.
   is `400` `{"ok":false,"error":"bodyServoMember is not a body servo controller this firmware can drive"}`.
   Choosing `pca9685` **adds** the expander's sixteen Outputs, `pca:0`..`pca:15`,
   beside the board's own, which keep working (#444). Saved immediately, **takes
-  effect at the next reboot**. Configuration's Component Picker writes it from
-  the Body servo controller family's cards.
+  effect at the next reboot**. Configuration writes it.
 - `pcaAddress(64..127)` — the PCA9685's I2C address (`0x40`..`0x7F`, base
   `0x40` plus its address jumpers); default 64 (`0x40`). Takes effect at the
   next reboot. `112`..`115` (`0x70`..`0x73`) are refused, `400` with `field`
@@ -2592,7 +2588,7 @@ The browser adapter for the Controller Console (ADR 0036) — the same command
 processor a serial terminal drives, over HTTP. See
 [console.md](console.md) for the command language and
 [console-protocol.md](console-protocol.md) for the full record format. This is
-the endpoint the dashboard's Live Logs command box calls.
+the endpoint the Dashboard's Console command box calls.
 
 - Input: form field `command`, or JSON body `{ "command": "..." }`.
 - Success: `200` `{"records":[...]}` — one object per Console Record, each
@@ -2667,6 +2663,12 @@ curl -s -X POST http://artoo.local/api/console \
 Returns controller status snapshot.
 
 - Success: `200`
+- Errors:
+  - `500` `{"ok":false,"error":"request scratch unavailable"}`
+  - `200` `{"ok":false,"error":"status payload overflow"}` when the snapshot did not
+    fit its buffer: a `200` that is **not** a status object, so a reader checks
+    for `ok:false` before reading fields. The `status` event on `/api/events`
+    carries the same fallback body in that case
 - Top-level fixed fields include:
 - `estop`, `webControlEnabled`, `sbusSignalLost`, `sbusHwFailsafe`, `webDriveExpired`
 - `failsafeSource`, `failsafeCount`, `failsafeTriggerMs`, `failsafeZeroMs`, `failsafeTriggerToZeroMs`, `failsafeWatchdogMs`, `failsafeTriggerSource`
@@ -2832,6 +2834,7 @@ it is on the admission layer's short list of read-only diagnostic paths
 (`webPathIsDiagnostic()`), which are let through at a lower floor.
 
 - Success: `200` JSON
+- Errors: `500` `{"ok":false,"error":"request scratch unavailable"}`
 - Fields: `estop`, `sbusSignalLost`, `sbusHwFailsafe`, `webControlEnabled`,
   `wifiConnected`, `wifiClientConnected`, `littleFsReady`, `heapFree`,
   `heapMin`, `heapLargestBlock` (the Internal Data Heap, the same reading
