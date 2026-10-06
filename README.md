@@ -1,10 +1,10 @@
-# protoArtoo
+# protoR2
 
 **Open-source ESP32 body-controller firmware for R2D2 (astromech) droids: build
 sequences on a timeline, wire and set up your droid from the browser, and drive
 it by RC or web. Pluggable drive, sound, radio, dome and servo hardware.**
 
-protoArtoo runs on the Body Controller in your droid's body: the board that
+protoR2 runs on the Body Controller in your droid's body: the board that
 owns the Foot Drive, the body servos and lights, the sound module, Dome
 Rotation and the link to the Dome Controller. You set it up, wire it and run
 it from any web browser, with no app and no rebuild. Every source line is open.
@@ -156,14 +156,14 @@ endorsement from Lucasfilm or The Walt Disney Company.
   timeline of authored moves; picking a part on a drawing of the droid;
   saying on the surface what it cannot show; explanation as a required field;
   one Escape per layer, questions answered in two verbs, quiet receipts. His
-  is a simulator; protoArtoo configures and moves a real droid.
+  is a simulator; protoR2 configures and moves a real droid.
 - **[Mr Baddeley](https://www.patreon.com/c/mrbaddeley)** created the
   3D-printable MK4 astromech, and his
   [Facebook community](https://www.facebook.com/groups/MrBaddeley/) is where
   builders meet.
 - **[Printed Droid](https://www.printed-droid.com/)**'s
   [R2-D2 terminology](https://www.printed-droid.com/kb/r2-d2-terminology) is
-  how protoArtoo names dome parts and takes their panel bearings; their
+  how protoR2 names dome parts and takes their panel bearings; their
   drawing is their own work and is not reproduced here.
 - **[astromech.net](https://astromech.net/)** and the MarcDuino and SHADOW
   communities. This firmware is meant as a contribution back.
@@ -176,5 +176,5 @@ endorsement from Lucasfilm or The Walt Disney Company.
 - **Product photographs** stay with their owners; provenance per image is in
   [product image provenance](docs/product-image-provenance.md).
 
-*protoArtoo began as open firmware for the Artoo Controller PCB. Today that
-board is one Body Controller in the table above.*
+*protoR2 was called protoArtoo and began as open firmware for the Artoo
+Controller PCB. Today that board is one Body Controller in the table above.*

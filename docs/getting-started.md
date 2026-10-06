@@ -10,7 +10,7 @@ you want to change the firmware.
 
 ## Update a running droid from a release
 
-Already running protoArtoo? You do not need to build anything to update.
+Already running protoR2? You do not need to build anything to update.
 
 1. Open the [latest release](https://github.com/mattiasbrandt/protoArtoo/releases/latest)
    and download the two images for your Body Controller:

@@ -1,6 +1,6 @@
-# protoArtoo Goal
+# protoR2 Goal
 
-This document defines the durable technical direction for protoArtoo.
+This document defines the durable technical direction for protoR2.
 
 ## Table of Contents
 
@@ -13,13 +13,13 @@ This document defines the durable technical direction for protoArtoo.
 - [Operational and Safety Goals](#operational-and-safety-goals)
 - [Interface and Integration Goals](#interface-and-integration-goals)
 - [Operator Capability Baseline](#operator-capability-baseline)
-- [How protoArtoo Differs From Other Community Stacks](#how-protoartoo-differs-from-other-community-stacks)
+- [How protoR2 Differs From Other Community Stacks](#how-protor2-differs-from-other-community-stacks)
 - [Out of Scope](#out-of-scope)
 - [References](#references)
 
 ## Objective
 
-protoArtoo targets a complete open-source ESP32 body-controller firmware stack for R2D2 (astromech) droids, with predictable control behavior, explicit subsystem ownership, and maintainable long-term operation. Each subsystem is a Component Family whose products are peers: the builder fits the one they own, and the firmware supports it through one interface rather than through a board- or vendor-specific build.
+protoR2 targets a complete open-source ESP32 body-controller firmware stack for R2D2 (astromech) droids, with predictable control behavior, explicit subsystem ownership, and maintainable long-term operation. Each subsystem is a Component Family whose products are peers: the builder fits the one they own, and the firmware supports it through one interface rather than through a board- or vendor-specific build.
 
 The Component Registry (`include/component_registry.inc`) is the source for what is supported: **supported** means a driver ships, **roadmap** means planned with no driver yet, and **Confirmed on a Droid** records a supported product that has run on a real droid.
 
@@ -67,7 +67,7 @@ Commitments that must remain true:
 - core body-controller functionality does not depend on private paid firmware blobs
 
 Positioning:
-- protoArtoo can reuse shared community hardware patterns while keeping implementation, behavior, and evolution transparent and community-auditable
+- protoR2 can reuse shared community hardware patterns while keeping implementation, behavior, and evolution transparent and community-auditable
 
 ## Architecture Goals
 
@@ -104,7 +104,7 @@ Positioning:
 
 ## Operator Capability Baseline
 
-The following baseline captures what protoArtoo is expected to provide in normal operation.
+The following baseline captures what protoR2 is expected to provide in normal operation.
 
 Control and safety baseline:
 - RC control supports standard_pwm, single_sbus, dual_sbus and elrs modes, and a droid with no Radio Controller fitted drives from the web
@@ -128,7 +128,7 @@ Hardware support baseline:
 - drive integration on the artoo-esp32 Board Variant remains hoverboard UART contract based, forced by that PCB's fixed wiring (one UART, no spare); other Board Variants may default to a different drive backend where their wiring allows it (ADR 0029)
 - component-level compatibility remains contract-driven and documented
 
-## How protoArtoo Differs From Other Community Stacks
+## How protoR2 Differs From Other Community Stacks
 
 ### Stack Profile Snapshot (Capabilities + Typical Component Footprint)
 
@@ -136,7 +136,7 @@ This table captures stack posture and typical hardware assumptions.
 
 | Stack | Typical controller hardware profile | Typical control input profile | Typical drive/audio profile | Source and distribution posture |
 |---|---|---|---|---|
-| protoArtoo | ESP32 Body Controller (Artoo PCB, FireBeetle 2 ESP32-P4) | RC receivers (PWM/SBUS/ELRS) plus browser UI, or browser only | pluggable Foot Drive (hoverboard today; artoo-esp32's default, forced by its wiring, ADR 0029) plus body-owned audio modules (DY-SV5W, CHIRP Audio Trigger, MP3 Trigger) | fully open repository target (firmware + web + docs) with no binary-only paywall goal |
+| protoR2 | ESP32 Body Controller (Artoo PCB, FireBeetle 2 ESP32-P4) | RC receivers (PWM/SBUS/ELRS) plus browser UI, or browser only | pluggable Foot Drive (hoverboard today; artoo-esp32's default, forced by its wiring, ADR 0029) plus body-owned audio modules (DY-SV5W, CHIRP Audio Trigger, MP3 Trigger) | fully open repository target (firmware + web + docs) with no binary-only paywall goal |
 | Padawan360 | Arduino 2560 or Mega ADK (UNO possible) plus USB Host Shield | Xbox 360 wireless controller plus Xbox wireless USB receiver | Sabertooth (feet), SyRen (dome), MP3 Trigger audio; I2C-centric peripheral control model | public code and long-running community documentation are available |
 | ShadowMD | Arduino 2560/Mega ADK plus USB Host Shield as a master coordinating MarcDuino/Benduino nodes | 1-2 PS3 Move Navigation controllers via CSR-class BT dongle | Sabertooth 2x32A (feet), SyRen 10 (dome), MP3 Trigger-class audio, XBee integration, sequence/animation routing to dependent nodes | ◐ public implementations/docs exist, but maintenance and exact architecture vary by fork/build |
 | ShadowRC (Printed-Droid fork lineage) | Arduino Mega 2560/Mega ADK as main controller with MarcDuino integration path | RC radio/receiver model (Turnigy Evolution plus iBus-class receivers documented) | Sabertooth (feet), SyRen 10 (dome), direct MP3 Trigger plus parallel MarcDuino sound/panel control | ◐ public documentation and source publication are documented for this fork lineage; name now overlaps with unrelated closed-source software |
@@ -146,7 +146,7 @@ This table captures stack posture and typical hardware assumptions.
 
 ### Capability Alignment Matrix
 
-| Comparison axis (capability + required hardware emphasis) | protoArtoo | Padawan360 | ShadowMD | ShadowRC | DroidLink | Benduino | AstroCAN |
+| Comparison axis (capability + required hardware emphasis) | protoR2 | Padawan360 | ShadowMD | ShadowRC | DroidLink | Benduino | AstroCAN |
 |---|---|---|---|---|---|---|---|
 | Source transparency and attribution posture | ✅ open code and documented behavior are explicit goals | ✅ public repo and open sketch lineage | ◐ public forks exist, but not one canonical maintained source line | ◐ published as open fork lineage in documented 2021 release context; name now overlaps with unrelated closed-source software | ◐ docs public, firmware distribution license-gated | ◐ public docs describe lineage and rights boundaries; canonical firmware location varies by generation | ◐ ecosystem docs public; firmware openness depends on module/project |
 | Core hardware dependency profile | ✅ ESP32 body controller + RC receiver + browser control path | ✅ Arduino + USB Host Shield + Xbox receiver/controller + Sabertooth/SyRen + MP3 Trigger | ✅ Arduino Mega/ADK + USB Host Shield + CSR BT + PS3 Nav + Sabertooth/SyRen + MarcDuino/Benduino node topology | ✅ Arduino Mega/ADK + RC TX/RX (iBus profile) + Sabertooth/SyRen + MP3 Trigger + MarcDuino stack | ✅ ESP32-S3 Master/Display/Slave model + licensed installer workflow | ✅ Arduino Pro Mini/Nano class node with terminal-rich board variants and compatibility with MarcDuino/BetterDuino ecosystems | ✅ CAN module stack with bridge/shield/module ecosystem |
