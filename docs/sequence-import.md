@@ -18,7 +18,7 @@ Sequence contribution   (gate below)          + registry + test + credits
 
 1. **Entry point.** A request arrives via the **Sequence request** template ("can we get
    project X's sequence?") or the **Sequence contribution** template ("here is one I built"
-   -- the editor's *Share to project* button targets this). Both are in
+   -- the editor can share a sequence straight to it). Both are in
    `.github/ISSUE_TEMPLATE/`.
 2. **Evaluate** against the gate below. If it does not pass, say so honestly on the issue
    (per the project's issue-rejection convention) and close it.
@@ -30,8 +30,9 @@ Accept a sequence only if all hold; otherwise decline with a written reason.
 
 1. **Novel.** Its operator-recognizable behavior is not already produced by a Factory
    sequence or an alias. Check the name *and the behavior* against the catalog and alias
-   tables in `src/tasks/sequence_catalog.cpp` -- the 23 Factory sequences (including the body routines
-   `DM:SE30`..`DM:SE36`) plus 24 `:SE`/`$` aliases already cover the classic R2 repertoire, so most "ports" are duplicates.
+   tables in `src/tasks/sequence_catalog.cpp` -- the Factory sequences (including the body
+   routines `DM:SE30`..`DM:SE36`) and the `:SE`/`$` aliases already cover the classic R2
+   repertoire, so most "ports" are duplicates.
 2. **Plays to protoArtoo's strength.** Prefer choreographies that pair a body sound with
    synced dome and body motion. A panel-only wave with no sound is almost always already an
    alias.
@@ -117,7 +118,7 @@ effects. Drop anything outside the allowed set.
 - Logic / PSI / display: `@0T...`, `@0P...`, `@1M...` (pass through the trigger; the dome
   executes the effect -- never author per-frame LED content over the 9600-baud slip ring)
 - Holos / HPs: `*HP...`, `*ST00` etc.
-- Legacy Marcduino sequence: `:SE##` (2-digit zero-padded; a Dome command step; not inside a loop)
+- Legacy Marcduino sequence: `:SE##` (2-digit zero-padded; sent as written; not inside a loop)
 
 `:SM` may appear in source code or explanatory comments to document the original project's
 approach. It is never valid migration output.
@@ -143,7 +144,7 @@ static const SeqStep kExampleSteps[] = {
     SEQ_TERM(1500),
 };
 // catalog row: { "DM:EXAMPLE", kExampleSteps, SEQ_STEPCOUNT(kExampleSteps), <suppressMs>, TOGGLE_NONE, nullptr, 0,
-//                "<one-line description the Sequences page shows> (<length> s)." }
+//                "<one-line description> (<length> s)." }
 ```
 
 Use a clean, **additive** `DM:` name that collides with no existing Factory or alias name.

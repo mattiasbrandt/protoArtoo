@@ -70,8 +70,8 @@ at a time. A pie opened with `:OP` stays open unless the branch closes it.
 
 ### Non-panel dome commands
 
-The editor's light step kinds write the dome's own typed commands, which Protocol
-Check validates field by field:
+Light steps send the dome's own typed commands, which Protocol Check validates
+field by field:
 
 - `DV:<NAME>` -- Visual Preset; the name must be one the dome knows (`ROCKMARCH`,
   `VADER`, `ALARM`, `LEIA`, `HEART`, `CANTINA`, `SCREAM`, `OVERLOAD`, `HELLO`,
@@ -79,8 +79,7 @@ Check validates field by field:
 - `DL:...` -- Logic / PSI Mode; `DT:...` -- Logic Text; `DH:...` -- Holo Effect
   (grammar in [dome-visual-authoring-contract.md](dome-visual-authoring-contract.md))
 
-Anything else goes in a **Dome command** step, sent as written. These are not panel
-intent commands:
+Any other dome string is sent as written. These are not panel intent commands:
 
 - `@0T...` / `@0P...` / `@1M...` -- logic / PSI / text display
 - `*HP...` / `*ST00` -- holo / HP commands
@@ -88,7 +87,7 @@ intent commands:
   not for panel control; rejected inside a loop
 
 A raw logic, PSI or holo code saves, but the dome draws it in its default colors, so
-the Rehearsal warns (`raw-light-code`) and suggests a Visual Preset step instead.
+the Rehearsal warns (`raw-light-code`) and suggests a Visual Preset instead.
 Raw logic text (`@nM...`) is not warned about: no preset carries text.
 
 ### `:SM` is not available in sequences
@@ -125,18 +124,18 @@ itself, or a dome Part by its catalog id.
 ```
 
 It turns the short way round from where the dome **believes** it points, at the
-speed its full turn was timed at, and stops on time (the Dome page records the
-full turn). The Part's bearing is read when the step runs, so a corrected
+speed its full turn was timed at, and stops on time (the full turn is timed on
+the Dome page). The Part's bearing is read when the step runs, so a corrected
 `bearing_deg` reaches every saved step.
 
 It is a different promise from `domeRotate`: a duration always completes, and a
 turn to a target may not. While where the dome points is unknown (after a boot,
-an estop or Sleep Mode, until **Front is here**), the dome not calibrated or the
-Dome ESC off, the
-step does not move the dome; the run reports `bearing-unknown`,
+an estop or Sleep Mode, until the builder confirms front on the Dome page), the
+dome not calibrated or the Dome ESC off, the step does not move the dome; the run reports `bearing-unknown`,
 `dome-not-calibrated` or `component-disabled` and carries on. It saves either
 way. A sequence's end stops the dome, so leave the end at least half the
-dome's full-turn time after a bearing step. A pose press (the timeline's send to this moment) does not turn the dome.
+dome's full-turn time after a bearing step. Sending one moment of the timeline to
+the droid does not turn the dome.
 
 ## Moving a body part
 
@@ -240,9 +239,9 @@ Only a sound module that mixes can play one: today that is the CHIRP Audio Trigg
 On any other module the sequence still saves and runs, without the Background
 Track; the run reports `module-cannot-mix` and carries on, and the Rehearsal warns
 about it beforehand. With Sound switched off the run reports `component-disabled`
-instead. A pose press (the timeline's send to this moment) does not
-start or stop a Background Track, unless the press ends the sequence that
-started it: that end stops it, as any abnormal end does.
+instead. Sending one moment of the timeline to the droid does not start or stop
+a Background Track, unless it ends the sequence that started it: that end stops
+it, as any abnormal end does.
 
 ## Tempo and beats
 
@@ -330,9 +329,7 @@ run, and the log says so.
 The editor reads the sequence you are writing and says what will not happen the
 way you wrote it. It is not Protocol Check: Protocol Check decides whether a
 sequence can be saved, and the Rehearsal can never stop a save or a run
-(ADR 0044). Its counts sit under Protocol Check's verdict. You get the full list
-when you save and when you tune a Factory sequence, and a folded badge after a
-test run.
+(ADR 0044).
 
 Every finding is one of two levels -- a **warning** (it will not do what you
 wrote) or a **note** (worth knowing) -- and carries a token beside its message
@@ -363,7 +360,7 @@ and a fix:
 | `background-track-cannot-mix` | warning | a Background Track on a droid whose sound module plays one sound at a time | it saves and runs without the Background Track (ADR 0054) |
 
 It also says how many steps it could check. A dome panel move, a body move and a
-random pick each carry a question it cannot answer from the page -- how long the
+random pick each carry a question it cannot answer from the sequence -- how long the
 panel or part takes to move, or which panel the dice will choose -- and those
 steps are named as not checked, with what would close the gap.
 
@@ -441,11 +438,9 @@ model -- no `fx` field (inferred), no manual cleanup steps (automatic).
   sequence runs, each take plays from its `t` beside the steps: where two takes cover one
   part, the later one in the array moves it, and a step that moves the part wins over
   both. A toggle sequence plays its takes on its open half only, and a sequence placed
-  inside another (`sequence` step) brings its steps but not its takes. A take is made by
-  Perform in the editor, never written by hand. On the timeline it is one block across
-  the lanes of the parts it moves: dragged to move it, its edges dragged to trim it, which
-  writes `from` and `to` (ms into the take; `t` is then where `from` plays), and never
-  opened step by step. Perform again, on a picked take, performs a new one in its place.
+  inside another (`sequence` step) brings its steps but not its takes. A take is recorded
+  in the editor, never written by hand. Trimming it writes `from` and `to` (ms into the
+  take; `t` is then where `from` plays).
 
 ### Named Tracks vs `$NNN`
 
