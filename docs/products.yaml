@@ -309,7 +309,80 @@ products:
     gate: null
     included: 0
     sheet: xbox-controller-input.md
-    notes: ""
+    notes: |
+      Roadmap (#312). #303 recorded the Component Protocol as Bluetooth HID; #312
+      names the wireless dongle and the wired controller, and both of those are USB.
+      The sheet shows four protocols in this family, so which one #312 is about is an
+      operator decision, not a research result.
+
+      The board decides the protocol. artoo-esp32 is a classic ESP32: Bluetooth
+      Classic and BLE, no USB host. firebeetle2 is an ESP32-P4: a USB host, no radio
+      of its own, and a BLE-only C6 companion. So the dongle and wired paths are
+      firebeetle2-only, the Bluetooth Classic path is artoo-esp32-only, and the
+      Component Protocol and the Board Capability Gate are one decision here, not
+      two. The three coherent positions:
+      - Bluetooth, Series X|S pad, artoo-esp32: a current-production controller, no
+        dongle, Bluepad32 does the work. Costs: reverses the Bluetooth Framework
+        Envelope decision, the BLE-versus-BR/EDR firmware trap, nothing on
+        firebeetle2.
+      - USB, 360 dongle, firebeetle2: the hobby's proven arrangement, explicit
+        disconnect events, four controllers. Costs: discontinued hardware, a custom
+        USB class driver, nothing on artoo-esp32.
+      - USB, wired GIP, firebeetle2: a published Microsoft specification and a
+        current controller; a cable is a dead man's handle. Costs: tethered.
+      No position serves both boards. Whether firebeetle2 could ever take a
+      Bluetooth controller is the sheet's Open Item 1 (HID host over ESP-Hosted).
+
+      Which controller the lineup names is open too: the hobby's part (360 + receiver)
+      is discontinued, and the current-production Series X|S pad is used by no droid
+      project. Both cannot be the lineup entry.
+
+      Bluetooth means reversing a Framework Envelope decision. artoo-esp32's
+      `artoo_envelope` block compiles Bluetooth out (`CONFIG_BT_ENABLED=n`) and
+      records its saving and how to undo it. That saving is the floor, not the bill:
+      a Bluetooth HID host (BTstack or Bluedroid, HID parsing, bonding storage) has
+      never been measured here. Settle it by building once with `CONFIG_BT_ENABLED=y`
+      plus a host stack and reading `check-envelope`; the static-DRAM segment, not
+      flash, is the number to watch. The block's "an operator would notice: nothing"
+      line becomes false and is rewritten in the same commit.
+
+      Bluepad32 would be the first dependency whose licence depends on how the
+      project is distributed (BTstack is free for open source, commercial for closed
+      source). protoArtoo is a public repository, which is the case the open-source
+      terms cover, but adopting it is an explicit operator decision, answered once.
+
+      Either path, the driver is written: a custom class driver over the ESP-IDF USB
+      Host Library matching `FF/47/D0` (GIP) or the 360 vendor interface, or
+      Bluepad32. The seam is the same: a Radio Controller member that produces what
+      `rc_input.cpp` already produces.
+
+      A gamepad does not fit the binding model. `RcBindingConfig` is channel and
+      range shaped (source, channel, min/center/max, deadband, reverse). A pad has no
+      channels, no pulse widths and nothing to calibrate; what it has is button
+      identity, click-versus-hold and modifiers, the grammar the sheet's Padawan360
+      section shows. So it needs a new `RcBindingSource` and a second binding shape,
+      not one more enum value, and that design is shared with any future gamepad:
+      decide it before the first one. Diagnostics likewise: the RC diagnostics
+      contract defines `raw` and `rawUs` in SBUS counts and pulse microseconds, and a
+      gamepad has neither. Either the contract grows a third source-native form, or a
+      gamepad reports `normalized` and `mapped` only and the UI says so.
+
+      The failsafe, not negotiable:
+      - a last-report watchdog owned by protoArtoo, on the order of
+        `SBUS_TIMEOUT_MS`, feeding the existing failsafe; the disconnect event only
+        makes the common case fast;
+      - disarmed on connect, and on every reconnect, as Padawan360 does;
+      - an idle disconnect (the controller's ~15 minute power-off) is normal, not an
+        error;
+      - consider pinning the controller's address, as ShadowMD pins a MAC. Pairing
+        is not authorisation.
+      Unlike Padawan360's cooperative `loop()` check, the 50 Hz DriveTask's zeroing
+      does not depend on the USB stack being serviced.
+
+      Padawan360's Home-button LED ring shows drive armed state and the speed preset
+      on the controller itself; protoArtoo has no equivalent. No astromech project
+      drives an Xbox controller from an ESP32, so protoArtoo would be first, with no
+      build to copy.
 
   - value: 4
     id: rc_transmitter_pwm
@@ -419,7 +492,33 @@ products:
     gate: null
     included: 1
     sheet: pca9685-servo-expander.md
-    notes: ""
+    notes: |
+      The dome already runs two of these: `0x40` for the panels and `0x41` for the
+      holos, 19 slots, on the operator's AstroPixelsPlus fork
+      (`mattiasbrandt/AstroPixelsPlus`), which pins Reeltwo at `23.5.3` in its
+      platformio.ini rather than vendoring it. The sheet's three field problems (the
+      grinding servo, the off-by-one, the pin-0 underflow) were found there; the
+      fork's FORK_IMPROVEMENTS.md and its ADR 0004 (holo servoSettings starts at
+      pin 17) are the record.
+
+      Things about the dome fork that a body-side change must not inherit by
+      accident:
+      - It is 1-based Reeltwo. The body expander's Outputs are the silkscreen,
+        0-based (`pca:0`-`pca:15`). Porting a channel table between the two shifts
+        every servo by one.
+      - Its live holo table is pins 17-22, with the old 16-21 values left commented
+        out. Upstream still has the pin-16 comment, so bumping Reeltwo or re-syncing
+        the table from upstream regresses it.
+      - It calls a bare `Wire.begin()` and runs its bus at 100 kHz; the body
+        expander runs 400 kHz (#306).
+      - It ships 800-2200 us per slot. The body's LEDC defaults are 500-2500 us. Not
+        a conflict, but a body Output should not silently take either range from the
+        other.
+
+      The bus-init and seam plan the sheet carried is built (#444): the servo
+      backend seam, the I2C bring-up at an explicit clock, silkscreen numbering,
+      the driver's own clamped microseconds-to-ticks conversion, and the no-trim
+      decision on the oscillator (#306, 2026-09-30) are in the driver and its header.
 
   - value: 10
     id: pololu_maestro
