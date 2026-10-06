@@ -219,7 +219,45 @@ products:
       hazards:
         - "No GPIO header pin takes 5 V. The 5 V rail is power only."
       source: "Electrical Summary"
-    notes: ""
+    notes: |
+      Supported, and not yet a board to buy for a droid. The reasons are the board
+      facts in the sheet's "Before you buy one": a DFRobot-acknowledged bad batch
+      whose C6 cannot join WiFi, a recovery that needs a wired reflash on 2 mm bare
+      pads, and a factory C6 that refuses the wire-free update. A wire reflash is a
+      developer bring-up expedient, not a builder path: it breaks the promise that a
+      droid is built without soldering and flashed from the web. None of this applies
+      to the artoo-esp32.
+
+      What changes that verdict: DFRobot shipping corrected boards or a corrected
+      factory C6 image. A successful repair on our bench does not change it, and nor
+      do more good boards arriving, because neither tells a builder what is in the
+      box they would be opening.
+
+      The two bench boards (both chip revision v1.3):
+      - Board 1 is the misprovisioned unit. Its link never came up. #198 tried the
+        wired C6 reflash and closed not planned on 2026-09-07: the C6 latches
+        IO8 = 0 at every reset, so it never enters UART download mode, and IO8 is not
+        on any pad. A full 4 MB read worked on 2026-08-22 with IO8 high, so the fault
+        most likely came from the pad work, not from DFRobot; it is not part of the
+        vendor escalation. The C6 was never erased or written. Board 1 now runs main
+        as the bench's WiFi-module-absent fixture and may be flashed freely.
+      - Board 2 provisions correctly and runs the shipping firebeetle2 image: link
+        up, HTTP, SSE and the web UI served over it. Its C6 flash contents are
+        UNKNOWN and stay that way: reading them needs the same 2 mm pad contact, and
+        board 2 gets no pad work and its C6 is not reflashed, because it is the
+        project's only working C6.
+
+      Programming the C6: the pad order, the 5 V-to-NC hazard and the reflash
+      sequence in the sheet came out of #198 (Phase A, the 118-cycle passive boot
+      log; Phase B, the jig attempts, one of which lost pad 3 inside 15 s). #198
+      holds the full working notes, the strap diagnosis and the do-not-repeat list. The reflash
+      sequence has never been carried to completion here.
+
+      C6 updates over SDIO: refused by the factory C6 (ADR 0034 records the
+      measurement on board 2 and why update support is discovered, not declared).
+      Proving the update path needs a C6 already running an OTA-capable slave image,
+      and neither board can provide one without reflashing board 2's working C6. It
+      is recorded as a risk, not carried as a ticket nobody can action.
 
   # ---------------------------------------------------------------------------
   # Radio Controller
