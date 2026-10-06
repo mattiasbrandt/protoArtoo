@@ -11,13 +11,13 @@ see `CHANGELOG.md`.
 
 | Status item | Current state |
 |---|---|
-| Latest release | [`v1.3.4`](https://github.com/mattiasbrandt/protoArtoo/releases/tag/v1.3.4) (2026-10-05), a fix release with no images |
+| Latest release | [Releases](https://github.com/mattiasbrandt/protoArtoo/releases/latest). A fix release carries no images |
 | Newest images | [`v1.3.0`](https://github.com/mattiasbrandt/protoArtoo/releases/tag/v1.3.0) (2026-09-11): firmware and filesystem images for the artoo-esp32, one per sound module, and for the FireBeetle 2 |
 | Body Controllers | Artoo PCB (Supported, Tested); DFRobot FireBeetle 2 ESP32-P4 (Supported; read ["Before you buy one"](spec-sheets/firebeetle2-esp32-p4-spec-sheet.md#before-you-buy-one)) |
 | Web control | Working — pages load reliably, and a controller too busy to serve a page says so and offers a retry instead of hanging |
 | Typing commands | Working — a command console in the dashboard and over a serial cable, same words either way; it still answers when the web pages have gone quiet |
 | Next up | Foot Drive validation on an assembled droid |
-| In development | Guided Setup, Wiring, Parts, Lights, sequences on a timeline and the believed dome position, in `CHANGELOG.md` `[Unreleased]` |
+| In development | `CHANGELOG.md` `[Unreleased]` |
 
 `v1.0.0` is the first stable release. Its capabilities are confirmed on real
 hardware: audio, RC control, dome control, servos, web workflows, backups, and
@@ -65,8 +65,8 @@ for it.
 - **Servos** — arm and other servo movement confirmed on real hardware.
 - **Web control workflows** — setup, live control, backup/restore, and droid
   identity (custom `.local` name) confirmed in hardware validation. Page loads
-  are reliable, and a controller under memory pressure answers with a plain
-  "controller busy" page and a retry instead of leaving the browser hanging.
+  are reliable, and a controller under memory pressure says it is busy and
+  offers a retry instead of leaving the browser hanging.
 - **WiFi setup from the browser** — pointing the droid at a home network or
   keeping it on its own hotspot, switched from the WiFi page with a staged
   reboot, confirmed on the controller. Settings survive reboots and firmware
@@ -129,8 +129,7 @@ A Body Controller, supported for developers.
   Drive failsafe with motors connected, and kill-switch behavior have not yet been
   confirmed on an assembled droid with a hoverboard installed. This is planned
   as follow-up work after `v1.0.0` and will be documented when complete.
-- **MP3 Trigger sound module.** Supported, with its Sound page; not yet Tested
-  on a droid.
+- **MP3 Trigger sound module.** Supported; not yet Tested on a droid.
 - **First boot of a downloaded release on a fresh controller.** The
   boot-into-setup-hotspot flow is covered by automated tests and the release
   builds ship without any developer WiFi shortcut, but the literal "flash,
