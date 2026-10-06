@@ -1,7 +1,7 @@
-# protoArtoo — Audio System Reference
+# protoArtoo - Audio System Reference
 
-The body controller is the **sole audio source** for the droid. All audio commands —
-from RC input, web API, dome serial `$` RX, or mood presets — route through the
+The body controller is the **sole audio source** for the droid. All audio commands -
+from RC input, the web API, `$` lines arriving over protoR2link, or mood presets - route through the
 AudioTask queue and are dispatched through a pluggable driver backend. No other
 task or subsystem writes to the audio GPIO directly.
 
@@ -9,7 +9,7 @@ task or subsystem writes to the audio GPIO directly.
 
 - [1. Backend Architecture](#1-backend-architecture)
 - [2. Backend Details](#2-backend-details)
-- [2.1 `AUDIO_SOFT_UART` - DY-SV5W Binary Frame](#21-audio_soft_uart--dy-sv5w-binary-frame)
+- [2.1 `AUDIO_SOFT_UART` - DY-SV5W Binary Frame](#21-audio_soft_uart---dy-sv5w-binary-frame)
 - [2.2 `AUDIO_CHIRP` - CHIRP Audio Trigger ASCII Backend](#22-audio_chirp---chirp-audio-trigger-ascii-backend)
 - [2.3 `AUDIO_MP3TRIGGER` - SparkFun MP3 Trigger](#23-audio_mp3trigger---sparkfun-mp3-trigger)
 - [3. MarcDuino `$` Command Mapping](#3-marcduino--command-mapping)
@@ -32,8 +32,8 @@ the firmware is completely agnostic to which module is physically installed —
 it asks the driver what it supports and never which one it is.
 
 `PA_AUDIO_DRIVER` keeps exactly one job: it names the module a controller that
-has never been asked starts with. It no longer decides what the image can
-drive.
+has never been asked starts with. It no longer decides which modules the
+image carries.
 
 Interface reference:
 
@@ -46,25 +46,27 @@ this to its module's native range.
 
 ### Available backends
 
-Every row below ships in every image. The three implemented modules are all
-selectable at runtime; DFPlayer Mini is present in the lineup as planned, with
-no driver behind it.
+The three Supported modules are peers: every image, on both Body Controllers
+(the Artoo PCB and the FireBeetle 2), carries a driver for each, and any of them
+is selectable at runtime. Tested means the module has run on a real droid.
+DFPlayer Mini is on the Roadmap.
 
-| Member id | Module | Protocol | Status |
+| Member id | Module | Protocol | State |
 |---|---|---|---|
-| `dy_sv5w` | DY-SV5W | Binary frames, 9600 baud | ✅ Implemented |
-| `mp3_trigger` | SparkFun MP3 Trigger | Binary, 9600 baud (community standard; factory default 38400) | ✅ Implemented — hardware validation pending |
-| `chirp` | CHIRP Audio Trigger | ASCII commands, configurable baud | ✅ Implemented — TX+RX, live status queries |
-| `dfplayer_mini` | DFPlayer Mini | Binary frames, 9600 baud | 🔲 Planned — no driver in the image |
+| `dy_sv5w` | DY-SV5W | Binary frames, 9600 baud | Tested |
+| `mp3_trigger` | SparkFun MP3 Trigger | Binary, 9600 baud (community standard; factory default 38400) | Supported |
+| `chirp` | CHIRP Audio Trigger | ASCII commands, 9600 baud (set in `CHIRP.INI`); TX and RX, live status queries | Tested |
+| `dfplayer_mini` | DFPlayer Mini | Binary frames, 9600 baud | Roadmap |
 
 To change module: wire up the new one and `POST /api/config` with
 `soundMember=<member id>`. The change is saved immediately and takes effect at
 the next boot. The lineup itself is `GET /api/identity/components`.
 
-Setup's Audio control is an enable toggle plus the live driver name; it does
-not choose which product is fitted. The Component Picker cards that would show
-each module's photograph are still to come (#369). The photographs already
-ship in the default asset set (`/<id>.webp`, including `mp3_trigger.webp`).
+On Configuration the Sound card is a Component Picker: one card per module
+from `GET /api/identity/components`, each with its drawing or photograph.
+Picking a card saves `soundMember`, and the card says so until the reboot that
+starts it. The Not fitted card switches Sound off; Sequences still run, in
+silence.
 
 The `PA_AUDIO_DRIVER` values (`AUDIO_SOFT_UART`, `AUDIO_CHIRP`,
 `AUDIO_MP3TRIGGER`) still name the same three modules, and still select which
@@ -75,7 +77,7 @@ them: naming an unbuilt module as a build's default is a build error.
 
 ## 2. Backend Details
 
-### 2.1 `AUDIO_SOFT_UART` — DY-SV5W Binary Frame
+### 2.1 `AUDIO_SOFT_UART` - DY-SV5W Binary Frame
 
 **Files:** `src/drivers/audio_dy_sv5w.cpp`, `include/audio_dy_sv5w.h`
 
@@ -92,7 +94,7 @@ query `AA 01 00 AB` is that frame's checksum (`0xAA + 0x01 + 0x00`), not a foote
 Transport depends on the board, keyed on `PA_CAP_DEDICATED_AUDIO_UART`. On
 artoo-esp32 all three hardware UART controllers are spoken for, so TX is an
 interrupt-protected software bit-bang on `PIN_AUDIO_TX` (GPIO 26) and RX borrows
-the dome link's controller through `audioUartClaim()`. Where the board has a
+protoR2link's controller through `audioUartClaim()`. Where the board has a
 spare controller, audio gets it in both directions. The driver is identical on
 both: the `AudioSerialIO` seam hides the difference.
 
@@ -127,7 +129,7 @@ the spec sheet's storage section.
 
 ---
 
-### 2.2 `AUDIO_CHIRP` — CHIRP Audio Trigger ASCII Backend
+### 2.2 `AUDIO_CHIRP` - CHIRP Audio Trigger ASCII Backend
 
 **File:** `src/drivers/audio_chirp.cpp`
 
@@ -144,18 +146,17 @@ single-track binary modules:
 
 **Protocol:** ASCII commands, `\n` terminated, with ACK responses from the board.
 
-**Baud rate:** CHIRP defaults to 115200 but is configurable. Set `#BAUD_RATE 9600`
-in `CHIRP.INI` on the SD root to match the protoArtoo software UART driver. If
-a hardware UART becomes available in a future revision, higher baud rates are
-possible without code changes beyond the driver.
+**Baud rate:** CHIRP defaults to 115200 but is configurable. The protoArtoo
+driver talks to it at 9600 on both Body Controllers, so set `#BAUD_RATE 9600`
+in `CHIRP.INI` on the SD root.
 
-#### Setup
+#### Card settings
 
 Required `CHIRP.INI` settings:
 
 | Key | Required value | Purpose |
 |---|---|---|
-| `#BAUD_RATE` | `9600` | Must match protoArtoo soft-UART rate |
+| `#BAUD_RATE` | `9600` | Must match the protoArtoo driver's rate |
 | `#BANK1_PAGE` | `A` (board default) | Selects active page for Bank 1 vocals |
 | `#USE_FLASH_BANK1` | write it explicitly | Flash sync for fast Bank 1 access; leave it off if Bank 1 exceeds 14 MB |
 
@@ -201,8 +202,8 @@ stream, and their Track Stop is a full stop.
 
 The module, not the body, chooses the stream a `PLAY` lands on: its lowest
 inactive stream, or stream 0 when all of them are busy. A stream that finishes
-sends nothing, and on artoo-esp32 nothing the module says is heard while the
-dome link holds the shared UART. So the driver keeps, per stream, only what it
+sends nothing, and on artoo-esp32 nothing the module says is heard while
+protoR2link holds the shared UART. So the driver keeps, per stream, only what it
 can stand behind - *idle by proof* (it sent the `STOP`, or a status reply said
 idle), *maybe a vocal*, or *the Background Track* - and works by these rules
 (`src/drivers/audio_chirp.cpp`, "Stream model"):
@@ -305,11 +306,11 @@ See the upstream CHIRP examples and folder conventions in the CHIRP project docs
 
 CHIRP supports live status queries at any time, including active playback. The
 protoArtoo CHIRP driver queries automatically every 10 seconds, so no operator
-poll action is required. On artoo-esp32 the replies arrive on the dome link's
-UART controller, so the query and the catalog refresh are skipped while the
-dome link holds it and the Sound page says "Held by protoR2link"; on
+poll action is required. On artoo-esp32 the replies arrive on protoR2link's
+UART controller, so the query and the catalog refresh are skipped while
+protoR2link holds it and the Sound page says "Held by protoR2link"; on
 firebeetle2 audio has its own controller (`PA_CAP_DEDICATED_AUDIO_UART`) and
-both run whatever the dome link is doing.
+both run whatever protoR2link is doing.
 
 Reported fields include module link state (ACK-based), play state (playing when
 any of the module's default three streams reports playing), Bank 1 sound count
@@ -330,7 +331,7 @@ What those two rows mean here:
 
 #### Catalog-assisted slot mapping (Sound page)
 
-When CHIRP catalog capability is present, the Sound page adds a CHIRP workspace that:
+When CHIRP catalog capability is present, the Sound page's **Catalog** section:
 
 - refreshes and lists live catalog entries (bank/page/index/name) from the module cache
 - supports single-row map/play plus bulk mode with multi-select checkboxes and map-checked action
@@ -344,7 +345,7 @@ When CHIRP catalog capability is present, the Sound page adds a CHIRP workspace 
   and apply them in one action, withheld while part of the listing is missing — a suggested range spans
   `lo..hi` and would otherwise claim sounds nobody listed
 - names what the listing is missing (banks that did not arrive, sounds listed by index, the entry cap)
-- warns beside the Named sounds table when the module's `MSUM` checksum shows the card's sound list has
+- warns beside the Named Tracks table when the module's `MSUM` checksum shows the card's sound list has
   changed since the assignments were saved. Saving stays available: the builder decides what the new
   numbers should point at
 - locks catalog controls during refresh and shows long-running feedback (large catalogs can take about
@@ -371,7 +372,7 @@ reads `unchecked` rather than carrying a stale file forward.
 
 ---
 
-### 2.3 `AUDIO_MP3TRIGGER` — SparkFun MP3 Trigger
+### 2.3 `AUDIO_MP3TRIGGER` - SparkFun MP3 Trigger
 
 **File:** `src/drivers/audio_mp3trigger.cpp`
 
@@ -390,7 +391,7 @@ out of the box will not answer protoArtoo. Configure it by putting a file named
 Only 2400, 9600, 19200, 31250 and 38400 are accepted. The command must start
 with `#` followed by a space; only the first 512 bytes of the file are parsed,
 and the first `*` character ends the command section. No firmware changes are
-required — the existing 9600-baud soft-UART path is compatible. Full detail in
+required: the driver already talks at 9600 baud. Full detail in
 [`spec-sheets/mp3-trigger-sound.md`](spec-sheets/mp3-trigger-sound.md).
 
 #### SD card layout
@@ -407,14 +408,14 @@ Community R2 track bank assignments (source-verified: BetterDuino, SHADOW_MD):
 | 051–075 | Happy | — |
 | 076–100 | Sad | — |
 | 101–125 | Whistle | — |
-| 126–150 | Scream | `cfg_snd_scream` = 126 ✓ |
-| 151–175 | Leia | `cfg_snd_leia` = 151 ✓ |
-| 176–200 | Sing / music | SW theme = 177, Imperial March = 178, Cantina = 180 ✓ |
+| 126-150 | Scream | `snd_scream` = 126 |
+| 151-175 | Leia | `snd_leia` = 151 |
+| 176-200 | Sing / music | SW theme = 177, Imperial March = 178, Cantina = 180 |
 | 201–225 | Music tracks | — |
 | 254 | Silent / blank | Stop workaround track |
-| 255 | Startup sound | `cfg_snd_startup` = 255 ✓ |
+| 255 | Startup sound | `snd_startup` = 255 |
 
-All protoArtoo named-track NVS defaults match this layout with no remapping needed.
+All protoArtoo Named Track defaults match this layout with no remapping needed.
 
 #### Wire protocol
 
@@ -475,26 +476,27 @@ includes 254 or 255.
 
 ## 3. MarcDuino `$` Command Mapping
 
-All `$` commands received by AudioTask (from dome serial RX, RC trigger, or
-web API) are parsed and dispatched through the active backend. The mapping is
+All `$` commands received by AudioTask (over protoR2link, from an RC trigger, or
+from the web API) are parsed and dispatched through the active backend. The mapping is
 backend-agnostic — AudioTask calls `AudioDriver` methods; the backend handles
 the wire.
 
 | Command | Description | Driver call |
 |---|---|---|
-| `$nnn` | Play track number `nnn` (1-based) | `playTrack(nnn)` |
-| `$S` | Play scream sound | `playTrack(cfg_snd_scream)` — NVS `snd_scream` |
-| `$F` | Play short circuit / faint | `playTrack(cfg_snd_faint)` — NVS `snd_faint` |
-| `$L` | Play Leia message | `playTrack(cfg_snd_leia)` — NVS `snd_leia` |
-| `$c` | Play short Cantina | `playTrack(cfg_snd_cantina_s)` |
-| `$C` | Play long Cantina | `playTrack(cfg_snd_cantina_l)` |
-| `$W` | Play Star Wars theme | `playTrack(cfg_snd_sw_theme)` |
-| `$M` | Play Imperial March | `playTrack(cfg_snd_imp_march)` |
-| `$B` | Play startup sound | `playTrack(cfg_snd_startup)` |
-| `$D` | Disco | `playTrack(cfg_snd_disco)` when configured |
-| `$H` | Happy / greeting clip | `playTrack(cfg_snd_happy)` |
-| `$R` | Enable random playback mode | AudioTask state — no driver call |
-| `$O` | Disable random playback mode | AudioTask state — no driver call |
+| `$8nn` | Bank 8, sound `nn` (ShadowMD's `$Bnn`) | `playTrackBanked(nn,8,page)` where the module has a bank 8; refused where it has not |
+| `$nnn` | Play track number `nnn` (1-based), every other number | `playTrack(nnn)` |
+| `$S` | Play scream sound | `playTrack(scream)` - NVS `snd_scream` |
+| `$F` | Play short circuit / faint | `playTrack(faint)` - NVS `snd_faint` |
+| `$L` | Play Leia message | `playTrack(leia)` - NVS `snd_leia` |
+| `$c` | Play short Cantina | `playTrack(cantina_s)` - NVS `snd_cantina_s` |
+| `$C` | Play long Cantina | `playTrack(cantina_l)` - NVS `snd_cantina_l` |
+| `$W` | Play Star Wars theme | `playTrack(sw_theme)` - NVS `snd_sw` |
+| `$M` | Play Imperial March | `playTrack(imp_march)` - NVS `snd_march` |
+| `$B` | Play startup sound | `playTrack(startup)` - NVS `snd_startup` |
+| `$D` | Disco | `playTrack(disco)` - NVS `snd_disco`, when not 0 |
+| `$H` | Happy / greeting clip | `playTrack(happy)` - NVS `snd_happy` |
+| `$R` | Enable random playback mode | AudioTask state - no driver call |
+| `$O` | Disable random playback mode (the current sound plays on) | AudioTask state - no driver call |
 | `$s` | Stop + disable random mode | `stop()` |
 | `$+` | Volume up | `setVolume(currentVol + 1)` clamped to 30 |
 | `$-` | Volume down | `setVolume(currentVol - 1)` clamped to 0 |
@@ -545,8 +547,9 @@ AudioTask manages the random sound timer internally — no driver involvement.
 - `$R` → start timer; fire `playTrack(random in [snd_rand_min, snd_rand_max])`
   using the current mood interval (`snd_int_quiet|mid|full|awake`)
 - `$O` or `$s` → stop random mode
-- Active mood (`:SE10`/`:SE11`/`:SE13`/`:SE14`) governs whether random is on
-  (see `docs/goal.md §6.8`)
+- The active Mood (`:SE10`/`:SE11`/`:SE13`/`:SE14`) picks the interval; an
+  interval of 0 (Quiet by default) plays nothing at random
+  (`include/audio_dollar_parser.h`, "Per-mood random playback intervals")
 
 **NVS keys:**
 
@@ -563,22 +566,21 @@ AudioTask manages the random sound timer internally — no driver involvement.
 
 ## 5. Operator Frontend Surfaces
 
-The audio system is operated primarily through the Sound page, with Setup used
-to enable/disable the hardware path. Which sound product is fitted is a
-Component Member (`soundMember`), not a Setup toggle.
+The audio system is operated through the Sound page. Which sound module is
+fitted, or that none is, is chosen on Configuration.
 
 ### Sound page (`/sound.html`)
 
 Primary workflows:
 
-- Sound module status and driver capabilities
-- Global controls (volume, stop, random on/off)
-- Named sounds table (play and track remap)
-- System sounds table (boot/mode/drive/dome event sounds)
-- Category ranges and mood mapping
-- Mood interval timing controls
-- Direct track playback
-- CHIRP catalog tools (when backend supports catalog)
+- **Sound module**: module status and driver capabilities
+- **Playback**: volume, stop, random on/off
+- **Named Tracks**: play and track remap
+- **Catalog**: CHIRP catalog tools (when the module has a catalog)
+- **Sound categories** and **Mood mapping**: a track range per category, categories per Mood
+- **System sounds**: boot, mode, Foot Drive and dome event sounds
+- **Direct track**: find and play a clip by number
+- **Random range** and **Chatter intervals**: the random pool and seconds per Mood
 - MP3 Trigger: 3.3 V jumper and `MP3TRIGR.INI` `#BAUD 9600` wiring note,
   missing-clip banner from `'E'`, category-range warning for 254/255
 
@@ -589,15 +591,12 @@ Implementation references:
 
 ### Configuration and Maintenance (`/configuration.html`, `/maintenance.html`)
 
-What was the Setup page is two surfaces since #404. Audio-related controls:
+Audio-related controls:
 
-- `S2 - Sound` enable/disable toggle, on Configuration
-- Live driver label for S2 (the fitted member's name, not a product picker), on
-  Configuration
+- **Sound** on Configuration's Hardware components: the Component Picker for
+  the sound module, with the Sound component toggle behind it and the running
+  driver's name beside the toggle (`#s2-driver-label`)
 - Sound serial state in Maintenance's serial links
-
-The board picture on Configuration is the body controller (`artoo_pcb` /
-`firebeetle2`), not the sound module.
 
 Implementation references:
 
@@ -615,4 +614,4 @@ Implementation references:
 5. [DY-SV5W — Arduino Forum](https://forum.arduino.cc/t/how-to-use-dy-sv5w-mp3-player/1218247)
 6. [DY-SV5W spec sheet](spec-sheets/dy-sv5w-sound.md) — this project's protocol and hardware research for the DY-SV5W
 7. [MP3 Trigger spec sheet](spec-sheets/mp3-trigger-sound.md) — protocol, card layout, electricals, and what the driver actually sends
-8. [DFPlayer Mini spec sheet](spec-sheets/dfplayer-mini-sound.md) — the planned fourth member
+8. [DFPlayer Mini spec sheet](spec-sheets/dfplayer-mini-sound.md) - on the Roadmap
