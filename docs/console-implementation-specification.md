@@ -19,7 +19,6 @@
 >   `board_capability` and `build_flag` fields, the inventory and the drift
 >   checks
 > - [action-registry.yaml](action-registry.yaml): the operations themselves
->   (217 on 2026-10-06)
 > - [ADR 0036](adr/0036-controller-console-one-core-two-adapters.md): one core,
 >   two adapters; the core is `src/console/console_module.cpp`
 >

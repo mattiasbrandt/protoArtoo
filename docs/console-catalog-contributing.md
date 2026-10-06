@@ -56,11 +56,8 @@ both show up there.
   2. **Item-based query** — no `fields:`, but `is_query: true` stated
      explicitly — a standalone query whose answer is a sequence of `item`
      records instead of scalar fields, because it doesn't fit the
-     fields:/JSON-key model the first shape assumes. Seven rows take this
-     shape on 2026-10-06: `system.status.logs`, `system.api.get-components`,
-     `system.api.get-profiler`, `dome.api.list-sequences`,
-     `dome.api.list-builtin-sequences`, `servo.api.get-outputs` and
-     `rc.api.get-bindable-actions`.
+     fields:/JSON-key model the first shape assumes (`system.status.logs`
+     and `servo.api.get-outputs` are two of them).
   3. **Non-query** — `is_query: false` and no `fields:` — this row only
      describes a field inside another query's aggregate response
      (`system.status.dashboard-health`-style rows); it is metadata, never

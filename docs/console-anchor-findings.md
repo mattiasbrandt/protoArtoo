@@ -6,12 +6,11 @@
 
 > **A dated record of #212 at `c13cb6f`, not a description of today
 > (2026-10-06, #475).** Its counts and gate findings were true at that base and
-> have moved since. On 2026-10-06 the inventory holds 217 rows (dome 66, sound
-> 58, system 54, drive-servo-aux-rc 39); two registry rows declare
+> have moved since: the inventory has grown, registry rows now declare
 > `board_capability: PA_CAP_HOSTED_WIFI` (the FireBeetle 2's WiFi module, #471),
-> the catalog generator gives every drive row
-> `PA_CAP_DRIVE_BACKEND_HOVERBOARD`, and twelve catalog rows are board-gated in
-> all; the four `build_flag` rows still hold. Source and line references that
+> and the catalog generator gives every drive row
+> `PA_CAP_DRIVE_BACKEND_HOVERBOARD`, so "no board_capability gates" below no
+> longer holds. Source and line references that
 > were wrong when written are corrected in place below and marked as such.
 > The live account of the gates is
 > [console-catalog-contributing.md](console-catalog-contributing.md).
