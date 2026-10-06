@@ -98,21 +98,34 @@ void test_catalog_availability_flags() {
     TEST_ASSERT_NOT_NULL(hostedReset);
     TEST_ASSERT_FALSE(hostedReset->available_on_board);
 
-    // ...and so is the other PA_CAP_HOSTED_WIFI row, while most of the catalog
-    // stays on. How many rows are off is the catalog's to say, not a number
-    // pinned here (it read 1 until #471 added the second row): a
-    // registry row gaining a board_capability shows up as a registry diff,
-    // and make check-action-drift's byte-compare of this catalog
-    // (tools/check_console_catalog_drift.py) holds the table to it.
+    // ...and the off-board set in this build is exactly the PA_CAP_HOSTED_WIFI
+    // rows, named. A row that gains a board_capability without anyone noticing
+    // silently removes an operation from a board, so it fails here by name; a
+    // row leaving the set fails here too. Update this list only together with
+    // the row's board_capability in docs/action-registry.yaml.
+    static const char* const kOffBoard[] = {
+        "system.action.reboot-wifi-module",
+        "system.status.hosted-link",
+    };
+    const size_t kOffBoardCount = sizeof(kOffBoard) / sizeof(kOffBoard[0]);
+
     int offBoard = 0;
     for (size_t i = 0; i < count; ++i) {
-        if (!entries[i].available_on_board) offBoard++;
+        if (entries[i].available_on_board) continue;
+        offBoard++;
+
+        bool named = false;
+        for (size_t r = 0; r < kOffBoardCount; ++r) {
+            if (strcmp(kOffBoard[r], entries[i].name) == 0) {
+                named = true;
+                break;
+            }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(named, entries[i].name);
     }
-    TEST_ASSERT_GREATER_OR_EQUAL_INT(1, offBoard);
-    TEST_ASSERT_LESS_THAN_INT((int)count, offBoard);
-    const ConsoleCatalogEntry* hostedLink = consoleCatalogFindByName("system.status.hosted-link");
-    TEST_ASSERT_NOT_NULL(hostedLink);
-    TEST_ASSERT_EQUAL(hostedReset->available_on_board, hostedLink->available_on_board);
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)kOffBoardCount, offBoard,
+                                  "a named off-board row came back on, or a new row went off - "
+                                  "update this list together with its board_capability");
 
     // The unrelated capability still resolves the other way in the same build:
     // PA_CAP_DRIVE_BACKEND_HOVERBOARD is 1 on artoo-esp32, so drive rows are on.
