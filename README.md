@@ -87,27 +87,27 @@ run on a real droid.
 | Family | Product | Supported | Tested | Roadmap |
 |---|---|:---:|:---:|:---:|
 | <img src="docs/images/families/body-controller.svg" width="20" height="20" alt=""> **Body Controller** | [Artoo PCB](https://www.artoo.uk/) | ✓ | ✓ |  |
-|  | [FireBeetle 2 (ESP32-P4)](docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md) | ✓ |  |  |
-| <img src="docs/images/families/radio-controller.svg" width="20" height="20" alt=""> **Radio Controller** | [HotRC DS-650](docs/spec-sheets/hotrc-ds650-radio.md) | ✓ | ✓ |  |
+|  | FireBeetle 2 (ESP32-P4) | ✓ |  |  |
+| <img src="docs/images/families/radio-controller.svg" width="20" height="20" alt=""> **Radio Controller** | HotRC DS-650 | ✓ | ✓ |  |
 |  | RC Radio | ✓ |  |  |
-|  | [RC Receiver - PWM](docs/spec-sheets/rc-receiver-spec.md) | ✓ |  |  |
-|  | [RC Receiver - SBUS](docs/spec-sheets/sbus-protocol.md) | ✓ |  |  |
-|  | [RC Receiver - ELRS](docs/spec-sheets/elrs-crsf-radio.md) |  |  | ✓ |
-|  | [Xbox Controller](docs/spec-sheets/xbox-controller-input.md) |  |  | ✓ |
-| <img src="docs/images/families/body-servo-controller.svg" width="20" height="20" alt=""> **Body servo controller** | [Body controller board GPIO](docs/spec-sheets/servo-communication.md) | ✓ | ✓ |  |
-|  | [PCA9685](docs/spec-sheets/pca9685-servo-expander.md) | ✓ |  |  |
-|  | [Pololu Maestro](docs/spec-sheets/pololu-maestro-servo-controller.md) |  |  | ✓ |
-| <img src="docs/images/families/dome-rotation.svg" width="20" height="20" alt=""> **Dome Rotation** | [ISDT ESC70 (RC ESC)](docs/spec-sheets/isdt-esc70-dome-esc.md) | ✓ | ✓ |  |
-|  | [SyRen 10](docs/spec-sheets/sabertooth-syren-packet-serial.md) |  |  | ✓ |
-| <img src="docs/images/families/dome-controller.svg" width="20" height="20" alt=""> **Dome Controller** | [AstroPixels Plus](docs/spec-sheets/astropixels-dome-controller.md) | ✓ | ✓ |  |
-|  | [Teeces](docs/spec-sheets/teeces-dome-lighting.md) |  |  | ✓ |
-| <img src="docs/images/families/foot-drive.svg" width="20" height="20" alt=""> **Foot Drive** | [Hoverboard, hacked firmware](docs/spec-sheets/hoverboard-hacked-firmware-foot-drive.md) | ✓ |  |  |
-|  | [Sabertooth 2x25](docs/spec-sheets/sabertooth-syren-packet-serial.md) |  |  | ✓ |
-|  | [Flipsky Mini V6 VESC](docs/spec-sheets/flipsky-vesc-foot-drive.md) |  |  | ✓ |
-| <img src="docs/images/families/sound.svg" width="20" height="20" alt=""> **Sound** | [DY-SV5W](docs/spec-sheets/dy-sv5w-sound.md) | ✓ | ✓ |  |
-|  | [MP3 Trigger](docs/spec-sheets/mp3-trigger-sound.md) | ✓ |  |  |
-|  | [CHIRP Audio Trigger](docs/spec-sheets/chirp-audio-trigger-sound.md) | ✓ | ✓ |  |
-|  | [DFPlayer Mini](docs/spec-sheets/dfplayer-mini-sound.md) |  |  | ✓ |
+|  | RC Receiver - PWM | ✓ |  |  |
+|  | RC Receiver - SBUS | ✓ |  |  |
+|  | RC Receiver - ELRS |  |  | ✓ |
+|  | Xbox Controller |  |  | ✓ |
+| <img src="docs/images/families/body-servo-controller.svg" width="20" height="20" alt=""> **Body servo controller** | Body controller board GPIO | ✓ | ✓ |  |
+|  | PCA9685 | ✓ |  |  |
+|  | Pololu Maestro |  |  | ✓ |
+| <img src="docs/images/families/dome-rotation.svg" width="20" height="20" alt=""> **Dome Rotation** | ISDT ESC70 (RC ESC) | ✓ | ✓ |  |
+|  | SyRen 10 |  |  | ✓ |
+| <img src="docs/images/families/dome-controller.svg" width="20" height="20" alt=""> **Dome Controller** | AstroPixels Plus | ✓ | ✓ |  |
+|  | Teeces |  |  | ✓ |
+| <img src="docs/images/families/foot-drive.svg" width="20" height="20" alt=""> **Foot Drive** | Hoverboard, hacked firmware | ✓ |  |  |
+|  | Sabertooth 2x25 |  |  | ✓ |
+|  | Flipsky Mini V6 VESC |  |  | ✓ |
+| <img src="docs/images/families/sound.svg" width="20" height="20" alt=""> **Sound** | DY-SV5W | ✓ | ✓ |  |
+|  | MP3 Trigger | ✓ |  |  |
+|  | CHIRP Audio Trigger | ✓ | ✓ |  |
+|  | DFPlayer Mini |  |  | ✓ |
 
 [Full support detail](docs/goal.md#target-hardware-profile)
 
