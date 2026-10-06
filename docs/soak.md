@@ -219,7 +219,7 @@ stopped looking is not a measurement.
 
 ### `c6_reset_recovery` — does the link come back on its own?
 
-Only available on the `bench` Image Mode. It schedules a reset of the companion
+Only available on the `bench` Image Mode. It schedules a reset of the
 WiFi Module through `POST /api/c6/reset`, then watches for the host to
 re-establish the link **without rebooting itself**, and for a fresh SSE stream to
 start advancing again.

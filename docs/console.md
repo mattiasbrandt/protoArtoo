@@ -573,8 +573,8 @@ you get the newest lines and a `[CUT]` line under the reply; see
 
 ## Rebooting the WiFi module
 
-Boards that serve WiFi through a separate **WiFi module** — the FireBeetle 2
-ESP32-P4 and its fitted companion chip — can reboot that module on purpose:
+Boards that serve WiFi through a separate **WiFi Module** - the FireBeetle 2
+ESP32-P4 and its ESP32-C6 - can reboot that module on purpose:
 
 ```text
 > system.action.reboot-wifi-module

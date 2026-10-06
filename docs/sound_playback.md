@@ -435,7 +435,7 @@ The register accepts 0–255 (0 = loudest). The vendor guide's useful range is
 #### Status queries
 
 The driver sends `'S'+'0'` (version) and `'S'+'1'` (track count) at init and
-on each operator Poll to verify the serial link and refresh total tracks.
+on each poll of the module (`POST /api/audio/query`) to verify the serial link and refresh total tracks.
 Auto-query is off (`QUERY_SAFE_PLAYING` is not set). Response lines are
 `=`-prefixed; the `=` character is stripped before parsing. Leading `'X'` /
 `'x'` / `'E'` are skipped so a finish byte cannot fail a live query.
@@ -449,7 +449,7 @@ Play-state is not a query either: unsolicited `'X'` (finished), `'x'`
 
 > **Play-state follows the board's finish byte** (#396). It is not a query, and
 > it stays `unknown` until the first `'X'` / `'x'` / `'E'`. `'E'` is a missing
-> file on the card, not a wiring fault. Use Poll for link and track count; do
+> file on the card, not a wiring fault. Poll the module (`POST /api/audio/query`) for link and track count; do
 > not poll while a clip is playing.
 
 ---

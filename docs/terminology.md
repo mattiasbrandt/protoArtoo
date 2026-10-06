@@ -82,8 +82,8 @@ Related distinction:
 `UART` means Universal Asynchronous Receiver/Transmitter: asynchronous serial communication.
 
 In protoArtoo topology (`include/config.h`):
-- the Console uses UART0 (a USB serial bridge on the Artoo PCB, USB CDC on the
-  FireBeetle 2)
+- the Console uses UART0 through a USB serial bridge on the Artoo PCB; on the
+  FireBeetle 2 it is USB CDC, not a UART
 - the Foot Drive uses UART1 (header S1 on the Artoo PCB)
 - protoR2link uses UART2, bidirectional over the slip ring (header S3 on the
   Artoo PCB)
@@ -185,7 +185,7 @@ Rule of thumb:
 
 - Namespace used by this project: `proto` (`NVS_NAMESPACE`)
 - Main load/save path: `configLoad()` and `configSave()` in `src/config_store.cpp`, which delegate to `configDeserialize()` / `configSerialize()` in `src/config_serializer.cpp`
-- Every Setting's NVS key lives in the Settings table in `src/config_settings.cpp`, which `src/config_serializer.cpp` includes; the keys old schemas used, and their migrations, are in `src/config_store.cpp`. `PrefsReader`/`PrefsWriter` in `src/config_nvsio.cpp` are the NVS adapters; `MapReader`/`MapWriter` in `test/stubs/config/map_config_io.h` are the test doubles
+- Every Setting's NVS key lives in the Settings table in `src/config_settings.cpp`, which `src/config_serializer.cpp` includes; keys that are not Settings (RC bindings, Servo Output rows, the droid name and others) live in `src/config_serializer.cpp` itself; the keys old schemas used, and their migrations, are in `src/config_store.cpp`. `PrefsReader`/`PrefsWriter` in `src/config_nvsio.cpp` are the NVS adapters; `MapReader`/`MapWriter` in `test/stubs/config/map_config_io.h` are the test doubles
 
 What NVS stores in this repo:
 
