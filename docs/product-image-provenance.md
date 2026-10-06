@@ -1,9 +1,9 @@
 # Product image provenance
 
 Photographs the **default** asset set carries for the Component Picker
-(#316, ADR 0065). Each file is `data/asset-sets/default/<id>.webp`,
-where `<id>` is the Component Registry token. The **legacy** set does not
-carry these files.
+(#316, ADR 0065), and the one picture it carries for a droid design. A
+product file is `data/asset-sets/default/<id>.webp`, where `<id>` is the
+Component Registry token. The **legacy** set does not carry these files.
 
 They are identification pictures: the thing an operator matches against
 the hardware in their hand. They are not a grant of rights in the product
@@ -22,9 +22,9 @@ Encoded 400x300 WebP, dark ground `#0c1525`, at most 8 KiB
 | `rc_radio.webp` | RC Radio | supported | Operator-supplied product photograph of a RadioMaster TX16S handset (`tasks/product-images/elrs-radio.png`), illustrating the generic RC Radio card (#369). It was held back while the Radio Controller rows were receivers, because a handset is not a receiver. | Manufacturer product image, used to identify the class of RC radio. |
 | `rc_transmitter_pwm.webp` | RC Receiver - PWM | supported | Operator-supplied product photograph of a HotRC F-06A PWM receiver. The photograph is of the box in the droid, which is what protoArtoo reads. | Manufacturer product image, used to identify the receiver. |
 | `rc_transmitter_sbus.webp` | RC Receiver - SBUS | supported | Operator-supplied product photograph of an SBUS receiver. | Manufacturer product image, used to identify the receiver. |
-| `rc_transmitter_elrs.webp` | RC Receiver - ELRS | supported | Operator-supplied product photograph of an ELRS receiver (SuperP-class). The controller reads no ELRS input yet (#369). | Manufacturer product image, used to identify the receiver. |
+| `rc_transmitter_elrs.webp` | RC Receiver - ELRS | roadmap (operator, 2026-10-06; the registry row follows in #477) | Operator-supplied product photograph of an ELRS receiver (SuperP-class). The controller reads no ELRS input yet (#369). | Manufacturer product image, used to identify the receiver. |
 | `xbox_controller.webp` | Xbox Controller | roadmap | Operator-supplied photograph of a white Xbox 360 wired controller. EXIF: Nikon D7000, Adobe Photoshop CS5, 2014-08-29. Photographer not named on the file. | Third-party photograph; copyright holder unknown. Used only as product identification on a picker card. |
-| `pca9685.webp` | PCA9685 | roadmap | Operator-supplied product photograph of a 16-channel PCA9685 expander board. | Manufacturer / listing photograph, used to identify the board. |
+| `pca9685.webp` | PCA9685 | supported (#444) | Operator-supplied product photograph of a 16-channel PCA9685 expander board. | Manufacturer / listing photograph, used to identify the board. |
 | `pololu_maestro.webp` | Pololu Maestro | roadmap | Operator-supplied product photograph of a Pololu Maestro. | Manufacturer product image, used to identify the board. |
 | `isdt_esc70.webp` | ISDT ESC70 (RC ESC) | supported | Operator-supplied product photograph of an ISDT ESC70. | Manufacturer product image, used to identify the ESC. |
 | `syren10.webp` | SyRen 10 | roadmap | Operator-supplied product photograph of a Dimension Engineering SyRen 10. | Manufacturer product image, used to identify the controller. |
@@ -37,6 +37,12 @@ Encoded 400x300 WebP, dark ground `#0c1525`, at most 8 KiB
 | `mp3_trigger.webp` | MP3 Trigger | supported | Operator-supplied product photograph of a SparkFun MP3 Trigger. | Manufacturer product image, used to identify the module. |
 | `chirp.webp` | CHIRP Audio Trigger | supported | Operator-supplied 3D render of the CHIRP Audio Trigger Rev B (silkscreen 5C17V, dated 20260101). | Project render of the module this firmware already drives. |
 | `dfplayer_mini.webp` | DFPlayer Mini | roadmap | Operator-supplied product photograph of a DFPlayer Mini. EXIF: Adobe Photoshop 22.0, 2024-12-31. | Manufacturer product image, used to identify the module. |
+
+A droid design's picture, not a Component Registry token:
+
+| File | Design | Source | Licence |
+|---|---|---|---|
+| `mrbaddeley.webp` | MrBaddeley's designs (MK4, MK4.1, MK3), named by `picture:` in `docs/droid-parts.yaml` | MrBaddeley's "Printed Droids" poster, encoded by `tools/encode_product_photos.py` (#369). | Not recorded when it was added; the operator to confirm. |
 
 Not photographed:
 
