@@ -8,8 +8,8 @@
 //
 // WHAT IT PROVES, once the droid has reported (the uptime readout has left
 // "..."):
-//   a  every .indicator.warn on the surface is one of the two memory lights
-//      (#diag-heap-free-light, -largest-): amber is "degraded and you
+//   a  every .indicator.warn on the surface is the one memory light
+//      (#diag-heap-largest-light): amber is "degraded and you
 //      can act on it", and data/health_signals.js's word tables have no amber
 //      row for either link;
 //   b  the surface's text does not contain "stale".
