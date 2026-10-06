@@ -4,8 +4,8 @@ name: Release
 # action lands pinned the same way (#473). Dependabot's grouped weekly
 # updates move the pins.
 
-# Purely additive to verification.yml — triggers only on a vX.Y.Z tag push,
-# never on branch push/PR, so the existing PR/merge gate is unaffected.
+# Purely additive to verification.yml — publishes only on a vX.Y.Z tag push,
+# never on a branch push or PR, so the existing PR/merge gate is unaffected.
 #
 # A manual dispatch is the dry run (#473): it builds and stages both boards'
 # assets exactly as a full-tier tag would and keeps them as a run artifact
@@ -17,9 +17,11 @@ on:
   workflow_dispatch:
 
 # One run per tag (or dispatched ref); never cancel a release mid-publish — a
-# killed publish job could leave a half-uploaded release behind.
+# killed publish job could leave a half-uploaded release behind. The event is
+# in the group so a dry run dispatched on a tag ref never queues behind, or
+# replaces the pending run of, that tag's real release.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:

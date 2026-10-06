@@ -52,7 +52,7 @@ class AutoReleaseTriggerTest(unittest.TestCase):
         self.workflow = _load("auto-release.yml")
         self.triggers = _triggers(self.workflow)
 
-    def test_triggers_on_a_push_to_main_only(self):
+    def test_triggers_on_main_and_its_verification(self):
         """A push to main, and a completed Verification of main: the run
         that may cut a minor or major tag (#473)."""
         self.assertEqual(sorted(self.triggers), ["push", "workflow_run"])
@@ -93,6 +93,13 @@ class AutoReleaseTriggerTest(unittest.TestCase):
         self.assertIn("head_commit.author.email", job["if"])
         self.assertIn("!=", job["if"])
 
+    def test_promotion_and_tag_wait_for_the_gate(self):
+        """Neither writes to main nor tags unless the Verification gate said go."""
+        steps = {step.get("name"): step for step in self.workflow["jobs"]["release"]["steps"]}
+        for name in ["📝 Promote the Unreleased CHANGELOG section", "🏷️ Tag the release"]:
+            with self.subTest(step=name):
+                self.assertIn("steps.gate.outputs.go == 'true'", steps[name]["if"])
+
 
 class BotIdentityTest(unittest.TestCase):
     """Every guard must name the same bot, or one of them stops guarding."""
@@ -126,7 +133,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.workflow = _load("release.yml")
         self.jobs = self.workflow["jobs"]
 
-    def test_triggers_on_a_tag_only(self):
+    def test_triggers_on_a_tag_or_a_dry_run(self):
         """A tag, or the manual dry run (#473); never a branch push."""
         triggers = _triggers(self.workflow)
         self.assertEqual(sorted(triggers), ["push", "workflow_dispatch"])
