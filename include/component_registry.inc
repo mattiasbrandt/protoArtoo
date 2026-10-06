@@ -124,7 +124,7 @@ PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_SOUND,                 "sound",        
 // why `included` tests PA_BOARD rather than a capability.
 // -----------------------------------------------------------------------------
 // Confirmed on a droid: operator, 2026-09-30, #455.
-PA_COMPONENT_PART( 1, "artoo_pcb",  "Artoo PCB (artoo.uk)",   COMPONENT_CATEGORY_BODY_CONTROLLER, "none", COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,     0, nullptr, (PA_BOARD == PA_BOARD_ARTOO_ESP32))
+PA_COMPONENT_PART( 1, "artoo_pcb",   "Artoo PCB (artoo.uk)",    COMPONENT_CATEGORY_BODY_CONTROLLER, "none", COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,     0, nullptr, (PA_BOARD == PA_BOARD_ARTOO_ESP32))
 PA_COMPONENT_PART( 2, "firebeetle2", "FireBeetle 2 (ESP32-P4)", COMPONENT_CATEGORY_BODY_CONTROLLER, "none", COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, (PA_BOARD == PA_BOARD_FIREBEETLE2))
 
 // -----------------------------------------------------------------------------
@@ -173,15 +173,15 @@ PA_COMPONENT_PART( 6, "rc_transmitter_elrs", "RC Receiver - ELRS", COMPONENT_CAT
 // -----------------------------------------------------------------------------
 // Confirmed on a droid: operator, 2026-09-30, #455.
 PA_COMPONENT_PART( 8, "esp32_gpio_ledc", "Body controller board GPIO", COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "ledc",             COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,     0, nullptr, 1)
-PA_COMPONENT_PART( 9, "pca9685",         "PCA9685",           COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "i2c_pwm_expander", COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 1)
-PA_COMPONENT_PART(10, "pololu_maestro",  "Pololu Maestro",    COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "maestro_serial",   COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
+PA_COMPONENT_PART( 9, "pca9685",         "PCA9685",                    COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "i2c_pwm_expander", COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 1)
+PA_COMPONENT_PART(10, "pololu_maestro",  "Pololu Maestro",             COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "maestro_serial",   COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
 
 // -----------------------------------------------------------------------------
 // Dome Rotation -- what turns the dome.
 // -----------------------------------------------------------------------------
 // Confirmed on a droid: operator, 2026-09-30, #455.
-PA_COMPONENT_PART(11, "isdt_esc70", "ISDT ESC70 (RC ESC)", COMPONENT_CATEGORY_DOME_ROTATION, "ledc",              COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,     0, nullptr, 1)
-PA_COMPONENT_PART(12, "syren10",    "SyRen 10",            COMPONENT_CATEGORY_DOME_ROTATION, "de_packet_serial",  COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
+PA_COMPONENT_PART(11, "isdt_esc70", "ISDT ESC70 (RC ESC)", COMPONENT_CATEGORY_DOME_ROTATION, "ledc",             COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,     0, nullptr, 1)
+PA_COMPONENT_PART(12, "syren10",    "SyRen 10",            COMPONENT_CATEGORY_DOME_ROTATION, "de_packet_serial", COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
 
 // -----------------------------------------------------------------------------
 // Dome Controller -- the dome's own board, panels and lighting, over protoR2link.
@@ -244,4 +244,4 @@ PA_COMPONENT_PART(20, "chirp",         "CHIRP Audio Trigger", COMPONENT_CATEGORY
                   AudioDriver::AUDIO_CAP_QUERY_SAFE_PLAYING | AudioDriver::AUDIO_CAP_CATALOG |
                   AudioDriver::AUDIO_CAP_MIXES,
                   nullptr, 1)
-PA_COMPONENT_PART(21, "dfplayer_mini", "DFPlayer Mini",       COMPONENT_CATEGORY_SOUND, "dfplayer_serial",   COMPONENT_STATUS_ROADMAP, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
+PA_COMPONENT_PART(21, "dfplayer_mini", "DFPlayer Mini",       COMPONENT_CATEGORY_SOUND, "dfplayer_serial",   COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
