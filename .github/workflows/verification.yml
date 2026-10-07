@@ -90,12 +90,16 @@ jobs:
       reasons: ${{ steps.changes.outputs.reasons }}
     steps:
       # The classifier and nothing else: it is stdlib Python and runs on the
-      # runner's own python3, so this job needs no setup.
+      # runner's own python3, so this job needs no setup. A push to main also
+      # takes the whole history, for the release tags it is classified
+      # against. (fetch-depth is written as `!= main ... && 1 || 0` because 0
+      # is falsy in an expression: `== main && 0 || 1` would always say 1.)
       - name: ⬇️ Checkout the classifier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           sparse-checkout: tools/ci_changes.py
           sparse-checkout-cone-mode: false
+          fetch-depth: ${{ (github.event_name != 'push' || github.ref != 'refs/heads/main') && 1 || 0 }}
 
       - name: 🧭 Decide which jobs run
         id: changes
@@ -109,9 +113,10 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           # Every way of not knowing the files runs every class: a manual
-          # dispatch, a new branch (no `before`), a compare that fails, a force
-          # push (anything but `ahead`), or a list at the API's cap (300 files
-          # for a compare, 3000 for a pull request), which may be cut short.
+          # dispatch, a new branch (no `before`), main with no release tag
+          # behind it, a compare that fails, a force push (anything but
+          # `ahead`), or a list at the API's cap (300 files for a compare,
+          # 3000 for a pull request), which may be cut short.
           # A rename passes its old path too: moving a file out of data/
           # changes the image as much as editing it does.
           reasons="$RUNNER_TEMP/reasons.md"
@@ -134,19 +139,31 @@ jobs:
                 all "the pull request lists 3000 files or more"
               ;;
             push)
-              # auto-release.yml tags main's tip on this run's `verification`
-              # job, so on main a green gate has to mean every check ran
-              # there, not that nothing changed since a run that may have
-              # failed.
-              [ "$REF" != refs/heads/main ] || all "a push to main"
-              [ -n "${BEFORE//0/}" ] || all "a new branch"
+              # On main the range starts at the latest release tag the pushed
+              # commit carries, not at `before`. auto-release.yml tags main's
+              # tip on this run's `verification` job, so a green gate there
+              # has to cover every unreleased commit: classified from
+              # `before`, a docs push after a red run would come out green
+              # and let a minor or major be tagged over the failure. From the
+              # tag, a docs push right after a release runs nothing heavy,
+              # and while a feat or fix is unreleased every push runs what
+              # that code needs.
+              if [ "$REF" = refs/heads/main ]; then
+                base=$(git describe --tags --abbrev=0 --match 'v*' "$SHA") ||
+                  all "no release tag is reachable from the pushed commit"
+                range="the range since $base"
+              else
+                [ -n "${BEFORE//0/}" ] || all "a new branch"
+                base=$BEFORE
+                range="the pushed range"
+              fi
               compare="$RUNNER_TEMP/compare.json"
-              gh api "repos/$REPO/compare/$BEFORE...$SHA" > "$compare" ||
-                all "the pushed range could not be compared"
+              gh api "repos/$REPO/compare/$base...$SHA" > "$compare" ||
+                all "$range could not be compared"
               status=$(jq -r .status "$compare")
-              [ "$status" = ahead ] || all "the pushed range is $status, not ahead"
+              [ "$status" = ahead ] || all "$range is $status, not ahead"
               [ "$(jq '.files | length' "$compare")" -lt 300 ] ||
-                all "the pushed range lists 300 files or more"
+                all "$range lists 300 files or more"
               jq -r '.files[] | .filename, (.previous_filename // empty)' "$compare" > "$files"
               ;;
             *)
