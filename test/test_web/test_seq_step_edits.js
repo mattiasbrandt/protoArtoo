@@ -1,18 +1,15 @@
-// An edit to a step in the sequence editor reaches the sequence Save sends.
+// An edit in the sequence editor reaches the sequence Save sends, and an edit
+// the droid has not received is never let go without asking.
 //
-// A step's time offset input (.step-t) sits beside its fields rather than
-// among them, and before #434 no listener was attached to it: the operator
-// changed the time, the field showed it, and Save posted the old one. The
-// same class of fault - an input the editor draws but never reads back - is
-// what this file guards.
+// The step cards this file once drove went with the card editor (9b71d736,
+// #441); the timeline is the one editor, and its own suite is
+// test_seq_timeline.js. What stays here is what Save, Duplicate, Retime to the
+// grid and leaving do with the routine the editor holds, so an edit is made
+// the way the timeline makes one: on the sequence the editor holds.
 //
 // Drives the shipped chain data/seq.html declares, in one vm context, through
-// the seam the Playwright suites use (window.__seqEditorForTesting). Each
-// step's inputs are derived from the markup the editor actually wrote - the
-// card's time input from renderEditorView()'s markup, its fields from what
-// renderStepFields() put in the card's .step-fields container - so an input
-// the editor stopped drawing is found by nothing here. Per test_web/README.md:
-// executed, not pattern-matched.
+// the seam the Playwright suites use (window.__seqEditorForTesting). Per
+// test_web/README.md: executed, not pattern-matched.
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -54,9 +51,6 @@ const escapeHtml = (value) =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-
-const unescapeAttr = (value) =>
-  String(value).replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 
 function makeElement(extra = {}) {
   const element = {
@@ -109,109 +103,6 @@ function newPage({ onDroid = null } = {}) {
   const rowButtons = [];
   byId("seq-cards-container").querySelectorAll = (selector) => (selector === "[data-action]" ? rowButtons : []);
 
-  // Each rendered step card, rebuilt whenever the editor's markup changes.
-  // Only an expanded card carries a time input and a fields container.
-  let cardsFor = null;
-  let cards = [];
-  const stepCards = () => {
-    const html = byId("seq-editor-view").innerHTML || "";
-    if (html === cardsFor) return cards;
-    cardsFor = html;
-    const marks = [];
-    const cardRe = /data-step-index="(\d+)"/g;
-    let match;
-    while ((match = cardRe.exec(html)) !== null) marks.push({ index: match[1], at: match.index });
-    cards = [];
-    marks.forEach((mark, i) => {
-      const end = i + 1 < marks.length ? marks[i + 1].at : html.length;
-      const slice = html.slice(mark.at, end);
-      const time = /<input class="step-t"[^>]*value="(\d*)"/.exec(slice);
-      if (!time || !slice.includes('class="step-fields"')) return;
-      const card = { index: mark.index };
-      card.timeInput = makeElement({ value: time[1] });
-      card.fields = makeElement();
-      // The type chip the card rendered lit.
-      const lit = /class="step-type-chip[^"]*\bactive\b[^"]*"[^>]*data-type="([a-zA-Z]+)"/.exec(slice);
-      card.chip = makeElement({
-        dataset: { type: lit ? lit[1] : "" },
-        classList: { add() {}, remove() {}, toggle() {}, contains: (name) => name === "active" },
-      });
-      // The fields renderStepFields() wrote, re-derived when it writes again.
-      let inputsFor = null;
-      let inputs = [];
-      card.fieldInputs = () => {
-        if (card.fields.innerHTML === inputsFor) return inputs;
-        inputsFor = card.fields.innerHTML;
-        inputs = [];
-        const inputRe = /<input\b[^>]*>/g;
-        let tag;
-        while ((tag = inputRe.exec(inputsFor)) !== null) {
-          const field = /data-field="([^"]+)"/.exec(tag[0]);
-          if (!field) continue;
-          const value = /value="([^"]*)"/.exec(tag[0]);
-          inputs.push(makeElement({
-            dataset: { field: field[1] },
-            value: value ? unescapeAttr(value[1]) : "",
-            type: "text",
-            closest: (selector) => (selector === ".step-card" ? card.row : null),
-          }));
-        }
-        return inputs;
-      };
-      // The panel step's two pickers, which are selects and not form fields:
-      // each as the option its markup shows selected, re-derived when the
-      // fields are written again.
-      let pickersFor = null;
-      let pickers = {};
-      card.picker = (name) => {
-        if (card.fields.innerHTML !== pickersFor) {
-          pickersFor = card.fields.innerHTML;
-          pickers = {};
-        }
-        if (!(name in pickers)) {
-          const select = new RegExp(`<select class="[^"]*\\b${name}\\b[^"]*"[^>]*>([\\s\\S]*?)</select>`).exec(pickersFor);
-          const chosen = select ? /<option value="([^"]*)"\s+selected/.exec(select[1]) : null;
-          pickers[name] = select ? makeElement({ value: chosen ? chosen[1] : "" }) : null;
-        }
-        return pickers[name];
-      };
-      const PICKERS = ["dome-action-select", "dome-target-select"];
-      card.fields.querySelector = (selector) => {
-        if (selector === 'input[data-field="cmd"]') return card.fieldInputs().find((input) => input.dataset.field === "cmd") || null;
-        return PICKERS.includes(selector.slice(1)) ? card.picker(selector.slice(1)) : null;
-      };
-      card.fields.querySelectorAll = (selector) => {
-        if (selector === "[data-field]") return card.fieldInputs();
-        if (selector === ".dome-action-select, .dome-target-select") return PICKERS.map(card.picker).filter(Boolean);
-        return [];
-      };
-      card.row = makeElement({
-        dataset: { stepIndex: mark.index },
-        querySelector: (selector) =>
-          selector === ".step-t" ? card.timeInput
-            : selector === ".step-fields" ? card.fields
-              : selector === ".step-type-chip.active" ? card.chip : null,
-        querySelectorAll: (selector) => (selector === ".step-type-chip" ? [card.chip] : []),
-      });
-      card.fields.closest = (selector) => (selector === ".step-card" ? card.row : null);
-      card.timeInput.closest = card.fields.closest;
-      cards.push(card);
-    });
-    return cards;
-  };
-
-  // One selector part, `ancestor target` or `target`, answered from the cards.
-  const matchPart = (part) => {
-    const tokens = part.trim().split(/\s+/);
-    const target = tokens[tokens.length - 1];
-    const ancestor = tokens.length > 1 ? tokens[0] : null;
-    if (target === ".step-t" && (!ancestor || ancestor === ".step-card")) return stepCards().map((c) => c.timeInput);
-    if (target === ".step-card" && !ancestor) return stepCards().map((c) => c.row);
-    if (target === ".step-fields" && !ancestor) return stepCards().map((c) => c.fields);
-    if (target === "[data-field]" && ancestor === ".step-fields") return stepCards().flatMap((c) => c.fieldInputs());
-    return [];
-  };
-
   const sandbox = {
     PAAssetsReady: true,
     PAApi: {
@@ -253,11 +144,8 @@ function newPage({ onDroid = null } = {}) {
       body: makeElement(),
       documentElement: makeElement(),
       getElementById: byId,
-      querySelector: (selector) => {
-        const index = /^\[data-step-index="(\d+)"\]$/.exec(selector);
-        return index ? stepCards().find((c) => c.index === index[1])?.row || null : null;
-      },
-      querySelectorAll: (selector) => selector.split(",").flatMap(matchPart),
+      querySelector: () => null,
+      querySelectorAll: () => [],
       createElement: () => makeElement(),
       addEventListener() {},
       removeEventListener() {},
@@ -290,9 +178,7 @@ function newPage({ onDroid = null } = {}) {
     stored,
     // The sequence the editor holds, as Save would send it; null with no edit open.
     editing: () => seam.editorState.current,
-    card: (index) => stepCards().find((c) => c.index === String(index)),
-    open(sequence, expanded) {
-      seam.editorState.expanded = new Set(expanded);
+    open(sequence) {
       seam.renderEditorView(sequence);
     },
     async save() {
@@ -328,16 +214,13 @@ test("retiming to the grid counts only the steps that landed, and one undo puts 
     { t: 40, type: "audio", cmd: "$S" },
     { t: 2600, type: "end" },
   ];
-  page.open(
-    {
-      name: "DM:RETIME",
-      suppressMs: 8000,
-      toggleGroup: "none",
-      tempo: { bpm: 120, phase: 0, barLen: 4, barPhase: 0, source: "typed", confidence: 1 },
-      steps: JSON.parse(JSON.stringify(original)),
-    },
-    [],
-  );
+  page.open({
+    name: "DM:RETIME",
+    suppressMs: 8000,
+    toggleGroup: "none",
+    tempo: { bpm: 120, phase: 0, barLen: 4, barPhase: 0, source: "typed", confidence: 1 },
+    steps: JSON.parse(JSON.stringify(original)),
+  });
 
   fire(page.byId("seq-editor-retime"), "click");
   assert.equal(page.byId("seq-editor-retime-receipt").textContent, "3 of 4 steps landed on a beat.");
@@ -354,23 +237,23 @@ test("retiming to the grid counts only the steps that landed, and one undo puts 
 // orphan every sequence that holds this one.
 test("a saved sequence always carries a stable id, and keeps the one it has", async () => {
   const minted = newPage();
-  minted.open({ name: "DM:FRESH", suppressMs: 8000, toggleGroup: "none", steps: [{ t: 0, type: "end" }] }, []);
+  minted.open({ name: "DM:FRESH", suppressMs: 8000, toggleGroup: "none", steps: [{ t: 0, type: "end" }] });
   await minted.save();
   const first = minted.posts.filter((post) => post.url === "/api/seq");
   assert.equal(first.length, 1, "Save sent nothing");
   assert.match(first[0].body.id || "", /^[0-9a-f]{8}$/);
 
   const kept = newPage();
-  kept.open({ name: "DM:HELD", id: "abcd1234", suppressMs: 8000, toggleGroup: "none", steps: [{ t: 0, type: "end" }] }, []);
+  kept.open({ name: "DM:HELD", id: "abcd1234", suppressMs: 8000, toggleGroup: "none", steps: [{ t: 0, type: "end" }] });
   await kept.save();
   const second = kept.posts.filter((post) => post.url === "/api/seq");
   assert.equal(second[0].body.id, "abcd1234", "the save replaced the sequence's id");
 });
 
-// Leaving the editor used to swap its state for a new object that had no set
-// of expanded steps, so the next sequence opened from the list threw before it
-// drew a single step (#441) - and the seam above went on holding the object
-// that had been thrown away. The way out is All sequences, on the strip.
+// Leaving the editor used to swap its state for a new object, so the next
+// sequence opened from the list threw before it drew a single step (0022cf99,
+// #441) - and the seam above went on holding the object that had been thrown
+// away. The way out is All sequences, on the strip.
 test("a sequence opens after another was closed with All sequences", () => {
   const page = newPage();
   const sequence = {
@@ -382,11 +265,13 @@ test("a sequence opens after another was closed with All sequences", () => {
       { t: 1000, type: "end" },
     ],
   };
-  page.open(sequence, []);
+  page.open(sequence);
   fire(page.byId("seq-editor-cancel"), "click");
+  assert.equal(page.editing(), null, "the fixture: All sequences closed the clean edit");
 
-  page.open(sequence, [0]);
-  assert.ok(page.card(0), "the sequence opened after another was closed drew no step");
+  page.open(sequence);
+  assert.equal(JSON.stringify(page.editing()?.steps), JSON.stringify(sequence.steps), "the sequence opened after another was closed is not the one the editor holds");
+  assert.match(page.byId("seq-editor-view").innerHTML, /id="seq-editor-timeline"/, "the sequence opened after another was closed drew no stage");
 });
 
 // An unsaved edit is not kept, and it is never dropped without the builder
@@ -404,16 +289,15 @@ test("an unsaved edit is dropped only on Discard, whichever way the builder was 
       { t: 1000, type: "end" },
     ],
   };
+  // The edit a drag of the first block makes, on the routine the editor holds.
   const edit = () => {
-    page.open(sequence, [0]);
-    const time = page.card(0).timeInput;
-    time.value = "250";
-    fire(time, "change");
+    page.open(sequence);
+    page.editing().steps[0].t = 250;
   };
   assert.equal(typeof page.surface.decide, "function", "Sequences registered no unmount hold with the shell");
 
   // With nothing unsaved, both ways out are free.
-  page.open(sequence, []);
+  page.open(sequence);
   assert.equal(page.surface.decide(), false, "a clean edit held the surface");
   fire(page.byId("seq-editor-cancel"), "click");
   assert.equal(page.editing(), null, "All sequences on a clean edit did not close it");
@@ -447,17 +331,13 @@ test("an unsaved edit is dropped only on Discard, whichever way the builder was 
 test("an edit made while a save is on its way is still unsaved when it lands", async () => {
   const page = newPage();
   page.open(
-    { name: "DM:INFLIGHT", suppressMs: 8000, toggleGroup: "none", steps: [{ t: 0, type: "audio", cmd: "$H" }, { t: 1000, type: "end" }] },
-    [0],
-  );
-  const time = page.card(0).timeInput;
-  time.value = "250";
-  fire(time, "change");
+    { name: "DM:INFLIGHT", suppressMs: 8000, toggleGroup: "none", steps: [{ t: 0, type: "audio", cmd: "$H" }, { t: 1000, type: "end" }] });
+  // The edit a drag of the first block makes, on the routine the editor holds.
+  page.editing().steps[0].t = 250;
 
-  // Save is pressed, and before the droid answers the time is changed again.
+  // Save is pressed, and before the droid answers the block is moved again.
   fire(page.byId("seq-editor-save"), "click");
-  time.value = "400";
-  fire(time, "change");
+  page.editing().steps[0].t = 400;
   await page.settle();
 
   const saved = page.posts.filter((post) => post.url === "/api/seq");
