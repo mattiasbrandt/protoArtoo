@@ -34,6 +34,13 @@ const bootstrapPart1Src = bootstrapFile.substring(bootstrapFile.indexOf("(() => 
 const statusStreamSrc = readFileSync(join(dataDir, "status_stream.js"), "utf-8");
 const liveReadingSrc = readFileSync(join(dataDir, "live_reading.js"), "utf-8");
 
+// What every surface's document loads after data/web_api.js, as data/index.html
+// orders it: the overlay (Escape, the question, the receipt; window.PAOverlay)
+// and the Operator Shell, which publishes the act every surface draws its
+// buttons with (window.PAUi, #460).
+const overlaySrc = readFileSync(join(dataDir, "overlay.js"), "utf-8");
+const shellSrc = readFileSync(join(dataDir, "shell.js"), "utf-8");
+
 // A stub element that answers any property access with something plausible, so
 // module-level wiring never crashes on an element this test does not care
 // about. Writes are accepted and discarded.
@@ -88,6 +95,55 @@ const escapeForTest = (value) =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+
+// The Operator Shell's window.PAUi, from the shipped shell.js run in a context
+// of its own. This harness's document is one surface with no shell chrome
+// around it, and under the permissive stub every #shell-* lookup would answer:
+// run in the surface's own context, the shell would render its rail, load the
+// droid's identity and register a section of its own, all of it in the
+// request log a test asserts on. So the shell runs beside the surface, the way
+// partsGlobals() below runs the parts catalog, and only what it publishes is
+// handed over. Its transport never answers and its timers never run.
+const operatorShellUi = () => {
+  const never = () => new Promise(() => {});
+  const shellWindow = {
+    PAApi: { ...shippedWords(), ApiError, request: never, get: never, postForm: never, postJson: never },
+    PAUtils: { escapeHtml: escapeForTest, escapeAttr: escapeForTest },
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    location: { origin: "http://device", href: "http://device/", hash: "" },
+    localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    matchMedia: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+  };
+  const noTimer = () => 0;
+  const shellContext = {
+    window: shellWindow,
+    document: {
+      readyState: "complete",
+      visibilityState: "visible",
+      body: makeElement(),
+      documentElement: makeElement(),
+      getElementById: () => null,
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: () => makeElement(),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    },
+    console: { log: () => {}, warn: () => {}, error: () => {}, info: () => {} },
+    setTimeout: noTimer,
+    clearTimeout: () => {},
+    setInterval: noTimer,
+    clearInterval: () => {},
+  };
+  Object.assign(shellWindow, { setTimeout: noTimer, clearTimeout: () => {}, setInterval: noTimer, clearInterval: () => {} });
+  shellContext.globalThis = shellContext;
+  vm.createContext(shellContext);
+  for (const [name, src] of [["status_stream.js", statusStreamSrc], ["live_reading.js", liveReadingSrc], ["shell.js", shellSrc]]) {
+    vm.runInContext(src, shellContext, { filename: name });
+  }
+  return shellWindow.PAUi;
+};
 
 class ApiError extends Error {
   constructor(message, { kind = "network", status = 0 } = {}) {
@@ -217,6 +273,7 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
     matchMedia: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
     requestAnimationFrame: (fn) => addTimer(timeouts, fn, 0),
     getSelection: () => null,
+    PAUi: operatorShellUi(),
     ...overrides,
   };
 
@@ -282,12 +339,14 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
   // A browser resolves every window property as a bare global, so what a test
   // hands in as an override (a FileReader, a published module) is mirrored the
   // same way the four built-in objects are.
-  for (const key of ["PAApi", "PAUtils", "PABootstrap", ...Object.keys(overrides)]) {
+  for (const key of ["PAApi", "PAUtils", "PABootstrap", "PAUi", ...Object.keys(overrides)]) {
     context[key] = windowMock[key];
   }
 
   // Load PART 1 of page_bootstrap.js first to populate window.PageBootstrap
   vm.runInNewContext(bootstrapPart1Src, context);
+  vm.runInNewContext(overlaySrc, context, { filename: "overlay.js" });
+  context.PAOverlay = windowMock.PAOverlay;
   // Then the chain every document loads ahead of a surface: the stream (unless
   // a test hands in its own) and the Live Reading, started the way the
   // Operator Shell starts it. This context has no EventSource, so the Live
@@ -297,8 +356,17 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
   vm.runInNewContext(liveReadingSrc, context, { filename: "live_reading.js" });
   context.PALiveReading = windowMock.PALiveReading;
   windowMock.PALiveReading.start();
+  // A browser's window is the global: what a chained script publishes on
+  // window is a bare name to every script after it (data/parts.js reads
+  // PAParts bare).
+  const publishBare = () => {
+    for (const key of Object.keys(windowMock)) {
+      if (!(key in context)) context[key] = windowMock[key];
+    }
+  };
   chain.forEach((name) => {
     vm.runInNewContext(readFileSync(join(dataDir, name), "utf-8"), context, { filename: name });
+    publishBare();
   });
   // Then load the page module itself
   vm.runInNewContext(source, context, { filename: file });
@@ -361,11 +429,15 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
 
 export { ApiError };
 
-// The shipped parts catalog and the shared mapping module (data/droid_parts.js,
-// data/droid_part_kind.js, data/parts_mapping.js), evaluated as a browser loads
-// them before a surface that reads them - Servos names each Output's Parts and
-// moves a Part through PAParts. Handed to loadPageModule() as window overrides,
-// so the module under test runs against the real ones rather than a stand-in.
+// The shipped parts catalog and the shared mapping module, in the order
+// data/servo.html loads them before a surface that reads them - Servos names
+// each Output's Parts and moves a Part through PAParts. Chained, not handed in
+// as overrides: PAParts asks its move question through the page's own
+// window.PAOverlay and window.PAUi (#456, #460), which a context of its own
+// does not have.
+export const PARTS_CHAIN = ["droid_parts.js", "droid_part_kind.js", "outputs.js", "parts_mapping.js"];
+
+// The same catalog evaluated on its own, for a test that only reads it.
 export const partsGlobals = () => {
   const context = { window: {}, console };
   for (const file of ["droid_parts.js", "droid_part_kind.js", "parts_mapping.js"]) {
