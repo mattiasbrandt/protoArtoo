@@ -558,7 +558,8 @@ test("the print act's icon is one the shell's sprite draws", async () => {
   const link = env.document.getElementById("wiring-save");
   const href = link.querySelector("use").getAttribute("href");
   assert.ok(env.document.getElementById(href.slice(1)), `${href} resolves to no symbol`);
-  assert.equal(link.getAttribute("aria-label"), "Printable wiring sheet");
+  // An act since fdc9a8dc (#460): its words are its name, not an aria-label.
+  assert.ok(link.querySelector(".act-label")?.textContent, "the print act has no words to be named by");
 });
 
 test("the sheet writes nothing to the droid", async () => {
