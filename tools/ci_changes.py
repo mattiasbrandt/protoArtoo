@@ -30,11 +30,16 @@ Each rule names the classes whose jobs READ the path, measured from the jobs
 rather than guessed from the directory name:
 
 - The board jobs build from `src/`, `include/`, `lib/`, `data/`, `boards/`,
-  `partitions/` and `platformio.ini`, and run the Python in `BOARD_TOOLS`:
-  `check_build_budgets.py` and what it imports, and the `extra_scripts` the
-  budgeted envs name and what those import. That list is held by hand. A new
-  import into one of those scripts has to be added to it, or a change to the
-  imported file stops rebuilding the boards.
+  `partitions/` and `platformio.ini`, and run Python from `tools/`:
+  `check_build_budgets.py`, the `extra_scripts` the envs name, and whatever
+  those import. Every `tools/**/*.py` and `tools/*.json` therefore turns
+  `boards` on. A list of just the scripts they reach would fail open the day
+  one of them imported a file the list did not name.
+- `data/fw-version.json` and `data/fs-version.json` turn nothing on. Every
+  build stamps both afresh from git (`tools/extract_version.py`, a `pre:`
+  script), and no test reads the committed copies. They are what
+  version-sync.yml commits to main after every push, so without this rule no
+  push to main could come out documentation-only.
 - The native suite (`test_filter = test_native/*`) compiles `src/`,
   `include/`, `lib/`, `test/stubs/`, and opens `data/console_help.txt`,
   `data/asset-sets/` and `test/fixtures/protocol_mirror.json` at run time.
@@ -63,25 +68,8 @@ CLASSES = ("boards", "native", "analysis", "web", "tools")
 ALL = CLASSES
 NONE: tuple[str, ...] = ()
 
-# The Python the board jobs run, and the data it reads, found by following
-# imports from tools/check_build_budgets.py and from every extra_scripts entry
-# of the budgeted envs in platformio.ini. Held by hand: see the module
-# docstring.
-BOARD_TOOLS = frozenset({
-    "tools/build_budgets.json",
-    "tools/check_build_budgets.py",
-    "tools/check_framework_envelope.py",
-    "tools/extract_version.py",
-    "tools/gzip_fsdata.py",
-    "tools/littlefs_builder.py",
-    "tools/littlefs_image.py",
-    "tools/nano_link.py",
-    "tools/pio_lock.py",
-    "tools/refresh_component_headers.py",
-    "tools/slice_verify.py",
-    "tools/suite_pause.py",
-    "tools/task_stack_recipes.json",
-})
+# Stamped by every build, from git: see the module docstring.
+VERSION_STAMPS = frozenset({"data/fw-version.json", "data/fs-version.json"})
 
 # Pictures outside data/ are not shipped in the image and no check reads them.
 IMAGE_SUFFIXES = frozenset({".png", ".webp", ".jpg", ".jpeg", ".gif", ".svg"})
@@ -116,6 +104,8 @@ def classify(path: str) -> tuple[tuple[str, ...], str]:
         return NONE, "a picture outside data/"
     if _under(path, "docs/spec-sheets/"):
         return NONE, "a spec sheet: its drift checks run on every event"
+    if path in VERSION_STAMPS:
+        return NONE, "a version stamp every build rewrites"
 
     if path == "platformio.ini":
         return FIRMWARE, "the build description"
@@ -133,8 +123,9 @@ def classify(path: str) -> tuple[tuple[str, ...], str]:
     if _under(path, "boards/", "partitions/"):
         return ("boards",), "board or partition definition"
 
-    if path in BOARD_TOOLS:
-        return ("boards", "tools"), "a script the board build runs"
+    if _under(path, "tools/") and (
+            suffix == ".py" or (suffix == ".json" and p.parent == PurePosixPath("tools"))):
+        return ("boards", "tools"), "Python or data the board build may run"
     if _under(path, "tools/", "test/test_tools/"):
         return ("tools",), "tooling"
 
