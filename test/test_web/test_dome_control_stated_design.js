@@ -16,6 +16,7 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 const { statusFrame } = require("./helpers/fake_droid.js");
+const { operatorShellUi } = require("./helpers/page_module_env.js");
 
 const root = path.resolve(__dirname, "../..");
 
@@ -312,6 +313,8 @@ async function bodyCard(status) {
       messageFor: (error) => String(error && error.message),
     },
     PAUtils: { escapeHtml: (value) => String(value), escapeAttr: (value) => String(value) },
+    // The act the body view's panel is drawn with, from the shipped shell (#460).
+    PAUi: operatorShellUi(),
     document,
     URLSearchParams,
     setTimeout,

@@ -24,6 +24,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 import { MiniDocument } from "./helpers/mini_dom.js";
+import { operatorShellUi } from "./helpers/page_module_env.js";
 import { servoRow as output, withParts, describe, asStarted } from "./helpers/fake_droid.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -54,6 +55,8 @@ const boot = async ({ outputs = twoArmsOn(), estop = "clear" } = {}) => {
 
   const window = {
     document,
+    // The act the tray's buttons are drawn with, from the shipped shell (#460).
+    PAUi: operatorShellUi(),
     PALiveReading: {
       WAITING: "Waiting",
       UNKNOWN: "Unknown",
