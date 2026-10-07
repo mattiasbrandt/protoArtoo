@@ -252,7 +252,8 @@
     const label = button.querySelector(".act-label");
     if (!label) throw new Error(`setAct: no .act-label in ${button.outerHTML.slice(0, 80)}`);
     label.textContent = words;
-    // actFace() writes exactly one icon(), so the act's one <use> is its icon.
+    // An act holds one icon, from actFace() or its own markup (wiring.html's
+    // move question), so its one <use> is its icon.
     if (name) button.querySelector("use").setAttribute("href", `#i-${name}`);
   };
 
