@@ -12,13 +12,29 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 const { shippedWords } = require("./helpers/shipped_words.cjs");
+const { operatorShellUi } = require("./helpers/page_module_env.js");
 
 const root = path.resolve(__dirname, "../..");
 const read = (name) => fs.readFileSync(path.join(root, "data", name), "utf8");
 
+// PART 1 of data/page_bootstrap.js publishes window.PASurface, which the run
+// watch and the editor hold the surface's unmount through (#441, #451).
+const bootstrapSrc = read("page_bootstrap.js");
+const bootstrapPart1 = bootstrapSrc.substring(
+  bootstrapSrc.indexOf("(() => {"),
+  bootstrapSrc.indexOf("// =========================== PART 2"),
+);
+
 // The script chain data/seq.html declares, minus the ones this behaviour never
 // reaches (the shell, the transport).
 const PAGE_MODULES = [
+  // Escape and the question every surface asks with (#456).
+  "overlay.js",
+  // The status stream and the run watch data/seq.js reads from the Live
+  // Reading (#451). Loaded, not started: starting it is the Operator Shell's
+  // call, and no frame reaches these tests.
+  "status_stream.js",
+  "live_reading.js",
   "droid_parts.js",
   "droid_build.js",
   "dome_command_map.js",
@@ -108,6 +124,8 @@ function newPage(config, domeResponse) {
       postJson: () => Promise.resolve({ ok: true, data: {} }),
       messageFor: (error) => String(error && error.message),
     },
+    // The act the pages draw their buttons with, from the shipped shell (#460).
+    PAUi: operatorShellUi(),
     PAUtils: {
       escapeHtml,
       escapeAttr: escapeHtml,
@@ -121,10 +139,6 @@ function newPage(config, domeResponse) {
       retryNow() {},
       refreshSections() {},
     },
-    PAStatusStream: { isSupported: () => false, subscribe: () => () => {}, getLastStatus: () => null },
-    // The surface's poll handle, as data/page_bootstrap.js hands it out. The
-    // run watch (data/seq.js) takes one as the page loads; nothing here runs it.
-    PASurface: { poll: () => ({ start() {}, stop() {} }) },
     localStorage: { length: 0, key: () => null, getItem: () => null, setItem() {}, removeItem() {} },
     document: {
       readyState: "complete",
@@ -147,6 +161,7 @@ function newPage(config, domeResponse) {
     },
     alert() {},
     confirm: () => false,
+    AbortController, // the browser's own; the editor cancels a read it leaves
     setTimeout,
     clearTimeout,
     setInterval,
@@ -156,6 +171,7 @@ function newPage(config, domeResponse) {
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  vm.runInContext(bootstrapPart1, sandbox, { filename: "page_bootstrap.part1.js" });
   PAGE_MODULES.forEach((name) => {
     vm.runInContext(read(name), sandbox, { filename: name });
   });

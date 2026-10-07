@@ -27,15 +27,31 @@ import { dirname, join } from "path";
 
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
 import { shippedWords } from "./helpers/shipped_words.cjs";
+import { operatorShellUi } from "./helpers/page_module_env.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
 const readData = (name) => readFileSync(join(dataDir, name), "utf-8");
 
+// PART 1 of data/page_bootstrap.js publishes window.PASurface, which the run
+// watch and the editor hold the surface's unmount through (#441, #451).
+const bootstrapSrc = readData("page_bootstrap.js");
+const bootstrapPart1 = bootstrapSrc.substring(
+  bootstrapSrc.indexOf("(() => {"),
+  bootstrapSrc.indexOf("// =========================== PART 2"),
+);
+
 // The chain data/seq.html declares, minus the shell and the transport: this
 // harness stands in for those, because the point here is what the surface's
 // own scripts do to the tree the shell gave them.
 const PAGE_MODULES = [
+  // Escape and the question every surface asks with (#456).
+  "overlay.js",
+  // The status stream and the run watch data/seq.js reads from the Live
+  // Reading (#451). Loaded, not started: starting it is the Operator Shell's
+  // call, and no frame reaches these tests.
+  "status_stream.js",
+  "live_reading.js",
   "droid_parts.js",
   "droid_build.js",
   "dome_command_map.js",
@@ -90,6 +106,8 @@ const mountSequences = async () => {
       postForm: async () => ({ data: {} }),
       messageFor: (error) => String(error),
     },
+    // The act the pages draw their buttons with, from the shipped shell (#460).
+    PAUi: operatorShellUi(),
     PAUtils: {
       showFeedback: () => {},
       escapeHtml: (value) => String(value ?? ""),
@@ -97,8 +115,6 @@ const mountSequences = async () => {
       debounce: (fn) => fn,
     },
     PABootstrap: { registerSection: () => {}, setResourceLabels: () => {}, refreshSections: () => {} },
-    PAStatusStream: { isSupported: () => false, subscribe: () => () => {}, getLastStatus: () => null },
-    PASurface: { poll: () => ({ start() {}, stop() {} }), showing() {}, isStale: () => false },
     addEventListener: () => {},
     removeEventListener: () => {},
     setTimeout: (fn, ms) => { const t = setTimeout(fn, ms); t.unref?.(); return t; },
@@ -137,7 +153,13 @@ const mountSequences = async () => {
   };
   context.globalThis = context;
   vm.createContext(context);
-  PAGE_MODULES.forEach((name) => vm.runInContext(readData(name), context, { filename: name }));
+  vm.runInContext(bootstrapPart1, context, { filename: "page_bootstrap.part1.js" });
+  // A browser's window is the global, so what a module publishes on window is
+  // a bare name to the next (data/seq.js reads SeqProtocolCheck bare).
+  PAGE_MODULES.forEach((name) => {
+    vm.runInContext(readData(name), context, { filename: name });
+    for (const key of Object.keys(windowMock)) if (!(key in context)) context[key] = windowMock[key];
+  });
   await sleep(60);
 
   return {

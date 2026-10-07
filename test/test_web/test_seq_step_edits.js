@@ -20,11 +20,19 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 const { shippedWords } = require("./helpers/shipped_words.cjs");
+const { operatorShellUi } = require("./helpers/page_module_env.js");
 
 const root = path.resolve(__dirname, "../..");
 const read = (name) => fs.readFileSync(path.join(root, "data", name), "utf8");
 
 const PAGE_MODULES = [
+  // Escape and the question every surface asks with (#456).
+  "overlay.js",
+  // The status stream and the run watch data/seq.js reads from the Live
+  // Reading (#451). Loaded, not started: starting it is the Operator Shell's
+  // call, and no frame reaches these tests.
+  "status_stream.js",
+  "live_reading.js",
   "droid_parts.js",
   "droid_build.js",
   "dome_command_map.js",
@@ -223,13 +231,11 @@ function newPage({ onDroid = null } = {}) {
       },
       messageFor: (error) => String(error && error.message),
     },
+    // The act the pages draw their buttons with, from the shipped shell (#460).
+    PAUi: operatorShellUi(),
     PAUtils: { escapeHtml, escapeAttr: escapeHtml, showFeedback() {}, debounce: (fn) => fn },
     PABootstrap: { registerSection() {}, setResourceLabels() {}, retryNow() {}, refreshSections() {} },
-    PAStatusStream: { isSupported: () => false, subscribe: () => () => {}, getLastStatus: () => null },
     PASurface: {
-      // The poll handle the run watch (data/seq.js) takes as the page loads;
-      // nothing here runs it.
-      poll: () => ({ start() {}, stop() {} }),
       holdUnmount: (decide) => {
         surface.decide = decide;
       },
@@ -261,6 +267,7 @@ function newPage({ onDroid = null } = {}) {
     alert() {},
     confirm: () => false,
     crypto: require("node:crypto").webcrypto,  // the browser's own, which the editor mints ids with
+    AbortController, // the browser's own, which the editor cancels a read it leaves with
     setTimeout,
     clearTimeout,
     setInterval,
