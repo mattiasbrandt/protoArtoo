@@ -120,7 +120,16 @@ def main(argv: list[str] | None = None) -> int:
     while True:
         verdicts = []
         if use_comment:
-            verdicts.append(_verdict_from_comment(args.issue, args.marker))
+            # One failed read is not a verdict: GitHub answers 5xx for minutes
+            # at a time (2026-10-07), and a crash here looked like a finished
+            # worker to whoever only read the exit of a pipeline. The deadline
+            # still bounds an outage that never ends.
+            try:
+                verdicts.append(_verdict_from_comment(args.issue, args.marker))
+            except subprocess.CalledProcessError as exc:
+                print(f"wait_worker: reading #{args.issue} failed ({exc.stderr.strip()[:200]}); retrying",
+                      file=sys.stderr)
+                verdicts.append(None)
         if args.file is not None:
             verdicts.append(_verdict_from_file(args.file))
         verdict = _combined(verdicts)
