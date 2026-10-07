@@ -32,6 +32,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { MiniDOMParser } from "./helpers/mini_dom.js";
 import { shippedWords } from "./helpers/shipped_words.cjs";
+import { operatorShellUi } from "./helpers/page_module_env.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
@@ -177,6 +178,8 @@ const boot = ({ config = freshConfig(), rows = freshRows(), surface = "configura
     document: documentMock,
     PAAssetsReady: true,
     PAIdentity: IDENTITY,
+    // The act every surface draws its buttons with, from the shipped shell (#460).
+    PAUi: operatorShellUi(),
     PAApi: {
       // The shipped words table's lookups (helpers/shipped_words.cjs).
       ...shippedWords(),
