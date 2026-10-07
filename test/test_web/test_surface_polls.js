@@ -21,7 +21,7 @@ import { dirname, join } from "path";
 
 import { createRequire } from "node:module";
 
-import { loadPageModule, ApiError, partsGlobals } from "./helpers/page_module_env.js";
+import { loadPageModule, ApiError, PARTS_CHAIN } from "./helpers/page_module_env.js";
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
 import { shippedWords } from "./helpers/shipped_words.cjs";
 
@@ -344,15 +344,15 @@ test("a hold that throws does not trap the operator on the screen", () => {
 // =============================================================================
 
 const SURFACE_POLLS = [
-  { file: "servo.js", cadenceMs: 1000, what: "the outputs", overrides: partsGlobals },
+  { file: "servo.js", cadenceMs: 1000, what: "the outputs", chain: PARTS_CHAIN },
   { file: "sound.js", cadenceMs: 2000, what: "the sound module's status" },
   { file: "rc.js", cadenceMs: 1000, what: "the RC diagnostics" },
 ];
 
-for (const { file, cadenceMs, what, overrides = () => ({}) } of SURFACE_POLLS) {
+for (const { file, cadenceMs, what, overrides = () => ({}), chain = OUTPUTS_CHAIN } of SURFACE_POLLS) {
   test(`${file}: ${what} poll stops when the operator is reading another surface`, async () => {
     let env = null;
-    env = loadPageModule(file, { respond: () => ({}), overrides: overrides(), chain: OUTPUTS_CHAIN });
+    env = loadPageModule(file, { respond: () => ({}), overrides: overrides(), chain });
     await env.settle();
 
     const polls = env.intervals.filter((timer) => timer.ms === cadenceMs);
@@ -385,14 +385,14 @@ const READS_NO_STATUS_OF_ITS_OWN = [
   { file: "rc.js" },
   { file: "maintenance.js", overrides: withAvailability },
   { file: "configuration.js", overrides: withAvailability },
-  { file: "servo.js", overrides: partsGlobals },
-  { file: "parts.js", overrides: partsGlobals },
+  { file: "servo.js", chain: PARTS_CHAIN },
+  { file: "parts.js", chain: PARTS_CHAIN },
 ];
 
-for (const { file, overrides = () => ({}) } of READS_NO_STATUS_OF_ITS_OWN) {
+for (const { file, overrides = () => ({}), chain = OUTPUTS_CHAIN } of READS_NO_STATUS_OF_ITS_OWN) {
   test(`${file}: asks the droid for no status of its own`, async () => {
     let env = null;
-    env = loadPageModule(file, { respond: () => ({}), overrides: overrides(), chain: OUTPUTS_CHAIN });
+    env = loadPageModule(file, { respond: () => ({}), overrides: overrides(), chain });
     await env.settle(8);
 
     assert.deepEqual(
@@ -416,11 +416,11 @@ for (const { file, overrides = () => ({}) } of READS_NO_STATUS_OF_ITS_OWN) {
 
 const STALE_AFTER_A_FAILED_REFRESH = [
   { file: "rc.js", what: "RC diagnostics" },
-  { file: "servo.js", what: "Servos", overrides: partsGlobals },
-  { file: "parts.js", what: "Parts", overrides: partsGlobals },
+  { file: "servo.js", what: "Servos", chain: PARTS_CHAIN },
+  { file: "parts.js", what: "Parts", chain: PARTS_CHAIN },
 ];
 
-for (const { file, what, overrides = () => ({}) } of STALE_AFTER_A_FAILED_REFRESH) {
+for (const { file, what, overrides = () => ({}), chain = OUTPUTS_CHAIN } of STALE_AFTER_A_FAILED_REFRESH) {
   test(`${file}: a refresh that fails leaves ${what} showing what it last read`, async () => {
     let answering = true;
     let env = null;
@@ -430,7 +430,7 @@ for (const { file, what, overrides = () => ({}) } of STALE_AFTER_A_FAILED_REFRES
         return {};
       },
       overrides: overrides(),
-      chain: OUTPUTS_CHAIN,
+      chain,
     });
     await env.settle();
 
@@ -999,8 +999,12 @@ test("leaving a surface writes nothing to the droid", async () => {
     "unmounting must never stop a sequence, release an output, drop a drive frame or clear a latch -- "
       + "what changes is only what the browser asks for",
   );
+  // The shell's own reads at boot are not the way out: its identity, the
+  // status, and the bundle's version for the rail's foot line (shell.js since
+  // #466 merged footer.js into it).
+  const shellBoot = new Set(["/api/identity", "/api/status", "/fs-version.json"]);
   assert.deepEqual(
-    env.requests.filter((path) => !path.endsWith(".html") && path !== "/api/identity" && path !== "/api/status"),
+    env.requests.filter((path) => !path.endsWith(".html") && !shellBoot.has(path)),
     [],
     "and it asks the controller for nothing of its own on the way out",
   );

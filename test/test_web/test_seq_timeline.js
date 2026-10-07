@@ -52,12 +52,28 @@ import { MiniDocument } from "./helpers/mini_dom.js";
 
 const require = createRequire(import.meta.url);
 const { shippedWords } = require("./helpers/shipped_words.cjs");
+import { operatorShellUi } from "./helpers/page_module_env.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const read = (name) => readFileSync(join(__dirname, "../../data", name), "utf-8");
 
+// PART 1 of data/page_bootstrap.js publishes window.PASurface, which the run
+// watch and the editor hold the surface's unmount through (#441, #451).
+const bootstrapSrc = read("page_bootstrap.js");
+const bootstrapPart1 = bootstrapSrc.substring(
+  bootstrapSrc.indexOf("(() => {"),
+  bootstrapSrc.indexOf("// =========================== PART 2"),
+);
+
 // The script chain data/seq.html declares, from the page's own modules on.
 const PAGE_MODULES = [
+  // Escape and the question every surface asks with (#456).
+  "overlay.js",
+  // The status stream and the run watch data/seq.js reads from the Live
+  // Reading (#451). Loaded, not started: starting it is the Operator Shell's
+  // call, and no frame reaches these tests.
+  "status_stream.js",
+  "live_reading.js",
   "dome_lights.js",
   "seq_protocol_check.js",
   "seq_tempo.js",
@@ -200,11 +216,9 @@ function openPage() {
       request: (url, opts = {}) => write(opts.method || "GET")(url, opts.body),
       messageFor: (error) => String(error && error.message),
     },
+    // The act the pages draw their buttons with, from the shipped shell (#460).
+    PAUi: operatorShellUi(),
     PAUtils: { escapeHtml, escapeAttr: escapeHtml, showFeedback() {}, debounce: (fn) => fn },
-    PAStatusStream: { isSupported: () => false, subscribe: () => () => {}, getLastStatus: () => null },
-    // The surface's poll handle, as data/page_bootstrap.js hands it out. The
-    // run watch (data/seq.js) takes one as the page loads; nothing here runs it.
-    PASurface: { poll: () => ({ start() {}, stop() {} }) },
     localStorage: { length: 0, key: () => null, getItem: () => null, setItem() {}, removeItem() {} },
     document: {
       readyState: "complete",
@@ -224,6 +238,7 @@ function openPage() {
       windowListeners[type] = (windowListeners[type] || []).filter((each) => each !== fn);
     },
     crypto: webcrypto, // the browser's own, which the editor mints ids with
+    AbortController, // the browser's own; the editor cancels a read it leaves
     setTimeout,
     clearTimeout,
     setInterval,
@@ -233,6 +248,7 @@ function openPage() {
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  vm.runInContext(bootstrapPart1, sandbox, { filename: "page_bootstrap.part1.js" });
   PAGE_MODULES.forEach((name) => vm.runInContext(read(name), sandbox, { filename: name }));
 
   const settle = async (turns = 12) => {
@@ -346,7 +362,6 @@ test("a drag on the timeline is one edit to the sequence the editor saves", asyn
   const page = openPage();
   await page.settle();
   page.seam.renderEditorView(JSON.parse(JSON.stringify(EDITED)));
-  (page.byId("seq-editor-show-timeline").listeners.click || []).forEach((fn) => fn());
 
   const view = page.editorTimeline;
   assert.ok(view.querySelector(".tl-grid"), "the editor drew no timeline");
@@ -384,15 +399,16 @@ test("a drag on the timeline is one edit to the sequence the editor saves", asyn
 
   // An Undo asked for with a block still held does nothing: the drag's writes
   // are in the routine and not yet an entry, and the steps a restore would put
-  // back are not the ones the drag is holding. Taking the view down under a
-  // drag puts the block back where the press found it.
+  // back are not the ones the drag is holding. A drag the browser cancels
+  // puts the block back where the press found it. (This was a Steps / Timeline
+  // toggle taking the view down; the toggle went with the card editor,
+  // 9b71d736, #441.)
   held = press();
   page.fireWindow("pointermove", { clientX: held.at + 450 * held.pxPerMs });
   (page.byId("seq-editor-undo").listeners.click || []).forEach((fn) => fn());
   assert.equal(turn().t, 2450, "Undo ran under a drag");
-  (page.byId("seq-editor-show-steps").listeners.click || []).forEach((fn) => fn());
-  assert.equal(turn().t, 2000, "a drag torn down mid-gesture left its half-made move in the routine");
-  (page.byId("seq-editor-show-timeline").listeners.click || []).forEach((fn) => fn());
+  page.fireWindow("pointercancel", {});
+  assert.equal(turn().t, 2000, "a drag abandoned mid-gesture left its half-made move in the routine");
 
   // Dragged on past the open, out of reach of any edge: it stays where it is put.
   held = press();
@@ -654,11 +670,14 @@ test("an inspector edit that changes nothing records nothing, and one that does 
   assert.equal(w.undoOff(), true);
 });
 
-test("Flutter on a Part standing open keeps the close it owes, and is not offered where there is none", async () => {
+// A flutter ends closed and owes no close (ADR 0049, amended 2026-10-02;
+// 15cc837d): turned into one, a pair's open takes its close with it, and
+// turned back, the open gets a close again.
+test("Flutter on a pair takes its close, and Open brings the pair back", async () => {
   const w = workspace(EDITED);
   w.pick("panel1", "open");
   w.choose("motion", "flutter");
-  assert.deepEqual(w.brief().slice(2, 4), [[2000, ":OF01"], [3000, ":CL01"]], "the flutter did not take the open's place and keep its close");
+  assert.deepEqual(w.brief().slice(2), [[2000, ":OF01"], [4000, "end"]], "the flutter did not take the open's place and its close");
   assert.equal(w.saveOff(), false, "the flutter left a routine the droid would refuse");
   assert.equal(w.choice("motion", "flutter")?.getAttribute("aria-pressed"), "true", "the inspector left the block it changed");
 
@@ -668,11 +687,11 @@ test("Flutter on a Part standing open keeps the close it owes, and is not offere
   assert.ok(w.field("runs"), "the pair came back without its length");
 
   // An open no step closes (the droid closes a ring panel itself after the
-  // end): a flutter there would never be closed, which Protocol Check refuses.
+  // end) is offered Flutter too: a flutter owes nothing after it.
   const left = workspace({ ...EDITED, steps: EDITED.steps.filter((step) => step.cmd !== ":CL01") });
   left.pick("panel1", "open");
   assert.ok(left.choice("motion", "open"), "the fixture: the open's Motion row is drawn");
-  assert.equal(left.choice("motion", "flutter"), null, "Flutter is offered on an open with no close to keep");
+  assert.ok(left.choice("motion", "flutter"), "Flutter is not offered on an open with no close");
 });
 
 test("Same pick is offered only to a Random Flutter that has a pick before it", async () => {

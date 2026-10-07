@@ -498,11 +498,11 @@
     // was made in; the node pressed only where it is still there.
     const put = (partId, address, control = null) => {
       const scope = control?.closest?.(".card") || document;
-      const name = control?.closest?.("[role='radiogroup']")?.getAttribute?.("aria-label") ?? null;
+      const name = control?.closest?.('[role="radiogroup"]')?.getAttribute?.("aria-label") ?? null;
       const again = control && {
         focus: () => {
           if (control.isConnected) return control.focus?.();
-          const bar = name === null ? null : Array.from(scope.querySelectorAll("[role='radiogroup']"))
+          const bar = name === null ? null : Array.from(scope.querySelectorAll('[role="radiogroup"]'))
             .find((each) => each.getAttribute("aria-label") === name);
           const same = bar ? Array.from(bar.querySelectorAll("button")).find((each) => each.dataset.value === address) : null;
           same?.focus?.();

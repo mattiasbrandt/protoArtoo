@@ -237,6 +237,10 @@ void test_every_setting_refuses_a_value_it_does_not_take_with_field_reason_and_a
             case SettingRule::Ipv4:
                 snprintf(bad, sizeof(bad), "%s", "999.1.1.1");
                 break;
+            case SettingRule::SequenceName:
+                // A name without its DM: is not a sequence name (docs/api.md).
+                snprintf(bad, sizeof(bad), "%s", "RESET");
+                break;
             case SettingRule::Mask:
                 snprintf(bad, sizeof(bad), "%ld", (long)setting.hi + 1);
                 snprintf(accepts, sizeof(accepts), "%ld..%ld", (long)setting.lo, (long)setting.hi);

@@ -17,11 +17,28 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 const { shippedWords } = require("./helpers/shipped_words.cjs");
+const { operatorShellUi } = require("./helpers/page_module_env.js");
+const { MiniDocument } = require("./helpers/mini_dom.js");
 
 const root = path.resolve(__dirname, "../..");
 const read = (name) => fs.readFileSync(path.join(root, "data", name), "utf8");
 
+// PART 1 of data/page_bootstrap.js publishes window.PASurface, which the run
+// watch and the editor hold the surface's unmount through (#441, #451).
+const bootstrapSrc = read("page_bootstrap.js");
+const bootstrapPart1 = bootstrapSrc.substring(
+  bootstrapSrc.indexOf("(() => {"),
+  bootstrapSrc.indexOf("// =========================== PART 2"),
+);
+
 const PAGE_MODULES = [
+  // Escape and the question every surface asks with (#456).
+  "overlay.js",
+  // The status stream and the run watch data/seq.js reads from the Live
+  // Reading (#451). Loaded, not started: starting it is the Operator Shell's
+  // call, and no frame reaches these tests.
+  "status_stream.js",
+  "live_reading.js",
   "droid_parts.js",
   "droid_build.js",
   "dome_command_map.js",
@@ -29,9 +46,13 @@ const PAGE_MODULES = [
   "dome_layout.js",
   "dome_lights.js",
   "seq_protocol_check.js",
+  "seq_tempo.js",
+  "seq_gesture.js",
   "servo_motion.js",
   "seq_rehearsal.js",
   "outputs.js",
+  // The stage that draws each step since the cards went (9b71d736, #441).
+  "seq_timeline.js",
   "seq.js",
 ];
 
@@ -94,7 +115,22 @@ const helloBefore = () => ({
 function newPage({ sequence = helloBefore(), failRead = false, outputs = [], config = {} } = {}) {
   const calls = [];
   const dialogs = [];
-  const elements = new Map();
+  // The stage the editor draws the sequence on, and the strip's Stop act,
+  // are real nodes: the timeline builds its lanes into them, and a run under
+  // way renames Stop through PAUi.setAct(), which reads the act's own markup.
+  const mini = new MiniDocument();
+  const ui = operatorShellUi();
+  const real = (tag = "div", html = "") => {
+    const node = mini.body.appendChild(mini.createElement(tag));
+    node.innerHTML = html;
+    return node;
+  };
+  const elements = new Map([
+    ["seq-editor-tlbar", real()],
+    ["seq-editor-timeline", real()],
+    ["seq-editor-droid", real()],
+    ["seq-editor-stop", real("button", ui.actFace("stop", "Stop"))],
+  ]);
   const byId = (id) => {
     if (!elements.has(id)) elements.set(id, makeElement());
     return elements.get(id);
@@ -137,6 +173,8 @@ function newPage({ sequence = helloBefore(), failRead = false, outputs = [], con
       },
       messageFor: (error) => String(error && error.message),
     },
+    // The act the pages draw their buttons with, from the shipped shell (#460).
+    PAUi: ui,
     PAUtils: { escapeHtml, escapeAttr: escapeHtml, showFeedback() {}, debounce: (fn) => fn },
     PABootstrap: {
       registerSection() {},
@@ -145,10 +183,6 @@ function newPage({ sequence = helloBefore(), failRead = false, outputs = [], con
       retryNow() {},
       refreshSections() {},
     },
-    PAStatusStream: { isSupported: () => false, subscribe: () => () => {}, getLastStatus: () => null },
-    // The surface's poll handle, as data/page_bootstrap.js hands it out. The
-    // run watch (data/seq.js) takes one as the page loads; nothing here runs it.
-    PASurface: { poll: () => ({ start() {}, stop() {} }) },
     localStorage: { length: 0, key: () => null, getItem: () => null, setItem() {}, removeItem() {} },
     document: {
       readyState: "complete",
@@ -168,6 +202,7 @@ function newPage({ sequence = helloBefore(), failRead = false, outputs = [], con
       dialogs.push(["confirm", text]);
       return false;
     },
+    AbortController, // the browser's own; the editor cancels a read it leaves
     setTimeout,
     clearTimeout,
     setInterval,
@@ -177,6 +212,7 @@ function newPage({ sequence = helloBefore(), failRead = false, outputs = [], con
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  vm.runInContext(bootstrapPart1, sandbox, { filename: "page_bootstrap.part1.js" });
   PAGE_MODULES.forEach((name) => vm.runInContext(read(name), sandbox, { filename: name }));
 
   const seam = sandbox.window.__seqEditorForTesting;
@@ -193,13 +229,12 @@ function newPage({ sequence = helloBefore(), failRead = false, outputs = [], con
     calls,
     dialogs,
     byId,
-    // Every markup the page wrote, joined, for a test about what it says.
-    markup: () => [...elements.values()].map((element) => element.innerHTML).join("\n"),
+    // What the stage says of each step it draws: every block's title.
+    stageSays: () => byId("seq-editor-timeline").querySelectorAll(".tl-item").map((item) => item.getAttribute("title")),
     card: { feedback: cardFeedback, rehearsal: cardRehearsal, testButton, tuneButton },
     settle,
     click,
     open(seq = sequence) {
-      seam.editorState.expanded = new Set();
       seam.renderEditorView(seq);
     },
   };
@@ -255,7 +290,7 @@ test("a fallback track is named by its Setting's label, as the Sound page names 
   sequence.steps.splice(1, 0, { t: 0, type: "audioCat", category: "alert", fallback: "faint" });
   page.open(sequence);
   const label = shippedWords().labelOf("faint");
-  assert.ok(page.markup().includes(`(fallback ${label})`), `the step does not name ${label}`);
+  assert.ok(page.stageSays().some((said) => said.includes(`(fallback ${label})`)), `the step does not name ${label}`);
 });
 
 // The line beside Test on the droid (#439, #287 specific 6). It names the

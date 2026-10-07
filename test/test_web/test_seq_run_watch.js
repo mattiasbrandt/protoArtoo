@@ -1,21 +1,22 @@
 // A run started on the Sequences surface: when the page says it is running,
-// and when it asks the droid about it.
+// and when it stops saying so.
 //
-// The droid answers POST /api/seq/test before the run has started and writes
-// the run's record (GET /api/seq/last-run) only when its dispatcher takes the
-// run up, so for a moment after every press the record is still the one from
-// before it - and when the same sequence is run twice, that record carries
-// this run's name and says it ended. A page that read it by name would end
-// Running the instant it began. And the record is a multi-KB document the
-// droid builds per request, so the page asks for it only while a run it
-// started is under way, and not at all while another surface is on screen
-// (ADR 0048).
+// The droid answers POST /api/seq/test before the run has started and records
+// the run only when its dispatcher takes it up, so for a moment after every
+// press the status frame's run (`seqRun`) is still the one from before it -
+// and when the same sequence is run twice, it carries this run's name and
+// says it ended. A page that judged the press by name would end Running the
+// instant it began. The run watch is the Live Reading's (data/live_reading.js,
+// 3e8c085c, #451): it judges a press by the run's start time and reads only
+// the frames the session already gets, never GET /api/seq/last-run.
 //
-// Runs the SHIPPED surface poll (PART 1 of data/page_bootstrap.js) in one
-// context with the shipped data/seq.js, so the poll's start, stop and owner
-// are the real ones. The once-a-second cadence is fired by hand: `tick()` runs
-// what the page scheduled, and an interval the page cleared is never run. Per
-// test_web/README.md: executed, not pattern-matched.
+// Runs the SHIPPED surface poll (PART 1 of data/page_bootstrap.js), status
+// stream and Live Reading in one context with the shipped data/seq.js. With
+// no EventSource the Live Reading's fallback poll brings the frames, so the
+// droid here is what GET /api/status answers. The page's clock is fired by
+// hand: `tick()` moves it a second and runs what the page scheduled for it,
+// and a timer the page cleared is never run. Per test_web/README.md: executed,
+// not pattern-matched.
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -23,6 +24,9 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 const { shippedWords } = require("./helpers/shipped_words.cjs");
+const { operatorShellUi } = require("./helpers/page_module_env.js");
+const { MiniDocument } = require("./helpers/mini_dom.js");
+const { statusFrame } = require("./helpers/fake_droid.js");
 
 const root = path.resolve(__dirname, "../..");
 const read = (name) => fs.readFileSync(path.join(root, "data", name), "utf8");
@@ -36,6 +40,13 @@ const bootstrapPart1 = bootstrapFile.substring(
 // The script chain data/seq.html declares that data/seq.js leans on to open a
 // sequence in the workspace.
 const PAGE_MODULES = [
+  // Escape and the question every surface asks with (#456).
+  "overlay.js",
+  // The status stream and the run watch data/seq.js reads from the Live
+  // Reading (#451). Started below as the Operator Shell starts it, so its
+  // fallback poll brings the droid's frames.
+  "status_stream.js",
+  "live_reading.js",
   "droid_parts.js",
   "droid_build.js",
   "dome_command_map.js",
@@ -108,27 +119,32 @@ const GREET = {
   ],
 };
 
-// A run's record, as src/seq_last_run_json.cpp writes the fields the page reads.
-const record = (name, startMs, outcome) => ({
-  valid: true,
-  name,
-  source: "web",
-  outcome,
-  running: outcome === "running",
-  startMs,
-  ...(outcome === "running" ? {} : { endMs: startMs + 1500 }),
-});
+// The run a status frame carries, as src/web/status_json.cpp writes it
+// (docs/api.md, `seqRun`).
+const run = (name, startMs, running) => ({ name, running, startMs });
 
 // The Sequences surface with DM:GREET open in the workspace, on a droid whose
-// last-run record is `droid.record` - the test changes it as the droid would.
-function newSurface(initialRecord) {
-  // `answers: false` is a droid that has dropped off the network: a read of the
-  // record gets no answer.
-  const droid = { record: initialRecord, answers: true };
+// last recorded run is `droid.run` (null before any since boot) - the test
+// changes it as the droid would.
+function newSurface(initialRun) {
+  // `answers: false` is a droid that has dropped off the network: a read of
+  // its status gets no answer.
+  const droid = { run: initialRun, answers: true };
   const requests = []; // every request the page sent, in order: "GET /api/..."
   let clock = 1_000_000;
   const intervals = new Map();
   let nextInterval = 1;
+  // Timeouts on the page's clock: each runs once the clock reaches it.
+  const timeouts = new Map();
+  let nextTimeout = 1;
+  const runDue = () => {
+    [...timeouts.entries()]
+      .filter(([, timer]) => timer.due <= clock)
+      .forEach(([id, timer]) => {
+        timeouts.delete(id);
+        timer.fn();
+      });
+  };
 
   const elements = new Map();
   const byId = (id) => {
@@ -138,6 +154,16 @@ function newSurface(initialRecord) {
   // The markup the workspace writes hides these until a run is under way
   // (data/seq.js renderEditorView()).
   ["seq-editor-running", "seq-editor-stop", "seq-editor-test-hint"].forEach((id) => byId(id).classList.add("hidden"));
+  // Stop is a real act: a run under way renames it through PAUi.setAct(),
+  // which reads the act's own markup.
+  const ui = operatorShellUi();
+  const mini = new MiniDocument();
+  const stop = mini.body.appendChild(mini.createElement("button"));
+  stop.innerHTML = ui.actFace("stop", "Stop");
+  stop.classList.add("hidden");
+  stop.listeners = {};
+  stop.addEventListener = (name, fn) => (stop.listeners[name] = stop.listeners[name] || []).push(fn);
+  elements.set("seq-editor-stop", stop);
 
   class PageDate extends Date {
     static now() {
@@ -151,9 +177,9 @@ function newSurface(initialRecord) {
       ...shippedWords(),
       get: (url) => {
         requests.push(`GET ${url}`);
-        if (url === "/api/seq/last-run") {
+        if (url === "/api/status") {
           if (!droid.answers) return Promise.reject(Object.assign(new Error("no response"), { kind: "network" }));
-          return Promise.resolve({ ok: true, status: 200, data: JSON.parse(JSON.stringify(droid.record)) });
+          return Promise.resolve({ ok: true, status: 200, data: statusFrame({ seqRun: droid.run && { ...droid.run } }) });
         }
         return Promise.resolve({ ok: true, status: 200, data: url.startsWith("/api/config") ? {} : [] });
       },
@@ -164,9 +190,10 @@ function newSurface(initialRecord) {
       },
       messageFor: (error) => String(error && error.message),
     },
+    // The act the pages draw their buttons with, from the shipped shell (#460).
+    PAUi: ui,
     PAUtils: { escapeHtml, escapeAttr: escapeHtml, showFeedback() {}, debounce: (fn) => fn },
     PABootstrap: { registerSection() {}, setResourceLabels() {}, retryNow() {}, refreshSections() {} },
-    PAStatusStream: { isSupported: () => false, subscribe: () => () => {}, getLastStatus: () => null },
     localStorage: { length: 0, key: () => null, getItem: () => null, setItem() {}, removeItem() {} },
     location: { origin: "http://device" },
     document: {
@@ -190,12 +217,13 @@ function newSurface(initialRecord) {
     alert() {},
     confirm: () => false,
     crypto: require("node:crypto").webcrypto,
-    setTimeout: (fn, ms) => {
-      const timer = setTimeout(fn, ms);
-      timer.unref?.();
-      return timer;
+    setTimeout: (fn, ms = 0) => {
+      const id = nextTimeout;
+      nextTimeout += 1;
+      timeouts.set(id, { fn, due: clock + ms });
+      return id;
     },
-    clearTimeout,
+    clearTimeout: (id) => timeouts.delete(id),
     // The cadence, held rather than run: tick() fires it.
     setInterval: (fn, ms) => {
       const id = nextInterval;
@@ -217,9 +245,14 @@ function newSurface(initialRecord) {
   // scripts, so what the surface creates in its script body is its own.
   sandbox.PASurface.showing("seq");
   PAGE_MODULES.forEach((name) => vm.runInContext(read(name), sandbox, { filename: name }));
+  // As the Operator Shell starts it, before any surface reads it.
+  sandbox.PALiveReading.start();
 
   const settle = async (turns = 8) => {
-    for (let i = 0; i < turns; i += 1) await new Promise((resolve) => setImmediate(resolve));
+    for (let i = 0; i < turns; i += 1) {
+      runDue();
+      await new Promise((resolve) => setImmediate(resolve));
+    }
   };
   const press = async (id) => {
     (byId(id).listeners.click || []).forEach((fn) => fn());
@@ -234,61 +267,56 @@ function newSurface(initialRecord) {
     requests,
     press,
     settle,
-    shell: sandbox.PASurface,
-    // A second of the page's clock, and whatever the page had scheduled for it.
+    // The page's clock moves `ms`; every interval the page holds fires once,
+    // whatever its cadence (the Live Reading's poll is the one that matters
+    // here), and every timeout due by then runs.
     async tick(ms = 1000) {
       clock += ms;
       [...intervals.values()].forEach((interval) => interval.fn());
       await settle();
     },
-    readsOfTheRecord: () => requests.filter((request) => request === "GET /api/seq/last-run").length,
     saysRunning: () => !byId("seq-editor-running").classList.contains("hidden"),
     offersTest: () => !byId("seq-editor-test").classList.contains("hidden"),
     feedback: () => byId("seq-editor-feedback").innerHTML,
   };
 }
 
-test("the record of an earlier run of the same sequence does not end Running, and this run's own ending does", async () => {
-  // DM:GREET ran before, and ended: the record carries this run's name.
-  const page = newSurface(record("DM:GREET", 40_000, "completed"));
-  assert.equal(page.readsOfTheRecord(), 0, "the page asked about a run before any was started here");
+test("an earlier run of the same sequence does not end Running, and this run's own ending does", async () => {
+  // DM:GREET ran before, and ended: the frame's run carries this run's name.
+  const page = newSurface(run("DM:GREET", 40_000, false));
 
   await page.press("seq-editor-test");
-  assert.deepEqual(page.requests.slice(0, 2), ["GET /api/seq/last-run", "POST /api/seq/test"],
-    "the record was not read before the run was sent");
+  const readAndRun = page.requests.filter((request) => request === "GET /api/status" || request.startsWith("POST "));
+  assert.deepEqual(readAndRun.slice(0, 2), ["GET /api/status", "POST /api/seq/test"],
+    "a page with no frame yet did not read the droid's run before it sent this one");
   assert.ok(page.saysRunning(), "the page does not say the run it sent is running");
 
-  // The dispatcher has not taken the run up yet: the droid still answers with
-  // the earlier run's record.
+  // The dispatcher has not taken the run up yet: the droid still reports the
+  // earlier run.
   await page.tick();
   await page.tick();
-  assert.ok(page.saysRunning(), "an earlier run's record ended this run");
+  assert.ok(page.saysRunning(), "an earlier run of the same sequence ended this run");
 
-  page.droid.record = record("DM:GREET", 91_000, "running");
+  page.droid.run = run("DM:GREET", 91_000, true);
   await page.tick();
   assert.ok(page.saysRunning());
 
-  // Stop asks the droid; the run is over when its record says so.
+  // Stop asks the droid; the run is over when its frame says so.
   await page.press("seq-editor-stop");
   assert.equal(page.requests.at(-1), "POST /api/seq/stop");
-  assert.ok(page.saysRunning(), "Running was taken down by the press, not by the droid's record");
+  assert.ok(page.saysRunning(), "Running was taken down by the press, not by the droid's frame");
 
-  page.droid.record = record("DM:GREET", 91_000, "aborted");
+  page.droid.run = run("DM:GREET", 91_000, false);
   await page.tick();
-  assert.equal(page.saysRunning(), false, "the run's own record ended and the page still says Running");
+  assert.equal(page.saysRunning(), false, "the run's own frame ended it and the page still says Running");
   assert.ok(page.offersTest());
-
-  // And with nothing under way, the droid is not asked again.
-  const asked = page.readsOfTheRecord();
-  await page.tick();
-  await page.tick();
-  assert.equal(page.readsOfTheRecord(), asked, "the record is still being read after the run ended");
+  assert.ok(!page.requests.includes("GET /api/seq/last-run"), "the run was judged by asking for the multi-KB record");
 });
 
 test("a run the droid accepted and never started stops reading as running, and the page says so", async () => {
   // Nothing has run since boot, and the droid refuses the run after its ok
   // (src/tasks/sequence_dispatcher.cpp: no room for the run's buffers).
-  const page = newSurface({ valid: false, note: "no sequence run recorded since boot" });
+  const page = newSurface(null);
 
   await page.press("seq-editor-test");
   assert.ok(page.saysRunning());
@@ -298,69 +326,37 @@ test("a run the droid accepted and never started stops reading as running, and t
   for (let second = 0; second < 6; second += 1) await page.tick();
   assert.equal(page.saysRunning(), false, "a run that never started still reads as running");
   assert.match(page.feedback(), /The droid did not start DM:GREET\./);
-
-  const asked = page.readsOfTheRecord();
-  await page.tick();
-  assert.equal(page.readsOfTheRecord(), asked, "the record is still being read after the page gave up");
 });
 
-test("a run under way is not asked about while another surface is on screen, and is on the way back", async () => {
-  const page = newSurface({ valid: false });
+test("a droid that stops answering mid-run does not read as running, and the page says it lost touch", async () => {
+  const page = newSurface(null);
   await page.press("seq-editor-test");
-  page.droid.record = record("DM:GREET", 5_000, "running");
+  page.droid.run = run("DM:GREET", 5_000, true);
   await page.tick();
   assert.ok(page.saysRunning());
 
-  // Long enough away that a page counting the time it was not asking would
-  // call the droid lost on the way back.
-  page.shell.showing("dashboard");
-  const asked = page.readsOfTheRecord();
-  for (let second = 0; second < 10; second += 1) await page.tick();
-  assert.equal(page.readsOfTheRecord(), asked, "the droid was asked about the run from a surface nobody is reading");
-
-  // It ended while the builder was elsewhere; the way back reads it at once.
-  page.droid.record = record("DM:GREET", 5_000, "completed");
-  page.shell.showing("seq");
-  await page.settle();
-  assert.equal(page.readsOfTheRecord(), asked + 1);
-  assert.equal(page.saysRunning(), false);
-});
-
-test("a droid that stops answering mid-run does not read as running for ever, and the page says it lost touch", async () => {
-  const page = newSurface({ valid: false });
-  await page.press("seq-editor-test");
-  page.droid.record = record("DM:GREET", 5_000, "running");
-  await page.tick();
-  assert.ok(page.saysRunning());
-
-  // The droid drops off the network. Nothing it could answer will end the run.
+  // The droid drops off the network: out of touch, the last frame cannot say
+  // a run is still under way.
   page.droid.answers = false;
   await page.tick();
-  assert.ok(page.saysRunning(), "one unanswered read ended the run");
-
-  for (let second = 0; second < 6; second += 1) await page.tick();
   assert.equal(page.saysRunning(), false, "a run on a droid that no longer answers still reads as running");
   assert.match(page.feedback(), /Lost touch with the droid; DM:GREET may still be running\./);
-
-  const asked = page.readsOfTheRecord();
-  await page.tick();
-  assert.equal(page.readsOfTheRecord(), asked, "the record is still being asked for after the page gave up");
 });
 
-test("another run's record landing just after the press does not end this run before its own record is there", async () => {
+test("another run landing just after the press does not end this run before its own is there", async () => {
   // A run sent a moment before this one - from another row, the radio, the
-  // Dashboard - writes its record first; this run preempts it and writes next.
-  const page = newSurface({ valid: false });
+  // Dashboard - is recorded first; this run preempts it and is recorded next.
+  const page = newSurface(null);
   await page.press("seq-editor-test");
-  page.droid.record = record("DM:OTHER", 7_000, "running");
+  page.droid.run = run("DM:OTHER", 7_000, true);
   await page.tick();
   assert.ok(page.saysRunning(), "the run before this one ended it");
 
-  page.droid.record = record("DM:GREET", 7_050, "running");
+  page.droid.run = run("DM:GREET", 7_050, true);
   await page.tick();
   assert.ok(page.saysRunning());
 
-  page.droid.record = record("DM:GREET", 7_050, "completed");
+  page.droid.run = run("DM:GREET", 7_050, false);
   await page.tick();
   assert.equal(page.saysRunning(), false);
 });

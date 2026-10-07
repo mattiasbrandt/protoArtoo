@@ -67,6 +67,12 @@ inline bool settingOtherText(const ConfigSetting& setting, const ConfigSnapshot&
             snprintf(out, outSize, "%s", strcmp(current, "10.1.2.3") == 0 ? "10.1.2.4" : "10.1.2.3");
             return true;
         }
+        case SettingRule::SequenceName: {
+            char current[24] = {};
+            configSettingFormat(setting, from, current, sizeof(current));
+            snprintf(out, outSize, "%s", strcmp(current, "DM:RESET") == 0 ? "DM:WAVE" : "DM:RESET");
+            return true;
+        }
         case SettingRule::Range:
         default: {
             const int32_t span = setting.hi - setting.lo + 1;

@@ -146,6 +146,15 @@ class MiniElement {
     return this.parentNode && this.parentNode.nodeType === 1 ? this.parentNode : null;
   }
 
+  // Node.isConnected: whether the node hangs off its document's <html>. An
+  // overlay's Escape guard reads it so a question left behind on a surface
+  // the shell has detached takes no key (data/overlay.js).
+  get isConnected() {
+    let at = this;
+    while (at.parentNode) at = at.parentNode;
+    return at === this.ownerDocument?.documentElement;
+  }
+
   get textContent() {
     return this.childNodes.map((node) => node.textContent).join("");
   }
@@ -175,6 +184,11 @@ class MiniElement {
     this.childNodes.push(node);
     this.ownerDocument?.onAttach?.(node);
     return node;
+  }
+
+  // Element.append: nodes in order, a string as a text node.
+  append(...nodes) {
+    nodes.forEach((node) => this.appendChild(typeof node === "string" ? new MiniText(node) : node));
   }
 
   removeChild(node) {
@@ -209,6 +223,15 @@ class MiniElement {
       node = node.parentNode;
     }
     return null;
+  }
+
+  // Node.contains: true for the node itself and anything below it, false for
+  // null, as a browser answers it.
+  contains(node) {
+    for (let at = node; at; at = at.parentNode) {
+      if (at === this) return true;
+    }
+    return false;
   }
 
   querySelectorAll(selector) {
@@ -471,6 +494,10 @@ export class MiniDOMParser {
     parseInto(root, html, parsed);
     const html_ = root.children.find((child) => child.tagName === "HTML");
     if (html_) {
+      // The parsed <html> is the document's root, not a child of the parse's
+      // scratch node, so its nodes are connected (Node.isConnected) as a
+      // browser's are.
+      root.removeChild(html_);
       parsed.documentElement = html_;
       parsed.head = html_.children.find((child) => child.tagName === "HEAD") || parsed.head;
       parsed.body = html_.children.find((child) => child.tagName === "BODY") || parsed.body;

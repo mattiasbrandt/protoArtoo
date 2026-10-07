@@ -103,6 +103,8 @@ class MockDocument {
   constructor() {
     this.elements = new Map();
     this.body = new MockElement("body", "", this);
+    // <html>, which the Operator Shell marks with the act-words switch (#460).
+    this.documentElement = new MockElement("html", "", this);
     this.visibilityState = "visible";
   }
 
@@ -474,8 +476,9 @@ test("Retry button is appended to identity-actions on pa:identity-unavailable", 
   // Button should have been appended
   const buttons = identityActions.children.filter((child) => child.tagName === "button");
   assert.strictEqual(buttons.length, 1, "Exactly one button should be appended to identity-actions");
-  assert.strictEqual(buttons[0].className, "btn accent", "Button should have correct className");
-  assert.strictEqual(buttons[0].textContent, "Retry now", "Button should have correct text");
+  // An act since #460 (1d73400f): its words are in its .act-label, beside its icon.
+  assert.ok(buttons[0].className.split(" ").includes("icon-act"), "Retry should be an act");
+  assert.match(buttons[0].innerHTML, /<span class="act-label">Retry now<\/span>/, "Retry should say Retry now");
 });
 
 test("Retry button calls PABootstrap.retryNow with shell-identity when clicked", () => {

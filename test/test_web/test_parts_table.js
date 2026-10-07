@@ -256,6 +256,8 @@ const bootPicker = async ({ outputs = freshOutputs(), catalogSource = readData("
   context.globalThis = context;
 
   const REAL_SCRIPTS = {
+    // Escape and the move question, which data/wiring.html loads (#456).
+    "/overlay.js": readData("overlay.js"),
     "/shell.js": readData("shell.js"),
     "/status_stream.js": readData("status_stream.js"),
     "/live_reading.js": readData("live_reading.js"),
@@ -355,13 +357,16 @@ test("taking a Part off one Output for another is asked first, then sends where 
   env.pick("doorFL", "ledc:3");
   assert.equal(env.posts.length, 0, "nothing reaches the droid before the builder answers");
   assert.equal(env.dialog.open, true);
-  assert.equal(env.text("wiring-move-title"), "Part already wired");
-  assert.equal(
-    env.text("wiring-move-body"),
-    "Left body door is on ARM1. Move it to ARM3 and unwire it from ARM1? " +
-      "ARM1 keeps Right body door. Upper utility arm is on ARM3 too — they will move together.",
-  );
-  assert.equal(env.text("wiring-move-confirm"), "Move it", "the button that agrees is the verb");
+  // The question in the one shared wording (data/parts_mapping.js
+  // announcement(), #456: the title is the question, both buttons verbs).
+  const asked = env.window.PAParts.announcement(env.window.PAParts.moveFor(env.window.PAOutputs.list(), "doorFL", "ledc:3"));
+  assert.equal(env.text("wiring-move-title"), asked.title);
+  assert.equal(env.text("wiring-move-body"), asked.body);
+  assert.equal(env.text("wiring-move-confirm"), asked.yes, "the button that agrees is the verb");
+  // The facts the builder decides on: the Part already on ARM3 moves along,
+  // and the one left on ARM1 stays there.
+  assert.match(env.text("wiring-move-body"), /Upper utility arm/, "the body does not name the Part that moves along");
+  assert.match(env.text("wiring-move-body"), /Right body door/, "the body does not name what ARM1 keeps");
 
   env.click("wiring-move-confirm");
   // While the move is on its way the row's bar takes no press, and no Output
@@ -401,7 +406,9 @@ test("Escape cancels the move question", async () => {
 
   env.pick("doorFL", "ledc:4");
   assert.equal(env.dialog.open, true);
-  env.dialog.fire("keydown", { key: "Escape" });
+  // Escape goes through the one shared guard on the document (data/overlay.js
+  // escGuard(), 36b62b4a, #456), which the browser reaches first, in capture.
+  env.document.dispatch("keydown", { key: "Escape", preventDefault() {}, stopPropagation() {} });
   await sleep(20);
   assert.equal(env.dialog.open, false);
   assert.equal(env.posts.length, 0, "a cancel sends nothing");
@@ -413,10 +420,9 @@ test("cancelling the question sends nothing and puts the control back", async ()
   const env = await bootPicker({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
 
   env.pick("doorFL", "ledc:4");
-  assert.equal(
-    env.text("wiring-move-body"),
-    "Left body door is on ARM1. Move it to ARM4 and unwire it from ARM1? ARM1 will have nothing on it.",
-  );
+  assert.equal(env.dialog.open, true);
+  // ARM1 holds only this Part, so the question says it is left empty.
+  assert.match(env.text("wiring-move-body"), /ARM1\b.*\bnothing\b/, "the body does not say ARM1 is left empty");
   env.click("wiring-move-cancel");
   await sleep(20);
   assert.equal(env.posts.length, 0);

@@ -13,7 +13,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
 
-import { loadPageModule, partsGlobals } from "./helpers/page_module_env.js";
+import { loadPageModule, PARTS_CHAIN } from "./helpers/page_module_env.js";
 import { createRequire } from "node:module";
 
 // The sound link's word and light come from the health-signal model, which
@@ -95,8 +95,7 @@ test("servo-outputs loader issues its request through the handle, not PAApi", as
   let env = null;
   env = loadPageModule("servo.js", {
     respond: () => ({ data: OUTPUTS_PAYLOAD }),
-    overrides: partsGlobals(),
-    chain: ["outputs.js"],
+    chain: PARTS_CHAIN,
   });
   const { calls, handle } = makeRecordingHandle(OUTPUTS_PAYLOAD);
 

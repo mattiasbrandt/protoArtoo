@@ -19,6 +19,7 @@ import { dirname, join } from "path";
 import { MiniDOMParser } from "./mini_dom.js";
 import { bootedDroid } from "./booted_droid.js";
 import { shippedWords } from "./shipped_words.cjs";
+import { operatorShellUi } from "./page_module_env.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "../../..");
@@ -173,6 +174,9 @@ export const boot = ({ set = "legacy", board = "artoo_esp32", assetsReady = true
     document: documentMock,
     PAAssetsReady: assetsReady,
     PAIdentity: { droidName: "artoo", mdnsUseName: false, board, board_capabilities: {}, build_flags: {} },
+    // The act every surface draws its buttons with, published by the Operator
+    // Shell around it (#460).
+    PAUi: operatorShellUi(),
     PAApi: {
       // The shipped words table's lookups (helpers/shipped_words.cjs).
       ...shippedWords(),

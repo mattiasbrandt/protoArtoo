@@ -22,6 +22,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 import { MiniDocument } from "./helpers/mini_dom.js";
+import { operatorShellUi } from "./helpers/page_module_env.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
@@ -38,6 +39,8 @@ const boot = () => {
     // makes a broken contract a failing test rather than an unnoticed request.
     PAApi: { get: refused, postForm: refused, estopPostForm: refused, gateControls: refused },
     PAUtils: { escapeHtml: (value) => String(value) },
+    // The act the panel's buttons are drawn with, from the shipped shell (#460).
+    PAUi: operatorShellUi(),
   };
   const errors = [];
   const context = {
