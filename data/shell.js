@@ -252,7 +252,8 @@
     const label = button.querySelector(".act-label");
     if (!label) throw new Error(`setAct: no .act-label in ${button.outerHTML.slice(0, 80)}`);
     label.textContent = words;
-    if (name) button.querySelector("svg.i > use").setAttribute("href", `#i-${name}`);
+    // actFace() writes exactly one icon(), so the act's one <use> is its icon.
+    if (name) button.querySelector("use").setAttribute("href", `#i-${name}`);
   };
 
   // ---------------------------------------------------------------------------
