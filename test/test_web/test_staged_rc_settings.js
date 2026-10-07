@@ -98,6 +98,10 @@ const loadInteractiveModule = (files, respond) => {
     // data/page_bootstrap.js publishes window.PASurface in the browser; this
     // context hand-rolls its globals, so it has to carry it too (#360).
     PASurface: { poll: () => ({ start() {}, stop() {}, cancelRetry() {} }) },
+    // data/overlay.js's question, answered yes: Restart asks before it sends
+    // (#456), and what these tests hold is when a yes may restart, not the
+    // question's own dialog, which this hand-rolled document cannot host.
+    PAOverlay: { ask: async () => true },
     PA_HEAP: {},
     setTimeout: (fn, ms) => {
       const id = timers.length + 1;
