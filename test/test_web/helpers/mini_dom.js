@@ -146,6 +146,15 @@ class MiniElement {
     return this.parentNode && this.parentNode.nodeType === 1 ? this.parentNode : null;
   }
 
+  // Node.isConnected: whether the node hangs off its document's <html>. An
+  // overlay's Escape guard reads it so a question left behind on a surface
+  // the shell has detached takes no key (data/overlay.js).
+  get isConnected() {
+    let at = this;
+    while (at.parentNode) at = at.parentNode;
+    return at === this.ownerDocument?.documentElement;
+  }
+
   get textContent() {
     return this.childNodes.map((node) => node.textContent).join("");
   }
