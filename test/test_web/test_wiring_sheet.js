@@ -273,6 +273,8 @@ const boot = async ({
   context.globalThis = context;
 
   const REAL_SCRIPTS = {
+    // Escape and the move question, which data/wiring.html loads (#456).
+    "/overlay.js": readData("overlay.js"),
     "/shell.js": readData("shell.js"),
     "/status_stream.js": readData("status_stream.js"),
     "/live_reading.js": readData("live_reading.js"),

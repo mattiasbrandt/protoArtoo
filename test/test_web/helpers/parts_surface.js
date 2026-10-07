@@ -436,10 +436,10 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
   // its Outputs (the bar's own button, as a click lands on it).
   env.unusedRows = () => document.getElementById("parts-unused").querySelectorAll("[data-part]");
   env.unusedBar = (id) =>
-    env.unusedRows().find((row) => row.dataset.part === id)?.querySelector("[data-bar-for]")?.querySelectorAll("[role='radiogroup'] button") ?? [];
+    env.unusedRows().find((row) => row.dataset.part === id)?.querySelector("[data-bar-for]")?.querySelectorAll('[role="radiogroup"]').flatMap((bar) => bar.querySelectorAll("button")) ?? [];
   env.pressUnusedOutput = (id, address) => env.unusedBar(id).find((button) => button.dataset.value === address).fire("click", {});
   // The picture panel's Output bar, for the Part picked on the picture.
-  env.panelBar = () => document.querySelector(".bodyview-panel-slot")?.querySelectorAll("[role='radiogroup'] button") ?? [];
+  env.panelBar = () => document.querySelector(".bodyview-panel-slot")?.querySelectorAll('[role="radiogroup"]').flatMap((bar) => bar.querySelectorAll("button")) ?? [];
   // Find by moving sits over Servos' rows: one button, which opens the Parts
   // nothing drives as pills, and pressing one of those starts the run.
   env.findTray = () => document.getElementById("outputs-find-tray");
