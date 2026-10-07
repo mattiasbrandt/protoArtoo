@@ -45,8 +45,13 @@ void test_slot4_drives_ledc_aux3() {
     TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX3, servoOutputSlotAddress(4).channel);
 }
 
-void test_slot5_has_no_output() {
-    TEST_ASSERT_TRUE(servoOutputSlotAddress(5) == SERVO_OUTPUT_NONE);
+// Past the board's five come the PCA9685's sixteen channels, whichever
+// member is chosen (e5c8a922, #444), and past those, nothing.
+void test_slot5_is_the_expanders_first_channel_and_the_slot_after_its_last_has_no_output() {
+    const ServoOutputAddress first = servoOutputSlotAddress(5);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_DRIVER_PCA9685, first.driver);
+    TEST_ASSERT_EQUAL_UINT8(0, first.channel);
+    TEST_ASSERT_TRUE(servoOutputSlotAddress(SERVO_OUTPUT_SLOT_COUNT) == SERVO_OUTPUT_NONE);
 }
 
 void test_slot255_has_no_output() {
@@ -221,7 +226,7 @@ int main() {
     RUN_TEST(test_slot2_drives_ledc_aux1);
     RUN_TEST(test_slot3_drives_ledc_aux2);
     RUN_TEST(test_slot4_drives_ledc_aux3);
-    RUN_TEST(test_slot5_has_no_output);
+    RUN_TEST(test_slot5_is_the_expanders_first_channel_and_the_slot_after_its_last_has_no_output);
     RUN_TEST(test_slot255_has_no_output);
     RUN_TEST(test_slot_invalid_large_has_no_output);
 
