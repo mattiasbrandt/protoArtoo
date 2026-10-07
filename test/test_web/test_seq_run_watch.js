@@ -43,8 +43,8 @@ const PAGE_MODULES = [
   // Escape and the question every surface asks with (#456).
   "overlay.js",
   // The status stream and the run watch data/seq.js reads from the Live
-  // Reading (#451). Loaded, not started: starting it is the Operator Shell's
-  // call, and no frame reaches these tests.
+  // Reading (#451). Started below as the Operator Shell starts it, so its
+  // fallback poll brings the droid's frames.
   "status_stream.js",
   "live_reading.js",
   "droid_parts.js",
@@ -267,8 +267,9 @@ function newSurface(initialRun) {
     requests,
     press,
     settle,
-    shell: sandbox.PASurface,
-    // A second of the page's clock, and whatever the page had scheduled for it.
+    // The page's clock moves `ms`; every interval the page holds fires once,
+    // whatever its cadence (the Live Reading's poll is the one that matters
+    // here), and every timeout due by then runs.
     async tick(ms = 1000) {
       clock += ms;
       [...intervals.values()].forEach((interval) => interval.fn());
@@ -309,6 +310,7 @@ test("an earlier run of the same sequence does not end Running, and this run's o
   await page.tick();
   assert.equal(page.saysRunning(), false, "the run's own frame ended it and the page still says Running");
   assert.ok(page.offersTest());
+  assert.ok(!page.requests.includes("GET /api/seq/last-run"), "the run was judged by asking for the multi-KB record");
 });
 
 test("a run the droid accepted and never started stops reading as running, and the page says so", async () => {
