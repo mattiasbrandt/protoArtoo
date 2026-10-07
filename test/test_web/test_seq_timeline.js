@@ -362,7 +362,6 @@ test("a drag on the timeline is one edit to the sequence the editor saves", asyn
   const page = openPage();
   await page.settle();
   page.seam.renderEditorView(JSON.parse(JSON.stringify(EDITED)));
-  (page.byId("seq-editor-show-timeline").listeners.click || []).forEach((fn) => fn());
 
   const view = page.editorTimeline;
   assert.ok(view.querySelector(".tl-grid"), "the editor drew no timeline");
@@ -400,15 +399,16 @@ test("a drag on the timeline is one edit to the sequence the editor saves", asyn
 
   // An Undo asked for with a block still held does nothing: the drag's writes
   // are in the routine and not yet an entry, and the steps a restore would put
-  // back are not the ones the drag is holding. Taking the view down under a
-  // drag puts the block back where the press found it.
+  // back are not the ones the drag is holding. A drag the browser cancels
+  // puts the block back where the press found it. (This was a Steps / Timeline
+  // toggle taking the view down; the toggle went with the card editor,
+  // 9b71d736, #441.)
   held = press();
   page.fireWindow("pointermove", { clientX: held.at + 450 * held.pxPerMs });
   (page.byId("seq-editor-undo").listeners.click || []).forEach((fn) => fn());
   assert.equal(turn().t, 2450, "Undo ran under a drag");
-  (page.byId("seq-editor-show-steps").listeners.click || []).forEach((fn) => fn());
-  assert.equal(turn().t, 2000, "a drag torn down mid-gesture left its half-made move in the routine");
-  (page.byId("seq-editor-show-timeline").listeners.click || []).forEach((fn) => fn());
+  page.fireWindow("pointercancel", {});
+  assert.equal(turn().t, 2000, "a drag abandoned mid-gesture left its half-made move in the routine");
 
   // Dragged on past the open, out of reach of any edge: it stays where it is put.
   held = press();
@@ -670,11 +670,14 @@ test("an inspector edit that changes nothing records nothing, and one that does 
   assert.equal(w.undoOff(), true);
 });
 
-test("Flutter on a Part standing open keeps the close it owes, and is not offered where there is none", async () => {
+// A flutter ends closed and owes no close (ADR 0049, amended 2026-10-02;
+// 15cc837d): turned into one, a pair's open takes its close with it, and
+// turned back, the open gets a close again.
+test("Flutter on a pair takes its close, and Open brings the pair back", async () => {
   const w = workspace(EDITED);
   w.pick("panel1", "open");
   w.choose("motion", "flutter");
-  assert.deepEqual(w.brief().slice(2, 4), [[2000, ":OF01"], [3000, ":CL01"]], "the flutter did not take the open's place and keep its close");
+  assert.deepEqual(w.brief().slice(2), [[2000, ":OF01"], [4000, "end"]], "the flutter did not take the open's place and its close");
   assert.equal(w.saveOff(), false, "the flutter left a routine the droid would refuse");
   assert.equal(w.choice("motion", "flutter")?.getAttribute("aria-pressed"), "true", "the inspector left the block it changed");
 
@@ -684,11 +687,11 @@ test("Flutter on a Part standing open keeps the close it owes, and is not offere
   assert.ok(w.field("runs"), "the pair came back without its length");
 
   // An open no step closes (the droid closes a ring panel itself after the
-  // end): a flutter there would never be closed, which Protocol Check refuses.
+  // end) is offered Flutter too: a flutter owes nothing after it.
   const left = workspace({ ...EDITED, steps: EDITED.steps.filter((step) => step.cmd !== ":CL01") });
   left.pick("panel1", "open");
   assert.ok(left.choice("motion", "open"), "the fixture: the open's Motion row is drawn");
-  assert.equal(left.choice("motion", "flutter"), null, "Flutter is offered on an open with no close to keep");
+  assert.ok(left.choice("motion", "flutter"), "Flutter is not offered on an open with no close");
 });
 
 test("Same pick is offered only to a Random Flutter that has a pick before it", async () => {
