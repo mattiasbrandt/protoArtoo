@@ -338,7 +338,7 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
   // browser resolves them. Mirror the published objects onto the context.
   // A browser resolves every window property as a bare global, so what a test
   // hands in as an override (a FileReader, a published module) is mirrored the
-  // same way the four built-in objects are.
+  // same way the built-in objects are.
   for (const key of ["PAApi", "PAUtils", "PABootstrap", "PAUi", ...Object.keys(overrides)]) {
     context[key] = windowMock[key];
   }
