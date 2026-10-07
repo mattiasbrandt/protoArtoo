@@ -4,12 +4,14 @@ name: Verification
 # action lands pinned the same way (#473). Dependabot's grouped weekly
 # updates move the pins.
 #
-# Shape (#473): `changes` decides whether code changed; the two boards and the
-# checks run as parallel jobs on the shared setup (.github/actions/setup); the
-# final job, named `verification` because protect-main requires that name,
-# writes the summary, posts the pull request comment and is the gate. It
-# fails on any job that failed, was cancelled, or was skipped for any reason
-# but a documentation-only change.
+# Shape (#473, #355): `changes` sorts the changed files into one class per
+# job (tools/ci_changes.py); the two boards and the checks run as parallel
+# jobs on the shared setup (.github/actions/setup), each board job and each
+# classed check only when its class is on; the final job, named
+# `verification` because protect-main requires that name, writes the summary,
+# posts the pull request comment and is the gate. It fails on any job that
+# failed, was cancelled, or was skipped for any reason but its own class
+# saying `false`.
 
 on:
   pull_request:
@@ -31,10 +33,12 @@ on:
     # it. No other .md file is shipped in the image or compiled in. The list reads top down and the last match wins:
     # everything, minus Markdown and LICENSE, plus the spec sheets again.
     #
-    # Only push is filtered here -- a pull request is filtered per-PR in the
-    # `changes` job, because GitHub evaluates pull_request path filters
-    # against the whole PR diff, not the commit just pushed, so they would
-    # never skip anything on a branch that also carries code.
+    # This filter only decides whether a push starts a run at all. Inside a
+    # run, push and pull request alike, `changes` decides which jobs it needs
+    # from the files themselves. A pull request has no filter here, because
+    # GitHub evaluates pull_request path filters against the whole PR diff,
+    # not the commit just pushed, so they would never skip anything on a
+    # branch that also carries code.
     paths:
       - '**'
       - '!**/*.md'
@@ -74,61 +78,114 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+    # One output per job class, each `true` or `false`, and `reasons`, the
+    # Markdown the summary shows. Which paths turn which class on is
+    # tools/ci_changes.py's to say, not this file's.
     outputs:
-      code: ${{ steps.changes.outputs.code }}
+      boards: ${{ steps.changes.outputs.boards }}
+      native: ${{ steps.changes.outputs.native }}
+      analysis: ${{ steps.changes.outputs.analysis }}
+      web: ${{ steps.changes.outputs.web }}
+      tools: ${{ steps.changes.outputs.tools }}
+      reasons: ${{ steps.changes.outputs.reasons }}
     steps:
-      - name: 🧭 Decide whether code changed
+      # The classifier and nothing else: it is stdlib Python and runs on the
+      # runner's own python3, so this job needs no setup. A push to main also
+      # takes the whole history, for the release tags it is classified
+      # against. (fetch-depth is written as `!= main ... && 1 || 0` because 0
+      # is falsy in an expression: `== main && 0 || 1` would always say 1.)
+      - name: ⬇️ Checkout the classifier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          sparse-checkout: tools/ci_changes.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: ${{ (github.event_name != 'push' || github.ref != 'refs/heads/main') && 1 || 0 }}
+
+      - name: 🧭 Decide which jobs run
         id: changes
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
           REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
           PR: ${{ github.event.pull_request.number }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
         run: |
-          # Markdown and LICENSE cannot change what the firmware does. Anything
-          # else -- .py, .yaml, .json, data/, src/, include/, test/, tools/,
-          # platformio.ini, Makefile, .github/ -- counts as code and runs the
-          # full set. The list is deliberately an allow-list of two harmless
-          # extensions rather than a deny-list of source directories: a new
-          # source directory then fails closed, running everything.
-          # A spec sheet is Markdown that proves the wiring cards generated
-          # into data/ (#458, #475); the drift check holding the cards to their
-          # sheets is one of the checks that still run on a
-          # documentation-only pull request.
-          if [ "$EVENT" != "pull_request" ]; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            echo "Not a pull request - running every check."
+          # Every way of not knowing the files runs every class: a manual
+          # dispatch, a new branch (no `before`), main with no release tag
+          # behind it, a compare that fails, a force push (anything but
+          # `ahead`), or a list at the API's cap (300 files for a compare,
+          # 3000 for a pull request), which may be cut short.
+          # A rename passes its old path too: moving a file out of data/
+          # changes the image as much as editing it does.
+          reasons="$RUNNER_TEMP/reasons.md"
+          files="$RUNNER_TEMP/files.txt"
+          emit() {
+            { echo 'reasons<<REASONS_EOF'; cat "$reasons"; echo 'REASONS_EOF'; } >> "$GITHUB_OUTPUT"
+            cat "$reasons"
+          }
+          all() {
+            python3 tools/ci_changes.py --all "$1" --explain "$reasons" >> "$GITHUB_OUTPUT"
+            emit
             exit 0
-          fi
-          files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename' || true)
-          if [ -z "$files" ]; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            echo "Could not list the pull request's files - running every check."
-            exit 0
-          fi
-          code=$(printf '%s\n' "$files" | grep -vE '(\.md|^LICENSE)$' || true)
-          if [ -n "$code" ]; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            echo "Code changed - running every check. First 20:"
-            printf '%s\n' "$code" | head -20
-          else
-            echo "code=false" >> "$GITHUB_OUTPUT"
-            echo "Documentation only - skipping the board builds, budgets, native"
-            echo "tests and static analysis. Drift, web and tooling checks still run."
-          fi
+          }
+          case "$EVENT" in
+            pull_request)
+              gh api "repos/$REPO/pulls/$PR/files" --paginate \
+                --jq '.[] | .filename, (.previous_filename // empty)' > "$files" ||
+                all "the pull request's files could not be listed"
+              [ "$(gh api "repos/$REPO/pulls/$PR" --jq .changed_files)" -lt 3000 ] ||
+                all "the pull request lists 3000 files or more"
+              ;;
+            push)
+              # On main the range starts at the latest release tag the pushed
+              # commit carries, not at `before`. auto-release.yml tags main's
+              # tip on this run's `verification` job, so a green gate there
+              # has to cover every unreleased commit: classified from
+              # `before`, a docs push after a red run would come out green
+              # and let a minor or major be tagged over the failure. From the
+              # tag, a docs push right after a release runs nothing heavy,
+              # and while a feat or fix is unreleased every push runs what
+              # that code needs.
+              if [ "$REF" = refs/heads/main ]; then
+                base=$(git describe --tags --abbrev=0 --match 'v*' "$SHA") ||
+                  all "no release tag is reachable from the pushed commit"
+                range="the range since $base"
+              else
+                [ -n "${BEFORE//0/}" ] || all "a new branch"
+                base=$BEFORE
+                range="the pushed range"
+              fi
+              compare="$RUNNER_TEMP/compare.json"
+              gh api "repos/$REPO/compare/$base...$SHA" > "$compare" ||
+                all "$range could not be compared"
+              status=$(jq -r .status "$compare")
+              [ "$status" = ahead ] || all "$range is $status, not ahead"
+              [ "$(jq '.files | length' "$compare")" -lt 300 ] ||
+                all "$range lists 300 files or more"
+              jq -r '.files[] | .filename, (.previous_filename // empty)' "$compare" > "$files"
+              ;;
+            *)
+              all "a $EVENT run"
+              ;;
+          esac
+          python3 tools/ci_changes.py --explain "$reasons" < "$files" >> "$GITHUB_OUTPUT"
+          emit
 
   # ── Boards ─────────────────────────────────────────────────────────────────
   # One job per board, each on its own PlatformIO core dir and cache. A board
   # job that succeeds saves its cache; one that fails saves nothing, so a
   # pool a failed build left broken is never restored by the next run.
   #
-  # Each job reports its rows as `outcome<TAB>label<TAB>command` lines and the
-  # budget script's headroom table as outputs; `verification` renders them.
+  # Each job reports its rows as `outcome<TAB>label<TAB>command<TAB>class`
+  # lines and the budget script's headroom table as outputs; `verification`
+  # renders them. A board row's class is `boards`.
 
   artoo:
     name: artoo
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.boards == 'true'
     runs-on: ubuntu-26.04
     # A warm run builds in ~10 min (profiler build, firmware, buildfs); a
     # cold one adds the toolchain download. Without a limit a hung pio holds
@@ -191,15 +248,15 @@ jobs:
         run: |
           {
             echo 'rows<<ROWS_EOF'
-            printf '%s\t%s\t%s\n' "$PROFILER_OUTCOME" "Profiler build" "pio run -e artoo_esp32_profiler"
-            printf '%s\t%s\t%s\n' "$BUDGETS_OUTCOME" "artoo_esp32 build and size budgets" "python3 tools/check_build_budgets.py --env artoo_esp32"
+            printf '%s\t%s\t%s\t%s\n' "$PROFILER_OUTCOME" "Profiler build" "pio run -e artoo_esp32_profiler" boards
+            printf '%s\t%s\t%s\t%s\n' "$BUDGETS_OUTCOME" "artoo_esp32 build and size budgets" "python3 tools/check_build_budgets.py --env artoo_esp32" boards
             echo 'ROWS_EOF'
           } >> "$GITHUB_OUTPUT"
 
   firebeetle2:
     name: firebeetle2
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.boards == 'true'
     runs-on: ubuntu-26.04
     # A cold ESP32-P4 build is ~7.5 min (2026-10-06), plus the penv pin and
     # the toolchain download.
@@ -247,7 +304,7 @@ jobs:
         run: |
           {
             echo 'rows<<ROWS_EOF'
-            printf '%s\t%s\t%s\n' "$BUDGETS_OUTCOME" "firebeetle2 build and size budgets" "python3 tools/check_build_budgets.py --env firebeetle2"
+            printf '%s\t%s\t%s\t%s\n' "$BUDGETS_OUTCOME" "firebeetle2 build and size budgets" "python3 tools/check_build_budgets.py --env firebeetle2" boards
             echo 'ROWS_EOF'
           } >> "$GITHUB_OUTPUT"
 
@@ -255,7 +312,9 @@ jobs:
   # Every check step uses continue-on-error: true so every check runs
   # regardless of earlier failures; the job's own gate at the end fails it if
   # any check did not succeed. steps.<id>.outcome reflects the actual
-  # pass/fail even when continue-on-error is set.
+  # pass/fail even when continue-on-error is set. Native tests, static
+  # analysis, the web tests and the tooling tests each run only when their
+  # class is on; every other check runs on every event.
 
   checks:
     name: checks
@@ -267,7 +326,10 @@ jobs:
     outputs:
       rows: ${{ steps.record.outputs.rows }}
     env:
-      CODE_CHANGED: ${{ needs.changes.outputs.code }}
+      NATIVE: ${{ needs.changes.outputs.native }}
+      ANALYSIS: ${{ needs.changes.outputs.analysis }}
+      WEB: ${{ needs.changes.outputs.web }}
+      TOOLS: ${{ needs.changes.outputs.tools }}
     steps:
       - name: ⬇️ Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -275,13 +337,15 @@ jobs:
       - name: 🧰 Set up the build
         uses: ./.github/actions/setup
         with:
-          # No PlatformIO at all on a documentation-only change: the native
-          # tests and static analysis are its only users here.
-          pool: ${{ needs.changes.outputs.code == 'true' && 'classic' || '' }}
+          # PlatformIO only for the checks that use it: the native tests and
+          # static analysis run pio, and the tooling tests read platformio.ini
+          # through PlatformIO's own config parser (test_asset_sets.py,
+          # test_build_budgets.py), skipping those cases when it is missing.
+          pool: ${{ (needs.changes.outputs.native == 'true' || needs.changes.outputs.analysis == 'true' || needs.changes.outputs.tools == 'true') && 'classic' || '' }}
           cache-name: checks
 
       - name: 🔧 Install cppcheck
-        if: needs.changes.outputs.code == 'true'
+        if: needs.changes.outputs.analysis == 'true'
         run: sudo apt-get install -y --no-install-recommends cppcheck
 
       - name: 🔑 Provision CI placeholder secrets.h
@@ -290,7 +354,7 @@ jobs:
       - name: 🧪 Native tests
         id: native-tests
         continue-on-error: true
-        if: needs.changes.outputs.code == 'true'
+        if: needs.changes.outputs.native == 'true'
         run: pio test -e native
 
       # check_severity in platformio.ini only filters what is printed;
@@ -298,7 +362,7 @@ jobs:
       - name: 🔍 Static analysis
         id: static-analysis
         continue-on-error: true
-        if: needs.changes.outputs.code == 'true'
+        if: needs.changes.outputs.analysis == 'true'
         run: pio check -e artoo_esp32 --fail-on-defect=high
 
       - name: 📋 Action registry drift
@@ -384,6 +448,7 @@ jobs:
       - name: 🌐 Web logic tests
         id: web-tests
         continue-on-error: true
+        if: needs.changes.outputs.web == 'true'
         run: node --test test/test_web/*.js
 
       # Host-side checks on the repo's own tooling and build description:
@@ -396,6 +461,7 @@ jobs:
       - name: 🧰 Tooling tests
         id: tooling-tests
         continue-on-error: true
+        if: needs.changes.outputs.tools == 'true'
         run: make test-tools
 
       # Each budgeted env is one board job above. A board added to
@@ -456,39 +522,49 @@ jobs:
           ACTIONLINT_OUTCOME: ${{ steps.actionlint.outcome }}
           BOARD_JOBS_OUTCOME: ${{ steps.board-jobs.outcome }}
         run: |
-          row() { printf '%s\t%s\t%s\n' "$1" "$2" "$3"; }
+          # The last field is the row's class: `always` for a check that runs
+          # on every event, so its skip can never pass the gate below.
+          row() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4"; }
           {
-            row "$TESTS_OUTCOME"           "Native tests"             "pio test -e native"
-            row "$ANALYSIS_OUTCOME"        "Static analysis"          "pio check -e artoo_esp32 --fail-on-defect=high"
-            row "$DRIFT_OUTCOME"           "Action registry drift"    "make check-action-drift"
-            row "$COMPONENT_DRIFT_OUTCOME" "Component registry drift" "make check-component-drift"
-            row "$PIN_DRIFT_OUTCOME"       "Pin drift"                "make check-pin-drift"
-            row "$ANATOMY_OUTCOME"         "Surface Anatomy"          "make check-surface-anatomy"
-            row "$VOCABULARY_OUTCOME"      "Vocabulary drift"         "make check-vocabulary-drift"
-            row "$GLOSSARY_NAME_OUTCOME"   "Glossary name"            "git grep for the old glossary name"
-            row "$BOARD_LABEL_OUTCOME"     "Board label drift"        "make check-board-label-drift"
-            row "$COLOR_OUTCOME"           "Color drift"              "make check-color-drift"
-            row "$SERVO_MOTION_OUTCOME"    "Servo motion drift"       "make check-servo-motion-drift"
-            row "$PROTOCOL_MIRROR_OUTCOME" "Protocol mirror"          "make check-protocol-mirror"
-            row "$WEB_OUTCOME"             "Web logic tests"          "node --test test/test_web/*.js"
-            row "$TOOLING_OUTCOME"         "Tooling tests"            "make test-tools"
-            row "$BOARD_JOBS_OUTCOME"      "Board jobs cover the budgets" "tools/build_budgets.json envs"
-            row "$ACTIONLINT_OUTCOME"      "Workflow lint"            "actionlint"
+            row "$TESTS_OUTCOME"           "Native tests"             "pio test -e native" native
+            row "$ANALYSIS_OUTCOME"        "Static analysis"          "pio check -e artoo_esp32 --fail-on-defect=high" analysis
+            row "$DRIFT_OUTCOME"           "Action registry drift"    "make check-action-drift" always
+            row "$COMPONENT_DRIFT_OUTCOME" "Component registry drift" "make check-component-drift" always
+            row "$PIN_DRIFT_OUTCOME"       "Pin drift"                "make check-pin-drift" always
+            row "$ANATOMY_OUTCOME"         "Surface Anatomy"          "make check-surface-anatomy" always
+            row "$VOCABULARY_OUTCOME"      "Vocabulary drift"         "make check-vocabulary-drift" always
+            row "$GLOSSARY_NAME_OUTCOME"   "Glossary name"            "git grep for the old glossary name" always
+            row "$BOARD_LABEL_OUTCOME"     "Board label drift"        "make check-board-label-drift" always
+            row "$COLOR_OUTCOME"           "Color drift"              "make check-color-drift" always
+            row "$SERVO_MOTION_OUTCOME"    "Servo motion drift"       "make check-servo-motion-drift" always
+            row "$PROTOCOL_MIRROR_OUTCOME" "Protocol mirror"          "make check-protocol-mirror" always
+            row "$WEB_OUTCOME"             "Web logic tests"          "node --test test/test_web/*.js" web
+            row "$TOOLING_OUTCOME"         "Tooling tests"            "make test-tools" tools
+            row "$BOARD_JOBS_OUTCOME"      "Board jobs cover the budgets" "tools/build_budgets.json envs" always
+            row "$ACTIONLINT_OUTCOME"      "Workflow lint"            "actionlint" always
           } > "$RUNNER_TEMP/rows.tsv"
           { echo 'rows<<ROWS_EOF'; cat "$RUNNER_TEMP/rows.tsv"; echo 'ROWS_EOF'; } >> "$GITHUB_OUTPUT"
 
-      # A skipped check passes ONLY when `changes` positively said this change
-      # touched nothing but documentation -- the one condition under which it
-      # was deliberately not run; an empty answer fails closed. Skipped for
-      # any other reason is a failure, so a step that never executes can
-      # never quietly satisfy the gate.
+      # A skipped check passes ONLY when `changes` positively said its own
+      # class is `false` -- the one condition under which it was deliberately
+      # not run; an empty or missing answer fails closed, and an `always`
+      # row has no class to say so. Skipped for any other reason is a
+      # failure, so a step that never executes can never quietly satisfy
+      # the gate.
       - name: 🚦 Fail if any check failed
         if: always()
         run: |
           failed=()
-          while IFS=$'\t' read -r outcome label _; do
+          while IFS=$'\t' read -r outcome label _ class; do
             [ "$outcome" = success ] && continue
-            [ "$outcome" = skipped ] && [ "$CODE_CHANGED" = false ] && continue
+            case "$class" in
+              native) said=$NATIVE ;;
+              analysis) said=$ANALYSIS ;;
+              web) said=$WEB ;;
+              tools) said=$TOOLS ;;
+              *) said="" ;;
+            esac
+            [ "$outcome" = skipped ] && [ "$said" = false ] && continue
             failed+=("$label ($outcome)")
           done < "$RUNNER_TEMP/rows.tsv"
           if [ ${#failed[@]} -gt 0 ]; then
@@ -512,8 +588,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    env:
-      CODE_CHANGED: ${{ needs.changes.outputs.code }}
     steps:
       - name: 📊 Write run summary
         env:
@@ -524,6 +598,7 @@ jobs:
           ARTOO_ROWS: ${{ needs.artoo.outputs.rows }}
           FIREBEETLE2_ROWS: ${{ needs.firebeetle2.outputs.rows }}
           CHECKS_ROWS: ${{ needs.checks.outputs.rows }}
+          REASONS: ${{ needs.changes.outputs.reasons }}
           ARTOO_HEADROOM: ${{ needs.artoo.outputs.headroom }}
           FIREBEETLE2_HEADROOM: ${{ needs.firebeetle2.outputs.headroom }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -543,10 +618,10 @@ jobs:
           {
             echo "## 🤖 Verification"
             echo ""
-            if [ "$CODE_CHANGED" = "false" ]; then
-              echo "This change touches documentation only, so the board builds,"
-              echo "budgets, native tests and static analysis were skipped. They run"
-              echo "again on the first commit that touches anything else."
+            if [ -n "$REASONS" ]; then
+              echo "### Which classes ran"
+              echo ""
+              printf '%s\n' "$REASONS"
               echo ""
             fi
             echo "| | Job | Result |"
@@ -556,17 +631,17 @@ jobs:
             job firebeetle2 "$FIREBEETLE2_RESULT"
             job checks "$CHECKS_RESULT"
             echo ""
-            echo "| | Check | Command | Status |"
-            echo "|---|---|---|---|"
+            echo "| | Check | Command | Class | Status |"
+            echo "|---|---|---|---|---|"
             printf '%s\n' "$ARTOO_ROWS" "$FIREBEETLE2_ROWS" "$CHECKS_ROWS" |
-              while IFS=$'\t' read -r outcome label cmd; do
+              while IFS=$'\t' read -r outcome label cmd class; do
                 [ -n "$outcome" ] || continue
                 case "$outcome" in
                   success) status="Passed" ;;
                   skipped) status="Skipped" ;;
                   *) status="**Failed** ($outcome)" ;;
                 esac
-                echo "| $(mark "$outcome") | $label | \`$cmd\` | $status |"
+                echo "| $(mark "$outcome") | $label | \`$cmd\` | $class | $status |"
               done
             headroom artoo_esp32 "$ARTOO_HEADROOM"
             headroom firebeetle2 "$FIREBEETLE2_HEADROOM"
@@ -583,19 +658,31 @@ jobs:
           header: verification
           path: .ci-summary.md
 
-      # A skipped job passes only when `changes` positively said "false"
-      # (documentation only), which skips the two board jobs. An empty answer
-      # fails closed. Skipped, failed or cancelled for any other reason fails
-      # the required check.
+      # `changes` and `checks` must succeed. A board job skipped passes only
+      # when `changes` positively said `boards=false`; an empty or missing
+      # answer fails closed. Skipped, failed or cancelled for any other
+      # reason fails the required check. `checks` judges its own skipped
+      # steps by their classes.
       - name: 🚦 Gate - fail if any job did not succeed
         if: always()
         env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          ARTOO_RESULT: ${{ needs.artoo.result }}
+          FIREBEETLE2_RESULT: ${{ needs.firebeetle2.result }}
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          BOARDS: ${{ needs.changes.outputs.boards }}
         run: |
-          for r in $RESULTS; do
-            [ "$r" = success ] && continue
-            [ "$r" = skipped ] && [ "$CODE_CHANGED" = false ] && continue
-            echo "a required job ended $r (changes, artoo, firebeetle2, checks: $RESULTS)"
-            exit 1
+          failed=()
+          [ "$CHANGES_RESULT" = success ] || failed+=("changes ($CHANGES_RESULT)")
+          [ "$CHECKS_RESULT" = success ] || failed+=("checks ($CHECKS_RESULT)")
+          for job in "artoo $ARTOO_RESULT" "firebeetle2 $FIREBEETLE2_RESULT"; do
+            name=${job% *} result=${job#* }
+            [ "$result" = success ] && continue
+            [ "$result" = skipped ] && [ "$BOARDS" = false ] && continue
+            failed+=("$name ($result)")
           done
+          if [ ${#failed[@]} -gt 0 ]; then
+            printf 'A required job did not succeed: %s\n' "${failed[@]}"
+            exit 1
+          fi
           echo "Every job passed."

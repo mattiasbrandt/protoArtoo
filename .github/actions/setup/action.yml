@@ -14,7 +14,8 @@ inputs:
     description: >-
       The PlatformIO core dir this job builds in: `classic` (~/.platformio, the
       ESP32 and native envs), `p4` (~/.platformio-p4, the ESP32-P4), or empty
-      for a job that runs no pio at all (a documentation-only change).
+      for a job that runs no pio at all (in verification.yml, `checks` when
+      the change turns on none of the native, analysis and tooling classes).
     required: false
     default: ''
   cache-name:
@@ -69,8 +70,8 @@ runs:
       run: pip install platformio==6.1.19
 
     - name: 📦 Install Python tools
-      # Always: the drift, web and tooling checks run on every change,
-      # including a documentation-only one.
+      # Always: the drift checks run on every change, including a
+      # documentation-only one, and read the registries through PyYAML.
       shell: bash
       run: pip install -r tools/requirements.txt
 
@@ -133,7 +134,8 @@ runs:
 
     - name: 🗜️ Install zopfli
       # tools/gzip_fsdata.py gzips every web asset with zopfli on every pio
-      # build and refuses to build without it (#461). Always installed: the
-      # tooling tests stage a filesystem too, on a documentation-only change.
+      # build and refuses to build without it (#461). The tooling tests stage
+      # a filesystem too. Installed for every job, which costs seconds, rather
+      # than tracking which classes a change turned on.
       shell: bash
       run: sudo apt-get install -y --no-install-recommends zopfli

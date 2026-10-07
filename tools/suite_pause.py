@@ -4,7 +4,9 @@
 The operator is checking whether a second agent's read of the diff carries
 the quality these runs were being repeated to buy. The tests stay in the
 tree. CI still runs the native suite and the web suite on a pull request
-into main (.github/workflows/verification.yml). This pause covers local
+into main when its files reach them (.github/workflows/verification.yml
+classifies the pull request's whole range; the epic's closure pull request
+reaches both). This pause covers local
 `make test`, `make test-web`, the native, web, and mutation stages of
 slice_verify, and a direct `tools/mutation_verify.py` run.
 
@@ -26,7 +28,8 @@ SUITES_RESUME_ON = date(2026, 11, 1)
 BANNER = (
     "SUITES PAUSED until 2026-11-01 (#464). "
     "Native tests, web tests, and mutation checks are not run per slice. "
-    "A pull request into main still runs the native and web suites in CI. "
+    "A pull request into main still runs the native and web suites in CI "
+    "when its files reach them. "
     "PROTOARTOO_SUITES=1 runs them now."
 )
 
