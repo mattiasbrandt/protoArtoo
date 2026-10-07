@@ -494,6 +494,10 @@ export class MiniDOMParser {
     parseInto(root, html, parsed);
     const html_ = root.children.find((child) => child.tagName === "HTML");
     if (html_) {
+      // The parsed <html> is the document's root, not a child of the parse's
+      // scratch node, so its nodes are connected (Node.isConnected) as a
+      // browser's are.
+      root.removeChild(html_);
       parsed.documentElement = html_;
       parsed.head = html_.children.find((child) => child.tagName === "HEAD") || parsed.head;
       parsed.body = html_.children.find((child) => child.tagName === "BODY") || parsed.body;
