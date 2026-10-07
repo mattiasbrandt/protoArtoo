@@ -99,9 +99,11 @@ def classify(path: str) -> tuple[tuple[str, ...], str]:
     p = PurePosixPath(path)
     suffix = p.suffix.lower()
 
-    # What every job's set-up or definition reads.
+    # What every job's set-up or definition reads, and these rules: a change
+    # to which jobs run is checked by all of them.
     if _under(path, ".github/") or path in {
         "Makefile", "package.json", "package-lock.json", "tools/requirements.txt",
+        "tools/ci_changes.py",
     }:
         return ALL, "every job is set up or defined by it"
 
