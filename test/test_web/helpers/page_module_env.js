@@ -104,7 +104,7 @@ const escapeForTest = (value) =>
 // request log a test asserts on. So the shell runs beside the surface, the way
 // partsGlobals() below runs the parts catalog, and only what it publishes is
 // handed over. Its transport never answers and its timers never run.
-const operatorShellUi = () => {
+export const operatorShellUi = () => {
   const never = () => new Promise(() => {});
   const shellWindow = {
     PAApi: { ...shippedWords(), ApiError, request: never, get: never, postForm: never, postJson: never },
