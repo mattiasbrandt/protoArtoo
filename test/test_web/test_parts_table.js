@@ -363,6 +363,10 @@ test("taking a Part off one Output for another is asked first, then sends where 
   assert.equal(env.text("wiring-move-title"), asked.title);
   assert.equal(env.text("wiring-move-body"), asked.body);
   assert.equal(env.text("wiring-move-confirm"), asked.yes, "the button that agrees is the verb");
+  // The facts the builder decides on: the Part already on ARM3 moves along,
+  // and the one left on ARM1 stays there.
+  assert.match(env.text("wiring-move-body"), /Upper utility arm/, "the body does not name the Part that moves along");
+  assert.match(env.text("wiring-move-body"), /Right body door/, "the body does not name what ARM1 keeps");
 
   env.click("wiring-move-confirm");
   // While the move is on its way the row's bar takes no press, and no Output
@@ -417,6 +421,8 @@ test("cancelling the question sends nothing and puts the control back", async ()
 
   env.pick("doorFL", "ledc:4");
   assert.equal(env.dialog.open, true);
+  // ARM1 holds only this Part, so the question says it is left empty.
+  assert.match(env.text("wiring-move-body"), /ARM1\b.*\bnothing\b/, "the body does not say ARM1 is left empty");
   env.click("wiring-move-cancel");
   await sleep(20);
   assert.equal(env.posts.length, 0);

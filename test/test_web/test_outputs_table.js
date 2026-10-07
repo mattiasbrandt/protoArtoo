@@ -28,6 +28,8 @@ test("taking a Part off another Output from Servos is asked in the part-first ta
   assert.equal(env.dialog.open, true);
   assert.equal(env.byId("outputs-move-title").textContent, expected.title);
   assert.equal(env.byId("outputs-move-body").textContent, expected.body);
+  assert.match(expected.body, /Upper utility arm/, "the body does not name the Part that moves along");
+  assert.match(expected.body, /Right body door/, "the body does not name what ARM1 keeps");
 
   env.answerMove(true);
   await sleep(20);
