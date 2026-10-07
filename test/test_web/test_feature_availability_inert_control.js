@@ -143,6 +143,8 @@ const loadInteractiveSurfaces = ({ identity = null, failIdentity = false } = {})
   };
   const documentMock = {
     body: makeElement(),
+    // <html>, which the Operator Shell marks with the act-words switch (#460).
+    documentElement: makeElement(),
     visibilityState: "visible",
     getElementById: element,
     querySelector: () => makeElement(),
