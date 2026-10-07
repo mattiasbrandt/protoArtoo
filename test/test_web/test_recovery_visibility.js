@@ -120,6 +120,10 @@ const CHROME_SELECTORS = new Set([
   "#shell-content",
   ".shell-estop",
   ".status-plate-region",
+  // The one tooltip that names an act, drawn on <body> by the shell, not by a
+  // surface (data/shell.js, 1d73400f, #460). It names the act under the
+  // pointer or focus, which with the view up is chrome or the view's own.
+  ".act-tip",
 ]);
 
 const declaredZIndexes = () =>
