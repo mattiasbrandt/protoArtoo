@@ -177,6 +177,11 @@ class MiniElement {
     return node;
   }
 
+  // Element.append: nodes in order, a string as a text node.
+  append(...nodes) {
+    nodes.forEach((node) => this.appendChild(typeof node === "string" ? new MiniText(node) : node));
+  }
+
   removeChild(node) {
     const at = this.childNodes.indexOf(node);
     if (at >= 0) {
@@ -209,6 +214,15 @@ class MiniElement {
       node = node.parentNode;
     }
     return null;
+  }
+
+  // Node.contains: true for the node itself and anything below it, false for
+  // null, as a browser answers it.
+  contains(node) {
+    for (let at = node; at; at = at.parentNode) {
+      if (at === this) return true;
+    }
+    return false;
   }
 
   querySelectorAll(selector) {
