@@ -99,6 +99,12 @@ class MockElement {
     return results;
   }
 
+  // Node.contains: the node itself and anything below it, which a panel
+  // rebuild reads to keep focus where the operator put it (b90a7fb8, #355).
+  contains(node) {
+    return node === this || this.children.some((child) => child.contains?.(node));
+  }
+
   replaceChildren(...children) {
     this.children = [];
     children.forEach((child) => {

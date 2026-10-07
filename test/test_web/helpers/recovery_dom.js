@@ -150,6 +150,15 @@ export class MockElement {
     });
   }
 
+  // Node.contains: the node itself and anything below it. A panel rebuild
+  // reads it to keep focus where the operator put it (b90a7fb8, #355).
+  contains(node) {
+    for (let at = node; at; at = at.parentElement) {
+      if (at === this) return true;
+    }
+    return false;
+  }
+
   // Depth-first, document order - the order the browser would return.
   descendants() {
     const out = [];
