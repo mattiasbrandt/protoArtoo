@@ -1,7 +1,9 @@
 # A step is put on a beat by picking it, and a Gesture repeats on the grid
 
-Status: accepted (2026-09-09, issue #336). Describes the **target** model; none of
-it is implemented yet.
+Status: accepted (2026-09-09, issue #336). **Built by #438 (2026-10-01):** a step
+put on a beat by picking it, bar and beat numbers, the downbeat the builder sets,
+the bulk retime with its receipt (`SeqTempo.retime`), and a Gesture's pace,
+repeat and extent in beats.
 
 ## Context
 
