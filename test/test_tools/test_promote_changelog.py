@@ -29,7 +29,7 @@ SCRIPT = TOOLS / "promote_changelog.py"
 
 HEADER = """# Changelog
 
-All notable changes to `protoArtoo` are documented here.
+All notable changes to `protoR2` are documented here.
 
 """
 

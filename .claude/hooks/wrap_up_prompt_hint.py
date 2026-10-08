@@ -52,7 +52,7 @@ def main() -> int:
         )
 
     sys.stderr.write(
-        "protoArtoo wrap-up trigger detected. Apply AGENTS.md Wrap-up trigger: "
+        "protoR2 wrap-up trigger detected. Apply AGENTS.md Wrap-up trigger: "
         "inspect repo state, update the active issue or public status docs as needed, "
         "record significant outcomes on the issue (MemPalace writes are refused), commit verified slices when appropriate, "
         "and report the approved verification label plus remaining blockers. Make the next "

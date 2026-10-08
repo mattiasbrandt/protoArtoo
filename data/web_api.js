@@ -1,7 +1,7 @@
 // =============================================================================
 // data/web_api.js
 //
-// Shared HTTP helper for protoArtoo web pages.
+// Shared HTTP helper for protoR2 web pages.
 // - Normalizes timeout/network/http/json errors
 // - Provides GET / form POST / JSON POST helpers, and a file read and upload
 //   for the one binary document the droid stores beside JSON (a take, #442)

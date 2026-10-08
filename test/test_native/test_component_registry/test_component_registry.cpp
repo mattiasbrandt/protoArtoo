@@ -68,8 +68,9 @@ void test_every_roadmap_row_is_present_and_carries_no_driver() {
         }
     }
     // Nine at #303; eight since the ELRS receiver became selectable (#369);
-    // seven since the PCA9685 was built (#444).
-    TEST_ASSERT_EQUAL_size_t(7, roadmap);
+    // seven since the PCA9685 was built (#444); eight since ELRS went back to
+    // roadmap (#477).
+    TEST_ASSERT_EQUAL_size_t(8, roadmap);
 }
 
 // DFPlayer Mini is the named case: AUDIO_DFPLAYER used to be an #error, and is

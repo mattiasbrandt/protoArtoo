@@ -280,7 +280,7 @@ const initialConfig = (droid) => {
       mode: 'client',
       staSsid: 'bench-ap',
       staPasswordSet: true,
-      apSsid: 'protoartoo',
+      apSsid: 'protor2',
       apPasswordSet: false,
       pendingApply: false,
     },

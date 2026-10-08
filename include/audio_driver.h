@@ -1,7 +1,7 @@
 // =============================================================================
 // include/audio_driver.h
 //
-// Abstract AudioDriver interface for protoArtoo body audio system.
+// Abstract AudioDriver interface for protoR2 body audio system.
 //
 // The body controller is the sole audio source for the droid. All audio
 // commands  --  from RC, web API, or dome serial '$' RX  --  route through the

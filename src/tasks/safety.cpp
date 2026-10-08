@@ -1,7 +1,7 @@
 // =============================================================================
 // src/tasks/safety.cpp
 //
-// SafetyMonitorTask  --  secondary audit task for protoArtoo.
+// SafetyMonitorTask  --  secondary audit task for protoR2.
 // Runs at 10 Hz on Core 0 (low priority, non-blocking).
 //
 // Responsibilities:

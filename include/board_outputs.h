@@ -8,7 +8,7 @@
 // as the word typed in the Console and sent to POST /api/servo: ARM1..ARM5 on
 // the Artoo PCB, GPIO 49 / GPIO 50 / GPIO 4 / GPIO 5 / GPIO 51 on the
 // FireBeetle 2 (GLOSSARY.md "Output Address", "Board Component Label"; ADR 0033
-// Amendment 2026-09-19). There is no protoArtoo-wide name for an Output and no
+// Amendment 2026-09-19). There is no protoR2-wide name for an Output and no
 // split into arm and AUX kinds.
 //
 // ONE SOURCE PER BOARD. What a board prints lives in include/component_labels.inc
@@ -188,7 +188,7 @@ constexpr bool boardOutputWordMatches(const char* typed, const char* label) {
 }
 
 // The Output `word` names on `board`, or nullptr when it names none of them -
-// including every old protoArtoo-wide word (aux1..aux3 on the Artoo, all of
+// including every old protoR2-wide word (aux1..aux3 on the Artoo, all of
 // arm1..aux3 on the FireBeetle 2), which is not an alias of anything (ADR 0033
 // Amendment 2026-09-19).
 constexpr const BoardOutput* boardOutputForWord(const char* board, const char* word) {

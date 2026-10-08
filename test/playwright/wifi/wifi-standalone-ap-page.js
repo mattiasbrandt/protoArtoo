@@ -142,7 +142,7 @@ const applyWifi = (saved, form) => {
 // The four droids, as the settings they saved and applied and what
 // GET /api/wifi reports (formatWifiJson() in
 // src/web/api_status_serializers.cpp). WiFi Provisioning broadcasts the Default
-// AP Credential (WIFI_AP_SSID "protoArtoo", include/config.h).
+// AP Credential (WIFI_AP_SSID "protoR2", include/config.h).
 const SAVED_CLIENT = {
   provisioned: true,
   mode: 'client',
@@ -159,16 +159,16 @@ const DROIDS = {
   },
   provisioning: {
     settings: { provisioned: false, mode: 'client', staSsid: '', staPassword: '', apSsid: '', apPassword: '' },
-    diagnostics: { apSsid: 'protoArtoo', apIp: '192.168.4.1', ...NO_CLIENT },
+    diagnostics: { apSsid: 'protoR2', apIp: '192.168.4.1', ...NO_CLIENT },
   },
   clientNotJoined: {
     settings: { ...SAVED_CLIENT },
-    diagnostics: { apSsid: 'protoArtoo', apIp: '', ...NO_CLIENT, staEnabled: true },
+    diagnostics: { apSsid: 'protoR2', apIp: '', ...NO_CLIENT, staEnabled: true },
   },
   clientJoined: {
     settings: { ...SAVED_CLIENT },
     diagnostics: {
-      apSsid: 'protoArtoo',
+      apSsid: 'protoR2',
       apIp: '',
       staEnabled: true,
       staConnected: true,
@@ -352,7 +352,7 @@ const run = async ({ page, droid, report, pageErrors, consoleErrors }) => {
     'wifi-client-state': 'Not active',
     'wifi-compare-state': 'nothing saved yet',
     'wifi-saved-summary-mode': 'Not provisioned',
-    'wifi-apply-guidance': 'WiFi Provisioning is temporary, not Standalone AP Mode. Join protoArtoo, open http://192.168.4.1, save settings below, then reboot.',
+    'wifi-apply-guidance': 'WiFi Provisioning is temporary, not Standalone AP Mode. Join protoR2, open http://192.168.4.1, save settings below, then reboot.',
   });
   const provisioningPosture = await posture(page);
   report.add('b', 'WiFi Provisioning reads as temporary and unsaved, and says how to save settings',

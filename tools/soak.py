@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""protoArtoo soak harness -- a permanent instrument, not one epic's scaffold.
+"""protoR2 soak harness -- a permanent instrument, not one epic's scaffold.
 
-Holds a protoArtoo controller's web stack under load for as long as it is
+Holds a protoR2 controller's web stack under load for as long as it is
 asked to, and answers one question: did it hold up? A run ends in one Run
 Verdict (PASS / FAIL / INVALID), one exit code and one JSON artefact carrying
 every number the verdict was taken from. Operator documentation is
@@ -6711,7 +6711,7 @@ def run_self_test() -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "protoArtoo soak harness: hold a controller's web stack under load for as "
+            "protoR2 soak harness: hold a controller's web stack under load for as "
             "long as you ask, and say in one verdict and one exit code whether it held "
             "up. Reads only -- it never flashes, never calls `make ota` and never writes "
             "to the controller's configuration. See docs/soak.md."
@@ -6957,7 +6957,7 @@ def main(argv: list[str]) -> int:
         if args.driver == "all" else [args.driver]
     )
     planned = {name: planned_driver_duration_s(name, args) for name in drivers_to_run}
-    monitor.rule("protoArtoo soak")
+    monitor.rule("protoR2 soak")
     monitor.rows([
         ("started", format_timestamp(started_at)),
         ("device", f"{args.device}:{args.port}"),

@@ -3,7 +3,7 @@
 // This file exists to hold down the one thing the decision can get wrong:
 // a design SEEDS the Parts and never FENCES them. The reference this seam is
 // adapted from deletes a model's complement when the model is hidden, because
-// its models are exclusive stage payloads; protoArtoo's are not, and copying
+// its models are exclusive stage payloads; protoR2's are not, and copying
 // the removal half would throw away the gripper arm a builder printed. So the
 // tests below say "not removed" three different ways on purpose.
 //

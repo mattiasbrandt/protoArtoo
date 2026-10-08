@@ -7,7 +7,7 @@ import sys
 from typing import Any, Dict
 
 
-HOOK_PROFILE_ENV = "PROTOARTOO_HOOK_PROFILE"
+HOOK_PROFILE_ENV = "PROTOR2_HOOK_PROFILE"
 
 
 def _is_minimal_profile() -> bool:

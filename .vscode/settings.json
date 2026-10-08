@@ -1,6 +1,6 @@
 {
     // =========================================================================
-    // protoArtoo — VS Code workspace settings
+    // protoR2 — VS Code workspace settings
     //
     // Shared project settings committed to the repo. Personal overrides
     // (font size, theme, keybindings) belong in User Settings, not here.
@@ -96,7 +96,7 @@
 
     // --- Spell checker (project dictionary) ---------------------------------
     "cSpell.words": [
-        "protoArtoo",
+        "protoR2",
         "AstroPixels",
         "Marcduino",
         "hoverboard",

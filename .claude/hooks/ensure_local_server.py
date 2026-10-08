@@ -11,12 +11,12 @@ from pathlib import Path
 
 PORT = 4173
 SERVE_DIR = "data"
-LOG_FILE = "/tmp/protoartoo-server.log"
-PID_FILE = "/tmp/protoartoo-server.pid"
+LOG_FILE = "/tmp/protor2-server.log"
+PID_FILE = "/tmp/protor2-server.pid"
 
 PW_MCP_PORT = 8931
-PW_MCP_LOG = "/tmp/protoartoo-pw-mcp.log"
-PW_MCP_PID_FILE = "/tmp/protoartoo-pw-mcp.pid"
+PW_MCP_LOG = "/tmp/protor2-pw-mcp.log"
+PW_MCP_PID_FILE = "/tmp/protor2-pw-mcp.pid"
 
 TIMEOUT_S = 15.0
 

@@ -165,14 +165,14 @@ void test_post_valid_name_applies_and_echoes() {
 
 void test_identity_manifest_fits_fixed_budget_and_overflow_fails() {
     char body[IDENTITY_JSON_MAX_BYTES] = {};
-    TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), "protoartoo", false));
+    TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), "protor2", false));
     TEST_ASSERT_LESS_THAN(sizeof(body), strlen(body));
     TEST_ASSERT_NOT_NULL(strstr(body, "\"board_capabilities\""));
     TEST_ASSERT_NOT_NULL(strstr(body, "\"board_lanes\""));
     TEST_ASSERT_NOT_NULL(strstr(body, "\"build_flags\""));
 
     char tooSmall[64] = {};
-    TEST_ASSERT_FALSE(formatIdentityJson(tooSmall, sizeof(tooSmall), "protoartoo", false));
+    TEST_ASSERT_FALSE(formatIdentityJson(tooSmall, sizeof(tooSmall), "protor2", false));
 }
 
 // The handler's headroom arithmetic (src/web/api_identity.cpp) is stated for

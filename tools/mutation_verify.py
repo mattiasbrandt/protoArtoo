@@ -13,7 +13,7 @@ file, concurrency 1:
 
   1. the likely-set: every test file whose load-map entry lists a data/*.js
      file the patch touches. The load map comes from the load-traced HEAD web
-     run (tools/web_load_trace.cjs), cached in /tmp/protoartoo-web-load-map.json
+     run (tools/web_load_trace.cjs), cached in /tmp/protor2-web-load-map.json
      and keyed by the data/ and test/test_web/ trees and the Node version.
      Every unknown widens to the whole suite, never narrows: no map, a map
      that does not cover exactly the test files on disk, a patched file no

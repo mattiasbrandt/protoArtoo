@@ -8,7 +8,7 @@
 //   parsing), not via Reeltwo/Marcduino runtime libraries.
 // - Reason: body firmware only needs a bounded subset with deterministic routing
 //   to local queues and safety gates (estop, feature toggles, non-blocking sends).
-// - Scope: this parser handles the protoArtoo body-owned subset and explicitly
+// - Scope: this parser handles the protoR2 body-owned subset and explicitly
 //   ignores/delegates unsupported prefixes by topology design.
 //
 // Reference sources:

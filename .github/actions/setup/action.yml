@@ -1,4 +1,4 @@
-name: protoArtoo build setup
+name: protoR2 build setup
 description: >-
   Python, the PlatformIO Core this tree builds with, the Python tools, Node with
   esbuild on PATH, zopfli, and the PlatformIO cache for one core dir. Shared by

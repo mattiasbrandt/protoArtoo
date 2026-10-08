@@ -38,7 +38,7 @@ WifiConfig unprovisionedDefault() {
     cfg.mode = WifiMode::CLIENT;
     cfg.sta_ssid[0] = '\0';
     cfg.sta_password[0] = '\0';
-    snprintf(cfg.ap_ssid, sizeof(cfg.ap_ssid), "protoArtoo");
+    snprintf(cfg.ap_ssid, sizeof(cfg.ap_ssid), "protoR2");
     snprintf(cfg.ap_password, sizeof(cfg.ap_password), "artooDefault");
     return cfg;
 }

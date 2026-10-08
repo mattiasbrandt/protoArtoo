@@ -211,7 +211,7 @@ void test_the_rc_map_and_wifi_routes_are_refused_while_the_window_is_held(void) 
     TEST_ASSERT_EQUAL_INT_MESSAGE(503, mapBackend.sentCode, "a contended rc map POST was not refused");
     TEST_ASSERT_NOT_NULL(strstr(mapBackend.sentBody, "config write busy"));
 
-    const WebRequestTestParam wifiParams[] = {{"ap_ssid", "protoArtoo-test"}};
+    const WebRequestTestParam wifiParams[] = {{"ap_ssid", "protoR2-test"}};
     WebRequestTestBackend wifiBackend;
     wifiBackend.params = wifiParams;
     wifiBackend.paramCount = 1;

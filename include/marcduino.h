@@ -1,7 +1,7 @@
 // =============================================================================
 // include/marcduino.h
 //
-// Marcduino command string constants for protoArtoo body controller.
+// Marcduino command string constants for protoR2 body controller.
 // These are the commands sent TO the dome (body->dome) and received FROM
 // the dome (dome->body).
 //

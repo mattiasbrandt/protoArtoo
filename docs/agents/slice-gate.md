@@ -1,6 +1,6 @@
 # Worker slice gate
 
-**Suites paused through 2026-10-31 (#464).** The native, web, and mutation stages of `tools/slice_verify.py` skip themselves and print `SKIP (suites paused until 2026-11-01, #464)`. That row is not a pass of the suite. A missing suite run is not a reject. The build, the diff checks, and the tooling self-tests still run. CI on a pull request into `main` still runs the native and web suites. Do not add tests or mutation patches during the pause. The date lives in `tools/suite_pause.py` and the skip ends on 2026-11-01 with no further edit. `PROTOARTOO_SUITES=1` runs the stages.
+**Suites paused through 2026-10-31 (#464).** The native, web, and mutation stages of `tools/slice_verify.py` skip themselves and print `SKIP (suites paused until 2026-11-01, #464)`. That row is not a pass of the suite. A missing suite run is not a reject. The build, the diff checks, and the tooling self-tests still run. CI on a pull request into `main` still runs the native and web suites. Do not add tests or mutation patches during the pause. The date lives in `tools/suite_pause.py` and the skip ends on 2026-11-01 with no further edit. `PROTOR2_SUITES=1` runs the stages.
 
 **The gate in a pane.** A pipe through `tee` records tee's status. Run it as `python3 tools/pane_run.py /tmp/gate-<s>.log --cwd <worktree> -- python3 tools/slice_verify.py --base <ref> --json /tmp/slice-<s>.json`: one call splits a pane, runs the gate there under `tools/gate_in_pane.sh`, waits, prints the tail and closes its own pane. One log per slice, never a shared `/tmp/gate.log`: `pane_run.py` locks the log and refuses a log that another run is writing. The log's last line is `GATE_EXIT=<n>`, the command's own exit code. Outside Herdr, run `tools/gate_in_pane.sh /tmp/gate-<s>.log -- <the same command>` directly. `--json` writes a boolean `ok` (true when the gate has no failures). After the command, the script restores `data/fw-version.json` and `data/fs-version.json`, which a firmware build rewrites and which are never committed.
 
@@ -100,7 +100,7 @@ it runs the **likely-set** - the test files the load map says open a patched
 `data/*.js` file - **shortest-first** by each file's cached wall time, and
 **stops at the first clean assertion kill**. The load map is traced from the
 gate's own HEAD web run by `tools/web_load_trace.cjs` (a `node --require`
-preload), and cached in `/tmp/protoartoo-web-load-map.json` keyed by the
+preload), and cached in `/tmp/protor2-web-load-map.json` keyed by the
 `data/` and `test/test_web/` tree ids and the Node version; standalone runs
 share it and rebuild it once when it is stale. Every unknown widens to the
 whole suite, never narrows. `SURVIVED` now means *no test that loads this file
@@ -129,11 +129,11 @@ fail a build. Anything else in the diff -
 `tools/`, `platformio.ini` - is not web-only and runs every row. It is derived
 from the diff; there is no flag.
 
-**Locks.** The pio phases hold `/tmp/protoartoo-pio.lock`. The web suite and the
-mutation stage hold `/tmp/protoartoo-webtest.lock` - a different lock, never
+**Locks.** The pio phases hold `/tmp/protor2-pio.lock`. The web suite and the
+mutation stage hold `/tmp/protor2-webtest.lock` - a different lock, never
 held together with the pio lock and never nested in it - so two gates' web
 stages run one after the other without queueing anyone's build. Base-suite
-totals are cached machine-wide in `/tmp/protoartoo-slice-verify-cache.json`,
+totals are cached machine-wide in `/tmp/protor2-slice-verify-cache.json`,
 keyed by base sha, the three verifier hashes and the Node version, and a killed
 gate removes the `/tmp/slice-verify-base-*` worktree it made. Per-stage wall
 times go to stderr and `--json`, never to the block.

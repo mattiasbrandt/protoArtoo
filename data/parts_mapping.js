@@ -92,7 +92,7 @@
   // PCB, GPIO 49 on the FireBeetle 2, the space included (ADR 0033 Amendment
   // 2026-09-19).
   // Never folded or rewritten: the label is not an id to be derived from, and a
-  // board whose label is not the old protoArtoo word would be sent a word it
+  // board whose label is not the old protoR2 word would be sent a word it
   // refuses. An Output no board labels - an expander's row - has none, and the
   // route cannot move it.
   const servoWord = (output) => output.label;

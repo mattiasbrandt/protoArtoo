@@ -180,7 +180,7 @@ void benchMainTask(void* param) {
 // ============================================================================
 
 void benchPhase0Banner() {
-    Serial.println("\n[BENCH P0] === protoArtoo P4 RT Bench Harness ===");
+    Serial.println("\n[BENCH P0] === protoR2 P4 RT Bench Harness ===");
     Serial.println("[BENCH P0] Wiring: BENCH_TX_SBUS (GPIO52, free pin) -> PIN_SBUS1_RX (GPIO28)");
     Serial.println("[BENCH P0] Wiring: PIN_DRIVE_TX (GPIO20) -> BENCH_RX_DRIVE (GPIO51, borrowed ARM5)");
     Serial.println("[BENCH P0] Precondition: Servo/AUX outputs disabled (check boot log for 'skipping LEDC init')");

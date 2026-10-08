@@ -698,6 +698,7 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
     const SpeedPresetId activePresetBefore =
         normalizeSpeedPresetId((uint8_t)working->drive.speedPresetActive);
     SpeedPresetId activePresetAfter = activePresetBefore;
+    const uint8_t rcInputModeBefore = working->system.rc_input_mode;
 
     // Every droid Setting the request named, each through its one declaration
     // (include/config_settings.h): its check, its words, its refusal. Nothing
@@ -730,6 +731,25 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
         appendApplied(&result->applied, "[CFG] %s updated to %s", setting.form,
                       text[0] != '\0' ? text : "(none)");
         result->changed = true;
+    }
+
+    // An RC Receiver the Component Registry lists as roadmap is not an answer
+    // anybody can give, by the rule rcMember's Member check applies to a radio
+    // (componentPartIsSelectable()). ELRS is roadmap (#477), so its mode is
+    // refused as a new answer. The word stays in kRcInputModeWords: it is what
+    // NVS stores, and what a droid that picked it while it was selectable still
+    // reports. A request stating the mode the droid already holds passes, so
+    // that droid's backup posted back as GET read it comes back whole. Keyed to
+    // the registry row rather than the enum, so the refusal lifts itself when
+    // the row turns supported.
+    if (configParamHas(params, "rcInputMode") && working->system.rc_input_mode == RC_INPUT_ELRS &&
+        rcInputModeBefore != RC_INPUT_ELRS) {
+        const ComponentPartEntry* receiver = componentPartById("rc_transmitter_elrs");
+        if (receiver == nullptr || !componentPartIsSelectable(*receiver)) {
+            setError(result, "rcInputMode elrs is not read by this firmware yet",
+                     ApplyRefusalReason::OutOfRange, "rcInputMode");
+            return;
+        }
     }
 
     // No Radio Controller fitted is one answer, not three (GLOSSARY.md "Radio

@@ -5,6 +5,9 @@ receivers. An ELRS receiver hands its channels to the vehicle over **CRSF**, the
 Crossfire serial protocol TBS defined, so this sheet covers both: ELRS for what
 a receiver does, CRSF for what arrives on the wire.
 
+**Status: Roadmap.** The droid reads no ELRS input yet, so the receiver cannot
+be picked; this sheet is the research a driver would start from.
+
 Research date 2026-09-10. Every frame byte, channel constant, baud rate and
 default in this document was read from the TBS CRSF specification, from
 ExpressLRS firmware source, from library source, or from the astromech projects

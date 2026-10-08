@@ -1,5 +1,5 @@
 # =============================================================================
-# protoArtoo — build facade
+# protoR2 — build facade
 #
 # Running bare `make` launches the interactive wizard (tools/deploy.py).
 #
@@ -98,7 +98,7 @@ PIO = PLATFORMIO_CORE_DIR=$(PIO_CORE_DIR) $(FLOCK) pio
 # holds the lock for exactly as long as the command it execs. Deliberately not
 # `?=`: a lock that is one `make FLOCK= build` away from being off is a habit
 # again. The escape hatch for a contiguous multi-command window is
-# `PROTOARTOO_PIO_LOCK_HELD=1 flock /tmp/protoartoo-pio.lock <commands>`.
+# `PROTOR2_PIO_LOCK_HELD=1 flock /tmp/protor2-pio.lock <commands>`.
 FLOCK := python3 tools/pio_lock.py
 
 -include user.mk

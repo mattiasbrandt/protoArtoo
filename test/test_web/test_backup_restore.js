@@ -526,7 +526,7 @@ test("a file not in the shape Download backup writes is refused, and nothing is 
     page.env.emitOn("backup-file-input", "change");
     await page.env.settle();
 
-    assert.match(page.receipt(), /^Not a protoArtoo backup: /, `${JSON.stringify(file).slice(0, 60)} was offered`);
+    assert.match(page.receipt(), /^Not a protoR2 backup: /, `${JSON.stringify(file).slice(0, 60)} was offered`);
     assert.equal(page.env.element("restore-sections").hidden, true, "no part is offered");
   }
 });

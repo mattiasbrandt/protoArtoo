@@ -2,7 +2,7 @@
 """
 Lightweight fixture server for offline editor development and Playwright tests.
 
-Serves the protoArtoo editor (data/) + fixture APIs locally on :4173.
+Serves the protoR2 editor (data/) + fixture APIs locally on :4173.
 
 Usage:
   python3 tools/serve_editor_fixture.py
@@ -51,7 +51,7 @@ HOST = "localhost"
 # newline-separated (src/web/api_logs.cpp), one line per entry in the
 # "[<millis>][<level>][<tag>] message" form include/logging.h emits.
 FIXTURE_LOG_LINES = (
-    "[312][I][boot] protoArtoo starting, reset reason POWERON",
+    "[312][I][boot] protoR2 starting, reset reason POWERON",
     "[418][I][config] loaded from NVS, log level 3",
     "[1204][I][wifi] connecting to bench-ap",
     "[2530][I][wifi] connected, ip 192.168.1.42",

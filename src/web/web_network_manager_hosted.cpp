@@ -1093,7 +1093,7 @@ HostedLinkResetOutcome hostedLinkResetCoprocessor() {
     // BOARD_SDIO_ESP_HOSTED_RESET the variant defines: hostedGetPins() returns
     // what ESP-Hosted actually configured, so this can never drive a pin the
     // transport is not on -- including if a caller ever overrides the set
-    // through WiFi.setPins() before WiFi.begin(). protoArtoo does not, so the
+    // through WiFi.setPins() before WiFi.begin(). protoR2 does not, so the
     // two agree at 54 today.
     int8_t clk = -1, cmd = -1, d0 = -1, d1 = -1, d2 = -1, d3 = -1, rst = -1;
     hostedGetPins(&clk, &cmd, &d0, &d1, &d2, &d3, &rst);

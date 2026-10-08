@@ -2,7 +2,9 @@
 // include/rc_input.h
 //
 // RcInputTask public interface.
-// Handles all RC input modes: standard_pwm, single_sbus, dual_sbus.
+// Reads the three RC input modes that have a decoder: standard_pwm,
+// single_sbus, dual_sbus. The other two of RcInputMode's five (robot_state.h),
+// elrs and not_fitted, start no decoder and no task.
 // Runs on Core 1 at ~200 Hz poll rate.
 // =============================================================================
 #pragma once

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Agent-focused instructions for the `protoArtoo` firmware repository.
+Agent-focused instructions for the `protoR2` firmware repository.
 
 This file is the model-agnostic canonical instruction source for mixed-agent
 workflows. It outranks the Claude adapter (`.claude/CLAUDE.md`), the agent
@@ -10,7 +10,7 @@ epic issue. Material an agent needs only on some paths lives under
 
 ## Project Context
 
-- Project: `protoArtoo` (ESP32 body controller firmware for MK4 astromech droids)
+- Project: `protoR2` (ESP32 body controller firmware for MK4 astromech droids)
 - Build system: PlatformIO (`artoo_esp32` and `firebeetle2` firmware targets +
   `native` tests)
 - Companion dome firmware: `mattiasbrandt/AstroPixelsPlus`
@@ -27,9 +27,9 @@ The shell on this bench is zsh. Quote a glob (`--include='*.cpp'`). An unquoted 
   `GLOSSARY.md` Flagged Ambiguities or in an ADR.
 - Operator intent and design source (local only, never commit/push):
   `tasks/research-r2d2-*` — the operator's own curated statement of what
-  protoArtoo should become, carrying dated operator decisions, a source-verified
+  protoR2 should become, carrying dated operator decisions, a source-verified
   findings pass, a ranked recommendation list and 23 reference screenshots.
-  **For what protoArtoo should do it outranks the code; for what protoArtoo does
+  **For what protoR2 should do it outranks the code; for what protoR2 does
   today the code outranks it.** See "Planning Mode".
 - Other internal planning/agent working docs (local only, never commit/push):
   `tasks/**` — including the RC diagnostics/mapping contract
@@ -140,11 +140,11 @@ otherwise.
 
 **The code prices a decision. It never bounds one.** Read the implementation to
 learn what a choice costs, what it breaks and where it would land. Never read it
-to decide what protoArtoo *should* do. "It does not work that way today" is a
+to decide what protoR2 *should* do. "It does not work that way today" is a
 price tag, never an argument: a question about what the product should do is not
 a question of fact, and the codebase can only report what somebody already built.
 
-**Order of authority for what protoArtoo should become:**
+**Order of authority for what protoR2 should become:**
 
 1. A dated operator decision — an issue comment, an ADR, this file.
 2. `tasks/research-r2d2-*`, the operator's design source. Read it before the
@@ -153,14 +153,14 @@ a question of fact, and the codebase can only report what somebody already built
    already taken; they do not fence off decisions not yet taken.
 4. The implementation.
 
-Reverse that order for what protoArtoo **does today**: the code wins, and the
+Reverse that order for what protoR2 **does today**: the code wins, and the
 research is a snapshot of another project taken in August 2026. Where the
 research and a later operator decision disagree, the operator decision wins.
 
 **Naming what does not exist is the work, not a guess.** The Effort Policy's
 no-guessing rule governs facts about what exists: never invent a pin number, a
 wire format or a field name in shipped code. It does not reach proposals. In a
-planning ticket, naming a component, a term or a capability protoArtoo does not
+planning ticket, naming a component, a term or a capability protoR2 does not
 have yet is the deliverable. Mark it a proposal; never mark it `UNKNOWN`, and
 never suppress it because you could not cite a file for it.
 
@@ -214,7 +214,7 @@ make the call.
 
 ## Verification Scale (Non-Negotiable)
 
-protoArtoo is a small hobby project with one known user, the operator. Verification
+protoR2 is a small hobby project with one known user, the operator. Verification
 is sized to that, not to a production product with a support obligation. Operator
 decision, 2026-09-04, after epic #206 ended with seven open sub-issues that were all
 bench rows, audit bookkeeping and closure steps for one bench day (folded into #274).
@@ -283,7 +283,8 @@ worktree alike, never a wing derived from the directory you happen to be in. The
 convention on this machine is `wing_<project>` (`wing_mattias`, `wing_dotfiles`,
 `wing_work`); the bare form `protoartoo` is not a wing and neither is
 `protoArtoo`, which case-sensitively matches nothing and returns "No results
-found" rather than an error. The older `protoartoo` and `wing_wt_*` wings were
+found" rather than an error. The wing keeps the project's old name until it is
+renamed outside this repository. The older `protoartoo` and `wing_wt_*` wings were
 merged into `wing_protoartoo` on 2026-09-17; nothing needs re-mining.
 
 **Writes are refused, and that is expected.** The MemPalace daemon holds the
@@ -468,7 +469,7 @@ fine. Do not wait for a window or schedule around anyone.
 
 This rule is enforced, not remembered: every `pio` invocation in the Makefile,
 and every pio phase of `tools/slice_verify.py`, goes through
-`tools/pio_lock.py`, which takes `/tmp/protoartoo-pio.lock` and waits there
+`tools/pio_lock.py`, which takes `/tmp/protor2-pio.lock` and waits there
 until it is free.
 
 So run `make build`, `make test` and the slice gate **plainly. Do not put
@@ -482,10 +483,10 @@ For a contiguous window across several commands, which a both-chip-target
 ticket wants so the alternation is not interleaved:
 
 ```
-PROTOARTOO_PIO_LOCK_HELD=1 flock /tmp/protoartoo-pio.lock <commands>
+PROTOR2_PIO_LOCK_HELD=1 flock /tmp/protor2-pio.lock <commands>
 ```
 
-`PROTOARTOO_PIO_LOCK_HELD=1` tells everything underneath that the lock is
+`PROTOR2_PIO_LOCK_HELD=1` tells everything underneath that the lock is
 already held, so nothing inside tries to take it again. A bare `pio` you type
 yourself is still outside the lock — one more reason the dual-target rule above
 routes through `make`; run `python3 tools/pio_lock.py pio run -e <env>` when you
@@ -493,10 +494,10 @@ must call pio directly.
 
 The lock file says who holds it. Every field is derived, never passed in — pid,
 worktree, branch, target, command, timestamp, plus optional
-`PROTOARTOO_LOCK_OWNER` free text — written the moment the lock is taken and
+`PROTOR2_LOCK_OWNER` free text — written the moment the lock is taken and
 deliberately **left behind on release**: the stale record is what tells the next
 agent which chip target last touched the shared framework packages, which is
-where a suspect image size is explained. `cat /tmp/protoartoo-pio.lock` reads it
+where a suspect image size is explained. `cat /tmp/protor2-pio.lock` reads it
 without taking the lock, and a build that gives up waiting prints it. The pid
 names the last holder, not necessarily a live process — check with `kill -0`.
 
@@ -513,7 +514,7 @@ dist, #473). Run that line and nothing else, then re-run the build. Never `pacma
 
 Operator experiment, started 2026-10-02. Through 2026-10-31 the native suite, the web suite, and mutation checks do not run per slice, and a missing run is not a reason to reject a slice. `make test` and `make test-web` print the pause and return. `tools/slice_verify.py` skips those stages, including the base-suite run. `tools/mutation_verify.py` returns without applying patches. The test files stay. CI still runs the native suite and the web suite on a pull request into `main` when its files reach them: Verification classifies the pull request's whole range, so the epic's closure pull request reaches both.
 
-This overrides, until 2026-11-01, the "never skip verification" bullet above, the one-test floor, the worker-slice-gate suite rows, and "add `make test`" in Default completion evidence below. It does not override the build, a second agent's read of the production diff, or the safety-critical rules. Do not add tests or mutation patches to stand in for the paused runs. `PROTOARTOO_SUITES=1` runs the suites anyway; a worker does not set it. On 2026-11-01 the skip ends by itself (`tools/suite_pause.py`).
+This overrides, until 2026-11-01, the "never skip verification" bullet above, the one-test floor, the worker-slice-gate suite rows, and "add `make test`" in Default completion evidence below. It does not override the build, a second agent's read of the production diff, or the safety-critical rules. Do not add tests or mutation patches to stand in for the paused runs. `PROTOR2_SUITES=1` runs the suites anyway; a worker does not set it. On 2026-11-01 the skip ends by itself (`tools/suite_pause.py`).
 
 ## Verification and Reporting
 
@@ -552,8 +553,8 @@ makes a build fail is product and ships at any stage; a probe matrix proving tha
 `static_assert` fires is scaffolding and waits.
 
 **Project-wide renames are classified, never blanket-substituted.** A term that
-names two different things (`protoArtoo` is both the project and, historically,
-a PlatformIO env) cannot be renamed with one substitution. Classify every hit as
+names two different things (`protoArtoo` was both the project's old name and,
+historically, a PlatformIO env) cannot be renamed with one substitution. Classify every hit as
 *identifier* (rename), *project or product name* (keep), *history* (keep), or
 *intentional fixture* (keep); then sweep the whole tree — `tools/`, `.claude/`,
 `.github/`, `.gitignore` carry identifiers and operator-facing strings just as
@@ -651,7 +652,7 @@ Classify verification status explicitly — use only these labels:
 - `full-hardware-required` — the remaining exposure is droid-only; recorded, not scheduled
 
 **These labels describe evidence. They are not a gate** (operator decision,
-2026-09-01). protoArtoo is a small open-source hobby project, and integrated-droid
+2026-09-01). protoR2 is a small open-source hobby project, and integrated-droid
 confirmation is a desirable outcome, not a precondition for closing work.
 
 - A ticket, a PR, or an epic **closes on the strongest evidence the available
@@ -724,7 +725,7 @@ wrong with a minor UI change.
   in the issue checklist comment. Write what the code does and why it is that way, then cite the
   issue. This binds commit subjects too: `Refs #189` yes, "slice 3" no.
 - **Borrowed code carries its origin's notice; borrowed ideas carry a README credit.**
-  protoArtoo credits what it learned from
+  protoR2 credits what it learned from
   [r2d2-astromech-simulator](https://github.com/mikeeddington-lgtm/r2d2-astromech-simulator)
   in `README.md`. Crediting a pattern is our choice — no licence condition attaches to an
   idea. The condition fires on **code**: a file holding Mike Eddington's source, copied or

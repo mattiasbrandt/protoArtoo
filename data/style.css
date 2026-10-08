@@ -1975,7 +1975,7 @@ input[type="number"]::-webkit-inner-spin-button {
    Feature Availability: the astromech power-rail states shared by component
    rows and by build-conditional diagnostic panels.
 
-   GLOSSARY.md "Availability Family" groups every way protoArtoo says no into
+   GLOSSARY.md "Availability Family" groups every way protoR2 says no into
    four, named by what the builder does next, and states that a family is told
    apart by treatment, never by hue. The carriers below are therefore rail
    style, brightness and motion, and not one of the four spends --warning or
@@ -1986,7 +1986,7 @@ input[type="number"]::-webkit-inner-spin-button {
    Amber cannot come back here. GLOSSARY.md "Status Color" reserves it for
    "you can do something about this, and should", and two of these families -
    change it elsewhere, settled no - are things the builder cannot change from
-   any screen protoArtoo has, while a third is a transient unknown.
+   any screen protoR2 has, while a third is a transient unknown.
 
    The treatments are read from r2d2-astromech-simulator v1.79.0 (175ad1b),
    which answers the same question twice. .blkbrick.unwired
@@ -2039,7 +2039,7 @@ input[type="number"]::-webkit-inner-spin-button {
   background-image: linear-gradient(90deg, color-mix(in srgb, var(--lift) 9%, transparent), transparent 44%);
 }
 
-/* change it here — the switch is on a protoArtoo page and the builder can
+/* change it here — the switch is on a protoR2 page and the builder can
    reach it. Full brightness and a solid rail: this is a live control that
    happens to be off, not something that has been taken away. */
 .availability-change-here,

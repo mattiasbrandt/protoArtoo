@@ -14,7 +14,7 @@ VALID_LABELS = (
     "full-hardware-required",
 )
 
-HOOK_PROFILE_ENV = "PROTOARTOO_HOOK_PROFILE"
+HOOK_PROFILE_ENV = "PROTOR2_HOOK_PROFILE"
 
 
 def main() -> int:

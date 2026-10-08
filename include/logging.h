@@ -1,7 +1,7 @@
 // =============================================================================
 // include/logging.h
 //
-// Logging macros for protoArtoo  --  shared between tasks, drivers, and web layer.
+// Logging macros for protoR2  --  shared between tasks, drivers, and web layer.
 // Centralizes log formatting to ensure consistent output across the system.
 //
 // Log level is checked at runtime against the config cache log level, which is

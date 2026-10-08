@@ -1,6 +1,6 @@
-# Contributing to protoArtoo
+# Contributing to protoR2
 
-Thank you for your interest in contributing. protoArtoo is safety-critical
+Thank you for your interest in contributing. protoR2 is safety-critical
 firmware for a 20 kg wheeled robot. Quality, clarity, and traceability are not
 optional here — they are part of the deliverable.
 
@@ -175,7 +175,7 @@ These will not be accepted in a pull request.
 
 ## Branch strategy
 
-Through the `v1.0.0` release, protoArtoo used a phase-oriented branch model:
+Through the `v1.0.0` release, protoR2 used a phase-oriented branch model:
 all work for a development phase landed on a single long-lived
 `phase/vX.Y.Z` branch, merged into `main` (non-fast-forward, PM-approved) at
 phase completion. That model is retired as of `v1.0.0` — documented below
@@ -221,7 +221,7 @@ doesn't apply to ongoing feature-branch PRs.)
 
 ### Current practice
 
-In practice, protoArtoo is maintained solo, with AI coding agents doing much
+In practice, protoR2 is maintained solo, with AI coding agents doing much
 of the implementation work under human review directly on feature branches.
 Mattias approves and merges every PR into `main`, unconditionally — no
 agent self-merge regardless of how low-risk a change appears.
@@ -401,7 +401,7 @@ Per-frame verbose logging gated by a `#ifdef PA_VERBOSE_<TASK>` build flag
 
 ## Versioning and releases
 
-protoArtoo uses [Semantic Versioning 2.0.0](https://semver.org/).
+protoR2 uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 **A merge to `main` releases itself.** Nobody tags by hand.
 `.github/workflows/auto-release.yml` runs on every push to `main`, reads the

@@ -1,7 +1,7 @@
 // =============================================================================
 // src/main.cpp
 //
-// protoArtoo  --  ESP32 body controller for MK4 astromech droid.
+// protoR2  --  ESP32 body controller for MK4 astromech droid.
 // Boot: config load, safety defaults, task creation.
 // =============================================================================
 
@@ -90,7 +90,7 @@ namespace {
 void logBootHealth() {
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
-    PA_LOG_INFO("main", "protoArtoo boot begin");
+    PA_LOG_INFO("main", "protoR2 boot begin");
     PA_LOG_INFO("main", "reset_reason=%s (%d)", resetReasonName(esp_reset_reason()),
                 (int)esp_reset_reason());
     PA_LOG_INFO("main",

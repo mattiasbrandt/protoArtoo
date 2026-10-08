@@ -2,7 +2,7 @@
 # =============================================================================
 # tools/console_client.py  (formerly tools/serial_monitor.py)
 #
-# The Console Client (GLOSSARY.md) for protoArtoo ESP32 bench verification: the
+# The Console Client (GLOSSARY.md) for protoR2 ESP32 bench verification: the
 # boot-log capture every epic uses, the interactive serial terminal an operator
 # sits at, and the scripted mode a bench day and its agents drive -- on either
 # Console Adapter (docs/console-protocol.md), one host program, no shim.
@@ -1838,7 +1838,7 @@ class _AppendDirective(argparse.Action):
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "protoArtoo Console Client: boot-log capture, interactive serial "
+            "protoR2 Console Client: boot-log capture, interactive serial "
             "terminal, and scripted mode on either Console Adapter (#264). The "
             "default POSIX backend does not reset the ESP32 on connect (measured "
             "0/5 unseated); --pyserial does, every time."

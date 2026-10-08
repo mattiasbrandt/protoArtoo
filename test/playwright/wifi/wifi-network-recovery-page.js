@@ -134,7 +134,7 @@ const applyWifi = (saved, form) => {
 };
 
 // The droid this script meets: booted into Network Recovery Mode, broadcasting
-// the Default AP Credential (WIFI_AP_SSID "protoArtoo", include/config.h) with
+// the Default AP Credential (WIFI_AP_SSID "protoR2", include/config.h) with
 // its client off, and a mistyped client network saved and applied.
 const initialDroid = () => {
   const applied = {
@@ -151,7 +151,7 @@ const initialDroid = () => {
     networkRecovery: true,
     // GET /api/wifi, formatWifiJson() in src/web/api_status_serializers.cpp.
     diagnostics: {
-      apSsid: 'protoArtoo',
+      apSsid: 'protoR2',
       apIp: '192.168.4.1',
       staEnabled: false,
       staConnected: false,
@@ -285,7 +285,7 @@ const run = async ({ page, droid, report, pageErrors, consoleErrors }) => {
   const kept = await expectTexts(page, {
     'wifi-compare-state': 'saved settings are the ones running',
     'wifi-active-summary-mode': 'Network Recovery Mode',
-    'wifi-active-summary-network': 'protoArtoo',
+    'wifi-active-summary-network': 'protoR2',
     'wifi-active-summary-address': 'http://192.168.4.1',
     'wifi-saved-summary-title': 'Saved settings',
     'wifi-saved-summary-mode': 'WiFi Client Mode',
@@ -302,7 +302,7 @@ const run = async ({ page, droid, report, pageErrors, consoleErrors }) => {
 
   const guidance = await expectTexts(page, {
     'wifi-apply-state': 'nothing staged',
-    'wifi-apply-guidance': 'Network Recovery Mode is on; saved settings are unchanged. Join protoArtoo, open http://192.168.4.1, fix the settings below, save, then reboot.',
+    'wifi-apply-guidance': 'Network Recovery Mode is on; saved settings are unchanged. Join protoR2, open http://192.168.4.1, fix the settings below, save, then reboot.',
   });
   const refusedBefore = await page.isDisabled('#wifi-apply-reboot-button');
   report.add('c', 'Staged network switch points at the recovery network, and Reboot to Apply is refused',
@@ -333,7 +333,7 @@ const run = async ({ page, droid, report, pageErrors, consoleErrors }) => {
     'wifi-compare-state': 'saved settings wait for a reboot',
     'wifi-saved-summary-sta': 'AstroHome',
     'wifi-apply-state': 'staged, waiting for a reboot',
-    'wifi-apply-guidance': 'Network Recovery Mode is on and your fixes are saved. Join protoArtoo, open http://192.168.4.1, then Reboot to Apply to return to WiFi Client Mode.',
+    'wifi-apply-guidance': 'Network Recovery Mode is on and your fixes are saved. Join protoR2, open http://192.168.4.1, then Reboot to Apply to return to WiFi Client Mode.',
   });
   const liveAfter = await page.isEnabled('#wifi-apply-reboot-button');
   report.add('e', 'After the repair it still reads recovery, says the fixes are saved, and Reboot to Apply is live',

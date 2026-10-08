@@ -510,12 +510,12 @@ void test_wifi_three_way_field_match() {
 
 void test_wifi_carries_active_wifi_config_ssid() {
     WifiConfig activeWifi = {};
-    snprintf(activeWifi.ap_ssid, sizeof(activeWifi.ap_ssid), "%s", "protoArtoo-test");
+    snprintf(activeWifi.ap_ssid, sizeof(activeWifi.ap_ssid), "%s", "protoR2-test");
     configCacheSetActiveWifi(activeWifi);
 
     runQuery("system.status.wifi");
 
-    TEST_ASSERT_EQUAL_STRING("protoArtoo-test", capturedValue("apSsid"));
+    TEST_ASSERT_EQUAL_STRING("protoR2-test", capturedValue("apSsid"));
 }
 
 // =============================================================================
@@ -960,7 +960,7 @@ void test_system_api_get_components_names_the_radio_member() {
     }
     TEST_ASSERT_NOT_NULL_MESSAGE(row, "no radio_controller category row");
     TEST_ASSERT_EQUAL_STRING(
-        "category:radio_controller name:Radio Controller selectable:5 memberKey:rc_member "
+        "category:radio_controller name:Radio Controller selectable:4 memberKey:rc_member "
         "activeMember:rc_radio",
         row);
 
@@ -980,7 +980,7 @@ void test_system_api_get_components_names_the_radio_member() {
     }
     TEST_ASSERT_NOT_NULL_MESSAGE(row, "no radio_controller category row");
     TEST_ASSERT_EQUAL_STRING(
-        "category:radio_controller name:Radio Controller selectable:5 memberKey:rc_member "
+        "category:radio_controller name:Radio Controller selectable:4 memberKey:rc_member "
         "activeMember:-",
         row);
 }
@@ -4502,7 +4502,7 @@ void test_servo_open_takes_the_board_label_typed_with_a_space() {
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
 }
 
-// protoArtoo's old word for the Artoo's third Output is not an alias: it is
+// protoR2's old word for the Artoo's third Output is not an alias: it is
 // refused, and the refusal names the words this board takes - `both` among
 // them where the operation takes the broadcast, and not where it does not.
 void test_servo_refuses_a_word_the_board_does_not_print_and_names_its_words() {

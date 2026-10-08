@@ -1,7 +1,7 @@
 // =============================================================================
 // src/web/web_network_bootstrap.cpp
 //
-// WiFi boot posture decision and application for protoArtoo.
+// WiFi boot posture decision and application for protoR2.
 // Handles boot posture decisions and WiFi configuration application,
 // network recovery gesture evaluation, and OTA registration. WiFi event
 // handling and registration are delegated to the network manager seam
@@ -27,7 +27,7 @@
 // even in native test builds, so they are defined at the top level, not inside #ifdef ARDUINO.
 // src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
 // compile-time WiFi defaults. It is never required to compile or boot - public
-// release binaries (protoArtoo_chirp, protoArtoo_mp3trigger) ship without it and
+// release binaries ship without it and
 // boot into WiFi Provisioning via wifiDecideBootPosture() instead.
 #ifdef ARDUINO
 #include <ArduinoOTA.h>

@@ -34,11 +34,11 @@ class SuitePause(unittest.TestCase):
         self.assertFalse(suite_pause.paused(date(2026, 11, 1)))
 
     def test_override_runs_the_suites(self):
-        os.environ["PROTOARTOO_SUITES"] = "1"
+        os.environ["PROTOR2_SUITES"] = "1"
         try:
             self.assertFalse(suite_pause.paused(date(2026, 10, 2)))
         finally:
-            del os.environ["PROTOARTOO_SUITES"]
+            del os.environ["PROTOR2_SUITES"]
 
 
 class TapCountParsing(unittest.TestCase):

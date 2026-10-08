@@ -1091,7 +1091,7 @@
   };
 
   // ---- FILE PARSE ----
-  // A protoArtoo backup is a JSON object with a schema number, in the shape
+  // A protoR2 backup is a JSON object with a schema number, in the shape
   // Download backup writes it. Anything else is refused with the reason, never
   // half-read, and as not supported rather than impossible: opening sharing
   // later is a policy change, not a format change (ADR 0056).
@@ -1138,7 +1138,7 @@
   };
 
   const refuseFile = (why) => {
-    setFeedback(`Not a protoArtoo backup: ${why}. Restoring it is not supported; choose a file Download backup saved.`, 'error');
+    setFeedback(`Not a protoR2 backup: ${why}. Restoring it is not supported; choose a file Download backup saved.`, 'error');
     parsedBackup = null;
     showRestorePanel(false);
   };

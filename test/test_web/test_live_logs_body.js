@@ -30,7 +30,7 @@ const webApiSrc = readFileSync(join(__dirname, "../../data/web_api.js"), "utf-8"
 // A ring body in the shape src/web/api_logs.cpp actually sends: one
 // "[<millis>][<level>][<tag>] message" line per entry, newline separated.
 const DEVICE_LOG_BODY =
-  "[1204][I][boot] protoArtoo starting\n[1731][I][wifi] connected 192.168.1.42\n[2050][W][rc] no SBUS frames yet";
+  "[1204][I][boot] protoR2 starting\n[1731][I][wifi] connected 192.168.1.42\n[2050][W][rc] no SBUS frames yet";
 
 // What tools/serve_editor_fixture.py used to answer /api/logs with before
 // #261: the dashboard shell, at 200, as text/html.
@@ -181,7 +181,7 @@ test("A text/plain body with a charset parameter is still log text", async () =>
   await env.runSection("app-recent-logs");
 
   assert.ok(
-    panel.innerHTML.includes("protoArtoo starting"),
+    panel.innerHTML.includes("protoR2 starting"),
     "the media type must be compared without its parameters, or every server " +
       "that sends a charset is refused"
   );
@@ -250,7 +250,7 @@ test("A response with no content type is refused", async () => {
     "an undeclared media type cannot be confirmed as log text"
   );
   assert.ok(
-    !panel.innerHTML.includes("protoArtoo starting"),
+    !panel.innerHTML.includes("protoR2 starting"),
     "an unconfirmed body must not be rendered as history"
   );
 });
@@ -370,7 +370,7 @@ test("A stream error between a refusal and the retry does not cancel the retry",
       "panel is not log history and must not satisfy the load guard"
   );
   assert.ok(
-    panel.innerHTML.includes("protoArtoo starting"),
+    panel.innerHTML.includes("protoR2 starting"),
     `the recovered history must be painted; panel was: ${panel.innerHTML}`
   );
   assert.ok(
@@ -378,7 +378,7 @@ test("A stream error between a refusal and the retry does not cancel the retry",
     "the streamed line must survive: history goes in front of it, not over it"
   );
   assert.ok(
-    panel.innerHTML.indexOf("protoArtoo starting") < panel.innerHTML.indexOf("connection lost"),
+    panel.innerHTML.indexOf("protoR2 starting") < panel.innerHTML.indexOf("connection lost"),
     "the ring is older than anything that streamed after it, so it belongs first"
   );
 });

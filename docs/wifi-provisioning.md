@@ -1,6 +1,6 @@
 # WiFi Provisioning (Runtime, ADR 0015)
 
-This is the operator-facing guide to getting a protoArtoo controller onto a
+This is the operator-facing guide to getting a protoR2 controller onto a
 network from a browser — no firmware source, no PlatformIO, no editing
 `secrets.h`. It covers first-boot setup, choosing an ongoing WiFi mode,
 switching modes later, and recovering a controller you've locked yourself out
@@ -26,11 +26,11 @@ own WiFi network using the **Default AP Credential**.
 
 | | |
 |---|---|
-| Network name (SSID) | `protoArtoo` |
-| Password | `protoArtoo1` |
+| Network name (SSID) | `protoR2` |
+| Password | `protoArtoo123` |
 | Browser address | `http://192.168.4.1` |
 
-1. On your phone or laptop, join the `protoArtoo` WiFi network with the
+1. On your phone or laptop, join the `protoR2` WiFi network with the
    password above.
 2. Open `http://192.168.4.1` in a browser.
 3. Go to the **WiFi** page and choose your ongoing mode (below).
@@ -119,7 +119,7 @@ Once latched, the controller temporarily starts WiFi Provisioning — same
 Default AP Credential and address as first boot — **without erasing your
 saved Device WiFi Settings**. From there:
 
-1. Join the `protoArtoo` AP and open `http://192.168.4.1`.
+1. Join the `protoR2` AP and open `http://192.168.4.1`.
 2. On the WiFi page, correct your Client or AP settings and save.
 3. Reboot to apply — the controller returns to its normal saved posture.
 

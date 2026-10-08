@@ -382,7 +382,7 @@ void test_a_browser_wifi_write_is_refused_while_the_other_adapter_holds_the_wind
     struct PaStubMutex* m = paStubMutexStorage();
     m->held = 1;
 
-    runInto(&g_outer, CONSOLE_SOURCE_WEB, "wifi.config.settings ap-ssid=protoArtoo-test");
+    runInto(&g_outer, CONSOLE_SOURCE_WEB, "wifi.config.settings ap-ssid=protoR2-test");
 
     TEST_ASSERT_EQUAL_STRING_MESSAGE(
         "result status=err outcome=unavailable reason=temporarily-unavailable",

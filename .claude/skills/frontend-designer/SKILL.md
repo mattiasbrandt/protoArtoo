@@ -1,6 +1,6 @@
 ---
 name: frontend-designer
-description: Design and refine operator-friendly UI for protoArtoo with clear visual hierarchy and non-developer UX language.
+description: Design and refine operator-friendly UI for protoR2 with clear visual hierarchy and non-developer UX language.
 ---
 
 Design for droid operators, not developers.

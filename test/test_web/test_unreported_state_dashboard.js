@@ -147,7 +147,7 @@ test("a mood the droid has not reported is not printed as mood zero", () => {
 // row's stored id and name, ADR 0068); the card names them from it, and a
 // status key it cannot place is not dressed up as an Output with a name this
 // page made up (ADR 0033 Amendment 2026-09-19). The fake droid's ids follow no
-// pattern, and `aux1` is the old protoArtoo word a page might still know. The
+// pattern, and `aux1` is the old protoR2 word a page might still know. The
 // row carries a Part: an Output with none is not on the card (#472).
 test("the component card names Outputs as the firmware reported them, and no others", async () => {
   const rows = [servoRow("ledc:0", "GPIO 49", { parts: ["doorFL"] })];

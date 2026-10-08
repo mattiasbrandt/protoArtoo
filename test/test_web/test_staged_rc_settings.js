@@ -240,7 +240,7 @@ test("non-RC component auto-save retains ordinary saved feedback", async () => {
     system: {},
   };
   const env = loadInteractiveModule(CONFIGURATION, async (_method, path) => {
-    if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
+    if (path === "/api/identity") return { droidName: "protor2", mdnsUseName: false };
     if (path === "/api/config") return config;
     return {};
   });
@@ -268,7 +268,7 @@ test("RC component auto-save reports that controller restart is required", async
     system: {},
   };
   const env = loadInteractiveModule(CONFIGURATION, async (_method, path) => {
-    if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
+    if (path === "/api/identity") return { droidName: "protor2", mdnsUseName: false };
     if (path === "/api/config") return config;
     return {};
   });
@@ -295,7 +295,7 @@ test("restart remains pending after a later non-RC component save", async () => 
     system: {},
   };
   const env = loadInteractiveModule(CONFIGURATION, async (_method, path) => {
-    if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
+    if (path === "/api/identity") return { droidName: "protor2", mdnsUseName: false };
     if (path === "/api/config") return config;
     return {};
   });
@@ -327,7 +327,7 @@ test("an RC change queued behind an in-flight save cannot lose the restart cue",
   const postedRcValues = [];
   const firstSaveResponse = new Promise((resolve) => { resolveFirstSave = resolve; });
   const env = loadInteractiveModule(CONFIGURATION, async (method, path, body) => {
-    if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
+    if (path === "/api/identity") return { droidName: "protor2", mdnsUseName: false };
     if (method === "POST" && path === "/api/config") {
       postCount += 1;
       postedRcValues.push(body.get("enableRcCh1"));
@@ -392,7 +392,7 @@ test("WARNING #1: restart cue must survive a later save failure", async () => {
   const config = { components: { rcCh1: { enabled: false }, rcCh2: { enabled: false }, rcCh3: { enabled: false }, rcCh4: { enabled: false }, rcCh5: { enabled: false }, rcCh6: { enabled: false } }, system: {} };
   let firstSaveSucceeds = true;
   const env = loadInteractiveModule(CONFIGURATION, async (method, path, body) => {
-    if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
+    if (path === "/api/identity") return { droidName: "protor2", mdnsUseName: false };
     if (method === "POST" && path === "/api/config") {
       if (!firstSaveSucceeds) throw new Error("Save failed (simulated)");
       return config;
@@ -446,7 +446,7 @@ test("WARNING #2: stale response must not overwrite newer RC pending state", asy
   const postedValues = [];
 
   const env = loadInteractiveModule(CONFIGURATION, async (method, path, body) => {
-    if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
+    if (path === "/api/identity") return { droidName: "protor2", mdnsUseName: false };
     if (method === "POST" && path === "/api/config") {
       const posted = {
         rcCh1: body.get("enableRcCh1"),
@@ -511,7 +511,7 @@ test("generation guard prevents corrupted savedGeneration affecting future saves
   const thirdSavePromise = new Promise((resolve) => { thirdSaveResolve = resolve; });
 
   const env = loadInteractiveModule(CONFIGURATION, async (method, path, body) => {
-    if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
+    if (path === "/api/identity") return { droidName: "protor2", mdnsUseName: false };
     if (method === "POST" && path === "/api/config") {
       const ch1 = body.get("enableRcCh1") === "true";
       const ch2 = body.get("enableRcCh2") === "true";
@@ -583,7 +583,7 @@ test("WARNING #3: reverting to boot-active value must clear restart cue", async 
   const config = { components: { rcCh1: { enabled: false }, rcCh2: { enabled: false }, rcCh3: { enabled: false }, rcCh4: { enabled: false }, rcCh5: { enabled: false }, rcCh6: { enabled: false } }, system: {} };
 
   const env = loadInteractiveModule(CONFIGURATION, async (method, path, body) => {
-    if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
+    if (path === "/api/identity") return { droidName: "protor2", mdnsUseName: false };
     if (method === "POST" && path === "/api/config") {
       const newEnabled = body.get("enableRcCh1") === "true";
       config.components.rcCh1.enabled = newEnabled;

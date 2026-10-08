@@ -140,7 +140,7 @@ PREAMBLE = f"""\
 //                 drives a Sabertooth under Foot Drive and a SyRen under Dome
 //                 Rotation from one implementation (GLOSSARY.md "Component
 //                 Protocol"). `none` is the Body Controller's: it hosts
-//                 protoArtoo rather than being driven by it.
+//                 protoR2 rather than being driven by it.
 //   status        COMPONENT_STATUS_SUPPORTED (implemented and drivable) or
 //                 COMPONENT_STATUS_ROADMAP (intended, not built). Two values,
 //                 and "might" is deliberately not one of them (#303).

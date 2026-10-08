@@ -1,7 +1,7 @@
 // =============================================================================
 // include/config.h
 //
-// GPIO pin assignments and compile-time constants for protoArtoo.
+// GPIO pin assignments and compile-time constants for protoR2.
 // Supports multiple controller board variants on different chip targets.
 // See docs/pin_map.md and docs/adr/0028-two-layer-board-abstraction.md
 //
@@ -282,8 +282,8 @@ constexpr uint8_t PIN_RC_CH1 = 28;  // P2 unimpeachable, SBUS #1 (drive) receive
 constexpr uint8_t PIN_RC_CH2 = 29;  // P2 unimpeachable, SBUS #2 (dome) receiver
 constexpr uint8_t PIN_RC_CH3 = 30;  // P2 unimpeachable
 constexpr uint8_t PIN_RC_CH4 = 31;  // P2 unimpeachable, spec sheet: "best clean pin in <=36 range"
-constexpr uint8_t PIN_RC_CH5 = 32;  // P1-for-I3C, reassignable (protoArtoo does not use I3C)
-constexpr uint8_t PIN_RC_CH6 = 33;  // P1-for-I3C, reassignable (protoArtoo does not use I3C)
+constexpr uint8_t PIN_RC_CH5 = 32;  // P1-for-I3C, reassignable (protoR2 does not use I3C)
+constexpr uint8_t PIN_RC_CH6 = 33;  // P1-for-I3C, reassignable (protoR2 does not use I3C)
 
 constexpr uint8_t PIN_SBUS1_RX = PIN_RC_CH1;  // CH1  --  SBUS #1 (drive)
 constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)
@@ -629,20 +629,20 @@ constexpr char NVS_NAMESPACE[] = "proto";
 // them once that row is safely down. Nothing writes them.
 constexpr char NVS_KEY_RETIRED_AUX_LED_PIN[] = "aux_led_pin";
 constexpr char NVS_KEY_RETIRED_AUX_LED_COUNT[] = "aux_led_count";
-constexpr char DROID_NAME_DEFAULT[] = "protoartoo";
+constexpr char DROID_NAME_DEFAULT[] = "protor2";
 constexpr size_t DROID_NAME_MAX_LEN = 32;
 
 // -----------------------------------------------------------------------------
 // WiFi AP
 // -----------------------------------------------------------------------------
-constexpr char WIFI_AP_SSID[] = "protoArtoo";
+constexpr char WIFI_AP_SSID[] = "protoR2";
 constexpr char WIFI_AP_IP[] = "192.168.4.1";
 
 // Default AP Credential (ADR 0015): the documented bootstrap password an
 // Unprovisioned Controller uses for WiFi Provisioning and Network Recovery
 // Mode. Public and shared by design  --  it is a bootstrap credential, not a
 // security boundary  --  and operator-changeable through Device WiFi Settings.
-constexpr char WIFI_DEFAULT_AP_PASSWORD[] = "protoArtoo1";
+constexpr char WIFI_DEFAULT_AP_PASSWORD[] = "protoArtoo123";
 
 // -----------------------------------------------------------------------------
 // WiFi hostname / mDNS

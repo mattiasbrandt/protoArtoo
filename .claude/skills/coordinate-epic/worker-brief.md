@@ -39,7 +39,7 @@ that a route installed after mount needs `page.reload()` because
 `python3 tools/css_where.py <selector>`.
 
 SUITES PAUSED THROUGH 2026-10-31 (#464)
-This overrides every later line that tells you to run `make test`, `make test-web`, `pio test`, `node --test`, `tools/mutation_verify.py`, or to add a test or a mutation patch. Do not run them. Do not write them. `make test` and `make test-web` return immediately and that is correct. A slice is accepted when a second agent has read the production diff. One `make build` when something compiles. The existing tests stay in the tree and run in CI when a pull request into main opens. Do not set `PROTOARTOO_SUITES=1`. On 2026-11-01 the pause ends by itself.
+This overrides every later line that tells you to run `make test`, `make test-web`, `pio test`, `node --test`, `tools/mutation_verify.py`, or to add a test or a mutation patch. Do not run them. Do not write them. `make test` and `make test-web` return immediately and that is correct. A slice is accepted when a second agent has read the production diff. One `make build` when something compiles. The existing tests stay in the tree and run in CI when a pull request into main opens. Do not set `PROTOR2_SUITES=1`. On 2026-11-01 the pause ends by itself.
 
 THE TICKET IS YOUR SOURCE
 You are building a decision somebody already took, so everything it turned on
@@ -64,7 +64,7 @@ If a pattern, a number or a string you need is missing from the ticket, SAY SO
 on the issue, then use the copied research to unblock yourself. Reporting it is
 not optional: a thin ticket is a coordinator defect that gets repaired for the
 next wave, and a gap you quietly work around stays a gap. Do NOT re-derive the
-pattern, and do not substitute an audit of protoArtoo's own code for it.
+pattern, and do not substitute an audit of protoR2's own code for it.
 
 NO SELF-IMPOSED BUDGETS
 You have no token budget to manage, no efficiency target, and no deadline.

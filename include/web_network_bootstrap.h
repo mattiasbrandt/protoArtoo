@@ -1,7 +1,7 @@
 // =============================================================================
 // include/web_network_bootstrap.h
 //
-// WiFi boot posture decision and application for protoArtoo.
+// WiFi boot posture decision and application for protoR2.
 // This module handles device-level posture concerns: evaluating network recovery
 // gestures, building developer WiFi shortcuts, deciding boot postures, and
 // applying them. Event handling and registration are the network manager seam's

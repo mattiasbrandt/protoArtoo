@@ -1,6 +1,6 @@
 // Droid Part control-path inventory (GLOSSARY.md "Droid Parts Catalog"; #301, #356).
 //
-// A control path is HOW protoArtoo can reach a Part: the dome's serial link,
+// A control path is HOW protoR2 can reach a Part: the dome's serial link,
 // a local PWM channel, or nothing yet. It says what is DRIVABLE, never what is
 // NAMEABLE - every Part docs/droid-parts.yaml declares reaches both generated
 // outputs, because a Part is identity and a builder must be able to name the

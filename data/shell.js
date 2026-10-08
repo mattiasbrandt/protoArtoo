@@ -418,11 +418,11 @@
   // ---------------------------------------------------------------------------
   // Identity
   // ---------------------------------------------------------------------------
-  let identityName = "protoartoo";
+  let identityName = "protor2";
   let currentSurface = null;
 
   const applyIdentityName = (name) => {
-    identityName = String(name || "protoartoo");
+    identityName = String(name || "protor2");
     // "<surface> - <droid>", the same way round on every surface. Dashboard and
     // Sound used to put the droid first, which read as a different page rather
     // than as the same page named differently.
@@ -876,7 +876,7 @@
                  every screen, and the one <h1> a document gets belongs to the
                  surface being shown. It was an <h1> while the nav was a strip
                  above a page that had no title of its own. -->
-            <span class="brand-name" data-identity-name>protoartoo</span>
+            <span class="brand-name" data-identity-name>protor2</span>
             <div class="subtitle">R2-D2 Body Controller</div>
           </div>
         </a>

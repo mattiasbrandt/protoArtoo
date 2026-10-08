@@ -82,7 +82,7 @@ The phases that invoke pio hold the machine-wide build lock (tools/pio_lock.py,
 AGENTS.md "The build lock"), so a gate run and another agent's build serialise
 instead of colliding. It is taken per pio phase rather than for the whole run.
 The web suite and the mutation stage hold a different lock,
-/tmp/protoartoo-webtest.lock, so two gates' web stages serialise without
+/tmp/protor2-webtest.lock, so two gates' web stages serialise without
 queueing anyone's build behind them; the two are never held as one lock, and
 never nested. Run the gate plainly: an outer `flock` on the same file is now
 the nested case, and is refused rather than waited on.
@@ -121,15 +121,15 @@ ROOT = Path(__file__).resolve().parents[1]
 # worktree, so its native build is always cold, and a cache under one
 # worktree's .pio never helped the next worktree's gate run against the same
 # base. Keyed by base sha, the three verifier hashes and the Node version.
-CACHE_PATH = Path("/tmp/protoartoo-slice-verify-cache.json")
+CACHE_PATH = Path("/tmp/protor2-slice-verify-cache.json")
 # The web suite and the mutation stage serialise on this lock; the pio lock is
 # for pio only (tools/pio_lock.py). Two concurrent web stages starved each
 # other into ENOMEM on 2026-09-18 (coordinate-epic SKILL.md "The build lock").
-WEBTEST_LOCK_PATH = Path("/tmp/protoartoo-webtest.lock")
+WEBTEST_LOCK_PATH = Path("/tmp/protor2-webtest.lock")
 # The load map (tools/web_load_trace.cjs) and the per-file durations the
 # mutation runner orders by. Shared by the gate and standalone mutation_verify.
-LOAD_MAP_CACHE_PATH = Path("/tmp/protoartoo-web-load-map.json")
-LOAD_TRACE_ENV = "PROTOARTOO_LOAD_TRACE"
+LOAD_MAP_CACHE_PATH = Path("/tmp/protor2-web-load-map.json")
+LOAD_TRACE_ENV = "PROTOR2_LOAD_TRACE"
 VERSION_JSON_RE = re.compile(r"^data/.*version\.json$")
 # Generated, firmware-consumed artefacts under data/. They ship in the LittleFS
 # image but the browser never executes or parses them, so the web suite - whose
@@ -523,7 +523,7 @@ def run_web_tests(
     env = None
     trace_out: Path | None = None
     if trace:
-        trace_out = Path(tempfile.mkdtemp(prefix="protoartoo-load-trace-")) / "map.json"
+        trace_out = Path(tempfile.mkdtemp(prefix="protor2-load-trace-")) / "map.json"
         cmd = ["node", "--require", str(ROOT / TRACE_SCRIPT), *WEB_TEST_FLAGS, *files]
         env = {**os.environ, LOAD_TRACE_ENV: str(trace_out)}
     with web_test_lock(cmd):

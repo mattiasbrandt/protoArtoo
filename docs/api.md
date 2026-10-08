@@ -1,6 +1,6 @@
 # REST API Reference
 
-This document describes the currently exposed HTTP and SSE API in protoArtoo,
+This document describes the currently exposed HTTP and SSE API in protoR2,
 including request shape, accepted parameters, and observed response contracts.
 
 Every route `src/web/web_seam_routes.cpp` registers is documented here or
@@ -606,7 +606,7 @@ Queues servo command.
   `arm3`, `ARM 3` and `ARM3` are the same Output, and so are `gpio49` and
   `GPIO 49`. `GET /api/config` (`components.<id>.label`) and
   `GET /api/servo/outputs` (`name`) report the running board's words. The old
-  protoArtoo-wide words `aux1`..`aux3` are not taken on any board, and on the
+  protoR2-wide words `aux1`..`aux3` are not taken on any board, and on the
   FireBeetle 2 neither are `arm1`/`arm2`: there is no alias. `both` is the
   first two Outputs together (`ARM1` and `ARM2`, or `GPIO 49` and `GPIO 50`).
   An Output on a PCA9685 expander (#444) is named by its address, `pca:0` ..
@@ -2081,7 +2081,7 @@ Updates supported config fields and persists to NVS.
 - drive: `speedLimitMax(0..600)`, `speedPresetSlow(0..600)`, `speedPresetNormal(0..600)`, `speedPresetTurbo(0..600)`, `webDriveTimeoutMs(100..5000)`, `stationary(bool)`
 - servo: `cadenceFloorMs(50..5000)` — the Cadence Floor: the least time, in ms, between two body Outputs the droid starts itself (back to centre, the power-up pass, a pose, a Gesture, a flutter's legs). Steps an author wrote keep their own timing. The default, 450, is the dome's measured figure; nobody has measured the body's. Takes effect from the next move. The Console's `servo.config.cadence-floor` sets the same value. GET also reads `servo.cadenceFloorSource`: `dome` while the value is the dome's figure, `builder` once another has been set. It is a reading, ignored on POST.
 - system: `logLevel(1..4|error|warning|info|debug)` — 1 Error, 2 Warning, 3 Info, 4 Debug; the words are taken as well as the numbers, at every door (the Console's `system.config.log-level` takes the same), and GET always reads the number. Emission changes immediately; the log ring's depth follows the saved level at the next reboot.
-- rc: `rcInputMode(standard_pwm|single_sbus|dual_sbus|elrs|not_fitted)` (`elrs`: an ELRS receiver is fitted and the controller reads no input from it yet; the RC path behaves as with no receiver. `not_fitted`: no Radio Controller at all, a droid driven from the web alone; storing it also clears `rcMember` and sets `enableRcCh1`..`enableRcCh6` false, each unless the same request states it, and the RC path starts nothing, so the SBUS boot lock and the two radio failsafe layers stand down), `rcMember` (the RC Radio: a Radio Controller registry id), `sbusTimeoutMs(50..5000)`, `sbusRecvCh2(bool)`
+- rc: `rcInputMode(standard_pwm|single_sbus|dual_sbus|elrs|not_fitted)` (`elrs`: ELRS is roadmap, so a request that would change the mode to `elrs` is refused (400, `rcInputMode elrs is not read by this firmware yet`); a droid that stored it earlier keeps it, may state it again, and its RC path behaves as with no receiver. `not_fitted`: no Radio Controller at all, a droid driven from the web alone; storing it also clears `rcMember` and sets `enableRcCh1`..`enableRcCh6` false, each unless the same request states it, and the RC path starts nothing, so the SBUS boot lock and the two radio failsafe layers stand down), `rcMember` (the RC Radio: a Radio Controller registry id), `sbusTimeoutMs(50..5000)`, `sbusRecvCh2(bool)`
 - components (bool): `enableDomeEsc`, `enableRcCh1..6`, `enableDrive`, `enableAudio`, `enableProtoR2link`.
   `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2` and `enableAux3` name the
   Outputs' wired ticks, and **every write of one is refused**, `400` with `field`
@@ -2869,7 +2869,7 @@ provisioning/recovery flow (ADR 0015).
 - Success: `200` JSON
 - `apSsid`: SSID currently broadcast by the AP radio. During WiFi
   Provisioning or Network Recovery Mode this is the Default AP Credential's
-  SSID (`protoArtoo`), not necessarily the operator's saved Standalone AP
+  SSID (`protoR2`), not necessarily the operator's saved Standalone AP
   Mode SSID.
 - `staSsid`: the network the client side is joined to; empty while it is
   not connected (`include/web_network_manager.h`).
@@ -2887,7 +2887,7 @@ curl -s http://artoo.local/api/wifi
 #### Example response
 
 ```json
-{"apSsid":"protoArtoo","apIp":"192.168.4.1","staEnabled":true,"staConnected":true,"staIp":"10.0.0.22","staSsid":"HomeNetwork","wifiRssi":-70,"networkRecovery":false}
+{"apSsid":"protoR2","apIp":"192.168.4.1","staEnabled":true,"staConnected":true,"staIp":"10.0.0.22","staSsid":"HomeNetwork","wifiRssi":-70,"networkRecovery":false}
 ```
 
 ### POST /api/wifi
@@ -2922,7 +2922,7 @@ curl -s -X POST http://artoo.local/api/wifi \
 #### Example response
 
 ```json
-{"ok":true,"wifi":{"provisioned":true,"mode":"client","staSsid":"HomeNetwork","staPasswordSet":true,"apSsid":"protoArtoo","apPasswordSet":true,"pendingApply":true,"networkRecovery":false}}
+{"ok":true,"wifi":{"provisioned":true,"mode":"client","staSsid":"HomeNetwork","staPasswordSet":true,"apSsid":"protoR2","apPasswordSet":true,"pendingApply":true,"networkRecovery":false}}
 ```
 
 ### GET /api/serial

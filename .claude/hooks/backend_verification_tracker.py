@@ -10,7 +10,7 @@ import re
 import time
 from pathlib import Path
 
-STATE_FILE = Path("/tmp/protoartoo_backend_verify.json")
+STATE_FILE = Path("/tmp/protor2_backend_verify.json")
 
 
 def _classify_command(cmd: str) -> str:

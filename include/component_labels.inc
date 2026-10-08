@@ -33,7 +33,7 @@ PA_COMPONENT_LABEL(artoo_esp32, enable_arm1, "ARM1")
 PA_COMPONENT_LABEL(artoo_esp32, enable_arm2, "ARM2")
 // The Outputs behind enable_aux1..3 are printed ARM3 / ARM4 / ARM5 on the Artoo
 // PCB (docs/pin_map.md "GPIO Assignment Summary (Artoo-esp32)", the traced board).
-// Until #411 they read AUX1-AUX3 here: protoArtoo's word, on a board that
+// Until #411 they read AUX1-AUX3 here: protoR2's word, on a board that
 // prints another, and Wiring names every wire by what the board prints.
 PA_COMPONENT_LABEL(artoo_esp32, enable_aux1, "ARM3")
 PA_COMPONENT_LABEL(artoo_esp32, enable_aux2, "ARM4")

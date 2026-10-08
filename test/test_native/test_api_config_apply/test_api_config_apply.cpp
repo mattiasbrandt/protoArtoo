@@ -147,14 +147,28 @@ void test_configApply_rcMember_takes_a_radio_and_refuses_anything_else(void) {
     }
 }
 
-// An ELRS receiver is stored like any other receiver type (#369).
-void test_configApply_rcInputMode_accepts_elrs(void) {
+// ELRS is roadmap (#477): its mode is refused as a new answer, by the rule a
+// roadmap radio is refused as rcMember. A droid that stored it while it was
+// selectable re-states it and passes, so its backup comes back whole. The
+// refusal is judged after the Settings loop has written the working copy, as
+// the speed-preset rule is; a refused write commits nothing
+// (configWriteWindow()), so the refusal is what is asserted, not the copy.
+void test_configApply_rcInputMode_refuses_elrs_as_a_new_answer(void) {
     std::map<std::string, std::string> m = {{"rcInputMode", "elrs"}};
     ConfigSnapshot snap = makeDefaultSnap();
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
-    TEST_ASSERT_FALSE(result.error.hasError);
-    TEST_ASSERT_EQUAL_UINT8(RC_INPUT_ELRS, snap.system.rc_input_mode);
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_EQUAL_STRING("rcInputMode elrs is not read by this firmware yet", result.error.message);
+    TEST_ASSERT_EQUAL(ApplyRefusalReason::OutOfRange, result.error.refusal.reason);
+    TEST_ASSERT_EQUAL_STRING("rcInputMode", result.error.refusal.field);
+
+    ConfigSnapshot held = makeDefaultSnap();
+    held.system.rc_input_mode = RC_INPUT_ELRS;
+    ConfigApplyResult heldResult;
+    configApply(makeSource(&m), &held, false, &heldResult);
+    TEST_ASSERT_FALSE(heldResult.error.hasError);
+    TEST_ASSERT_EQUAL_UINT8(RC_INPUT_ELRS, held.system.rc_input_mode);
 }
 
 // No radio fitted is one answer (GLOSSARY.md "Radio Controller", #369): the
@@ -915,7 +929,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_stationary_bool_reject);
     RUN_TEST(test_configApply_rcInputMode_enum_reject);
     RUN_TEST(test_configApply_rcMember_takes_a_radio_and_refuses_anything_else);
-    RUN_TEST(test_configApply_rcInputMode_accepts_elrs);
+    RUN_TEST(test_configApply_rcInputMode_refuses_elrs_as_a_new_answer);
     RUN_TEST(test_configApply_rcInputMode_not_fitted_clears_the_radio_and_every_channel);
     RUN_TEST(test_configApply_protoR2linkWifiPeerIp_invalid_ipv4_reject);
     RUN_TEST(test_configApply_protoR2linkWifiPeerIp_empty_clears);
