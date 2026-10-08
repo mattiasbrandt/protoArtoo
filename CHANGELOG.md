@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `protoArtoo` are documented here.
+All notable changes to `protoR2` are documented here.
 
 Format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning 2.0.0](https://semver.org/).
@@ -200,6 +200,11 @@ a show from the Dashboard.
   page; hover or focus names it.
 
 ### Changed
+- **The project is protoR2.** It was called protoArtoo until v1.3.x. A new or
+  reset controller hosts the setup network `protoR2`, password
+  `protoArtoo123`, and its droid name is `protor2` (`protor2.local` once you
+  let the droid use its name on your network). A droid already set up keeps
+  its name and WiFi.
 - **One firmware per board, whatever sound module you fitted.** A release
   carries one firmware and one filesystem image per board. Pick the sound
   module on Configuration; it takes effect at the next start.
