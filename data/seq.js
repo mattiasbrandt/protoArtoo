@@ -3690,6 +3690,35 @@
     }
   };
 
+  // The tempo levels of the track dropped in (#14): the tempo heard, its half,
+  // two thirds, three halves and double, each with how strongly the track
+  // repeats there against the one heard. Shown while the tempo is the one
+  // measured from that file; the levels are not stored, so a reopened
+  // sequence offers them again when the track is dropped in again.
+  const LEVEL_WORDS = { "1/2": "half", "2/3": "two thirds", "1/1": "heard", "3/2": "three halves", "2/1": "double" };
+  const LEVEL_MARKS = { "1/2": "1/2", "2/3": "2/3", "1/1": "", "3/2": "3/2", "2/1": "2x" };
+  const paintLevels = () => {
+    const row = document.getElementById("seq-editor-levels");
+    const seg = document.getElementById("seq-editor-levels-seg");
+    if (!row || !seg) return;
+    const tempo = editorState.current.tempo;
+    const levels = droppedTrack?.levels || [];
+    const shown = levels.length > 0 && tempo?.source === "analysed" && tempo.hash === droppedTrack.hash;
+    row.classList.toggle("hidden", !shown);
+    if (!shown) {
+      seg.innerHTML = "";
+      return;
+    }
+    seg.innerHTML = levels
+      .map((level, i) => {
+        const key = `${level.num}/${level.den}`;
+        const mark = LEVEL_MARKS[key] ? `${LEVEL_MARKS[key]} ` : "";
+        const fit = `${Math.round(level.strength * 100)}%`;
+        return `<button type="button" data-level="${i}" aria-pressed="${level.bpm === tempo.bpm ? "true" : "false"}" aria-label="${level.bpm} BPM, ${LEVEL_WORDS[key]}, ${fit} as strong">${mark}${Number(level.bpm)} <span class="setting-unit">${fit}</span></button>`;
+      })
+      .join("");
+  };
+
   // The controls that show something the history holds: the tempo on the
   // ruler and the interrupt group in the drawer. Painted by the edit that
   // changes one and by an undo.
@@ -3700,6 +3729,7 @@
     const sourceEl = document.getElementById("seq-editor-tempo-source");
     if (sourceEl) sourceEl.textContent = tempoSourceLabel(tempo);
     document.getElementById("seq-editor-downbeat")?.classList.toggle("hidden", !tempo);
+    paintLevels();
     const group = editorState.current.toggleGroup || "none";
     document.getElementById("seq-editor-toggle")?.querySelectorAll("button").forEach((button) =>
       button.setAttribute("aria-pressed", button.dataset.value === group ? "true" : "false"));
@@ -3858,6 +3888,11 @@
                 <button id="seq-editor-retime" class="seq-act icon-act${seq.tempo ? "" : " hidden"}" type="button">${window.PAUi.actFace("grid", "Retime to the grid")}</button>
               </span>
               <span class="setting-value seq-tempo-source" id="seq-editor-tempo-source">${tempoSourceLabel(seq.tempo)}</span>
+            </div>
+            <div id="seq-editor-levels" class="setting-row hidden">
+              <span class="setting-name">Heard as</span>
+              <span id="seq-editor-levels-seg" class="seg seg-sm" role="group" aria-label="Tempo levels heard in the track"></span>
+              <span class="setting-value"></span>
             </div>
             <p class="hint seq-receipt" id="seq-editor-retime-receipt" role="status"></p>
             <div id="seq-editor-tap" class="setting-row hidden">
@@ -4283,6 +4318,7 @@
         }
         if (held && held.hash === result.hash) {
           tempoFeedback("This is the track the tempo was measured from.");
+          paintLevels();
           updateValidationSummary();
           return;
         }
@@ -4290,6 +4326,15 @@
         setTempo(window.SeqTempo.analyzedTempo(result));
       });
     }
+
+    // A level picked: the same measurement at that tempo. Where beat 1 sits,
+    // and the bar, stay where the builder put them.
+    document.getElementById("seq-editor-levels-seg")?.addEventListener("click", (event) => {
+      const level = droppedTrack?.levels?.[Number(event.target?.closest?.("button[data-level]")?.dataset.level)];
+      const held = editorState.current.tempo;
+      if (!level || !held || level.bpm === held.bpm) return;
+      setTempo({ ...window.SeqTempo.analyzedTempo(droppedTrack), bpm: level.bpm, phase: held.phase, barLen: held.barLen, barPhase: held.barPhase });
+    });
 
     const downbeatInput = document.getElementById("seq-editor-downbeat-beat");
     if (downbeatInput) {

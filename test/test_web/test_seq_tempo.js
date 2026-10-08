@@ -82,6 +82,30 @@ test("the climb after the halving moves one lag at most", () => {
   assert.equal(T.climb(rising, 80, 20, 80), 80, "never past the search window");
 });
 
+// TEMPO LEVELS (#14): the builder picks between the tempo heard and its half,
+// two thirds, three halves and double, so a folded reading is a choice on
+// screen rather than a number that looks right.
+test("an analyzed tempo comes with its levels, the heard one at full strength", () => {
+  const result = load().analyze(clickTrack(120, 20, 0.25));
+  assert.deepEqual([...result.levels.map((l) => `${l.num}/${l.den}`)], ["1/2", "2/3", "1/1", "3/2", "2/1"]);
+  const heard = result.levels[2];
+  assert.equal(heard.bpm, result.bpm);
+  assert.equal(heard.strength, 1);
+  assert.equal(result.levels[0].bpm, Math.round(result.bpm * 5) / 10);
+  assert.equal(result.levels[4].bpm, Math.round(result.bpm * 20) / 10);
+  // A click every half second repeats every second too, and does not repeat
+  // at two thirds of a beat: the half level is strong, the 3/2 weak.
+  assert.ok(result.levels[0].strength > 0.5, `half: ${result.levels[0].strength}`);
+  assert.ok(result.levels[3].strength < result.levels[0].strength, JSON.stringify(result.levels));
+});
+
+test("a track with no steady beat offers no levels", () => {
+  const silent = { sampleRate: 44100, length: 441000, duration: 10, numberOfChannels: 1, getChannelData: () => new Float32Array(441000) };
+  const result = load().analyze(silent);
+  assert.equal(result.bpm, 0);
+  assert.equal(result.levels.length, 0);
+});
+
 // The same one-way door for the tempo itself (FIX 3, #438): the octave halving
 // rounds the lag one frame off the correlation peak and the interpolation will
 // not walk back, so 128 BPM clicks read 126.05. A grid stored at the wrong
