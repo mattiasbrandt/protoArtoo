@@ -270,7 +270,14 @@ jobs:
           # Draft-first so watchers never see a release before all assets are
           # attached. A hyphenated semver tag (e.g. v1.0.0-rc.1) is marked
           # prerelease so it can never become the repo's "latest" release.
-          args=(--title "$TAG" --notes-file release-notes.md --verify-tag --draft)
+          # A feature release may name itself: a `<!-- release-name: ... -->`
+          # line in its CHANGELOG section (hidden when the notes render) makes
+          # the title "v1.4.0 – <name>". Without one, and on every patch, the
+          # title is the bare tag.
+          name=$(sed -n 's/^<!-- release-name: \(.*[^ ]\) *-->$/\1/p' release-notes.md | head -n 1)
+          title="$TAG"
+          [ -z "$name" ] || title="$TAG – $name"
+          args=(--title "$title" --notes-file release-notes.md --verify-tag --draft)
           case "$TAG" in
             *-*) args+=(--prerelease) ;;
           esac
