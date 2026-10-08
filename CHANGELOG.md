@@ -25,11 +25,37 @@ the patch releases, whose notes live on their own GitHub Release.
 
 ## [Unreleased]
 
+<!-- release-name: The modular release -->
 **The modular release.** The first release as protoR2. The droid's web pages
 are rebuilt around what a builder is doing: say what your droid is made of,
 wire it, calibrate it, build routines on a timeline, and run a show from the
 Dashboard. The hardware is a lineup of products to pick from, and the Artoo
 PCB is one Body Controller among them.
+
+<img src="https://github.com/mattiasbrandt/protoArtoo/raw/main/docs/images/readme/dashboard.webp" width="720" alt="The Dashboard: the droid drawn as R2, the sequence chips and STOP">
+
+```diff
+ Before (v1.3.x)                          This release
+- one page per firmware subsystem        + four groups: Drive, Perform, Configure, Maintain
+- sequences as a card list               + one timeline: sets, nesting, tempo, takes, Rehearsal
+- pins kept by hand per board            + Wiring: one parts table named by board silk, printable
+- calibration by typing microseconds     + Servos: drive-and-set dial, pace, release, power-up
+- a Setup page of switches               + guided Setup, then Configuration and Maintenance
+- the Artoo PCB as the product           + Body Controllers, sound modules and drives as products
+- one firmware per sound module          + one firmware per board
+```
+
+### Before you update
+
+| What changes | What to do |
+|---|---|
+| A **reset or new controller** comes up as **protoR2**: setup network `protoR2`, password `protoArtoo123`, droid name `protor2` | Nothing for a droid already set up: it keeps its name and WiFi |
+| **Servo settings move** to the new outputs on the first start: ends, part and servo kept, centre worked out | Take a backup first; going back to an older firmware afterwards is untested |
+| An artoo-esp32 keeps **five** of your sequences, a FireBeetle 2 **ten** | **Export** any beyond that before updating |
+| Outputs are called what the **board prints** (ARM1 to ARM5, GPIO numbers); `aux1` to `aux3` are refused | Scripts and API callers use the new words; RC bindings are untouched |
+| Estop and sleep **let go** of every output instead of closing it | A released part rests where it is |
+| ELRS is **Roadmap**; choosing `elrs` anew is refused | A droid already set to `elrs` keeps it |
+| **One firmware per board**, whatever sound module | Pick the module on Configuration |
 
 ### Added
 
