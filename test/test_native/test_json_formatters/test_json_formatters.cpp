@@ -121,7 +121,7 @@ void test_wifiStatusApSsid_prefers_active_saved_ap_ssid() {
 }
 
 void test_wifiStatusApSsid_falls_back_to_default_when_active_empty() {
-    TEST_ASSERT_EQUAL_STRING("protoArtoo", wifiStatusApSsid(""));
+    TEST_ASSERT_EQUAL_STRING("protoR2", wifiStatusApSsid(""));
 }
 
 // --- formatSerialJson() tests ---

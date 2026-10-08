@@ -192,7 +192,7 @@ const BOARD_LABELS = {
 
   const renderIdentity = (identity) => {
     if (identityNameInput) {
-      identityNameInput.value = normalizeIdentityInput(identity?.droidName || "protoartoo");
+      identityNameInput.value = normalizeIdentityInput(identity?.droidName || "protor2");
     }
     if (identityMdnsCheckbox) {
       identityMdnsCheckbox.checked = Boolean(identity?.mdnsUseName);
@@ -845,7 +845,7 @@ const BOARD_LABELS = {
     updateEnabledSummary();
   });
   updateEnabledSummary();
-  renderIdentity({ droidName: "protoartoo", mdnsUseName: false });
+  renderIdentity({ droidName: "protor2", mdnsUseName: false });
   setIdentityFeedback("Loading the Body Controller's identity…");
   if (window.PAIdentity) receiveIdentity(window.PAIdentity);
   loadFeatures();

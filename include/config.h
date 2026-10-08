@@ -629,20 +629,20 @@ constexpr char NVS_NAMESPACE[] = "proto";
 // them once that row is safely down. Nothing writes them.
 constexpr char NVS_KEY_RETIRED_AUX_LED_PIN[] = "aux_led_pin";
 constexpr char NVS_KEY_RETIRED_AUX_LED_COUNT[] = "aux_led_count";
-constexpr char DROID_NAME_DEFAULT[] = "protoartoo";
+constexpr char DROID_NAME_DEFAULT[] = "protor2";
 constexpr size_t DROID_NAME_MAX_LEN = 32;
 
 // -----------------------------------------------------------------------------
 // WiFi AP
 // -----------------------------------------------------------------------------
-constexpr char WIFI_AP_SSID[] = "protoArtoo";
+constexpr char WIFI_AP_SSID[] = "protoR2";
 constexpr char WIFI_AP_IP[] = "192.168.4.1";
 
 // Default AP Credential (ADR 0015): the documented bootstrap password an
 // Unprovisioned Controller uses for WiFi Provisioning and Network Recovery
 // Mode. Public and shared by design  --  it is a bootstrap credential, not a
 // security boundary  --  and operator-changeable through Device WiFi Settings.
-constexpr char WIFI_DEFAULT_AP_PASSWORD[] = "protoArtoo1";
+constexpr char WIFI_DEFAULT_AP_PASSWORD[] = "protoArtoo123";
 
 // -----------------------------------------------------------------------------
 // WiFi hostname / mDNS
