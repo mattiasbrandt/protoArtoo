@@ -383,24 +383,32 @@ jobs:
             echo "$stray"
             exit 1
           fi
-          if git diff --quiet -- docs/images/readme/; then
-            echo "The pictures from $TAG match the ones on main's history - nothing to commit."
-            exit 0
-          fi
+          # Keep the capture outside the checkout. Each attempt below builds the
+          # commit afresh on main's current tip from these files and never
+          # rebases a binary edit: another release's picture commit can land on
+          # main while this capture runs and change the same files, and a
+          # rebase of one picture onto another stops on a conflict (#480).
+          keep="$RUNNER_TEMP/readme-showcase"
+          rm -rf "$keep"
+          mkdir -p "$keep"
+          cp docs/images/readme/*.png docs/images/readme/*.webp "$keep/"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/images/readme/
-          git commit -m "docs(plan): recapture the README Showcase from $TAG"
-          # The capture took minutes and main may have moved: replay the one
-          # commit on main's tip and push, a few times if main keeps moving.
           for attempt in 1 2 3; do
             git fetch origin main
-            git rebase origin/main
+            git checkout --force --detach origin/main
+            cp "$keep"/* docs/images/readme/
+            if [ -z "$(git status --porcelain --untracked-files=all -- docs/images/readme/)" ]; then
+              echo "The pictures from $TAG match the ones on main - nothing to commit."
+              exit 0
+            fi
+            git add docs/images/readme/
+            git commit -m "docs(plan): recapture the README Showcase from $TAG"
             if git push origin HEAD:main; then
               echo "Pushed the Showcase from $TAG to main."
               exit 0
             fi
-            echo "Push attempt $attempt was refused; main moved, retrying."
+            echo "Push attempt $attempt was refused; main moved, rebuilding the commit on its new tip."
           done
           echo "::error::Could not push the Showcase commit to main after three attempts."
           exit 1
