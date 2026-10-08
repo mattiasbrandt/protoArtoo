@@ -174,8 +174,8 @@ The six CH headers (CH1-CH6) support three mutually exclusive wiring modes:
 | Dual SBUS      | SBUS1 → CH1 (GPIO 15), SBUS2 → CH2 (GPIO 13) | Up to 32  |
 
 The receiver mode is the `rcInputMode` Setting (`rc.inputMode`). Besides the three wiring
-modes it takes `not_fitted` (no Radio Controller: a web-only droid) and `elrs`. ELRS is on the
-Roadmap: the mode can be stored, and the controller reads no input from it yet. Single SBUS
+modes it takes `not_fitted` (no Radio Controller: a web-only droid). ELRS is on the Roadmap:
+`elrs` is refused as a new answer, and a droid that stored it earlier reads no input from it. Single SBUS
 reads CH1 by default; the `sbusRecvCh2` Setting moves it to CH2. A mode change takes effect
 after a restart.
 
