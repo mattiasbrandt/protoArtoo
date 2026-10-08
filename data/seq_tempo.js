@@ -253,7 +253,9 @@
     const levels = heard > 0
       ? LEVELS.map(([num, den]) => {
           const at = Math.round(((bpm * num) / den) * 10) / 10;
-          const strength = Math.round((corrAt((60 * fps) / at) / heard) * 100) / 100;
+          // The tempo heard is the yardstick, so it reads 1 exactly, not
+          // whatever its rounded BPM reads back at.
+          const strength = num === den ? 1 : Math.round((corrAt((60 * fps) / at) / heard) * 100) / 100;
           return { bpm: at, num, den, strength };
         })
       : [];
