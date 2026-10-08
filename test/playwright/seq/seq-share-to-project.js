@@ -86,7 +86,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     await page.waitForFunction(() => window.__openCalls && window.__openCalls.length > 0);
     const url = await page.evaluate(() => window.__openCalls[0]);
     assert(
-      url.includes('github.com/mattiasbrandt/protoArtoo/issues/new'),
+      url.includes('github.com/mattiasbrandt/protoR2/issues/new'),
       `wrong issue host: ${url}`
     );
     assert(url.includes('template=sequence-contribution.md'), `missing template: ${url}`);

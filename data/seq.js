@@ -5097,7 +5097,7 @@
   // Share to project (contribution funnel — ADR 0007)
   // =========================================================================
 
-  const SEQ_REPO_SLUG = "mattiasbrandt/protoArtoo";
+  const SEQ_REPO_SLUG = "mattiasbrandt/protoR2";
 
   // The editor is served over HTTP on the LAN, where navigator.clipboard is
   // often unavailable (secure-context only). Try the async API, then fall back

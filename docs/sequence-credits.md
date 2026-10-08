@@ -12,7 +12,7 @@ comments plus the table below.
 ## Migrated sequences
 
 Community choreographies are migrated on request -- open a
-[Sequence request](https://github.com/mattiasbrandt/protoArtoo/issues/new?template=sequence-request.md),
+[Sequence request](https://github.com/mattiasbrandt/protoR2/issues/new?template=sequence-request.md),
 or, if you built one in the editor, share it from there.
 
 | Sequence | Source project | Origin (URL / commit) | License | Migrated in |

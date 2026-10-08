@@ -12,7 +12,7 @@ you want to change the firmware.
 
 Already running protoR2? You do not need to build anything to update.
 
-1. Open the [latest release](https://github.com/mattiasbrandt/protoArtoo/releases/latest)
+1. Open the [latest release](https://github.com/mattiasbrandt/protoR2/releases/latest)
    and download the two images for your Body Controller:
 
    | Body Controller | Firmware | Filesystem |
@@ -96,8 +96,8 @@ later, and getting back in when you have locked yourself out are in
 ### Build and flash
 
 ```bash
-git clone https://github.com/mattiasbrandt/protoArtoo.git
-cd protoArtoo
+git clone https://github.com/mattiasbrandt/protoR2.git
+cd protoR2
 
 # First time only: OTA address and USB port (writes user.mk, gitignored)
 make setup

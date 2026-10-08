@@ -78,7 +78,7 @@ reset, not a crash). A clean reset has no coredump.
 Symptom: PANIC under load, or OTA failing mid-transfer, or sluggish HTTP. Root
 class on this board is **internal-heap exhaustion** → failed allocation →
 (exceptions-disabled) `abort()` -> PANIC. See issue
-[#8](https://github.com/mattiasbrandt/protoArtoo/issues/8).
+[#8](https://github.com/mattiasbrandt/protoR2/issues/8).
 
 ### Quick read (any build, over HTTP)
 
@@ -752,6 +752,6 @@ only its `--json`).
 - Controller Console: [console.md](console.md), [console-protocol.md](console-protocol.md),
   [console-client.md](console-client.md) (`tools/console_client.py`).
 - WiFi setup, mode switching, recovery: [wifi-provisioning.md](wifi-provisioning.md) (ADR 0015).
-- Heap root-cause + fixes: GitHub issue [#8](https://github.com/mattiasbrandt/protoArtoo/issues/8).
+- Heap root-cause + fixes: GitHub issue [#8](https://github.com/mattiasbrandt/protoR2/issues/8).
 - In-PCB USB flash limitation: [section 3](#3-flashing-constraint-read-before-collecting-usb-evidence) above.
 - ESP-IDF coredump guide: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/core_dump.html>

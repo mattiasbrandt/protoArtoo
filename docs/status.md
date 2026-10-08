@@ -11,8 +11,8 @@ see `CHANGELOG.md`.
 
 | Status item | Current state |
 |---|---|
-| Latest release | [Releases](https://github.com/mattiasbrandt/protoArtoo/releases/latest). A fix release carries no images |
-| Newest images | [`v1.3.0`](https://github.com/mattiasbrandt/protoArtoo/releases/tag/v1.3.0) (2026-09-11): firmware and filesystem images for the artoo-esp32, one per sound module, and for the FireBeetle 2 |
+| Latest release | [Releases](https://github.com/mattiasbrandt/protoR2/releases/latest). A fix release carries no images |
+| Newest images | [`v1.4.0`](https://github.com/mattiasbrandt/protoR2/releases/tag/v1.4.0) (2026-10-08): one firmware and one filesystem image per board, for the artoo-esp32 and the FireBeetle 2 |
 | Body Controllers | Artoo PCB (Supported, Tested); DFRobot FireBeetle 2 ESP32-P4 (Supported; read ["Before you buy one"](spec-sheets/firebeetle2-esp32-p4-spec-sheet.md#before-you-buy-one)) |
 | Web control | Working — pages load reliably, and a controller too busy to serve a page says so and offers a retry instead of hanging |
 | Typing commands | Working — a command console in the dashboard and over a serial cable, same words either way; it still answers when the web pages have gone quiet |

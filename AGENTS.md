@@ -902,7 +902,7 @@ push to `main`. Mechanism and fallbacks: the docstring in
 
 ### Issue tracker
 
-GitHub Issues on `mattiasbrandt/protoArtoo` via `gh`; relationships through the `github-issues` skill. See `docs/agents/issue-tracker.md`.
+GitHub Issues on `mattiasbrandt/protoR2` via `gh`; relationships through the `github-issues` skill. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

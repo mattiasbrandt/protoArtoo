@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and PRDs for this repo live as GitHub issues on `github.com/mattiasbrandt/protoArtoo`. Use the `gh` CLI for all operations.
+Issues and PRDs for this repo live as GitHub issues on `github.com/mattiasbrandt/protoR2`. Use the `gh` CLI for all operations.
 
 ## Conventions
 

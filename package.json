@@ -12,15 +12,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mattiasbrandt/protoArtoo.git"
+    "url": "git+https://github.com/mattiasbrandt/protoR2.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/mattiasbrandt/protoArtoo/issues"
+    "url": "https://github.com/mattiasbrandt/protoR2/issues"
   },
-  "homepage": "https://github.com/mattiasbrandt/protoArtoo#readme",
+  "homepage": "https://github.com/mattiasbrandt/protoR2#readme",
   "devDependencies": {
     "esbuild": "0.28.2",
     "playwright": "^1.63.0"
