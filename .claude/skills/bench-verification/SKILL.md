@@ -372,7 +372,7 @@ protocol.
   or an upload goes in a script: `pane_run.py <log> --script /tmp/<name>.sh`
   (the upload guard matches the command text).
 - **One build machine-wide.** `make` and the slice gate take
-  `/tmp/protoartoo-pio.lock` themselves; run them plainly, never with `flock`
+  `/tmp/protor2-pio.lock` themselves; run them plainly, never with `flock`
   in front, which is refused as a nested take.
 - **Confirm the image before any acceptance run.** `firmwareVersion` must match
   the intended commit; a `-dirty` or stale image invalidates the whole run. If

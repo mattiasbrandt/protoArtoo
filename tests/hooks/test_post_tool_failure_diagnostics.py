@@ -64,7 +64,7 @@ class PostToolFailureDiagnosticsHookTests(unittest.TestCase):
             "tool_input": {"command": "pio run -e protoArtoo -t upload"},
             "error": "Permission denied",
         }
-        proc = self.run_hook(payload, extra_env={"PROTOARTOO_HOOK_PROFILE": "minimal"})
+        proc = self.run_hook(payload, extra_env={"PROTOR2_HOOK_PROFILE": "minimal"})
         self.assertEqual(proc.returncode, 0)
         self.assertEqual(proc.stdout.strip(), "")
 

@@ -6,7 +6,7 @@ import re
 import time
 from pathlib import Path
 
-STATE_FILE = Path("/tmp/protoartoo_backend_verify.json")
+STATE_FILE = Path("/tmp/protor2_backend_verify.json")
 MAX_AGE_SECONDS = 6 * 60 * 60
 REQUIRED = (
     "firmware_build",

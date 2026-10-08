@@ -10,7 +10,7 @@ reaches both). This pause covers local
 `make test`, `make test-web`, the native, web, and mutation stages of
 slice_verify, and a direct `tools/mutation_verify.py` run.
 
-On 2026-11-01 the skip ends by itself. PROTOARTOO_SUITES=1 runs them now.
+On 2026-11-01 the skip ends by itself. PROTOR2_SUITES=1 runs them now.
 
 `--check` exits 0 when the pause is active and 1 when the suites should run,
 so the Makefile can fall through.
@@ -30,12 +30,12 @@ BANNER = (
     "Native tests, web tests, and mutation checks are not run per slice. "
     "A pull request into main still runs the native and web suites in CI "
     "when its files reach them. "
-    "PROTOARTOO_SUITES=1 runs them now."
+    "PROTOR2_SUITES=1 runs them now."
 )
 
 
 def paused(today: date | None = None) -> bool:
-    if os.environ.get("PROTOARTOO_SUITES") == "1":
+    if os.environ.get("PROTOR2_SUITES") == "1":
         return False
     if today is None:
         today = date.today()

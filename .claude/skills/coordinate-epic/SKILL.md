@@ -422,19 +422,19 @@ build a path to X.
 
 Only one PlatformIO build may run on the machine, and the tooling now enforces
 that rather than asking every agent to remember it: `make` and the slice gate
-take `/tmp/protoartoo-pio.lock` themselves (AGENTS.md "The build lock"). Brief
+take `/tmp/protor2-pio.lock` themselves (AGENTS.md "The build lock"). Brief
 workers to run `make build` and the gate **plainly** - do not paste `flock` in
 front, which is now the nested case and is refused rather than waited on. For a
 contiguous multi-command window, brief
-`PROTOARTOO_PIO_LOCK_HELD=1 flock /tmp/protoartoo-pio.lock <commands>`.
+`PROTOR2_PIO_LOCK_HELD=1 flock /tmp/protor2-pio.lock <commands>`.
 
-`cat /tmp/protoartoo-pio.lock` names the current or last holder and the chip
+`cat /tmp/protor2-pio.lock` names the current or last holder and the chip
 target it was building. That is where to start when an image size moves.
 
 **The pio lock covers pio, and nothing else; the gate's web stages have their
 own lock (#405).** `tools/slice_verify.py` passes `lock=True` only at its
 PlatformIO call sites. `run_web_tests()` and the mutation stage hold
-`/tmp/protoartoo-webtest.lock` instead - a separate lock, never nested in the
+`/tmp/protor2-webtest.lock` instead - a separate lock, never nested in the
 pio one - so two workers' gates run their web suites and mutation stages one
 after the other rather than side by side. A hand-typed `make test-web` takes
 neither lock.

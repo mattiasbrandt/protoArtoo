@@ -20,7 +20,7 @@
 // runs in the runner and in every child. A child (NODE_TEST_CONTEXT set) owns
 // exactly one test file, process.argv[1], and writes its opens to a fragment
 // file on exit. The runner writes nothing of its own; on exit it merges the
-// fragments into $PROTOARTOO_LOAD_TRACE:
+// fragments into $PROTOR2_LOAD_TRACE:
 //
 //   { "test/test_web/test_foo.js": ["data/page_bootstrap.js", "data/shell.js"] }
 //
@@ -30,14 +30,14 @@
 // It must not change what it measures: no output on stdout or stderr (node
 // relays a child's stderr into the TAP stream as comments), no change to exit
 // codes, and a read it cannot attribute is dropped rather than thrown on. With
-// PROTOARTOO_LOAD_TRACE unset it does nothing at all.
+// PROTOR2_LOAD_TRACE unset it does nothing at all.
 // =============================================================================
 "use strict";
 
 const fs = require("fs");
 const path = require("path");
 
-const outPath = process.env.PROTOARTOO_LOAD_TRACE;
+const outPath = process.env.PROTOR2_LOAD_TRACE;
 
 if (outPath) {
   const root = process.cwd();

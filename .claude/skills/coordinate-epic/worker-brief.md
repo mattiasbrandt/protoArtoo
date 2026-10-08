@@ -39,7 +39,7 @@ that a route installed after mount needs `page.reload()` because
 `python3 tools/css_where.py <selector>`.
 
 SUITES PAUSED THROUGH 2026-10-31 (#464)
-This overrides every later line that tells you to run `make test`, `make test-web`, `pio test`, `node --test`, `tools/mutation_verify.py`, or to add a test or a mutation patch. Do not run them. Do not write them. `make test` and `make test-web` return immediately and that is correct. A slice is accepted when a second agent has read the production diff. One `make build` when something compiles. The existing tests stay in the tree and run in CI when a pull request into main opens. Do not set `PROTOARTOO_SUITES=1`. On 2026-11-01 the pause ends by itself.
+This overrides every later line that tells you to run `make test`, `make test-web`, `pio test`, `node --test`, `tools/mutation_verify.py`, or to add a test or a mutation patch. Do not run them. Do not write them. `make test` and `make test-web` return immediately and that is correct. A slice is accepted when a second agent has read the production diff. One `make build` when something compiles. The existing tests stay in the tree and run in CI when a pull request into main opens. Do not set `PROTOR2_SUITES=1`. On 2026-11-01 the pause ends by itself.
 
 THE TICKET IS YOUR SOURCE
 You are building a decision somebody already took, so everything it turned on

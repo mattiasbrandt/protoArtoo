@@ -5,7 +5,7 @@ AGENTS.md: only one PlatformIO build may run on this machine at a time. Two
 runs in one worktree corrupt SCons state and return a plausible wrong answer,
 and a single core dir is not safe against concurrent package installs either.
 That rule used to be enforced only by every agent remembering to type
-`flock /tmp/protoartoo-pio.lock` in front of every command. Every `pio`
+`flock /tmp/protor2-pio.lock` in front of every command. Every `pio`
 invocation in the Makefile and in tools/slice_verify.py goes through this
 module instead, so the rule holds without anyone remembering it.
 
@@ -19,21 +19,21 @@ Two entry points, one mechanism:
            mutation stage do not block other agents.
 
 fcntl.flock() and flock(1) are both flock(2), so a hand-typed
-`flock /tmp/protoartoo-pio.lock ...` still serialises against both.
+`flock /tmp/protor2-pio.lock ...` still serialises against both.
 
 Nesting is the trap
 -------------------
 flock(2) locks belong to an *open file description*: a second open() of the
 same path is a different description, so an inner acquire waits on the outer
 one, and flock(2) does not detect the deadlock (flock(2) NOTES). The old
-convention `flock /tmp/protoartoo-pio.lock make build` is exactly that shape,
+convention `flock /tmp/protor2-pio.lock make build` is exactly that shape,
 so this module has to recognise a nest instead of queueing behind itself. Two
 signals, checked in this order:
 
-  1. PROTOARTOO_PIO_LOCK_HELD=1 — the caller states it already holds the lock.
+  1. PROTOR2_PIO_LOCK_HELD=1 — the caller states it already holds the lock.
      It is set for every child process while we hold it, and it is the
      documented escape hatch for a contiguous multi-command window:
-     `PROTOARTOO_PIO_LOCK_HELD=1 flock /tmp/protoartoo-pio.lock <commands>`.
+     `PROTOR2_PIO_LOCK_HELD=1 flock /tmp/protor2-pio.lock <commands>`.
   2. An inherited open fd on the lock file. flock(1) does not close its fd
      before exec'ing the command — that is what its -o flag is for — so a
      process started under `flock <lockfile> <command>` inherits an fd
@@ -80,10 +80,10 @@ a lock-wait timeout, 5 for a penv on the wrong PlatformIO Core, 127 when the
 command cannot be executed.
 
 Environment:
-  PROTOARTOO_PIO_LOCK       lock file path (default /tmp/protoartoo-pio.lock)
-  PROTOARTOO_PIO_LOCK_HELD  "1" when the caller already holds the lock
-  PROTOARTOO_PIO_LOCK_WAIT  seconds to wait for the lock (default 3600)
-  PROTOARTOO_LOCK_OWNER     optional free-text context for the record
+  PROTOR2_PIO_LOCK       lock file path (default /tmp/protor2-pio.lock)
+  PROTOR2_PIO_LOCK_HELD  "1" when the caller already holds the lock
+  PROTOR2_PIO_LOCK_WAIT  seconds to wait for the lock (default 3600)
+  PROTOR2_LOCK_OWNER     optional free-text context for the record
 """
 
 from __future__ import annotations
@@ -100,11 +100,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-DEFAULT_LOCK_PATH = "/tmp/protoartoo-pio.lock"
-LOCK_PATH_ENV = "PROTOARTOO_PIO_LOCK"
-HELD_ENV = "PROTOARTOO_PIO_LOCK_HELD"
-WAIT_ENV = "PROTOARTOO_PIO_LOCK_WAIT"
-OWNER_ENV = "PROTOARTOO_LOCK_OWNER"
+DEFAULT_LOCK_PATH = "/tmp/protor2-pio.lock"
+LOCK_PATH_ENV = "PROTOR2_PIO_LOCK"
+HELD_ENV = "PROTOR2_PIO_LOCK_HELD"
+WAIT_ENV = "PROTOR2_PIO_LOCK_WAIT"
+OWNER_ENV = "PROTOR2_LOCK_OWNER"
 GIT_TIMEOUT = 10
 # Above the longest legitimate wait: a gate run holds the lock across a full
 # native suite and a full firmware build, and several agents can be queued
@@ -148,7 +148,7 @@ def held_env_for(path: Path) -> str:
     if path == lock_path():
         return HELD_ENV
     stem = "".join(ch if ch.isalnum() else "_" for ch in path.name.upper())
-    return f"PROTOARTOO_LOCK_HELD_{stem}"
+    return f"PROTOR2_LOCK_HELD_{stem}"
 
 
 # build_lock()'s `lock_path` parameter shadows lock_path() inside it.
@@ -548,7 +548,7 @@ def build_lock(
 
     `command` is what the caller is about to run; it is recorded in the lock
     file so a blocked agent can see what it is waiting on. A no-op when the
-    caller already holds the lock (PROTOARTOO_PIO_LOCK_HELD), and a loud
+    caller already holds the lock (PROTOR2_PIO_LOCK_HELD), and a loud
     failure when it detects that an outer `flock(1)` holds it without having
     said so.
 
@@ -557,7 +557,7 @@ def build_lock(
 
     `lock_path` takes a different lock file with the same mechanism; the
     default is the pio lock. It is a separate lock, not a nested one: its held
-    marker is held_env_for(lock_path), never PROTOARTOO_PIO_LOCK_HELD.
+    marker is held_env_for(lock_path), never PROTOR2_PIO_LOCK_HELD.
     """
     path = lock_path if lock_path is not None else _pio_lock_path()
     is_pio_lock = path == _pio_lock_path()

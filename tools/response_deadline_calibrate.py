@@ -210,7 +210,7 @@ def upload_rejection_probe(controller: str) -> dict[str, Any]:
     is actually sent -- the connection is closed rather than delivering the
     bytes the header promised, which is what keeps this cheap.
     """
-    boundary = "----protoartooCalibrationProbe"
+    boundary = "----protor2CalibrationProbe"
     preamble = (
         f"--{boundary}\r\n"
         'Content-Disposition: form-data; name="file"; filename="calibration.bin"\r\n'

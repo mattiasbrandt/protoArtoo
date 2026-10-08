@@ -468,7 +468,7 @@ fine. Do not wait for a window or schedule around anyone.
 
 This rule is enforced, not remembered: every `pio` invocation in the Makefile,
 and every pio phase of `tools/slice_verify.py`, goes through
-`tools/pio_lock.py`, which takes `/tmp/protoartoo-pio.lock` and waits there
+`tools/pio_lock.py`, which takes `/tmp/protor2-pio.lock` and waits there
 until it is free.
 
 So run `make build`, `make test` and the slice gate **plainly. Do not put
@@ -482,10 +482,10 @@ For a contiguous window across several commands, which a both-chip-target
 ticket wants so the alternation is not interleaved:
 
 ```
-PROTOARTOO_PIO_LOCK_HELD=1 flock /tmp/protoartoo-pio.lock <commands>
+PROTOR2_PIO_LOCK_HELD=1 flock /tmp/protor2-pio.lock <commands>
 ```
 
-`PROTOARTOO_PIO_LOCK_HELD=1` tells everything underneath that the lock is
+`PROTOR2_PIO_LOCK_HELD=1` tells everything underneath that the lock is
 already held, so nothing inside tries to take it again. A bare `pio` you type
 yourself is still outside the lock — one more reason the dual-target rule above
 routes through `make`; run `python3 tools/pio_lock.py pio run -e <env>` when you
@@ -493,10 +493,10 @@ must call pio directly.
 
 The lock file says who holds it. Every field is derived, never passed in — pid,
 worktree, branch, target, command, timestamp, plus optional
-`PROTOARTOO_LOCK_OWNER` free text — written the moment the lock is taken and
+`PROTOR2_LOCK_OWNER` free text — written the moment the lock is taken and
 deliberately **left behind on release**: the stale record is what tells the next
 agent which chip target last touched the shared framework packages, which is
-where a suspect image size is explained. `cat /tmp/protoartoo-pio.lock` reads it
+where a suspect image size is explained. `cat /tmp/protor2-pio.lock` reads it
 without taking the lock, and a build that gives up waiting prints it. The pid
 names the last holder, not necessarily a live process — check with `kill -0`.
 
@@ -513,7 +513,7 @@ dist, #473). Run that line and nothing else, then re-run the build. Never `pacma
 
 Operator experiment, started 2026-10-02. Through 2026-10-31 the native suite, the web suite, and mutation checks do not run per slice, and a missing run is not a reason to reject a slice. `make test` and `make test-web` print the pause and return. `tools/slice_verify.py` skips those stages, including the base-suite run. `tools/mutation_verify.py` returns without applying patches. The test files stay. CI still runs the native suite and the web suite on a pull request into `main` when its files reach them: Verification classifies the pull request's whole range, so the epic's closure pull request reaches both.
 
-This overrides, until 2026-11-01, the "never skip verification" bullet above, the one-test floor, the worker-slice-gate suite rows, and "add `make test`" in Default completion evidence below. It does not override the build, a second agent's read of the production diff, or the safety-critical rules. Do not add tests or mutation patches to stand in for the paused runs. `PROTOARTOO_SUITES=1` runs the suites anyway; a worker does not set it. On 2026-11-01 the skip ends by itself (`tools/suite_pause.py`).
+This overrides, until 2026-11-01, the "never skip verification" bullet above, the one-test floor, the worker-slice-gate suite rows, and "add `make test`" in Default completion evidence below. It does not override the build, a second agent's read of the production diff, or the safety-critical rules. Do not add tests or mutation patches to stand in for the paused runs. `PROTOR2_SUITES=1` runs the suites anyway; a worker does not set it. On 2026-11-01 the skip ends by itself (`tools/suite_pause.py`).
 
 ## Verification and Reporting
 

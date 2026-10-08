@@ -63,7 +63,7 @@ def _patched_espota_main(espota_path: Path, transfer_timeout: int):
     patched = source.replace(needle, replacement, 1)
 
     namespace = {
-        "__name__": "__protoartoo_patched_espota__",
+        "__name__": "__protor2_patched_espota__",
         "__file__": str(espota_path),
     }
     exec(compile(patched, str(espota_path), "exec"), namespace)
