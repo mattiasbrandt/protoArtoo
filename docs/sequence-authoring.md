@@ -251,6 +251,13 @@ A sequence may carry a **tempo** (`tempo` at the top level, ADR 0058): `bpm`
 1..16, default 4), `barPhase`, `duration` (ms the track runs) and `hash` (the
 analysed file's fingerprint; the analysed route only).
 
+An analysed track is offered at five **levels** under the tempo, as **Heard
+as**: the tempo heard, its half, two thirds, three halves and double, each with
+how strongly the track repeats there against the one heard. A beat tracker
+cannot tell a tempo from its half or double, so pick the one that matches the
+music; beat 1 stays where it was. The levels are not saved. Drop the track in
+again to see them again.
+
 Any step may then carry `beat` (the whole beat it starts on, 0..1200) beside its
 `t`; the beat wins, and changing the BPM moves every step on a beat and leaves
 every step placed in milliseconds where it was. A dome turn or a body flutter may
