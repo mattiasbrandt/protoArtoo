@@ -25,9 +25,11 @@ the patch releases, whose notes live on their own GitHub Release.
 
 ## [Unreleased]
 
-The droid's web pages, rebuilt around what a builder is doing: say what your
-droid is made of, wire it, calibrate it, build routines on a timeline, and run
-a show from the Dashboard.
+**The modular release.** The first release as protoR2. The droid's web pages
+are rebuilt around what a builder is doing: say what your droid is made of,
+wire it, calibrate it, build routines on a timeline, and run a show from the
+Dashboard. The hardware is a lineup of products to pick from, and the Artoo
+PCB is one Body Controller among them.
 
 ### Added
 
