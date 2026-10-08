@@ -1,4 +1,4 @@
-# tools/requirements.txt — developer tools for protoArtoo.
+# tools/requirements.txt — developer tools for protoR2.
 # Install with: pip install -r tools/requirements.txt
 #
 # pyserial: required for tools/console_client.py (make monitor).

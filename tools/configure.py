@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""First-run setup wizard for protoArtoo.
+"""First-run setup wizard for protoR2.
 
 Modes:
   - Default (no flags): writes user.mk with local build overrides only.
@@ -402,7 +402,7 @@ def run() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="protoArtoo local setup wizard")
+    parser = argparse.ArgumentParser(description="protoR2 local setup wizard")
     parser.add_argument(
         "--wifi",
         action="store_true",

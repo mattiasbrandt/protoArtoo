@@ -19,7 +19,7 @@ list here - from the two manifests that already declare the components whose
 naming is the board's:
 
 - `include/board_outputs.h`, `BOARD_OUTPUTS[]` - the Outputs. "An Output is
-  called by what its board prints beside its pin ... There is no protoArtoo-wide
+  called by what its board prints beside its pin ... There is no protoR2-wide
   name for an Output" (GLOSSARY.md "Output Address", ADR 0033 Amendment
   2026-09-19). For an Output the label IS the name, so copy may not carry one.
 - `include/board_lanes.inc` - the Board Lanes. The lane is "an optional clause

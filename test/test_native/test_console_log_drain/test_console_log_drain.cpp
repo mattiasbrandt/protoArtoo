@@ -127,9 +127,9 @@ void test_a_line_logged_before_the_bind_reaches_the_wire_directly(void) {
     fixtureSetUp(LOG_RING_MAX_LINES);
     serialStubReset();
 
-    paLogLine("[I][main] protoArtoo boot begin");
+    paLogLine("[I][main] protoR2 boot begin");
 
-    TEST_ASSERT_TRUE_MESSAGE(wireIndexOf("protoArtoo boot begin") >= 0,
+    TEST_ASSERT_TRUE_MESSAGE(wireIndexOf("protoR2 boot begin") >= 0,
                              "a pre-bind log line must still reach the wire directly");
     TEST_ASSERT_EQUAL_INT_MESSAGE(
         0, SerialStub::availableForWriteCallCount,

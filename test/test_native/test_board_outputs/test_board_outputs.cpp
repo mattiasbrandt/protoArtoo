@@ -42,7 +42,7 @@ void test_a_label_with_a_space_is_matched_without_regard_to_case_or_spaces() {
     TEST_ASSERT_NULL(boardOutputForWord("firebeetle2", "gpio 499"));
 }
 
-// protoArtoo's old words are nobody's alias. On the Artoo, ARM1 and ARM2 are
+// protoR2's old words are nobody's alias. On the Artoo, ARM1 and ARM2 are
 // still what the board prints; the three it printed ARM3..ARM5 all along are no
 // longer reachable as aux1..aux3. On the FireBeetle 2 none of them is a word.
 void test_the_old_words_name_only_what_a_board_prints() {

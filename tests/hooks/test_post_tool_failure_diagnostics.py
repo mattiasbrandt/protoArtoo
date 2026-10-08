@@ -31,7 +31,7 @@ class PostToolFailureDiagnosticsHookTests(unittest.TestCase):
         payload = {
             "hook_event_name": "PostToolUseFailure",
             "tool_name": "Bash",
-            "tool_input": {"command": "pio run -e protoArtoo -t upload"},
+            "tool_input": {"command": "pio run -e protoR2 -t upload"},
             "error": "Permission denied by project policy",
         }
         proc = self.run_hook(payload)
@@ -61,7 +61,7 @@ class PostToolFailureDiagnosticsHookTests(unittest.TestCase):
         payload = {
             "hook_event_name": "PostToolUseFailure",
             "tool_name": "Bash",
-            "tool_input": {"command": "pio run -e protoArtoo -t upload"},
+            "tool_input": {"command": "pio run -e protoR2 -t upload"},
             "error": "Permission denied",
         }
         proc = self.run_hook(payload, extra_env={"PROTOR2_HOOK_PROFILE": "minimal"})

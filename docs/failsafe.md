@@ -1,6 +1,6 @@
 # Failsafe System
 
-protoArtoo tracks five Failsafe Layers for drive control. Each one can hold the
+protoR2 tracks five Failsafe Layers for drive control. Each one can hold the
 droid out of drive on its own, and the droid stays out of drive until every
 active layer has cleared (`include/failsafe_gate.h`). The design goal is
 simple: loss of control input, stalled firmware, or an operator stop must all
@@ -33,7 +33,7 @@ also stand down: a lost or stale PWM signal zeroes the RC drive command
   `failsafeSource=FS_SBUS_HW`
 
 This is the fastest RC-side safety path. If the receiver itself detects radio
-loss, protoArtoo immediately zeros drive output on the next decoded frame.
+loss, protoR2 immediately zeros drive output on the next decoded frame.
 
 Diagnostics surfaces also report the current SBUS hardware-failsafe
 bit per source in `GET /api/rc` and `event: rc`.
@@ -127,7 +127,7 @@ a serious safety event.
 ## Foot Drive backstop - hoverboard UART timeout
 
 This is not a Failsafe Layer the firmware tracks. It belongs to one Foot Drive,
-the hoverboard with hacked firmware, and runs outside protoArtoo:
+the hoverboard with hacked firmware, and runs outside protoR2:
 
 - Source: hoverboard motor controller firmware
 - Trigger: hoverboard stops receiving valid UART frames for 800 ms (EFeru
@@ -135,7 +135,7 @@ the hoverboard with hacked firmware, and runs outside protoArtoo:
 - Result: until then the wheels keep turning on the last frame; then EFeru
   coasts and RoboDurden soft-brakes, independently of the Body Controller
 
-protoArtoo supports it by following the zero-frame rule: it never goes silent
+protoR2 supports it by following the zero-frame rule: it never goes silent
 intentionally. Even when stopped, it keeps transmitting zero commands.
 
 ## Boot safety defaults
@@ -171,7 +171,7 @@ Pins per Body Controller (`include/config.h`, full list in
 
 ## Real-Time / Core Pinning Contract
 
-protoArtoo runs on dual-core processors (ESP32 classic or ESP32-P4). Real-time
+protoR2 runs on dual-core processors (ESP32 classic or ESP32-P4). Real-time
 drive control and SBUS input processing are pinned to Core 1 to avoid
 contention with WiFi, web API, and housekeeping tasks.
 

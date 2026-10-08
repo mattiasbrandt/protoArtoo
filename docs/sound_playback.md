@@ -1,4 +1,4 @@
-# protoArtoo - Audio System Reference
+# protoR2 - Audio System Reference
 
 The body controller is the **sole audio source** for the droid. All audio commands -
 from RC input, the web API, `$` lines arriving over protoR2link, or mood presets - route through the
@@ -143,7 +143,7 @@ single-track binary modules:
 
 **Protocol:** ASCII commands, `\n` terminated, with ACK responses from the board.
 
-**Baud rate:** CHIRP defaults to 115200 but is configurable. The protoArtoo
+**Baud rate:** CHIRP defaults to 115200 but is configurable. The protoR2
 driver talks to it at 9600 on both Body Controllers, so set `#BAUD_RATE 9600`
 in `CHIRP.INI` on the SD root.
 
@@ -153,7 +153,7 @@ Required `CHIRP.INI` settings:
 
 | Key | Required value | Purpose |
 |---|---|---|
-| `#BAUD_RATE` | `9600` | Must match the protoArtoo driver's rate |
+| `#BAUD_RATE` | `9600` | Must match the protoR2 driver's rate |
 | `#BANK1_PAGE` | `A` (board default) | Selects active page for Bank 1 vocals |
 | `#USE_FLASH_BANK1` | write it explicitly | Flash sync for fast Bank 1 access; leave it off if Bank 1 exceeds 14 MB |
 
@@ -168,7 +168,7 @@ Alternative baud-rate method (no SD card edit): hold **Prev** and press
 That is the firmware's order (`CHIRP_Audio.ino`); the upstream README lists the
 three rates in a different one.
 
-**protoArtoo driver mapping:**
+**protoR2 driver mapping:**
 
 | `AudioDriver` call | CHIRP command | Notes |
 |---|---|---|
@@ -220,7 +220,7 @@ idle), *maybe a vocal*, or *the Background Track* - and works by these rules
   `PLAY` while a Background Track is held, some other stream must be idle by
   proof; if none is, the vocal started longest ago is stopped first and the new
   one plays. The Background Track is never the one stopped. "Longest ago" is the
-  order protoArtoo sent them in, so the stream stopped may already have gone
+  order protoR2 sent them in, so the stream stopped may already have gone
   quiet on its own.
 - **Track Stop** (Bounded Audio teardown, `sound.action.track-stop`) stops every
   stream but the Background Track's. **Quiet**, Sleep Mode entry and Sound
@@ -301,7 +301,7 @@ See the upstream CHIRP examples and folder conventions in the CHIRP project docs
 #### Status queries
 
 CHIRP supports live status queries at any time, including active playback. The
-protoArtoo CHIRP driver queries automatically every 10 seconds, so no operator
+protoR2 CHIRP driver queries automatically every 10 seconds, so no operator
 poll action is required. On artoo-esp32 the replies arrive on protoR2link's
 UART controller, so the query and the catalog refresh are skipped while
 protoR2link holds it, and the Sound page says so; on
@@ -320,7 +320,7 @@ What those two rows mean here:
   its storage, and Bank 1 lives on onboard flash while Banks 2–6 live on the
   card, so the driver states that arrangement rather than querying it.
 - **Current track** is the catalog entry the module says it is *playing*, not the
-  last index protoArtoo asked for. It is 0 after Stop, and 0 whenever the
+  last index protoR2 asked for. It is 0 after Stop, and 0 whenever the
   reported path does not identify exactly one catalog entry — unidentified while
   playing is honest; naming a sound that already stopped is not.
 
@@ -364,7 +364,7 @@ in the community. BetterDuino, SHADOW_MD, and Padawan360 all treat it as their
 default. It uses a VS1063 audio codec with a simple 2-byte binary serial protocol.
 
 **Baud rate:** 9600 (community standard). Factory default is 38400, so a board
-out of the box will not answer protoArtoo. Configure it by putting a file named
+out of the box will not answer protoR2. Configure it by putting a file named
 `MP3TRIGR.INI` in the SD card root containing one line:
 
 ```
@@ -398,7 +398,7 @@ Community R2 track bank assignments (source-verified: BetterDuino, SHADOW_MD):
 | 254 | Silent / blank | Stop workaround track |
 | 255 | Startup sound | `snd_startup` = 255 |
 
-All protoArtoo Named Track defaults match this layout with no remapping needed.
+All protoR2 Named Track defaults match this layout with no remapping needed.
 
 #### Wire protocol
 
@@ -410,7 +410,7 @@ All protoArtoo Named Track defaults match this layout with no remapping needed.
 | `'S'+'1'` | Query SD track count | Response: `=NNN\r\n` (strip `=` before parsing) |
 | `'O'` | Toggle play/pause | Not used directly by driver |
 
-**protoArtoo driver mapping:**
+**protoR2 driver mapping:**
 
 | `AudioDriver` call | Wire command | Notes |
 |---|---|---|
@@ -426,7 +426,7 @@ All protoArtoo Named Track defaults match this layout with no remapping needed.
 #### Volume scaling (VS1063 register is inverted)
 
 The register accepts 0–255 (0 = loudest). The vendor guide's useful range is
-0–64; values much above that are inaudible. protoArtoo maps the operator's
+0–64; values much above that are inaudible. protoR2 maps the operator's
 0–30 slider onto that audible span (#396):
 
 - vol=0 → nativeVol=64 (vendor floor)

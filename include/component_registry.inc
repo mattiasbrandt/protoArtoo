@@ -54,7 +54,7 @@
 //                 drives a Sabertooth under Foot Drive and a SyRen under Dome
 //                 Rotation from one implementation (GLOSSARY.md "Component
 //                 Protocol"). `none` is the Body Controller's: it hosts
-//                 protoArtoo rather than being driven by it.
+//                 protoR2 rather than being driven by it.
 //   status        COMPONENT_STATUS_SUPPORTED (implemented and drivable) or
 //                 COMPONENT_STATUS_ROADMAP (intended, not built). Two values,
 //                 and "might" is deliberately not one of them (#303).
@@ -124,8 +124,8 @@ PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_FOOT_DRIVE,            "foot_drive",   
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_SOUND,                 "sound",                 "Sound",                 "snd_member")
 
 // -----------------------------------------------------------------------------
-// Body Controller -- the board hosting protoArtoo. "more to come"; the category
-// is open (#303). Neither row is driven by protoArtoo, so neither declares a
+// Body Controller -- the board hosting protoR2. "more to come"; the category
+// is open (#303). Neither row is driven by protoR2, so neither declares a
 // protocol: the running image IS the answer to which one is fitted, which is
 // why `included` tests PA_BOARD rather than a capability.
 // -----------------------------------------------------------------------------

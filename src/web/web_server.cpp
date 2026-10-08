@@ -1,7 +1,7 @@
 // =============================================================================
 // src/web/web_server.cpp
 //
-// WiFi and HTTP server bootstrap for protoArtoo.
+// WiFi and HTTP server bootstrap for protoR2.
 // =============================================================================
 
 #include "../../include/web_server.h"
@@ -54,7 +54,7 @@
 
 // src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
 // compile-time WiFi defaults. It is never required to compile or boot - public
-// release binaries (protoArtoo_chirp, protoArtoo_mp3trigger) ship without it and
+// release binaries ship without it and
 // boot into WiFi Provisioning via wifiDecideBootPosture() instead.
 #if __has_include("secrets.h")
 #include "secrets.h"

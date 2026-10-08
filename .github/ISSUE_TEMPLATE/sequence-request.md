@@ -1,6 +1,6 @@
 ---
 name: Sequence request
-about: Ask us to bring a choreography from another R2 project to protoArtoo
+about: Ask us to bring a choreography from another R2 project to protoR2
 labels: "dome, feature request"
 ---
 
@@ -14,12 +14,12 @@ Marcduino sketch, a video clip...). A link to the source is a big help.
 ## What does it do? ✨
 
 Describe the gesture: panels, dome motion, sound, holos/logics -- and especially how the
-sound and motion line up. That sync is protoArtoo's whole reason for owning sequences.
+sound and motion line up. That sync is protoR2's whole reason for owning sequences.
 
 ## Notes
 
-- We migrate sequences into the firmware ourselves (translated to protoArtoo's panels and
+- We migrate sequences into the firmware ourselves (translated to protoR2's panels and
   sounds, then reviewed), so a rough description is plenty.
-- If it is close to something protoArtoo already does, we may pass -- novel choreographies
+- If it is close to something protoR2 already does, we may pass -- novel choreographies
   are the goal.
 - Source license / attribution info is welcome if you know it.

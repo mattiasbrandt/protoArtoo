@@ -310,7 +310,7 @@ Row reassignment is bounded by the spec sheet's suitability taxonomy, not free e
 
 - **P2** -- any GPIO via the matrix, usable without restriction. Move these freely.
 - **P1** -- fixed IO MUX pins, or pins with peripheral-specific hardware (the GPIO32/33 I3C pair).
-  Reassignable here only because protoArtoo does not use I3C.
+  Reassignable here only because protoR2 does not use I3C.
 - **P3** -- usable, but conflicts with an important function: strapping (GPIO34-GPIO38),
   JTAG (GPIO2-GPIO5), UART0 (GPIO37/GPIO38), USB Serial/JTAG (GPIO24/GPIO25). Several production
   pins already sit here deliberately; moving something *onto* a P3 pin needs the conflict understood
@@ -342,8 +342,8 @@ The other connectors, with their silkscreen labels:
 | 29 | `SPI` block, pin `29/MO` | SBUS receiver #2 (dome) | RMT | MOSI | P2 unimpeachable; SPI header |
 | 30 | `SPI` block, pin `30/MI` | RC channel #3 | GPIO | MISO | P2 unimpeachable; SPI header |
 | 31 | main field, row `31` | RC channel #4 | GPIO | SS | P2 unimpeachable; spec sheet "best clean pin in <=36 range" |
-| 32 | main field, row `32` | RC channel #5 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
-| 33 | main field, row `33` | RC channel #6 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
+| 32 | main field, row `32` | RC channel #5 | GPIO | — | P1 (reassignable, protoR2 does not use I3C) |
+| 33 | main field, row `33` | RC channel #6 | GPIO | — | P1 (reassignable, protoR2 does not use I3C) |
 | 34 | main field, row `34` | Audio module TX (UART3) | UART3 | — | P3 strapping (JTAG source); hardware UART via GPIO matrix (#254) |
 | 36 | main field, row `36` | Audio module RX (UART3) | UART3 | — | P3 strapping (ROM print); audio's own controller, not shared (#254) |
 | 49 | main field, row `49` | Servo output GPIO 49 (left/top arm) | LEDC PWM | A5 (code alias; nothing is printed on the field) | LDO caution (VDD_IO_6); ADC2_CHANNEL0 |
@@ -444,9 +444,9 @@ wanted; it is the evidence that exists.
 ## artoo.uk Hardware Reference
 
 The artoo.uk manual GPIO assignments all match the PCB trace. Two labels differ from
-protoArtoo convention:
+protoR2 convention:
 
-| artoo.uk label     | GPIO(s) | artoo.uk description    | protoArtoo label | Note |
+| artoo.uk label     | GPIO(s) | artoo.uk description    | protoR2 label | Note |
 |--------------------|---------|-------------------------|------------------|------|
 | Arm 1 (Top)        | 23      | Left utility arm        | ARM1             | — |
 | Arm 2 (Bottom)     | 5       | Right utility arm       | ARM2             | — |

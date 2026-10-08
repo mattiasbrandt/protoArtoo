@@ -255,7 +255,7 @@
   // The dome, top-down
   //
   // The vendored MK4 map (window.DOME_PANEL_MAP_SVG) is the ONE copy of the
-  // dome's geometry protoArtoo carries, and tools/check_dome_panel_drift.py
+  // dome's geometry protoR2 carries, and tools/check_dome_panel_drift.py
   // holds it against the dome's own map. So this reads its pieces out of that
   // string rather than keeping a second copy that nothing checks, and redraws
   // them in the body's line language.

@@ -1,6 +1,6 @@
 # Project Status
 
-protoArtoo is open-source ESP32 body-controller firmware for MK4 astromech droids.
+protoR2 is open-source ESP32 body-controller firmware for MK4 astromech droids.
 This page gives builders and operators a plain-language snapshot of what's ready
 to use and what isn't, yet.
 

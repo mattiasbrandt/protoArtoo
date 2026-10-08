@@ -64,7 +64,7 @@ If a pattern, a number or a string you need is missing from the ticket, SAY SO
 on the issue, then use the copied research to unblock yourself. Reporting it is
 not optional: a thin ticket is a coordinator defect that gets repaired for the
 next wave, and a gap you quietly work around stays a gap. Do NOT re-derive the
-pattern, and do not substitute an audit of protoArtoo's own code for it.
+pattern, and do not substitute an audit of protoR2's own code for it.
 
 NO SELF-IMPOSED BUDGETS
 You have no token budget to manage, no efficiency target, and no deadline.

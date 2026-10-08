@@ -16,7 +16,7 @@
 // A Sequence may still name a light that is on neither; this page does not
 // list it. With no light on the droid, one line sends the builder to Wiring.
 //
-// AN LED STRIP IS NOT A THING ON THE DROID. It is a Light Type: what protoArtoo
+// AN LED STRIP IS NOT A THING ON THE DROID. It is a Light Type: what protoR2
 // puts on one of its own wires to light a Part (ADR 0067). So it is never a row
 // here; it is what a row's wire CARRIES, read from data/outputs.js's `light`
 // answer, and the Part on that wire inherits it. Three iterations of this
@@ -25,7 +25,7 @@
 //
 // THE TWO HALVES READ DIFFERENTLY, ON PURPOSE (ADR 0067):
 //
-//   a body light   protoArtoo lights it, so it names its Light Type and reads
+//   a body light   protoR2 lights it, so it names its Light Type and reads
 //                  on / off / flash with brightness for "how far" - the words
 //                  ADR 0049 gives every Part, so one word means one thing
 //                  across the droid.
@@ -40,7 +40,7 @@
 // NOTHING HERE NAMES AN OUTPUT, a pin or a board label. Which wire carries a
 // light is Wiring's answer, reached from here and never repeated.
 //
-// NOTHING HERE IS DEVICE TRUTH. Every reading is what protoArtoo asked for:
+// NOTHING HERE IS DEVICE TRUTH. Every reading is what protoR2 asked for:
 // the strip's color is what it set, and a dome light's state is not claimed
 // at all, because nothing reports it back (ADR 0045).
 //
@@ -237,7 +237,7 @@
   // ---------------------------------------------------------------------------
   // A dome light
   // ---------------------------------------------------------------------------
-  // The dome controller lights it, and protoArtoo asks it for a mode and a
+  // The dome controller lights it, and protoR2 asks it for a mode and a
   // color by forwarding the command a sequence step already sends
   // (POST /api/dome/cmd; DL:<target>:<mode>:<color>, validated at
   // src/protocol_check.cpp). Which lights answer to one is the dome's own
@@ -280,7 +280,7 @@
   // The eight color words are the dome's, and the strip borrows seven of them
   // so one color word means one thing across the droid (operator, 2026-09-20).
   // DEFAULT is not among the strip's: on the dome it means "the color you are
-  // already using", and protoArtoo's own strip has no such color to mean - a
+  // already using", and protoR2's own strip has no such color to mean - a
   // dot that did nothing is the dead control this page exists without.
   //
   // The values come from the token layer rather than from a second table here,
@@ -407,7 +407,7 @@
   // ---------------------------------------------------------------------------
   // A body light
   // ---------------------------------------------------------------------------
-  // protoArtoo lights it through the wire it is on, so it names that wire's
+  // protoR2 lights it through the wire it is on, so it names that wire's
   // Light Type and reads on / off / flash with brightness (ADR 0049). The
   // commands are the controller's own: POST /api/aux-led/effect and
   // /api/aux-led/color.

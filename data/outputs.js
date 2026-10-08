@@ -66,7 +66,7 @@
   ]);
   const NO_SERVO = Object.freeze({ id: "none", label: "None" });
 
-  // The Light Types protoArtoo can put on one of its own wires (GLOSSARY.md
+  // The Light Types protoR2 can put on one of its own wires (GLOSSARY.md
   // "Light Type", ADR 0067). One today; the list is what grows when there are
   // more, and the stored token stays the one the firmware already saves.
   const LIGHT_TYPES = Object.freeze([Object.freeze({ id: "rgb", label: "LED strip" })]);

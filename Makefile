@@ -1,5 +1,5 @@
 # =============================================================================
-# protoArtoo — build facade
+# protoR2 — build facade
 #
 # Running bare `make` launches the interactive wizard (tools/deploy.py).
 #

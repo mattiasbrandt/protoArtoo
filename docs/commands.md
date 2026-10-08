@@ -1,4 +1,4 @@
-# protoArtoo Commands Reference
+# protoR2 Commands Reference
 
 Implementation-focused command reference for supported command inputs.
 

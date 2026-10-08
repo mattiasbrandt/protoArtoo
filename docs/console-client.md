@@ -117,7 +117,7 @@ default is only the fallback (`configResolvedMdnsHostname()`,
 | # | Try | Where the name comes from |
 |---|---|---|
 | 1 | `http://artoo.local`, or `http://firebeetle2.local` | The compiled default. This is the right **first** attempt, and the one a tool or an agent should make when it knows nothing else about the board. |
-| 2 | `http://<droid-name>.local` | The configured name: `GET /api/identity` -> `droidName`, advertised whenever `mdnsUseName` is true. A droid named `protoartoo` answers at `protoartoo.local` and **not** at `artoo.local`. |
+| 2 | `http://<droid-name>.local` | The configured name: `GET /api/identity` -> `droidName`, advertised whenever `mdnsUseName` is true. A droid named `protor2` answers at `protor2.local` and **not** at `artoo.local`. |
 | 3 | `http://<ip>` | The WiFi Client address (`staIp` in `GET /api/wifi`), or your network's lease table. Never guessable, always right. |
 
 **Step 1 failing is not evidence the board is offline.** The ordinary meaning is
@@ -249,7 +249,7 @@ as the droid sent it:
 --- http POST http://10.0.0.22/api/config body=b'rcMember=rc_radio' ---
 HTTP 200 OK (1834 bytes, application/json)
 {"ok":true,...}
---- kept /home/me/protoArtoo/tasks/bench-run/after.json (1834 bytes, HTTP 200) ---
+--- kept /home/me/protoR2/tasks/bench-run/after.json (1834 bytes, HTTP 200) ---
 ```
 
 **No verdict, ever.** Any HTTP status - a `404`, a `400` refusal, a `500` - is the

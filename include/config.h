@@ -1,7 +1,7 @@
 // =============================================================================
 // include/config.h
 //
-// GPIO pin assignments and compile-time constants for protoArtoo.
+// GPIO pin assignments and compile-time constants for protoR2.
 // Supports multiple controller board variants on different chip targets.
 // See docs/pin_map.md and docs/adr/0028-two-layer-board-abstraction.md
 //
@@ -282,8 +282,8 @@ constexpr uint8_t PIN_RC_CH1 = 28;  // P2 unimpeachable, SBUS #1 (drive) receive
 constexpr uint8_t PIN_RC_CH2 = 29;  // P2 unimpeachable, SBUS #2 (dome) receiver
 constexpr uint8_t PIN_RC_CH3 = 30;  // P2 unimpeachable
 constexpr uint8_t PIN_RC_CH4 = 31;  // P2 unimpeachable, spec sheet: "best clean pin in <=36 range"
-constexpr uint8_t PIN_RC_CH5 = 32;  // P1-for-I3C, reassignable (protoArtoo does not use I3C)
-constexpr uint8_t PIN_RC_CH6 = 33;  // P1-for-I3C, reassignable (protoArtoo does not use I3C)
+constexpr uint8_t PIN_RC_CH5 = 32;  // P1-for-I3C, reassignable (protoR2 does not use I3C)
+constexpr uint8_t PIN_RC_CH6 = 33;  // P1-for-I3C, reassignable (protoR2 does not use I3C)
 
 constexpr uint8_t PIN_SBUS1_RX = PIN_RC_CH1;  // CH1  --  SBUS #1 (drive)
 constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)

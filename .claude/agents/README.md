@@ -1,6 +1,6 @@
-# protoArtoo Claude Agents
+# protoR2 Claude Agents
 
-Project-scoped Claude Code agents for the protoArtoo ESP32 body-controller
+Project-scoped Claude Code agents for the protoR2 ESP32 body-controller
 firmware. These are specialist roles, not generic coding personas.
 
 ## Agent Inventory

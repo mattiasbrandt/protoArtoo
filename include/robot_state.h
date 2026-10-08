@@ -1,7 +1,7 @@
 // =============================================================================
 // include/robot_state.h
 //
-// Shared robot state structure for protoArtoo.
+// Shared robot state structure for protoR2.
 // All inter-task communication goes through this struct + FreeRTOS primitives.
 //
 // Thread safety: All fields accessed under robotStateMux (portMUX_TYPE).

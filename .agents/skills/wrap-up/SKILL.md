@@ -1,6 +1,6 @@
 ---
 name: wrap-up
-description: Close out protoArtoo work by updating status records, preserving MemPalace memory, and reporting verification state. Use when the user says "wrap up", "wrap this up", "wrap-up", "close this out", or asks to finish the session/status handoff; interpret trailing context like "for the night", "it's late", or "pick up tomorrow" as a resumable handoff, and mid-implementation/context-window wording as a cue to suggest the handoff skill.
+description: Close out protoR2 work by updating status records, preserving MemPalace memory, and reporting verification state. Use when the user says "wrap up", "wrap this up", "wrap-up", "close this out", or asks to finish the session/status handoff; interpret trailing context like "for the night", "it's late", or "pick up tomorrow" as a resumable handoff, and mid-implementation/context-window wording as a cue to suggest the handoff skill.
 ---
 
 # Wrap Up

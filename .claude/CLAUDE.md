@@ -1,4 +1,4 @@
-# AI Coding Agent Guidelines - protoArtoo (Claude Adapter)
+# AI Coding Agent Guidelines - protoR2 (Claude Adapter)
 
 This is a thin adapter. Canonical cross-agent rules live in [AGENTS.md](../AGENTS.md).
 If any rule conflicts, follow [AGENTS.md](../AGENTS.md) unless the user explicitly overrides.
@@ -14,9 +14,9 @@ If any rule conflicts, follow [AGENTS.md](../AGENTS.md) unless the user explicit
 1. [AGENTS.md](../AGENTS.md) (authoritative policy) — including "Planning Mode"
    for any decision about something not built yet
 2. `tasks/research-r2d2-*` (local, untracked) — the operator's design source for
-   what protoArtoo should become. Read it **before** the code when planning; it
-   outranks the code for what protoArtoo should do, and the code outranks it for
-   what protoArtoo does today
+   what protoR2 should become. Read it **before** the code when planning; it
+   outranks the code for what protoR2 should do, and the code outranks it for
+   what protoR2 does today
 3. [docs/goal.md](../docs/goal.md) and [docs/status.md](../docs/status.md) (public planning baseline)
 4. [tasks/rc_diagnostics_contract.md](../tasks/rc_diagnostics_contract.md) when working RC diagnostics/mapping
 5. [include/config.h](../include/config.h) and [docs/pin_map.md](../docs/pin_map.md) for hardware truth

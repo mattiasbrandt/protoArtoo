@@ -1,6 +1,6 @@
 ---
 name: playwright
-description: Browser verification and UX behavior auditing for protoArtoo web UI using Playwright MCP. Use for interaction checks, regressions, and screenshot-backed findings.
+description: Browser verification and UX behavior auditing for protoR2 web UI using Playwright MCP. Use for interaction checks, regressions, and screenshot-backed findings.
 ---
 
 Use this skill when validating operator-facing web flows in data/ pages.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""protoArtoo — interactive build & deploy wizard.
+"""protoR2 — interactive build & deploy wizard.
 
 Run via:  make          (default target)
           python3 tools/deploy.py
@@ -184,7 +184,7 @@ def main() -> int:
         print(info("   pip install -r tools/requirements.txt  for arrow-key menus.\n"))
 
     print()
-    print(bold("🤖  protoArtoo  —  build & deploy"))
+    print(bold("🤖  protoR2  —  build & deploy"))
     print(SEP)
 
     # ── Q1: Action ──

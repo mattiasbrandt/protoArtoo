@@ -3,7 +3,7 @@
  *
  * The one apply seam for the Droid Build (ADR 0047, #333, #343).
  *
- * A Droid Build is what protoArtoo knows about which droid it is bolted into:
+ * A Droid Build is what protoR2 knows about which droid it is bolted into:
  * a Dome Design and a Body Design, each at a Design Variant, together with the
  * Fitted Parts they seeded and any Common Addition the builder added.
  *

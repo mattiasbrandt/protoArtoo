@@ -141,16 +141,16 @@ const initialDroid = () => {
     mode: 'client',
     staSsid: 'AstroHome',
     staPassword: 'astro-home-pass',
-    apSsid: 'protoArtoo',
+    apSsid: 'protoR2',
     apPassword: 'field-kit-pass',
   };
   return {
     active: { ...applied },
-    saved: { ...applied, apSsid: 'protoArtoo-AP' },
+    saved: { ...applied, apSsid: 'protoR2-AP' },
     networkRecovery: false,
     // GET /api/wifi, formatWifiJson() in src/web/api_status_serializers.cpp.
     diagnostics: {
-      apSsid: 'protoArtoo',
+      apSsid: 'protoR2',
       apIp: '192.168.4.1',
       staEnabled: true,
       staConnected: true,
@@ -287,7 +287,7 @@ const run = async ({ page, droid, report, pageErrors, consoleErrors }) => {
     'wifi-saved-summary-title': 'Saved after reboot',
     'wifi-saved-summary-mode': 'WiFi Client Mode',
     'wifi-saved-summary-sta': 'AstroHome',
-    'wifi-saved-summary-ap': 'protoArtoo-AP',
+    'wifi-saved-summary-ap': 'protoR2-AP',
   });
   report.add('b', 'Active against saved shows the joined network beside the saved settings', lib.verdict(compare.ok), compare.detail);
 
@@ -301,7 +301,7 @@ const run = async ({ page, droid, report, pageErrors, consoleErrors }) => {
     apSsid: document.getElementById('wifi-ap-ssid').value,
     passwords: document.getElementById('wifi-sta-password').value + document.getElementById('wifi-ap-password').value,
   }));
-  const formOk = form.client && form.staSsid === 'AstroHome' && form.apSsid === 'protoArtoo-AP' && form.passwords === '';
+  const formOk = form.client && form.staSsid === 'AstroHome' && form.apSsid === 'protoR2-AP' && form.passwords === '';
   report.add('c', 'The form holds the saved settings and says a blank password is kept',
     lib.verdict(hints.ok && formOk), `${hints.detail}; form ${JSON.stringify(form)}`);
 
@@ -328,7 +328,7 @@ const run = async ({ page, droid, report, pageErrors, consoleErrors }) => {
     'wifi-settings-feedback': 'WiFi settings saved. Reboot the Body Controller to apply the staged network switch.',
   });
   const passwordKeys = Object.keys(sent).filter((key) => /password/i.test(key));
-  const bodyOk = saved.length === 1 && sent.wifiMode === 'client' && sent.staSsid === 'AstroHome' && sent.apSsid === 'protoArtoo-AP' && passwordKeys.length === 0;
+  const bodyOk = saved.length === 1 && sent.wifiMode === 'client' && sent.staSsid === 'AstroHome' && sent.apSsid === 'protoR2-AP' && passwordKeys.length === 0;
   const kept = droid.saved.staPassword === 'astro-home-pass' && droid.saved.apPassword === 'field-kit-pass';
   report.add('e', 'Save with blank password boxes sends no password, and both saved passwords stand',
     lib.verdict(bodyOk && kept && savedSaid.ok),

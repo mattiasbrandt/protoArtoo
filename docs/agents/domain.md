@@ -4,7 +4,7 @@ How the engineering skills should consume this repo's domain documentation when 
 
 ## Before exploring, read these
 
-- **`GLOSSARY.md`** at the repo root — domain language and key concepts for protoArtoo firmware.
+- **`GLOSSARY.md`** at the repo root — domain language and key concepts for protoR2 firmware.
 - **`docs/adr/`** — read ADRs that touch the area you're about to work in.
 
 If any of these files don't exist, proceed silently. Don't flag their absence.

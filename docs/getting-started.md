@@ -68,8 +68,8 @@ before you order one.
 
 ## Join the droid to your WiFi
 
-A freshly flashed Body Controller hosts its own WiFi network, `protoArtoo`,
-password `protoArtoo1`. Join it, open `http://192.168.4.1`, and on the **WiFi**
+A freshly flashed Body Controller hosts its own WiFi network, `protoR2`,
+password `protoArtoo123`. Join it, open `http://192.168.4.1`, and on the **WiFi**
 page pick how the droid joins WiFi from then on:
 
 - **WiFi Client Mode** joins your home or workshop network; the droid is then

@@ -1078,7 +1078,7 @@ void test_servo_accepts_the_broadcast_arm() {
 
 // The word is the running board's label for the Output (ADR 0033 Amendment
 // 2026-09-19). This image is built for the Artoo PCB, which prints ARM1..ARM5,
-// so protoArtoo's old word for its third Output is not an alias of anything:
+// so protoR2's old word for its third Output is not an alias of anything:
 // it is refused, and the refusal names the words this board does take.
 void test_servo_refuses_a_word_the_board_does_not_print() {
     const WebRequestTestParam params[] = {{"arm", "aux1"}, {"action", "open"}};

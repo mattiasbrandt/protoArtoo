@@ -23,7 +23,7 @@
 // no board prints a word for one (servoOutputParseExpanderAddress()); or
 // "both", which keeps its meaning: SERVO_OUTPUT_BOTH_ARMS, the first two
 // Outputs together (the other three have no broadcast). False, with `*output`
-// untouched, for anything else, including the old protoArtoo-wide words
+// untouched, for anything else, including the old protoR2-wide words
 // arm1..aux3 where they are not this board's label - there is no alias - and a
 // board Output's own address, `ledc:3`, which is not a second name for ARM3.
 // Exported (not file-local to api_servo.cpp) so the Controller Console's

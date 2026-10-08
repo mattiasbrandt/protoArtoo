@@ -1,6 +1,6 @@
 # Soak testing a controller — `tools/soak.py`
 
-A **soak** holds a protoArtoo controller's web stack under continuous load for
+A **soak** holds a protoR2 controller's web stack under continuous load for
 as long as you ask — minutes, or a whole evening — and then says, in one
 sentence and one exit code, whether it held up.
 
@@ -276,7 +276,7 @@ On `stderr`, a heartbeat line per `--progress-interval-s`, plus (on a terminal)
 one status line refreshing every second so a long wait never looks like a hang:
 
 ```
-=== protoArtoo soak ===
+=== protoR2 soak ===
   started       2026-09-03T12:36:31+0200
   device        artoo.local:80
   image mode    artoo (build env artoo_esp32)

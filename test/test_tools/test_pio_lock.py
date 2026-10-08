@@ -61,7 +61,7 @@ def fake_penv(core: Path, version: str, scons: str) -> None:
 
 class LockPathHelpers(unittest.TestCase):
     def test_target_comes_from_the_pio_environment_flag(self):
-        self.assertEqual(pio_lock.build_target(["pio", "run", "-e", "protoArtoo"]), "protoArtoo")
+        self.assertEqual(pio_lock.build_target(["pio", "run", "-e", "protoR2"]), "protoR2")
         self.assertEqual(pio_lock.build_target(["pio", "test", "--environment=native"]), "native")
 
     def test_target_without_an_env_flag_is_not_invented(self):
@@ -94,11 +94,11 @@ class BuildLockBehavior(unittest.TestCase):
         )
 
     def test_plain_run_takes_the_lock_and_records_the_holder(self):
-        proc = self.run_locked(["true", "-e", "protoArtoo"])
+        proc = self.run_locked(["true", "-e", "protoR2"])
         self.assertEqual(proc.returncode, 0, proc.stderr)
         record = self.lock.read_text()
-        self.assertIn("target: protoArtoo", record)
-        self.assertIn("command: true -e protoArtoo", record)
+        self.assertIn("target: protoR2", record)
+        self.assertIn("command: true -e protoR2", record)
         self.assertRegex(record, r"pid: \d+")
         self.assertRegex(record, r"worktree: /\S")
         self.assertRegex(record, r"branch: \S")
@@ -108,9 +108,9 @@ class BuildLockBehavior(unittest.TestCase):
         # the useful part - it is what tells the next agent which target last
         # touched the shared framework pools - so release must not clear it.
         with mock.patch.dict(os.environ, child_env(self.lock), clear=True):
-            with pio_lock.build_lock(["pio", "run", "-e", "protoArtoo"]):
-                self.assertIn("target: protoArtoo", self.lock.read_text())
-        self.assertIn("target: protoArtoo", self.lock.read_text())
+            with pio_lock.build_lock(["pio", "run", "-e", "protoR2"]):
+                self.assertIn("target: protoR2", self.lock.read_text())
+        self.assertIn("target: protoR2", self.lock.read_text())
 
     @unittest.skipUnless(HAS_FLOCK, "flock(1) required to build the nested case")
     def test_nesting_under_an_outer_flock_fails_loudly_instead_of_hanging(self):

@@ -264,7 +264,7 @@ void test_populateConfigJson_wifi_block_exposes_password_flags_not_plaintext(voi
     snap.wifi.mode = WifiMode::CLIENT;
     snprintf(snap.wifi.sta_ssid, sizeof(snap.wifi.sta_ssid), "HomeNetwork");
     snprintf(snap.wifi.sta_password, sizeof(snap.wifi.sta_password), "supersecret");
-    snprintf(snap.wifi.ap_ssid, sizeof(snap.wifi.ap_ssid), "protoArtoo");
+    snprintf(snap.wifi.ap_ssid, sizeof(snap.wifi.ap_ssid), "protoR2");
     snap.wifi.ap_password[0] = '\0';
 
     JsonDocument doc;
@@ -276,7 +276,7 @@ void test_populateConfigJson_wifi_block_exposes_password_flags_not_plaintext(voi
     TEST_ASSERT_EQUAL_STRING("client", wifi["mode"] | "");
     TEST_ASSERT_EQUAL_STRING("HomeNetwork", wifi["staSsid"] | "");
     TEST_ASSERT_TRUE(wifi["staPasswordSet"].as<bool>());
-    TEST_ASSERT_EQUAL_STRING("protoArtoo", wifi["apSsid"] | "");
+    TEST_ASSERT_EQUAL_STRING("protoR2", wifi["apSsid"] | "");
     TEST_ASSERT_FALSE(wifi["apPasswordSet"].as<bool>());
 
     char out[kConfigJsonBudget] = {};

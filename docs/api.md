@@ -1,6 +1,6 @@
 # REST API Reference
 
-This document describes the currently exposed HTTP and SSE API in protoArtoo,
+This document describes the currently exposed HTTP and SSE API in protoR2,
 including request shape, accepted parameters, and observed response contracts.
 
 Every route `src/web/web_seam_routes.cpp` registers is documented here or
@@ -606,7 +606,7 @@ Queues servo command.
   `arm3`, `ARM 3` and `ARM3` are the same Output, and so are `gpio49` and
   `GPIO 49`. `GET /api/config` (`components.<id>.label`) and
   `GET /api/servo/outputs` (`name`) report the running board's words. The old
-  protoArtoo-wide words `aux1`..`aux3` are not taken on any board, and on the
+  protoR2-wide words `aux1`..`aux3` are not taken on any board, and on the
   FireBeetle 2 neither are `arm1`/`arm2`: there is no alias. `both` is the
   first two Outputs together (`ARM1` and `ARM2`, or `GPIO 49` and `GPIO 50`).
   An Output on a PCA9685 expander (#444) is named by its address, `pca:0` ..
@@ -2869,7 +2869,7 @@ provisioning/recovery flow (ADR 0015).
 - Success: `200` JSON
 - `apSsid`: SSID currently broadcast by the AP radio. During WiFi
   Provisioning or Network Recovery Mode this is the Default AP Credential's
-  SSID (`protoArtoo`), not necessarily the operator's saved Standalone AP
+  SSID (`protoR2`), not necessarily the operator's saved Standalone AP
   Mode SSID.
 - `staSsid`: the network the client side is joined to; empty while it is
   not connected (`include/web_network_manager.h`).
@@ -2887,7 +2887,7 @@ curl -s http://artoo.local/api/wifi
 #### Example response
 
 ```json
-{"apSsid":"protoArtoo","apIp":"192.168.4.1","staEnabled":true,"staConnected":true,"staIp":"10.0.0.22","staSsid":"HomeNetwork","wifiRssi":-70,"networkRecovery":false}
+{"apSsid":"protoR2","apIp":"192.168.4.1","staEnabled":true,"staConnected":true,"staIp":"10.0.0.22","staSsid":"HomeNetwork","wifiRssi":-70,"networkRecovery":false}
 ```
 
 ### POST /api/wifi
@@ -2922,7 +2922,7 @@ curl -s -X POST http://artoo.local/api/wifi \
 #### Example response
 
 ```json
-{"ok":true,"wifi":{"provisioned":true,"mode":"client","staSsid":"HomeNetwork","staPasswordSet":true,"apSsid":"protoArtoo","apPasswordSet":true,"pendingApply":true,"networkRecovery":false}}
+{"ok":true,"wifi":{"provisioned":true,"mode":"client","staSsid":"HomeNetwork","staPasswordSet":true,"apSsid":"protoR2","apPasswordSet":true,"pendingApply":true,"networkRecovery":false}}
 ```
 
 ### GET /api/serial

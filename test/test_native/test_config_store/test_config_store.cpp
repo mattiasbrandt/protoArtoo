@@ -1455,7 +1455,7 @@ void test_wifiConfigToView_sets_password_flags_not_plaintext() {
     wifi.mode = WifiMode::CLIENT;
     snprintf(wifi.sta_ssid, sizeof(wifi.sta_ssid), "%s", "HomeNetwork");
     snprintf(wifi.sta_password, sizeof(wifi.sta_password), "%s", "supersecret");
-    snprintf(wifi.ap_ssid, sizeof(wifi.ap_ssid), "%s", "protoArtoo");
+    snprintf(wifi.ap_ssid, sizeof(wifi.ap_ssid), "%s", "protoR2");
     snprintf(wifi.ap_password, sizeof(wifi.ap_password), "%s", "apsecret1");
 
     WifiConfigView view = wifiConfigToView(wifi);
@@ -1464,7 +1464,7 @@ void test_wifiConfigToView_sets_password_flags_not_plaintext() {
     TEST_ASSERT_EQUAL_INT((int)WifiMode::CLIENT, (int)view.mode);
     TEST_ASSERT_EQUAL_STRING("HomeNetwork", view.sta_ssid);
     TEST_ASSERT_TRUE(view.sta_password_set);
-    TEST_ASSERT_EQUAL_STRING("protoArtoo", view.ap_ssid);
+    TEST_ASSERT_EQUAL_STRING("protoR2", view.ap_ssid);
     TEST_ASSERT_TRUE(view.ap_password_set);
 }
 

@@ -61,7 +61,7 @@ const boot = () => {
   };
   context.globalThis = context;
   // The real catalog, art and dome map, so the placement rules are checked
-  // against the droid protoArtoo actually draws rather than a fixture that
+  // against the droid protoR2 actually draws rather than a fixture that
   // agrees with them.
   ["droid_parts.js", "dome_panel_model.js", "body_art.js", "body_view.js"].forEach((file) => {
     vm.runInNewContext(readData(file), context, { filename: file });

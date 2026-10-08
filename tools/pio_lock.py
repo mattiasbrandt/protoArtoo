@@ -11,7 +11,7 @@ module instead, so the rule holds without anyone remembering it.
 
 Two entry points, one mechanism:
 
-  * CLI  — `python3 tools/pio_lock.py pio run -e protoArtoo` takes the lock and
+  * CLI  — `python3 tools/pio_lock.py pio run -e protoR2` takes the lock and
            then *execs* the command, so the exec'd process holds the lock for
            its whole life and no wrapper lingers between make and pio.
   * API  — `with pio_lock.build_lock(): ...`, used by tools/slice_verify.py to

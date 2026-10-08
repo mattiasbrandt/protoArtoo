@@ -1,4 +1,4 @@
-# protoArtoo Products
+# protoR2 Products
 # ===================
 # Source of truth for every Component Family and every product in it: what the
 # Component Registry declares (ADR 0042 as amended 2026-09-09), each product's
@@ -66,8 +66,8 @@ families:
     name: Body Controller
     member_key: null
     section: |
-      Body Controller -- the board hosting protoArtoo. "more to come"; the category
-      is open (#303). Neither row is driven by protoArtoo, so neither declares a
+      Body Controller -- the board hosting protoR2. "more to come"; the category
+      is open (#303). Neither row is driven by protoR2, so neither declares a
       protocol: the running image IS the answer to which one is fitted, which is
       why `included` tests PA_BOARD rather than a capability.
 
@@ -453,7 +453,7 @@ products:
 
       Bluepad32 would be the first dependency whose licence depends on how the
       project is distributed (BTstack is free for open source, commercial for closed
-      source). protoArtoo is a public repository, which is the case the open-source
+      source). protoR2 is a public repository, which is the case the open-source
       terms cover, but adopting it is an explicit operator decision, answered once.
 
       Either path, the driver is written: a custom class driver over the ESP-IDF USB
@@ -473,7 +473,7 @@ products:
       gamepad reports `normalized` and `mapped` only and the UI says so.
 
       The failsafe, not negotiable:
-      - a last-report watchdog owned by protoArtoo, on the order of
+      - a last-report watchdog owned by protoR2, on the order of
         `SBUS_TIMEOUT_MS`, feeding the existing failsafe; the disconnect event only
         makes the common case fast;
       - disarmed on connect, and on every reconnect, as Padawan360 does;
@@ -485,8 +485,8 @@ products:
       does not depend on the USB stack being serviced.
 
       Padawan360's Home-button LED ring shows drive armed state and the speed preset
-      on the controller itself; protoArtoo has no equivalent. No astromech project
-      drives an Xbox controller from an ESP32, so protoArtoo would be first, with no
+      on the controller itself; protoR2 has no equivalent. No astromech project
+      drives an Xbox controller from an ESP32, so protoR2 would be first, with no
       build to copy.
 
   - value: 4
@@ -571,7 +571,7 @@ products:
       advice. The recommendation is to keep 200 ms for CRSF and record that the
       second was declined on purpose, not by oversight.
 
-      What protoArtoo would have to do:
+      What protoR2 would have to do:
 
       The UART. SBUS costs no UART because it is decoded on RMT; CRSF at 420 kbaud
       is UART work. artoo-esp32's three UARTs are all committed (console, drive, and
@@ -635,14 +635,14 @@ products:
       failsafe redesign, because the receiver-flag layer stops existing; an arm
       channel, which changes how a builder drives the droid; and a builder-side
       provisioning story (binding phrase, packet rate, switch mode, telemetry ratio,
-      receiver baud), all set outside protoArtoo.
+      receiver baud), all set outside protoR2.
 
       Interference with our own AP: ELRS at 2.4 GHz and the droid's WiFi AP share
       the band on one droid; nobody has measured what the receiver does to the AP.
       Bench test: run both and watch link quality and AP throughput together.
 
       The hobby's own ELRS droid control has been announced three times and built
-      once (ShadyRC Crossfire). protoArtoo would not be following a finished peer;
+      once (ShadyRC Crossfire). protoR2 would not be following a finished peer;
       it would arrive at about the same time as CHIRP Droid Control.
 
       No ELRS receiver has run on this project's hardware.
@@ -744,7 +744,7 @@ products:
         Coordinator cannot hold it.
       - ADR 0043 schedules an Output Release from arrival: firmware stops knowing
         when arrival is; Get Moving State is global and Mini-only.
-      - #301 / #318: the builder edits Outputs in protoArtoo's UI. A sequencer
+      - #301 / #318: the builder edits Outputs in protoR2's UI. A sequencer
         Maestro moves authorship into an XML on a PC: two editors, one droid, no
         sync.
       The hobby's reason for a co-processor (a single-threaded AVR loop stalls the
@@ -1243,8 +1243,10 @@ products:
         is not portable to another droid's dome.
 
       The fork finds the body by mDNS at `protoartoo.local`, with a manual `bodypeerip`
-      override. The WiFi fallback needs dome and body on the same network, which an
-      AP-mode dome is not.
+      override. That is the droid name's old default: a controller reset since the
+      rename is `protor2` (#477), and the fork's lookup has not followed yet. The
+      WiFi fallback needs dome and body on the same network, which an AP-mode dome
+      is not.
 
       Current draw has not been measured on this droid: an inline meter on the dome 5 V
       feed, idle and during `DV:SCREAM`, would settle it.
@@ -2114,7 +2116,7 @@ products:
       default Sound member.
 
       Our own dome already runs one. The operator's AstroPixelsPlus fork commands a
-      DFPlayer through `MarcduinoSound.h` and shows three things a protoArtoo driver
+      DFPlayer through `MarcduinoSound.h` and shows three things a protoR2 driver
       should not copy (the sheet's AstroPixelsPlus section has the code facts): it
       plays with `0x03` while its own setup guide documents the `/mp3/NNNN.mp3`
       layout of `0x12`; its `begin()` runs the DFRobot library's 2.2 s
@@ -2125,7 +2127,7 @@ products:
       reached independently on another board.
 
       A card moved from a MarcDuino-family droid keeps its file numbers and loses
-      the bank semantics: protoArtoo maps `$nnn` straight to `playTrack(nnn)` with
+      the bank semantics: protoR2 maps `$nnn` straight to `playTrack(nnn)` with
       named slots in NVS, not the 9x25 bank grid. A documentation point, not a code
       one.
 

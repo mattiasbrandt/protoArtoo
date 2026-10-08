@@ -1,6 +1,6 @@
 # Marcduino Commands
 
-What protoArtoo's body answers when you send it a Marcduino line, and what it
+What protoR2's body answers when you send it a Marcduino line, and what it
 hands on to the Dome Controller instead. If you are arriving from ShadowMD or
 Padawan360 with bindings you already have, this is the page that says which of
 them the body runs and which go to the dome.
@@ -102,7 +102,7 @@ every `:OP`, `:CL` and `:OF` number above `05` other than `99`, every `:MV`
 number the body has no Output for, every other `:` command, and every `#` line
 except the three above.
 
-protoArtoo does not say what the dome will do with them, and does not keep a
+protoR2 does not say what the dome will do with them, and does not keep a
 list of what the dome answers. If the dome's firmware handles the line,
 something moves or lights; if it does not, nothing does.
 
@@ -126,7 +126,7 @@ cut short would be a different command.
     fitted sound module has a bank 8, and is refused with that reason where it
     has not. The CHIRP Audio Trigger reads banks 1 to 6
     (`docs/spec-sheets/chirp-audio-trigger-sound.md`) and the other modules
-    have no banks, so on every module protoArtoo supports today `$8nn` is
+    have no banks, so on every module protoR2 supports today `$8nn` is
     refused. It never plays raw track 8nn. `$800` names sound 00, which no bank
     has, and is refused everywhere.
   - Every other number, `$nnn`, is a raw track number: `$001`, `$126`.

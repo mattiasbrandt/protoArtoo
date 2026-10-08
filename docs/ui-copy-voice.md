@@ -295,7 +295,7 @@ review that reads the words and not the layout has read half the page.
 
 The honesty wording of a simulator — "not simulated", "stands in", "simulator
 placeholders, NOT measured on your servos" — marks *model versus reality*, a
-gap protoArtoo does not have. Ours are different distinctions and get their own
+gap protoR2 does not have. Ours are different distinctions and get their own
 words: configured-but-never-actuated, declared-but-not-detected,
 endpoint-typed versus endpoint-measured, saved-but-not-yet-applied.
 

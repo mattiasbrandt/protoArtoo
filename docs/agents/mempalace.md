@@ -1,8 +1,9 @@
 # MemPalace memory protocol
 
-Long-term project memory for `protoArtoo` lives in MemPalace (MCP server plus a
+Long-term project memory for `protoR2` lives in MemPalace (MCP server plus a
 user-level daemon), in one wing: **`wing_protoartoo`**. The convention on this
-machine is `wing_<project>`; the bare `protoartoo` is not a wing, and
+machine is `wing_<project>`, and the wing keeps the project's old name until it
+is renamed outside this repository; the bare `protoartoo` is not a wing, and
 `protoArtoo` case-sensitively matches nothing and answers "No results found"
 rather than failing - so a wing-scoped search against it reads as *no prior art*
 when it means *no such wing*. The older `protoartoo` and `wing_wt_*` wings were

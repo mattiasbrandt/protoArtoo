@@ -21,7 +21,7 @@
 //
 // ARM1 and ARM2 are Output Addresses and a board legend, not Part names. The
 // Droid Parts Catalog calls the two utility arms `utilUp` and `utilLo`
-// (docs/droid-parts.yaml, "one of the two MG996R utility arm servos protoArtoo
+// (docs/droid-parts.yaml, "one of the two MG996R utility arm servos protoR2
 // already drives"), and those are Parts: identity, not wiring. The two
 // vocabularies are not a duplicate to be reconciled -- ADR 0041 and ADR 0050
 // keep them apart deliberately, because which Part a wire moves is the

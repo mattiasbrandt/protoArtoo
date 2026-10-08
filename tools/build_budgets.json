@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "description": "Per-environment flash and RAM build-size budgets for protoArtoo firmware",
+    "description": "Per-environment flash and RAM build-size budgets for protoR2 firmware",
     "flash_unit": "bytes",
     "ram_unit": "bytes",
     "notes": [

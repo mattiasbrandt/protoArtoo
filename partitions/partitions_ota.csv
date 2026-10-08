@@ -1,4 +1,4 @@
-# Partition table for protoArtoo — 4MB ESP32 flash, OTA + LittleFS + coredump
+# Partition table for protoR2 — 4MB ESP32 flash, OTA + LittleFS + coredump
 #
 # Redesigned for arduino-esp32 v3.x (IDF 5.x) which produces ~15% larger
 # binaries than v2.x due to expanded network stack and USB support.

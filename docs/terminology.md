@@ -1,4 +1,4 @@
-# protoArtoo Terminology
+# protoR2 Terminology
 
 This document explains common project terms used in code, docs, logs, and planning.
 
@@ -26,7 +26,7 @@ was resolved - lives in `GLOSSARY.md` under Language and Flagged Ambiguities.
 
 ## Quick Glossary
 
-| Term | Meaning in protoArtoo | Why it matters |
+| Term | Meaning in protoR2 | Why it matters |
 |---|---|---|
 | ESTOP | Latching emergency stop state | Prevents unintended movement restart |
 | failsafe | Layered safety stop behavior when control health is bad | Core motion safety model |
@@ -44,7 +44,7 @@ was resolved - lives in `GLOSSARY.md` under Language and Flagged Ambiguities.
 
 `ESTOP` means emergency stop.
 
-In protoArtoo:
+In protoR2:
 - `estop` is a latching safety state in runtime state.
 - Typical set path is `POST /api/estop`.
 - Clear requires an explicit action (`POST /api/estop/clear` or equivalent manual-command clear path).
@@ -81,7 +81,7 @@ Related distinction:
 
 `UART` means Universal Asynchronous Receiver/Transmitter: asynchronous serial communication.
 
-In protoArtoo topology (`include/config.h`):
+In protoR2 topology (`include/config.h`):
 - the Console uses UART0 through a USB serial bridge on the Artoo PCB; on the
   FireBeetle 2 it is USB CDC, not a UART
 - the Foot Drive uses UART1 (header S1 on the Artoo PCB)
@@ -132,9 +132,9 @@ Why it matters:
 `ReelTwo` (repository/package often spelled `Reeltwo`) is a C++ framework/library ecosystem
 used in astromech firmware stacks.
 
-In protoArtoo context:
+In protoR2 context:
 - ReelTwo is primarily relevant on dome-side firmware ecosystems (for example AstroPixelsPlus lineage).
-- Body-side protoArtoo uses its own explicit task/driver architecture and does not rely on a full
+- Body-side protoR2 uses its own explicit task/driver architecture and does not rely on a full
   ReelTwo runtime for core body behavior.
 
 Why it matters:
@@ -144,7 +144,7 @@ Why it matters:
 
 `AstroPixels` / `AstroPixelsPlus` refer to dome-controller firmware lineage used in community builds.
 
-In protoArtoo topology:
+In protoR2 topology:
 - dome controller is treated as an AstroPixelsPlus-class peer subsystem.
 - body and dome coordinate over protoR2link with explicit responsibility boundaries.
 - dome-side effects (lighting/animation ownership) are dome responsibilities.
@@ -229,7 +229,7 @@ Why it matters:
 
 In practical terms:
 
-- The controller itself creates a WiFi network (default SSID: `protoArtoo`)
+- The controller itself creates a WiFi network (default SSID: `protoR2`)
 - Typical default IP is `192.168.4.1`
 
 Why it matters:

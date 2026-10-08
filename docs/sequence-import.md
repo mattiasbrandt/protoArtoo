@@ -1,7 +1,7 @@
 # Migrating a community sequence (developer playbook)
 
 This is how a maintainer turns an accepted community-sequence request into a **Migrated
-Sequence** -- a Factory Sequence translated from another R2 project into protoArtoo's C++
+Sequence** -- a Factory Sequence translated from another R2 project into protoR2's C++
 catalog. Migration is a **code + PR** activity, not an operator runtime feature
 (see [ADR 0007](adr/0007-community-sequence-migration.md)). For the Factory authoring
 mechanics referenced below, see [`sequence-authoring.md`](sequence-authoring.md);
@@ -33,7 +33,7 @@ Accept a sequence only if all hold; otherwise decline with a written reason.
    tables in `src/tasks/sequence_catalog.cpp` -- the Factory sequences (including the body
    routines `DM:SE30`..`DM:SE36`) and the `:SE`/`$` aliases already cover the classic R2
    repertoire, so most "ports" are duplicates.
-2. **Plays to protoArtoo's strength.** Prefer choreographies that pair a body sound with
+2. **Plays to protoR2's strength.** Prefer choreographies that pair a body sound with
    synced dome and body motion. A panel-only wave with no sound is almost always already an
    alias.
 3. **Maps cleanly.** Panels map onto the allowed panel intent targets; the signature sound
@@ -50,10 +50,10 @@ in the catalog comment.
 
 ### 1. Panels -> panel intent commands
 
-Map each source panel to the nearest protoArtoo equivalent by physical role, then express
+Map each source panel to the nearest protoR2 equivalent by physical role, then express
 the motion as a panel intent command:
 
-| Source motion | protoArtoo command |
+| Source motion | protoR2 command |
 |---|---|
 | Full open | `:OP<target>` |
 | Full close | `:CL<target>` |
@@ -103,7 +103,7 @@ If the source's signature sound has no matching role, the sequence is not a clea
 
 ### 3. Dome dialect normalization
 
-Map source Marcduino commands onto protoArtoo's panel intent vocabulary and non-panel dome
+Map source Marcduino commands onto protoR2's panel intent vocabulary and non-panel dome
 effects. Drop anything outside the allowed set.
 
 **Panel movement** -- use panel intent commands only:
@@ -168,7 +168,7 @@ forbids redistribution**.
 |---|---|---|
 | Padawan360 (dankraus) | BSD-3-Clause | attribution + notice |
 | ReelTwo library | LGPL | library code, not packaged choreographies; we don't link or copy it |
-| Marcduino V2/V3 firmware | CuriousMarc / N. Hutchison (not an open license) | the `:SE` repertoire; protoArtoo aliases, never copies code |
+| Marcduino V2/V3 firmware | CuriousMarc / N. Hutchison (not an open license) | the `:SE` repertoire; protoR2 aliases, never copies code |
 | AstroPixelsPlus (reeltwo) + forks | see repo `LICENSE` | the dome firmware base |
 
 ## Verification
