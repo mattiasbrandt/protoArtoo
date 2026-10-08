@@ -11,7 +11,7 @@
 // (musicMono, musicAnalyse). ADR 0058 took the port and its notice
 // deliberately: the constants and the estimator are the reference's, and
 // writing them out fresh would produce the same function under a different
-// label. Two measured defects are corrected before any grid is stored, because
+// label. The measured defects below are corrected before any grid is stored, because
 // a stored grid and the beat indices on its steps make a later correction
 // re-resolve every beat-placed step in every saved sequence:
 //   FIX 1  corr() was an unnormalised dot product, so a shorter lag summed
@@ -27,6 +27,14 @@
 //          walk back: 128 BPM clicks read 126.05 and 150 read 147.66. The lag
 //          climbs to the local maximum of corr() before the interpolation.
 //          This, not FIX 1, is what the -2.0 / -2.3 BPM figures were.
+//          (#14, operator 2026-10-08) The climb is held to one lag either
+//          side of where the halving landed, which is all the rounding can
+//          cost. Unbounded, it walked three lags onto a different peak on a
+//          real track: 130.8 BPM became 141.4.
+//   FIX 4  (#14, operator 2026-10-08) FIX 2 left the grid early by up to one
+//          hop, because an onset is found in the first frame that holds it,
+//          wherever in that frame it falls: 2-8 ms early (mean 5.1) over 32
+//          click tracks. Half a hop more centres it: -2.2 to +3.3 ms.
 //
 // The ported part carries the reference's notice, as its licence requires:
 //
@@ -80,6 +88,17 @@
     return out;
   };
 
+  // FIX 3, bounded (#14): from `lag`, step to a neighbour while it correlates
+  // higher, never more than one lag from where it started.
+  const climb = (corr, lag, lagLo, lagHi) => {
+    const from = lag;
+    for (;;) {
+      if (lag + 1 <= Math.min(lagHi, from + 1) && corr(lag + 1) > corr(lag)) lag++;
+      else if (lag - 1 >= Math.max(lagLo, from - 1) && corr(lag - 1) > corr(lag)) lag--;
+      else return lag;
+    }
+  };
+
   // musicAnalyse (music.js:55-114). Takes anything shaped like an AudioBuffer
   // and returns the grid in milliseconds: bpm to one decimal (0 when there is
   // no steady beat), where beat 0 sits, every beat inside the track, the
@@ -108,7 +127,8 @@
     const onsets = [];
     const minGap = (0.22 * sr) / hop; // >= 220 ms between beats
     // FIX 2: an onset is timed at its window's centre, not its start.
-    const centre = win / (2 * sr);
+    // FIX 4: and half a hop on, the middle of the frame it was found in.
+    const centre = win / (2 * sr) + hop / (2 * sr);
     let last = -1e9;
     for (let f = 1; f < nF - 1; f++) {
       if (flux[f] < flux[f - 1] || flux[f] < flux[f + 1]) continue;
@@ -171,12 +191,8 @@
     }
     // FIX 3 (#438): halving rounds the lag, which can land one frame off the
     // peak; the interpolation below only looks half a lag either side, so
-    // climb first.
-    for (;;) {
-      if (bestLag + 1 <= lagHi && corr(bestLag + 1) > corr(bestLag)) bestLag++;
-      else if (bestLag - 1 >= lagLo && corr(bestLag - 1) > corr(bestLag)) bestLag--;
-      else break;
-    }
+    // climb first -- one lag either side and no further (#14).
+    bestLag = climb(corr, bestLag, lagLo, lagHi);
     best = corr(bestLag);
     // parabolic interpolation over the neighbouring lags recovers the
     // fractional peak
@@ -392,6 +408,7 @@
 
   window.SeqTempo = Object.freeze({
     TAPS_MIN,
+    climb,
     analyze,
     analyzeFile,
     tap,
