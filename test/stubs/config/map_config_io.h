@@ -166,6 +166,13 @@ public:
     bool writeStr(const char* key, const char* value) override {
         // Match PrefsWriter contract: nullptr is an error, not an empty string
         if (value == nullptr) return false;
+        // ...and a write that did not land is an error too (#375). Nothing is
+        // stored when the scheduled failure fires, because a failed
+        // nvs_set_str() stored nothing either.
+        if (failStringWrites_ > 0) {
+            failStringWrites_--;
+            return false;
+        }
         data_[key] = value;
         return true;
     }
@@ -184,9 +191,16 @@ public:
         return schema_version_;
     }
 
+    // Test API: make the next `count` string writes report failure, so a
+    // serializer's own reporting can be asked what it does when one record of
+    // a multi-record save does not land (#375). The Preferences stub carries
+    // the same switch one layer down, for the tests that go through PrefsWriter.
+    void failNextStringWrites(unsigned count) { failStringWrites_ = count; }
+
 private:
     std::map<std::string, std::string> data_;
     uint8_t schema_version_;
+    unsigned failStringWrites_ = 0;
 };
 
 }  // anonymous namespace

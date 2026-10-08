@@ -8,8 +8,8 @@
 // baud. RX status/manifest responses are read via UART_PORT_AUDIO on
 // PIN_AUDIO_RX.
 //
-// Written for the artoo-esp32 posture, where UART_PORT_AUDIO is shared with the
-// dome link; see the file header of src/drivers/audio_chirp.cpp.
+// On artoo-esp32 UART_PORT_AUDIO is shared with the dome link; on firebeetle2
+// audio has it to itself. See the file header of src/drivers/audio_chirp.cpp.
 //
 // NOTE: CHIRP defaults to 115200 baud. Before using this driver, set the board's
 // baud rate to 9600 by placing the following in CHIRP.INI on the SD card root:
@@ -18,7 +18,9 @@
 // Reference: https://github.com/joymonkey/CHIRP
 // See docs/sound_playback.md #2.2 for full protocol and file layout details.
 //
-// Only compiled when PA_AUDIO_DRIVER == AUDIO_CHIRP (platformio.ini).
+// Every image carries this driver: sound is a Component Family whose member is
+// chosen at runtime and staged at reboot (ADR 0042), so PA_AUDIO_DRIVER now
+// only names which module a controller that has never been told starts with.
 // =============================================================================
 #pragma once
 
@@ -27,9 +29,36 @@
 
 #include "audio_driver.h"
 #include "audio_serial_io.h"
+#include "component_registry.h"
 
 // CHIRP native volume range (0 = silent, 99 = maximum)
 static constexpr uint8_t CHIRP_VOL_MAX = 99;
+
+// The module's default stream count (CHIRP config.h DEFAULT_MAX_STREAMS 3), and
+// this droid's. #MAX_STREAMS can be set 1-10 in CHIRP.INI and no command
+// reports the value, so the stream model and the status query both rest on the
+// default rather than on a discovered configuration.
+static constexpr uint8_t CHIRP_STREAM_COUNT = 3u;
+static constexpr uint8_t CHIRP_NO_STREAM = 0xFFu;
+
+// What the body knows about one of the module's streams (ADR 0054). The rules
+// that write it are the stream model in src/drivers/audio_chirp.cpp.
+enum class ChirpStreamUse : uint8_t {
+    // First, so a zeroed stream is the cautious answer: a stream the body has
+    // not stopped or seen idle may be playing.
+    MaybeVocal = 0,  // a vocal PLAY may have landed here, and may have ended unannounced
+    IdleByProof,     // stopped by the body, or seen idle by an attributed STAT, since its last PLAY
+    BackgroundTrack,  // the Background Track's stream
+};
+
+// What one read window produced. A parser must only ever see Complete: half a
+// NAME line read as a whole one is a track called "genera", and half a
+// "Sounds: 24" is a count of 2 (#397 work item 12).
+enum class ChirpFrame : uint8_t {
+    None,       // nothing finished inside the window; any partial is retained
+    Complete,   // one whole line, terminator consumed, in the caller's buffer
+    Oversized,  // a line longer than the buffer could hold; dropped through its terminator
+};
 
 class AudioDriverChirp : public AudioDriver {
    public:
@@ -45,19 +74,39 @@ class AudioDriverChirp : public AudioDriver {
     void playTrack(uint16_t track) override;
     void playTrackBanked(uint16_t index, uint8_t bank, char page) override;
 
-    // Stop all active streams.
+    // Stop all active streams, the Background Track's included.
     void stop() override;
 
-    // Set volume 0-30 (clamped by AudioTask). Scaled to CHIRP 0-99 range.
+    // Set volume 0-30 (clamped by AudioTask) on every stream, the Background
+    // Track's included. Scaled to CHIRP 0-99 range.
     void setVolume(uint8_t vol) override;
+
+    // Streams and the Background Track (ADR 0054); the rules are the stream
+    // model in src/drivers/audio_chirp.cpp.
+    void stopStream(uint8_t stream) override;
+    void setStreamVolume(uint8_t stream, uint8_t vol) override;
+    void stopVocals() override;
+    bool playBackgroundTrack(uint16_t index, uint8_t bank, char page, uint8_t vol) override;
+    void stopBackgroundTrack() override;
+    bool backgroundTrackHeld() const override;
+    bool vocalHeld() const override;
+    // The Sound page's Driver row is operator-facing, and bare "CHIRP" also
+    // names CHIRP Droid Control, a different product by the same author
+    // (GLOSSARY.md Flagged Ambiguities, 2026-09-08: always qualify in operator
+    // copy). Read from this product's Component Registry row rather than
+    // restated here, exactly as capabilities() is - as the other two sound
+    // drivers do (#422).
     const char* driverName() const override {
-        return "CHIRP";
+        return componentPartDisplayName("chirp");
     }
 
+    // Read from this product's Component Registry row rather than restated
+    // here, so the row and the driver cannot drift apart (ADR 0042).
     uint8_t capabilities() const override {
-        return AUDIO_CAP_STATUS_QUERY | AUDIO_CAP_DEVICE_TYPE | AUDIO_CAP_TRACK_COUNT |
-               AUDIO_CAP_CURRENT_TRACK | AUDIO_CAP_QUERY_SAFE_PLAYING | AUDIO_CAP_CATALOG;  // 0x3F
+        return componentPartCapabilities("chirp");
     }
+    static_assert(componentPartExists("chirp"),
+                  "AudioDriverChirp cites a product id no Component Registry row declares; a typo here would otherwise read as a module that can be asked nothing");
 
     AudioRxStatus classifyRxStatus(bool linkOk) const override;
 
@@ -66,6 +115,11 @@ class AudioDriverChirp : public AudioDriver {
 
     // Catalog interface implementations (overrides).
     bool refreshCatalog() override;
+    AudioCatalogRefreshOutcome lastCatalogRefreshOutcome() const override {
+        return m_lastRefreshOutcome;
+    }
+    void getCatalogCompleteness(AudioCatalogCompleteness& out) const override;
+    bool getSoundListChecksum(uint32_t* out) const override;
     uint16_t getCatalogEntryCount() const override;
     const AudioCatalogEntry* getCatalogEntries() const override;
     uint8_t getCatalogBankCount() const override;
@@ -75,14 +129,74 @@ class AudioDriverChirp : public AudioDriver {
    private:
     AudioSerialIO m_io{};
 
+    // Stream model (ADR 0054). One entry per default stream; sentSeq orders the
+    // PLAYs the body sent, so the smallest among the vocals is the one started
+    // longest ago.
+    struct ChirpStream {
+        ChirpStreamUse use;
+        uint32_t sentSeq;
+    };
+    ChirpStream m_streams[CHIRP_STREAM_COUNT] = {};
+    uint32_t m_sendSeq = 0;
+    // The operator's volume in native units, carried on every vocal PLAY, or
+    // CHIRP_VOL_UNSET before setVolume() has run (the module's own level stands).
+    static constexpr uint8_t CHIRP_VOL_UNSET = 0xFFu;
+    uint8_t m_vocalVolume = CHIRP_VOL_UNSET;
+    // When the last vocal PLAY went out (m_io.millisNow()), and whether one
+    // has: an ERR: line read just after a Background Track's PLAY may be that
+    // vocal's.
+    uint32_t m_lastVocalSentMs = 0;
+    bool m_vocalSent = false;
+    // A STAT query in an earlier snapshot went unanswered, so its reply may
+    // still arrive and would be read as the next snapshot's first.
+    bool m_statReplyOwed = false;
+    // The first ERR: line read after a Background Track's PLAY, whole: the
+    // longest handlePlay() prints ("ERR:PARAM - Invalid sound index") is 31
+    // characters. A member, not a local, so AudioTask's recorded stack chain
+    // does not carry it.
+    char m_backgroundTrackErr[32] = {0};
+
+    uint8_t backgroundTrackStream() const;
+    void makeRoomBesideBackgroundTrack();
+    void noteVocalSent();
+    void readBackgroundTrackAnswer(bool vocalJustSent);
+    void noteStreamObserved(uint8_t stream, bool playing);
+
     uint16_t m_totalTracks = 0;
     uint8_t m_playState = 0xFF;
     bool m_linkOk = false;
-    uint16_t m_lastTrack = 0;   // last track index sent to playTrack(); reported as currentTrack
+    // The catalog entry the module was last OBSERVED playing, 0 when nothing
+    // identified it. Never the last index this driver sent: a commanded index
+    // echoed back as current playback is the lie #397 exists to remove.
+    uint16_t m_currentTrack = 0;
     bool m_catalogReady = false;
+    // Whether the last GMAN reply accounted for every bank the module meant to
+    // send. False after a truncated manifest, including one this driver
+    // recovered Bank 1's count for: a recovered count is not proof that no
+    // other BANK row was dropped, and a catalog that cannot be shown complete
+    // must not be described as complete (#397 work item 1).
+    bool m_manifestComplete = false;
     uint16_t m_catalogCount = 0;
     uint16_t m_catalogCapacity = 0;  // allocated m_catalog entry count (right-sized)
     uint8_t m_catalogBankCount = 0;
+    // Entries the walk could not name, left as index_N. Counted rather than
+    // only logged: a catalog full of index_N rows is usable and is not whole,
+    // and the Sound page has to be able to say so (#397 work item 12).
+    uint16_t m_missingNameCount = 0;
+    // The walk stopped at m_catalogCapacity with banks still unwalked.
+    bool m_entryCapReached = false;
+    // GMAN's "MSUM:<n>" -- the module's CRC32 over its variant and file NAMES in
+    // scan order (CHIRP_Audio.ino globalFilenameChecksum). It changes when a
+    // file is added, removed or renamed, which is exactly what renumbers the
+    // Banks 2-6 indexes a saved binding addresses. It does NOT cover
+    // directories, pages or file contents, so a same-name move between pages
+    // keeps it; that is a limit to state, not a reason to withhold the warning
+    // the module does offer (#397 work item 4).
+    AudioCatalogRefreshOutcome m_lastRefreshOutcome = AudioCatalogRefreshOutcome::Failed;
+    uint32_t m_soundListChecksum = 0;
+    // Whether the last manifest read carried a checksum at all. A checksum of
+    // zero is a value; an absent one is not, and the two must not be confused.
+    bool m_soundListChecksumValid = false;
     // Catalog storage is heap-allocated on first discovery and reused after.
     // When CHIRP RX is unavailable (e.g. the dome link owns the shared
     // controller) discovery
@@ -92,6 +206,12 @@ class AudioDriverChirp : public AudioDriver {
     AudioCatalogBank* m_catalogBanks = nullptr;
 
     bool loadManifestBanks(uint32_t timeoutMs, bool keepTotalTracks);
+
+    // Bank 1's sound count read back from the module's LIST dump, or 0 when the
+    // dump did not carry it. Only called when GMAN arrived without its BANK:1
+    // line, which is what a card with 13 or more Bank 2-6 directories does to
+    // it; see loadManifestBanks().
+    uint16_t queryBank1CountFromList();
 
     // Split, lazy catalog allocation (heap-exhaustion fix). The bank summary
     // array (~2.3 KB) is needed by the boot/link path; the per-track entry array
@@ -110,6 +230,37 @@ class AudioDriverChirp : public AudioDriver {
     // Yield Core 0 during long catalog walks so WiFi/OTA/SSE and IDLE0 run.
     void cooperativeCatalogYield();
 
-    // Read one \r\n-terminated ASCII line via m_io.
-    uint8_t readLine(char* buf, uint8_t maxLen, uint32_t timeoutMs);
+    // Read one '\n'-terminated ASCII line via m_io ('\r' discarded). Bytes that
+    // arrive without their terminator stay in the assembly buffer below and are
+    // completed by a later call, so the caller's own operation deadline -- not
+    // one read window -- is what bounds a partial line.
+    ChirpFrame readFrame(char* buf, uint8_t maxLen, uint32_t timeoutMs);
+
+    // Forget any partial line. Called wherever the driver drains RX to start a
+    // fresh conversation: the bytes before a drain belong to the exchange that
+    // is being abandoned, and completing a line across that boundary would
+    // splice two replies together.
+    void resetFrameAssembly();
+
+    // True while bytes are being assembled into a line that has not ended yet.
+    // A read window that expires mid-line is the module still talking, not the
+    // module having stopped -- which is the difference between "the LIST dump
+    // is over" and "this line is long".
+    bool frameInProgress() const { return m_rxLineLen > 0 || m_rxDiscardToTerminator; }
+
+    // The catalog index the module's reported playback path identifies, or 0
+    // when it identifies no single entry. Path-aware: see the definition in
+    // src/drivers/audio_chirp.cpp for the module-side rules it mirrors.
+    uint16_t catalogIndexForPath(const char* path) const;
+
+    // Line assembly for readFrame(). Wide enough for every frame the module
+    // prints -- the longest is "STAT:playing," plus a 64-byte path plus ",99"
+    // -- so anything that fills it is not a frame at all.
+    static constexpr uint8_t CHIRP_RX_LINE_MAX = 128;
+    char m_rxLine[CHIRP_RX_LINE_MAX] = {0};
+    uint8_t m_rxLineLen = 0;
+    // True while a line too long for m_rxLine is being dropped. The rest of it
+    // is discarded up to and including its terminator so the NEXT frame starts
+    // clean, rather than the tail being handed out as a short line of its own.
+    bool m_rxDiscardToTerminator = false;
 };

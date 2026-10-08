@@ -3,7 +3,9 @@
 
 Runs the checks required by AGENTS.md's verification section and prints a
 stable, copy-pasteable block. Workers paste the block verbatim into their
-status comment; a reviewer re-runs the same command and compares.
+status comment; the coordinator checks the block's provenance against the
+branch per slice and runs the gate itself once per wave, on the merged tree
+(docs/agents/slice-gate.md).
 
 Diff checks compare merge-base(<base>, HEAD) against HEAD — committed work
 only, so commit the slice before running the gate. Working-tree changes are
@@ -12,51 +14,78 @@ working-tree diff would always self-flag. Pre-existing instances in untouched
 files are never reported. Checks:
 
 1. native test total at HEAD vs base, plus suite pass/fail; a shrinking total
-   fails the gate (coverage reduction needs explicit coordinator acceptance),
-   and a flat total fails when the diff touches src/ or include/ — production
+   fails the gate unless the run carries a coordinator-sanctioned
+   --expect-test-shrink (the ACK is visible, with the count), and a flat
+   total fails when the diff touches src/ or include/ — production
    changes must grow the suite that covers them unless the run carries a
    coordinator-sanctioned --expect-no-new-tests (the ACK is visible)
 2. web suite (node:test) total at HEAD vs base, gated on process exit code and
    `# cancelled` — never on `# fail`, which is unreliable in both directions
    (a hung test vanishes from it; a broken invocation inflates it); a flat
    total fails when the diff touches data/ (beyond the version stamps), with
-   the same --expect-no-new-tests waiver
+   the same --expect-no-new-tests waiver, and a shrinking total fails with
+   the same --expect-test-shrink waiver
 3. mutation gate: a diff that touches web production JS (data/*.js) must
    carry mutation patches (--mutations, files or directories of *.patch);
    the gate runs tools/mutation_verify.py itself and fails unless every
    mutation is KILLED and every changed JS file is hit by at least one
    patch, so a passing block *implies* killed mutations — waivable only via
-   a visible, coordinator-sanctioned --expect-no-mutations ACK
-4. no test file deleted between base and HEAD (native or web)
+   a visible, coordinator-sanctioned --expect-no-mutations ACK. The
+   mutation table, `ran` column included, is printed in the block
+4. no test file deleted between base and HEAD (native or web), unless the
+   run carries --expect-test-shrink; every deleted file is then named in
+   the ACK
 5. `pio run -e artoo_esp32` exit code (never bare `pio run`)
 6. `tools/check_action_registry_drift.py` exit code
 7. `data/*version.json` must not appear in the diff
 8. no new `extern` declarations added inside `.cpp` files (`extern "C"` allowed)
 9. no new `#ifdef ARDUINO` / `#ifndef ARDUINO` blocks added under `include/`
-10. neither `tools/slice_verify.py` nor `tools/mutation_verify.py` may be in
-    the diff unless the run acknowledges it with --expect-gate-edit (the ACK
-    is visible in the block) — both scripts produce evidence, so both are
-    fenced
+10. none of the three evidence producers - tools/slice_verify.py,
+    tools/mutation_verify.py, tools/web_load_trace.cjs - may be in the diff
+    unless the run acknowledges it with --expect-gate-edit (the ACK is
+    visible in the block)
 11. no fenced pathspec (--fenced, comma-separated, repeatable) in the diff
 12. the tooling test suite (test/test_tools/, includes the gate's own unit
     tests) passes — the evidence producer is not exempt from prove-it-works
 13. no added line, in any file, names the glossary by the name it had before
     50c74203 (OLD_GLOSSARY_RE); it is GLOSSARY.md
+14. build budget (artoo_esp32, tools/build_budgets.json): flash and static RAM
+    under their budgets, and the BOOT HEAP FIGURE - static .data + .bss plus
+    the stack and TCB of every task each boot creates (the recipe arms whose
+    "created" is "always", tools/task_stack_recipes.json) - no more than
+    boot_heap_threshold_bytes past boot_heap_baseline_bytes, unless the run
+    carries a coordinator-sanctioned --expect-heap-growth <bytes> naming at
+    least the growth (the ACK is visible, with both numbers). The figure is
+    not runtime heap: WiFi and lwIP buffers, the HTTP server, conditionally
+    created tasks and transient allocations are outside it, and `make
+    bench-auto`'s memory log stays the runtime truth (#468)
 
-The block opens with provenance lines — blob hashes of both verifier
+A web-only diff - every path in merge-base..HEAD matches WEB_ONLY_RES - cannot
+fail the native suite, the build budget or the task stack chains, so those
+rows print SKIP (web-only diff). The firmware compile stays: it is also the
+staging check, because tools/gzip_fsdata.py runs on every `pio run`, minifies
+every data/ JS and CSS file through esbuild and resolves the HTML includes -
+the only syntax check a data/ file that no web test opens gets.
+Web-only is derived from the diff and printed in the block; there is no flag
+for it.
+
+The block opens with provenance lines — blob hashes of the three verifier
 scripts, HEAD sha, a
 DIRTY marker when the working tree differs beyond `data/*version.json`,
 base/merge-base, diff size, and toolchain versions — so a pasted block can be
 checked against the commit and gate version it claims to describe. Every
 subprocess runs under a timeout so a hung build or test fails the gate loudly
-instead of hanging it.
+instead of hanging it. Per-stage wall times go to stderr and --json, never to
+the block: the block is compared verbatim, and a timing never repeats.
 
 The phases that invoke pio hold the machine-wide build lock (tools/pio_lock.py,
 AGENTS.md "The build lock"), so a gate run and another agent's build serialise
-instead of colliding. It is taken per pio phase rather than for the whole run,
-so the web suite and the mutation stage do not queue other agents behind them.
-Run the gate plainly: an outer `flock` on the same file is now the nested case,
-and is refused rather than waited on.
+instead of colliding. It is taken per pio phase rather than for the whole run.
+The web suite and the mutation stage hold a different lock,
+/tmp/protor2-webtest.lock, so two gates' web stages serialise without
+queueing anyone's build behind them; the two are never held as one lock, and
+never nested. Run the gate plainly: an outer `flock` on the same file is now
+the nested case, and is refused rather than waited on.
 
 Exit code 0 only when every check passes. Dependency-free: stdlib + git + pio,
 plus tools/pio_lock.py beside this script.
@@ -65,23 +94,42 @@ plus tools/pio_lock.py beside this script.
 from __future__ import annotations
 
 import argparse
+import atexit
 import contextlib
 import json
 import os
 import re
+import resource
+import shutil
+import signal
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 import glob
+
+import suite_pause
 
 # Sibling module in tools/, which is on sys.path for both entry points: this
 # script run directly, and the tooling tests that import it.
 import pio_lock
 
 ROOT = Path(__file__).resolve().parents[1]
-CACHE_PATH = ROOT / ".pio" / "slice-verify-cache.json"
+# Machine-wide, not per worktree: the base run happens in a fresh temporary
+# worktree, so its native build is always cold, and a cache under one
+# worktree's .pio never helped the next worktree's gate run against the same
+# base. Keyed by base sha, the three verifier hashes and the Node version.
+CACHE_PATH = Path("/tmp/protor2-slice-verify-cache.json")
+# The web suite and the mutation stage serialise on this lock; the pio lock is
+# for pio only (tools/pio_lock.py). Two concurrent web stages starved each
+# other into ENOMEM on 2026-09-18 (coordinate-epic SKILL.md "The build lock").
+WEBTEST_LOCK_PATH = Path("/tmp/protor2-webtest.lock")
+# The load map (tools/web_load_trace.cjs) and the per-file durations the
+# mutation runner orders by. Shared by the gate and standalone mutation_verify.
+LOAD_MAP_CACHE_PATH = Path("/tmp/protor2-web-load-map.json")
+LOAD_TRACE_ENV = "PROTOR2_LOAD_TRACE"
 VERSION_JSON_RE = re.compile(r"^data/.*version\.json$")
 # Generated, firmware-consumed artefacts under data/. They ship in the LittleFS
 # image but the browser never executes or parses them, so the web suite - whose
@@ -93,7 +141,7 @@ VERSION_JSON_RE = re.compile(r"^data/.*version\.json$")
 # tools/check_action_registry_drift.py. Same exclusion principle as
 # VERSION_JSON_RE above, different reason: build artefact vs uncoverable-by-
 # construction. .html and .css are deliberately NOT here - the web suite does
-# read .html (see test/test_web/test_issue_117_recovery_visibility.js), so
+# read .html (see test/test_web/test_recovery_visibility.js), so
 # those stay answerable.
 GENERATED_DATA_RE = re.compile(r"^data/console_help\.txt$")
 WEB_PRODUCTION_RE = re.compile(r"^data/")
@@ -103,10 +151,10 @@ ARDUINO_GUARD_RE = re.compile(
     r"#\s*(?:ifndef|ifdef)\s+ARDUINO\b|#\s*(?:if|elif)\b.*defined\s*\(\s*ARDUINO\s*\)"
 )
 # The glossary had this name until 50c74203 (mattpocock/skills v1.3.0 renamed
-# the convention to GLOSSARY.md). Branches cut before the rename still carry
-# the old name, so a worker writing it from habit or a stale brief is the way
-# it comes back. The brackets keep this line from matching itself, or the CI
-# grep.
+# the convention to GLOSSARY.md). Slice branches cut before the rename still
+# carry the old name, so a worker writing it from habit or a stale brief is the
+# way it comes back. Unlike the two checks above it is prose, so comments
+# count. The brackets keep this line from matching itself, or the CI grep.
 OLD_GLOSSARY_RE = re.compile(r"CONTEXT[.]md|CONTEXT[-]MAP")
 TEST_TOTAL_RE = re.compile(r"(\d+) test cases:")
 TEST_SUCCEEDED_RE = re.compile(r"(\d+) succeeded")
@@ -131,12 +179,50 @@ GIT_TIMEOUT = 120
 BUILD_TIMEOUT = 1800
 NATIVE_TEST_TIMEOUT = 1800
 WEB_TEST_TIMEOUT = 300
+# The mutation runner starts one node per test file, so its deadline is per
+# file. The slowest file at HEAD is 16.1 s (test_status_plate.js, #405).
+MUTATION_FILE_TIMEOUT = 60
+# Memory ceiling for a test subprocess, the same shape as the timeout above and
+# there for the case the timeout structurally cannot catch.
+#
+# Measured 2026-09-11 (#344, #355): an unbounded loop in a worker's in-progress
+# data/shell.js grew one node process from 26.0 to 29.8 GB in about twelve
+# seconds and systemd-oomd killed the operator's whole terminal scope, 337
+# processes, three times over. --test-timeout=10000 never fired and could not
+# have: the loop re-entered through Promise.resolve().then(), and a microtask
+# chain starves timers by construction, so the deadline never gets a turn.
+# mutation_verify multiplies the exposure by running the whole suite once per
+# patch, and a worker mid-slice is exactly when such a loop is most likely.
+#
+# 2 GiB is ~24x the measured peak of a healthy run (85 MB, whole web suite,
+# 2026-09-12) and catches the runaway above in 0.1s instead of twelve seconds.
+# RLIMIT_AS rather than a heap flag: the allocation that ran away was external
+# to the JS heap, so --max-old-space-size (default ~4.1 GB) would not have seen
+# it. Applied per subprocess, so node's own per-file test children inherit it
+# and each file is capped individually.
+TEST_MEMORY_LIMIT_BYTES = 2 * 1024 * 1024 * 1024
 DEFAULT_TIMEOUT = 600
 GATE_SCRIPT = "tools/slice_verify.py"
 MUTATION_SCRIPT = "tools/mutation_verify.py"
+TRACE_SCRIPT = "tools/web_load_trace.cjs"
+VERIFIER_SCRIPTS = (GATE_SCRIPT, MUTATION_SCRIPT, TRACE_SCRIPT)
 WEB_JS_RE = re.compile(r"^data/.*\.js$")
+# A diff is web-only when EVERY path in it matches one of these. An allow-list,
+# not "the diff has no src/": a native test reads data/console_help.txt, so a
+# data/ path outside this list can fail the native suite.
+WEB_ONLY_RES = (
+    re.compile(r"^data/[^/]+\.(js|css|html)$"),
+    re.compile(r"^test/test_web/"),
+    re.compile(r"^docs/"),
+)
+WEB_ONLY_SKIP = "SKIP (web-only diff)"
 
 DRAM_PREFIXES = (".dram0.", ".dram1.")
+
+# Each task's stack per chip, and whether every boot on that chip creates it
+# (the arm's "created"), live in the stack recipes; the TCB size per chip is in
+# their metadata, measured from the ELF (#468).
+TASK_RECIPES = ROOT / "tools" / "task_stack_recipes.json"
 
 
 @dataclass
@@ -145,6 +231,10 @@ class CheckResult:
     detail: str
     passed: bool
     notes: list[str]
+    # Printed in the block under the status rows, PASS or FAIL: the mutation
+    # table is evidence on a passing run too.
+    table: list[str] = field(default_factory=list)
+    skipped: bool = False
 
 
 def info(message: str) -> None:
@@ -159,12 +249,29 @@ def _text(data: str | bytes | None) -> str:
     return data
 
 
+def _memory_capper(limit: int | None):
+    """preexec_fn capping the child's address space, or None for no cap.
+
+    Returns None rather than a no-op callable when uncapped: passing any
+    preexec_fn disables subprocess's fast-path fork, so an unlimited run should
+    not pay for a limit it is not setting.
+    """
+    if limit is None:
+        return None
+
+    def cap():
+        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+
+    return cap
+
+
 def run(
     cmd: list[str],
     cwd: Path = ROOT,
     timeout: int = DEFAULT_TIMEOUT,
     env: dict | None = None,
     lock: bool = False,
+    memory_limit: int | None = None,
 ) -> subprocess.CompletedProcess:
     """Run a command under a timeout; `lock` holds the build lock across it.
 
@@ -179,7 +286,7 @@ def run(
         try:
             return subprocess.run(
                 cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout,
-                env=env,
+                env=env, preexec_fn=_memory_capper(memory_limit),
             )
         except subprocess.TimeoutExpired as exc:
             stderr = _text(exc.stderr) + f"\n[slice_verify] timed out after {timeout}s"
@@ -325,19 +432,36 @@ def run_native_tests(cwd: Path) -> tuple[int, tuple[int, int] | None, str]:
     return proc.returncode, parse_native_summary(output), output
 
 
-def load_cache() -> dict:
+def read_json(path: Path) -> dict:
+    """A JSON object from `path`, or {} when it is missing or unreadable.
+
+    Both callers treat {} as "nothing cached" and recompute, so a corrupt cache
+    costs a rerun, never a wrong answer.
+    """
     try:
-        return json.loads(CACHE_PATH.read_text())
+        data = json.loads(path.read_text())
     except (OSError, ValueError):
         return {}
+    return data if isinstance(data, dict) else {}
 
 
-def save_cache(cache: dict) -> None:
+def write_json(path: Path, data: dict) -> None:
+    """Replace `path` atomically: a reader in another gate never sees half a file."""
+    partial = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     try:
-        CACHE_PATH.parent.mkdir(exist_ok=True)
-        CACHE_PATH.write_text(json.dumps(cache))
-    except OSError:
-        pass
+        partial.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
+        partial.replace(path)
+    except OSError as err:
+        # A cache we cannot write means the next run recomputes; say so rather
+        # than pretend it was saved.
+        info(f"could not write {path}: {err}")
+
+
+def cache_key(base_sha: str, hashes: dict[str, str], node_version: str) -> str:
+    """Base totals depend on the base tree and on the code that counted them."""
+    return ":".join(
+        (base_sha, hashes["gate"], hashes["mut"], hashes["trace"], node_version)
+    )
 
 
 def web_test_files(cwd: Path) -> list[str]:
@@ -351,35 +475,110 @@ def parse_tap_counts(output: str) -> dict[str, int] | None:
     return counts if "tests" in counts else None
 
 
-def run_web_tests(cwd: Path) -> tuple[int, dict[str, int] | None, str]:
+def web_test_lock(command: list[str]):
+    """The web-test mutex: same flock(2) mechanism as the pio lock, other file."""
+    return pio_lock.build_lock(command, lock_path=WEBTEST_LOCK_PATH)
+
+
+def node_version() -> str:
+    proc = run(["node", "--version"], timeout=60)
+    return proc.stdout.strip() if proc.returncode == 0 else "unknown"
+
+
+def load_map_key(cwd: Path = ROOT) -> dict[str, str] | None:
+    """What a load map is valid for: the data/ and test/test_web/ trees and Node.
+
+    None when a tree id cannot be read, which the reader treats as no map.
+    """
+    key = {"node": node_version()}
+    for name, tree in (("data", "HEAD:data"), ("test_web", "HEAD:test/test_web")):
+        proc = run(["git", "rev-parse", tree], cwd=cwd, timeout=GIT_TIMEOUT)
+        if proc.returncode != 0:
+            return None
+        key[name] = proc.stdout.strip()
+    return key
+
+
+def save_load_map(key: dict[str, str], load_map: dict[str, list[str]]) -> None:
+    """Store a fresh map. The durations section is kept: it is not keyed."""
+    cache = read_json(LOAD_MAP_CACHE_PATH)
+    cache["key"] = key
+    cache["map"] = load_map
+    write_json(LOAD_MAP_CACHE_PATH, cache)
+
+
+def run_web_tests(
+    cwd: Path, trace: bool = False
+) -> tuple[int, dict[str, int] | None, str]:
+    """The whole web suite, one node invocation, under the web-test lock.
+
+    With `trace`, node preloads tools/web_load_trace.cjs and a green run is
+    stored as the load map for this HEAD - the mutation runner's narrowing
+    comes from this run, not from a second one.
+    """
     files = web_test_files(cwd)
     if not files:
         return 0, {"tests": 0, "pass": 0, "fail": 0, "cancelled": 0}, ""
-    proc = run(["node", *WEB_TEST_FLAGS, *files], cwd=cwd, timeout=WEB_TEST_TIMEOUT)
+    cmd = ["node", *WEB_TEST_FLAGS, *files]
+    env = None
+    trace_out: Path | None = None
+    if trace:
+        trace_out = Path(tempfile.mkdtemp(prefix="protor2-load-trace-")) / "map.json"
+        cmd = ["node", "--require", str(ROOT / TRACE_SCRIPT), *WEB_TEST_FLAGS, *files]
+        env = {**os.environ, LOAD_TRACE_ENV: str(trace_out)}
+    with web_test_lock(cmd):
+        proc = run(cmd, cwd=cwd, timeout=WEB_TEST_TIMEOUT, env=env,
+                   memory_limit=TEST_MEMORY_LIMIT_BYTES)
     output = proc.stdout + proc.stderr
-    return proc.returncode, parse_tap_counts(output), output
+    counts = parse_tap_counts(output)
+    if trace_out is not None:
+        green = proc.returncode == 0 and counts is not None and not counts.get("cancelled")
+        load_map = read_json(trace_out) if green else {}
+        key = load_map_key(cwd) if load_map else None
+        if key is not None:
+            save_load_map(key, load_map)
+        else:
+            info("web run not green or not traced; no load map stored (mutations widen)")
+        # A private mkdtemp: the map and any fragments a crashed child left.
+        shutil.rmtree(trace_out.parent, ignore_errors=True)
+    return proc.returncode, counts, output
 
 
-def base_totals(base_sha: str) -> tuple[dict[str, int | None], dict[str, list[str]]]:
+# Base worktrees this process created and has not removed yet. A clean return
+# removes its own in base_totals()'s finally; a killed run used to leave them in
+# /tmp forever, which is what the atexit and signal handlers in main() are for.
+_BASE_WORKTREES: set[Path] = set()
+
+
+def remove_base_worktrees() -> None:
+    for worktree in sorted(_BASE_WORKTREES):
+        run(["git", "worktree", "remove", "--force", str(worktree)])
+        _BASE_WORKTREES.discard(worktree)
+    run(["git", "worktree", "prune"])
+
+
+def base_totals(
+    base_sha: str, key: str, need_native: bool = True
+) -> tuple[dict[str, int | None], dict[str, list[str]]]:
     """Native and web test totals at the base commit, via a throwaway worktree.
 
-    Cached per commit SHA so repeated gate runs do not rebuild the base
-    suites. Cache entries written by older gate versions were a bare native
-    total; those are treated as native-only and the web total is filled in.
+    Cached machine-wide under `key` (cache_key()) so repeated gate runs - from
+    any worktree - do not rebuild the base suites. `need_native=False` is the
+    web-only diff, whose native row is skipped; a cached native total is still
+    returned when there is one.
     """
-    cache = load_cache()
-    entry = cache.get(base_sha)
-    if isinstance(entry, int):
-        entry = {"native": entry}
+    cache = read_json(CACHE_PATH)
+    entry = cache.get(key)
     totals: dict[str, int | None] = dict(entry) if isinstance(entry, dict) else {}
     notes: dict[str, list[str]] = {"native": [], "web": []}
-    if "native" in totals and "web" in totals:
+    if ("native" in totals or not need_native) and "web" in totals:
         return totals, notes
     info(f"running base suites at {base_sha[:12]} (temporary worktree)...")
     worktree = Path(tempfile.mkdtemp(prefix="slice-verify-base-"))
+    _BASE_WORKTREES.add(worktree)
     try:
         git(["worktree", "add", "--detach", str(worktree), base_sha])
-        if "native" not in totals:
+        if need_native and "native" not in totals:
             code, summary, output = run_native_tests(worktree)
             if code != 0 or summary is None:
                 totals["native"] = None
@@ -396,12 +595,13 @@ def base_totals(base_sha: str) -> tuple[dict[str, int | None], dict[str, list[st
             else:
                 totals["web"] = counts["tests"]
     finally:
-        run(["git", "worktree", "remove", "--force", str(worktree)])
-        run(["git", "worktree", "prune"])
-    cached = {key: value for key, value in totals.items() if value is not None}
+        remove_base_worktrees()
+    cached = {name: value for name, value in totals.items() if value is not None}
     if cached:
-        cache[base_sha] = cached
-        save_cache(cache)
+        # Re-read: another worktree's gate may have written while this one ran.
+        cache = read_json(CACHE_PATH)
+        cache[key] = cached
+        write_json(CACHE_PATH, cache)
     return totals, notes
 
 
@@ -424,6 +624,30 @@ def production_changes(diff_names: list[str]) -> dict[str, list[str]]:
     }
 
 
+def is_web_only(diff_names: list[str]) -> bool:
+    """True when every path in the diff is one the native side cannot see.
+
+    An empty diff is not web-only: nothing was proven about it, so it keeps the
+    full set of rows.
+    """
+    return bool(diff_names) and all(
+        any(pattern.match(name) for pattern in WEB_ONLY_RES) for name in diff_names
+    )
+
+
+def skipped(label: str) -> CheckResult:
+    return CheckResult(label, WEB_ONLY_SKIP, True, [], skipped=True)
+
+
+def paused_skip(label: str) -> CheckResult:
+    """Product suite row skipped for the #464 experiment. A pass of this row
+    is not a pass of the suite."""
+    return CheckResult(
+        label, "SKIP (suites paused until 2026-11-01, #464)", True,
+        [suite_pause.BANNER], skipped=True,
+    )
+
+
 def zero_delta_ok(
     delta: int, production: list[str], waived: bool, suite: str
 ) -> tuple[bool, list[str]]:
@@ -444,12 +668,29 @@ def zero_delta_ok(
     ]
 
 
+def shrink_ok(delta: int, waived: bool, suite: str) -> tuple[bool, list[str]]:
+    """A shrinking suite is coverage removed; it passes only under an explicit,
+    visible waiver, and the ACK carries the count so the block says how much."""
+    if delta >= 0:
+        return True, []
+    if waived:
+        return True, [
+            f"{suite} test count shrank by {-delta};"
+            " ACK (--expect-test-shrink); needs coordinator sanction"
+        ]
+    return False, [
+        f"{suite} test count shrank by {-delta}; shrinking coverage needs"
+        " coordinator-sanctioned --expect-test-shrink"
+    ]
+
+
 def check_native_tests(
     base_total: int | None,
     same_commit: bool,
     base_notes: list[str],
     production: list[str],
     expect_no_new_tests: bool,
+    expect_test_shrink: bool,
 ) -> CheckResult:
     info("running native tests at HEAD...")
     code, summary, output = run_native_tests(ROOT)
@@ -467,12 +708,10 @@ def check_native_tests(
     else:
         delta = total - base_total
         detail = f"{base_total} -> {total}  (delta {delta:+d})"
-        passed = code == 0 and succeeded == total and delta >= 0
-        if delta < 0:
-            notes.append(
-                f"native test count shrank by {-delta}; shrinking coverage"
-                " needs explicit coordinator acceptance"
-            )
+        passed = code == 0 and succeeded == total
+        shrink_passed, shrink_notes = shrink_ok(delta, expect_test_shrink, "native")
+        notes.extend(shrink_notes)
+        passed = passed and shrink_passed
         delta_ok, delta_notes = zero_delta_ok(
             delta, production, expect_no_new_tests, "native"
         )
@@ -491,9 +730,10 @@ def check_web_tests(
     base_notes: list[str],
     production: list[str],
     expect_no_new_tests: bool,
+    expect_test_shrink: bool,
 ) -> CheckResult:
-    info("running web tests at HEAD...")
-    code, counts, output = run_web_tests(ROOT)
+    info("running web tests at HEAD (load-traced)...")
+    code, counts, output = run_web_tests(ROOT, trace=True)
     notes: list[str] = list(base_notes)
     if counts is None:
         notes.append(f"could not parse web TAP summary (exit {code}); tail:")
@@ -509,12 +749,10 @@ def check_web_tests(
     else:
         delta = total - base_total
         detail = f"{base_total} -> {total}  (delta {delta:+d})"
-        passed = code == 0 and cancelled == 0 and delta >= 0
-        if delta < 0:
-            notes.append(
-                f"web test count shrank by {-delta}; shrinking coverage"
-                " needs explicit coordinator acceptance"
-            )
+        passed = code == 0 and cancelled == 0
+        shrink_passed, shrink_notes = shrink_ok(delta, expect_test_shrink, "web")
+        notes.extend(shrink_notes)
+        passed = passed and shrink_passed
         delta_ok, delta_notes = zero_delta_ok(
             delta, production, expect_no_new_tests, "web"
         )
@@ -571,13 +809,25 @@ def uncovered_production_files(
 
 
 def check_mutations(
-    production_web: list[str], patches: list[str], expect_no_mutations: bool
+    production_web: list[str],
+    patches: list[str],
+    expect_no_mutations: bool,
+    deleted: frozenset[str] = frozenset(),
 ) -> CheckResult:
     """Mutation coverage as a gate row: a passing block implies killed
     mutations, so there is no separate evidence left for a report to
-    substitute or omit."""
+    substitute or omit.
+
+    A file the diff deletes has no code left to mutate, so it is not asked
+    for a patch: #415 deleted data/wiring_outputs.js as its ticket required
+    and the row failed on a demand nothing could meet. What replaced the file
+    is a changed file of its own and is covered on those terms."""
     label = "mutation gate"
-    production_js = [name for name in production_web if WEB_JS_RE.match(name)]
+    production_js = [
+        name
+        for name in production_web
+        if WEB_JS_RE.match(name) and name not in deleted
+    ]
     if not patches:
         if not production_js:
             return CheckResult(label, "not required", True, [])
@@ -610,28 +860,60 @@ def check_mutations(
             " patch aimed at it"
         )
     info(f"running {MUTATION_SCRIPT} on {len(patches)} patches...")
-    timeout = 120 + (WEB_TEST_TIMEOUT + 30) * len(patches)
-    proc = run(["python3", MUTATION_SCRIPT, *patches], timeout=timeout)
-    for line in proc.stdout.splitlines():
+    # A backstop for a wedged runner, not a budget: one possible load-map
+    # rebuild, then every patch widened to every file at the per-file ceiling.
+    # mutation_verify bounds each child itself.
+    per_file = MUTATION_FILE_TIMEOUT + 5
+    timeout = 120 + WEB_TEST_TIMEOUT + per_file * len(web_test_files(ROOT)) * len(patches)
+    cmd = ["python3", MUTATION_SCRIPT, *patches]
+    # The runner takes the web-test lock too (standalone runs need it); holding
+    # it here makes its acquire a no-op instead of a wait on ourselves.
+    with web_test_lock(cmd):
+        proc = run(cmd, timeout=timeout)
+    for line in proc.stderr.splitlines():
         info(f"  {line}")
+    table = mutation_table(proc.stdout)
     if proc.returncode != 0:
         passed = False
-        notes.append(f"{MUTATION_SCRIPT} exit {proc.returncode}; table:")
-        notes.extend(proc.stdout.splitlines()[-(len(patches) + 4) :])
+        notes.append(f"{MUTATION_SCRIPT} exit {proc.returncode}")
+        if not table:
+            notes.extend(proc.stdout.splitlines()[-(len(patches) + 4) :])
         stderr_tail = proc.stderr.strip()
         if stderr_tail:
             notes.extend(stderr_tail.splitlines()[-5:])
-    return CheckResult(label, f"{len(patches)} patches", passed, notes)
+    return CheckResult(label, f"{len(patches)} patches", passed, notes, table=table)
 
 
-def check_deleted_tests(base_sha: str) -> CheckResult:
+def mutation_table(stdout: str) -> list[str]:
+    """The runner's table - header and one row per patch - for the block.
+
+    The runner's own "mutation gate: PASS" summary line is left out: the
+    block's mutation row already says it, and says it with the gate's status.
+    """
+    return [
+        line for line in stdout.splitlines()
+        if line.strip() and not line.startswith("mutation gate:")
+    ]
+
+
+def deleted_tests_result(names: list[str], waived: bool) -> CheckResult:
+    notes = [f"deleted: {name}" for name in names]
+    if names and waived:
+        notes.append("ACK (--expect-test-shrink); needs coordinator sanction")
+    elif names:
+        notes.append(
+            "deleting a test file needs coordinator-sanctioned --expect-test-shrink"
+        )
+    return CheckResult(
+        "deleted test files", str(len(names)), waived or not names, notes
+    )
+
+
+def check_deleted_tests(base_sha: str, expect_test_shrink: bool) -> CheckResult:
     names = git(
         ["diff", "--diff-filter=D", "--name-only", base_sha, "HEAD", "--", "test/"]
     ).splitlines()
-    notes = [f"deleted: {name}" for name in names]
-    if names:
-        notes.append("deleting a test file needs explicit coordinator acceptance")
-    return CheckResult("deleted test files", str(len(names)), not names, notes)
+    return deleted_tests_result(names, expect_test_shrink)
 
 
 def check_command_exit(
@@ -650,7 +932,69 @@ def check_command_exit(
     return CheckResult(label, f"exit {proc.returncode}", proc.returncode == 0, notes)
 
 
-def check_build_budget(env_name: str = "artoo_esp32") -> CheckResult:
+def always_created_tasks(chip: str, recipes: dict) -> list[tuple[str, int]]:
+    """(task, stack bytes) of every task each boot on `chip` creates."""
+    return [
+        (entry["task"], entry["chips"][chip]["stack_bytes"])
+        for entry in recipes["tasks"]
+        if chip in entry["chips"] and entry["chips"][chip]["created"] == "always"
+    ]
+
+
+def boot_heap_bytes(static_ram: int, chip: str, recipes: dict) -> int:
+    """The boot heap figure: static .data + .bss, plus the stack and TCB of
+    every task each boot on `chip` creates.
+
+    It is what a boot takes from internal RAM before anything runs, and it can
+    be read from a build. It is NOT runtime heap: WiFi and lwIP buffers, the
+    HTTP server's task and sockets, request bodies, a conditionally created
+    task (an RC input, the dome, audio, the aux LEDs, the PCA9685 sender, the
+    OTA task) and every transient allocation are outside it, and so is the
+    allocator's per-block overhead. `make bench-auto`'s memory log is the
+    runtime truth; this figure exists so a slice that grows the part a build
+    CAN see is caught at that slice (#468).
+    """
+    tcb = recipes["metadata"]["tcb_bytes"][chip]
+    return static_ram + sum(stack + tcb for _, stack in always_created_tasks(chip, recipes))
+
+
+def boot_heap_verdict(
+    figure: int, env_budget: dict, expect_heap_growth: int | None
+) -> tuple[bool, str, list[str]]:
+    """(passed, detail, notes) for the boot heap figure against its baseline.
+
+    Growth past the baseline by more than the threshold fails, unless the run
+    names at least that many bytes with --expect-heap-growth, which a
+    coordinator grants like the other waivers; the ACK is then printed with
+    both numbers. The baseline moves only by an operator-approved edit of
+    tools/build_budgets.json, never by the gate.
+    """
+    baseline = env_budget.get("boot_heap_baseline_bytes")
+    threshold = env_budget.get("boot_heap_threshold_bytes")
+    if baseline is None or threshold is None:
+        return False, f"Boot heap {figure} (no baseline)", [
+            "No boot_heap_baseline_bytes / boot_heap_threshold_bytes in build_budgets.json"
+        ]
+    growth = figure - baseline
+    detail = f"Boot heap {figure} ({growth:+d} vs {baseline})"
+    if growth <= threshold:
+        return True, detail, []
+    grew = f"boot heap grew {growth} B over the {baseline} B baseline (threshold {threshold} B)"
+    if expect_heap_growth is not None and expect_heap_growth >= growth:
+        return True, detail, [
+            f"{grew}; ACK (--expect-heap-growth {expect_heap_growth}); needs coordinator sanction"
+        ]
+    short = (f"; --expect-heap-growth {expect_heap_growth} names fewer bytes than that"
+             if expect_heap_growth is not None else "")
+    return False, detail, [
+        f"{grew}{short}; give the bytes back, or name them with a coordinator-sanctioned"
+        " --expect-heap-growth <bytes>"
+    ]
+
+
+def check_build_budget(
+    env_name: str = "artoo_esp32", expect_heap_growth: int | None = None
+) -> CheckResult:
     """Check if built firmware exceeds the budget for flash/RAM.
 
     Only the slice gate checks artoo_esp32 budget. CI wiring is separate.
@@ -705,6 +1049,18 @@ def check_build_budget(env_name: str = "artoo_esp32") -> CheckResult:
             [f"No ram_budget_bytes for {env_name}"]
         )
 
+    try:
+        chip, _ = platform_for_env(env_name, budgets)
+        recipes = json.loads(TASK_RECIPES.read_text(encoding="utf-8"))
+        boot_heap = boot_heap_bytes(ram_bytes, chip, recipes)
+        info(f"boot heap {env_name}: static {ram_bytes} + "
+             f"{', '.join(task for task, _ in always_created_tasks(chip, recipes))}")
+    except Exception as e:
+        return CheckResult(
+            "build budget", "no boot heap figure", False,
+            [f"Could not compute the boot heap figure for {env_name}: {e}"]
+        )
+
     # Check budgets
     flash_over_budget = flash_bytes > flash_ceiling
     ram_over_budget = ram_bytes > ram_ceiling
@@ -729,8 +1085,14 @@ def check_build_budget(env_name: str = "artoo_esp32") -> CheckResult:
         pct_used = (ram_bytes / ram_ceiling) * 100
         detail_parts.append(f"RAM {ram_bytes} < {ram_ceiling} ({pct_used:.1f}%)")
 
+    boot_passed, boot_detail, boot_notes = boot_heap_verdict(
+        boot_heap, env_budget, expect_heap_growth
+    )
+    detail_parts.append(boot_detail)
+    notes.extend(boot_notes)
+
     detail = " | ".join(detail_parts)
-    passed = not (flash_over_budget or ram_over_budget)
+    passed = not (flash_over_budget or ram_over_budget) and boot_passed
     return CheckResult("build budget", detail, passed, notes)
 
 
@@ -761,7 +1123,7 @@ def check_version_json(base_sha: str) -> CheckResult:
 
 def check_gate_script(base_sha: str, expect_gate_edit: bool) -> CheckResult:
     names = git(
-        ["diff", "--name-only", base_sha, "HEAD", "--", GATE_SCRIPT, MUTATION_SCRIPT]
+        ["diff", "--name-only", base_sha, "HEAD", "--", *VERIFIER_SCRIPTS]
     ).splitlines()
     if not names:
         return CheckResult("gate script in diff", "0 files", True, [])
@@ -770,7 +1132,7 @@ def check_gate_script(base_sha: str, expect_gate_edit: bool) -> CheckResult:
         return CheckResult("gate script in diff", "ACK (expect-gate-edit)", True, notes)
     notes = [f"in diff: {name}" for name in names]
     notes.append(
-        "neither verifier script may be edited by the slice it verifies; rerun"
+        "no verifier script may be edited by the slice it verifies; rerun"
         " with --expect-gate-edit only for coordinator-sanctioned gate work"
     )
     return CheckResult("gate script in diff", f"{len(names)} files", False, notes)
@@ -835,13 +1197,72 @@ def env_fingerprint() -> str:
     )
 
 
+def c_code_part(line: str) -> str:
+    """The code on one C/C++ line, with its comment dropped.
+
+    The per-line form of tools/operator_copy.py blank_js_comments(): the gate
+    sees one added line at a time, so a line whose first non-space character
+    is `*` is treated as a block-comment body and yields nothing (a `*/` there
+    closes it, and what follows is code again). Outside a string literal a
+    `//` ends the code, and a `/*` is dropped through its `*/` on the same
+    line, or to the end of the line when it does not close there.
+    String-aware, because `"http://x"` is not a comment.
+
+    Not handled: a block comment's middle line that does not begin with `*`.
+    Without the lines above it there is no way to know it is inside a
+    comment, so it still reaches the pattern as code.
+    """
+    stripped = line.lstrip()
+    if stripped.startswith("*"):
+        close = stripped.find("*/")
+        if close < 0:
+            return ""
+        line = stripped[close + 2:]
+    code = []
+    index, end = 0, len(line)
+    while index < end:
+        char = line[index]
+        if char in "'\"":
+            start = index
+            index += 1
+            while index < end and line[index] != char:
+                index += 2 if line[index] == "\\" else 1
+            index += 1
+            code.append(line[start:index])
+            continue
+        if char == "/" and index + 1 < end and line[index + 1] == "/":
+            break
+        if char == "/" and index + 1 < end and line[index + 1] == "*":
+            close = line.find("*/", index + 2)
+            if close < 0:
+                break
+            code.append(" ")
+            index = close + 2
+            continue
+        code.append(char)
+        index += 1
+    return "".join(code)
+
+
+def code_matches(pattern: re.Pattern, line: str) -> bool:
+    # Both callers ask about code, not prose: an `extern` or an `#ifndef
+    # ARDUINO` named in a comment declares nothing and guards nothing, so the
+    # comment is dropped before matching.
+    return bool(pattern.search(c_code_part(line)))
+
+
+def text_matches(pattern: re.Pattern, line: str) -> bool:
+    return bool(pattern.search(line))
+
+
 def check_added_pattern(
-    label: str, base_sha: str, pathspec: list[str], pattern: re.Pattern
+    label: str, base_sha: str, pathspec: list[str], pattern: re.Pattern,
+    matches=code_matches,
 ) -> CheckResult:
     hits = [
         (path, line)
         for path, line in added_lines(base_sha, pathspec)
-        if pattern.search(line)
+        if matches(pattern, line)
     ]
     notes = [f"{path}: {line.strip()}" for path, line in hits]
     return CheckResult(label, str(len(hits)), not hits, notes)
@@ -871,6 +1292,21 @@ def main() -> int:
         help="acknowledge, with coordinator sanction, that this slice changes"
         " production code without growing the owning test suite;"
         " the ACK is visible in the printed block",
+    )
+    parser.add_argument(
+        "--expect-test-shrink",
+        action="store_true",
+        help="acknowledge, with coordinator sanction, that this slice deletes"
+        " tests or test files; the ACK, the count and every deleted file are"
+        " visible in the printed block",
+    )
+    parser.add_argument(
+        "--expect-heap-growth",
+        type=int,
+        metavar="BYTES",
+        help="acknowledge, with coordinator sanction, that this slice grows the"
+        " boot heap figure past its baseline by up to BYTES; the ACK and both"
+        " numbers are visible in the printed block",
     )
     parser.add_argument(
         "--mutations",
@@ -903,99 +1339,190 @@ def main() -> int:
         print(f"error: {err}", file=sys.stderr)
         return 2
 
-    gate_hash = script_blob_hash()
-    mutation_hash = script_blob_hash(MUTATION_SCRIPT)
+    # A killed run must not strand its base worktree in /tmp. The finally in
+    # base_totals() covers a clean return; SystemExit from the handler unwinds
+    # through subprocess.run, which kills the child it was waiting on, and
+    # through that finally, and atexit catches whatever is left.
+    atexit.register(remove_base_worktrees)
+
+    def on_signal(signum, _frame):
+        raise SystemExit(128 + signum)
+
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(signum, on_signal)
+
+    hashes = {
+        "gate": script_blob_hash(GATE_SCRIPT),
+        "mut": script_blob_hash(MUTATION_SCRIPT),
+        "trace": script_blob_hash(TRACE_SCRIPT),
+    }
     dirty = working_tree_dirty()
     env = env_fingerprint()
     diff_names = git(["diff", "--name-only", base_sha, "HEAD"]).splitlines()
     diff_files = len(diff_names)
     production = production_changes(diff_names)
+    web_only = is_web_only(diff_names)
     print(
-        f"gate {gate_hash}  mut {mutation_hash}"
+        f"gate {hashes['gate']}  mut {hashes['mut']}  trace {hashes['trace']}"
         f"  head {head_sha[:12]}{'  DIRTY' if dirty else ''}"
     )
-    print(f"base {args.base}  merge-base {base_sha[:12]}  files {diff_files}")
+    print(
+        f"base {args.base}  merge-base {base_sha[:12]}  files {diff_files}"
+        f"  web-only {'yes' if web_only else 'no'}"
+    )
     print(f"env  {env}")
     print()
 
+    stage_seconds: dict[str, float] = {}
+
+    def stage(name: str, thunk):
+        """Run one stage and record its wall time - stderr and --json only."""
+        started = time.monotonic()
+        try:
+            return thunk()
+        finally:
+            elapsed = time.monotonic() - started
+            stage_seconds[name] = round(elapsed, 1)
+            info(f"{name} {elapsed:.1f}s")
+
+    # #464: do not pay for base suites while the product suites themselves are
+    # skipped. The date check lives in tools/suite_pause.py.
+    product_suites_paused = suite_pause.paused()
+    if product_suites_paused:
+        info(suite_pause.BANNER)
+
     same_commit = base_sha == head_sha
-    if same_commit:
+    if same_commit or product_suites_paused:
         base: dict[str, int | None] = {"native": None, "web": None}
         base_notes: dict[str, list[str]] = {"native": [], "web": []}
     else:
-        base, base_notes = base_totals(base_sha)
+        key = cache_key(base_sha, hashes, node_version())
+        base, base_notes = stage(
+            "base suites", lambda: base_totals(base_sha, key, need_native=not web_only)
+        )
 
     results = [
-        check_command_exit(
+        # `make test-tools`, not a bare unittest discovery: the target also
+        # runs each test/test_tools/*.js with node, which discovery never sees
+        # (#466). It is the same command CI runs. The Python half alone takes
+        # about 80 s here, so the timeout leaves room for both.
+        stage("self-tests", lambda: check_command_exit(
             "gate self-tests",
-            ["python3", "-m", "unittest", "discover", "-s", "test/test_tools", "-q"],
-            timeout=120,
+            ["make", "test-tools"],
+            timeout=240,
+        )),
+        paused_skip("native tests") if product_suites_paused else (
+            skipped("native tests") if web_only else stage("native", lambda: check_native_tests(
+                base.get("native"),
+                same_commit,
+                base_notes["native"],
+                production["native"],
+                args.expect_no_new_tests,
+                args.expect_test_shrink,
+            ))
         ),
-        check_native_tests(
-            base["native"],
-            same_commit,
-            base_notes["native"],
-            production["native"],
-            args.expect_no_new_tests,
-        ),
-        check_web_tests(
+        paused_skip("web tests") if product_suites_paused else stage("web", lambda: check_web_tests(
             base["web"],
             same_commit,
             base_notes["web"],
             production["web"],
             args.expect_no_new_tests,
-        ),
-        check_mutations(production["web"], mutations, args.expect_no_mutations),
-        check_deleted_tests(base_sha),
+            args.expect_test_shrink,
+        )),
+        paused_skip("mutation gate") if product_suites_paused else stage("mutations", lambda: check_mutations(
+            production["web"],
+            mutations,
+            args.expect_no_mutations,
+            frozenset(
+                git(["diff", "--diff-filter=D", "--name-only", base_sha, "HEAD"])
+                .splitlines()
+            ),
+        )),
+        check_deleted_tests(base_sha, args.expect_test_shrink),
     ]
 
     # pio run with explicit PLATFORMIO_CORE_DIR to avoid inheriting from shell,
     # and under the machine-wide build lock (AGENTS.md "The build lock").
     pio_env = os.environ.copy()
     pio_env["PLATFORMIO_CORE_DIR"] = get_platformio_core_dir("artoo_esp32")
+    # The firmware compile is also the staging check: tools/gzip_fsdata.py is a
+    # pre: extra script that runs on every `pio run`, minifying every data/ JS
+    # and CSS file through esbuild (a syntax error fails the build) and
+    # resolving the HTML includes. A data/ file that no web test opens has no
+    # other check, so a web-only diff keeps this row.
+    #
+    # Not `-t buildfs`, which #405 specified for web-only diffs: measured
+    # 2026-09-18 in a fresh worktree, buildfs entered the framework reinstall
+    # (the per-worktree stamp was missing), compiled the IDF libs and exited
+    # before `Copied compiled` - leaving the machine-wide artoo framework pool
+    # pristine behind a stamp claiming it was rebuilt, the uploadfs fault
+    # (coordinate-epic SKILL.md "The build lock"). A full `pio run` completes
+    # that cycle. Every worker gates from a fresh worktree.
+    results.append(stage("pio run", lambda: check_command_exit(
+        "pio run -e artoo_esp32", ["pio", "run", "-e", "artoo_esp32"],
+        env=pio_env, lock=True,
+    )))
+    if web_only:
+        results.extend([skipped("build budget"), skipped("task stack chains")])
+    else:
+        results.extend([
+            stage("build budget", lambda: check_build_budget(
+                "artoo_esp32", args.expect_heap_growth)),
+            # Re-walk every task's recorded chain against the image the row above
+            # just linked, and fail when a chain has outgrown its
+            # *_MEASURED_CHAIN_BYTES constant (ADR 0040, #271). The static_assert
+            # in include/config.h stops the CONSTANT being trimmed; nothing noticed
+            # the CHAIN growing past it, which is the half #226 found with a reboot
+            # on both boards.
+            #
+            # Outside the locked phase and with no env on purpose: it disassembles
+            # the existing .pio/build/artoo_esp32/firmware.elf and starts no build.
+            #
+            # Never give this -fstack-usage. The chain comes from the linked image,
+            # not from .su files, and setting PLATFORMIO_BUILD_SRC_FLAGS changes
+            # PlatformIO's project checksum - the next plain pio invocation then
+            # wipes every directory under .pio/build/. ADR 0040 assumed the flag
+            # was needed; #271 measured that it is both unnecessary and destructive.
+            #
+            # Under the build lock, like the pio calls: the check reads the
+            # shared framework-arduinoespressif32-libs archives, which another
+            # worktree's first build extracts and rebuilds IN PLACE. Read
+            # unlocked, it raced one twice on #355's rework wave and failed on
+            # "no archives under .../esp32/lib" with nothing wrong in the slice.
+            stage("stack chains", lambda: check_command_exit(
+                "task stack chains",
+                ["python3", "tools/check_task_stack_chains.py", "--env", "artoo_esp32"],
+                timeout=900,
+                lock=True,
+            )),
+        ])
     results.extend([
-        check_command_exit(
-            "pio run -e artoo_esp32", ["pio", "run", "-e", "artoo_esp32"],
-            env=pio_env, lock=True,
-        ),
-        check_build_budget("artoo_esp32"),
-        # Re-walk every task's recorded chain against the image the row above just
-        # linked, and fail when a chain has outgrown its *_MEASURED_CHAIN_BYTES
-        # constant (ADR 0040, #271). The static_assert in include/config.h stops the
-        # CONSTANT being trimmed; nothing noticed the CHAIN growing past it, which is
-        # the half #226 found with a reboot on both boards.
-        #
-        # Outside the locked phase and with no env on purpose: it disassembles the
-        # existing .pio/build/artoo_esp32/firmware.elf and starts no build.
-        #
-        # Never give this -fstack-usage. The chain comes from the linked image, not
-        # from .su files, and setting PLATFORMIO_BUILD_SRC_FLAGS changes PlatformIO's
-        # project checksum - the next plain pio invocation then wipes every directory
-        # under .pio/build/. ADR 0040 assumed the flag was needed; #271 measured that
-        # it is both unnecessary and destructive.
-        check_command_exit(
-            "task stack chains",
-            ["python3", "tools/check_task_stack_chains.py", "--env", "artoo_esp32"],
-            timeout=900,
-        ),
-        check_command_exit(
+        stage("drift", lambda: check_command_exit(
             "check-action-drift", ["python3", "tools/check_action_registry_drift.py"]
-        ),
+        )),
         check_version_json(base_sha),
         check_added_pattern("new extern in .cpp", base_sha, ["*.cpp"], EXTERN_RE),
         check_added_pattern(
             "new #ifndef ARDUINO in inc/", base_sha, ["include/"], ARDUINO_GUARD_RE
         ),
         check_added_pattern(
-            "old glossary name added", base_sha, [], OLD_GLOSSARY_RE
+            "old glossary name added", base_sha, [], OLD_GLOSSARY_RE, text_matches
         ),
         check_gate_script(base_sha, args.expect_gate_edit),
         check_fenced_paths(base_sha, fences),
     ])
 
     for result in results:
-        status = "PASS" if result.passed else "FAIL"
+        status = "SKIP" if result.skipped else "PASS" if result.passed else "FAIL"
         print(f"{result.label:<{LABEL_WIDTH}}{result.detail:<{DETAIL_WIDTH}} {status}")
+
+    # Tables are evidence whatever the status: a passing mutation row that
+    # omits its table is incomplete, so they print on PASS too.
+    for result in results:
+        if result.table:
+            print()
+            for line in result.table:
+                print(line)
 
     failures = [result for result in results if not result.passed]
     # A passing check that carries notes is a check that passed *because* a
@@ -1004,7 +1531,7 @@ def main() -> int:
     # that never needed a waiver, and AGENTS.md's rule that an unsanctioned
     # waiver ACK is an automatic reject had nothing to detect. Printing them
     # puts every consumed waiver in the pasted block, where the coordinator's
-    # character-for-character re-run comparison sees it.
+    # read of the block sees it.
     acknowledged = [r for r in results if r.passed and r.notes]
     if failures or acknowledged:
         print()
@@ -1018,27 +1545,34 @@ def main() -> int:
     if args.json:
         payload = {
             "gate": {
-                "script_hash": gate_hash,
-                "mutation_script_hash": mutation_hash,
+                "script_hash": hashes["gate"],
+                "mutation_script_hash": hashes["mut"],
+                "trace_script_hash": hashes["trace"],
                 "head": head_sha,
                 "dirty": dirty,
                 "base_ref": args.base,
                 "merge_base": base_sha,
                 "files_in_diff": diff_files,
+                "web_only": web_only,
                 "env": env,
                 "fenced": fences,
                 "expect_gate_edit": args.expect_gate_edit,
                 "expect_no_new_tests": args.expect_no_new_tests,
+                "expect_test_shrink": args.expect_test_shrink,
                 "expect_no_mutations": args.expect_no_mutations,
+                "expect_heap_growth": args.expect_heap_growth,
                 "mutations": mutations,
                 "production_files": production,
+                "stage_seconds": stage_seconds,
             },
             "checks": [
                 {
                     "label": result.label,
                     "detail": result.detail,
                     "passed": result.passed,
+                    "skipped": result.skipped,
                     "notes": result.notes,
+                    "table": result.table,
                 }
                 for result in results
             ],

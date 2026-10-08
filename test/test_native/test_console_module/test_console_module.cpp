@@ -43,6 +43,7 @@
                               // config write lock (#226 defect 1 rework, #269)
 
 #include "action_registry.h"
+#include "board_outputs.h"
 #include "api_identity.h"        // formatIdentityJson(), IDENTITY_JSON_MAX_BYTES -
                                   // system.api.get-identity's JSON-builder leg (#221)
 #include "validation_snapshot.h"  // ValidationSnapshot, captureValidationSnapshot(),
@@ -55,6 +56,8 @@
 #include "api_status.h"
 #include "audio_task.h"
 #include "config_cache.h"
+#include "config_settings.h"  // configSettingByForm() - each op's Setting
+#include "component_registry.h"
 #include "console_config_fields.h"  // kComponentToggleFields[] - defect 2 rework:
                                     // proves the table matches configApply() by
                                     // driving the real Apply Core, not a comment's promise
@@ -62,9 +65,10 @@
 #include "console_module.h"
 #include "console_record.h"  // consoleReasonString() - pins the wire spelling of the
                              // read-only reason, not just its enum value (#226)
-#include "drive_arbiter.h"  // driveArbiterInit/Reset/Submit/Resolve() - #222's motion
+#include "drive_arbiter.h"  // driveArbiterInit/Submit/Resolve() - #222's motion
                             // executors submit through the REAL arbiter, so its own
                             // resolve() is the queue/state evidence these tests read
+#include "drive_arbiter_test_hooks.h"  // driveArbiterReset() between cases
 #include "drive_speed_preset.h"  // SpeedPresetId - #222's speed-preset executors
 #include "failsafe_gate.h"  // failsafeInit() - driveArbiterSubmit()'s WEB_API path
                             // clears FailsafeLayer::WEB_TIMEOUT through this module
@@ -93,7 +97,10 @@
                                   // test_api_audio_routes.cpp for sound.action.play-track/
                                   // set-volume's own queue stub (#221 remainder)
 #include "aux_led_test_hooks.h"  // g_test_aux_led_queue_ok - aux.action.led-color/-effect's
+#include "servo_task_test_hooks.h"  // ServoTask's boot snapshot, which the native build stubs
+#include "marcduino_test_hooks.h"  // the dome link and body handler seams (#449)
                                   // own queue stub (#221 remainder)
+#include "heap_reading_test_hooks.h"  // g_test_heap_* - the health heap keys (#381)
 #include "web_server_test_hooks.h"  // g_test_restart_requests - system.action.reboot's (#225)
                                      // own observation hook, shared with test_api_motion_routes.cpp
 
@@ -113,6 +120,8 @@
                                      // real capture pipeline, driven the same way the
                                      // dispatcher task drives it (#221 remainder)
 #include "seq_last_run_json.h"      // populateSeqLastRunJson() - the JSON-builder leg of
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
+#include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
                                      // dome.api.get-sequence-last-run's three-way field check
 
 // A drive command reaches the arbiter only through driveArbiterSubmit(), so
@@ -246,6 +255,28 @@ static const char* capturedValue(const char* name) {
     return nullptr;
 }
 
+// The lit wires the aux tests command. robotState.auxLed is keyed by
+// BOARD_OUTPUTS index, so this lights exactly the Outputs the running board
+// says can carry a light and leaves the rest dark - which is what makes "it
+// reached only the lit ones" an assertion rather than a coincidence.
+static void lightEveryCapableWire() {
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        robotState.auxLed[i] = {};
+        robotState.auxLed[i].lit = BOARD_OUTPUTS[i].lightCapable;
+        robotState.auxLed[i].available = BOARD_OUTPUTS[i].lightCapable;
+    }
+}
+
+static const BoardOutput* firstLightCapableOutput() {
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (BOARD_OUTPUTS[i].lightCapable) {
+            return &BOARD_OUTPUTS[i];
+        }
+    }
+    TEST_FAIL_MESSAGE("this board has no Output that can carry a light");
+    return nullptr;
+}
+
 // =============================================================================
 // Key-set helpers for the three-way check
 // =============================================================================
@@ -296,7 +327,7 @@ static std::vector<std::string> jsonTopLevelKeys(const char* json) {
 void setUp() {
     robotState = RobotState{};
     ConfigSnapshot snap = {};
-    configCacheApply(snap);
+    configCacheReplace(snap);
     g_test_dispatch_action_calls = 0;
     g_test_last_dispatch_target = ROBOT_ACTION_NONE;
     g_test_last_dispatch_source = SRC_NONE;
@@ -314,6 +345,8 @@ void setUp() {
     g_test_commanded_rc_debug = false;
     g_test_commanded_rc_debug_calls = 0;
     g_test_applied_mood = 0;
+    g_test_servo_wired_at_start_mask = 0xFF;
+    g_test_servo_driven_mask = 0xFF;
 
     // #221 remainder: sound.action.play-track/set-volume and
     // aux.action.led-color/-effect's own queue stubs - reset per test rather
@@ -323,6 +356,9 @@ void setUp() {
     // observation globals (track-stop, query-status, every $-letter dollar
     // shortcut and the raw dollar-command passthrough).
     g_test_audio_queue_ok = true;
+    // Audio output on for this boot, so the sound rows below reach their queue
+    // stubs; the sound-off tests switch it off themselves (#370).
+    configCacheSetActiveAudioEnabled(true);
     g_test_audio_play_track_calls = 0;
     g_test_audio_last_track = 0;
     g_test_audio_volume_calls = 0;
@@ -367,7 +403,7 @@ void setUp() {
     ConfigSnapshot driveDefaults = {};
     configCacheRead(&driveDefaults);
     driveDefaults.drive.speedLimitMax = 300;
-    configCacheApply(driveDefaults);
+    configCacheReplace(driveDefaults);
 
     // #259: dome.action.dome-sequence/test-sequence submit through the REAL
     // sequenceStart()/sequenceQueue, matching test_api_seq_routes.cpp's own
@@ -379,22 +415,32 @@ void setUp() {
     seqStoreIndexClear();
     g_test_seq_delete_ok = true;
     g_test_seq_delete_calls = 0;
+    g_test_heap_internal_data = {262144, 262144, 262144};
+    g_test_heap_buffer_largest = 262144;
+    // Armed after this setUp()'s own seeding: from here every config write
+    // must run inside a Write Window, as it must on the droid after boot (#418).
+    configWriteWindowArm(true);
 }
-void tearDown() {}
+void tearDown() {
+    const uint32_t misses = configWriteWindowMisses();
+    configWriteWindowArm(false);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, misses, "a config write ran outside its Write Window");
+}
 
 // =============================================================================
 // system.status.health
 // =============================================================================
 
 void test_health_three_way_field_match() {
-    // 384, matching handleHealthGet()'s own buffer (src/web/api_status.cpp) -
-    // resetReason (#225) is a variable-length string, not a fixed-width
-    // value, so this is no longer bounded by the old fixed-field shape.
-    char json[384];
+    // HEALTH_JSON_BUFFER_BYTES, matching handleHealthGet()'s own buffer
+    // (src/web/api_status.cpp) - resetReason (#225) is a variable-length
+    // string, not a fixed-width value, so this is no longer bounded by the old
+    // fixed-field shape.
+    char json[HEALTH_JSON_BUFFER_BYTES];
     // Same shape formatHealthJson() actually emits - values are arbitrary,
     // only the key set matters here.
     formatHealthJson(json, sizeof(json), true, false, false, true, false, false, true, 1000, 900,
-                     800, -50, 123456, "SOFTWARE");
+                     800, 0, 0, 0, 0, -50, 123456, "SOFTWARE");
     std::vector<std::string> jsonKeys = jsonTopLevelKeys(json);
     std::vector<std::string> registryFields = catalogFieldNames("system.status.health");
 
@@ -427,6 +473,24 @@ void test_health_executes_synchronously_and_carries_real_state() {
                              "fsReady is not a real JSON key on this response");
 }
 
+// The health snapshot behind system.status.health, which GET /api/health
+// renders too, publishes its three heap keys from the Internal Data Heap and
+// never the Buffer Reading (#381): heapLargestBlock was the 8-bit block here
+// and the INTERNAL block on /api/status. On the ESP32-P4 the Buffer Reading
+// counts PSRAM, which is why it is set megabytes apart.
+void test_health_heap_keys_are_the_internal_data_heap() {
+    g_test_heap_internal_data = {41000, 38000, 30000};
+    g_test_heap_buffer_largest = 4000000;
+    runQuery("system.status.health");
+
+    TEST_ASSERT_EQUAL_STRING("41000", capturedValue("heapFree"));
+    TEST_ASSERT_EQUAL_STRING("38000", capturedValue("heapMin"));
+    TEST_ASSERT_EQUAL_STRING("30000", capturedValue("heapLargestBlock"));
+    // The Buffer Reading, which admission sheds by: the one heap figure a serial
+    // session has when HTTP has gone dark under pressure.
+    TEST_ASSERT_EQUAL_STRING("4000000", capturedValue("heapLargest8bit"));
+}
+
 // =============================================================================
 // system.status.wifi
 // =============================================================================
@@ -446,12 +510,12 @@ void test_wifi_three_way_field_match() {
 
 void test_wifi_carries_active_wifi_config_ssid() {
     WifiConfig activeWifi = {};
-    snprintf(activeWifi.ap_ssid, sizeof(activeWifi.ap_ssid), "%s", "protoArtoo-test");
+    snprintf(activeWifi.ap_ssid, sizeof(activeWifi.ap_ssid), "%s", "protoR2-test");
     configCacheSetActiveWifi(activeWifi);
 
     runQuery("system.status.wifi");
 
-    TEST_ASSERT_EQUAL_STRING("protoArtoo-test", capturedValue("apSsid"));
+    TEST_ASSERT_EQUAL_STRING("protoR2-test", capturedValue("apSsid"));
 }
 
 // =============================================================================
@@ -465,7 +529,8 @@ void test_wifi_carries_active_wifi_config_ssid() {
 // rename there would not fail this test, only a device/controller-upload run.
 void test_dome_status_current_field_match_registry_to_emitter() {
     std::vector<std::string> registryFields = catalogFieldNames("dome.status.current");
-    TEST_ASSERT_TRUE(registryFields == (std::vector<std::string>{"domeEnabled", "domeTargetSpeed"}));
+    TEST_ASSERT_TRUE(registryFields == (std::vector<std::string>{"domeBearing", "domeBearingDeg",
+                                                                 "domeEnabled", "domeTargetSpeed"}));
 
     runQuery("dome.status.current");
     std::vector<std::string> emitted = emittedFieldNames();
@@ -476,7 +541,10 @@ void test_dome_status_current_carries_real_state() {
     robotState.domeTargetSpeed = 0.5f;
     ConfigSnapshot snap = {};
     snap.system.enable_dome_esc = true;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 
     runQuery("dome.status.current");
 
@@ -491,7 +559,7 @@ void test_dome_status_current_carries_real_state() {
 
 void test_sound_three_way_field_match() {
     char json[256];
-    formatAudioStatusJson(json, sizeof(json), "TEST", 0, true, false, 0, 0, 0, 0, "ok", "ok");
+    formatAudioStatusJson(json, sizeof(json), "TEST", true, 0, true, false, 0, 0, 0, 0, 0, "ok", "ok");
     std::vector<std::string> jsonKeys = jsonTopLevelKeys(json);
     std::vector<std::string> registryFields = catalogFieldNames("sound.status.current");
 
@@ -532,7 +600,7 @@ void test_sound_carries_real_state_and_labels() {
 // set - documented explicitly rather than silently narrowed.
 void test_dome_serial_link_fields_are_real_dome_subobject_keys() {
     char json[768];
-    formatSerialJson(json, sizeof(json), true, 5, 7);
+    formatSerialJson(json, sizeof(json), "S1", "S2", "S3", true, 5, 7);
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, json);
     TEST_ASSERT_FALSE(err);
@@ -747,7 +815,7 @@ void test_logs_query_full_ring_reports_every_line() {
 // Both answer `item` records (one per sequence), not `field` records - the
 // same reason system.status.logs needed its own capture above. One small
 // capture struct covers both (48 rows/320 bytes: comfortably above both
-// SEQ_STORE_MAX (16) and the real, compiled-in Factory catalog's count, and
+// SEQ_INDEX_CAPACITY (10) and the real, compiled-in Factory catalog's count, and
 // above the longest realistic item line - see consoleExecuteDomeApiList
 // BuiltinSequences()'s own itemBuf comment, src/console/console_module.cpp).
 
@@ -791,6 +859,165 @@ static void runSeqItemQuery(const char* operationName) {
     req.source = CONSOLE_SOURCE_SERIAL;
     req.operationName = operationName;
     consoleExecuteCommand(&req, &sink);
+}
+
+// servo.api.get-outputs (#362): the bench side's read of the Servo Output rows,
+// one item per row, in the REST answer's own key names. Every Part a ganged
+// Output drives is named, the band follows the fitted component, and an Output
+// with no pulse says so with `-` rather than a width that reads as a position.
+// AUX1 is the board's third Output, on LEDC channel 3, and every width below
+// differs, so a read that confused the board index with the channel could not
+// pass.
+void test_servo_api_get_outputs_streams_every_row_as_an_item() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+
+    const char* const ganged[] = {"utilUp", "doorFL"};
+    for (const char* part : ganged) {
+        ServoOutputPartMove move = {};
+        snprintf(move.part, sizeof(move.part), "%s", part);
+        move.toOutput = true;
+        move.toDriver = SERVO_DRIVER_LEDC;
+        move.toChannel = LEDC_CH_ARM1;
+        {
+            const ConfigWriteWindowForTest seed;
+            TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED, configCacheMoveServoOutputPart(move));
+        }
+    }
+    ServoOutputEdit micro = {};
+    micro.driver = SERVO_DRIVER_LEDC;
+    micro.channel = LEDC_CH_AUX2;
+    micro.fields = SERVO_FIELD_COMPONENT;
+    micro.component = SERVO_COMP_MG90S;
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApplyServoOutputEdits(&micro, 1);
+    }
+
+    const RobotState saved = robotState;
+    robotState.servoCommanded[0] = {1620, 2000, true, 0};   // ARM1, part way through a move
+    // AUX1: no pulse whatever the widths, nudged once, and let go by its
+    // Output Release (#443), which the bench reads by the REST token.
+    robotState.servoCommanded[2] = {1100, 1200, false, 1, false, SERVO_LIMP_OUTPUT_RELEASE};
+    robotState.servoCommanded[3] = {2400, 2400, true, 3};   // AUX2, nudged three times
+
+    runSeqItemQuery("servo.api.get-outputs");
+    robotState = saved;
+
+    TEST_ASSERT_TRUE(g_seqItemCap.beginCalled);
+    TEST_ASSERT_TRUE(g_seqItemCap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_seqItemCap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_seqItemCap.outcome);
+    TEST_ASSERT_EQUAL_INT(SERVO_OUTPUT_ROW_DEFAULT_COUNT, g_seqItemCap.count);
+    TEST_ASSERT_EQUAL_STRING(
+        "address:ledc:0 name:ARM1 parts:utilUp,doorFL bandLoUs:1000 bandHiUs:2000 "
+        "commandedUs:1620 targetUs:2000 nudgesDone:0 limp:-",
+        g_seqItemCap.values[0]);
+    // The nudge count travels whether or not there is a pulse (#363).
+    TEST_ASSERT_EQUAL_STRING(
+        "address:ledc:3 name:ARM3 parts:- bandLoUs:1000 bandHiUs:2000 commandedUs:- targetUs:- "
+        "nudgesDone:1 limp:release",
+        g_seqItemCap.values[2]);
+    TEST_ASSERT_EQUAL_STRING(
+        "address:ledc:4 name:ARM4 parts:- bandLoUs:500 bandHiUs:2500 "
+        "commandedUs:2400 targetUs:2400 nudgesDone:3 limp:-",
+        g_seqItemCap.values[3]);
+
+    // Leave a controller nobody has wired for whatever runs next.
+    prefs.begin("proto", false);
+    prefs.clear();
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+}
+
+// system.api.get-components names the Radio Controller's member the way
+// GET /api/identity/components does (#369, reopened from the #355 bench): the
+// Console answered `-` for the radio a builder had picked, because only Sound
+// had an accessor. rc_radio is not the family default (hotrc_ds650), so a row
+// that fell back to the default, or to `-`, cannot pass.
+void test_system_api_get_components_names_the_radio_member() {
+    const ComponentPartEntry* radio = componentPartById("rc_radio");
+    TEST_ASSERT_NOT_NULL(radio);
+    ConfigSnapshot snap = {};
+    snap.system.rc_member = radio->value;
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
+
+    runSeqItemQuery("system.api.get-components");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_seqItemCap.outcome);
+    const char* row = nullptr;
+    for (int i = 0; i < g_seqItemCap.count; ++i) {
+        if (strncmp(g_seqItemCap.values[i], "category:radio_controller ", 26) == 0) {
+            row = g_seqItemCap.values[i];
+        }
+    }
+    TEST_ASSERT_NOT_NULL_MESSAGE(row, "no radio_controller category row");
+    TEST_ASSERT_EQUAL_STRING(
+        "category:radio_controller name:Radio Controller selectable:4 memberKey:rc_member "
+        "activeMember:rc_radio",
+        row);
+
+    // No radio fitted (#369): the Console names none, as HTTP does, and never
+    // the family default in its place.
+    snap.system.rc_member = COMPONENT_MEMBER_NONE;
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
+    runSeqItemQuery("system.api.get-components");
+    row = nullptr;
+    for (int i = 0; i < g_seqItemCap.count; ++i) {
+        if (strncmp(g_seqItemCap.values[i], "category:radio_controller ", 26) == 0) {
+            row = g_seqItemCap.values[i];
+        }
+    }
+    TEST_ASSERT_NOT_NULL_MESSAGE(row, "no radio_controller category row");
+    TEST_ASSERT_EQUAL_STRING(
+        "category:radio_controller name:Radio Controller selectable:4 memberKey:rc_member "
+        "activeMember:-",
+        row);
+}
+
+// Every part item reaches the sink whole, and says what the table says about
+// whether the product has run on a droid (#455) - the fact GET
+// /api/identity/components reports as `confirmed_on_droid`, so the two
+// adapters cannot report different project facts. The executor formats into
+// one fixed buffer and snprintf truncates in silence, so "whole" is asserted
+// on the item's last field: a row that outgrew the buffer loses its tail.
+void test_system_api_get_components_part_items_are_whole_and_carry_the_droid_fact() {
+    runSeqItemQuery("system.api.get-components");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_seqItemCap.outcome);
+
+    for (size_t i = 0; i < COMPONENT_PART_COUNT; ++i) {
+        const ComponentPartEntry& part = COMPONENT_PARTS[i];
+        char head[64];
+        const int headLen = snprintf(head, sizeof(head), "part:%s ", part.id);
+        const char* item = nullptr;
+        for (int j = 0; j < g_seqItemCap.count; ++j) {
+            if (strncmp(g_seqItemCap.values[j], head, (size_t)headLen) == 0) {
+                item = g_seqItemCap.values[j];
+            }
+        }
+        TEST_ASSERT_NOT_NULL_MESSAGE(item, part.id);
+
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(item, part.confirmedOnDroid ? " confirmedOnDroid:true "
+                                                                        : " confirmedOnDroid:false "),
+                                     item);
+
+        char tail[64];
+        const int tailLen = snprintf(tail, sizeof(tail), " boardCapability:%s",
+                                     part.gate != nullptr ? part.gate : "-");
+        const size_t itemLen = strlen(item);
+        TEST_ASSERT_TRUE_MESSAGE(itemLen >= (size_t)tailLen, item);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(tail, item + itemLen - (size_t)tailLen, item);
+    }
 }
 
 void test_dome_api_list_sequences_streams_the_real_index_as_items() {
@@ -1220,7 +1447,10 @@ void test_system_api_get_identity_carries_real_config_state() {
     configCacheRead(&snap);
     snprintf(snap.system.droid_name, sizeof(snap.system.droid_name), "%s", "Chopper");
     snap.system.mdns_use_name = true;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 
     runQuery("system.api.get-identity");
 
@@ -1539,7 +1769,10 @@ void test_sound_get_mood_map_matches_the_config_row_for_the_same_state() {
     snap.audio.snd_moodcat_mid = 22;
     snap.audio.snd_moodcat_full = 33;
     snap.audio.snd_moodcat_awakeplus = 44;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 
     runQuery("sound.api.get-mood-map");
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
@@ -1717,7 +1950,7 @@ void test_action_marcduino_command_missing_value_answers_missing_argument() {
     TEST_ASSERT_EQUAL_STRING("value", capturedValue("argument"));
 }
 
-// A value not starting with a body-owned prefix (:, $, #) fails the same
+// A value not starting with a prefix a binding may carry (:, $, #) fails the same
 // existing validator (rcPayloadValidForMarcduinoCommand()) the live RC
 // trigger path already enforces - "accept exactly what the existing
 // handlers accept ... no widening".
@@ -1795,6 +2028,27 @@ void test_action_send_command_unsupported_keyword_answers_out_of_range() {
     TEST_ASSERT_EQUAL_STRING("command", capturedValue("argument"));
 }
 
+// "#st"/"#sm" over the Console (#379). The '#' prefix sends the line to the
+// Marcduino body parser, which matches neither keyword, so no mode changes -
+// and this executor shares the dispatch core that decides that, so it must
+// answer the refusal rather than let it fall through to an ok record. The
+// REST route answers 400 and names POST /api/mode; a Console result record
+// carries no free text (ConsoleRecordSink), so this side answers the value
+// reason it already uses for a command the core will not run. The next move
+// on this transport is system.action.set-mode.
+void test_action_send_command_shadowed_mode_keyword_is_refused() {
+    g_test_commanded_stationary = false;
+
+    runQuery("dome.action.send-command command=#st");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("command", capturedValue("argument"));
+    TEST_ASSERT_FALSE_MESSAGE(g_test_commanded_stationary,
+                              "a refused line must not command a mode");
+}
+
 // The sleep-mode prefix block, reproduced verbatim from
 // handleManualCommandPost(): a dome-forwarding prefix ('*'/'@'/'%'/'&'/'!')
 // is held while sleeping - blocked-by-state, not dispatched.
@@ -1803,6 +2057,41 @@ void test_action_send_command_dome_forward_prefix_is_blocked_while_sleeping() {
 
     runQuery("dome.action.send-command command=*ST00");
 
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+}
+
+// A line the body does not own is forwarded, and a forward answers queued -
+// handed on - never applied: the body cannot say what the dome did with it
+// (ADR 0055, #449). One the body owns and refuses is not ok.
+void test_action_send_command_forward_answers_queued_and_a_refusal_is_not_ok() {
+    marcduinoTestHooksReset();
+
+    runQuery("dome.action.send-command command=:OP07");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING(":OP07", g_test_dome_last_tx);
+
+    g_test_marcduino_body_outcome = MarcduinoBodyOutcome::BlockedByEstop;
+    runQuery("dome.action.send-command command=:OP01");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+    marcduinoTestHooksReset();
+}
+
+// A dome.action.marcduino-command line the body owns and refused answers why,
+// not queue-full - which is what the dispatch core said for every line it
+// swallowed before #449.
+void test_action_marcduino_command_refused_by_estop_answers_blocked() {
+    robotState.webControlEnabled = true;
+    g_test_dispatch_outcome = RcDispatchOutcome::kBlockedByEstop;
+
+    runQuery("dome.action.marcduino-command value=:OP01");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
 }
@@ -1887,7 +2176,10 @@ void test_action_dome_move_is_blocked_while_sleeping() {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.system.enable_dome_esc = true;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
     robotState.sleepMode = true;
 
     runQuery("dome.action.move speed=0.5");
@@ -1900,7 +2192,10 @@ void test_action_dome_move_is_refused_when_dome_output_is_disabled() {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.system.enable_dome_esc = false;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 
     runQuery("dome.action.move speed=0.5");
 
@@ -1912,7 +2207,10 @@ void test_action_dome_move_queues_when_enabled() {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.system.enable_dome_esc = true;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 
     runQuery("dome.action.move speed=0.5");
 
@@ -2098,34 +2396,51 @@ void test_scoped_non_motion_actions_are_not_executor_not_ready() {
                               "every non-motion, non-parameterized action must dispatch");
 }
 
+// An operation the registry keeps off the Console answers not-on-console, and
+// nothing else does (ADR 0037 Amendment 2026-10-06, #474). The catalog is the
+// one record of which rows those are, so this asserts over it rather than over
+// a list of names: every row whose `console:` marks it excluded answers the
+// reason, and every action row that answers it is marked.
+void test_every_excluded_row_answers_not_on_console_and_only_those() {
+    robotState.webControlEnabled = true;
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+
+    int excluded = 0;
+    for (size_t i = 0; i < count; ++i) {
+        const bool marked = entries[i].console_excluded != CONSOLE_EXCLUSION_NONE;
+        if (!marked && strcmp(entries[i].type, CONSOLE_CATALOG_TYPE_ACTION) != 0) continue;
+        runQuery(entries[i].name);
+        if (marked) {
+            excluded++;
+            TEST_ASSERT_EQUAL_INT_MESSAGE(CONSOLE_REASON_NOT_ON_CONSOLE, g_cap.reason,
+                                          entries[i].name);
+        } else {
+            TEST_ASSERT_NOT_EQUAL_MESSAGE(CONSOLE_REASON_NOT_ON_CONSOLE, g_cap.reason,
+                                          entries[i].name);
+        }
+    }
+    TEST_ASSERT_GREATER_THAN_MESSAGE(0, excluded, "no catalog row is marked excluded");
+}
+
 // The closing guard for #221 (epic row #46): the action rows that still answer
-// executor-not-ready are exactly these twelve, each carrying a true, specific
-// reason on its own docs/action-registry.yaml entry and in the dispatch-site
-// comment (consoleExecuteCommand()'s CONSOLE_OP_ACTION case). A thirteenth row
-// joining the set fails here, so the next unwired operation cannot arrive
-// unexplained; a row leaving it fails here too, so the list cannot rot.
+// executor-not-ready are exactly these three, each with a true, specific reason
+// on its own docs/action-registry.yaml entry and in the dispatch-site comment
+// (consoleExecuteCommand()'s CONSOLE_OP_ACTION case). They are work, not scope:
+// a core the Console module could not reach. A fourth row joining the set fails
+// here, so the next unwired operation cannot arrive unexplained; a row leaving
+// it fails here too, so the list cannot rot.
 //
 // Update this list only together with the reason at both sites - never to make
-// the row green.
-void test_the_executor_not_ready_set_is_exactly_the_recorded_rows() {
-    static const char* const kRecorded[] = {
-        // #206 document / bulk transfer
-        "dome.api.get-sequence",
-        "dome.api.get-layout",
-        "dome.action.save-sequence",
-        "rc.api.get-map",
-        "rc.action.set-map",
-        "system.api.get-coredump",
-        "system.action.upload-firmware",
-        "system.action.upload-filesystem",
-        // core unreachable from this module without editing a fenced file
+// the row green. A row that is never on the Console does not belong here: its
+// registry row says so with `console:` and it answers not-on-console.
+void test_the_executor_not_ready_set_is_exactly_the_unwired_rows() {
+    static const char* const kUnwired[] = {
         "system.api.get-coredump-status",
         "system.action.erase-coredump",
         "system.api.get-admission-trace",
-        // the browser Console Adapter itself, not an operation
-        "system.console",
     };
-    const size_t kRecordedCount = sizeof(kRecorded) / sizeof(kRecorded[0]);
+    const size_t kUnwiredCount = sizeof(kUnwired) / sizeof(kUnwired[0]);
 
     robotState.webControlEnabled = true;
     size_t count = 0;
@@ -2138,18 +2453,18 @@ void test_the_executor_not_ready_set_is_exactly_the_recorded_rows() {
         if (g_cap.reason != CONSOLE_REASON_EXECUTOR_NOT_READY) continue;
         notReady++;
 
-        bool recorded = false;
-        for (size_t r = 0; r < kRecordedCount; ++r) {
-            if (strcmp(kRecorded[r], entries[i].name) == 0) {
-                recorded = true;
+        bool unwired = false;
+        for (size_t r = 0; r < kUnwiredCount; ++r) {
+            if (strcmp(kUnwired[r], entries[i].name) == 0) {
+                unwired = true;
                 break;
             }
         }
-        TEST_ASSERT_TRUE_MESSAGE(recorded, entries[i].name);
+        TEST_ASSERT_TRUE_MESSAGE(unwired, entries[i].name);
     }
 
-    TEST_ASSERT_EQUAL_INT_MESSAGE((int)kRecordedCount, notReady,
-                                  "a recorded row started dispatching, or a new row stopped - "
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)kUnwiredCount, notReady,
+                                  "an unwired row started dispatching, or a new row stopped - "
                                   "update this list together with its reason at the registry "
                                   "and the dispatch site");
 }
@@ -2188,7 +2503,10 @@ void test_action_executor_not_ready_count_report() {
 void test_component_toggle_read_reports_saved_and_active() {
     ConfigSnapshot saved = {};
     saved.system.enable_arm1 = true;
-    configCacheApply(saved);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(saved);
+    }
 
     // Active still reflects a boot where arm1 was off - the exact "staged,
     // not yet rebooted into" divergence ADR 0027 describes.
@@ -2208,7 +2526,7 @@ void test_component_toggle_read_reports_saved_and_active() {
 void test_component_toggle_write_persists_and_reports_staged_until_reboot() {
     g_test_status_broadcast_count = 0;
 
-    runQuery("system.config.enable_arm2 value=true");
+    runQuery("system.config.enable_drive value=true");
 
     TEST_ASSERT_FALSE_MESSAGE(g_cap.beginCalled, "a write answers a single result record");
     TEST_ASSERT_TRUE(g_cap.resultCalled);
@@ -2218,7 +2536,7 @@ void test_component_toggle_write_persists_and_reports_staged_until_reboot() {
 
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
-    TEST_ASSERT_TRUE_MESSAGE(snap.system.enable_arm2, "the write must reach the config cache");
+    TEST_ASSERT_TRUE_MESSAGE(snap.system.enable_drive, "the write must reach the config cache");
     TEST_ASSERT_EQUAL_UINT_MESSAGE(1, g_test_status_broadcast_count,
                                   "a successful commit broadcasts status, matching the REST path");
 }
@@ -2228,7 +2546,7 @@ void test_component_toggle_write_persists_and_reports_staged_until_reboot() {
 // proving the schema check accepts either spelling verbatim, not just the
 // generic one.
 void test_component_toggle_write_accepts_the_named_key_not_only_value() {
-    runQuery("system.config.enable_aux1 enableAux1=true");
+    runQuery("system.config.enable_audio enableAudio=true");
 
     TEST_ASSERT_TRUE(g_cap.resultCalled);
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
@@ -2236,7 +2554,7 @@ void test_component_toggle_write_accepts_the_named_key_not_only_value() {
 
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
-    TEST_ASSERT_TRUE(snap.system.enable_aux1);
+    TEST_ASSERT_TRUE(snap.system.enable_audio);
 }
 
 void test_component_toggle_write_rejects_an_unknown_argument() {
@@ -2253,23 +2571,25 @@ void test_component_toggle_write_rejects_an_unknown_argument() {
     TEST_ASSERT_FALSE_MESSAGE(snap.system.enable_aux2, "a rejected write must not reach the cache");
 }
 
+// Named by the argument the builder typed, not the POST field it saves under
+// (#425), with the words a boolean takes.
 void test_component_toggle_write_rejects_a_malformed_boolean() {
-    runQuery("system.config.enable_aux3 value=maybe");
+    runQuery("system.config.enable_protor2link value=maybe");
 
     TEST_ASSERT_TRUE(g_cap.beginCalled);
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
-    TEST_ASSERT_EQUAL_STRING("enableAux3", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("value", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("true,false,1,0", capturedValue("accepts"));
 }
 
 // =============================================================================
 // Component Toggle table drift check (#226 rework, defect 2)
 //
-// include/console_config_fields.h's kComponentToggleFields[] says, in prose,
-// that its paramKey values are "copied verbatim from api_config_apply.cpp's
-// boolFields[] array" and that a rename in one needs a matching edit in the
-// other. Nothing enforced that. This drives configApply() - the real Apply
+// include/console_config_fields.h's kComponentToggleFields[] names each toggle
+// by its Setting's form name (src/config_settings.cpp), and a rename in one
+// needs a matching edit in the other. Nothing else enforces that. This drives configApply() - the real Apply
 // Core, bypassing the Console dispatch layer entirely - directly with each
 // of the 15 entries' paramKey and asserts the named SystemConfig field
 // actually flips. A rename in either table without the other breaks this
@@ -2294,6 +2614,62 @@ const char* singleParamGet(void* ctx, const char* name) {
 }
 }  // namespace
 
+// A Setting refuses a value identically at both doors (ADR 0068, amended
+// 2026-09-26): each of the Console's single-field Setting ops answers a value
+// its Setting does not take with the reason and the accepts configApply() - the
+// Apply Core POST /api/config answers from - gives for the same value under the
+// form name. Only the argument the Console names differs: the builder typed
+// `value=`, never the form name.
+void test_every_single_field_setting_op_refuses_as_the_http_door_does() {
+    struct Op {
+        const char* operationName;
+        const char* form;
+    };
+    Op ops[5 + kComponentToggleFieldCount] = {
+        {"dome.config.stand-down", "standDownSequence"},
+        {"drive.config.speed-limit", "speedLimitMax"},
+        {"rc.config.mode", "rcInputMode"},
+        {"servo.config.cadence-floor", "cadenceFloorMs"},
+        {"system.config.log-level", "logLevel"},
+    };
+    for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
+        ops[5 + i] = {kComponentToggleFields[i].operationName, kComponentToggleFields[i].paramKey};
+    }
+
+    static ConfigApplyResult result;
+    for (const Op& op : ops) {
+        const ConfigSetting* setting = configSettingByForm(op.form);
+        TEST_ASSERT_NOT_NULL_MESSAGE(setting, op.form);
+        const char* bad = setting->rule == SettingRule::Bool ? "maybe" : "99999";
+
+        char line[96] = {};
+        snprintf(line, sizeof(line), "%s value=%s", op.operationName, bad);
+        runQuery(line);
+
+        ConfigSnapshot working = {};
+        configCacheRead(&working);
+        SingleParamCtx ctx{op.form, bad};
+        ConfigParamSource params;
+        params.ctx = &ctx;
+        params.get = singleParamGet;
+        configApply(params, &working, working.system.enable_dome_esc, &result);
+
+        TEST_ASSERT_TRUE_MESSAGE(result.error.hasError, op.operationName);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_INVALID, g_cap.outcome, op.operationName);
+        TEST_ASSERT_EQUAL_MESSAGE(consoleReasonFromApplyRefusal(result.error.refusal.reason),
+                                  g_cap.reason, op.operationName);
+        // A refusal with no one value to take - an Output's wired tick, which
+        // follows its Parts - carries no accepts at either door.
+        const char* accepts = capturedValue("accepts");
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(result.error.refusal.accepts, accepts ? accepts : "",
+                                         op.operationName);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("value", capturedValue("argument"), op.operationName);
+    }
+}
+
+// An Output's wired tick follows its Parts (#411): configApply() knows its
+// name and refuses the write by it, and the field does not flip. The refusal
+// naming the paramKey is what proves the two tables still agree for those.
 void test_component_toggle_table_paramkeys_match_config_apply() {
     for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
         const ComponentToggleField& field = kComponentToggleFields[i];
@@ -2313,6 +2689,13 @@ void test_component_toggle_table_paramkeys_match_config_apply() {
         char message[96];
         snprintf(message, sizeof(message), "operation=%s paramKey=%s", field.operationName,
                  field.paramKey);
+        if (boardOutputByEnabledField(field.paramKey) != nullptr) {
+            TEST_ASSERT_TRUE_MESSAGE(result.error.hasError, message);
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(field.paramKey, result.error.refusal.field, message);
+            TEST_ASSERT_EQUAL_MESSAGE(ApplyRefusalReason::Conflict, result.error.refusal.reason, message);
+            TEST_ASSERT_FALSE_MESSAGE(working.system.*(field.field), message);
+            continue;
+        }
         TEST_ASSERT_FALSE_MESSAGE(result.error.hasError, message);
         TEST_ASSERT_TRUE_MESSAGE(working.system.*(field.field), message);
     }
@@ -2325,7 +2708,10 @@ void test_component_toggle_table_paramkeys_match_config_apply() {
 void test_drive_speed_limit_read_and_write() {
     ConfigSnapshot snap = {};
     snap.drive.speedLimitMax = 250;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 
     runQuery("drive.config.speed-limit");
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
@@ -2339,29 +2725,92 @@ void test_drive_speed_limit_read_and_write() {
     TEST_ASSERT_EQUAL_INT16(300, after.drive.speedLimitMax);
 }
 
+// The refusal names what the builder typed and what it would have taken, read
+// from the Apply Core's refusal data (#425). It used to name the POST field
+// (`speedLimitMax`), which no Console builder ever types.
 void test_drive_speed_limit_rejects_out_of_range() {
     runQuery("drive.config.speed-limit value=9999");
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("value", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("0..600", capturedValue("accepts"));
 }
 
-void test_aux_led_pin_read_and_write() {
-    runQuery("aux.config.led-pin value=2");
+// A light's settings are one per Output since #413, so the op names the Output
+// first. On a FireBeetle 2 with no WiFi the Console is the only route to them.
+void test_aux_led_count_read_and_write_names_its_output() {
+    const char* const target = boardOutputLabel(*firstLightCapableOutput());
+    char write[64] = {};
+    snprintf(write, sizeof(write), "aux.config.led-count target=%s value=30", target);
+    runQuery(write);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
 
-    runQuery("aux.config.led-pin");
-    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
-    TEST_ASSERT_EQUAL_STRING("2", capturedValue("value"));
-}
-
-void test_aux_led_count_read_and_write() {
-    runQuery("aux.config.led-count value=30");
-    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
-
-    runQuery("aux.config.led-count");
+    char read[64] = {};
+    snprintf(read, sizeof(read), "aux.config.led-count target=%s", target);
+    runQuery(read);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
     TEST_ASSERT_EQUAL_STRING("30", capturedValue("value"));
+}
+
+// And the count it reports is that Output's, not the droid's: writing one
+// Output's count must leave the others where they were.
+void test_aux_led_count_is_one_outputs_own() {
+    const BoardOutput* first = firstLightCapableOutput();
+    const BoardOutput* second = nullptr;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (BOARD_OUTPUTS[i].lightCapable && &BOARD_OUTPUTS[i] != first) {
+            second = &BOARD_OUTPUTS[i];
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(second);
+
+    char write[64] = {};
+    snprintf(write, sizeof(write), "aux.config.led-count target=%s value=44",
+             boardOutputLabel(*first));
+    runQuery(write);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    char read[64] = {};
+    snprintf(read, sizeof(read), "aux.config.led-count target=%s", boardOutputLabel(*second));
+    runQuery(read);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("1", capturedValue("value"));
+}
+
+// The count goes through the row door (ADR 0068), whose refusal names the row's
+// field (`ledc:3.ledCount`) - a name no Console builder typed. The refusal is
+// pinned on `value`, the argument they did type, and the range the row check
+// holds comes back with it.
+void test_aux_led_count_refused_through_the_row_door_names_value() {
+    char write[64] = {};
+    snprintf(write, sizeof(write), "aux.config.led-count target=%s value=0",
+             boardOutputLabel(*firstLightCapableOutput()));
+    runQuery(write);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("value", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("1..255", capturedValue("accepts"));
+}
+
+// An Output that cannot carry a light has no count to read or write, and says
+// so rather than answering for a neighbour.
+void test_aux_led_count_refuses_an_output_that_cannot_be_lit() {
+    const BoardOutput* servoOnly = nullptr;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (!BOARD_OUTPUTS[i].lightCapable) {
+            servoOnly = &BOARD_OUTPUTS[i];
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(servoOnly);
+
+    char read[64] = {};
+    snprintf(read, sizeof(read), "aux.config.led-count target=%s", boardOutputLabel(*servoOnly));
+    runQuery(read);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
 }
 
 void test_rc_mode_read_and_write() {
@@ -2381,8 +2830,8 @@ void test_rc_mode_rejects_an_unknown_mode_string() {
 }
 
 // system.config.log-level (#225): read renders the live numeric level;
-// write accepts the raw 1..4 integer api_config_apply.cpp's paramInt16
-// validates.
+// write accepts the raw 1..4 integer its Setting's declaration checks
+// (src/config_settings.cpp).
 void test_log_level_read_and_write_the_integer() {
     runQuery("system.config.log-level value=3");
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
@@ -2437,7 +2886,7 @@ void test_log_level_word_form_is_case_insensitive() {
 }
 
 // The named key (logLevel=) works exactly like value= - the same
-// ScalarConfigArg bridge every other row in g_scalarConfigExecutors[] shares
+// ScalarConfigArg bridge every Setting op in g_settingOps[] shares
 // (src/console/console_module.cpp).
 void test_log_level_accepts_the_named_key() {
     runQuery("system.config.log-level logLevel=info");
@@ -2469,10 +2918,9 @@ void test_log_level_rejects_an_unknown_argument() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
 }
 
-// An extra key alongside a valid value= must still be rejected as unknown -
-// the word-form translator only fires for an exactly-one-argument write
-// (consoleExecuteSystemLogLevel()'s own comment, src/console/console_module.cpp),
-// so this also proves the translator does not silently swallow the second key.
+// An extra key alongside a valid value= must still be rejected as unknown: a
+// word the Setting takes (src/config_settings.cpp) does not let a second key
+// through the single-field write's argument check.
 void test_log_level_rejects_an_extra_argument_even_with_a_valid_word() {
     runQuery("system.config.log-level value=debug bogus=1");
 
@@ -2492,10 +2940,11 @@ void test_scalar_config_write_rejects_an_unknown_argument() {
 // Cross-adapter serialization (#226 rework, defect 1): consoleWriteScalarConfigField()
 // is the sole reader/writer of s_consoleConfigApplyResult, and both Console
 // adapters (serial task, browser's psychic server task - both pinned to
-// Core 0) can call it concurrently. The config write lock (ConfigWriteLock,
-// include/api_config.h) serializes the whole configApply() -> error check ->
-// configCommitApplied() window, and since #269 the REST config routes take
-// the same one; these tests simulate another writer holding it via the native
+// Core 0) can call it concurrently. The config write lock
+// (include/config_write_lock.h), held by the config Write Window
+// configWriteWindow() since #418, serializes the whole configApply() -> error
+// check -> configCommitApplied() window, and the REST config route calls the
+// same window; these tests simulate another writer holding it via the native
 // mutex stub's exposed singleton (paStubMutexStorage()), which is what every
 // xSemaphoreCreateMutexStatic() returns natively, matching the precedent
 // test_console_serial_output.cpp already set for inspecting/driving
@@ -2529,7 +2978,7 @@ void test_config_write_releases_the_mutex_after_a_successful_write() {
     consoleModuleInit();
     paStubMutexReset();
 
-    runQuery("system.config.enable_arm2 value=true");
+    runQuery("system.config.enable_audio value=true");
 
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_STAGED_UNTIL_REBOOT, g_cap.outcome);
@@ -2607,7 +3056,10 @@ static void seedWifi(WifiMode mode, const char* staSsid, const char* staPassword
     snprintf(snap.wifi.sta_password, sizeof(snap.wifi.sta_password), "%s", staPassword);
     snprintf(snap.wifi.ap_ssid, sizeof(snap.wifi.ap_ssid), "%s", apSsid);
     snprintf(snap.wifi.ap_password, sizeof(snap.wifi.ap_password), "%s", apPassword);
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
     configCacheSetActiveWifi(snap.wifi);
     configCacheSetActiveWifiRecovery(false);
 }
@@ -3096,7 +3548,10 @@ void test_drive_move_clamps_to_the_configured_speed_cap() {
     robotState.webControlEnabled = true;
     ConfigSnapshot snap = {};
     snap.drive.speedLimitMax = 200;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 
     runQuery("drive.action.move speed=900 steer=-900");
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
@@ -3104,7 +3559,10 @@ void test_drive_move_clamps_to_the_configured_speed_cap() {
     ConfigSnapshot raised = {};
     configCacheRead(&raised);
     raised.drive.speedLimitMax = 1000;
-    configCacheApply(raised);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(raised);
+    }
 
     const DriveOutput resolved = resolvedDriveOutput();
     TEST_ASSERT_EQUAL_INT16(200, resolved.speed);
@@ -3148,7 +3606,7 @@ void test_drive_move_rejects_an_unknown_argument() {
 
 // Consent depends on RobotState, never on which adapter asked - the serial
 // terminal is "a trusted local source" for the SAME reason the web adapter
-// is: neither is the RC link (docs/console-implementation-specification.md).
+// is: neither is the RC link (docs/console-protocol.md section 5).
 void test_drive_move_consent_is_identical_from_both_adapters() {
     robotState.webControlEnabled = false;
     robotState.sbusSignalLost = true;
@@ -3483,6 +3941,62 @@ void test_sound_play_track_blocked_while_sleeping() {
     TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_play_track_calls);
 }
 
+// Sound switched off at boot (#370): AudioTask was never created, so nothing
+// drains the queue. Every row that would send the module a command answers
+// with the reason and sends nothing - never "ok outcome=queued" onto a queue
+// nobody reads, which is what sound.action.play-track answered on the bench.
+void test_sound_rows_are_refused_with_the_reason_while_sound_is_off() {
+    configCacheSetActiveAudioEnabled(false);
+    const char* rows[] = {
+        "sound.action.play-track track=1",
+        "sound.action.set-volume volume=10",
+        "sound.action.play-track-scream",
+        "sound.action.dollar-command cmd=$R",
+        "sound.action.track-stop",
+        "sound.action.query-status",
+        "sound.api.refresh-catalog",
+        "sound.api.play-banked bank=1 page=A index=1",
+    };
+    for (const char* row : rows) {
+        g_cap = CapturedRecord{};
+        runQuery(row);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_STATUS_ERR, g_cap.status, row);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome, row);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_REASON_COMPONENT_DISABLED, g_cap.reason, row);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(
+            "Sound is off. Switch it on in Configuration, then restart the droid.",
+            capturedValue("detail"), row);
+    }
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_play_track_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_volume_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_dollar_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_stop_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_query_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_refresh_catalog_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_play_banked_calls);
+}
+
+// With sound off the status names the module the builder picked, not the
+// driver bound at boot, and says sound is off (#370; measured on both boards
+// in the 2026-09-11 comments on #370).
+void test_sound_status_names_the_picked_module_while_sound_is_off() {
+    configCacheSetActiveAudioEnabled(false);
+    ConfigSnapshot snap = {};
+    snap.system.sound_member = componentPartById("mp3_trigger")->value;
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
+
+    runQuery("sound.status.current");
+
+    TEST_ASSERT_EQUAL_STRING("MP3 Trigger", capturedValue("driver"));
+    TEST_ASSERT_EQUAL_STRING("off", capturedValue("output"));
+    char caps[8];
+    snprintf(caps, sizeof(caps), "%u", (unsigned)componentPartCapabilities("mp3_trigger"));
+    TEST_ASSERT_EQUAL_STRING(caps, capturedValue("capabilities"));
+}
+
 void test_sound_play_track_reports_a_full_queue() {
     g_test_audio_queue_ok = false;
 
@@ -3511,6 +4025,33 @@ void test_sound_set_volume_rejects_an_out_of_range_level() {
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("0..30", capturedValue("accepts"));
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_volume_calls);
+}
+
+// The volume and the mood masks are refused at the Console exactly as over
+// HTTP (ADR 0068, amended 2026-09-26): by their Settings' declarations, with
+// what each takes - never by a range copied into the registry schema, which
+// refused with no accepts. A value the schema's type cannot hold (`abc`) is
+// the declaration's to answer too.
+void test_audio_setting_ops_refuse_with_what_the_setting_takes() {
+    const struct {
+        const char* line;
+        const char* argument;
+        const char* accepts;
+    } cases[] = {
+        {"sound.config.volume volume=31", "volume", "0..30"},
+        {"sound.action.set-volume volume=abc", "volume", "0..30"},
+        {"sound.config.mood-category-map quiet=5000 mid=2 full=3 awakeplus=4", "quiet", "0..4095"},
+        {"sound.action.set-mood-map quiet=1 mid=70000 full=3 awakeplus=4", "mid", "0..4095"},
+    };
+    for (const auto& c : cases) {
+        runQuery(c.line);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_INVALID, g_cap.outcome, c.line);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason, c.line);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(c.argument, capturedValue("argument"), c.line);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(c.accepts, capturedValue("accepts"), c.line);
+    }
     TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_volume_calls);
 }
 
@@ -3534,11 +4075,11 @@ void test_sound_set_volume_reports_a_full_queue() {
 // consoleExecuteAction() a second time, not this file's own new code.
 // =============================================================================
 
-// The nine named-track shortcuts each send one specific two-character
+// The ten named-track shortcuts each send one specific two-character
 // dollar command - the assertion that actually distinguishes "scream plays"
 // from "the wrong track plays". Table-driven over
 // consoleExecuteSoundDollarShortcut()'s one shared body so a copy/paste slip
-// in any one of the nine thin wrappers (include/console_direct_action_
+// in any one of the ten thin wrappers (include/console_direct_action_
 // sound.h) fails here.
 void test_sound_named_track_shortcuts_send_the_right_dollar_command() {
     struct Case {
@@ -3555,6 +4096,7 @@ void test_sound_named_track_shortcuts_send_the_right_dollar_command() {
         {"sound.action.play-track-imperial-march", "$M"},
         {"sound.action.play-track-startup", "$B"},
         {"sound.action.play-track-disco", "$D"},
+        {"sound.action.play-track-happy", "$H"},
     };
     for (const Case& c : kCases) {
         g_test_audio_dollar_calls = 0;
@@ -3780,6 +4322,7 @@ void test_sound_set_mood_map_rejects_an_out_of_range_mask() {
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("0..4095", capturedValue("accepts"));
 }
 
 void test_sound_set_category_range_applies_and_persists() {
@@ -3805,11 +4348,25 @@ void test_sound_set_category_range_rejects_a_mismatched_key_pair() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
 }
 
+// Neither bound is out of range; the pair clashes, so it is a conflict named on
+// the argument the core names (ADR 0011 amended 2026-09-25).
 void test_sound_set_category_range_rejects_lo_greater_than_hi() {
     runQuery("sound.action.set-category-range lo_key=snd_cat_gen_lo hi_key=snd_cat_gen_hi lo=20 hi=10");
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_CONFLICT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("lo", capturedValue("argument"));
+}
+
+// A bound out of range is named by its Setting in the core (the key it was
+// for); on the Console it is the `hi=` the builder typed.
+void test_sound_set_category_range_names_an_out_of_range_bound_by_its_argument() {
+    runQuery("sound.action.set-category-range lo_key=snd_cat_gen_lo hi_key=snd_cat_gen_hi lo=1 hi=1000");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("hi", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("0..999", capturedValue("accepts"));
 }
 
 void test_sound_set_category_range_rejects_bank_as_an_unknown_argument() {
@@ -3827,17 +4384,20 @@ void test_sound_set_category_range_rejects_bank_as_an_unknown_argument() {
 // aux.action.led-color / aux.action.led-effect (#221 remainder)
 // =============================================================================
 
+// The Console action names no Output and means every lit wire, which is what
+// it has always meant and what an RC trigger and a sequence step mean by it.
 void test_aux_led_color_queues_a_valid_rgb_triple() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 5;
+    lightEveryCapableWire();
 
     runQuery("aux.action.led-color r=10 g=20 b=30");
 
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
-    TEST_ASSERT_EQUAL_UINT8(10, robotState.auxLed.r);
-    TEST_ASSERT_EQUAL_UINT8(20, robotState.auxLed.g);
-    TEST_ASSERT_EQUAL_UINT8(30, robotState.auxLed.b);
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        TEST_ASSERT_EQUAL_UINT8(BOARD_OUTPUTS[i].lightCapable ? 10 : 0, robotState.auxLed[i].r);
+        TEST_ASSERT_EQUAL_UINT8(BOARD_OUTPUTS[i].lightCapable ? 20 : 0, robotState.auxLed[i].g);
+        TEST_ASSERT_EQUAL_UINT8(BOARD_OUTPUTS[i].lightCapable ? 30 : 0, robotState.auxLed[i].b);
+    }
 }
 
 void test_aux_led_color_rejects_an_out_of_range_component() {
@@ -3848,17 +4408,14 @@ void test_aux_led_color_rejects_an_out_of_range_component() {
     TEST_ASSERT_EQUAL_STRING("g", capturedValue("argument"));
 }
 
-void test_aux_led_color_reports_component_disabled_when_pin_unset() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 0;  // no pin selected: aux.config.led-pin's "disabled" state
-    // The native auxLedQueueSetColor() stub (src/native_test_stubs.cpp) only
-    // gates on g_test_aux_led_queue_ok, unlike the real implementation
-    // (src/tasks/aux_led.cpp, not in [env:native]'s build filter) which also
-    // refuses when the strip is unavailable - so this forces the same
-    // refusal the real availability gate would produce, to prove
-    // consoleAnswerAuxLedRefusal() picks COMPONENT_DISABLED over QUEUE_FULL
-    // from robotState.auxLed alone once the call has failed either way.
-    g_test_aux_led_queue_ok = false;
+// A droid with nothing lit: no wire carries a Light Type, which is a config
+// answer and not a busy queue. The native stub refuses for the same reason the
+// real queue does (both ask auxLedTargetIsLit), so this reaches
+// consoleAnswerAuxLedRefusal() the way the device would.
+void test_aux_led_color_reports_component_disabled_when_nothing_is_lit() {
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        robotState.auxLed[i] = {};
+    }
 
     runQuery("aux.action.led-color r=1 g=1 b=1");
 
@@ -3867,8 +4424,7 @@ void test_aux_led_color_reports_component_disabled_when_pin_unset() {
 }
 
 void test_aux_led_color_reports_queue_full_when_available_but_refused() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 5;
+    lightEveryCapableWire();
     g_test_aux_led_queue_ok = false;
 
     runQuery("aux.action.led-color r=1 g=1 b=1");
@@ -3878,8 +4434,7 @@ void test_aux_led_color_reports_queue_full_when_available_but_refused() {
 }
 
 void test_aux_led_effect_queues_a_valid_effect() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 5;
+    lightEveryCapableWire();
 
     runQuery("aux.action.led-effect effect=pulse");
 
@@ -3896,8 +4451,7 @@ void test_aux_led_effect_queues_a_valid_effect() {
 // "off" - a legitimate value handleAuxLedEffectPost() accepts today - must
 // still be accepted here, not rejected as an unlisted enum value.
 void test_aux_led_effect_accepts_off_despite_the_buggy_catalog_enum() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 5;
+    lightEveryCapableWire();
 
     runQuery("aux.action.led-effect effect=off");
 
@@ -3931,16 +4485,94 @@ void test_aux_led_effect_rejects_an_unknown_argument() {
 // =============================================================================
 
 void test_servo_open_queues_with_the_resolved_arm_id() {
-    runQuery("servo.action.open target=aux2");
+    runQuery("servo.action.open target=arm4");
 
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// The target is the running board's word for the Output (ADR 0033 Amendment
+// 2026-09-19), typed as the board prints it or not: case and spaces are set
+// aside, and a quoted label with a space arrives as one value. This image is
+// the Artoo PCB's, which prints ARM1..ARM5.
+void test_servo_open_takes_the_board_label_typed_with_a_space() {
+    runQuery("servo.action.open target=\"Arm 3\"");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// protoR2's old word for the Artoo's third Output is not an alias: it is
+// refused, and the refusal names the words this board takes - `both` among
+// them where the operation takes the broadcast, and not where it does not.
+void test_servo_refuses_a_word_the_board_does_not_print_and_names_its_words() {
+    runQuery("servo.action.open target=aux1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("target", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("ARM1,ARM2,ARM3,ARM4,ARM5,both", capturedValue("accepts"));
+
+    runQuery("servo.action.nudge target=aux3");
+
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("ARM1,ARM2,ARM3,ARM4,ARM5", capturedValue("accepts"));
 }
 
 void test_servo_open_accepts_both_as_the_broadcast_target() {
     runQuery("servo.action.open target=both");
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// An Output nothing drives since the droid started is refused, never queued
+// (#364): ServoTask drops the command without a word. The detail is the
+// sentence POST /api/servo answers with, so both adapters say the same thing.
+void test_servo_refuses_an_output_nothing_drives_since_boot() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.system.enable_aux1 = true;  // ARM3, ticked after the droid started
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
+    g_test_servo_driven_mask = (uint8_t)~(1u << 2);
+
+    runQuery("servo.action.hold target=ARM3 position_us=1500");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_COMPONENT_DISABLED, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("Restart the droid to use ARM3.", capturedValue("detail"));
+
+    runQuery("servo.action.stop target=ARM3");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+
+    runQuery("servo.action.open target=ARM1");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// back to centre from the Console names what the sweep passes over because
+// nothing drives it, as POST /api/servo/centre does (#364).
+void test_servo_centre_all_names_an_output_nothing_drives() {
+    {
+        // A fresh table: every board Output has a row with travel.
+        const ConfigWriteWindowForTest window;
+        Preferences prefs;
+        prefs.begin("proto", false);
+        prefs.clear();
+        ServoOutputRepairReport report = {};
+        configLoadServoOutputs(prefs, &report);
+        prefs.end();
+    }
+    g_test_servo_driven_mask = (uint8_t)~(1u << 2);
+
+    runQuery("servo.action.centre-all");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("ARM3", capturedValue("skipped"));
 }
 
 void test_servo_close_rejects_an_unknown_target() {
@@ -3951,7 +4583,7 @@ void test_servo_close_rejects_an_unknown_target() {
 }
 
 // set-position's own catalog enum excludes "both" (docs/action-registry.yaml)
-// even though handleServoPost()'s parseArmId() would accept it for any
+// even though handleServoPost()'s servoParseTarget() would accept it for any
 // action - narrower than REST here is not "widening" and is the registry's
 // own declared shape, not invented in this dispatch code.
 void test_servo_set_position_rejects_both_though_open_close_accept_it() {
@@ -4030,6 +4662,39 @@ void test_servo_stop_rejects_position_us_as_an_unknown_argument() {
     TEST_ASSERT_EQUAL_STRING("position_us", capturedValue("argument"));
 }
 
+// servo.action.nudge (#363, ADR 0050): a Find by Moving nudge, reachable from
+// the Console the way set-position is. A target and nothing else: no width,
+// because ServoTask computes the pair from the pin, and no "both", because a
+// nudge is one output at a time by definition.
+void test_servo_nudge_queues_with_the_resolved_arm_id() {
+    runQuery("servo.action.nudge target=ARM3");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+void test_servo_nudge_rejects_both_as_two_outputs_in_one_press() {
+    runQuery("servo.action.nudge target=both");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_servo_nudge_rejects_a_width_as_an_unknown_argument() {
+    runQuery("servo.action.nudge target=arm1 position_us=1500");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("position_us", capturedValue("argument"));
+}
+
+void test_servo_nudge_rejects_a_missing_target() {
+    runQuery("servo.action.nudge");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+}
+
 // #257: g_directActionExecutors[] split into five per-domain tables
 // (include/console_direct_action_{system,drive,sound,aux_rc,servo}.h). Every
 // row's own behavior is already asserted above by name (e.g.
@@ -4074,6 +4739,7 @@ void test_257_every_direct_action_row_still_dispatches() {
         "sound.action.play-track-imperial-march",
         "sound.action.play-track-startup",
         "sound.action.play-track-disco",
+        "sound.action.play-track-happy",
         "sound.action.quiet",
         "sound.action.random-on",
         "sound.action.random-off",
@@ -4093,6 +4759,7 @@ void test_257_every_direct_action_row_still_dispatches() {
         "servo.action.close",
         "servo.action.set-position",
         "servo.action.stop",
+        "servo.action.nudge",
     };
     static const size_t kExpectedCount =
         sizeof(kExpectedDirectActionOperations) / sizeof(kExpectedDirectActionOperations[0]);
@@ -4108,51 +4775,6 @@ void test_257_every_direct_action_row_still_dispatches() {
         TEST_ASSERT_TRUE_MESSAGE(g_cap.resultCalled || g_cap.endCalled,
                                  kExpectedDirectActionOperations[i]);
     }
-}
-
-// dome.action.save-sequence (#259) is the one dome.action.* row #259
-// deliberately leaves EXECUTOR_NOT_READY: its REST body (POST /api/seq, a
-// full Learned Sequence JSON v1 document with a steps array) is the
-// "document/bulk transfer" #206 names out of scope for this epic, and the
-// Console's one-line key=value argument grammar has no shape for it - see
-// include/console_direct_action_dome.h's own header comment for the full
-// reasoning. Asserted here so a future accidental wiring (or an accidental
-// unwiring) of this specific row is caught by name, not folded into the
-// aggregate #220 report count.
-void test_action_save_sequence_stays_executor_not_ready_document_transfer_out_of_scope() {
-    runQuery("dome.action.save-sequence");
-
-    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
-    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
-}
-
-// dome.api.get-sequence / dome.api.get-layout (#221 remainder): the other
-// two of the five dome.api.* rows - the three above them
-// (get-sequence-last-run/list-sequences/list-builtin-sequences) are wired
-// and covered by their own tests above. These two stay EXECUTOR_NOT_READY
-// on purpose, the same document/bulk-transfer #206 exclusion
-// dome.action.save-sequence's test above asserts: seqStoreReadFileSlice()/
-// domeLayoutCacheReadChunk() are byte-slice readers over one stored
-// document (a Learned Sequence JSON v1 file; the dome's cached composed-
-// layout JSON), not a gap this ticket owes a Console Record shape for -
-// see the registry entries' own comments (docs/action-registry.yaml) and
-// consoleExecuteCommand()'s CONSOLE_OP_ACTION case (src/console/
-// console_module.cpp) for the full reasoning. Asserted here by name for the
-// same reason dome.action.save-sequence's test is: a future accidental
-// wiring (or unwiring) is caught, not folded into the aggregate #220
-// report count.
-void test_action_get_sequence_stays_executor_not_ready_document_transfer_out_of_scope() {
-    runQuery("dome.api.get-sequence");
-
-    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
-    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
-}
-
-void test_action_get_layout_stays_executor_not_ready_document_transfer_out_of_scope() {
-    runQuery("dome.api.get-layout");
-
-    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
-    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
 }
 
 // =============================================================================
@@ -4476,7 +5098,10 @@ void test_reason_matrix_component_disabled_from_a_component_toggle_off() {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.system.enable_dome_esc = false;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 
     runQuery("dome.action.move speed=0.5");
 
@@ -4501,7 +5126,10 @@ void test_reason_matrix_blocked_by_state_from_sleep() {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.system.enable_dome_esc = true;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
     robotState.sleepMode = true;
 
     runQuery("dome.action.move speed=0.5");
@@ -4577,7 +5205,10 @@ void test_a_component_toggle_flipped_after_discovery_changes_the_execution_answe
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.system.enable_dome_esc = true;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 
     runOperationsListing();
     const char* listed = listedOperationItem("dome.action.move");
@@ -4591,7 +5222,10 @@ void test_a_component_toggle_flipped_after_discovery_changes_the_execution_answe
     // The operator turns the Dome ESC off after listing the catalog.
     configCacheRead(&snap);
     snap.system.enable_dome_esc = false;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 
     runQuery("dome.action.move speed=0.5");
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
@@ -4633,8 +5267,11 @@ static void seedAudioTrack(const char* key, uint16_t value) {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     TEST_ASSERT_TRUE_MESSAGE(configAudioSetTrackByKey(&snap.audio, key, value),
-                             "test seed used a key AUDIO_TRACK_KEYS does not declare");
-    configCacheApply(snap);
+                             "test seed used a key no audio Setting declares");
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 }
 
 static uint16_t audioTrackValue(const char* key) {
@@ -4642,7 +5279,7 @@ static uint16_t audioTrackValue(const char* key) {
     configCacheRead(&snap);
     uint16_t value = 0;
     TEST_ASSERT_TRUE_MESSAGE(configAudioGetTrackByKey(snap.audio, key, &value),
-                             "read-back used a key AUDIO_TRACK_KEYS does not declare");
+                             "read-back used a key no audio Setting declares");
     return value;
 }
 
@@ -4671,9 +5308,9 @@ void test_sound_config_random_min_write_reaches_the_tracks_core() {
 
 // The core is the only gate on the value, not a copy of its rules in this
 // module: these two rows take the identical argument and get opposite
-// verdicts, because audioTracksApply()'s zero-allowed key list contains
-// sys_boot and not startup (src/web/api_audio_tracks_apply.cpp). No
-// adapter-side check could tell them apart without duplicating that list.
+// verdicts, because the startup Setting takes 1..999 and sys_boot 0..999
+// (src/config_settings.cpp). No adapter-side check could tell them apart
+// without duplicating those declarations.
 void test_sound_config_startup_track_rejects_zero_the_way_rest_does() {
     seedAudioTrack("startup", 5);
 
@@ -4682,6 +5319,10 @@ void test_sound_config_startup_track_rejects_zero_the_way_rest_does() {
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    // The core names the refused value by its Setting (`startup`); the builder
+    // typed it as `track=`, and that is the argument named, with the range.
+    TEST_ASSERT_EQUAL_STRING("track", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("1..999", capturedValue("accepts"));
     TEST_ASSERT_EQUAL_UINT16_MESSAGE(5, audioTrackValue("startup"),
                                      "a refused write must not have reached the config cache");
 }
@@ -4733,7 +5374,7 @@ void test_sound_config_track_assignments_reads_every_named_track() {
     runQuery("sound.config.track-assignments");
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(20, g_cap.fieldCount,
+    TEST_ASSERT_EQUAL_INT_MESSAGE(21, g_cap.fieldCount,
                                   "the row's read must list its whole key set");
     TEST_ASSERT_EQUAL_STRING("21", capturedValue("scream"));
     TEST_ASSERT_EQUAL_STRING("34", capturedValue("pbjtime"));
@@ -4797,8 +5438,8 @@ void test_sound_config_category_ranges_write_reaches_the_category_core() {
     TEST_ASSERT_EQUAL_UINT16(60, audioTrackValue("snd_cat_gen_hi"));
 }
 
-// lo>hi is a grouped rule with no single attributable argument, and it lives
-// in the core - this module never re-tests it.
+// lo>hi is a grouped rule, and it lives in the core - this module never
+// re-tests it. The core calls it a conflict (ADR 0011 amended 2026-09-25).
 void test_sound_config_category_ranges_refuses_an_inverted_pair() {
     seedAudioTrack("snd_cat_hap_lo", 10);
     seedAudioTrack("snd_cat_hap_hi", 20);
@@ -4807,7 +5448,7 @@ void test_sound_config_category_ranges_refuses_an_inverted_pair() {
 
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
-    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_CONFLICT, g_cap.reason);
     TEST_ASSERT_EQUAL_UINT16(10, audioTrackValue("snd_cat_hap_lo"));
     TEST_ASSERT_EQUAL_UINT16(20, audioTrackValue("snd_cat_hap_hi"));
 }
@@ -4819,7 +5460,10 @@ void test_sound_config_mood_category_map_reads_the_four_masks() {
     snap.audio.snd_moodcat_mid = 0x012;
     snap.audio.snd_moodcat_full = 0x123;
     snap.audio.snd_moodcat_awakeplus = 0xFFF;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 
     runQuery("sound.config.mood-category-map");
 
@@ -4880,7 +5524,10 @@ void test_sound_config_volume_reads_the_stored_default() {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.audio.audioVolume = 17;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 
     runQuery("sound.config.volume");
 
@@ -5078,6 +5725,7 @@ int main(int, char**) {
 
     RUN_TEST(test_health_three_way_field_match);
     RUN_TEST(test_health_executes_synchronously_and_carries_real_state);
+    RUN_TEST(test_health_heap_keys_are_the_internal_data_heap);
 
     RUN_TEST(test_wifi_three_way_field_match);
     RUN_TEST(test_wifi_carries_active_wifi_config_ssid);
@@ -5123,7 +5771,11 @@ int main(int, char**) {
     RUN_TEST(test_action_dispatch_attributes_serial_source);
     RUN_TEST(test_action_dispatch_attributes_web_source);
     RUN_TEST(test_scoped_non_motion_actions_are_not_executor_not_ready);
-    RUN_TEST(test_the_executor_not_ready_set_is_exactly_the_recorded_rows);
+    RUN_TEST(test_every_excluded_row_answers_not_on_console_and_only_those);
+    RUN_TEST(test_the_executor_not_ready_set_is_exactly_the_unwired_rows);
+    RUN_TEST(test_servo_api_get_outputs_streams_every_row_as_an_item);
+    RUN_TEST(test_system_api_get_components_names_the_radio_member);
+    RUN_TEST(test_system_api_get_components_part_items_are_whole_and_carry_the_droid_fact);
     RUN_TEST(test_action_executor_not_ready_count_report);
 
     RUN_TEST(test_action_zero_param_action_rejects_unknown_argument);
@@ -5174,7 +5826,10 @@ int main(int, char**) {
     RUN_TEST(test_action_send_command_unknown_argument_is_rejected);
     RUN_TEST(test_action_send_command_missing_command_answers_missing_argument);
     RUN_TEST(test_action_send_command_unsupported_keyword_answers_out_of_range);
+    RUN_TEST(test_action_send_command_shadowed_mode_keyword_is_refused);
     RUN_TEST(test_action_send_command_dome_forward_prefix_is_blocked_while_sleeping);
+    RUN_TEST(test_action_send_command_forward_answers_queued_and_a_refusal_is_not_ok);
+    RUN_TEST(test_action_marcduino_command_refused_by_estop_answers_blocked);
     RUN_TEST(test_action_send_command_keyword_is_not_blocked_by_sleep);
     RUN_TEST(test_action_send_command_estop_keyword_dispatches_through_the_real_core);
     RUN_TEST(test_action_sequence_stop_rejects_any_argument);
@@ -5194,9 +5849,6 @@ int main(int, char**) {
     RUN_TEST(test_action_test_sequence_missing_name_answers_missing_argument);
     RUN_TEST(test_action_test_sequence_rejects_a_non_dm_name);
     RUN_TEST(test_action_test_sequence_valid_name_queues_through_the_dispatcher);
-    RUN_TEST(test_action_save_sequence_stays_executor_not_ready_document_transfer_out_of_scope);
-    RUN_TEST(test_action_get_sequence_stays_executor_not_ready_document_transfer_out_of_scope);
-    RUN_TEST(test_action_get_layout_stays_executor_not_ready_document_transfer_out_of_scope);
 
     RUN_TEST(test_component_toggle_read_reports_saved_and_active);
     RUN_TEST(test_component_toggle_write_persists_and_reports_staged_until_reboot);
@@ -5204,10 +5856,13 @@ int main(int, char**) {
     RUN_TEST(test_component_toggle_write_rejects_an_unknown_argument);
     RUN_TEST(test_component_toggle_write_rejects_a_malformed_boolean);
     RUN_TEST(test_component_toggle_table_paramkeys_match_config_apply);
+    RUN_TEST(test_every_single_field_setting_op_refuses_as_the_http_door_does);
     RUN_TEST(test_drive_speed_limit_read_and_write);
     RUN_TEST(test_drive_speed_limit_rejects_out_of_range);
-    RUN_TEST(test_aux_led_pin_read_and_write);
-    RUN_TEST(test_aux_led_count_read_and_write);
+    RUN_TEST(test_aux_led_count_read_and_write_names_its_output);
+    RUN_TEST(test_aux_led_count_is_one_outputs_own);
+    RUN_TEST(test_aux_led_count_refused_through_the_row_door_names_value);
+    RUN_TEST(test_aux_led_count_refuses_an_output_that_cannot_be_lit);
     RUN_TEST(test_rc_mode_read_and_write);
     RUN_TEST(test_rc_mode_rejects_an_unknown_mode_string);
     RUN_TEST(test_log_level_read_and_write_the_integer);
@@ -5328,9 +5983,12 @@ int main(int, char**) {
     RUN_TEST(test_sound_play_track_queues_and_carries_the_track_number);
     RUN_TEST(test_sound_play_track_rejects_an_out_of_range_track);
     RUN_TEST(test_sound_play_track_blocked_while_sleeping);
+    RUN_TEST(test_sound_rows_are_refused_with_the_reason_while_sound_is_off);
+    RUN_TEST(test_sound_status_names_the_picked_module_while_sound_is_off);
     RUN_TEST(test_sound_play_track_reports_a_full_queue);
     RUN_TEST(test_sound_set_volume_applies_and_persists);
     RUN_TEST(test_sound_set_volume_rejects_an_out_of_range_level);
+    RUN_TEST(test_audio_setting_ops_refuse_with_what_the_setting_takes);
     RUN_TEST(test_sound_set_volume_reports_a_full_queue);
 
     RUN_TEST(test_sound_named_track_shortcuts_send_the_right_dollar_command);
@@ -5358,11 +6016,12 @@ int main(int, char**) {
     RUN_TEST(test_sound_set_category_range_applies_and_persists);
     RUN_TEST(test_sound_set_category_range_rejects_a_mismatched_key_pair);
     RUN_TEST(test_sound_set_category_range_rejects_lo_greater_than_hi);
+    RUN_TEST(test_sound_set_category_range_names_an_out_of_range_bound_by_its_argument);
     RUN_TEST(test_sound_set_category_range_rejects_bank_as_an_unknown_argument);
 
     RUN_TEST(test_aux_led_color_queues_a_valid_rgb_triple);
     RUN_TEST(test_aux_led_color_rejects_an_out_of_range_component);
-    RUN_TEST(test_aux_led_color_reports_component_disabled_when_pin_unset);
+    RUN_TEST(test_aux_led_color_reports_component_disabled_when_nothing_is_lit);
     RUN_TEST(test_aux_led_color_reports_queue_full_when_available_but_refused);
     RUN_TEST(test_aux_led_effect_queues_a_valid_effect);
     RUN_TEST(test_aux_led_effect_accepts_off_despite_the_buggy_catalog_enum);
@@ -5370,7 +6029,11 @@ int main(int, char**) {
     RUN_TEST(test_aux_led_effect_rejects_an_unknown_argument);
 
     RUN_TEST(test_servo_open_queues_with_the_resolved_arm_id);
+    RUN_TEST(test_servo_open_takes_the_board_label_typed_with_a_space);
+    RUN_TEST(test_servo_refuses_a_word_the_board_does_not_print_and_names_its_words);
     RUN_TEST(test_servo_open_accepts_both_as_the_broadcast_target);
+    RUN_TEST(test_servo_refuses_an_output_nothing_drives_since_boot);
+    RUN_TEST(test_servo_centre_all_names_an_output_nothing_drives);
     RUN_TEST(test_servo_close_rejects_an_unknown_target);
     RUN_TEST(test_servo_set_position_rejects_both_though_open_close_accept_it);
     RUN_TEST(test_servo_set_position_queues_with_a_valid_pulse_width);
@@ -5381,6 +6044,10 @@ int main(int, char**) {
     RUN_TEST(test_servo_stop_rejects_a_missing_target);
     RUN_TEST(test_servo_stop_rejects_an_unknown_target);
     RUN_TEST(test_servo_stop_rejects_position_us_as_an_unknown_argument);
+    RUN_TEST(test_servo_nudge_queues_with_the_resolved_arm_id);
+    RUN_TEST(test_servo_nudge_rejects_both_as_two_outputs_in_one_press);
+    RUN_TEST(test_servo_nudge_rejects_a_width_as_an_unknown_argument);
+    RUN_TEST(test_servo_nudge_rejects_a_missing_target);
     RUN_TEST(test_257_every_direct_action_row_still_dispatches);
 
     RUN_TEST(test_profiler_snapshot_answers_not_in_this_build);

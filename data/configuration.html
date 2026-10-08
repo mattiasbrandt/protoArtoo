@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/feature_availability.js,/droid_parts.js,/droid_build.js,/dome_layout.js,/apply_timing.js,/droid_build_picker.js,/component_picker.js,/configuration.js,/setup.js">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Configuration - protoR2</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- Thin delegate. This file is the one copy of this surface's markup and
+         the Operator Shell fetches it; fetching never runs scripts, so this
+         line is inert for the shell. A browser that lands here directly -- a
+         bookmark, an old link, a support conversation -- is handed to the shell
+         at this surface's route instead, so the address keeps opening what it
+         names (ADR 0048). -->
+    <script>window.PAShellDelegate = true; location.replace("/#configuration");</script>
+  </head>
+  <body data-page="configuration">
+
+    <!-- The asset set's product drawings (ADR 0065). The legacy set inlines a
+         symbol per product here and every Component Picker card draws one; the
+         default set's partial is empty, so that build shows the photograph.
+         It sits in the body because the Operator Shell mounts only a
+         surface's body, and the drawings must be in the document to be drawn. -->
+    <!-- PA:INCLUDE _product_art.html -->
+
+    <!-- The title is the name in the nav, and nothing under it (ADR 0066,
+         docs/ui-copy-voice.md rule 14). Every act on this page is named beside
+         the thing it acts on, so the title carries none of its own.
+
+         Two titles, because this surface is one of two things at a time: while
+         the droid is not set up, guided Setup is drawn over it and says so
+         (data/setup.js swaps them); otherwise it is Configuration. -->
+    <div class="title" id="configuration-title">
+      <div>
+        <h1>Configuration</h1>
+      </div>
+    </div>
+    <div class="title hidden" id="setup-title">
+      <div>
+        <h1>Setup</h1>
+      </div>
+    </div>
+
+    <!-- ---------------------------------------------------------------------
+         Guided Setup: the first-run takeover (#351, #297, GLOSSARY.md "Setup").
+
+         Setup is the guided run and nothing else, and it is drawn over this
+         surface, because its questions are this surface's controls (#404).
+         While that run is live the surface shows its chrome and ONE step at a
+         time; once the run has ended - by reaching the last step or by the
+         builder stopping - the chrome goes and this page is the cards below.
+         The run does not re-open by itself; Maintenance carries the one way
+         back in.
+
+         A step's body is an element carrying data-setup-step, and the wizard
+         shows the card that CONTAINS the current one. That is why the steps are
+         attributes on the controls a builder already meets rather than a second
+         set of screens: a question asked during the run and the same question
+         answered afterwards are the same markup, so the two cannot drift.
+
+         The step LIST, its order and every count live in data/setup.js. Nothing
+         here numbers a step, because a number typed in markup is a number that
+         goes wrong the day a step is inserted - which is exactly what #368
+         did.
+         --------------------------------------------------------------------- -->
+    <div class="card" id="wizard-checking">
+      <div class="sect"><h2>Setup</h2><span class="sub waiting"></span></div>
+      <p class="hint"></p>
+    </div>
+
+    <!-- What the run left behind (#371): what was set, what still waits for a
+         restart, and what was never asked. Shown once the run has ended - by
+         reaching the last step or by stopping - and drawn by data/setup.js from
+         the run's steps and the droid's saved record, so it carries no list of
+         its own and reads the same after a restart. It stays until Done, which
+         is saved on the droid like the rest of the run's record. -->
+    <div class="card hidden" id="setup-summary">
+      <div class="sect"><h2 id="setup-summary-title">Setup</h2><span class="sub" id="setup-summary-count"></span></div>
+      <p class="hint" id="setup-summary-hint"></p>
+      <div id="setup-summary-body"></div>
+      <div class="button-row button-row-compact">
+        <button id="setup-summary-done" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-check"/></svg><span class="act-label">Done</span></button>
+      </div>
+      <div id="setup-summary-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <div class="card hidden" id="wizard-head">
+      <!-- The rail: the questions in this run, the one you are on, and what
+           each one currently answers. A hollow mark is a question that has not
+           been on screen yet, which is not the same as one you answered. -->
+      <div class="wizard-rail" id="wizard-rail" role="group" aria-label="The questions in this run"></div>
+      <p class="hint wizard-legend hidden" id="wizard-legend"></p>
+      <div class="sect"><h2 id="wizard-question">Setting this droid up</h2><span class="sub" id="wizard-step-name"></span></div>
+      <p class="note" id="wizard-why"></p>
+    </div>
+
+    <!-- Step 1. The run continues the flow that started when the builder gave
+         the droid their WiFi, so it opens on the link they are reading this
+         over rather than on a fresh subject. Run-only: WiFi has its own
+         surface, and a second permanent home for it here would be the drift
+         #288 closed. -->
+    <div class="card hidden" id="wizard-wifi-card" data-setup-run-only>
+      <div class="sect"><h2>WiFi</h2><span class="sub waiting" id="wizard-wifi-state"></span></div>
+      <!-- data-setup-home: where this step is answered once the run is over,
+           since this card is the run's alone (data/setup.js). -->
+      <div data-setup-step="wifi" data-setup-home="#wifi">
+        <p class="note hidden apply-timing" data-apply-timing></p>
+        <p class="note waiting" id="wizard-wifi-prose"></p>
+        <div class="button-row button-row-compact">
+          <a class="btn btn-sm btn-quiet" href="#wifi">Change the network in WiFi</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- The board this image is running on, beside the other Body Controller
+         as a peer product (operator, 2026-09-12 on #369). Shown, not asked:
+         the family has no member setting, because the running image IS the
+         answer, so the board it was built for reads "On this board" and the
+         other is simply a product. The cards are the Component Picker's
+         (data/component_picker.js). -->
+    <div class="card">
+      <div class="sect"><h2>Body Controller</h2><span class="sub">runs the droid</span></div>
+      <div data-setup-step="_board">
+        <div class="component-picker" data-component-family="body_controller"></div>
+      </div>
+    </div>
+
+    <!-- Which droid this is: a Dome Design and a Body Design, each at its
+         Design Variant (ADR 0047, #368). The cards are drawn by
+         data/droid_build_picker.js from the catalog's designs, so nothing here
+         names a design. The guided run shows this same host as its step. -->
+    <div class="card">
+      <div class="sect"><h2>Droid Build</h2><span class="sub waiting" id="droid-build-summary"></span></div>
+      <div data-setup-step="build">
+        <p class="note hidden apply-timing" data-apply-timing></p>
+        <div id="droid-build-body"></div>
+        <div id="droid-build-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+      </div>
+    </div>
+
+    <!-- What is fitted. Every category in this card is a data-setup-step host,
+         and the guided run shows the same host as its step, so a category has
+         one home on this page and two ways of being shown (#404). Each carries
+         a Component Picker host (data/component_picker.js): the family's
+         products as cards, drawn once, whichever way the host is shown.
+
+         Where a family's answer is a Component Toggle, the toggle stays in the
+         form as the value the save sends, and its row is hidden: the cards are
+         the control, and "Not fitted" is one of them rather than a checkbox. -->
+    <div class="card">
+      <div class="sect"><h2>Hardware components</h2><span class="sub waiting" id="setup-enabled-summary"></span></div>
+      <form id="feature-form">
+
+        <div data-setup-step="drive">
+        <div class="sect"><h3>Foot Drive</h3><span class="sub">the feet</span></div>
+        <p class="note hidden apply-timing" data-apply-timing></p>
+        <div class="component-picker" data-component-family="foot_drive" data-component-toggle="enable-drive"
+             data-component-not-fitted="The droid is a statue. Sticks move, wheels don't."></div>
+        <div class="note note-info" role="note">
+          <span id="label-desc-enable_drive" class="component-label-desc">Wire it to <strong id="label-enable_drive"></strong>.</span>
+        </div>
+        <div class="component-row component-toggle-backing" data-feature-entry="system.config.enable_drive">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-drive" name="enableDrive">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label"><span data-setting-label="enableDrive"></span> <span class="component-badge" id="badge-enable_drive"></span></span>
+            <span class="toggle-status" id="status-drive">Off</span>
+          </label>
+        </div>
+
+        </div>
+        <div data-setup-step="domerot">
+        <div class="sect"><h3>Dome Rotation</h3><span class="sub">what turns the dome</span></div>
+        <p class="note hidden apply-timing" data-apply-timing></p>
+        <div class="component-picker" data-component-family="dome_rotation" data-component-toggle="enable-dome-esc"
+             data-component-not-fitted="The dome sits still through every sequence."></div>
+        <div class="note note-info" role="note">
+          <span id="label-desc-enable_dome_esc" class="component-label-desc">Wire it to <strong id="label-enable_dome_esc"></strong>.</span>
+        </div>
+        <div class="component-row component-toggle-backing" data-feature-entry="system.config.enable_dome_esc">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-dome-esc" name="enableDomeEsc">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label"><span data-setting-label="enableDomeEsc"></span> <span class="component-badge" id="badge-enable_dome_esc"></span></span>
+            <span class="toggle-status" id="status-dome-esc">Off</span>
+          </label>
+        </div>
+
+        </div>
+        <div data-setup-step="domectl">
+        <div class="sect"><h3>Dome Controller</h3><span class="sub">in the dome</span></div>
+        <p class="note hidden apply-timing" data-apply-timing></p>
+        <div class="component-picker" data-component-family="dome_controller" data-component-toggle="enable-protor2link"
+             data-component-not-fitted="The body drives, and the dome gets no light, panel or sound cues."></div>
+        <div class="note note-info" role="note">
+          <span id="label-desc-enable_protor2link" class="component-label-desc">Wire it to <strong id="label-enable_protor2link"></strong>.</span>
+        </div>
+        <div class="component-row component-toggle-backing" data-feature-entry="system.config.enable_protor2link">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-protor2link" name="enableProtoR2link">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label"><span data-setting-label="enableProtoR2link"></span> <span class="component-badge" id="badge-enable_protor2link"></span></span>
+            <span class="toggle-status" id="status-protor2link">Off</span>
+          </label>
+        </div>
+        <!-- protoR2link's own settings, shown while the Dome Controller is
+             fitted (#369). The slip ring's facts are the firmware's per-board
+             answer (GET /api/identity board_lanes.protor2link), written in by
+             data/configuration.js; nothing here is a copy of them. -->
+        <div class="setting-rows protor2link-settings" id="protor2link-settings" hidden>
+          <label class="setting-row">
+            <span class="setting-name"><span data-setting-label="protoR2linkWifiPeerIp"></span><span class="hint">WiFi fallback. Empty, found by name.</span></span>
+            <input id="protor2link-wifi-peer-ip" class="number-cell ip-cell" name="protoR2linkWifiPeerIp" type="text"
+                   inputmode="decimal" maxlength="15" autocomplete="off" spellcheck="false" placeholder="192.168.4.2">
+          </label>
+          <div class="setting-row" id="protor2link-slip-ring" hidden>
+            <span class="setting-name">Slip ring<span class="hint">Fixed on this board.</span></span>
+            <span class="setting-fact" id="protor2link-slip-ring-facts"></span>
+          </div>
+          <p class="feedback" id="protor2link-feedback" role="status" aria-live="polite"></p>
+        </div>
+
+        </div>
+        <div data-setup-step="sound">
+        <div class="sect"><h3>Sound</h3><span class="sub">the droid's voice</span></div>
+        <p class="note hidden apply-timing" data-apply-timing></p>
+        <div class="component-picker" data-component-family="sound" data-component-toggle="enable-audio"
+             data-component-not-fitted="Sequences still run start to finish, in silence."></div>
+        <div class="note note-info" role="note">
+          <span id="label-desc-enable_audio" class="component-label-desc">Wire it to <strong id="label-enable_audio"></strong>.</span>
+        </div>
+        <div class="component-row component-toggle-backing" data-feature-entry="system.config.enable_audio">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-audio" name="enableAudio">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label"><span data-setting-label="enableAudio"></span> <span class="component-badge" id="badge-enable_audio"></span></span>
+            <span id="s2-driver-label" class="s2-driver-label"></span>
+            <span class="toggle-status" id="status-audio">Off</span>
+          </label>
+        </div>
+
+        </div>
+        <div data-setup-step="_servos">
+        <div class="sect"><h3>Body servo controller</h3><span class="sub">for the body's servos</span></div>
+        <div class="component-picker" data-component-family="body_servo_controller"></div>
+        </div>
+        <div data-setup-step="rc">
+        <div class="sect"><h3>Radio Controller</h3><span class="sub">what you drive with</span></div>
+        <p class="note hidden apply-timing" data-apply-timing></p>
+        <div class="component-picker" data-component-family="radio_controller"
+             data-component-receiver-channels="rc-channel-plates"
+             data-component-not-fitted="Driven from the web alone. No radio, no channels."></div>
+        <!-- The channel ticks belong to the chosen RC Receiver (operator,
+             2026-09-18 on #369): the Component Picker moves this block into
+             that receiver's answer and shows the rows its mode reads. Declared
+             here so the inputs, their keys and their save stay Configuration's. -->
+        <div class="output-plates component-receiver-channels" id="rc-channel-plates">
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_rc_ch1">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-rc-ch1" name="enableRcCh1">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label"><span data-setting-label="enableRcCh1"></span> <span class="component-badge" id="badge-enable_rc_ch1"></span></span>
+            <span class="toggle-status" id="status-rc-ch1">Off</span>
+          </label>
+        </div>
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_rc_ch2">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-rc-ch2" name="enableRcCh2">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label"><span data-setting-label="enableRcCh2"></span> <span class="component-badge" id="badge-enable_rc_ch2"></span></span>
+            <span class="toggle-status" id="status-rc-ch2">Off</span>
+          </label>
+        </div>
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_rc_ch3">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-rc-ch3" name="enableRcCh3">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label"><span data-setting-label="enableRcCh3"></span> <span class="component-badge" id="badge-enable_rc_ch3"></span></span>
+            <span class="toggle-status" id="status-rc-ch3">Off</span>
+          </label>
+        </div>
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_rc_ch4">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-rc-ch4" name="enableRcCh4">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label"><span data-setting-label="enableRcCh4"></span> <span class="component-badge" id="badge-enable_rc_ch4"></span></span>
+            <span class="toggle-status" id="status-rc-ch4">Off</span>
+          </label>
+        </div>
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_rc_ch5">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-rc-ch5" name="enableRcCh5">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label"><span data-setting-label="enableRcCh5"></span> <span class="component-badge" id="badge-enable_rc_ch5"></span></span>
+            <span class="toggle-status" id="status-rc-ch5">Off</span>
+          </label>
+        </div>
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_rc_ch6">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-rc-ch6" name="enableRcCh6">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label"><span data-setting-label="enableRcCh6"></span> <span class="component-badge" id="badge-enable_rc_ch6"></span></span>
+            <span class="toggle-status" id="status-rc-ch6">Off</span>
+          </label>
+        </div>
+        </div>
+
+        </div>
+      </form>
+      <div id="feature-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading component settings...</div>
+    </div>
+
+    <div class="card">
+      <div class="sect"><h2>Droid identity</h2><span class="sub">name and hostname</span></div>
+      <div data-setup-step="name">
+      <p class="note hidden apply-timing" data-apply-timing></p>
+      <!-- The setting-row anatomy Foot Drive and Dome use: the name box is the
+           width of a name, the hostname tick is drawn as a switch and stays an
+           <input type="checkbox"> underneath, and Save sits at the card's foot
+           beside the line that answers it. -->
+      <div class="setting-rows">
+        <label class="setting-row">
+          <span class="setting-name">Droid name</span>
+          <input id="droid-name-input" class="number-cell text-cell" type="text" maxlength="32" pattern="[a-z0-9-]+" autocomplete="off" spellcheck="false" value="protor2">
+        </label>
+        <label class="setting-row">
+          <span class="setting-name">Use as network hostname (mDNS)</span>
+          <input id="mdns-use-name" class="switch" type="checkbox">
+        </label>
+      </div>
+      <p class="note hidden apply-timing" id="mdns-apply-timing"></p>
+      </div>
+      <div id="identity-actions"></div>
+      <div id="identity-diagnosis" class="hint" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="setting-foot">
+        <div id="identity-feedback" class="feedback identity-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+        <button id="identity-save-button" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-content-save-outline"/></svg><span class="act-label">Save</span></button>
+      </div>
+    </div>
+
+    <!-- The run's footer. Position and escape, and nothing else: when an answer
+         takes effect is a different question for every step and is stated beside
+         the step that owns it (#370), so a blanket promise here would be false
+         for at least three of them. No count in it is typed - see data/setup.js.
+
+         It sits at the end of the body rather than under the step, because the
+         cards between here and the chrome above are hidden while the run is
+         live, so this lands directly under whichever step is on screen. -->
+    <div class="card hidden" id="wizard-foot" data-setup-run-only>
+      <p class="hint" id="wizard-position"></p>
+      <div class="button-row button-row-compact">
+        <button id="wizard-back" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-u-left-top"/></svg><span class="act-label">Back</span></button>
+        <button id="wizard-next" class="btn btn-sm accent icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-u-right-top"/></svg><span class="act-label">Next</span></button>
+        <button id="wizard-stop" class="btn btn-sm btn-quiet icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-exit-to-app"/></svg><span class="act-label">Stop here</span></button>
+      </div>
+      <div id="wizard-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
+  </body>
+</html>

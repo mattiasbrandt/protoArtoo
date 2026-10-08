@@ -4,20 +4,12 @@
 // AudioDriver implementation for the SparkFun MP3 Trigger v2.x.
 //
 // TX commands are sent over software UART on PIN_AUDIO_TX at 9600 baud via
-// audio_soft_uart_tx.h. RX query responses are read from UART_PORT_AUDIO on
-// PIN_AUDIO_RX, opened RX-only (TX pin = -1).
+// audio_soft_uart_tx.h. RX is a dedicated audio UART on FireBeetle 2, and
+// GPIO-sampled on PIN_AUDIO_RX on artoo-esp32 so it never takes UART2 from
+// the dome (#396).
 //
-// No P4 environment selects this backend, so it has never run on a board with
-// PA_CAP_DEDICATED_AUDIO_UART; it is written for the artoo-esp32 posture, where
-// UART_PORT_AUDIO IS the dome link's controller and audio has no spare TX. It
-// is correct there and is left alone deliberately -- adding a capability branch
-// no build compiles would ship untested code (#254).
-//
-// This driver does NOT itself check for contention. That is AudioTask's job:
-// it calls audioUartClaim() before queryModuleState() and only calls in on
-// success, reporting a refusal as AUDIO_RX_BLOCKED_BY_DOME_UART. Earlier
-// revisions of this comment claimed the check lived here, which was never true
-// on any commit of this file.
+// queryModuleState() still goes through AudioTask's audioUartClaim() for
+// S0/S1. Finish-byte RX and begin() do not.
 //
 // Wire protocol (source-verified: BetterDuino MDuinoSound.cpp, Padawan360,
 // SparkFun MP3 Trigger v2.4 Hookup Guide):
@@ -26,7 +18,7 @@
 //     'S'+'0'   --  query firmware version string
 //     'S'+'1'   --  query SD track count
 //     't'+N     --  play track N by filename prefix NNNxxxx.MP3 (N = uint8_t 1-255)
-//     'v'+V     --  set volume: 0=loudest, 255=silent (VS1063 inverted register)
+//     'v'+V     --  set volume: 0=loudest, ascending toward silence (VS1063 inverted)
 //     'O'       --  toggle play/pause (not used directly  --  see stop() below)
 //
 //   Receive (module -> ESP32):
@@ -41,9 +33,10 @@
 // because it works regardless of current module play state. Operator SD root
 // must contain 254XXXX.MP3 (all R2 community packs include it).
 //
-// Volume mapping: VS1063 register is inverted.
-//   nativeVol = (30 - vol) * 255 / 30
-//   vol=0 -> 255 (silent), vol=30 -> 0 (maximum), vol=15 -> 127.
+// Volume mapping: VS1063 register is inverted. We map onto the vendor's
+// audible 0-64, not the full 0-255 (#396).
+//   nativeVol = (30 - vol) * MP3TRIGGER_VOL_AUDIBLE / 30
+//   vol=0 -> 64 (vendor floor), vol=30 -> 0 (maximum), vol=20 -> 21.
 //
 // Baud rate: 9600 (community standard). Factory default is 38400; set via baud
 // init file on SD root (see docs/sound_playback.md #2.3 for details).
@@ -57,16 +50,28 @@
 #include <stdio.h>  // sscanf
 
 #include "audio_soft_uart_tx.h"
+#if !PA_CAP_DEDICATED_AUDIO_UART
+#include "audio_soft_uart_rx.h"
+#endif
 #include "config.h"
 #include "logging.h"
 
 static const char* TAG = "Mp3TrgDrv";
+#if PA_CAP_DEDICATED_AUDIO_UART
 static HardwareSerial s_mp3Serial(UART_PORT_AUDIO);
+#endif
 
-// Production IO adapters
+// Production IO adapters. TX is always the bit-bang. RX is the dedicated
+// audio UART on boards that have one, and GPIO-sampled soft RX on artoo-esp32
+// so a finish byte does not take the dome's controller (#396).
 static void mp3WriteByte(uint8_t b)    { softUartTxByte(b); }
+#if PA_CAP_DEDICATED_AUDIO_UART
 static int  mp3RxAvailable()           { return s_mp3Serial.available(); }
 static int  mp3RxRead()                { return s_mp3Serial.read(); }
+#else
+static int  mp3RxAvailable()           { return softUartRxAvailable(); }
+static int  mp3RxRead()                { return softUartRxRead(); }
+#endif
 static void mp3DelayMs(uint32_t ms)    { vTaskDelay(pdMS_TO_TICKS(ms)); }
 static uint32_t mp3MillisNow()         { return (uint32_t)millis(); }
 
@@ -76,14 +81,30 @@ static const AudioSerialIO kMp3ProductionIO {
 
 // Read one '\r\n'-terminated ASCII response line via m_io. '\r' discarded;
 // reading stops at '\n' or timeout. Yields Core 0 while waiting.
+//
+// Leading unsolicited bytes ('X' finished, 'x' cancelled, 'E' missing track)
+// and other non-'=' noise are skipped so a finish byte in the drain-to-reply
+// window cannot fail a live query (#396).
 uint8_t AudioDriverMp3Trigger::readLine(char* buf, uint8_t maxLen,
                                         uint32_t timeoutMs) {
     if (maxLen == 0) { return 0; }
     uint32_t start = m_io.millisNow();
     uint8_t  pos   = 0;
+    bool     started = false;
     while ((uint32_t)(m_io.millisNow() - start) < timeoutMs && pos < maxLen - 1u) {
         if (m_io.rxAvailable()) {
             char c = (char)m_io.rxRead();
+            if (!started) {
+                if (c == 'X' || c == 'x' || c == 'E') {
+                    noteUnsolicited(c);
+                    continue;
+                }
+                if (c == '=') {
+                    started = true;
+                    buf[pos++] = c;
+                }
+                continue;
+            }
             if (c == '\n') { break; }
             if (c != '\r') { buf[pos++] = c; }
         } else {
@@ -98,7 +119,7 @@ uint8_t AudioDriverMp3Trigger::readLine(char* buf, uint8_t maxLen,
 uint8_t AudioDriverMp3Trigger::sendQuery(uint8_t b0, uint8_t b1,
                                          char* buf, uint8_t maxLen,
                                          uint32_t timeoutMs) {
-    while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
+    serviceRx();
     m_io.writeByte(b0);
     m_io.writeByte(b1);
     return readLine(buf, maxLen, timeoutMs);
@@ -106,15 +127,20 @@ uint8_t AudioDriverMp3Trigger::sendQuery(uint8_t b0, uint8_t b1,
 
 // -----------------------------------------------------------------------------
 // begin()
-// Open UART2 RX-only on PIN_AUDIO_RX, configure soft-UART TX, wait for module
-// boot, then query firmware version (S0) and track count (S1) before applying
-// the NVS-configured boot volume. Blocking  --  runs in AudioTask on Core 0.
+// Configure TX (bit-bang) and RX (dedicated UART, or GPIO-sampled RX that
+// does not take the dome controller). Then S0/S1 and boot volume.
+// Blocking -- runs in AudioTask on Core 0. Does not call audioUartClaim()
+// (#396): this path must not race DomeLink for UART2.
 // -----------------------------------------------------------------------------
 bool AudioDriverMp3Trigger::begin(uint8_t vol) {
     if (!m_io.writeByte) { m_io = kMp3ProductionIO; }
 
     // Hardware init  --  no-ops in native test builds.
+#if PA_CAP_DEDICATED_AUDIO_UART
     s_mp3Serial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
+#else
+    softUartRxBegin();
+#endif
     softUartTxBegin();
 
     // MP3 Trigger mounts the SD card on power-on. 1 s covers cold boot.
@@ -182,6 +208,8 @@ void AudioDriverMp3Trigger::playTrack(uint16_t track) {
         return;
     }
     m_lastTrack = track;
+    m_missingTrack = 0;
+    m_playState = 1;
     m_io.writeByte('t');
     m_io.writeByte((uint8_t)track);
 }
@@ -194,23 +222,24 @@ void AudioDriverMp3Trigger::playTrack(uint16_t track) {
 // SD root must contain 254XXXX.MP3 (all R2 community packs include it).
 // -----------------------------------------------------------------------------
 void AudioDriverMp3Trigger::stop() {
+    m_lastTrack = MP3TRIGGER_STOP_TRACK;
+    m_playState = 1;  // blank track is playing until 'X' (#396)
     m_io.writeByte('t');
     m_io.writeByte(MP3TRIGGER_STOP_TRACK);
 }
 
 // -----------------------------------------------------------------------------
 // setVolume()
-// vol is 0-30 (clamped by AudioTask before this call). Scaled to VS1063
-// inverted register: nativeVol = (30 - vol) * MP3TRIGGER_VOL_MAX / 30.
-//   vol=0  -> 255 (silent)
-//   vol=30 -> 0   (maximum)
-//   vol=15 -> 127
-// Following BetterDuino: practical audible range is 0-100 on the native scale;
-// values above ~100 are near-inaudible but technically valid per VS1063 spec.
+// vol is 0-30 (clamped by AudioTask before this call). Scaled onto the
+// vendor-audible inverted range (#396): nativeVol =
+// (30 - vol) * MP3TRIGGER_VOL_AUDIBLE / 30.
+//   vol=0  -> 64 (vendor floor; values above 64 are inaudible)
+//   vol=20 -> 21 (shipped default, inside the audible band)
+//   vol=30 -> 0  (maximum)
 // -----------------------------------------------------------------------------
 void AudioDriverMp3Trigger::setVolume(uint8_t vol) {
     uint8_t nativeVol =
-        (uint8_t)((uint32_t)(30u - vol) * MP3TRIGGER_VOL_MAX / 30u);
+        (uint8_t)((uint32_t)(30u - vol) * MP3TRIGGER_VOL_AUDIBLE / 30u);
     m_io.writeByte('v');
     m_io.writeByte(nativeVol);
 }
@@ -222,19 +251,20 @@ void AudioDriverMp3Trigger::setVolume(uint8_t vol) {
 // contention check here. SBUS2 is RMT-based and does not contend for it.
 //
 // Drains RX, sends S0 (link), then S1 (track count).
-// playState and device are always 0xFF  --  the MP3 Trigger protocol has no
-// play-state or device-type query commands. currentTrack is the cached value
-// from the last playTrack() call (no live query available).
+// playState is cached from unsolicited 'X'/'x'/'E' (#396), not queried.
+// device is always 0xFF (no device-type command). currentTrack is the cached
+// value from the last playTrack() call (no live query available).
 //
 // Only call from AudioTask (Core 0). Blocking up to ~1 s in the worst case.
 // -----------------------------------------------------------------------------
 bool AudioDriverMp3Trigger::queryModuleState(AudioModuleState& out) {
 
     out.linkOk       = false;
-    out.playState    = 0xFF;   // not queryable in this protocol
+    out.playState    = m_playState;
     out.device       = 0xFF;   // no device-type concept for MP3 Trigger
     out.totalTracks  = m_totalTracks;
     out.currentTrack = m_lastTrack;
+    out.missingTrack = m_missingTrack;
 
     char line[48];
     uint8_t n;
@@ -267,13 +297,38 @@ bool AudioDriverMp3Trigger::queryModuleState(AudioModuleState& out) {
 // getCachedState()
 // Returns last-known cached state with no UART traffic. Safe to call at any
 // time including during playback.
-// playState is always 0xFF (no play-state query in this protocol).
+// playState is cached from 'X'/'x'/'E' (#396); 0xFF until the first of those.
 // device is always 0xFF (no device-type concept for MP3 Trigger).
 // -----------------------------------------------------------------------------
 void AudioDriverMp3Trigger::getCachedState(AudioModuleState& out) const {
     out.linkOk       = m_linkOk;
-    out.playState    = 0xFF;
+    out.playState    = m_playState;
     out.device       = 0xFF;
     out.totalTracks  = m_totalTracks;
     out.currentTrack = m_lastTrack;
+    out.missingTrack = m_missingTrack;
+}
+
+void AudioDriverMp3Trigger::noteUnsolicited(char c) {
+    if (c == 'X' || c == 'x') {
+        m_playState = 0;
+        return;
+    }
+    if (c == 'E') {
+        m_missingTrack = m_lastTrack;
+        m_playState = 0;
+        PA_LOG_INFO(TAG, "track %u is not on the card", (unsigned)m_lastTrack);
+    }
+}
+
+void AudioDriverMp3Trigger::serviceRx() {
+    if (!m_io.rxAvailable) { return; }
+    while (m_io.rxAvailable()) {
+        int b = m_io.rxRead();
+        if (b < 0) { break; }
+        char c = (char)b;
+        if (c == 'X' || c == 'x' || c == 'E') {
+            noteUnsolicited(c);
+        }
+    }
 }

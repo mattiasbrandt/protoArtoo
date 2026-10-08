@@ -5,10 +5,12 @@
 //
 // audioTracksApply(): pure function - no FreeRTOS, no request object,
 //   no NVS, no logging. Reads key/track and the optional bank/page through
-//   a ConfigParamSource, classifies the key (interval / banked / plain
-//   named-or-category track, with the zero-allowed exception list), and
-//   mutates `working` in place. Byte-identical error messages to the legacy
-//   handler.
+//   a ConfigParamSource, checks the track against the key's audio Setting
+//   (include/config_settings.h: its range, and whether 0 is taken) or, for a
+//   CHIRP catalog binding, the binding's own 1..65535, and mutates `working` in
+//   place. A refusal of the value names the Setting - the key, `scream` or
+//   `snd_int_quiet` - with its reason and accepts, so a page can say which
+//   sound it was about.
 //
 // `catalogSupported` is a live input the shell must snapshot before calling
 // (audioCatalogSupported() queries the live AudioDriver), same reasoning as
@@ -26,6 +28,7 @@
 
 #include <stdint.h>
 
+#include "api_apply_refusal.h"
 #include "api_param_source.h"
 #include "config_cache.h"
 
@@ -33,6 +36,7 @@ struct AudioTracksApplyError {
     bool hasError = false;
     bool notFound = false;  // true -> shell responds 404 instead of 400
     char message[128] = {0};
+    ApplyRefusal refusal;  // what `message` says, as data (include/api_apply_refusal.h)
 };
 
 struct AudioTracksApplyResult {

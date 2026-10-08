@@ -1,8 +1,8 @@
-# protoArtoo Commands Reference
+# protoR2 Commands Reference
 
 Implementation-focused command reference for supported command inputs.
 
-This file is not a protocol spec and not a dome-link contract. It documents
+This file is not a protocol spec and not a protoR2link contract. It documents
 what command inputs are accepted by the current firmware and where to verify
 full behavior.
 
@@ -21,7 +21,7 @@ Use these as authoritative:
 | Surface | Input form | Notes |
 |---|---|---|
 | HTTP API commands | `POST /api/...` | Full schemas in `docs/api.md` |
-| Manual commands | `POST /api/manual-command` with `command=<value>` | Fixed keyword set + prefix routing |
+| Manual commands | `POST /api/manual-command` with `command=<value>` | Fixed keyword set + Command Ownership routing |
 | Dome RX commands | UART/WiFi line input from dome | Body handles a bounded subset |
 | RC bindable actions | token-based bindings via `/api/rc/map` | Discover valid tokens via `GET /api/actions` |
 
@@ -53,14 +53,28 @@ Exact supported keyword commands (case-insensitive):
 - `enable_web_control`
 - `disable_web_control`
 - `reboot`
-- `#st` (stationary mode)
-- `#sm` (driving mode)
 
-Prefix routing (case-sensitive):
+Refused (case-insensitive):
 
-- `$...` -> body audio queue
-- `:...` and `#...` -> body Marcduino parser
-- `*...`, `@...`, `%...`, `&...`, `!...` -> forwarded to dome TX
+- `#st`, `#sm` -- these resolve to stationary/driving mode in the keyword
+  table, but the routing below claims every `#` line first, so they never
+  reach it and no mode ever changes. The route answers `400` and points at
+  `POST /api/mode` (`docs/api.md`). Set the mode there, or with
+  `system.action.set-mode` over the Console.
+
+Routing (case-sensitive):
+
+- `$...` -> body audio queue. `$8nn` is bank 8, sound nn, refused where the
+  sound module has no bank 8; every other `$nnn` is a raw track
+- `:...` and `#...` -> Command Ownership: the body runs the lines naming
+  things it models and forwards every other one to the dome verbatim. A
+  full-droid sequence (`:SE01`-`:SE09`, `:SE15`, `:SE16`) runs its body half
+  and is forwarded too. The list of what the body answers, and what it
+  refuses, is `docs/marcduino_commands.md`
+- `*...`, `@...`, `%...`, `&...`, `!...` -> forwarded to dome TX (ADR 0045)
+
+A forward is answered as a forward (`{"ok":true,"forwarded":true}`), never as
+done, and a forward that could not be queued is answered `503`.
 
 Sleep guard:
 
@@ -80,16 +94,20 @@ Recognized line families from dome ingress:
     ignored when the Dome ESC is not staged active)
 - Cue lines:
   - `BD:<cue>`
-- Marcduino subset routed to body parser:
-  - `:OPxx`, `:CLxx`, `:MVxxdddd`
-  - `:SE30-:SE36`
-  - `:SE01-:SE09`, `:SE15`, `:SE16` (decomposed to body-side actions)
+- Marcduino subset the body parser runs:
+  - `:OPxx`, `:CLxx`, `:OFxx` (01-05 and 00/99), `:MVxxdddd` (01-05)
+  - `:SE30-:SE36` (body routines: each starts the Factory Sequence `DM:SE30`..`DM:SE36`
+    through the Sequence Coordinator, so a Retrained Sequence of that name replaces it)
+  - `:SE01-:SE09`, `:SE15`, `:SE16` (the body half only)
   - `$...`
-  - `#APSL`, `#APWU`
+  - `#APSL`, `#APWU`, `#PAHB`
 
-Intentionally not body-handled by parser path (ignored/deferred by topology):
+A line the dome sends is never forwarded back to it, including a full-droid
+`:SE` line: the dome already has it.
 
-- `@...`, `*...`, `%...`, `&...`, `!...`
+The body does not run `@...`, `*...`, `%...`, `&...` or `!...` lines; those
+belong to the dome. Every line the body does not run, these included, is
+counted as an unknown dome RX line.
 
 ## RC Bindable Command Actions
 

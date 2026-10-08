@@ -6,12 +6,22 @@
 # scripted mode (#264) can express. Human-only steps (physical attach/detach,
 # flashing, pressing heap from a browser) are `pause` directives; what a row
 # is expected to answer stays on #215's own criterion, never written here
-# (docs/console-protocol.md's "no expect directive" decision) -- a reviewer
-# reads the transcript against the linked ticket.
+# (docs/console-client.md "Bench sheets and @row": there is no expect
+# directive) -- a reviewer reads the transcript against the linked ticket.
+#
+# Plain requests to the droid's own routes are `http` steps, not pauses: they
+# go to --http-base (or --http's base), and the answers a row keeps (`> FILE`)
+# land in --run-dir. Board 1 has no network (its C6 is unflashable): run it
+# with --no-http, and every http step prints [HTTP-SKIPPED] instead of the run
+# being refused.
 #
 # Run with either adapter:
-#   python3 tools/console_client.py --port /dev/ttyACM0 --script tools/bench_rows/firebeetle2.txt
-#   python3 tools/console_client.py --http http://<host> --script tools/bench_rows/firebeetle2.txt
+#   python3 tools/console_client.py --port /dev/ttyACM0 --http-base http://<host> \
+#     --run-dir tasks/bench-run-p4 --script tools/bench_rows/firebeetle2.txt
+#   python3 tools/console_client.py --http http://<host> --run-dir tasks/bench-run-p4 \
+#     --script tools/bench_rows/firebeetle2.txt
+#   python3 tools/console_client.py --port /dev/ttyACM0 --no-http \
+#     --script tools/bench_rows/firebeetle2.txt                       (board 1)
 #
 # Select rows (by name only, e.g. "detach-replug" -- not the ticket number):
 #   --rows detach-replug,tab-completion   (explicit order, not file order)
@@ -22,6 +32,54 @@
 
 timeout 8
 settle 0.5
+
+# =============================================================================
+# The flash, first -- Round 2 on board 2 (#355, 2026-10-04)
+#
+# These two rows sit above everything else so a replay reaches them first:
+# flashing the filesystem image replaces LittleFS, and the Learned Sequences
+# board 2 holds are lost at the flash unless the first row keeps them. The
+# flash pause in first-command-and-help below is then already done: press Enter
+# at it. Board 2 by operator decision only (its C6 is the only working one);
+# board 1 has no network, and both rows are HTTP.
+# =============================================================================
+
+# #413 - what board 2 holds before the final tip goes on. Its NVS is
+# epic-lineage, last written by a 2026-09-29 image: 0556328b by the operator's
+# note of 2026-10-04, f3626fca by #355's body. The kept GET /api/status answer's
+# firmwareVersion says which. Both already carry #413's upgrade path
+# (adoptRetiredAuxLedKeys, src/config_serializer.cpp), so unlike artoo's
+# before-the-flash this first boot does not run it. What the tip's first boot
+# does cross here: the Output rows are read from the same soNN records, whose
+# release field was stored before and is read now (#443, 0 is never); and the
+# Settings added since have no key on this board yet, so they read their
+# defaults: seq_standdown (#451; empty, and Stand Down then runs DM:RESET),
+# cad_floor_ms (#453), srv_member and pca_addr (#444), dome_turn_ms,
+# dome_turn_pct and dome_turn_dir (#445). snd_happy was read before and is now a
+# Setting under the same key (#447). The three plain reads and the status read
+# are http steps; the pause keeps what a sheet cannot do: the Backup file is
+# built by the Maintenance page, and the sequences are fetched by names only
+# this droid's list knows. The image on the board predates #448, so its Backup
+# file does not hold the sequences: they are fetched one by one.
+@row 413 before-the-flash-on-the-p4
+send system.status.health
+http GET /api/status > p4-before-flash-status.json
+http GET /api/config > p4-before-flash-config.json
+http GET /api/servo/outputs > p4-before-flash-servo-outputs.json
+http GET /api/seq/list > p4-before-flash-seq-list.json
+pause BEFORE flashing: keep a Maintenance -> Backup file from http://10.0.0.51, and every Learned Sequence named in p4-before-flash-seq-list.json (GET /api/seq?name=... each). Press Enter.
+pause Flash firebeetle2 firmware AND filesystem images, let it boot, re-attach, then press Enter
+
+# The comparison with the before-the-flash copies is #355's: every Output row
+# reads what it held, release 0 where nothing set one, and nothing else moved.
+# Board 2 had no Output wired on 2026-09-29, so a row with a Part on it may not
+# exist to compare; the reads say so.
+@row 413 after-the-flash-nothing-moved-on-the-p4
+send system.status.health
+send servo.api.get-outputs
+http GET /api/status > p4-after-flash-status.json
+http GET /api/config > p4-after-flash-config.json
+http GET /api/servo/outputs > p4-after-flash-servo-outputs.json
 
 # #217 - first command + help over USB CDC with logs streaming; stack
 # high-water and before/after-flash checks are bench-observed, not
@@ -216,3 +274,418 @@ listen 40
 send system.status.health
 pause Watch the link drop and come back. The board must stay up throughout: uptimeMs keeps climbing and resetReason does not change - it is the module that restarted, not the controller. Press Enter when the link is back.
 send system.status.health
+
+# =============================================================================
+# Epic #175 Wave 0 -- the capability lines on the second Board Variant
+#
+# Added 2026-09-11, operator direction, as the P4 half of the block in
+# tools/bench_rows/artoo_esp32.txt:137+. Same rule as that block and as this
+# sheet: what a row must answer stays on the Closing Ticket (#355), never here.
+#
+# This sheet covers both P4 boards, and they are NOT equivalent for Wave 0.
+# Board 1's C6 is permanently unflashable, so board 1 has no WiFi and no HTTP:
+# on it, a Wave 0 capability whose ACTION arrives on POST /api/config is
+# unavailable rather than merely awkward, and the three rows below marked
+# "needs a working C6" cannot be run there at all. A P4 whose C6 works reaches
+# the LAN normally (PA_CAP_HOSTED_WIFI is 1 on this chip arm) and carries the
+# full set, exactly as artoo does.
+#
+# So the cuts below are BOARD 1 cuts, not P4 cuts. Read them as:
+#
+#   - A7's sound member (#340): a Component Member is SET on POST /api/config
+#     and no console operation writes one (src/console/console_catalog.cpp has
+#     sound.action.* and sound.config.volume, nothing that selects a member).
+#     The READ half is folded into the vocabulary row below. On board 1 the
+#     change half cannot be performed at all; on a working-C6 P4 it runs as
+#     the-sound-member-survives-a-reboot-on-the-p4 below.
+#   - A2/A3/A4's calibration crossing (#338 #342 #345): the distinctive
+#     pre-migration endpoints are written on POST /api/config too -- the catalog
+#     carries servo.action.* but no servo.config.* -- so the one-shot cannot be
+#     aimed on this board. What IS reachable from the console is the migration
+#     PATH; that is the second row below, and it claims less.
+#   - A6's Board Lanes (#339): board_lanes is emitted only by GET /api/identity
+#     (src/web/api_identity_serializers.cpp). The console's
+#     system.api.get-identity deliberately answers with the two ConfigSnapshot
+#     fields and NOT the board manifest (consoleExecuteSystemApiGetIdentity,
+#     src/console/console_module.cpp), so there is nothing here to read.
+#
+# Ceiling for this block, as for artoo's: Controller Upload Verified. Bench-Mode
+# means nothing is connected to the board, so a row wanting a moving arm is Not
+# Assessed and says so.
+# =============================================================================
+
+# A1a-A1d (#337 #356 #357 #358) - "Every part on your droid has a name the
+# firmware and the browser both know", and since #358 a Part is nameable whether
+# or not this body drives it. This is the one Wave 0 row a SECOND board can
+# falsify: the P4's Board Capability Gates are not artoo's, so if the catalog
+# were ever the drivable subset rather than the whole vocabulary, this is where
+# the list comes back short. get-components names every Part with its own gate
+# and included flag, so the gate VALUES are what may differ between the two
+# boards and the Part LIST is what must not. sound.status.current is the A7 read
+# half: which member this board reports fitted, on a board whose audio lane is
+# shared with protor2link.
+@row 358 the-part-vocabulary-on-the-second-board
+send system.api.get-components
+send sound.status.current
+
+# A2/A3/A4 (#338 #342 #345) with A8 (#375) and A9 (#376) - the migration PATH on
+# a second board's real NVS. system.action.set-mode calls saveConfigToNvs()
+# (include/console_direct_action_system.h), which runs configSaveServoOutputs()
+# before configSave() (src/config_store.cpp) -- so an ordinary mode change IS a full
+# config save and performs the migration, which is why "don't touch servo
+# settings" is not sufficient guidance to a bench operator. Native tests reach
+# this sequence against a stubbed Preferences; what they cannot reach is flash,
+# and this board's NVS partition is not artoo's. Since A8 a write that did not
+# reach flash reports err rather than ok, so the record this row returns is
+# itself the evidence. It does NOT prove a builder's calibration crossed: that
+# needs distinctive pre-migration values this board cannot be given.
+# Nothing here reads the endpoints back: servo.status.current is is_query:false
+# in the catalog -- a field descriptor, never an executable command (it answers
+# not-executable, measured on artoo 2026-09-11) -- and there is no
+# servo.config.* operation and no HTTP on this board. So this row evidences the
+# save and the board's survival of it, and #355 says plainly that the values
+# themselves are unreadable here.
+@row 345 the-first-save-migrates-on-this-board
+send system.status.health
+send system.action.set-mode mode=stationary
+send system.status.health
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send system.status.health
+
+# -----------------------------------------------------------------------------
+# The three rows below NEED A WORKING C6 (HTTP). Board 1 cannot run them; skip
+# them there. On a P4 whose C6 works they mirror the artoo sheet exactly, and
+# they are where the second Board Variant earns its place: its Board Capability
+# Gates and its Board Lanes are not artoo's.
+# -----------------------------------------------------------------------------
+
+# A6 (#339) on the P4 - the lanes here are a DIFFERENT answer, not a duplicate:
+# this chip arm gives audio its own controller (UART_PORT_AUDIO=3) where
+# artoo-esp32 shares one with the dome link, and PA_CAP_DEDICATED_AUDIO_UART
+# reports 1 here and 0 there. The Lane manifest is HTTP-only by design (see the
+# block comment above), so both reads are one kept GET /api/identity; checking
+# every lane against this chip's arm of include/config.h is #355's.
+@row 339 the-controller-says-where-it-routes-on-the-p4
+send system.api.get-identity
+http GET /api/identity > p4-routes-identity.json
+send system.status.health
+
+# A7 (#340) on the P4 - the Component Member change, which board 1 cannot make.
+# The change stays a pause: "the other supported member" depends on which one
+# this board reports fitted in the answers above, which the sheet cannot know.
+@row 340 the-sound-member-survives-a-reboot-on-the-p4
+send system.api.get-components
+send sound.status.current
+pause POST /api/config with soundMember=<the other supported member id>. The write is accepted immediately and takes effect at reboot. Press Enter.
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send system.api.get-components
+send sound.status.current
+
+# A2/A3/A4 (#338 #342 #345) on the P4 - the full crossing, on a second board's
+# real flash. Same shape as artoo's calibration-crosses-onto-the-rows: the
+# distinctive pre-migration values are written over HTTP BEFORE the Wave 0
+# image is flashed, and #355 carries the numbers for this board (they are
+# deliberately different from artoo's so the two transcripts cannot be
+# confused). Endpoints are not console-readable, so both reads are HTTP, kept
+# for #355 to check the ten endpoint values in. With both reads http steps the
+# row has no pause, so --skip-manual selects it: whether this board's NVS still
+# holds a crossing to make is #355's to say, not the sheet's.
+@row 345 the-calibration-crosses-onto-the-rows-on-the-p4
+pause ONE-SHOT, and it SAVES the config and sets Stationary Mode: run this row only on a board whose NVS still holds pre-migration servo keys (the 2026-09-11 Wave 0 check already crossed both bench boards). Press Enter to run it, or Ctrl-C to stop.
+http GET /api/config > p4-calibration-pre-migration-config.json
+send system.action.set-mode mode=stationary
+send system.status.health
+http GET /api/config > p4-calibration-post-migration-config.json
+
+# =============================================================================
+# Epic #175 closure session (#355) -- the P4's half, only if the operator puts
+# firebeetle2 on the bench
+#
+# Added 2026-09-27. #355's body says what each row must answer. Only checks
+# #355 names for both boards are here; everything board-independent was proven
+# on artoo and is cut on #355, not repeated. system.status.health carries the
+# heap keys, resetReason and estop, so those reads need no HTTP. Rows marked
+# HTTP need a working C6 (board 2, by operator decision only); skip them on
+# board 1. The image and last-run rows also run on board 1, where --no-http
+# skips their http steps and the Console sends still answer.
+# =============================================================================
+
+# Axis 1 - the image is what we think it is: firmwareVersion and the
+# filesystem stamp both name the intended commit, no -dirty. On board 1 (no
+# HTTP, --no-http) the two fetches are skipped: read the version from the boot
+# log in system.status.logs instead.
+@row 355 the-image-is-what-we-think-on-the-p4
+send system.status.health
+send system.status.logs
+http GET /api/status
+http GET /fs-version.json
+
+# #428 on the P4 - a requested restart runs on SafetyMonitor's stack here too
+# (5,120 B on this chip).
+@row 428 a-requested-restart-restarts-clean-on-the-p4
+send system.status.health
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send system.status.health
+send system.status.logs
+
+# #370 on the P4 - sound off says so, and a play is refused. The Wave 0
+# finding reproduced on this board with a different member, so it is replayed
+# here rather than cut as a duplicate. Agent-runnable.
+@row 370 sound-off-says-so-on-the-p4
+send system.action.enable-web-control
+send sound.status.current
+send sound.action.play-track track=1
+send system.action.disable-web-control
+
+# #381 decision 3 on the P4 (HTTP) - does admission need an internal floor?
+# heapLargest8bit (the Buffer Reading admission uses) counts PSRAM here;
+# heapLargestBlock (the Internal Data Heap) does not. The two under page load
+# are what the operator decides from.
+@row 381 p4-admission-under-page-load
+send system.status.health
+pause HTTP: open Dashboard, Parts and Sequences in three tabs and leave them live for 30 s. Press Enter.
+send system.status.health
+
+# #404 on the P4 (HTTP) - Configuration and Maintenance load on this board too.
+@row 404 configuration-and-maintenance-on-the-p4
+pause HTTP: open /setup.html and /#setup (both land on Configuration), then Maintenance. Press Enter.
+send system.status.health
+
+# #427 on the P4 - the last-run Console op overflowed its stack on this chip;
+# the fix was read from the disassembly and never run. Board 1 exercises the
+# Console task; the web Console path (httpd stack) needs HTTP, so board 2.
+# #430 - the P4 stacks were raised +15,872 B: the idle heap is read beside it.
+# The web Console half is two http steps (board 2 only; --no-http skips them on
+# board 1); #355 reads resetReason in the GET /api/status answer.
+@row 427 the-last-run-op-answers-on-the-p4
+send system.status.health
+send dome.api.get-sequence-last-run
+send system.status.health
+http POST /api/console command=dome.api.get-sequence-last-run > p4-web-console-last-run.json
+http GET /api/status
+
+# =============================================================================
+# Round 2 on board 2 (#355, 2026-10-04) -- what the epic built after 2026-09-29
+#
+# The P4 half of the artoo rows from #438 on, and the Bench-Mode rows the
+# merged tickets carried onto #355. Board 2 only: every row needs HTTP or a
+# page. #355's body and each carry say what a row must answer; a check that
+# needs a servo, a radio, a dome, a sound module, a strip or a drive backend is
+# droid-only and is never here.
+# =============================================================================
+
+# #441 - WRITES A SEQUENCE and deletes it again. The editor's Save was proven
+# in a browser against stubs (the request it sends); this is what the droid
+# stores. Make DM:BENCH (Edit any sequence, or a Factory one through Tune, and
+# rename it), tap a tempo of about 120 BPM and press Use, set the Interrupt
+# group to Pies and the Mute period to 9 s, Save. Reload the page and open it
+# again: the tempo, the interrupt group and the mute period read back as saved.
+# The list read keeps what the store indexed. On board 2 the store is on its
+# own LittleFS, freshly flashed above.
+@row 441 a-sequence-round-trips-on-the-p4
+pause At http://10.0.0.51/#seq save DM:BENCH as above, reload, reopen it and check the three settings, then press Enter
+http GET /api/seq/list > p4-seq-list-after-save.json
+http GET /api/seq?name=DM%3ABENCH > p4-seq-bench.json
+send dome.api.list-sequences
+
+# #441 - a duplicate is saved under an id of its own (a shipped defect:
+# Duplicate copied the original's id, and the firmware resolves a nested
+# reference by its stable id). Duplicate DM:BENCH, Save the copy as
+# DM:BENCH_COPY. In the list read, the two rows carry different ids.
+@row 441 a-duplicate-has-its-own-id-on-the-p4
+pause Duplicate DM:BENCH, save DM:BENCH_COPY, then press Enter
+http GET /api/seq/list > p4-seq-list-after-duplicate.json
+send dome.api.list-sequences
+
+# #441 - Running and its Stop against the real firmware. The droid writes a
+# run's record only when its dispatcher takes the run up, a moment after it
+# answers the press, and that gap is what a stub cannot show. On the list,
+# press Test on DM:BENCH: its row reads Running with the green lamp and offers
+# Stop DM:BENCH. Let it end by itself and press Test again: it reads Running
+# again, and does not flick straight back to Test on the earlier run's record.
+# Then press Stop DM:BENCH while it reads Running: the row goes back to Test.
+# The record then says aborted - or completed, when the routine was too short
+# to catch. The gap is a timing over this board's own link (the C6), which is
+# why it is replayed here rather than taken from artoo's.
+@row 441 a-run-reads-running-and-its-stop-ends-it-on-the-p4
+pause On the list press Test on DM:BENCH and let it end; press Test again, then Stop DM:BENCH while it reads Running, then press Enter
+http GET /api/seq/last-run > p4-seq-last-run-after-stop.json
+
+# #448 - the backup holds Sequences, round-tripped through this board's own
+# multipart parser and LittleFS: a backup holding a Learned Sequence and an RC
+# Map binding to it, the Sequence deleted, then Sequences and RC Map restored.
+# Both come back, and the receipt says so line by line (#355 reads the kept
+# receipt text against the two reads). The binding is a Reaction on Track
+# starts, offered in every receiver mode, so it does not depend on the mode
+# this board is in, and it cannot fire here: no sound module is connected.
+# Here so DM:BENCH exists, and before the Memory Wipe below; the binding is
+# removed at the end, because the wipe leaves a binding behind.
+@row 448 the-backup-brings-a-sequence-back-on-the-p4
+pause On RC (http://10.0.0.51/#rc) bind Track starts to Dome Sequence DM:BENCH and Save. Then on Maintenance -> Backup download a backup. Press Enter.
+http GET /api/rc/map > p4-backup-rc-map-before.json
+send dome.api.list-sequences
+pause Memory Wipe DM:BENCH from the Sequences list (DM:BENCH_COPY stays). Then on Maintenance -> Backup restore Sequences and RC Map from that file. Keep the receipt text. Press Enter.
+http GET /api/seq/list > p4-backup-seq-list-after-restore.json
+http GET /api/rc/map > p4-backup-rc-map-after-restore.json
+send dome.api.list-sequences
+send rc.api.get-map
+pause On RC remove the Track starts binding and Save, then press Enter
+send rc.api.get-map
+
+# #441 - Test and the pose press against the real firmware, not a stub: the
+# droid takes both and reports the run. Nothing is connected, so nothing moves;
+# the answer is what proves it. Then Memory Wipe both bench sequences, so the
+# board keeps its own Learned Sequences and room under the cap.
+@row 441 test-and-pose-reach-the-droid-on-the-p4
+pause Open DM:BENCH, press Test on the droid, then Move the droid to this moment at 1.00 s, then press Enter
+http GET /api/seq/last-run > p4-seq-last-run.json
+send system.status.health
+pause Memory Wipe DM:BENCH_COPY and DM:BENCH from the list, then press Enter
+send dome.api.list-sequences
+
+# #443 (ADR 0043) - an Output with a release time lets go that long after its
+# move ARRIVES, and a later move starts the count again. Read from the firmware
+# with nothing on the pin: the pulse and the limp token are ServoTask's, so a
+# servo stopping its fight is droid-only and never here. Needs one enabled
+# Output, named from the get-outputs answer; board 2 had none wired on
+# 2026-09-29, and with none this row is Not Assessed and says so. The first
+# read after each wait says limp:release, the read straight after the second
+# move says limp:- (a pulse, the count restarted); #355 checks them.
+@row 443 a-release-lets-go-after-it-arrives-on-the-p4
+send system.action.enable-web-control
+send servo.api.get-outputs
+pause POST /api/config outputRow=<an enabled Output's address> release=3000, then POST /api/servo action=position arm=<it> positionUs=1500. Wait 5 s, then press Enter.
+send servo.api.get-outputs
+pause POST /api/servo action=position arm=<it> positionUs=1600, then press Enter at once.
+send servo.api.get-outputs
+listen 5
+send servo.api.get-outputs
+pause POST /api/config outputRow=<its address> release=0 to leave it holding again, then press Enter.
+send system.action.disable-web-control
+
+# #451 - the Stand Down choice survives a reboot. A Setting new since board 2's
+# last image, so its first write here is also its first key on this board. The
+# choice stays a pause: Use as Stand Down is the Sequences page's, on a Factory
+# row as on a Learned one (data/seq.js), and any row but the one already
+# marked will do. The Console reads the same Setting as GET /api/config's
+# seq.standDown; #355 compares the two after the reboot with the name chosen.
+@row 451 the-stand-down-choice-survives-a-reboot-on-the-p4
+send dome.config.stand-down
+pause At http://10.0.0.51/#seq press Use as Stand Down on a Factory Sequence (note its name), then press Enter
+send dome.config.stand-down
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send dome.config.stand-down
+http GET /api/config > p4-stand-down-after-reboot-config.json
+
+# #451 - Play, Stop and Stand Down on the Dashboard against the real droid.
+# Nothing is connected, so nothing moves; the run record is the answer. The
+# first read names the played run and says how it ended (aborted, or completed
+# when it was too short to catch); the second names the Stand Down Sequence
+# chosen in the row above.
+@row 451 dashboard-play-stop-and-stand-down-on-the-p4
+pause On the Dashboard (http://10.0.0.51/) Play a Factory Sequence: its row reads Running and its Stop appears. Press Stop. Then press Enter.
+http GET /api/seq/last-run > p4-dashboard-last-run-after-stop.json
+pause Press Stand Down on the Dashboard and let it run, then press Enter
+http GET /api/seq/last-run > p4-dashboard-last-run-stand-down.json
+
+# #451 - what is running reaches the page with nothing pressed: the status
+# stream's seqRun, not a GET /api/seq/last-run (the run record document, built
+# per request). The run is started from the Console, so nothing on the page
+# asked for it. DM:SE30 runs about 20 s with nothing connected (artoo's
+# an-unclaimed-part-is-skipped-not-fatal).
+@row 451 a-run-reaches-the-dashboard-unasked-on-the-p4
+pause Open the Dashboard (http://10.0.0.51/) with the browser's network panel open and cleared, then press Enter
+send dome.action.test-sequence name=DM:SE30
+pause The Dashboard's row reads Running DM:SE30 with nothing pressed, and the network panel holds no GET /api/seq/last-run. Let it end, then press Enter.
+send dome.api.get-sequence-last-run
+
+# #451 - the full-screen posture. The chrome clears, STOP stays pressable, and
+# opening it sends nothing. With the link dropped the freshness line appears in
+# the posture and a running row reads Lost touch; back in touch the line hides
+# and the row reads Running again. That last half needs a run still going when
+# the link comes back, so the row keeps the Factory list with each one's
+# lengthMs and the pause asks for the longest; a run that ends during the drop
+# reads its end, not Running, and #355 reads it that way. The drop is the
+# operator's, from this side (this computer's Wi-Fi off, or its cable out):
+# system.action.reboot-wifi-module drops it from the droid's side but can take
+# up to 40 s to come back here (wifi-module-reboot above), longer than a run.
+@row 451 full-screen-rides-out-a-lost-link-on-the-p4
+http GET /api/seq/builtins > p4-posture-builtins.json
+pause On the Dashboard press Full screen: the chrome clears, STOP stays pressable, and the network panel shows nothing sent. Press Enter.
+pause Play the Factory Sequence with the longest lengthMs in p4-posture-builtins.json, and be in Full screen while it runs. While it reads Running, drop this computer's link to the droid for about 10 s: the freshness line appears and the row reads Lost touch. Restore the link: the line hides and the row reads Running again. Press Enter.
+send dome.api.get-sequence-last-run
+send system.status.health
+
+# #457 - several servos take one value in one press, and the four row fields
+# it sends (throwMs, accelMs, ease, boot) had never reached firmware: the
+# fixture droid takes none of them. Servos lists only Outputs with a Part on
+# them, and time to full throw is offered only on a calibrated row (motionOpen,
+# data/servo.js); an uncalibrated ticked row is skipped and named in the
+# answer. So the time half and its refusal need a calibrated row: board 2's are
+# in the get-outputs answer, and with none calibrated both are Not Assessed,
+# because the page sends nothing for the droid to refuse. At power-up (boot)
+# is offered on any servo row (bootOpen), so that apply reaches the droid
+# either way. Each read is kept twice: GET /api/config, which the carry names,
+# and GET /api/servo/outputs, where docs/api.md puts the row fields. #355
+# compares each with the one before it: the value on every ticked row it was
+# sent to, and after the refused set, nothing moved (all or nothing in one
+# Write Window, docs/api.md).
+@row 457 several-servos-take-one-value-on-the-p4
+send servo.api.get-outputs
+http GET /api/config > p4-bulk-before-config.json
+http GET /api/servo/outputs > p4-bulk-before-servo-outputs.json
+pause On Servos (http://10.0.0.51/#servo) tick two or more Outputs, a calibrated one among them if the board has one. Set time to full throw to 800 ms on the ticked outputs, then at power-up to home and hold. Keep both answer lines. Press Enter.
+http GET /api/config > p4-bulk-after-set-config.json
+http GET /api/servo/outputs > p4-bulk-after-set-servo-outputs.json
+pause With the same ticks, set time to full throw to 5 ms and keep the refusal in the droid's words. Press Enter.
+http GET /api/servo/outputs > p4-bulk-after-refusal-servo-outputs.json
+pause Put the rows back: each ticked row's time to full throw and at power-up as p4-bulk-before-servo-outputs.json holds them. Press Enter.
+http GET /api/servo/outputs > p4-bulk-put-back-servo-outputs.json
+
+# #450 - a Reaction saves and survives a reboot, and a per-wheel source shows
+# the waiting family. The two bound are the two that cannot fire on this bench:
+# Track starts needs a sound module, and a wheel's speed needs a drive backend
+# reporting feedback, so with nothing connected the wheel's Reaction reads
+# waiting (GET /api/rc reactions[], reason no-feedback or feedback-stale) and
+# never fires. Firing itself is droid-only. Both are removed at the end.
+@row 450 a-reaction-survives-a-reboot-on-the-p4
+http GET /api/rc/map > p4-reaction-before-rc-map.json
+pause On RC (http://10.0.0.51/#rc) bind Track starts and Left wheel speed (threshold 30 RPM, quiet 5 s) each to Random Humming, and Save. Left wheel speed reads in the waiting family. Press Enter.
+http GET /api/rc/map > p4-reaction-saved-rc-map.json
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+http GET /api/rc/map > p4-reaction-after-reboot-rc-map.json
+http GET /api/rc > p4-reaction-after-reboot-rc.json
+send rc.api.get-map
+pause On RC Left wheel speed still reads in the waiting family. Remove both Reactions and Save, then press Enter.
+send rc.api.get-map
+
+# #450 - the RC page offers the eight Reaction sources in every receiver mode.
+# The page takes its mode from the droid's running answer (rcSnapshot.mode,
+# data/rc.js), and rcInputMode applies at a restart, so each mode is a save and
+# a reboot. A mode the droid refuses is its answer, and the pause after it
+# then shows the mode before it again. The first read keeps the mode the board
+# was in. Run last in the sheet: the board is left in dual_sbus, the firmware
+# default, as the test leaves it.
+@row 450 the-reaction-sources-in-every-receiver-mode-on-the-p4
+send rc.config.mode
+http POST /api/config rcInputMode=standard_pwm
+send system.action.reboot
+pause Wait for the board to come back, re-attach. On RC the eight Reaction sources (Drive speed to Right wheel current) are offered. Press Enter.
+http POST /api/config rcInputMode=single_sbus
+send system.action.reboot
+pause Wait for the board to come back, re-attach. On RC the eight Reaction sources are offered. Press Enter.
+http POST /api/config rcInputMode=elrs
+send system.action.reboot
+pause Wait for the board to come back, re-attach. On RC the eight Reaction sources are offered. Press Enter.
+http POST /api/config rcInputMode=not_fitted
+send system.action.reboot
+pause Wait for the board to come back, re-attach. On RC the eight Reaction sources are offered. Press Enter.
+http POST /api/config rcInputMode=dual_sbus
+send system.action.reboot
+pause Wait for the board to come back, re-attach. On RC the eight Reaction sources are offered. Press Enter.
+send rc.config.mode

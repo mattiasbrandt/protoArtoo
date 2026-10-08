@@ -93,27 +93,45 @@ const char* consoleReasonString(ConsoleReason reason) {
             return "malformed-argument";
         case CONSOLE_REASON_READ_ONLY:
             return "read-only";
+        case CONSOLE_REASON_PART_NOT_ASSIGNED:
+            return "part-not-assigned";
+        case CONSOLE_REASON_CONFLICT:
+            return "conflict";
+        case CONSOLE_REASON_BEARING_UNKNOWN:
+            return "bearing-unknown";
+        case CONSOLE_REASON_DOME_NOT_CALIBRATED:
+            return "dome-not-calibrated";
+        case CONSOLE_REASON_MODULE_CANNOT_MIX:
+            return "module-cannot-mix";
+        case CONSOLE_REASON_NOT_ON_CONSOLE:
+            return "not-on-console";
         default:
             return "unknown";
+    }
+}
+
+ConsoleReason consoleReasonFromApplyRefusal(ApplyRefusalReason reason) {
+    switch (reason) {
+        case ApplyRefusalReason::OutOfRange:
+            return CONSOLE_REASON_OUT_OF_RANGE;
+        case ApplyRefusalReason::MissingArgument:
+            return CONSOLE_REASON_MISSING_ARGUMENT;
+        case ApplyRefusalReason::Conflict:
+            return CONSOLE_REASON_CONFLICT;
+        case ApplyRefusalReason::MalformedArgument:
+            return CONSOLE_REASON_MALFORMED_ARGUMENT;
+        case ApplyRefusalReason::NotInThisBuild:
+            return CONSOLE_REASON_NOT_IN_THIS_BUILD;
+        case ApplyRefusalReason::None:
+        case ApplyRefusalReason::Count:
+        default:
+            return CONSOLE_REASON_NONE;
     }
 }
 
 // =============================================================================
 // Record Formatting
 // =============================================================================
-
-size_t consoleFormatPair(char* buffer, size_t bufferSize, const char* key, const char* value) {
-    if (buffer == nullptr || bufferSize == 0 || key == nullptr || value == nullptr) {
-        return 0;
-    }
-
-    // Format as "key=value"
-    int written = snprintf(buffer, bufferSize, "%s=%s", key, value);
-    if (written < 0 || (size_t)written >= bufferSize) {
-        return 0;  // Buffer too small
-    }
-    return (size_t)written;
-}
 
 // -----------------------------------------------------------------------------
 // Record lines

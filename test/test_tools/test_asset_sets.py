@@ -3,11 +3,15 @@
 
 ADR 0065 -- only what is SHOWN may differ between boards. A file declares which
 builds carry it by which set directory it sits in, so the fact lives beside the
-file instead of in a list that goes stale. These tests cover the staging rule and
-the declarations, not the pictures: there are none yet, and the mechanism has to
-be a no-op until there are.
+file instead of in a list that goes stale. These tests cover the staging rule,
+the declarations, the 8 KiB per-photograph cap now that the default set carries
+pictures (#316), and PA:INCLUDE resolution across the set and common roots,
+which is what lets a set carry a fragment of a page and not only whole files
+(#382).
 """
 
+import gzip
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -83,19 +87,657 @@ class AssetSetStaging(unittest.TestCase):
         self.assertIn("raise SystemExit", source)
         self.assertIn("custom_asset_set is", source)
 
-    def test_no_set_directory_yet_is_a_no_op(self):
-        """Until the drawings and photographs exist, data/asset-sets/ is absent and
-        the mechanism must change nothing. If this fails because the directory now
-        exists, the assertion below is the one to keep."""
+    def test_both_sets_exist_together(self):
+        """An environment naming a missing set fails the build, so both
+        directories have to be present once either is. Photographs live in
+        default (#316); drawings in legacy are #382's."""
         sets_root = DATA / "asset-sets"
-        if not sets_root.is_dir():
-            self.skipTest("data/asset-sets/ does not exist yet; staging is a no-op")
+        self.assertTrue(sets_root.is_dir(), "data/asset-sets/ must exist")
         present = sorted(d.name for d in sets_root.iterdir() if d.is_dir())
         self.assertEqual(
             present,
             ["default", "legacy"],
             "both sets must exist together: an environment naming a missing set fails the build",
         )
+
+    def test_default_photographs_fit_two_littlefs_blocks(self):
+        """8 KiB is two 4 KiB blocks. 9 KiB would be three (#316, ADR 0065)."""
+        default = DATA / "asset-sets" / "default"
+        photos = sorted(default.glob("*.webp"))
+        self.assertGreaterEqual(len(photos), 1)
+        for path in photos:
+            size = path.stat().st_size
+            self.assertLessEqual(
+                size,
+                8192,
+                f"{path.name} is {size} B, over the 8 KiB block-boundary cap",
+            )
+
+
+class _FakeSConsEnv:
+    """Stands in for the ``env`` object SCons injects via ``Import("env")``.
+
+    Only what gzip_fsdata.py actually calls: ``subst()`` for the three
+    ``$VAR`` lookups, ``GetProjectOption()`` for ``custom_asset_set``, and
+    ``Replace()`` to repoint ``PROJECT_DATA_DIR`` at the staged copy.
+    """
+
+    def __init__(self, project_data_dir, build_dir, custom_asset_set="default"):
+        self._vars = {
+            "$PIOPLATFORM": "espressif32",
+            "$PROJECT_DATA_DIR": str(project_data_dir),
+            "$BUILD_DIR": str(build_dir),
+        }
+        self._custom_asset_set = custom_asset_set
+        self.replaced = {}
+
+    def subst(self, key):
+        return self._vars[key]
+
+    def GetProjectOption(self, name, default=None):
+        if name == "custom_asset_set":
+            return self._custom_asset_set
+        return default
+
+    def Replace(self, **kwargs):
+        self.replaced.update(kwargs)
+
+
+def _run_gzip_fsdata(fake_env):
+    """Run gzip_fsdata.py's module body -- including its unconditional
+    ``main()`` call at the bottom -- against a fake env, standing in for the
+    SCons runner that would otherwise exec it with a real one. ``Import()``
+    is SCons's own builtin, injecting a variable into the calling script's
+    globals as a side effect rather than returning it; there is no such
+    builtin under plain ``python3 -m unittest``, so this supplies one for the
+    single name the script asks for.
+    """
+    source = GZIP_FSDATA.read_text(encoding="utf-8")
+    namespace = {"__name__": "gzip_fsdata_under_test", "__file__": str(GZIP_FSDATA)}
+
+    def fake_import(name):
+        assert name == "env", "gzip_fsdata.py now Imports something other than 'env'"
+        namespace["env"] = fake_env
+
+    namespace["Import"] = fake_import
+    exec(compile(source, str(GZIP_FSDATA), "exec"), namespace)
+    return namespace
+
+
+class PartialIncludeResolution(unittest.TestCase):
+    """PA:INCLUDE must resolve a partial the same way whole-file staging
+    resolves a path: this environment's asset set before the common data
+    root (#382). Before this, _expand_includes searched only
+    $PROJECT_DATA_DIR, so a partial living inside a set was unreachable no
+    matter which set an environment named."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.src = Path(self.tmp.name) / "data"
+        self.build = Path(self.tmp.name) / "build"
+        self.src.mkdir()
+        self.build.mkdir()
+        # Every page below must inline the kernel to clear the mandatory
+        # guard; it lives in the common root exactly as on a real build.
+        (self.src / "_recovery_kernel.html").write_text("KERNEL", encoding="utf-8")
+
+    def _set_dir(self, name):
+        set_dir = self.src / "asset-sets" / name
+        set_dir.mkdir(parents=True)
+        return set_dir
+
+    def _build(self, custom_asset_set):
+        _run_gzip_fsdata(_FakeSConsEnv(self.src, self.build, custom_asset_set))
+
+    def _staged_html(self, name):
+        with gzip.open(self.build / "fsdata_gz" / (name + ".gz"), "rt", encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_partial_present_only_in_the_set_resolves_from_the_set(self):
+        set_dir = self._set_dir("myset")
+        (set_dir / "_only_in_set.html").write_text("SET-ONLY", encoding="utf-8")
+        (self.src / "page.html").write_text(
+            "<!-- PA:INCLUDE _recovery_kernel.html -->"
+            "<!-- PA:INCLUDE _only_in_set.html -->",
+            encoding="utf-8",
+        )
+        self._build(custom_asset_set="myset")
+        self.assertIn("SET-ONLY", self._staged_html("page.html"))
+
+    def test_partial_present_in_both_resolves_to_the_sets_copy(self):
+        set_dir = self._set_dir("myset")
+        (self.src / "_shared.html").write_text("COMMON-VERSION", encoding="utf-8")
+        (set_dir / "_shared.html").write_text("SET-VERSION", encoding="utf-8")
+        (self.src / "page.html").write_text(
+            "<!-- PA:INCLUDE _recovery_kernel.html -->"
+            "<!-- PA:INCLUDE _shared.html -->",
+            encoding="utf-8",
+        )
+        self._build(custom_asset_set="myset")
+        staged = self._staged_html("page.html")
+        self.assertIn("SET-VERSION", staged)
+        self.assertNotIn("COMMON-VERSION", staged)
+
+    def test_partial_present_only_in_common_still_resolves_with_a_set_active(self):
+        # The set exists and is active but carries no kernel of its own --
+        # this is exactly how _recovery_kernel.html must keep working once
+        # a build names a set.
+        self._set_dir("myset")
+        (self.src / "page.html").write_text(
+            "<!-- PA:INCLUDE _recovery_kernel.html -->", encoding="utf-8"
+        )
+        self._build(custom_asset_set="myset")
+        self.assertIn("KERNEL", self._staged_html("page.html"))
+
+    def test_partial_in_neither_root_raises_systemexit_naming_both(self):
+        set_dir = self._set_dir("myset")
+        (self.src / "page.html").write_text(
+            "<!-- PA:INCLUDE _recovery_kernel.html -->"
+            "<!-- PA:INCLUDE _does_not_exist.html -->",
+            encoding="utf-8",
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            self._build(custom_asset_set="myset")
+        message = str(ctx.exception)
+        self.assertIn("_does_not_exist.html", message)
+        self.assertIn(str(set_dir), message)
+        self.assertIn(str(self.src), message)
+
+
+class _StagingCase(unittest.TestCase):
+    """A throwaway data root with the kernel partial in it, staged on demand."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.src = Path(self.tmp.name) / "data"
+        self.build = Path(self.tmp.name) / "build"
+        self.src.mkdir()
+        self.build.mkdir()
+        (self.src / "_recovery_kernel.html").write_text("KERNEL", encoding="utf-8")
+
+    def _build(self):
+        _run_gzip_fsdata(_FakeSConsEnv(self.src, self.build))
+
+    def _staged(self, name):
+        with gzip.open(self.build / "fsdata_gz" / (name + ".gz"), "rt", encoding="utf-8") as fh:
+            return fh.read()
+
+
+class ShellDelegateKernel(_StagingCase):
+    """A shell delegate carries no recovery kernel, and the build refuses one
+    that does (#382, ADR 0048 amendment)."""
+
+    DELEGATE = '<script>window.PAShellDelegate = true; location.replace("/#x");</script>'
+
+    def test_a_delegate_carrying_the_kernel_is_refused(self):
+        (self.src / "page.html").write_text(
+            self.DELEGATE + "<!-- PA:INCLUDE _recovery_kernel.html -->", encoding="utf-8"
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            self._build()
+        self.assertIn("shell delegate", str(ctx.exception))
+
+    def test_a_delegate_without_the_kernel_is_staged_without_it(self):
+        (self.src / "page.html").write_text(self.DELEGATE + "<body>surface</body>", encoding="utf-8")
+        self._build()
+        staged = self._staged("page.html")
+        self.assertIn("surface", staged)
+        self.assertNotIn("KERNEL", staged)
+
+    def test_a_rendered_page_without_the_kernel_is_still_refused(self):
+        (self.src / "index.html").write_text("<body>shell</body>", encoding="utf-8")
+        with self.assertRaises(SystemExit) as ctx:
+            self._build()
+        self.assertIn("does not include '_recovery_kernel.html'", str(ctx.exception))
+
+
+class Minification(_StagingCase):
+    """JS and CSS are minified by esbuild without a string changing (#382)."""
+
+    def test_js_is_minified_and_a_nested_template_keeps_its_whitespace(self):
+        # The exact shape rjsmin broke in data/parts.js: whitespace inside a
+        # template literal nested in another one's ${...}.
+        nested = 'const row = (cls) => `<tr class="parts-row${cls ? ` ${cls}` : ""}">`;'
+        (self.src / "a.js").write_text(
+            "// a comment that must not be imaged\n"
+            "/* and a block comment */\n" + nested + "\n",
+            encoding="utf-8",
+        )
+        self._build()
+        staged = self._staged("a.js")
+        self.assertNotIn("comment", staged)
+        # The parameter is a local, so staging shortens its name (#381); the
+        # space before it is what rjsmin dropped.
+        self.assertRegex(staged, r"` \$\{[A-Za-z_$][\w$]*\}`")
+        self.assertIn('<tr class="parts-row${', staged)
+
+    def test_css_is_minified(self):
+        (self.src / "s.css").write_text(
+            "/* a comment that must not be imaged */\n.a  {\n  color :  red ;\n}\n",
+            encoding="utf-8",
+        )
+        self._build()
+        staged = self._staged("s.css")
+        self.assertNotIn("comment", staged)
+        self.assertIn(".a{color:red}", staged)
+
+    def test_a_missing_esbuild_fails_the_build(self):
+        import os
+        from unittest import mock
+
+        (self.src / "a.js").write_text("var a = 1;\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"PATH": self.tmp.name}):
+            with self.assertRaises(SystemExit) as ctx:
+                self._build()
+        self.assertIn("esbuild is not on PATH", str(ctx.exception))
+
+
+
+class _BoardEnv(_FakeSConsEnv):
+    """A fake env that also answers what a #board include asks: the env's
+    build_flags and the project directory the Component Registry lives in."""
+
+    def __init__(self, project_data_dir, build_dir, project_dir, flags, custom_asset_set="myset"):
+        super().__init__(project_data_dir, build_dir, custom_asset_set)
+        self._vars["$PROJECT_DIR"] = str(project_dir)
+        self._flags = flags
+
+    def GetProjectOption(self, name, default=None):
+        if name == "build_flags":
+            return self._flags
+        return super().GetProjectOption(name, default)
+
+
+class BoardDrawingInclude(unittest.TestCase):
+    """`PA:INCLUDE _product_art.html#board` inlines only the running board's
+    drawing (#411). Wiring pictures one board, and the whole sprite cost the
+    4 MB board 11.5 KB of gzipped image to show it. Which board is the
+    Component Registry's own (PA_BOARD == ...) gate, never a second map."""
+
+    REGISTRY = (
+        'PA_COMPONENT_PART( 1, "alpha_pcb", "Alpha", COMPONENT_CATEGORY_BODY_CONTROLLER, "none", '
+        "COMPONENT_STATUS_SUPPORTED, 0, nullptr, (PA_BOARD == PA_BOARD_ALPHA))\n"
+        'PA_COMPONENT_PART( 2, "beta_pcb", "Beta", COMPONENT_CATEGORY_BODY_CONTROLLER, "none", '
+        "COMPONENT_STATUS_SUPPORTED, 0, nullptr, (PA_BOARD == PA_BOARD_BETA))\n"
+        'PA_COMPONENT_PART( 3, "gamma_esc", "Gamma", COMPONENT_CATEGORY_DOME_ESC, "pwm", '
+        "COMPONENT_STATUS_SUPPORTED, 0, nullptr, (PA_BOARD == PA_BOARD_BETA))\n"
+    )
+    SPRITE = (
+        '<svg class="product-art-sprite" aria-hidden="true">'
+        '<symbol id="art-alpha_pcb" viewBox="0 0 400 300"><path d="ALPHA"/></symbol>'
+        '<symbol id="art-beta_pcb" viewBox="0 0 400 300"><path d="BETA"/></symbol>'
+        '<symbol id="art-gamma_esc" viewBox="0 0 400 300"><path d="GAMMA"/></symbol>'
+        "</svg>"
+    )
+    DELEGATE = '<script>window.PAShellDelegate = true; location.replace("/#w");</script>'
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.project = root
+        self.src = root / "data"
+        self.build = root / "build"
+        (self.src / "asset-sets" / "myset").mkdir(parents=True)
+        self.build.mkdir()
+        (root / "include").mkdir()
+        (root / "include" / "component_registry.inc").write_text(self.REGISTRY, encoding="utf-8")
+        (self.src / "_recovery_kernel.html").write_text("KERNEL", encoding="utf-8")
+
+    def _stage(self, sprite, flags, include="_art.html#board"):
+        (self.src / "asset-sets" / "myset" / "_art.html").write_text(sprite, encoding="utf-8")
+        (self.src / "page.html").write_text(
+            self.DELEGATE + "<body><!-- PA:INCLUDE %s --></body>" % include, encoding="utf-8"
+        )
+        _run_gzip_fsdata(_BoardEnv(self.src, self.build, self.project, flags))
+        with gzip.open(self.build / "fsdata_gz" / "page.html.gz", "rt", encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_only_the_running_boards_drawing_is_inlined_in_the_sprites_own_wrapper(self):
+        staged = self._stage(self.SPRITE, ["-DPA_LOG_LEVEL=2", "-DPA_BOARD=PA_BOARD_BETA"])
+        self.assertIn('<symbol id="art-beta_pcb"', staged)
+        self.assertNotIn("art-alpha_pcb", staged, "a peer board's drawing is not this board's")
+        self.assertNotIn("art-gamma_esc", staged, "another family gated on the same board is not the board")
+        self.assertIn('<svg class="product-art-sprite" aria-hidden="true">', staged)
+
+    def test_a_sprite_with_no_drawing_for_the_board_inlines_nothing(self):
+        staged = self._stage("<!-- photographs, no drawings -->", ["-DPA_BOARD=PA_BOARD_ALPHA"])
+        self.assertEqual(staged, self.DELEGATE + "<body></body>")
+
+    def test_an_env_with_no_board_or_an_unknown_fragment_fails_the_build(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self._stage(self.SPRITE, ["-DPA_LOG_LEVEL=2"])
+        self.assertIn("-DPA_BOARD=", str(ctx.exception))
+        with self.assertRaises(SystemExit) as ctx:
+            self._stage(self.SPRITE, ["-DPA_BOARD=PA_BOARD_BETA"], include="_art.html#dome")
+        self.assertIn("'#dome' is not a fragment", str(ctx.exception))
+
+
+class MarkupComments(_StagingCase):
+    """A staged page carries no markup comment, and nothing that only looks
+    like one is touched (#461). A whole-file non-greedy comment regex passes
+    the comment case and fails every other one here; the scanner exists for
+    those."""
+
+    PAGE = (
+        "<!DOCTYPE html>\n"
+        "<html><head>\n"
+        "  <!-- PA:INCLUDE _recovery_kernel.html -->\n"
+        "  <title>Droid <!-- not a comment in a title --></title>\n"
+        "  <!-- a note for whoever edits this page -->\n"
+        "  <script>\n"
+        '    var s = "<!-- keep -->";\n'
+        "    var t = `<!-- keep ${s} -->`;\n"
+        "  </script>\n"
+        "</head><body>\n"
+        '  <div data-note="<!-- keep -->" title=\'a <!-- b\'>x</div>\n'
+        "  <textarea><!-- typed by the operator --></textarea>\n"
+        "  <button>One</button>\n"
+        "  <!-- between two buttons -->\n"
+        "  <button>Two</button>\n"
+        "  <pre>\n  keep\n\n</pre>\n"
+        "</body></html>\n"
+    )
+
+    def test_comments_go_and_what_only_looks_like_one_stays(self):
+        (self.src / "page.html").write_text(self.PAGE, encoding="utf-8")
+        self._build()
+        staged = self._staged("page.html")
+        self.assertIn("KERNEL", staged, "the include is expanded, not stripped")
+        self.assertNotIn("a note for whoever", staged)
+        self.assertNotIn("between two buttons", staged)
+        self.assertIn("<title>Droid <!-- not a comment in a title --></title>", staged)
+        self.assertIn('var s = "<!-- keep -->";\n    var t = `<!-- keep ${s} -->`;', staged)
+        self.assertIn('<div data-note="<!-- keep -->" title=\'a <!-- b\'>x</div>', staged)
+        self.assertIn("<textarea><!-- typed by the operator --></textarea>", staged)
+        # One newline, not none: the gap between two inline buttons is a node.
+        self.assertIn("<button>One</button>\n<button>Two</button>", staged)
+        self.assertIn("<pre>\n  keep\n\n</pre>", staged)
+        self.assertEqual(
+            (self.src / "page.html").read_text(encoding="utf-8"), self.PAGE, "data/ keeps its comments"
+        )
+
+    def test_markup_it_does_not_read_fails_and_leaves_the_last_stage(self):
+        (self.src / "page.html").write_text(
+            "<!-- PA:INCLUDE _recovery_kernel.html --><p>ok</p>", encoding="utf-8"
+        )
+        self._build()
+        refused = {
+            "an unterminated comment": "<p>a</p><!-- never closed",
+            "closed by '--!>'": "<!-- a --!> b -->",
+            "inside script data": "<script>var a = '<!--'; var b = '<script>';</script>",
+            "a self-closed <script/>": '<script src="a.js"/>',
+            "not a start tag": '<p class="a>b</p>',
+            # Everything after <plaintext> renders as text, comments included.
+            "a <plaintext>": "<p>a</p><plaintext><!-- shown to the operator -->",
+        }
+        for why, body in refused.items():
+            with self.subTest(why):
+                (self.src / "page.html").write_text(
+                    "<!-- PA:INCLUDE _recovery_kernel.html -->" + body, encoding="utf-8"
+                )
+                with self.assertRaises(SystemExit) as ctx:
+                    self._build()
+                self.assertIn(why, str(ctx.exception))
+                self.assertIn("<p>ok</p>", self._staged("page.html"), "the last good stage is kept")
+
+
+class ZopfliStaging(_StagingCase):
+    """Every gzipped asset is written by zopfli (#461)."""
+
+    def test_a_missing_zopfli_fails_the_build(self):
+        import os
+        from unittest import mock
+
+        # A .txt asset is gzipped but never minified, so esbuild is not asked.
+        (self.src / "a.txt").write_text("text\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"PATH": self.tmp.name}):
+            with self.assertRaises(SystemExit) as ctx:
+                self._build()
+        self.assertIn("zopfli is not on PATH", str(ctx.exception))
+
+    def test_the_stage_is_written_largest_file_first(self):
+        """The order the stager writes in is (-size, path), the order
+        tools/littlefs_image.py images in. This records the writes themselves
+        rather than reading the stage back from disk, whose listing order is
+        the host filesystem's."""
+        import builtins
+        import shutil as shutil_module
+        from unittest import mock
+
+        (self.src / "b.webp").write_bytes(b"\0" * 10)
+        (self.src / "a.webp").write_bytes(b"\0" * 10)
+        (self.src / "c.webp").write_bytes(b"\0" * 300)
+        (self.src / "d.txt").write_text("x" * 5000, encoding="utf-8")
+        stage = self.build / "fsdata_gz"
+        written = []
+        in_copy = []
+        real_open, real_copy2 = builtins.open, shutil_module.copy2
+
+        def recording_open(path, mode="r", *args, **kwargs):
+            if "w" in mode and not in_copy and Path(path).parent == stage:
+                written.append(Path(path).name)
+            return real_open(path, mode, *args, **kwargs)
+
+        def recording_copy2(source, dest, *args, **kwargs):
+            # copy2 opens its destination itself; count the copy once.
+            if Path(dest).parent == stage:
+                written.append(Path(dest).name)
+            in_copy.append(True)
+            try:
+                return real_copy2(source, dest, *args, **kwargs)
+            finally:
+                in_copy.pop()
+
+        with mock.patch("builtins.open", recording_open), mock.patch("shutil.copy2", recording_copy2):
+            self._build()
+        # d.txt gzips to a few dozen bytes: smaller than c.webp, larger than a and b.
+        self.assertEqual(written, ["c.webp", "d.txt.gz", "a.webp", "b.webp"])
+
+
+class ScriptBundles(_StagingCase):
+    """Co-loaded script groups are staged as one bundle each (#461). The
+    loader dedupes a resource by name for the session, so a member loaded
+    outside its whole group would run twice; staging refuses that chain."""
+
+    SHELL = "/web_api.js,/body_art.js,/body_view.js,/footer.js"
+
+    def _page(self, chain):
+        (self.src / "page.html").write_text(
+            '<html data-scripts="%s"><head><!-- PA:INCLUDE _recovery_kernel.html --></head></html>'
+            % chain,
+            encoding="utf-8",
+        )
+
+    def _members(self, art='(()=>{"use strict";window.art=1})();\n', view="(()=>{window.view=1})();\n"):
+        (self.src / "body_art.js").write_text(art, encoding="utf-8")
+        (self.src / "body_view.js").write_text(view, encoding="utf-8")
+
+    def _bundle(self):
+        return self._staged("bundle_body.js")
+
+    def test_a_group_is_staged_as_its_bundle(self):
+        self._members()
+        self._page(self.SHELL)
+        self._build()
+        self.assertIn('data-scripts="/web_api.js,/bundle_body.js,/footer.js"', self._staged("page.html"))
+        stage = self.build / "fsdata_gz"
+        self.assertFalse((stage / "body_art.js.gz").exists(), "a member is never staged on its own")
+        self.assertFalse((stage / "body_view.js.gz").exists())
+        bundle = self._bundle()
+        self.assertLess(bundle.index("window.art=1"), bundle.index("window.view=1"), "group order")
+
+    def test_a_member_outside_its_whole_group_fails_the_build(self):
+        self._members()
+        for chain in ("/web_api.js,/body_view.js", "/body_view.js,/body_art.js",
+                      "/body_art.js,/web_api.js,/body_view.js"):
+            with self.subTest(chain):
+                self._page(chain)
+                with self.assertRaises(SystemExit) as ctx:
+                    self._build()
+                self.assertIn("outside its whole group", str(ctx.exception))
+
+    def test_a_character_reference_in_a_chain_fails_the_build(self):
+        """The browser decodes `&#95;` before the loader reads the chain; staging
+        does not, so an encoded member would slip past the group check."""
+        self._members()
+        self._page("/web_api.js,/body&#95;view.js")
+        with self.assertRaises(SystemExit) as ctx:
+            self._build()
+        self.assertIn("'&' in its data-scripts chain", str(ctx.exception))
+
+    def test_a_global_const_that_can_run_code_fails_the_build(self):
+        """Kept outside the isolating try, a call in the initializer would stop
+        every member after it."""
+        (self.src / "configuration.js").write_text(
+            "const BOARD_LABELS = { artoo_esp32: missing() };\n(() => {})();\n", encoding="utf-8"
+        )
+        (self.src / "setup.js").write_text("(() => {})();\n", encoding="utf-8")
+        self._page("/configuration.js,/setup.js")
+        with self.assertRaises(SystemExit) as ctx:
+            self._build()
+        self.assertIn("whose literal runs nothing", str(ctx.exception))
+
+    def test_a_chain_staging_cannot_read_fails_the_build(self):
+        self._members()
+        (self.src / "page.html").write_text(
+            "<html data-scripts='/body_art.js,/body_view.js'><head>"
+            "<!-- PA:INCLUDE _recovery_kernel.html --></head></html>",
+            encoding="utf-8",
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            self._build()
+        self.assertIn("a form staging does not read", str(ctx.exception))
+
+    def test_a_member_that_is_not_one_iife_fails_the_build(self):
+        self._members(view="function view(){}\n(()=>{})();\n")
+        self._page(self.SHELL)
+        with self.assertRaises(SystemExit) as ctx:
+            self._build()
+        self.assertIn("is one IIFE", str(ctx.exception))
+
+    def _run_in_node(self, bundle, probe):
+        import json
+        import shutil as shutil_module
+        import subprocess
+
+        node = shutil_module.which("node")
+        if node is None:
+            self.skipTest("node is not on PATH")
+        path = Path(self.tmp.name) / "bundle.js"
+        path.write_text(bundle, encoding="utf-8")
+        driver = (
+            "const vm=require('vm'),fs=require('fs');const errors=[];"
+            "process.on('uncaughtException',(e)=>errors.push(e.message));"
+            "globalThis.window=globalThis;"
+            "vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));"
+            "const probe=vm.runInThisContext(process.argv[2]);"
+            "setTimeout(()=>console.log(JSON.stringify({probe,errors})),20);"
+        )
+        result = subprocess.run([node, "-e", driver, str(path), probe],
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(result.stdout.strip(), "the bundle stopped partway: a throw escaped a member")
+        return json.loads(result.stdout)
+
+    def test_a_member_that_throws_does_not_stop_the_next_and_is_still_reported(self):
+        self._members(art='(()=>{"use strict";throw new Error("art failed")})();\n')
+        self._page(self.SHELL)
+        self._build()
+        outcome = self._run_in_node(self._bundle(), "globalThis.view")
+        self.assertEqual(outcome["probe"], 1, "the member after the one that threw still ran")
+        self.assertEqual(outcome["errors"], ["art failed"], "the error still reaches the page")
+
+    def test_a_leading_global_const_stays_global(self):
+        (self.src / "configuration.js").write_text(
+            "const BOARD_LABELS = { artoo_esp32: 'Artoo' };\n(() => { window.cfg = BOARD_LABELS.artoo_esp32; })();\n",
+            encoding="utf-8",
+        )
+        (self.src / "setup.js").write_text("(() => { window.setup = typeof BOARD_LABELS; })();\n", encoding="utf-8")
+        self._page("/configuration.js,/setup.js")
+        self._build()
+        outcome = self._run_in_node(self._staged("bundle_configuration.js"),
+                                    "[typeof BOARD_LABELS, window.cfg, window.setup].join()")
+        self.assertEqual(outcome["probe"], "object,Artoo,object")
+
+
+class RealPagesStage(unittest.TestCase):
+    """The scanner reads every real page in both asset sets, and what it must
+    leave alone it leaves alone (#461)."""
+
+    BUILDS = {"artoo_esp32": "legacy", "firebeetle2": "default"}
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            cls.config = _config()
+        except ImportError:  # pragma: no cover - depends on the runner
+            raise unittest.SkipTest("platformio is not installed; this check needs its config parser")
+
+    def test_both_sets_stage_and_the_kernel_is_as_written(self):
+        import re
+
+        kernel = (DATA / "_recovery_kernel.html").read_text(encoding="utf-8")
+        kernel_blocks = re.findall(r"<style>[\s\S]*?</style>|<script>[\s\S]*?</script>", kernel)
+        self.assertEqual(len(kernel_blocks), 2)
+        sources = {p.name: p.read_bytes() for p in DATA.glob("*.html")}
+        for env, asset_set in self.BUILDS.items():
+            with self.subTest(env), tempfile.TemporaryDirectory() as tmp:
+                build = Path(tmp)
+                flags = self.config.get("env:%s" % env, "build_flags")
+                self.assertEqual(self.config.get("env:%s" % env, "custom_asset_set", "default"), asset_set)
+                _run_gzip_fsdata(_BoardEnv(DATA, build, ROOT, flags, custom_asset_set=asset_set))
+                stage = build / "fsdata_gz"
+                pages = sorted(stage.glob("*.html.gz"))
+                self.assertGreater(len(pages), 10)
+                for page in pages:
+                    with gzip.open(page, "rt", encoding="utf-8") as fh:
+                        html = fh.read()
+                    markup = re.sub(
+                        r"<(script|style|textarea|title)\b[^>]*>[\s\S]*?</\1>", "", html, flags=re.I
+                    )
+                    self.assertNotIn("<!--", markup, "%s ships a markup comment" % page.name)
+                    if page.name == "index.html.gz":
+                        for block in kernel_blocks:
+                            self.assertIn(block, html, "the kernel's style and script are staged as written")
+                self.assertEqual(
+                    (stage / "console_help.txt").read_bytes(),
+                    (DATA / "console_help.txt").read_bytes(),
+                    "console_help.txt is read at an offset, so it is staged raw",
+                )
+                bundles = _run_gzip_fsdata(_BoardEnv(DATA, Path(tmp) / "again", ROOT, flags,
+                                                     custom_asset_set=asset_set))["SCRIPT_BUNDLES"]
+                for bundle, _label, members in bundles:
+                    self.assertTrue((stage / (bundle.lstrip("/") + ".gz")).is_file(), bundle)
+                    for member in members:
+                        self.assertFalse((stage / (member.lstrip("/") + ".gz")).exists(), member)
+                for page in pages:
+                    with gzip.open(page, "rt", encoding="utf-8") as fh:
+                        chain = re.search(r'data-scripts="([^"]*)"', fh.read())
+                    for name in (chain.group(1).split(",") if chain else []):
+                        self.assertNotIn(name, {m for _b, _l, ms in bundles for m in ms}, page.name)
+        self.assertEqual({p.name: p.read_bytes() for p in DATA.glob("*.html")}, sources)
+
+    def test_only_the_default_set_images_the_product_wiring_cards(self):
+        """The cards are reference content the default set carries and the
+        legacy set does not (ADR 0065, amended 2026-09-30; #458). On the legacy
+        image the Wiring page is staged with no card, no plate for them and no
+        partial beside it, so the cards cost that image nothing."""
+        staged = {}
+        for env, asset_set in self.BUILDS.items():
+            with tempfile.TemporaryDirectory() as tmp:
+                flags = self.config.get("env:%s" % env, "build_flags")
+                _run_gzip_fsdata(_BoardEnv(DATA, Path(tmp), ROOT, flags, custom_asset_set=asset_set))
+                stage = Path(tmp) / "fsdata_gz"
+                self.assertEqual(sorted(p.name for p in stage.rglob("_wiring_cards*")), [], env)
+                with gzip.open(stage / "wiring.html.gz", "rt", encoding="utf-8") as fh:
+                    staged[asset_set] = fh.read()
+        self.assertIn('id="wiring-product-cards"', staged["default"])
+        self.assertIn('"dy_sv5w":', staged["default"])
+        for marker in ("wiring-product", "dy_sv5w", "PA:INCLUDE"):
+            self.assertNotIn(marker, staged["legacy"])
 
 
 if __name__ == "__main__":

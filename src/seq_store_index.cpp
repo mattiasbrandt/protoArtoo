@@ -11,7 +11,7 @@
 
 #include <string.h>
 
-static SeqIndexEntry s_entries[SEQ_STORE_MAX];
+static SeqIndexEntry s_entries[SEQ_INDEX_CAPACITY];
 static uint8_t       s_count = 0;
 
 void seqStoreIndexClear() {
@@ -33,7 +33,7 @@ bool seqStoreIndexAdd(const SeqIndexEntry& e) {
         s_entries[slot] = e;  // update in place
         return true;
     }
-    if (s_count >= SEQ_STORE_MAX) return false;
+    if (s_count >= SEQ_INDEX_CAPACITY) return false;
     s_entries[s_count++] = e;
     return true;
 }
@@ -50,6 +50,15 @@ bool seqStoreIndexRemove(const char* name) {
 const SeqIndexEntry* seqStoreIndexFind(const char* name) {
     int slot = findSlot(name);
     return (slot >= 0) ? &s_entries[slot] : nullptr;
+}
+
+const SeqIndexEntry* seqStoreIndexFindRef(const char* ref) {
+    if (ref == nullptr || ref[0] == '\0') return nullptr;
+    if (strncmp(ref, "DM:", 3) == 0) return seqStoreIndexFind(ref);
+    for (uint8_t i = 0; i < s_count; ++i) {
+        if (strcmp(s_entries[i].id, ref) == 0) return &s_entries[i];
+    }
+    return nullptr;
 }
 
 uint8_t seqStoreIndexCount() {

@@ -2,7 +2,7 @@
 // test/test_native/test_servo_component_type/test_servo_component_type.cpp
 //
 // Native unit tests for servo component type system.
-// Tests: type string conversion, default calibration values, validation.
+// Tests: type string conversion and round-trip.
 //
 // All helpers are inline in servo_component_helpers.h — no hardware deps.
 // =============================================================================
@@ -81,109 +81,6 @@ void test_round_trip_preserves_type() {
     }
 }
 
-// --- servoTypeDefaultOpen ----------------------------------------------------
-
-void test_mg996r_default_open_is_2000us() {
-    TEST_ASSERT_EQUAL_UINT16(2000, servoTypeDefaultOpen(SERVO_COMP_MG996R));
-}
-
-void test_mg90s_default_open_is_2500us() {
-    TEST_ASSERT_EQUAL_UINT16(2500, servoTypeDefaultOpen(SERVO_COMP_MG90S));
-}
-
-void test_rgb_default_open_is_neutral() {
-    TEST_ASSERT_EQUAL_UINT16(1500, servoTypeDefaultOpen(SERVO_COMP_RGB));
-}
-
-void test_none_default_open_is_neutral() {
-    TEST_ASSERT_EQUAL_UINT16(1500, servoTypeDefaultOpen(SERVO_COMP_NONE));
-}
-
-// --- servoTypeDefaultClose ---------------------------------------------------
-
-void test_mg996r_default_close_is_1000us() {
-    TEST_ASSERT_EQUAL_UINT16(1000, servoTypeDefaultClose(SERVO_COMP_MG996R));
-}
-
-void test_mg90s_default_close_is_500us() {
-    TEST_ASSERT_EQUAL_UINT16(500, servoTypeDefaultClose(SERVO_COMP_MG90S));
-}
-
-void test_rgb_default_close_is_neutral() {
-    TEST_ASSERT_EQUAL_UINT16(1500, servoTypeDefaultClose(SERVO_COMP_RGB));
-}
-
-void test_none_default_close_is_neutral() {
-    TEST_ASSERT_EQUAL_UINT16(1500, servoTypeDefaultClose(SERVO_COMP_NONE));
-}
-
-// --- Default range validation ------------------------------------------------
-
-void test_mg996r_range_is_1000us() {
-    uint16_t open = servoTypeDefaultOpen(SERVO_COMP_MG996R);
-    uint16_t close = servoTypeDefaultClose(SERVO_COMP_MG996R);
-    TEST_ASSERT_EQUAL_UINT16(1000, open - close);
-}
-
-void test_mg90s_range_is_2000us() {
-    uint16_t open = servoTypeDefaultOpen(SERVO_COMP_MG90S);
-    uint16_t close = servoTypeDefaultClose(SERVO_COMP_MG90S);
-    TEST_ASSERT_EQUAL_UINT16(2000, open - close);
-}
-
-void test_mg90s_wider_range_than_mg996r() {
-    // MG90S has full 500-2500 range, MG996R has limited 1000-2000 range
-    uint16_t mg90sRange =
-        servoTypeDefaultOpen(SERVO_COMP_MG90S) - servoTypeDefaultClose(SERVO_COMP_MG90S);
-    uint16_t mg996rRange =
-        servoTypeDefaultOpen(SERVO_COMP_MG996R) - servoTypeDefaultClose(SERVO_COMP_MG996R);
-    TEST_ASSERT_TRUE(mg90sRange > mg996rRange);
-}
-
-// --- isValidServoCompType ----------------------------------------------------
-
-void test_valid_types_return_true() {
-    TEST_ASSERT_TRUE(isValidServoCompType(0));  // NONE
-    TEST_ASSERT_TRUE(isValidServoCompType(1));  // MG996R
-    TEST_ASSERT_TRUE(isValidServoCompType(2));  // MG90S
-    TEST_ASSERT_TRUE(isValidServoCompType(3));  // RGB
-}
-
-void test_invalid_types_return_false() {
-    TEST_ASSERT_FALSE(isValidServoCompType(4));
-    TEST_ASSERT_FALSE(isValidServoCompType(5));
-    TEST_ASSERT_FALSE(isValidServoCompType(255));
-}
-
-// --- clampServoCompType ------------------------------------------------------
-
-void test_clamp_valid_types_preserved() {
-    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_NONE, clampServoCompType(0));
-    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG996R, clampServoCompType(1));
-    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG90S, clampServoCompType(2));
-    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_RGB, clampServoCompType(3));
-}
-
-void test_clamp_invalid_to_none() {
-    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_NONE, clampServoCompType(4));
-    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_NONE, clampServoCompType(5));
-    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_NONE, clampServoCompType(100));
-    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_NONE, clampServoCompType(255));
-}
-
-// --- Integration: clamp + defaults -------------------------------------------
-
-void test_clamped_value_gives_valid_defaults() {
-    // Simulate reading a corrupted NVS value
-    uint8_t corruptedValue = 200;
-    ServoComponentType clamped = clampServoCompType(corruptedValue);
-
-    // Should clamp to NONE, which has neutral defaults
-    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_NONE, clamped);
-    TEST_ASSERT_EQUAL_UINT16(1500, servoTypeDefaultOpen(clamped));
-    TEST_ASSERT_EQUAL_UINT16(1500, servoTypeDefaultClose(clamped));
-}
-
 int main() {
     UNITY_BEGIN();
 
@@ -204,34 +101,6 @@ int main() {
 
     // Round-trip
     RUN_TEST(test_round_trip_preserves_type);
-
-    // Default open values
-    RUN_TEST(test_mg996r_default_open_is_2000us);
-    RUN_TEST(test_mg90s_default_open_is_2500us);
-    RUN_TEST(test_rgb_default_open_is_neutral);
-    RUN_TEST(test_none_default_open_is_neutral);
-
-    // Default close values
-    RUN_TEST(test_mg996r_default_close_is_1000us);
-    RUN_TEST(test_mg90s_default_close_is_500us);
-    RUN_TEST(test_rgb_default_close_is_neutral);
-    RUN_TEST(test_none_default_close_is_neutral);
-
-    // Range validation
-    RUN_TEST(test_mg996r_range_is_1000us);
-    RUN_TEST(test_mg90s_range_is_2000us);
-    RUN_TEST(test_mg90s_wider_range_than_mg996r);
-
-    // Validation
-    RUN_TEST(test_valid_types_return_true);
-    RUN_TEST(test_invalid_types_return_false);
-
-    // Clamping
-    RUN_TEST(test_clamp_valid_types_preserved);
-    RUN_TEST(test_clamp_invalid_to_none);
-
-    // Integration
-    RUN_TEST(test_clamped_value_gives_valid_defaults);
 
     return UNITY_END();
 }

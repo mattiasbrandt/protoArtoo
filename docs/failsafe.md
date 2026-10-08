@@ -1,17 +1,26 @@
 # Failsafe System
 
-protoArtoo implements five independent safety layers for drive control.
-The design goal is simple: loss of control input, stalled firmware, or hoverboard
-link failure must all converge on zero drive output.
+protoR2 tracks five Failsafe Layers for drive control. Each one can hold the
+droid out of drive on its own, and the droid stays out of drive until every
+active layer has cleared (`include/failsafe_gate.h`). The design goal is
+simple: loss of control input, stalled firmware, or an operator stop must all
+converge on zero drive output.
+
+The two radio layers (1 and 2) are SBUS layers: they apply only while drive is
+read from an SBUS receiver. With no Radio Controller fitted (`not_fitted`) they
+stand down and the feet are held by the web drive timeout and the Latching
+Estop, so a web-only droid can drive. With a PWM receiver (`standard_pwm`) they
+also stand down: a lost or stale PWM signal zeroes the RC drive command
+(`src/tasks/rc_input.cpp`), but it sets no layer and there is no boot lock.
 
 ## Table of Contents
 
 - [Layer 1 - SBUS receiver hardware failsafe](#layer-1---sbus-receiver-hardware-failsafe)
 - [Layer 2 - SBUS software watchdog](#layer-2---sbus-software-watchdog)
 - [Layer 3 - Web drive command timeout](#layer-3---web-drive-command-timeout)
-- [Layer 4 - ESP32 Task Watchdog Timer](#layer-4---esp32-task-watchdog-timer)
-- [Layer 5 - Hoverboard UART timeout](#layer-5---hoverboard-uart-timeout)
-- [Latching estop behavior](#latching-estop-behavior)
+- [Layer 4 - Watchdog reset](#layer-4---watchdog-reset)
+- [Layer 5 - Latching estop](#layer-5---latching-estop)
+- [Foot Drive backstop - hoverboard UART timeout](#foot-drive-backstop---hoverboard-uart-timeout)
 - [Boot safety defaults](#boot-safety-defaults)
 - [Implementation notes](#implementation-notes)
 
@@ -24,7 +33,7 @@ link failure must all converge on zero drive output.
   `failsafeSource=FS_SBUS_HW`
 
 This is the fastest RC-side safety path. If the receiver itself detects radio
-loss, protoArtoo immediately zeros drive output on the next decoded frame.
+loss, protoR2 immediately zeros drive output on the next decoded frame.
 
 Diagnostics surfaces also report the current SBUS hardware-failsafe
 bit per source in `GET /api/rc` and `event: rc`.
@@ -33,8 +42,8 @@ bit per source in `GET /api/rc` and `event: rc`.
 
 - Source: body firmware timeout
 - Implementation: `src/tasks/rc_input.cpp`
-- Trigger: no valid drive-receiver frame for more than `cfg_sbusTimeoutMs`
-  (default `SBUS_TIMEOUT_MS = 200 ms`)
+- Trigger: no valid drive-receiver frame for more than the `sbusTimeoutMs`
+  Setting (`rc.sbusTimeoutMs`, 50-5000 ms, default `SBUS_TIMEOUT_MS = 200 ms`)
 - Result: `sbusSignalLost=true`, `driveSpeed=0`, `driveSteer=0`,
   `failsafeSource=FS_SBUS_TIMEOUT`
 
@@ -49,23 +58,43 @@ even if the RC receiver does not assert its own failsafe flag.
 - the actual failsafe transition still depends on the watchdog timeout or the
   receiver-reported hardware failsafe bit
 
+The drive watchdog follows the receiver that carries drive: SBUS #1, or SBUS #2
+when the drive channels are routed to it (`include/rc_input_step.h`). A
+separate dome-spin receiver has its own watchdog: losing it records
+`FS_SBUS2_TIMEOUT` and stops the dome while drive continues
+(`src/tasks/rc_input.cpp`). That is not a drive
+layer.
+
 ## Layer 3 - Web drive command timeout
 
 - Source: body firmware timeout
-- Implementation: `src/tasks/drive.cpp`
-- Trigger: last drive command came from `SRC_WEB_API` and is older than
-  `cfg_webDriveTimeoutMs` (default `WEB_DRIVE_TIMEOUT_MS = 500`)
+- Implementation: `src/drive_arbiter.cpp` detects it; `src/tasks/drive.cpp`
+  syncs it into the failsafe gate once per 50 Hz tick
+- Trigger: last drive command came from `SRC_WEB_API` and is older than the
+  `webDriveTimeoutMs` Setting (`drive.webDriveTimeoutMs`, 100-5000 ms, default
+  `WEB_DRIVE_TIMEOUT_MS = 500`)
 - Result: `webDriveExpired=true`, `driveSpeed=0`, `driveSteer=0`,
   `failsafeSource=FS_WEB_TIMEOUT`
+- Cleared by: any newer drive command. A browser drive command renews it; an RC
+  radio command ends it, so the radio drives again within one 50 Hz drive tick
+  of sending a frame (the tick the frame arrives still reads the gate layer the
+  previous tick set). On a tie the radio counts as newer.
 
 Web control is intentionally dead-man style. A client must keep refreshing the
-command; silence is treated as a stop condition.
+command; silence is treated as a stop condition. The hold belongs to the
+browser's own command: once the RC radio has sent anything newer, a stale browser
+command no longer stops the feet. Releasing the browser's drive button and
+turning browser control off both send a zero browser command, so each starts the
+timeout like any other.
 
-## Layer 4 - ESP32 Watchdog Timer
+## Layer 4 - Watchdog reset
 
-- Source: ESP32 hardware watchdog (task watchdog, interrupt watchdog, or RTC watchdog)
-- Implementation: `src/main.cpp`, `src/tasks/drive.cpp`
-- Trigger: `DriveTask` stops reaching `esp_task_wdt_reset()` within
+- Source: the chip's watchdogs (task watchdog, interrupt watchdog, or RTC watchdog)
+- Implementation: five tasks subscribe to the task watchdog: DriveTask,
+  ServoTask, RCInputTask, SequenceDispatcherTask and DomeTask (the last three
+  when they are created). The boot decision is `src/failsafe_boot_twdt.cpp`,
+  called from `src/main.cpp`
+- Trigger: a subscribed task stops reaching `esp_task_wdt_reset()` within
   `WATCHDOG_TIMEOUT_S` (3 s), or any other watchdog reset (interrupt WDT,
   RTC WDT, super WDT) that defeats the panic handler
 - Result: ESP32 resets; next boot detects any watchdog reset reason
@@ -74,97 +103,125 @@ command; silence is treated as a stop condition.
 
 This covers firmware hangs in the real-time drive loop and other watchdog
 failures. The robot does not resume movement automatically after a watchdog
-reboot. All watchdog reset types arm estop — not only the task watchdog —
+reboot. All watchdog reset types arm estop - not only the task watchdog -
 because a watchdog firing indicates the firmware was in a crash state; the
 distinction between which watchdog fired is less important than knowing that
 something was wrong.
 
-## Layer 5 - Hoverboard UART timeout
+## Layer 5 - Latching estop
+
+- Source: the operator
+- Implementation: `src/failsafe_gate.cpp` (`failsafeClearEstop()` is the only
+  path that clears it)
+- Trigger: `POST /api/estop`, STOP in the web interface, `POST /api/manual-command`
+  with `command=estop`, or an RC trigger bound to estop
+- Result: `estop=true`, `failsafeSource=FS_ESTOP_CMD`
+- Cleared by: releasing STOP in the web interface, `POST /api/estop/clear`,
+  `POST /api/manual-command` with `command=clear_estop`, or the Console's
+  `system.action.estop-clear`
+
+Emergency stop is separate from the automatic timeouts above. `estop` does not
+auto-clear when RC or web input returns. This prevents accidental restart after
+a serious safety event.
+
+## Foot Drive backstop - hoverboard UART timeout
+
+This is not a Failsafe Layer the firmware tracks. It belongs to one Foot Drive,
+the hoverboard with hacked firmware, and runs outside protoR2:
 
 - Source: hoverboard motor controller firmware
-- Implementation: external to protoArtoo
-- Trigger: hoverboard stops receiving valid UART frames for roughly 500 ms
-- Result: hoverboard firmware stops the motors independently of the ESP32
+- Trigger: hoverboard stops receiving valid UART frames for 800 ms (EFeru
+  firmware) or 500 ms (RoboDurden firmware)
+- Result: until then the wheels keep turning on the last frame; then EFeru
+  coasts and RoboDurden soft-brakes, independently of the Body Controller
 
-protoArtoo supports this layer by following the zero-frame rule: it never goes
-silent intentionally. Even when stopped, it keeps transmitting zero commands.
-
-## Latching estop behavior
-
-Emergency stop is separate from the automatic timeouts above.
-
-- `POST /api/estop` sets `estop=true`
-- clear paths: `POST /api/estop/clear` and `POST /api/manual-command` with
-  `command=clear_estop`
-- `estop` does not auto-clear when RC or web input returns
-
-This prevents accidental restart after a serious safety event.
+protoR2 supports it by following the zero-frame rule: it never goes silent
+intentionally. Even when stopped, it keeps transmitting zero commands.
 
 ## Boot safety defaults
 
 The system boots with conservative defaults:
 
-- `sbusSignalLost = true` on boot; SBUS modes clear it after valid drive-receiver traffic is seen
+- when the receiver mode reads drive from SBUS and the drive channel is
+  switched on, the SBUS watchdog layer is set at boot (`sbusSignalLost = true`)
+  and clears after valid drive-receiver traffic is seen
+  (`src/tasks/rc_input_step.cpp`); with a PWM receiver, or no Radio Controller
+  fitted, there is no radio layer to set
 - watchdog-reset reboot sets `estop = true`
-- `cfg_speedLimitMax`, `cfg_sbusTimeoutMs`, and `cfg_webDriveTimeoutMs` are
-  loaded into `RobotState` before tasks start
+- the persisted Settings (`speedLimitMax`, `sbusTimeoutMs`,
+  `webDriveTimeoutMs`) are loaded into the config cache before tasks start;
+  tasks read them as a `ConfigSnapshot` through `configCacheRead()`
 
 ## Implementation notes
 
-- Drive SBUS: GPIO 15 via the custom RMT decoder
-- Dome SBUS: GPIO 13 via the custom RMT decoder when `dual_sbus` mode is selected
+Pins per Body Controller (`include/config.h`, full list in
+[pin_map.md](pin_map.md)):
+
+| Signal | Artoo PCB (artoo-esp32) | FireBeetle 2 (firebeetle2) |
+|---|---|---|
+| Drive SBUS (SBUS #1, RMT decoder) | GPIO 15 | GPIO 28 |
+| Dome SBUS (SBUS #2, RMT decoder, `dual_sbus`) | GPIO 13 | GPIO 29 |
+| Foot Drive UART1 TX / RX | GPIO 16 / 17 | GPIO 20 / 21 |
+
 - Standard PWM: CH1-CH6 can be used directly when `standard_pwm` mode is selected
 - SBUS digital channels CH17 and CH18 are captured for diagnostics/mapping and can
   be bound to trigger-style actions through the persisted RC mapping profile
-- Hoverboard: UART1 on GPIO 16/17
 - `SafetyMonitorTask` is observer-only; it logs failsafe transitions but does
   not command the motors directly
 
 ## Real-Time / Core Pinning Contract
 
-protoArtoo runs on dual-core processors (ESP32 classic or ESP32-P4). Real-time
+protoR2 runs on dual-core processors (ESP32 classic or ESP32-P4). Real-time
 drive control and SBUS input processing are pinned to Core 1 to avoid
 contention with WiFi, web API, and housekeeping tasks.
+
+Stack sizes differ per chip and move with the code: they live in
+`tools/task_stack_recipes.json`, with the measured call chain each one is sized
+from, generated into `include/task_stack_figures.h` (ADR 0040).
 
 **Core 1 (Real-Time Control Loop - 50 Hz drive frame rate):**
 - All tasks in this section must not allocate memory after startup.
 - Priorities are relative within Core 1; lower priority tasks yield to higher.
 
-| Task | Priority | Stack | Chip-Specific? | Rationale |
-|------|----------|-------|---|---|
-| **DriveTask** | 5 | 4096 B | No | 50 Hz hoverboard frame transmission + TWDT reset. Core-critical. Runs every 20 ms. Must complete within period or hoverboard coasts. |
-| **RCInputTask** | 5 | 7168 B | No | ~200 Hz RC poll (SBUS or PWM). Decodes frames and routes to failsafe/arbiter. Core-critical. |
-| **ServoTask** | 4 | 4096 B | No | 50 Hz servo/ESC PWM updates for arms and dome ESC. Processes queue without blocking. |
-| **DomeTask** | 4 | 3072 B | No | 50 Hz dome ESC command application. Processes queue, applies speed presets, respects estop. |
-| **DomeLinkTask** | 3 | 6144 B | No | Bidirectional UART2 to dome controller (AstroPixelsPlus). Coordinates transport arbiter (UART vs WiFi fallback). Non-blocking I/O. |
+| Task | Priority | Role |
+|------|----------|------|
+| **DriveTask** | 5 | 50 Hz Foot Drive frame transmission + TWDT reset. Core-critical. Must complete within its 20 ms period, or the hoverboard keeps acting on its last frame. |
+| **RCInputTask** | 5 | RC poll (SBUS or PWM). Decodes frames and routes to failsafe/arbiter. Core-critical. Not created when the receiver mode reads no input (`elrs`, `not_fitted`). |
+| **ServoTask** | 4 | 50 Hz servo/ESC PWM updates for arms and dome ESC. Processes its queue without blocking. |
+| **DomeTask** | 4 | 50 Hz dome ESC command application. Applies speed presets, respects estop. Not created when the Dome ESC is off at boot. |
+| **DomeLinkTask** | 3 | protoR2link to the Dome Controller over UART2, including the protoR2link Arbiter (UART slip ring vs WiFi fallback). Non-blocking I/O. |
 
 **Core 0 (Housekeeping, Web, OTA):**
 - Non-real-time tasks that handle WiFi, HTTP, SSE, OTA, audio, and logging.
 - May allocate and free memory per-request.
 - Do not block Core 1 RT loops.
 
-| Task | Priority | Stack | Chip-Specific? | Rationale |
-|------|----------|-------|---|---|
-| **AudioTask** | 3 | 6144 B | No | Software bit-bang TX to audio module (blocking ~6 ms per command). Kept off Core 1 to avoid timing interaction with DriveTask/ServoTask (`src/main.cpp:350-351`). Conditional on enable_audio. |
-| **SequenceDispatcherTask** | 3 | 4096 B | No | 10 ms body-side DM:* coordinator. Routes to queues without holding Core 1 (ADR 0004). |
-| **AuxLedTask** | 2 | 4096 B | No | WS2812B effects. Independent of Core 1. Conditional on presence of LED channels. |
-| **SafetyMonitorTask** | 2 | 3072 B | No | 10 Hz audit loop. Logs failsafe transitions and heap diagnostics. Low priority observer. |
-| **WebEvents** | 1 | 6144 B | No | SSE event-stream manager. Broadcasts status to connected clients. Background task. |
-| **ArduinoOTA** | 1 | 4096 B | No | OTA firmware/filesystem updates. Started from WiFi event callback, runs in background. |
+| Task | Priority | Role |
+|------|----------|------|
+| **Pca9685Task** | 6 | Sends PCA9685 servo frames over I2C, so a release is never queued behind a page load. Created only when the PCA9685 is this boot's body servo controller and answers. Not on the task watchdog. |
+| **AudioTask** | 3 | Commands to the sound module. On artoo-esp32 TX is a software bit-bang (blocking ~6 ms per command); on firebeetle2 the module has its own hardware UART. Kept off Core 1 to avoid timing interaction with DriveTask/ServoTask. Not created when audio is off at boot. |
+| **SequenceDispatcherTask** | 3 | Body-side DM:* coordinator. Routes to queues without holding Core 1 (ADR 0004). |
+| **AuxLedTask** | 2 | WS2812B effects. Independent of Core 1. Not created when its init fails. |
+| **SafetyMonitorTask** | 2 | Audit loop. Logs failsafe transitions and heap diagnostics. Observer only. |
+| **Console** | 2 | Controller Console serial adapter (ADR 0036). Needs no network. |
+| **ReactionTask** | 2 | Fires the Reactions bound to the droid's own conditions (ADR 0053). Reads the resolved drive output from `RobotState`; adds nothing to DriveTask and is not on the task watchdog. |
+| **HostedRecovery** | 2 | ESP32-P4 only: recovers the link to the WiFi Module. |
+| **WebEvents** | 1 | SSE event-stream manager. Broadcasts status to connected clients. |
+| **ArduinoOTA** | 1 | OTA firmware/filesystem updates. Started from the WiFi event callback. |
 
 **Pinning Mechanism Validity on ESP32-P4:**
-- Dual-core verified: `SOC_CPU_CORES_NUM = 2U` (components/soc/esp32p4/include/soc/soc_caps.h:179)
+- Dual-core verified: `SOC_CPU_CORES_NUM = 2U` (components/soc/esp32p4/include/soc/soc_caps.h)
 - `xTaskCreatePinnedToCore()` signature and semantics identical on P4 RISC-V
   (components/freertos/esp_additions/include/freertos/idf_additions.h)
 - `CONFIG_FREERTOS_UNICORE` not set (dual-core SMP enabled by default)
 - Core IDs (0, 1) are valid on both classic ESP32 and ESP32-P4 RISC-V
-- TWDT configuration (`esp_task_wdt_config_t`) unchanged on P4 (components/esp_system/include/esp_task_wdt.h:22-25)
+- TWDT configuration (`esp_task_wdt_config_t`) unchanged on P4 (components/esp_system/include/esp_task_wdt.h)
 
 **What Breaks If A Task Moves:**
 - Move **DriveTask** off Core 1: WiFi ISRs on Core 0 may preempt the 50 Hz loop, causing frame continuity loss. Safety invariant violated.
 - Move **RCInputTask** off Core 1: RC input processing and failsafe response add unpredictable latency; SBUS watchdog may fire spuriously. RC control becomes unreliable.
 - Move **DomeLinkTask** off Core 1 and into Core 0: UART2 bidirectional traffic competes with SSE broadcasts and web handlers; transport arbiter decisions may stall. Dome synchronization degrades.
-- Move **AudioTask** to Core 1: 6 ms blocking bit-bang TX stalls drive frames and RC input at 50 Hz. A single audio command can miss an entire drive frame cycle. Safety invariant violated.
+- Move **AudioTask** to Core 1: on artoo-esp32, 6 ms blocking bit-bang TX stalls drive frames and RC input at 50 Hz. A single audio command can miss an entire drive frame cycle. Safety invariant violated.
 - Move **WebEvents** to Core 1: SSE broadcasts and JSON serialization consume Core 1 CPU, competing with real-time loops.
 
 **Chip-Independence:**

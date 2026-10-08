@@ -1,7 +1,7 @@
 # Controller Console protocol
 
 The Controller Console is one command language shared by two operator surfaces:
-the **Live Logs** command box in the browser dashboard and a **serial terminal**
+the **Console** command box on the browser Dashboard and a **serial terminal**
 attached to the controller's USB port. Both surfaces send the same lines and
 receive the same results; this page is the reference for that language and its
 result format. Architecture and rationale: ADR 0036. Vocabulary: `GLOSSARY.md`
@@ -124,23 +124,18 @@ operations type=action
 
 ### 2.1 Operations listing output volume - no paging (decided, #219 R1)
 
-The `operations` command lists all 194 catalog entries. Measured, not
+The `operations` command lists every catalog entry. Measured, not
 estimated, by summing each entry's rendered item line against the shipped
 catalog table (`src/console/console_catalog.cpp`) and `artoo_esp32`'s actual
-macro values: four profiler/admission-trace entries answer `not-in-this-build`
-on that board and one WiFi-module entry answers `not-on-this-board`, each with
-a longer item line. Line shape is `< id=<n> type=item value=<name> (<type>[,
-<reason>])` plus the CR LF terminator (#267), with a single-digit request id.
+macro values: the profiler/admission-trace entries answer `not-in-this-build`
+on that board, the WiFi-module entries answer `not-on-this-board`, and the
+`not-on-console` entries (#474) carry that reason, each with a longer item line. Line
+shape is `< id=<n> type=item value=<name> (<type>[, <reason>])` plus the CR LF
+terminator (#267), with a single-digit request id.
 
-```
-entries: 194
-bytes on the wire: 11436
-seconds @115200 8N1 (10 bits/byte): 0.99
-```
-
-Re-measured at #243. The previous figures (190 entries, 10985 B, 0.95 s) were
-taken at #219, before the catalog grew and before #267 replaced the bare LF
-terminator with CR LF - so they understated the wire cost on two counts.
+At 115200 8N1 the listing takes about a second on the wire. The exact figure
+moves with every catalog row; the decision below rests on its order of
+magnitude.
 
 **Decision: no paging.** On both serial and web transports the listing is
 emitted in full, in one request. Justification:
@@ -149,27 +144,27 @@ emitted in full, in one request. Justification:
   shared serial mutex for that whole window, blocking every other task's log
   line (#219 R1) - that was the actual defect, and it is fixed by locking
   per record line (section 3.1), not by paging. With the mutex held per
-  line, `operations`' ~1 s is Core 0 non-real-time wall-clock time; it never
+  line, `operations`' second or so is Core 0 non-real-time wall-clock time; it never
   touches Core 1 and never delays a log line by more than one record's
-  width. Paging would trade that one linear ~1 s wait for a slower,
+  width. Paging would trade that one linear wait of about a second for a slower,
   stateful, multi-round-trip one, for no remaining safety benefit.
 - `operations` is an explicit, operator-typed discovery command, not
   telemetry - it is not issued in a loop, and a bench operator reading a
-  catalog can wait under a second for it.
+  catalog can wait about a second for it.
 - A paging protocol (chunk size, a `more` continuation, cursor state per
   session) is real design and state to carry on an already resource-constrained
-  embedded console, for a command whose entire cost is under a second and
+  embedded console, for a command whose entire cost is about a second and
   whose result usefully reassembles by Request ID either way (below).
 - This is a function of the byte count, not a fixed exemption: if the
   catalog grows by an order of magnitude, or a board ships at a lower baud
   rate, re-measure (sum each entry's rendered `< id=<n> type=item
-  value=<name> (<type>[, <reason>])\n` line length against the built
+  value=<name> (<type>[, <reason>])` line plus its CR LF against the built
   `src/console/console_catalog.cpp` and that env's actual build flags) and
   revisit before assuming the answer still holds.
 
 **What "no paging" does NOT mean:** it does not mean the listing is atomic on
 the wire. Per section 3.1, records of one request may be separated by other
-lines - `operations`' 194 `item` records can have log lines from other tasks
+lines - `operations`' `item` records can have log lines from other tasks
 land between them, and a reader reassembles the group by Request ID, not by
 assuming contiguity. The invariant that does hold, unconditionally, is
 section 6's "no line is ever interleaved inside another": every record and
@@ -185,20 +180,20 @@ pairs; the first pair is always the Request ID.
 
 ```text
 > sound.action.random-humming
-< id=18 type=result status=ok outcome=queued operation=sound.action.random-humming
+< id=18 type=result status=ok outcome=queued
 
 > system.status.health
 < id=19 type=begin operation=system.status.health
 < id=19 type=field name=heapFree value=42120
 < id=19 type=field name=heapMin value=31840
 < id=19 type=field name=estop value=false
-< id=19 type=end status=ok
+< id=19 type=end status=ok outcome=completed
 
 > system.config.log-level value=debug
-< id=20 type=result status=ok outcome=applied operation=system.config.log-level
+< id=20 type=result status=ok outcome=applied
 
 > system.action.profiler-trace-start
-< id=21 type=result status=err outcome=unavailable reason=not-in-this-build operation=system.action.profiler-trace-start
+< id=21 type=result status=err outcome=unavailable reason=not-in-this-build
 ```
 
 | `type=` | Meaning |
@@ -263,17 +258,55 @@ never type an ID.
   | `component-disabled` | the owning Component Toggle is off |
   | `blocked-by-state` | estop, sleep, stationary or another state rule holds it |
   | `temporarily-unavailable` | busy right now; try again |
+  | `part-not-assigned` | the droid knows this Part, but no Output on it drives the Part, so nothing moves (#301) |
+  | `bearing-unknown` | the dome does not know where it points - a boot, an estop or Sleep Mode forgot it - so go home and a bearing step do not move it until the builder says front is here (#445) |
+  | `dome-not-calibrated` | the dome's full turn is not timed, or which way positive turns it is not set, so no turn can be planned and no bearing believed (#445) |
+  | `module-cannot-mix` | the fitted sound module plays one sound at a time, so a sequence's Background Track does not play; the rest of the sequence runs (ADR 0054, #447) |
+  | `not-on-console` | the operation is never on the Console - a file transfer, a Sequences editor step, a browser-only act, or the browser Console Adapter itself; `help` names the page that does it as `console_page`. Declared on the registry row, so `operations` lists it too (ADR 0037 Amendment 2026-10-06, #474) |
+
+  `part-not-assigned` is the one that is a fact about the builder's wiring
+  rather than about the image, the board or a toggle (`dome-not-calibrated` is
+  the same kind of fact about their calibration). The body step type that
+  names a Part now exists (#349), and the Sequence Coordinator reports this
+  reason when a step names a Part no Servo Output on the droid claims - the step
+  is inert and the sequence carries on. It is asked of the Servo Output table at
+  execution, every time, which is the whole point of it: a step authored before
+  its arm was wired starts working once an Output claims that Part, with nothing
+  re-authored.
 
   Other reasons name the specific failure: `line-too-long`,
   `secret-not-settable`, `read-only` (the operation reads, but nothing in the
   firmware writes the value it names - section 4.2), `unknown-operation`,
   `unknown-argument`, `missing-argument`, `out-of-range`,
+  `conflict` (the value is fine on its own and clashes with another one, sent
+  or saved - speed presets that are not distinct, a range whose `lo` is above
+  its `hi`; it names the argument that was sent and carries no `accepts`),
   `malformed-argument` (a quoted value's escaping/quoting/UTF-8 did not parse,
   or a bare word appeared where `key=value` was required - section 1.2/1.3),
   `not-executable` (an event), and during development only
   `executor-not-ready` (an operation whose executor is not yet wired; the
   count must be zero when the feature is complete).
 
+- An Output is named by what the running board prints beside it (ADR 0033
+  Amendment 2026-09-19), so a servo `target=` takes that word - `arm3` or
+  `"ARM 3"` on the Artoo PCB, `gpio49` or `"GPIO 49"` on the FireBeetle 2, case
+  and spaces set aside - or `both`. An Output on a PCA9685 expander is named
+  by its address, `target=pca:3` (`pca:0`..`pca:15`, #444), since no board
+  prints a word for it; `accepts`, `target_accepts` and Tab list the board's
+  own words only. A word the board does not print is refused
+  `out-of-range` with an `accepts` field listing the words it does take, and
+  `help` lists them as `target_accepts`; Tab completes `target=` to them:
+
+  ```text
+  > servo.action.open target=aux1
+  < id=1 type=begin operation=servo.action.open
+  < id=1 type=field name=argument value=target
+  < id=1 type=field name=accepts value=ARM1,ARM2,ARM3,ARM4,ARM5,both
+  < id=1 type=end status=err outcome=invalid reason=out-of-range
+  ```
+
+  On the FireBeetle 2 the value is quoted, because its words carry a space:
+  `accepts="GPIO 49,GPIO 50,GPIO 4,GPIO 5,GPIO 51,both"`.
 - `not-in-this-build` and `not-on-this-board` are the same tokens the browser
   already uses for Feature Availability; the Console never invents a synonym.
 - Availability is **re-checked at execution**, not cached from discovery.
@@ -313,8 +346,12 @@ be read:
 
 What is withheld is only that prose. The fields the in-image catalog owns -
 `type`, `available_on_board`, `available_in_build`, `requires_web_control`,
-`read_only`, `aliases`, `params` - do not come from the file and render
-regardless of its health (#219 D3).
+`read_only`, `console_excluded`, `console_page`, `aliases`, `params` - do not
+come from the file and render regardless of its health (#219 D3).
+`console_excluded` (`file-transfer`, `editor-only`, `browser-only` or
+`console-itself`) and `console_page` (the page's name in the nav, quoted when
+it has a space: `console_page="RC Control"`) are present only on an operation
+that answers `not-on-console`.
 
 This field is only present when help text could not be retrieved in full; a
 successful help response contains no `help_file_status` field. This allows a
@@ -323,8 +360,8 @@ occur on a normal path).
 
 **A prose field that is present but shortened says so, separately.** The three
 file-resident fields are copied into fixed buffers - 255 bytes for
-`description`, 63 for `display_name` and `executor` - and ten of the catalog's
-194 descriptions are longer than that, up to 506 bytes. The value is emitted
+`description`, 63 for `display_name` and `executor`. A row longer than its
+buffer is not refused. The value is emitted
 clamped, and a clamped field is followed by a `<name>_truncated` field with
 value `true`: `description_truncated`, `display_name_truncated`,
 `executor_truncated`. The marker is absent when nothing was cut, so a reader
@@ -344,9 +381,9 @@ two senses, and a transcript shows both as `truncated=true`:
 | | `<name>_truncated` (this section) | `"truncated": true` on the envelope |
 |---|---|---|
 | Scope | one prose **field**, clamped to its buffer | the **number of items** in the answer - the bounded sink skipped or refused some (`system.status.logs` on a near-full ring, #239/#240) |
-| Where | a Console Record: `type=field name=description_truncated value=true` | a key on the JSON response body, beside `records` (`src/web/api_console.cpp:584`) |
+| Where | a Console Record: `type=field name=description_truncated value=true` | a key on the JSON response body, beside `records` (`src/web/api_console.cpp`) |
 | Adapter | both | browser only - serial has no envelope at all |
-| Consequence | routine, expected on ten catalog rows; the answer is complete | `tools/console_client.py` reports `[ADAPTER-CAPPED]` and exits **4**: a bench sheet stops there |
+| Consequence | the answer is complete; only that field was clamped | `tools/console_client.py` reports `[ADAPTER-CAPPED]` and exits **4**: a bench sheet stops there |
 
 Reading one as the other inverts what the run means, so it is worth being
 explicit that **a machine reader cannot confuse them**: they live in different
@@ -377,7 +414,20 @@ and a rename is a protocol break for a readability problem.
   range, type, enum and grouped rules are identical.
 - Grouped settings are validated as one configuration: `wifi.config.settings`
   rejects a `mode=client` without a usable SSID as a whole, naming the failing
-  field, exactly as the setup page does.
+  field, exactly as the WiFi page does.
+- A refused write answers in the shape a refused `target=` has (section 3.3):
+  the argument the builder typed, never the field the firmware saves it under;
+  the reason the validation gave; and `accepts=` with what the argument takes,
+  where a range or a set of words applies. All three come from the refusal the
+  shared validation returns as data, never from its sentence:
+
+  ```text
+  > drive.config.speed-limit value=9999
+  < id=1 type=begin operation=drive.config.speed-limit
+  < id=1 type=field name=argument value=value
+  < id=1 type=field name=accepts value=0..600
+  < id=1 type=end status=err outcome=invalid reason=out-of-range
+  ```
 - A write reports `applied`, `staged-until-reboot`, or an explicit persistence
   failure; a restart-required condition is reported, never assumed.
 - There is no raw key/value escape hatch into the settings store.
@@ -537,7 +587,7 @@ the task and a backtrace on its own path.
 
 ## 9. Browser
 
-The Live Logs command box sends the raw line to one endpoint and receives the
+The Dashboard's Console command box sends the raw line to one endpoint and receives the
 same records, rendered inline between the live log lines. History, Tab
 completion and ambiguity listing behave as on serial; the browser additionally
 keeps its own persistent session history.

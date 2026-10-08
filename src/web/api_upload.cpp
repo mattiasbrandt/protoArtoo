@@ -21,10 +21,10 @@
 
 #include <Arduino.h>
 #include <Update.h>
-#include <esp_heap_caps.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
 
+#include "heap_reading.h"
 #include "logging.h"
 #include "web_server.h"
 
@@ -38,7 +38,7 @@ namespace {
 struct UploadSession {
     UploadOutcome outcome;
     size_t bytesWritten;
-    uint32_t minHeapFree;  // smallest free heap seen across the transfer
+    uint32_t minHeapFree;  // smallest Internal Data Heap free seen across the transfer
     uint32_t startMs;
     // Whether the backend handed over a single chunk for this request. Not
     // derivable from the fields above: a request whose body the multipart
@@ -64,12 +64,12 @@ size_t filesystemPartitionSize() {
 void beginSession(UploadSession& session) {
     session.outcome = UploadOutcome::kInProgress;
     session.bytesWritten = 0;
-    session.minHeapFree = (uint32_t)ESP.getFreeHeap();
+    session.minHeapFree = heapReadInternalDataFree();
     session.startMs = millis();
 }
 
 void observeHeap(UploadSession& session) {
-    const uint32_t freeHeap = (uint32_t)ESP.getFreeHeap();
+    const uint32_t freeHeap = heapReadInternalDataFree();
     if (freeHeap < session.minHeapFree) {
         session.minHeapFree = freeHeap;
     }
@@ -180,9 +180,9 @@ void handleUploadDone(UploadSession& session, UploadTarget target, const char* l
         // it. Recorded here because nothing else in the system sees this moment.
         PA_LOG_ERROR(TAG,
                      "%s upload: %u byte body consumed, no chunk delivered; "
-                     "free heap %u, largest block %u",
-                     label, (unsigned)req.contentLength(), (unsigned)ESP.getFreeHeap(),
-                     (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+                     "free heap %u, largest8bit %u",
+                     label, (unsigned)req.contentLength(), (unsigned)heapReadInternalDataFree(),
+                     (unsigned)heapReadBufferLargest());
     }
 
     if (effective != UploadOutcome::kComplete) {

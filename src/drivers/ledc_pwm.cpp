@@ -58,16 +58,23 @@ uint8_t getChannelGpio(uint8_t channel) {
 // Returns false and logs on any LEDC API error (timer config only; skipped
 // channels do not fail init).
 // Stores the mask in s_configuredMask for use by write functions.
-// Returns true if timer config succeeds, even if enabledMask is 0 (no channels).
-// Configured channels start at neutral (1500us).
+// Returns true if timer config succeeds, even if enabledMask is 0 (no channels):
+// the timer comes up regardless, so a channel left out can be attached later
+// for a Find by Moving run (ledcPwmAttach(), #411).
+//
+// A configured SERVO channel starts with no pulse at all (duty 0): the servo is
+// limp wherever it was left, and nothing moves at power-up until ServoTask
+// drives it. What an Output does at power-up is its boot behaviour's to say
+// (ADR 0052), and every Output is limp by default. A neutral pulse here used to
+// move every servo on the droid to 1500 us at once on every power-up, which is
+// both the move limp exists to prevent and the many-at-once shape the Cadence
+// Floor exists to hold apart. The DOME channel is the exception and starts at
+// neutral, because it drives an ESC, not a servo: a floating signal line reads
+// as Receiver Lost to an ESC70 (include/ledc_pwm.h, ledcPwmRelease()), and
+// domeTaskInit() then arms it at its configured neutral.
 // -----------------------------------------------------------------------------
 bool ledcPwmInit(uint8_t enabledMask) {
     s_configuredMask = enabledMask;
-
-    // If no channels are enabled, skip timer config entirely.
-    if (enabledMask == 0) {
-        return true;
-    }
 
     ledc_timer_config_t timerConfig = {};
     timerConfig.speed_mode = PA_LEDC_MODE;
@@ -94,7 +101,7 @@ bool ledcPwmInit(uint8_t enabledMask) {
         channelConfig.channel = (ledc_channel_t)i;
         channelConfig.intr_type = LEDC_INTR_DISABLE;
         channelConfig.timer_sel = PA_LEDC_TIMER;
-        channelConfig.duty = pulseUsToDuty(SERVO_PULSE_NEUTRAL_US);
+        channelConfig.duty = (i == LEDC_CH_DOME) ? pulseUsToDuty(SERVO_PULSE_NEUTRAL_US) : 0;
         channelConfig.hpoint = 0;
 
         err = ledc_channel_config(&channelConfig);
@@ -107,6 +114,36 @@ bool ledcPwmInit(uint8_t enabledMask) {
 
     ESP_LOGI(TAG, "LEDC PWM initialized: %d channels @ %dHz", (int)configuredCount,
              LEDC_FREQUENCY_HZ);
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// ledcPwmAttach()
+// One servo channel configured after init, limp (duty 0): see include/ledc_pwm.h.
+// -----------------------------------------------------------------------------
+bool ledcPwmAttach(uint8_t channel) {
+    if (channel >= LEDC_CH_MAX || channel == LEDC_CH_DOME) {
+        return false;
+    }
+    if (s_configuredMask & (1 << channel)) {
+        return true;
+    }
+
+    ledc_channel_config_t channelConfig = {};
+    channelConfig.gpio_num = kChannelGpio[channel];
+    channelConfig.speed_mode = PA_LEDC_MODE;
+    channelConfig.channel = (ledc_channel_t)channel;
+    channelConfig.intr_type = LEDC_INTR_DISABLE;
+    channelConfig.timer_sel = PA_LEDC_TIMER;
+    channelConfig.duty = 0;
+    channelConfig.hpoint = 0;
+
+    const esp_err_t err = ledc_channel_config(&channelConfig);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Channel %d attach failed: %d", channel, err);
+        return false;
+    }
+    s_configuredMask = (uint8_t)(s_configuredMask | (1 << channel));
     return true;
 }
 
@@ -144,12 +181,12 @@ bool ledcPwmSetPulseWidth(uint8_t channel, uint16_t pulseUs) {
 }
 
 // -----------------------------------------------------------------------------
-// ledcPwmSetPercent()
-// Set pulse width as a fraction of the channel's full range (0.0-1.0).
-// Derives min/max from clampPulseWidth to stay consistent with clamping logic.
-// Returns false silently (no log) if channel is not in the configured mask.
+// ledcPwmRelease()
+// Duty 0 and nothing else: no clamp, because there is no width to clamp, and
+// no neutral, because a release commands no position (ADR 0043). Same mask
+// rule as the write above.
 // -----------------------------------------------------------------------------
-bool ledcPwmSetPercent(uint8_t channel, float percent) {
+bool ledcPwmRelease(uint8_t channel) {
     if (channel >= LEDC_CH_MAX) {
         return false;
     }
@@ -158,52 +195,17 @@ bool ledcPwmSetPercent(uint8_t channel, float percent) {
         return false;
     }
 
-    if (percent < 0.0f)
-        percent = 0.0f;
-    if (percent > 1.0f)
-        percent = 1.0f;
-
-    // Probe channel bounds via clampPulseWidth  --  single source of truth for limits.
-    uint16_t minUs = clampPulseWidth(channel, 0);
-    uint16_t maxUs = clampPulseWidth(channel, 65535U);
-    uint16_t pulseUs = minUs + (uint16_t)(percent * (float)(maxUs - minUs));
-
-    return ledcPwmSetPulseWidth(channel, pulseUs);
-}
-
-// -----------------------------------------------------------------------------
-// ledcPwmSetNeutral()
-// -----------------------------------------------------------------------------
-bool ledcPwmSetNeutral(uint8_t channel) {
-    return ledcPwmSetPulseWidth(channel, SERVO_PULSE_NEUTRAL_US);
-}
-
-// -----------------------------------------------------------------------------
-// ledcPwmInitNeutralPositions()
-// Set only configured channels to neutral.
-// Skips channels outside the enabled mask.
-// -----------------------------------------------------------------------------
-void ledcPwmInitNeutralPositions() {
-    for (int i = 0; i < LEDC_CH_MAX; i++) {
-        if (s_configuredMask & (1 << i)) {
-            ledcPwmSetNeutral(i);
-        }
+    esp_err_t err = ledc_set_duty(PA_LEDC_MODE, (ledc_channel_t)channel, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Release failed for channel %d: %d", channel, err);
+        return false;
     }
-    ESP_LOGI(TAG, "Configured channels set to neutral");
-}
 
-// -----------------------------------------------------------------------------
-// ledcPwmEmergencyStop()
-// Bypasses clamp/log path  --  writes neutral duty directly for minimum latency.
-// Sets only configured channels to neutral; skips channels outside the mask.
-// -----------------------------------------------------------------------------
-void ledcPwmEmergencyStop() {
-    uint32_t duty = pulseUsToDuty(SERVO_PULSE_NEUTRAL_US);
-    for (int i = 0; i < LEDC_CH_MAX; i++) {
-        if (s_configuredMask & (1 << i)) {
-            ledc_set_duty(PA_LEDC_MODE, (ledc_channel_t)i, duty);
-            ledc_update_duty(PA_LEDC_MODE, (ledc_channel_t)i);
-        }
+    err = ledc_update_duty(PA_LEDC_MODE, (ledc_channel_t)channel);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Release update failed for channel %d: %d", channel, err);
+        return false;
     }
-    ESP_LOGW(TAG, "EMERGENCY STOP - all configured channels neutral");
+
+    return true;
 }

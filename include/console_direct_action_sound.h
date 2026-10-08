@@ -20,8 +20,9 @@
 //
 // NOT a standalone compilation unit: #include'd from src/console/
 // console_module.cpp only, at the point these executors used to live, so
-// their bodies can see that file's own `static` consoleEmitArgFailure() and
-// consoleCommandSourceFor() by ordinary same-translation-unit visibility.
+// their bodies can see that file's own `static` consoleEmitArgFailure(),
+// consoleEmitApplyRefusal() and consoleCommandSourceFor() by ordinary
+// same-translation-unit visibility.
 // Not included, and must not be included, from anywhere else.
 // =============================================================================
 #pragma once
@@ -39,13 +40,37 @@
                                            // audioQueueTrackStop(), audioQueueQueryStatus(),
                                            // audioGetCapabilities() - includes audio_driver.h
                                            // transitively for AudioDriver::AUDIO_CAP_CATALOG
-#include "api_audio.h"                    // AudioSetVolumeCommitOutcome, audioSetVolumeCommitApplied(),
-                                           // AudioMoodMapCommitOutcome, audioMoodMapCommitApplied(),
-                                           // AudioCategoryRangeCommitOutcome,
-                                           // audioCategoryRangeCommitApplied() - and, transitively,
+#include "api_audio.h"                    // the volume, mood-map and category-range Write Windows
+                                           // and their outcomes - and, transitively,
                                            // api_audio_mood_map_apply.h/api_audio_category_range_apply.h
                                            // for audioMoodMapApply()/audioCategoryRangeApply()
-#include "config_cache.h"                 // ConfigSnapshot, configCacheRead()
+#include "config_cache.h"                 // ConfigSnapshot
+#include "audio_sound_member.h"           // audioSoundOn(), AUDIO_SOUND_OFF_REASON
+
+// With audio output off at boot nothing drains the audio queue, so every row
+// below that would send the module a command is refused with the reason, never
+// answered "queued" onto a queue nobody reads (#370). Called last, just before
+// the send, so a malformed line still gets its own answer. The reason is the
+// same sentence POST /api/audio answers with (include/audio_sound_member.h),
+// carried as a field beside COMPONENT_DISABLED - the owning toggle is off -
+// because the reason token alone cannot say where to switch it on.
+static bool consoleRefusedWhileSoundOff(uint32_t requestId, const char* operationName,
+                                        const ConsoleRecordSink* sink) {
+    if (audioSoundOn()) {
+        return false;
+    }
+    if (sink->onRecordBegin) {
+        sink->onRecordBegin(requestId, operationName);
+    }
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "detail", AUDIO_SOUND_OFF_REASON);
+    }
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                          CONSOLE_REASON_COMPONENT_DISABLED);
+    }
+    return true;
+}
 
 // sound.action.play-track: track=<1..999> - the same audioQueuePlayTrack()
 // call handleAudioPost()'s action=play branch makes (src/web/api_audio.cpp);
@@ -92,6 +117,9 @@ static void consoleExecuteSoundPlayTrack(uint32_t requestId, const char* operati
         return;
     }
 
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
     if (!audioQueuePlayTrack((uint16_t)track, consoleCommandSourceFor(source))) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
@@ -114,27 +142,34 @@ static void consoleExecuteSoundSetVolume(uint32_t requestId, const char* operati
                                          const ConsoleRecordSink* sink) {
     const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
     char badKey[40] = {};
-    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+    const ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
         entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
-    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
-                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
-                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
-                                   ? CONSOLE_REASON_MISSING_ARGUMENT
-                                   : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+    if (consoleRefuseSettingArgKeys(requestId, operationName,
+                                    entry != nullptr ? entry->params : nullptr, schemaStatus,
+                                    badKey, sink)) {
         return;
     }
 
-    char* end = nullptr;
-    long level = strtol(consoleArgsFind(args, "volume"), &end, 10);
-    if (*end != '\0' || level < 0 || level > 30) {
-        consoleEmitArgFailure(requestId, operationName, "volume", CONSOLE_REASON_OUT_OF_RANGE, sink);
+    // The volume Setting's own check (src/config_settings.cpp), as POST
+    // /api/audio's: a level it does not take is refused with its range.
+    const ConfigSetting* volume = audioSettingByName("volume", SettingDoor::AudioVolume);
+    int32_t level = 0;
+    if (volume == nullptr ||
+        !consoleCheckSettingArg(requestId, operationName, "volume", *volume,
+                                consoleArgsFind(args, "volume"), &level, sink)) {
         return;
     }
 
-    AudioSetVolumeCommitOutcome commit =
-        audioSetVolumeCommitApplied((uint8_t)level, consoleCommandSourceFor(source));
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
+    // The Write Window sound.config.volume and POST /api/audio call too
+    // (include/api_audio.h): the Commit Step writes the cache and saves it whole.
+    AudioSetVolumeCommitOutcome commit;
+    if (!audioSetVolumeWriteWindow((uint8_t)level, consoleCommandSourceFor(source), &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
+        return;
+    }
     if (!commit.queued) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
@@ -209,6 +244,9 @@ static void consoleExecuteSoundDollarShortcut(uint32_t requestId, const char* op
         return;
     }
 
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
     if (!audioQueueDollar(dollarCmd, consoleCommandSourceFor(source))) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
@@ -222,7 +260,7 @@ static void consoleExecuteSoundDollarShortcut(uint32_t requestId, const char* op
     }
 }
 
-// The nine named-track $-letter shortcuts (docs/action-registry.yaml's own
+// The ten named-track $-letter shortcuts (docs/action-registry.yaml's own
 // $ command reference, include/audio_dollar_parser.h): each is a thin
 // wrapper over consoleExecuteSoundDollarShortcut() above with its literal
 // two-character command baked in, matching what dome_link.cpp's own direct
@@ -282,16 +320,17 @@ static void consoleExecuteSoundPlayTrackDisco(uint32_t requestId, const char* op
                                               const ConsoleRecordSink* sink) {
     consoleExecuteSoundDollarShortcut(requestId, operationName, args, source, sink, "$D");
 }
+static void consoleExecuteSoundPlayTrackHappy(uint32_t requestId, const char* operationName,
+                                              const ConsoleArgs& args, ConsoleCommandSource source,
+                                              const ConsoleRecordSink* sink) {
+    consoleExecuteSoundDollarShortcut(requestId, operationName, args, source, sink, "$H");
+}
 
 // sound.action.quiet ($s): stop playback and disable random/idle mood until
 // reboot or Random On (ADR 0010). Reached through the SAME dollar-command
-// path handleAudioPost()'s action=dollar branch would use for cmd=$s -
-// audio_task.h's warning that the direct audioQueueStop() queue helper is
-// "Reserved for the mood system's Quiet path ($s / SE10) - do not call from
-// any other surface" is about that typed queue helper specifically, not
-// about reaching the same $s semantics through the dollar-command path,
-// which is the documented, supported way every other caller (web, dome_rx)
-// already reaches it.
+// path handleAudioPost()'s action=dollar branch would use for cmd=$s, which
+// is the documented, supported way every other caller (web, dome_rx) reaches
+// it.
 static void consoleExecuteSoundQuiet(uint32_t requestId, const char* operationName,
                                      const ConsoleArgs& args, ConsoleCommandSource source,
                                      const ConsoleRecordSink* sink) {
@@ -403,6 +442,9 @@ static void consoleExecuteSoundDollarCommand(uint32_t requestId, const char* ope
         return;
     }
 
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
     if (!audioQueueDollar(cmd, consoleCommandSourceFor(source))) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
@@ -437,6 +479,9 @@ static void consoleExecuteSoundTrackStop(uint32_t requestId, const char* operati
         return;
     }
 
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
     if (!audioQueueTrackStop(consoleCommandSourceFor(source))) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
@@ -472,6 +517,9 @@ static void consoleExecuteSoundQueryStatus(uint32_t requestId, const char* opera
         return;
     }
 
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
     if (!audioQueueQueryStatus(consoleCommandSourceFor(source))) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
@@ -495,11 +543,10 @@ static void consoleExecuteSoundQueryStatus(uint32_t requestId, const char* opera
 // consoleArgsAsParamSource() (include/console_args.h) is the SAME
 // ConfigParamSource adapter #226 already established for Console-sourced
 // Apply Core calls, reused verbatim rather than a second bridge. All four
-// fields are required with range 0-4095 in the registry schema - exactly
-// MOOD_CATEGORY_MASK_MAX (include/mood_sound_mapping.h) - so the apply
-// core's own hasError branch below is unreachable in practice for a
-// Console-originated call once schema validation has already passed; still
-// handled explicitly rather than assumed away.
+// fields are required by the registry schema, which carries no range for
+// them: each mask is checked by its Setting's declaration inside the core
+// (src/config_settings.cpp), and a mask it does not take comes back with its
+// range, as over HTTP (ADR 0068, amended 2026-09-26).
 static void consoleExecuteSoundSetMoodMap(uint32_t requestId, const char* operationName,
                                           const ConsoleArgs& args, ConsoleCommandSource source,
                                           const ConsoleRecordSink* sink) {
@@ -507,32 +554,32 @@ static void consoleExecuteSoundSetMoodMap(uint32_t requestId, const char* operat
                    // handler it mirrors does not attribute this NVS write to a source either.
     const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
     char badKey[40] = {};
-    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+    const ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
         entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
-    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
-                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
-                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
-                                   ? CONSOLE_REASON_MISSING_ARGUMENT
-                                   : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+    if (consoleRefuseSettingArgKeys(requestId, operationName,
+                                    entry != nullptr ? entry->params : nullptr, schemaStatus,
+                                    badKey, sink)) {
         return;
     }
 
     AudioMoodMapApplyResult result;
     audioMoodMapApply(consoleArgsAsParamSource(args), &result);
     if (result.error.hasError) {
-        // Unreachable after schema validation above (see header comment) -
-        // still a real status=err answer, not swallowed, matching every
-        // other apply-core error path in this module.
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID,
-                                CONSOLE_REASON_OUT_OF_RANGE);
-        }
+        // A mask its Setting does not take: the core checks each against its
+        // declaration and names it with its range, as POST /api/audio/mood-map.
+        consoleEmitApplyRefusal(requestId, operationName, result.error.refusal.field,
+                                result.error.refusal, sink);
         return;
     }
 
-    AudioMoodMapCommitOutcome commit = audioMoodMapCommitApplied(result);
+    // The Write Window POST /api/audio/mood-map calls (include/api_audio.h). It
+    // ran unguarded here until #418: its Commit Step writes the config cache
+    // and NVS, and a config write interleaving with it lost one of the two.
+    AudioMoodMapCommitOutcome commit;
+    if (!audioMoodMapWriteWindow(result, &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
+        return;
+    }
     if (!commit.ok) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
@@ -546,18 +593,18 @@ static void consoleExecuteSoundSetMoodMap(uint32_t requestId, const char* operat
     }
 }
 
+
 // sound.action.set-category-range: lo_key=/hi_key=<string> lo=/hi=<uint16> -
 // the same audioCategoryRangeApply() + audioCategoryRangeCommitApplied()
 // sequence handleAudioCategoryRangePost() runs (src/web/api_audio.cpp),
 // reusing the ADR 0011 Apply Core and its Commit Step (include/api_audio.h)
 // exactly as extracted for this purpose. The registry declares no range on
-// lo/hi (docs/action-registry.yaml), so the apply core's own 0-999/lo<=hi
-// and category-key-pair validation is the real gate here, not the schema -
-// its failure (any of: bad key pair, out-of-range value, lo>hi) is answered
-// as a single undifferentiated "invalid", the same OUT_OF_RANGE catch-all
-// consoleWriteScalarConfigField() already uses for any Apply Core rejection
-// (src/console/console_module.cpp), since there is no one attributable
-// argument key for a multi-field range check.
+// lo/hi (docs/action-registry.yaml), so each bound's Setting (its declared
+// range, src/config_settings.cpp), the lo<=hi pair rule and the category-key
+// pair check in the apply core are the real gate here, not the schema -
+// and its refusal names which argument and why (a bad key pair, a bound out
+// of range, a lo above hi is a `conflict`), which consoleEmitApplyRefusal()
+// answers as it does every Apply Core refusal (src/console/console_module.cpp).
 //
 // bank/page/clear_binding (REST's optional CHIRP-binding extension to this
 // same route) are deliberately NOT in this row's registry schema, so
@@ -572,32 +619,35 @@ static void consoleExecuteSoundSetCategoryRange(uint32_t requestId, const char* 
                    // the REST handler it mirrors does not attribute this NVS write either.
     const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
     char badKey[40] = {};
-    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+    const ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
         entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
-    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
-                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
-                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
-                                   ? CONSOLE_REASON_MISSING_ARGUMENT
-                                   : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+    if (consoleRefuseSettingArgKeys(requestId, operationName,
+                                    entry != nullptr ? entry->params : nullptr, schemaStatus,
+                                    badKey, sink)) {
         return;
     }
 
+    // The Write Window POST /api/audio/category-range calls
+    // (include/api_audio.h). This read-modify-write of the config cache ran
+    // unguarded here until #418, so a config write landing between its cache
+    // read and its commit was reverted.
     ConfigSnapshot snap = {};
-    configCacheRead(&snap);
     AudioCategoryRangeApplyResult result;
-    audioCategoryRangeApply(consoleArgsAsParamSource(args), consoleAudioCatalogSupported(), &snap,
-                            &result);
+    AudioCategoryRangeCommitOutcome commit;
+    if (!audioCategoryRangeWriteWindow(consoleArgsAsParamSource(args), consoleAudioCatalogSupported(),
+                                       &snap, &result, &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
+        return;
+    }
     if (result.error.hasError) {
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID,
-                                CONSOLE_REASON_OUT_OF_RANGE);
-        }
+        // The core names the argument and why, so a bad key pair, a bound out
+        // of range and a lo above hi each read as what they are.
+        consoleEmitApplyRefusal(requestId, operationName,
+                                consoleAudioBoundArgument(result.error.refusal.field, args),
+                                result.error.refusal, sink);
         return;
     }
 
-    AudioCategoryRangeCommitOutcome commit = audioCategoryRangeCommitApplied(&snap, result);
     if (!commit.ok) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
@@ -611,16 +661,24 @@ static void consoleExecuteSoundSetCategoryRange(uint32_t requestId, const char* 
     }
 }
 
-// A backend with no CHIRP catalog can never serve one: the driver is chosen at
-// compile time by PA_AUDIO_DRIVER (src/tasks/audio_task.cpp:54-66), so
-// AUDIO_CAP_CATALOG is a property of the built image read back at runtime, not
-// something an operator can turn on. handleAudioCatalogGet()/
-// handleAudioCatalogRefreshPost()/handleAudioPlayBankedPost() all answer 404
-// "catalog unsupported by active backend" for it; the Console's equivalent is
-// `unavailable reason=not-in-this-build` - "the feature was built out of this
-// image" (docs/console-protocol.md s.3.3), which is what this is. Deliberately
-// not a new reason token: the protocol says the Console never invents a synonym
-// for an availability answer it already has a word for.
+// A sound module with no catalog can never serve one. AUDIO_CAP_CATALOG is the
+// fitted module's own word about itself, read back at runtime, and it is not
+// something an operator can turn on for a module that does not have it.
+// handleAudioCatalogGet()/handleAudioCatalogRefreshPost()/
+// handleAudioPlayBankedPost() all answer 404 "catalog unsupported by active
+// backend" for it; the Console's equivalent is
+// `unavailable reason=not-in-this-build`.
+//
+// That token is now the weaker half of this answer and is deliberately left
+// alone here. It was exact while the driver was chosen at compile time: the
+// feature really had been built out of the image. Since #340 the image carries
+// every sound module and the Component Member picks one at reboot, so the
+// honest sentence is closer to "the module you have fitted cannot be asked for
+// a catalog" - a fitted-hardware fact rather than a build fact. Changing it
+// means either a new Availability Reason or re-pointing an existing one, which
+// is a protocol decision and not this file's to take; the protocol's own rule
+// is that the Console never invents a synonym for an answer it already has a
+// word for (docs/console-protocol.md s.3.3).
 static void consoleAnswerCatalogUnsupported(uint32_t requestId, const ConsoleRecordSink* sink) {
     if (sink->onRecordResult) {
         sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
@@ -641,6 +699,9 @@ static void consoleExecuteSoundRefreshCatalog(uint32_t requestId, const char* op
     }
     if (!consoleAudioCatalogSupported()) {
         consoleAnswerCatalogUnsupported(requestId, sink);
+        return;
+    }
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
         return;
     }
     if (!audioQueueRefreshCatalog(consoleCommandSourceFor(source))) {
@@ -714,6 +775,9 @@ static void consoleExecuteSoundPlayBanked(uint32_t requestId, const char* operat
     consoleParamParseNumeric(CONSOLE_PARAM_TYPE_UINT16, consoleArgsFind(args, "index"), &index);
     const char page = consoleArgsFind(args, "page")[0];
 
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
     if (!audioQueuePlayTrackBanked((uint16_t)index, (uint8_t)bank, page,
                                    consoleCommandSourceFor(source))) {
         if (sink->onRecordResult) {
@@ -739,6 +803,7 @@ static const ConsoleDirectActionExecutorEntry g_soundDirectActionExecutors[] = {
     {"sound.action.play-track-imperial-march", consoleExecuteSoundPlayTrackImperialMarch},
     {"sound.action.play-track-startup", consoleExecuteSoundPlayTrackStartup},
     {"sound.action.play-track-disco", consoleExecuteSoundPlayTrackDisco},
+    {"sound.action.play-track-happy", consoleExecuteSoundPlayTrackHappy},
     {"sound.action.quiet", consoleExecuteSoundQuiet},
     {"sound.action.random-on", consoleExecuteSoundRandomOn},
     {"sound.action.random-off", consoleExecuteSoundRandomOff},

@@ -21,7 +21,6 @@
 
 #ifdef ARDUINO
 #include <Arduino.h>
-#include <esp_heap_caps.h>
 #else
 // Native test build: esp_reset_reason()'s return type. <esp_system.h> does
 // not exist on the native toolchain (device builds get it transitively
@@ -51,8 +50,11 @@ esp_reset_reason_t esp_reset_reason();
 #include "config.h"
 #include "config_cache.h"
 #include "dome_link.h"
+#include "heap_reading.h"
 #include "reset_reason.h"
 #include "robot_state.h"
+#include "web_admission.h"
+#include "web_event_stream.h"
 #include "web_network_manager.h"
 #include "web_server.h"
 
@@ -82,45 +84,51 @@ const char* wifiStatusApSsid(const char* activeApSsid) {
     return WIFI_AP_SSID;
 }
 
-void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned long domeHbRx,
+void formatSerialJson(char* buf, size_t bufSize, const char* driveLabel, const char* soundLabel,
+                      const char* domeLabel, bool domeLinkActive, unsigned long domeHbRx,
                       unsigned long bodyHbTx) {
-    // The dome port's label/name/note literals are shared with
-    // captureDomeSerialLinkSnapshot's caller in console_module.cpp via the
-    // DOME_SERIAL_LINK_* constants (api_status.h) instead of being hand-typed
-    // twice - dome.status.serial-link's Console executor cites the same
-    // literals rather than a second copy that could drift from this one.
+    // The labels arrive from the caller, read off the running board - see the
+    // declaration in api_status.h for why they are not literals here. S0 keeps
+    // one: USB debug serial is not a Component, include/component_labels.inc
+    // declares no label for it on any board, so there is nothing to read. That
+    // gap is the remaining one in this response.
     snprintf(buf, bufSize,
              "{"
              "\"debug\":{\"label\":\"S0\",\"name\":\"ESP debug\",\"active\":true,\"note\":\"USB "
              "debug serial\"},"
-             "\"hoverboard\":{\"label\":\"S1\",\"name\":\"Hoverboard\",\"active\":true,"
-             "\"hardwareRequired\":true,\"note\":\"Firmware path active; full behavior needs Artoo "
-             "PCB + hoverboard chain\"},"
-             "\"sound\":{\"label\":\"S2\",\"name\":\"Sound\",\"active\":false,\"hardwareRequired\":"
-             "true,\"note\":\"Requires S2 wiring and a supported sound module\"},"
-             "\"dome\":{\"label\":\"" DOME_SERIAL_LINK_LABEL "\",\"name\":\"" DOME_SERIAL_LINK_NAME
+             "\"hoverboard\":{\"label\":\"%s\",\"name\":\"Hoverboard\",\"active\":true,"
+             "\"hardwareRequired\":true,\"note\":\"Firmware path active; full behaviour needs the "
+             "hoverboard chain wired\"},"
+             "\"sound\":{\"label\":\"%s\",\"name\":\"Sound\",\"active\":false,\"hardwareRequired\":"
+             "true,\"note\":\"Needs a supported sound module wired and switched on\"},"
+             "\"dome\":{\"label\":\"%s\",\"name\":\"" DOME_SERIAL_LINK_NAME
              "\",\"active\":%s,\"heartbeatRx\":%"
              "lu,\"heartbeatTx\":%lu,\"hardwareRequired\":"
              "true,\"note\":\"" DOME_SERIAL_LINK_NOTE "\"}"
              "}",
-             domeLinkActive ? "true" : "false", domeHbRx, bodyHbTx);
+             driveLabel != nullptr ? driveLabel : "", soundLabel != nullptr ? soundLabel : "",
+             domeLabel != nullptr ? domeLabel : "", domeLinkActive ? "true" : "false", domeHbRx,
+             bodyHbTx);
 }
 
 void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost,
                       bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
                       bool wifiClientConnected, bool fsReady, unsigned long heapFree,
-                      unsigned long heapMin, unsigned long heapLargestBlock, long wifiRssi,
+                      unsigned long heapMin, unsigned long heapLargestBlock,
+                      unsigned long heapLargest8bit, unsigned long allocBlocks,
+                      int httpSocketsOpen, unsigned sseClients, long wifiRssi,
                       unsigned long uptimeMs, const char* resetReason) {
     snprintf(buf, bufSize,
              "{\"estop\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webControlEnabled\":%s,"
              "\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,"
-             "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,"
-             "\"uptimeMs\":%lu,\"resetReason\":\"%s\"}",
+             "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,"
+             "\"allocBlocks\":%lu,\"httpSocketsOpen\":%d,\"sseClients\":%u,"
+             "\"wifiRssi\":%ld,\"uptimeMs\":%lu,\"resetReason\":\"%s\"}",
              estop ? "true" : "false", sbusSignalLost ? "true" : "false",
              sbusHwFailsafe ? "true" : "false", webControlEnabled ? "true" : "false",
              wifiConnected ? "true" : "false", wifiClientConnected ? "true" : "false",
-             fsReady ? "true" : "false", heapFree, heapMin, heapLargestBlock, wifiRssi, uptimeMs,
-             resetReason);
+             fsReady ? "true" : "false", heapFree, heapMin, heapLargestBlock, heapLargest8bit,
+             allocBlocks, httpSocketsOpen, sseClients, wifiRssi, uptimeMs, resetReason);
 }
 
 // =============================================================================
@@ -151,24 +159,35 @@ void captureHealthSnapshot(HealthSnapshot* out) {
 
     // #225: uptime and reset reason, the same on both build types - millis()
     // and esp_reset_reason() are each a real device call or a settable
-    // native stub (src/native_test_stubs.cpp), not an ARDUINO-only API like
-    // the heap block below. resetReasonName() returns a static string
-    // literal, so this is a pointer copy, not an allocation.
+    // native stub (src/native_test_stubs.cpp), as the heap reading below is
+    // too. resetReasonName() returns a static string literal, so this is a
+    // pointer copy, not an allocation.
     out->uptimeMs = millis();
     out->resetReason = resetReasonName(esp_reset_reason());
 
-#ifdef ARDUINO
-    out->heapFree = ESP.getFreeHeap();
-    out->heapMin = ESP.getMinFreeHeap();
-    out->heapLargestBlock = (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-#else
-    // Native tests: no standard-C equivalent of the ESP heap APIs. Matches
-    // the stub values consoleExecuteSystemStatusHealth used before this
-    // snapshot existed, so the native tests built against it stay stable.
-    out->heapFree = 262144;
-    out->heapMin = 262144;
-    out->heapLargestBlock = 262144;
-#endif
+    // The Internal Data Heap, the same reading /api/status publishes under
+    // these three keys (include/heap_reading.h). The native build's stand-in
+    // is settable through include/heap_reading_test_hooks.h.
+    const HeapInternalDataReading dataHeap = heapReadInternalData();
+    out->heapFree = dataHeap.free;
+    out->heapMin = dataHeap.minEver;
+    out->heapLargestBlock = dataHeap.largest;
+    // The Buffer Reading beside it, so the serial record carries the figure
+    // admission sheds requests by when HTTP cannot answer.
+    out->heapLargest8bit = heapReadBufferLargest();
+    // The allocated block count, from the same mask. heap_caps_get_info()
+    // walks the heap like the largest-block reading above; both doors that
+    // call this run on core 0, and nothing on core 1 does.
+    HeapInternalDataInfo dataHeapInfo = {};
+    heapReadInternalDataInfo(&dataHeapInfo);
+    out->allocBlocks = dataHeapInfo.allocatedBlocks;
+
+    // The server's sockets and event streams, read here, outside the
+    // robotState section above: webEventStreamClientCount() takes its own
+    // s_streamMux and must not nest inside another critical section.
+    // g_webSocketsOpen is the admission census's published figure.
+    out->httpSocketsOpen = g_webSocketsOpen;
+    out->sseClients = (unsigned)webEventStreamClientCount();
 }
 
 void captureWifiStatusSnapshot(WifiStatusSnapshot* out) {
@@ -203,6 +222,38 @@ void captureDomeStatusSnapshot(DomeStatusSnapshot* out) {
     out->domeTargetSpeed = robotState.domeTargetSpeed;
     taskEXIT_CRITICAL(&robotStateMux);
     out->domeEnabled = cfg.system.enable_dome_esc;
+    out->bearing = domeBearingRead();
+}
+
+void captureServoOutputCommanded(ServoOutputDriver driver, uint8_t channel,
+                                 ServoOutputCommandedSnapshot* out) {
+    if (out == nullptr) {
+        return;
+    }
+    *out = ServoOutputCommandedSnapshot{};
+
+    // Asked by address, like everything else on the servo path (#444): an
+    // address ServoTask has no slot for answers a zero-filled position, which
+    // is an Output nothing has driven - no pulse, limp since boot.
+    const ServoCommandedPosition commanded = servoCommandedOf({driver, channel});
+
+    // The nudge count travels whatever the pulse state: a discovery run reads
+    // it before it asks and compares afterwards, and a refused nudge on an
+    // output with no pulse still counts as ended (#363).
+    out->nudgesDone = commanded.nudgesDone;
+
+    // No pulse, no position: the widths of an output nobody has driven are not
+    // a place it stands, so they are not handed on. Why there is none travels
+    // instead (#364): a surface says "pulses off" and "the estop let go"
+    // differently.
+    if (!commanded.pulsing) {
+        out->limp = commanded.limp;
+        return;
+    }
+    out->held = commanded.held;
+    out->pulsing = true;
+    out->nowUs = commanded.nowUs;
+    out->targetUs = commanded.targetUs;
 }
 
 void captureDomeSerialLinkSnapshot(DomeSerialLinkSnapshot* out) {

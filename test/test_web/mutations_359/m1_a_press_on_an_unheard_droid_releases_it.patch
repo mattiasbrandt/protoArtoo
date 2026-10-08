@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index d80968b0..f7707b46 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -1108,7 +1108,7 @@
+   //   half just set.
+   const pressEstop = () => {
+     if (clearPending) return undefined;
+-    if (stopsInFlight === 0 && LIVE.current().estopLatched) return requestClear();
++    if (stopsInFlight === 0 && LIVE.current().status?.estop === true) return requestClear();
+     return requestStop();
+   };
+ 

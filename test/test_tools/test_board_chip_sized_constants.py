@@ -12,6 +12,9 @@ Three things are asserted, and the third is the one that matters:
 
 1. Each board's values, written here independently of the headers so a
    copy-paste that converged the two boards cannot also update the expectation.
+   The task stacks are the exception: their one home is
+   tools/task_stack_recipes.json (ADR 0040, amended 2026-09-27), so the probe
+   compares what each board compiles against that, never against a copy here.
 2. That the ESP32-P4 arm satisfies the ceilings its derivations claim.
 3. That artoo-esp32 and the ESP32-P4 do NOT converge, and that artoo-esp32's
    values are exactly the pre-#256 numbers. Both boards passing their own
@@ -21,6 +24,7 @@ Three things are asserted, and the third is the one that matters:
 
 import json
 import os
+import sys
 import shutil
 import subprocess
 import tempfile
@@ -31,19 +35,25 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INCLUDE_DIR = REPO_ROOT / "include"
 
+sys.path.insert(0, str(REPO_ROOT / "tools"))
+from check_task_stack_chains import rule_stack  # noqa: E402
+
 # Everything the probed headers pull in, staged into the probe's include path.
-# config.h drags the two manifest .inc files and the FireBeetle pin inventory.
+# config.h drags the three manifest .inc files and the FireBeetle pin inventory.
 PROBE_HEADER_SET = (
     "config.h",
     "board_capabilities.inc",
+    "board_lanes.inc",
     "build_flags.inc",
     "firebeetle_required_pins.inc",
     "log_buffer.h",
     "protocol_check.h",
+    "seq_tempo.h",
     "seq_store_index.h",
     "seq_store_util.h",
     "sequence_engine.h",
     "sequence_run_evidence.h",
+    "task_stack_figures.h",
 )
 
 # What each board must produce. Order matches the printf in _probe_source().
@@ -51,6 +61,14 @@ EXPECTED_BY_BOARD = {
     # Pre-#256 values, unchanged. Every one was sized against this board's heap,
     # and every one must stay exactly where it is.
     "PA_BOARD_ARTOO_ESP32": {
+        # The one entry here that is NOT a pre-#256 value: the operator set the
+        # artoo-esp32's Learned Sequence cap to five on 2026-09-25 (ADR 0065
+        # amendment, #426), so the filesystem image and the saved sequences fit
+        # one 160-block partition. The first refused count is what the real
+        # seqStoreCapacityCheck() answers when compiled for this board.
+        "seq_store_cap": 5,
+        "seq_first_refused_count": 5,
+        "seq_index_capacity": 10,
         "seq_file_max_bytes": 12 * 1024,
         "seq_fs_free_floor": 24 * 1024,
         "evid_cmd_len": 48,
@@ -60,22 +78,15 @@ EXPECTED_BY_BOARD = {
         "log_line_max": 128,
         "log_ladder": (16, 20, 24, 48),
         "log_ring_max_lines": 48,
-        # Pre-#256 literals, unchanged. WebEvents is 6144 here even though the
-        # #248 rule on its 5904 B chain would raise it -- the tight-heap decline
-        # recorded beside the constant in include/config.h.
-        "rc_input_stack": 7168,
-        "audio_stack": 6144,
-        "web_events_stack": 6144,
-        # Raised from 5120 by #226 - the only stack here whose under-size was a
-        # reproduced device fault rather than a walk - then re-derived by #269
-        # once the config-write path stopped carrying three ConfigSnapshot
-        # copies, and again at #271 from a walk on the merged tree:
-        # 7360 * 1.25 = 9200 -> 9216.
-        "console_stack": 9216,
     },
     # Re-derived from the sequence model's own ceilings. See the derivations in
     # include/seq_store_util.h and include/sequence_run_evidence.h.
     "PA_BOARD_FIREBEETLE2": {
+        # Ten, unchanged (ADR 0065 amendment): this board's filesystem is
+        # 9.88 MB and the web image never competes with the sequences.
+        "seq_store_cap": 10,
+        "seq_first_refused_count": 10,
+        "seq_index_capacity": 10,
         "seq_file_max_bytes": 24 * 1024,
         "seq_fs_free_floor": 48 * 1024,
         "evid_cmd_len": 64,
@@ -87,66 +98,42 @@ EXPECTED_BY_BOARD = {
         "log_line_max": 128,
         "log_ladder": (32, 64, 96, 112),
         "log_ring_max_lines": 112,
-        # Re-derived by the #248 rule from tools/stack_usage_report.py chains
-        # against the linked firebeetle2 image (product and profiler match).
-        # RCInputTask 5376 * 1.25 = 6720 -> 7168; AudioTask 4848 * 1.25 = 6060
-        # -> 6144; WebEvents 5808 * 1.25 = 7260 -> 7680. Only WebEvents moves:
-        # 5808 already exceeds the inherited 6144.
-        "rc_input_stack": 7168,
-        "audio_stack": 6144,
-        "web_events_stack": 7680,
-        # ConsoleTask by the same rule (#226, re-derived by #269 and again at
-        # #271, after #226 wave 10 put a deeper branch on the chain):
-        # 7984 * 1.25 = 9980 -> 10240. The panic the original raise fixed was
-        # captured on this board.
-        "console_stack": 10240,
     },
 }
 
-# Worst-case static chains, read from the recipe table rather than restated.
-#
-# The EXPECTED_BY_BOARD values above are deliberately written out by hand, so
-# that a copy-paste converging the two boards cannot also update the
-# expectation. The chains are the opposite case: since #271 they have a single
-# source (tools/task_stack_recipes.json, checked against include/config.h by
-# test_task_stack_recipes.py and re-walked from a linked image by
-# tools/check_task_stack_chains.py), and a second hand-written copy here would
-# be exactly the drift that ticket exists to remove -- one of these four was
-# already 176 B stale against the merged tree when it was written out.
-#
-# The ConsoleTask chain is the stitched figure on both chips: onCliCommand's
-# total plus consoleTask's and embeddedCliProcess's own frames, because
-# embedded-cli reaches the command callback through cli->onCommand and the
-# walker does not follow indirect calls. AudioTask's artoo-esp32 chain is the
-# profiler image, the deeper of the two. Both are recorded per arm in the
-# recipe table.
+# Task stacks and their chains, read from the recipe table rather than
+# restated. The EXPECTED_BY_BOARD values above are deliberately written out by
+# hand, so that a copy-paste converging the two boards cannot also update the
+# expectation. The stack figures are the opposite case: they have one home,
+# tools/task_stack_recipes.json, which include/task_stack_figures.h is
+# generated from, and every hand-written copy of them went stale at the next
+# re-derivation (ADR 0040, amended 2026-09-27).
 _RECIPES = json.loads(
     (REPO_ROOT / "tools" / "task_stack_recipes.json").read_text(encoding="utf-8")
 )
-_CHAIN_BY_KEY = {
+_TASK_BY_KEY = {
     "rc_input_stack": "RCInputTask",
     "audio_stack": "AudioTask",
     "web_events_stack": "WebEvents",
     "console_stack": "Console",
 }
+STACK_KEYS = tuple(_TASK_BY_KEY)
 
 
-def _chains_for(chip):
+def _figures_for(chip, field):
     by_task = {entry["task"]: entry for entry in _RECIPES["tasks"]}
     return {
-        key: by_task[task]["chips"][chip]["chain_bytes"]
-        for key, task in _CHAIN_BY_KEY.items()
+        key: by_task[task]["chips"][chip][field]
+        for key, task in _TASK_BY_KEY.items()
     }
 
 
-P4_STACK_CHAINS = _chains_for("esp32p4")
-ESP32_STACK_CHAINS = _chains_for("esp32")
-
-
-def stack_size_for_chain(chain_bytes):
-    """#248 rule: chain + 25%, rounded up to the next 512 bytes."""
-    need = (chain_bytes * 5 + 3) // 4
-    return ((need + 511) // 512) * 512
+P4_STACK_CHAINS = _figures_for("esp32p4", "chain_bytes")
+ESP32_STACK_CHAINS = _figures_for("esp32", "chain_bytes")
+RECORDED_STACKS = {
+    "PA_BOARD_ARTOO_ESP32": _figures_for("esp32", "stack_bytes"),
+    "PA_BOARD_FIREBEETLE2": _figures_for("esp32p4", "stack_bytes"),
+}
 
 # Boot-path log sites per level, measured from the call closure of setup() plus
 # the web bring-up entered from the WiFi event callback, with the task entry
@@ -194,6 +181,17 @@ class BoardChipSizedConstants(unittest.TestCase):
                 '#include "config.h"',
                 "#include <cstdio>",
                 "int main() {",
+                # The real refusal, not the constant: the first index count at
+                # which seqStoreCapacityCheck() refuses a new name, with room
+                # to spare on every other axis.
+                "    unsigned firstRefused = 0;",
+                "    while (firstRefused <= SEQ_INDEX_CAPACITY &&",
+                "           seqStoreCapacityCheck(true, (uint8_t)firstRefused,",
+                "                                 100, 1u << 20).ok) {",
+                "        ++firstRefused;",
+                "    }",
+                '    std::printf("%u %u %u ", (unsigned)SEQ_STORE_CAP,',
+                "        firstRefused, (unsigned)SEQ_INDEX_CAPACITY);",
                 '    std::printf("%zu %zu %d %d %d %zu %zu %zu %zu %zu %zu %zu '
                 '%u %u %u %u\\n",',
                 "        (size_t)SEQ_FILE_MAX_BYTES, (size_t)SEQ_FS_FREE_FLOOR,",
@@ -223,10 +221,16 @@ class BoardChipSizedConstants(unittest.TestCase):
                 shutil.copyfile(INCLUDE_DIR / name, staged / name)
             source_path = Path(tmp) / "chip_sized_constants_probe.cpp"
             source_path.write_text(self._probe_source(board_macro), encoding="utf-8")
+            # The store's capacity decision is compiled in for real, once per
+            # board, so the refusal is the production function's answer.
+            store_util = Path(tmp) / "seq_store_util.cpp"
+            shutil.copyfile(REPO_ROOT / "src" / "seq_store_util.cpp", store_util)
             output_path = Path(tmp) / "chip_sized_constants_probe"
             compile_result = subprocess.run(
                 [self.compiler, "-std=c++17", "-I", str(staged),
-                 str(source_path), "-o", str(output_path)],
+                 f"-DPA_BOARD={board_macro}", "-DPA_LOG_LEVEL=2",
+                 "-DPA_HEAP_PROFILE=0",
+                 str(source_path), str(store_util), "-o", str(output_path)],
                 capture_output=True, text=True, check=False,
             )
             self.assertEqual(compile_result.returncode, 0, compile_result.stderr)
@@ -236,8 +240,12 @@ class BoardChipSizedConstants(unittest.TestCase):
             )
             self.assertEqual(run_result.returncode, 0, run_result.stderr)
         fields = [int(v) for v in run_result.stdout.split()]
-        self.assertEqual(len(fields), 16, run_result.stdout)
+        self.assertEqual(len(fields), 19, run_result.stdout)
+        store, fields = fields[:3], fields[3:]
         values = {
+            "seq_store_cap": store[0],
+            "seq_first_refused_count": store[1],
+            "seq_index_capacity": store[2],
             "seq_file_max_bytes": fields[0],
             "seq_fs_free_floor": fields[1],
             "evid_cmd_len": fields[2],
@@ -260,17 +268,28 @@ class BoardChipSizedConstants(unittest.TestCase):
 
     # -- 1. each board's declared values -------------------------------------
 
+    def _declared(self, board_macro):
+        """The probed values this file writes out by hand: all but the stacks."""
+        return {k: v for k, v in self._values(board_macro).items() if k not in STACK_KEYS}
+
     def test_artoo_esp32_values_are_unchanged(self):
         self.assertEqual(
-            self._values("PA_BOARD_ARTOO_ESP32"),
+            self._declared("PA_BOARD_ARTOO_ESP32"),
             EXPECTED_BY_BOARD["PA_BOARD_ARTOO_ESP32"],
         )
 
     def test_firebeetle2_values_are_the_re_derived_ones(self):
         self.assertEqual(
-            self._values("PA_BOARD_FIREBEETLE2"),
+            self._declared("PA_BOARD_FIREBEETLE2"),
             EXPECTED_BY_BOARD["PA_BOARD_FIREBEETLE2"],
         )
+
+    def test_each_board_compiles_its_recorded_task_stacks(self):
+        """The stacks the probe reads are the recipe's, board by board."""
+        for board, stacks in RECORDED_STACKS.items():
+            with self.subTest(board=board):
+                probed = self._values(board)
+                self.assertEqual({k: probed[k] for k in STACK_KEYS}, stacks)
 
     # -- 2. the ESP32-P4 arm satisfies the ceilings it claims -----------------
 
@@ -398,29 +417,29 @@ class BoardChipSizedConstants(unittest.TestCase):
 
         Under-sizing is the dangerous direction. A constant below chain+25%
         rounded up to 512 is an overrun waiting for a path the HWM has not
-        run yet. RCInputTask and AudioTask land on the inherited literals;
-        WebEvents does not -- 5808 already exceeds 6144.
+        run yet.
         """
         v = self._values("PA_BOARD_FIREBEETLE2")
         for key, chain in P4_STACK_CHAINS.items():
             with self.subTest(key=key):
-                self.assertGreaterEqual(v[key], stack_size_for_chain(chain))
+                self.assertGreaterEqual(v[key], rule_stack(chain))
                 self.assertEqual(v[key] % 512, 0)
 
-    def test_p4_webevents_is_the_one_that_moves(self):
-        """The inherited 6144 is 336 B short of the ESP32-P4 chain.
+    def test_p4_webevents_stays_above_the_inherited_6144(self):
+        """WebEvents was the overrun original #256 moved, and it still is.
 
-        RCInputTask and AudioTask re-derive to the same number the shipping
-        artoo image has always had. WebEvents is the overrun this ticket
-        exists to fix, so a later edit that "simplified" it back to 6144
-        on both chips is the regression.
+        RCInputTask and AudioTask coincidentally re-derived to artoo's
+        literals in 2026-09-01; the 2026-09-13 reopen walk raised both on
+        P4, so equality across chips is no longer a property to pin. A later
+        edit that "simplified" WebEvents back to 6144 on both chips is still
+        the regression that ticket exists to catch.
         """
         artoo = self._values("PA_BOARD_ARTOO_ESP32")
         p4 = self._values("PA_BOARD_FIREBEETLE2")
-        self.assertEqual(artoo["rc_input_stack"], p4["rc_input_stack"])
-        self.assertEqual(artoo["audio_stack"], p4["audio_stack"])
         self.assertGreater(p4["web_events_stack"], artoo["web_events_stack"])
         self.assertGreater(p4["web_events_stack"], 6144)
+        self.assertGreater(p4["rc_input_stack"], artoo["rc_input_stack"])
+        self.assertGreater(p4["audio_stack"], artoo["audio_stack"])
 
     def test_artoo_task_stacks_are_not_below_the_measured_chains(self):
         """ESP32 stacks may stay above the rule; they must not drop below the chain.
@@ -439,7 +458,7 @@ class BoardChipSizedConstants(unittest.TestCase):
         self.assertNotEqual(artoo, firebeetle)
         # console_stack is deliberately absent: see
         # test_console_stack_is_derived_per_chip_even_where_they_coincide.
-        for key in ("seq_file_max_bytes", "seq_fs_free_floor",
+        for key in ("seq_store_cap", "seq_file_max_bytes", "seq_fs_free_floor",
                     "evid_cmd_len", "evid_tx_cap", "evid_cleanup_cap",
                     "evid_record_bytes", "log_ring_max_lines",
                     "web_events_stack"):
@@ -465,12 +484,12 @@ class BoardChipSizedConstants(unittest.TestCase):
         artoo = self._values("PA_BOARD_ARTOO_ESP32")
         firebeetle = self._values("PA_BOARD_FIREBEETLE2")
         self.assertEqual(
-            stack_size_for_chain(ESP32_STACK_CHAINS["console_stack"]),
+            rule_stack(ESP32_STACK_CHAINS["console_stack"]),
             artoo["console_stack"],
             "the artoo-esp32 Console stack does not follow the #248 rule for its chain",
         )
         self.assertEqual(
-            stack_size_for_chain(P4_STACK_CHAINS["console_stack"]),
+            rule_stack(P4_STACK_CHAINS["console_stack"]),
             firebeetle["console_stack"],
             "the ESP32-P4 Console stack does not follow the #248 rule for its chain",
         )
@@ -491,11 +510,13 @@ class BoardChipSizedConstants(unittest.TestCase):
         for header, needle in (
             ("seq_store_util.h",
              "the Learned Sequence per-file cap has no value for this chip target"),
+            ("seq_store_util.h",
+             "the Learned Sequence store cap has no value for this board"),
             ("sequence_run_evidence.h",
              "sequence run-evidence ring dimensions have no value for this chip target"),
             ("log_buffer.h",
              "the log ring depth ladder has no value for this chip target"),
-            ("config.h",
+            ("task_stack_figures.h",
              "task stack sizes have no value for this chip target"),
         ):
             with self.subTest(header=header):

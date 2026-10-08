@@ -1,0 +1,12 @@
+diff --git i/data/find_by_moving.js w/data/find_by_moving.js
+index 21bb45ae..81a52f5e 100644
+--- i/data/find_by_moving.js
++++ w/data/find_by_moving.js
+@@ -208,7 +208,6 @@
+         say(`One move at a time: wait for ${partLabel(pending())} to land.`, "warning");
+         return;
+       }
+-      if (!moveActsLive) return;
+       const candidates = freeOutputs();
+       if (!candidates.length) {
+         say("Nothing to nudge. There is no free servo output: every one has a part or carries a light.", "warning");

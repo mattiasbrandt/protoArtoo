@@ -16,7 +16,7 @@
 
 // src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
 // compile-time WiFi defaults. It is never required to compile or boot - public
-// release binaries (protoArtoo_chirp, protoArtoo_mp3trigger) ship without it and
+// release binaries ship without it and
 // boot into WiFi Provisioning via wifiDecideBootPosture() instead.
 #if __has_include("secrets.h")
 #include "secrets.h"
@@ -45,6 +45,21 @@ void wifiNetworkManagerResolveStaCredentialsCommon(const WifiConfig& settings,
 void wifiNetworkManagerApplyBootPostureCommon(WifiBootPosture posture,
                                                 const WifiConfig& settings,
                                                 const char* logTag) {
+#if PA_CAP_NATIVE_WIFI
+    // Hand the WiFi driver the buffer counts platformio.ini's
+    // [artoo_envelope] declares (#436). The name misleads: true does not
+    // force static buffers, it tells wifiLowLevelInit() to pass
+    // WIFI_INIT_CONFIG_DEFAULT() through as the sdkconfig resolved it. Left
+    // false, WiFiGeneric.cpp:273-280 (framework-arduinoespressif32
+    // libraries/WiFi) overwrites them with 32 dynamic TX, 4 static RX,
+    // 32 dynamic RX and 4 cache TX, and the envelope's TX cap never reaches
+    // the driver. It must run before the first WiFi.mode() below, which is
+    // what calls wifiLowLevelInit(); every boot posture -- provisioning,
+    // network recovery, client mode, standalone AP -- starts WiFi from this
+    // switch. Native WiFi only: the envelope is artoo's, so the hosted
+    // backend (firebeetle2) keeps the core's own counts, as before.
+    WiFi.useStaticBuffers(true);
+#endif
     switch (posture) {
         case WifiBootPosture::PROVISIONING:
         case WifiBootPosture::NETWORK_RECOVERY:

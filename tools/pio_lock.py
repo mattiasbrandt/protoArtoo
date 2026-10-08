@@ -5,13 +5,13 @@ AGENTS.md: only one PlatformIO build may run on this machine at a time. Two
 runs in one worktree corrupt SCons state and return a plausible wrong answer,
 and a single core dir is not safe against concurrent package installs either.
 That rule used to be enforced only by every agent remembering to type
-`flock /tmp/protoartoo-pio.lock` in front of every command. Every `pio`
+`flock /tmp/protor2-pio.lock` in front of every command. Every `pio`
 invocation in the Makefile and in tools/slice_verify.py goes through this
 module instead, so the rule holds without anyone remembering it.
 
 Two entry points, one mechanism:
 
-  * CLI  — `python3 tools/pio_lock.py pio run -e protoArtoo` takes the lock and
+  * CLI  — `python3 tools/pio_lock.py pio run -e protoR2` takes the lock and
            then *execs* the command, so the exec'd process holds the lock for
            its whole life and no wrapper lingers between make and pio.
   * API  — `with pio_lock.build_lock(): ...`, used by tools/slice_verify.py to
@@ -19,21 +19,21 @@ Two entry points, one mechanism:
            mutation stage do not block other agents.
 
 fcntl.flock() and flock(1) are both flock(2), so a hand-typed
-`flock /tmp/protoartoo-pio.lock ...` still serialises against both.
+`flock /tmp/protor2-pio.lock ...` still serialises against both.
 
 Nesting is the trap
 -------------------
 flock(2) locks belong to an *open file description*: a second open() of the
 same path is a different description, so an inner acquire waits on the outer
 one, and flock(2) does not detect the deadlock (flock(2) NOTES). The old
-convention `flock /tmp/protoartoo-pio.lock make build` is exactly that shape,
+convention `flock /tmp/protor2-pio.lock make build` is exactly that shape,
 so this module has to recognise a nest instead of queueing behind itself. Two
 signals, checked in this order:
 
-  1. PROTOARTOO_PIO_LOCK_HELD=1 — the caller states it already holds the lock.
+  1. PROTOR2_PIO_LOCK_HELD=1 — the caller states it already holds the lock.
      It is set for every child process while we hold it, and it is the
      documented escape hatch for a contiguous multi-command window:
-     `PROTOARTOO_PIO_LOCK_HELD=1 flock /tmp/protoartoo-pio.lock <commands>`.
+     `PROTOR2_PIO_LOCK_HELD=1 flock /tmp/protor2-pio.lock <commands>`.
   2. An inherited open fd on the lock file. flock(1) does not close its fd
      before exec'ing the command — that is what its -o flag is for — so a
      process started under `flock <lockfile> <command>` inherits an fd
@@ -80,10 +80,10 @@ a lock-wait timeout, 5 for a penv on the wrong PlatformIO Core, 127 when the
 command cannot be executed.
 
 Environment:
-  PROTOARTOO_PIO_LOCK       lock file path (default /tmp/protoartoo-pio.lock)
-  PROTOARTOO_PIO_LOCK_HELD  "1" when the caller already holds the lock
-  PROTOARTOO_PIO_LOCK_WAIT  seconds to wait for the lock (default 3600)
-  PROTOARTOO_LOCK_OWNER     optional free-text context for the record
+  PROTOR2_PIO_LOCK       lock file path (default /tmp/protor2-pio.lock)
+  PROTOR2_PIO_LOCK_HELD  "1" when the caller already holds the lock
+  PROTOR2_PIO_LOCK_WAIT  seconds to wait for the lock (default 3600)
+  PROTOR2_LOCK_OWNER     optional free-text context for the record
 """
 
 from __future__ import annotations
@@ -100,11 +100,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-DEFAULT_LOCK_PATH = "/tmp/protoartoo-pio.lock"
-LOCK_PATH_ENV = "PROTOARTOO_PIO_LOCK"
-HELD_ENV = "PROTOARTOO_PIO_LOCK_HELD"
-WAIT_ENV = "PROTOARTOO_PIO_LOCK_WAIT"
-OWNER_ENV = "PROTOARTOO_LOCK_OWNER"
+DEFAULT_LOCK_PATH = "/tmp/protor2-pio.lock"
+LOCK_PATH_ENV = "PROTOR2_PIO_LOCK"
+HELD_ENV = "PROTOR2_PIO_LOCK_HELD"
+WAIT_ENV = "PROTOR2_PIO_LOCK_WAIT"
+OWNER_ENV = "PROTOR2_LOCK_OWNER"
 GIT_TIMEOUT = 10
 # Above the longest legitimate wait: a gate run holds the lock across a full
 # native suite and a full firmware build, and several agents can be queued
@@ -136,6 +136,23 @@ def note(message: str) -> None:
 
 def lock_path() -> Path:
     return Path(os.environ.get(LOCK_PATH_ENV) or DEFAULT_LOCK_PATH)
+
+
+def held_env_for(path: Path) -> str:
+    """The environment variable that says "an ancestor holds this lock".
+
+    The pio lock keeps its documented name. Any other lock file taken through
+    build_lock(lock_path=...) - the web-test lock in tools/slice_verify.py - gets
+    a name of its own, so holding one lock never reads as holding the other.
+    """
+    if path == lock_path():
+        return HELD_ENV
+    stem = "".join(ch if ch.isalnum() else "_" for ch in path.name.upper())
+    return f"PROTOR2_LOCK_HELD_{stem}"
+
+
+# build_lock()'s `lock_path` parameter shadows lock_path() inside it.
+_pio_lock_path = lock_path
 
 
 def wait_seconds() -> float:
@@ -335,7 +352,16 @@ def refuse_bad_penv(core: Path, problem: str) -> None:
     note("does not show this. Left alone, every env fails at the link step with")
     note("\"No module named 'SCons.Tool.FortranCommon'\". The fix:")
     pin = ".".join(map(str, PINNED_PIO_VERSION))
-    note(f"  {core / 'penv' / 'bin' / 'python'} -m pip install platformio=={pin}")
+    # Through the penv's own uv, on the `pioarduino` dist. pioarduino creates
+    # the penv with `uv venv`, which has no pip, and the P4 platform decides
+    # whether to upgrade by reading that dist's version, so `pip install
+    # platformio==` either fails or leaves the 6.2.0 dist listed. Both penvs
+    # on the bench carry uv (2026-10-06). --reinstall-package rewrites the
+    # files even when the dist already reads 6.1.19 but platformio/ moved
+    # under it, which a plain install leaves alone (#473).
+    penv = core / "penv" / "bin"
+    note(f"  {penv / 'uv'} pip install --python {penv / 'python'} "
+         f"--reinstall-package pioarduino pioarduino=={pin}")
     raise SystemExit(EXIT_PENV)
 
 
@@ -513,43 +539,54 @@ def acquire(
 
 
 @contextlib.contextmanager
-def build_lock(command: list[str] | None = None, env: dict[str, str] | None = None):
+def build_lock(
+    command: list[str] | None = None,
+    lock_path: Path | None = None,
+    env: dict[str, str] | None = None,
+):
     """Hold the machine-wide PlatformIO build lock for the duration of the block.
 
     `command` is what the caller is about to run; it is recorded in the lock
     file so a blocked agent can see what it is waiting on. A no-op when the
-    caller already holds the lock (PROTOARTOO_PIO_LOCK_HELD), and a loud
+    caller already holds the lock (PROTOR2_PIO_LOCK_HELD), and a loud
     failure when it detects that an outer `flock(1)` holds it without having
     said so.
 
     `env` is the environment the command will run with, when it is not ours:
     the penv check reads the core dir from it.
+
+    `lock_path` takes a different lock file with the same mechanism; the
+    default is the pio lock. It is a separate lock, not a nested one: its held
+    marker is held_env_for(lock_path), never PROTOR2_PIO_LOCK_HELD.
     """
-    path = lock_path()
-    # Before the lock: a broken penv fails in a second either way, and
-    # refusing here does not make the agents queued behind us wait for it.
-    check_penv(command, env)
-    if os.environ.get(HELD_ENV) == "1":
+    path = lock_path if lock_path is not None else _pio_lock_path()
+    is_pio_lock = path == _pio_lock_path()
+    if is_pio_lock:
+        # Before the lock: a broken penv fails in a second either way, and
+        # refusing here does not make the agents queued behind us wait for it.
+        check_penv(command, env)
+    held_env = held_env_for(path)
+    if os.environ.get(held_env) == "1":
         # The outer holder is usually a hand-typed `flock(1)`, which cannot
         # write a record of its own; ours names the worktree and target that
         # are actually building inside its window.
-        write_record(path, command, held_pool_fields(path, command))
+        write_record(path, command, held_pool_fields(path, command) if is_pio_lock else None)
         yield
         return
     if inherited_lock_fd(path) is not None:
         refuse_nested(path)
-    fd = acquire(path, wait_seconds(), command, pool=True)
-    previous = os.environ.get(HELD_ENV)
+    fd = acquire(path, wait_seconds(), command, pool=is_pio_lock)
+    previous = os.environ.get(held_env)
     # Everything spawned under us is inside the lock; saying so keeps a nested
     # `make` or gate run from queueing behind the lock we are already holding.
-    os.environ[HELD_ENV] = "1"
+    os.environ[held_env] = "1"
     try:
         yield
     finally:
         if previous is None:
-            os.environ.pop(HELD_ENV, None)
+            os.environ.pop(held_env, None)
         else:
-            os.environ[HELD_ENV] = previous
+            os.environ[held_env] = previous
         os.close(fd)  # closing the last descriptor releases the flock(2) lock
 
 

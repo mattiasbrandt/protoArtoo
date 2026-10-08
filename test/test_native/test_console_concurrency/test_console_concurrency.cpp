@@ -34,9 +34,10 @@
  *    below read the outer's answer after the interruption precisely so that
  *    would show.
  *  - The config-write critical section (`s_consoleConfigApplyResult` under
- *    the config write lock, ConfigWriteLock in include/api_config.h - the one
- *    every config writer takes since #269, this module's two adapters and the
- *    REST routes alike). The lock tests below drive it from BOTH Console
+ *    the config write lock, include/config_write_lock.h - the one every config
+ *    writer runs under since #269, and since #418 only inside the Write Window
+ *    this module's two adapters and the REST routes share). The lock tests
+ *    below drive it from BOTH Console
  *    sources, which the existing coverage in test_console_module.cpp does only
  *    from the serial one; test_config_write_lock.cpp drives the REST side.
  */
@@ -56,6 +57,8 @@
 #include "console_catalog.h"
 #include "console_module.h"
 #include "console_record.h"
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
+#include "config_write_window_test_hooks.h"  // configWriteWindowMisses()
 
 // =============================================================================
 // Capture: one per concurrent request, so the two answers can be compared
@@ -192,17 +195,23 @@ static void runInto(Capture* cap, ConsoleCommandSource source, const char* comma
 
 void setUp(void) {
     ConfigSnapshot snap = {};
-    configCacheApply(snap);
+    configCacheReplace(snap);
     consoleModuleInit();  // idempotent
     paStubMutexReset();
     captureReset(&g_outer);
     captureReset(&g_inner);
     memset(&g_plan, 0, sizeof(g_plan));
     g_active = nullptr;
+    // Armed after this setUp()'s own seeding: from here every config write
+    // must run inside a Write Window, as it must on the droid after boot (#418).
+    configWriteWindowArm(true);
 }
 
 void tearDown(void) {
+    const uint32_t misses = configWriteWindowMisses();
+    configWriteWindowArm(false);
     paStubMutexReset();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, misses, "a config write ran outside its Write Window");
 }
 
 // Every record a capture holds must carry that capture's own request ID.
@@ -352,7 +361,7 @@ void test_a_browser_write_is_refused_while_the_other_adapter_holds_the_window(vo
     struct PaStubMutex* m = paStubMutexStorage();
     m->held = 1;  // the serial adapter, mid-write
 
-    runInto(&g_outer, CONSOLE_SOURCE_WEB, "system.config.enable_arm1 value=true");
+    runInto(&g_outer, CONSOLE_SOURCE_WEB, "system.config.enable_drive value=true");
 
     TEST_ASSERT_EQUAL_STRING_MESSAGE(
         "result status=err outcome=unavailable reason=temporarily-unavailable",
@@ -360,7 +369,7 @@ void test_a_browser_write_is_refused_while_the_other_adapter_holds_the_window(vo
 
     ConfigSnapshot after = {};
     configCacheRead(&after);
-    TEST_ASSERT_FALSE_MESSAGE(after.system.enable_arm1,
+    TEST_ASSERT_FALSE_MESSAGE(after.system.enable_drive,
                               "a refused browser write still reached the config cache");
 }
 
@@ -373,7 +382,7 @@ void test_a_browser_wifi_write_is_refused_while_the_other_adapter_holds_the_wind
     struct PaStubMutex* m = paStubMutexStorage();
     m->held = 1;
 
-    runInto(&g_outer, CONSOLE_SOURCE_WEB, "wifi.config.settings ap-ssid=protoArtoo-test");
+    runInto(&g_outer, CONSOLE_SOURCE_WEB, "wifi.config.settings ap-ssid=protoR2-test");
 
     TEST_ASSERT_EQUAL_STRING_MESSAGE(
         "result status=err outcome=unavailable reason=temporarily-unavailable",
@@ -388,19 +397,19 @@ void test_a_browser_wifi_write_is_refused_while_the_other_adapter_holds_the_wind
  * test cannot see.
  */
 void test_alternating_writes_from_both_adapters_all_apply_with_balanced_locking(void) {
-    runInto(&g_outer, CONSOLE_SOURCE_SERIAL, "system.config.enable_arm1 value=true");
+    runInto(&g_outer, CONSOLE_SOURCE_SERIAL, "system.config.enable_drive value=true");
     TEST_ASSERT_EQUAL_STRING_MESSAGE("result status=ok outcome=staged-until-reboot",
                                      lastRecord(&g_outer), "the serial write did not apply");
 
     captureReset(&g_inner);
-    runInto(&g_inner, CONSOLE_SOURCE_WEB, "system.config.enable_arm2 value=true");
+    runInto(&g_inner, CONSOLE_SOURCE_WEB, "system.config.enable_audio value=true");
     TEST_ASSERT_EQUAL_STRING_MESSAGE("result status=ok outcome=staged-until-reboot",
                                      lastRecord(&g_inner), "the browser write did not apply");
 
     ConfigSnapshot after = {};
     configCacheRead(&after);
-    TEST_ASSERT_TRUE_MESSAGE(after.system.enable_arm1, "the serial write was lost");
-    TEST_ASSERT_TRUE_MESSAGE(after.system.enable_arm2, "the browser write was lost");
+    TEST_ASSERT_TRUE_MESSAGE(after.system.enable_drive, "the serial write was lost");
+    TEST_ASSERT_TRUE_MESSAGE(after.system.enable_audio, "the browser write was lost");
 
     struct PaStubMutex* m = paStubMutexStorage();
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "the config-write window was left held");
@@ -423,10 +432,10 @@ void test_alternating_writes_from_both_adapters_all_apply_with_balanced_locking(
  */
 void test_the_write_window_is_released_before_the_answer_is_emitted(void) {
     g_plan.fireAfterOuterRecord = 1;
-    g_plan.command = "system.config.enable_arm2 value=true";
+    g_plan.command = "system.config.enable_audio value=true";
     g_plan.source = CONSOLE_SOURCE_WEB;
 
-    runInto(&g_outer, CONSOLE_SOURCE_SERIAL, "system.config.enable_arm1 value=true");
+    runInto(&g_outer, CONSOLE_SOURCE_SERIAL, "system.config.enable_drive value=true");
 
     TEST_ASSERT_EQUAL_INT_MESSAGE(1, g_plan.fired, "the nested browser write never ran");
     TEST_ASSERT_EQUAL_STRING_MESSAGE("result status=ok outcome=staged-until-reboot",
@@ -437,8 +446,8 @@ void test_the_write_window_is_released_before_the_answer_is_emitted(void) {
 
     ConfigSnapshot after = {};
     configCacheRead(&after);
-    TEST_ASSERT_TRUE_MESSAGE(after.system.enable_arm1, "the outer write was lost");
-    TEST_ASSERT_TRUE_MESSAGE(after.system.enable_arm2, "the nested write was lost");
+    TEST_ASSERT_TRUE_MESSAGE(after.system.enable_drive, "the outer write was lost");
+    TEST_ASSERT_TRUE_MESSAGE(after.system.enable_audio, "the nested write was lost");
 
     struct PaStubMutex* m = paStubMutexStorage();
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "the config-write window was left held");
@@ -455,7 +464,7 @@ void test_a_query_nested_in_a_write_never_touches_the_write_window(void) {
     g_plan.command = "system.status.health";
     g_plan.source = CONSOLE_SOURCE_WEB;
 
-    runInto(&g_outer, CONSOLE_SOURCE_SERIAL, "system.config.enable_aux1 value=true");
+    runInto(&g_outer, CONSOLE_SOURCE_SERIAL, "system.config.enable_protor2link value=true");
 
     TEST_ASSERT_EQUAL_INT_MESSAGE(1, g_plan.fired, "the nested query never ran");
     assertAllRecordsCarryOwnId(&g_inner, "nested browser query");

@@ -8,10 +8,14 @@
 // dispatches the returned AudioAction to the active AudioDriver.
 //
 // Named track defaults follow the R2 community standard SD card numbering.
-// They are compile-time defaults only; NVS-backed overrides exist via audioTrackNvsKey() / config_store.
+// They are compile-time defaults only; each is the default of its audio Setting,
+// stored under that Setting's NVS key (src/config_settings.cpp).
 //
 // $ command reference (full set handled here):
-//   $nnn   --  play track nnn (1-based integer)
+//   $8nn   --  bank 8, sound nn: ShadowMD's $Bnn, played where the fitted
+//              sound module has a bank 8 and refused where it has not
+//              (audioDollarBankForm() below)
+//   $nnn   --  play track nnn (1-based integer), every other number
 //   $S     --  play scream
 //   $F     --  play short circuit / faint
 //   $L     --  play Leia message
@@ -21,6 +25,7 @@
 //   $M     --  play Imperial March
 //   $B     --  play startup / boot sound
 //   $D     --  play disco (NVS key snd_disco, disabled when 0)
+//   $H     --  play the happy / greeting clip
 //   $R     --  enable random playback mode
 //   $O     --  disable random mode (does not stop current sound)
 //   $s     --  stop playback and disable random mode
@@ -109,6 +114,7 @@ enum AudioActionType : uint8_t {
     AUDIO_ACTION_VOLUME_SET,   // set absolute volume 0-30 (see AudioAction.volume)
     AUDIO_ACTION_VOLUME_UP,    // increment volume by 1 (AudioTask applies clamp)
     AUDIO_ACTION_VOLUME_DOWN,  // decrement volume by 1 (AudioTask applies clamp)
+    AUDIO_ACTION_PLAY_BANKED,  // sound AudioAction.track in bank AudioAction.bank
 };
 
 // -----------------------------------------------------------------------------
@@ -116,84 +122,40 @@ enum AudioActionType : uint8_t {
 // -----------------------------------------------------------------------------
 struct AudioAction {
     AudioActionType type = AUDIO_ACTION_NONE;
-    uint16_t track       = 0;  // valid when type == AUDIO_ACTION_PLAY_TRACK
+    uint16_t track       = 0;  // PLAY_TRACK: the track; PLAY_BANKED: the sound in the bank
     uint8_t volume       = 0;  // valid when type == AUDIO_ACTION_VOLUME_SET
+    uint8_t bank         = 0;  // valid when type == AUDIO_ACTION_PLAY_BANKED
 };
 
 // -----------------------------------------------------------------------------
-// audioTrackNvsKey()
-// Map an API track key name to its NVS key string.
-// Returns nullptr for unknown key names.
+// audioDollarBankForm()
+// Whether cmd is ShadowMD's bank form of '$', and which bank and sound it names.
 //
-// Key names are the same strings used in GET/POST /api/audio/tracks and in
-// the sound.js NAMED_SOUNDS table. NVS keys are <=15 chars (NVS limit).
+// ShadowMD writes $Bnn for "bank B, sound nn" - its template sends $803 and
+// $809-$825 - where '$' here has always meant a raw track number, so $803 used
+// to play track 803: accepted, never an error, and the wrong file (#321). The
+// operator's answer on #449 (2026-09-30): $8nn is bank 8, sound nn, and every
+// other number stays a raw track. Bank 8 alone, because raw $1nn-$7nn are the
+// R2 community's own track numbers ($126 is the scream default above) and
+// reading those as banks would move files that play correctly today.
 //
-// Pure function  --  no Arduino/FreeRTOS deps, safe to call from native tests.
-// Used in api_audio.cpp (POST /api/audio/tracks) to avoid duplicating the
-// key->NVS mapping.
+// Exactly four characters, '$', '8' and two digits. $800 is the bank form
+// naming sound 0, which no bank has; parseAudioDollar() answers NONE for it.
 // -----------------------------------------------------------------------------
-inline const char* audioTrackNvsKey(const char* key) {
-    if (!key) return nullptr;
-    if (__builtin_strcmp(key, "scream")    == 0) return "snd_scream";
-    if (__builtin_strcmp(key, "faint")     == 0) return "snd_faint";
-    if (__builtin_strcmp(key, "leia")      == 0) return "snd_leia";
-    if (__builtin_strcmp(key, "cantina_s") == 0) return "snd_cantina_s";
-    if (__builtin_strcmp(key, "sw_theme")  == 0) return "snd_sw";
-    if (__builtin_strcmp(key, "imp_march") == 0) return "snd_march";
-    if (__builtin_strcmp(key, "cantina_l") == 0) return "snd_cantina_l";
-    if (__builtin_strcmp(key, "startup")   == 0) return "snd_startup";
-    if (__builtin_strcmp(key, "doodoo")    == 0) return "snd_doodoo";
-    if (__builtin_strcmp(key, "failure")   == 0) return "snd_failure";
-    if (__builtin_strcmp(key, "disco")     == 0) return "snd_disco";
-    if (__builtin_strcmp(key, "mahna")     == 0) return "snd_mahna";
-    if (__builtin_strcmp(key, "inlove")    == 0) return "snd_inlove";
-    if (__builtin_strcmp(key, "macho")     == 0) return "snd_macho";
-    if (__builtin_strcmp(key, "gangnam")   == 0) return "snd_gangnam";
-    if (__builtin_strcmp(key, "uptown")    == 0) return "snd_uptown";
-    if (__builtin_strcmp(key, "celebr")    == 0) return "snd_celebr";
-    if (__builtin_strcmp(key, "stayin")    == 0) return "snd_stayin";
-    if (__builtin_strcmp(key, "harlem")    == 0) return "snd_harlem";
-    if (__builtin_strcmp(key, "pbjtime")   == 0) return "snd_pbjtime";
-    if (__builtin_strcmp(key, "sys_boot")  == 0) return "snd_sys_boot";
-    if (__builtin_strcmp(key, "sys_mode_n") == 0) return "snd_sys_mode_n";
-    if (__builtin_strcmp(key, "sys_mode_s") == 0) return "snd_sys_mode_s";
-    if (__builtin_strcmp(key, "sys_mode_t") == 0) return "snd_sys_mode_t";
-    if (__builtin_strcmp(key, "sys_drv_on") == 0) return "snd_sys_drv_on";
-    if (__builtin_strcmp(key, "sys_dome_on") == 0) return "snd_sys_dome_on";
-    // NVS key drops the underscore before "down": 15 chars, the ESP-IDF
-    // Preferences key length ceiling (#189).
-    if (__builtin_strcmp(key, "sys_net_down") == 0) return "snd_sys_netdown";
-    if (__builtin_strcmp(key, "snd_cat_gen_lo") == 0) return "snd_cat_gen_lo";
-    if (__builtin_strcmp(key, "snd_cat_gen_hi") == 0) return "snd_cat_gen_hi";
-    if (__builtin_strcmp(key, "snd_cat_chat_lo") == 0) return "snd_cat_chat_lo";
-    if (__builtin_strcmp(key, "snd_cat_chat_hi") == 0) return "snd_cat_chat_hi";
-    if (__builtin_strcmp(key, "snd_cat_hap_lo") == 0) return "snd_cat_hap_lo";
-    if (__builtin_strcmp(key, "snd_cat_hap_hi") == 0) return "snd_cat_hap_hi";
-    if (__builtin_strcmp(key, "snd_cat_proc_lo") == 0) return "snd_cat_proc_lo";
-    if (__builtin_strcmp(key, "snd_cat_proc_hi") == 0) return "snd_cat_proc_hi";
-    if (__builtin_strcmp(key, "snd_cat_sad_lo") == 0) return "snd_cat_sad_lo";
-    if (__builtin_strcmp(key, "snd_cat_sad_hi") == 0) return "snd_cat_sad_hi";
-    if (__builtin_strcmp(key, "snd_cat_sent_lo") == 0) return "snd_cat_sent_lo";
-    if (__builtin_strcmp(key, "snd_cat_sent_hi") == 0) return "snd_cat_sent_hi";
-    if (__builtin_strcmp(key, "snd_cat_hum_lo") == 0) return "snd_cat_hum_lo";
-    if (__builtin_strcmp(key, "snd_cat_hum_hi") == 0) return "snd_cat_hum_hi";
-    if (__builtin_strcmp(key, "snd_cat_scrm_lo") == 0) return "snd_cat_scrm_lo";
-    if (__builtin_strcmp(key, "snd_cat_scrm_hi") == 0) return "snd_cat_scrm_hi";
-    if (__builtin_strcmp(key, "snd_cat_ooh_lo") == 0) return "snd_cat_ooh_lo";
-    if (__builtin_strcmp(key, "snd_cat_ooh_hi") == 0) return "snd_cat_ooh_hi";
-    if (__builtin_strcmp(key, "snd_cat_alrm_lo") == 0) return "snd_cat_alrm_lo";
-    if (__builtin_strcmp(key, "snd_cat_alrm_hi") == 0) return "snd_cat_alrm_hi";
-    if (__builtin_strcmp(key, "snd_cat_snrk_lo") == 0) return "snd_cat_snrk_lo";
-    if (__builtin_strcmp(key, "snd_cat_snrk_hi") == 0) return "snd_cat_snrk_hi";
-    if (__builtin_strcmp(key, "snd_cat_whis_lo") == 0) return "snd_cat_whis_lo";
-    if (__builtin_strcmp(key, "snd_cat_whis_hi") == 0) return "snd_cat_whis_hi";
-    if (__builtin_strcmp(key, "rand_min")  == 0) return "snd_rand_min";
-    if (__builtin_strcmp(key, "rand_max")  == 0) return "snd_rand_max";
-    if (__builtin_strcmp(key, "snd_int_quiet") == 0) return "snd_int_quiet";
-    if (__builtin_strcmp(key, "snd_int_mid")   == 0) return "snd_int_mid";
-    if (__builtin_strcmp(key, "snd_int_full")  == 0) return "snd_int_full";
-    if (__builtin_strcmp(key, "snd_int_awake") == 0) return "snd_int_awake";
-    return nullptr;
+constexpr uint8_t AUDIO_DOLLAR_BANK = 8;
+
+inline bool audioDollarBankForm(const char* cmd, uint8_t* bankOut, uint16_t* soundOut) {
+    if (cmd == nullptr || cmd[0] != '$' || cmd[1] != (char)('0' + AUDIO_DOLLAR_BANK) ||
+        cmd[2] < '0' || cmd[2] > '9' || cmd[3] < '0' || cmd[3] > '9' || cmd[4] != '\0') {
+        return false;
+    }
+    if (bankOut != nullptr) {
+        *bankOut = AUDIO_DOLLAR_BANK;
+    }
+    if (soundOut != nullptr) {
+        *soundOut = (uint16_t)(((cmd[2] - '0') * 10) + (cmd[3] - '0'));
+    }
+    return true;
 }
 
 // -----------------------------------------------------------------------------

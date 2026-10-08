@@ -12,14 +12,29 @@
 #include <ArduinoJson.h>
 #include <unity.h>
 
+#include <cstdio>
 #include <cstring>
+#include <map>
+#include <string>
+
+#include <Preferences.h>
 
 #include "api_config.h"
+#include "component_registry.h"
+#include "config_nvsio.h"
+#include "config_serializer.h"
 #include "config_cache.h"
+#include "config_records.h"
+#include "droid_build.h"
 #include "web_request_test_backend.h"
-
-extern bool g_test_commanded_stationary;
-extern unsigned g_test_status_broadcast_count;
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
+#include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
+#include "../../../test/stubs/config/map_config_io.h"
+#include "../../../test/stubs/config/servo_output_table_writer.h"
+#include "../../../test/stubs/config/setting_samples.h"
+#include "config_settings.h"
+#include "drive_speed_preset.h"
+#include "commanded_modes_test_hooks.h"  // g_test_commanded_stationary, g_test_status_broadcast_count
 
 namespace {
 
@@ -34,16 +49,37 @@ ConfigSnapshot readSnapshot() {
 void setUp() {
     ConfigSnapshot snap = {};
     snap.drive.speedLimitMax = 100;
-    configCacheApply(snap);
+    configCacheReplace(snap);
     configCacheSetActiveWifi(snap.wifi);
     configCacheSetActiveWifiRecovery(false);
     g_test_status_broadcast_count = 0;
+    // The NVS double keeps its keys per namespace for the whole binary, as
+    // flash does; every test here starts from an erased partition.
+    Preferences::eraseFlash();
+    // Armed after this setUp()'s own seeding: from here every config write
+    // must run inside a Write Window, as it must on the droid after boot (#418).
+    configWriteWindowArm(true);
 }
 
 void tearDown() {
+    const uint32_t misses = configWriteWindowMisses();
+    configWriteWindowArm(false);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, misses, "a config write ran outside its Write Window");
 }
 
 // --- POST /api/config -------------------------------------------------------
+
+// The addressed Servo Output rows only exist once something has loaded them
+// (ADR 0041); on a controller that is main's boot path. Empty storage gives the
+// five default rows, which is the state a fresh controller boots into.
+void seedServoOutputRows() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+}
+
 
 void test_config_post_applies_a_field_and_echoes_the_snapshot() {
     const WebRequestTestParam params[] = {{"speedLimitMax", "80"}};
@@ -69,6 +105,26 @@ void test_config_post_applies_a_field_and_echoes_the_snapshot() {
     TEST_ASSERT_FALSE(doc["wifi"]["networkRecovery"].isNull());
 }
 
+// A Setting that takes words takes the same words at every door (ADR 0068,
+// amended 2026-09-26): the log level takes `debug` over HTTP as the Console
+// does, and GET still reads it as the number, so a backup round-trips.
+void test_the_log_level_takes_its_words_over_http_and_reads_back_as_its_number() {
+    const WebRequestTestParam params[] = {{"logLevel", "debug"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 1;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, backend.sentCode, backend.sentBody);
+    TEST_ASSERT_EQUAL_UINT8(PA_LOG_LEVEL_DEBUG, readSnapshot().system.logLevel);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_TRUE(doc["system"]["logLevel"].is<int>());
+    TEST_ASSERT_EQUAL_INT(PA_LOG_LEVEL_DEBUG, doc["system"]["logLevel"].as<int>());
+}
+
 void test_config_post_rejects_an_out_of_range_value_without_applying_it() {
     const WebRequestTestParam params[] = {{"speedLimitMax", "9999"}};
     WebRequestTestBackend backend;
@@ -80,9 +136,40 @@ void test_config_post_rejects_an_out_of_range_value_without_applying_it() {
 
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"ok\":false"));
-    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"error\":\""));
+    // The sentence is the one this route has always answered, and what it says
+    // rides beside it as keys a page reads instead of the sentence (#425).
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_STRING("speedLimitMax must be 0..600", doc["error"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("speedLimitMax", doc["field"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("out-of-range", doc["reason"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("0..600", doc["accepts"].as<const char*>());
     // The rejected value must not have reached the cache.
     TEST_ASSERT_EQUAL_INT(100, readSnapshot().drive.speedLimitMax);
+}
+
+// Presets that are each in range but not distinct clash with each other: that
+// is a conflict, not out-of-range, and there is no single value `accepts` could
+// name (ADR 0011 amended 2026-09-25).
+void test_config_post_refuses_clashing_speed_presets_as_a_conflict() {
+    const WebRequestTestParam params[] = {
+        {"speedPresetSlow", "300"}, {"speedPresetNormal", "300"}, {"speedPresetTurbo", "500"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 3;
+    WebRequest req(&backend);
+    const int slowBefore = readSnapshot().drive.speedPresetSlow;
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_STRING("speed presets must be distinct values", doc["error"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("conflict", doc["reason"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("speedPresetSlow", doc["field"].as<const char*>());
+    TEST_ASSERT_TRUE(doc["accepts"].isNull());
+    TEST_ASSERT_EQUAL_INT(slowBefore, readSnapshot().drive.speedPresetSlow);
 }
 
 void test_config_post_accepts_a_raw_json_body_under_the_plain_name() {
@@ -105,7 +192,7 @@ void test_config_post_accepts_a_raw_json_body_under_the_plain_name() {
 // The Commit Step hands its post-commit snapshot back through `working`
 // instead of returning one (ADR 0011's 2026-09-04 amendment), so what the
 // caller renders has to be the state the config cache actually ended up in.
-// Drop configCacheApply(*working) from configCommitApplied() and this goes
+// Drop configCacheApplyKeepingLive(*working, ...) from configCommitApplied() and this goes
 // red: `working` still carries the caller's intent while the cache never
 // moved.
 void test_config_commit_leaves_working_agreeing_with_the_config_cache() {
@@ -119,7 +206,12 @@ void test_config_commit_leaves_working_agreeing_with_the_config_cache() {
     static ConfigApplyResult result;
     result = ConfigApplyResult{};
 
-    ConfigCommitOutcome commit = configCommitApplied(&working, result, SRC_WEB_API);
+    ConfigCommitOutcome commit = {};
+    {
+        // Standing where configWriteWindow() would: this test drives the Commit Step directly.
+        const ConfigWriteWindowForTest window;
+        commit = configCommitApplied(&working, result, SRC_WEB_API);
+    }
 
     TEST_ASSERT_TRUE(commit.persisted);
     const ConfigSnapshot cached = readSnapshot();
@@ -166,6 +258,430 @@ void test_config_post_syncs_stationary_and_broadcasts_status() {
     TEST_ASSERT_GREATER_THAN(0, g_test_status_broadcast_count);
 }
 
+// --- the round trip: what GET reads, POST takes back (ADR 0068, #423) -------
+
+namespace {
+
+std::string readBody(void (*handler)(WebRequest&)) {
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handler(req);
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    return std::string(backend.sentBody, backend.sentBodyLength);
+}
+
+// What a backup holds, as a restore posts it back: GET /api/config with the
+// rows GET /api/servo/outputs read beside it as `outputs` (ADR 0068).
+std::string readBackupBody() {
+    JsonDocument config;
+    TEST_ASSERT_FALSE(deserializeJson(config, readBody(handleConfigGet)));
+    JsonDocument table;
+    TEST_ASSERT_FALSE(deserializeJson(table, readBody(handleServoOutputsGet)));
+    config["outputs"] = table["outputs"];
+    std::string body;
+    serializeJson(config, body);
+    return body;
+}
+
+// The rows as stored, loaded the way the boot path loads them.
+void loadServoOutputTable(const ServoOutputTable& table) {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+    PrefsWriter writer(prefs);
+    TEST_ASSERT_TRUE(writeServoOutputTableForTest(table, writer));
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+}
+
+ServoOutputTable readServoOutputTable() {
+    ServoOutputTable table = {};
+    table.count = configCacheServoOutputCount();
+    for (uint8_t i = 0; i < table.count; ++i) {
+        TEST_ASSERT_TRUE(configCacheReadServoOutput(i, &table.rows[i]));
+    }
+    return table;
+}
+
+// Field by field, every stored field the row declares
+// (kServoOutputRowFields), compared as it is stored: a row's tail padding is not
+// part of what it holds, and a field added to the row is compared the day it
+// is declared.
+void assertSameRows(const ServoOutputTable& want, const ServoOutputTable& got) {
+    TEST_ASSERT_EQUAL_UINT8(want.count, got.count);
+    for (uint8_t i = 0; i < want.count; ++i) {
+        for (const ServoOutputRowField& field : kServoOutputRowFields) {
+            char w[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+            char g[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+            TEST_ASSERT_TRUE(servoOutputRowFieldFormat(field, want.rows[i], w, sizeof(w)));
+            TEST_ASSERT_TRUE(servoOutputRowFieldFormat(field, got.rows[i], g, sizeof(g)));
+            char where[48] = {};
+            snprintf(where, sizeof(where), "row %u %s", (unsigned)i, field.name);
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(w, g, where);
+        }
+    }
+}
+
+// The five rows a fresh controller boots with, and one Part on ARM2, so the
+// round trip has to move it to reach the other table.
+ServoOutputTable rowsLikeSetUp() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+    TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[1], "doorFL"));
+    return table;
+}
+
+// Every row Setting moved off rowsLikeSetUp() on every Output it exists on, by
+// its declaration and through the row's own merge - never a hand list, so a
+// row Setting declared tomorrow is carried by the round trip the day it is
+// declared. Each row also drives a Part rowsLikeSetUp() puts on no Output.
+ServoOutputTable rowsUnlikeSetUp() {
+    const ServoOutputTable like = rowsLikeSetUp();
+    ServoOutputTable table = like;
+    size_t index = 0;
+    size_t part = 0;
+    for (uint8_t r = 0; r < table.count; ++r) {
+        ServoOutputRow& row = table.rows[r];
+        const BoardOutput* board =
+            row.driver == SERVO_DRIVER_LEDC ? boardOutputOnChannel(row.channel) : nullptr;
+        for (size_t s = 0; s < outputRowSettingCount(); ++s) {
+            const OutputRowSetting& setting = outputRowSettingAt(s);
+            if (setting.store != RowSettingStore::Row || !outputRowSettingIsOn(setting, board)) {
+                continue;
+            }
+            int32_t value = 0;
+            TEST_ASSERT_TRUE_MESSAGE(rowSettingOtherValue(setting, row, index++, &value), setting.key);
+            ServoOutputEdit edit = {};
+            edit.driver = row.driver;
+            edit.channel = row.channel;
+            outputRowSettingSetOnEdit(setting, value, &edit);
+            TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, servoOutputApplyEdit(&row, edit), setting.key);
+        }
+
+        servoOutputClearParts(&row);
+        while (part < DROID_PART_COUNT && servoOutputTableFindPart(like, droidPartIdAt(part)) <
+                                              SERVO_OUTPUT_ROW_MAX) {
+            ++part;
+        }
+        TEST_ASSERT_TRUE(part < DROID_PART_COUNT);
+        TEST_ASSERT_TRUE(servoOutputAddPart(&row, droidPartIdAt(part++)));
+    }
+    return table;
+}
+
+// Every Record's GET answer, as JSON text.
+std::string recordAnswers() {
+    JsonDocument doc;
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        const ConfigRecordId id = (ConfigRecordId)r;
+        configRecordAnswer(id, doc[configRecordKey(id)].to<JsonObject>());
+    }
+    std::string text;
+    serializeJson(doc, text);
+    return text;
+}
+
+// Every Record's live copy in the form NVS holds it, and back again: how a test
+// keeps and puts back the Records whatever fields they carry.
+MapWriter saveRecords() {
+    const ConfigWriteWindowForTest window;
+    MapWriter stored;
+    TEST_ASSERT_TRUE(configRecordsSave((uint32_t)((1ull << CONFIG_RECORD_COUNT) - 1u), stored));
+    return stored;
+}
+
+void loadRecords(const MapWriter& stored) {
+    MapReader reader;
+    for (const auto& entry : stored.data()) {
+        reader.set(entry.first.c_str(), entry.second);
+    }
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        char repaired[112] = {};
+        TEST_ASSERT_FALSE_MESSAGE(
+            configRecordLoad((ConfigRecordId)r, reader, repaired, sizeof(repaired)), repaired);
+    }
+}
+
+const char* formGet(void* ctx, const char* name) {
+    auto* form = static_cast<std::map<std::string, std::string>*>(ctx);
+    auto it = form->find(name);
+    return it == form->end() ? nullptr : it->second.c_str();
+}
+
+// Every field of every Record at its declared example, through the Record's
+// own check and merge - never a hand list, so a field added to a Record is
+// carried by the round trips below the day it is declared.
+void stateEveryRecordExample() {
+    std::map<std::string, std::string> form;
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        size_t count = 0;
+        const ConfigRecordField* fields = configRecordFields((ConfigRecordId)r, &count);
+        for (size_t f = 0; f < count; ++f) {
+            form[fields[f].form] = fields[f].example;
+        }
+    }
+    const ConfigParamSource params{&form, formGet};
+    static ConfigRecordEdits edits;
+    edits = ConfigRecordEdits{};
+    static ConfigAppliedFields applied;
+    applied = ConfigAppliedFields{};
+    ApplyRefusal refusal;
+    char sentence[192] = {};
+    const ConfigRecordCheck check{params, &refusal, sentence, sizeof(sentence), &applied};
+    const ConfigWriteWindowForTest window;
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        TEST_ASSERT_TRUE_MESSAGE(configRecordCheck((ConfigRecordId)r, check, &edits), sentence);
+        configRecordMerge((ConfigRecordId)r, edits);
+    }
+}
+
+// A GET leaf as the text a form carries it in: a list comma-joined, a flag as
+// true or false.
+std::string leafText(JsonVariantConst leaf) {
+    if (leaf.is<JsonArrayConst>()) {
+        std::string joined;
+        for (JsonVariantConst item : leaf.as<JsonArrayConst>()) {
+            joined += (joined.empty() ? "" : ",") + std::string(item.as<const char*>());
+        }
+        return joined;
+    }
+    if (leaf.is<bool>()) {
+        return leaf.as<bool>() ? "true" : "false";
+    }
+    return leaf.is<const char*>() ? leaf.as<const char*>() : "(not text)";
+}
+
+JsonVariantConst leafAt(JsonVariantConst at, const char* dotted) {
+    std::string path = dotted;
+    size_t start = 0;
+    while (true) {
+        const size_t dot = path.find('.', start);
+        at = at[path.substr(start, dot - start)];
+        if (dot == std::string::npos) {
+            return at;
+        }
+        start = dot + 1;
+    }
+}
+
+// GET answers every Record field at its path with the example it was stated
+// at, and each example is a value `base` did not hold - so a field GET does not
+// write, or one whose example proves nothing, fails here by name.
+void assertEveryRecordExampleAnswered(const std::string& baseAnswers) {
+    JsonDocument now;
+    TEST_ASSERT_FALSE(deserializeJson(now, recordAnswers()));
+    JsonDocument base;
+    TEST_ASSERT_FALSE(deserializeJson(base, baseAnswers));
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        size_t count = 0;
+        const ConfigRecordField* fields = configRecordFields((ConfigRecordId)r, &count);
+        for (size_t f = 0; f < count; ++f) {
+            const std::string answered = leafText(leafAt(now.as<JsonVariantConst>(), fields[f].path));
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(fields[f].example, answered.c_str(), fields[f].form);
+            const std::string before = leafText(leafAt(base.as<JsonVariantConst>(), fields[f].path));
+            TEST_ASSERT_FALSE_MESSAGE(before == answered, fields[f].form);
+        }
+    }
+}
+
+// Every declared Setting, each moved off the value setUp() leaves, and every
+// Record field at its example: they travel with a backup too. A Setting or a
+// Record field GET reports and POST cannot take back stays at its setUp()
+// value, and the comparison after the round trip finds it.
+struct Configuration {
+    ConfigSnapshot snap;
+    ServoOutputTable rows;
+    MapWriter records;
+};
+
+Configuration readConfiguration() {
+    Configuration now = {};
+    configCacheRead(&now.snap);
+    now.rows = readServoOutputTable();
+    now.records = saveRecords();
+    return now;
+}
+
+void applyConfiguration(const Configuration& config) {
+    loadServoOutputTable(config.rows);
+    {
+        const ConfigWriteWindowForTest window;
+        configCacheReplace(config.snap);
+    }
+    loadRecords(config.records);
+}
+
+Configuration configurationUnlikeSetUp(const Configuration& base) {
+    Configuration want = base;
+    want.rows = rowsUnlikeSetUp();
+
+    // Every droid Setting moved off what setUp() left, by its declaration and
+    // through its own check - never a hand list, so a Setting declared with no
+    // GET or POST handling stays at its setUp() value and the comparison after
+    // the round trip finds it.
+    for (size_t i = 0; i < configSettingCount(); ++i) {
+        const ConfigSetting& setting = configSettingAt(i);
+        char text[24] = {};
+        TEST_ASSERT_TRUE_MESSAGE(settingOtherText(setting, base.snap, i, text, sizeof(text)),
+                                 setting.form);
+        ApplyRefusal refusal;
+        char sentence[CONFIG_SETTING_SENTENCE_MAX] = {};
+        TEST_ASSERT_TRUE_MESSAGE(
+            configSettingApply(setting, text, &want.snap, &refusal, sentence, sizeof(sentence)),
+            setting.form);
+        char before[24] = {};
+        char after[24] = {};
+        configSettingFormat(setting, base.snap, before, sizeof(before));
+        configSettingFormat(setting, want.snap, after, sizeof(after));
+        TEST_ASSERT_FALSE_MESSAGE(strcmp(before, after) == 0, setting.form);
+    }
+
+    // The rules across Settings, as configApply() judges them beside its loop:
+    // the dome pulses in order, the idle pauses shortest first, and the active
+    // preset the limit names.
+    if (want.snap.dome.dome_rnd_pause_min > want.snap.dome.dome_rnd_pause_max) {
+        const uint8_t shortest = want.snap.dome.dome_rnd_pause_max;
+        want.snap.dome.dome_rnd_pause_max = want.snap.dome.dome_rnd_pause_min;
+        want.snap.dome.dome_rnd_pause_min = shortest;
+    }
+    DomeConfig& dome = want.snap.dome;
+    uint16_t pulses[3] = {dome.dome_min_pulse_us, dome.dome_neutral_us, dome.dome_max_pulse_us};
+    for (int a = 0; a < 3; ++a) {
+        for (int b = a + 1; b < 3; ++b) {
+            if (pulses[b] < pulses[a]) {
+                const uint16_t t = pulses[a];
+                pulses[a] = pulses[b];
+                pulses[b] = t;
+            }
+        }
+    }
+    dome.dome_min_pulse_us = pulses[0];
+    dome.dome_neutral_us = pulses[1];
+    dome.dome_max_pulse_us = pulses[2];
+    DriveConfig& drive = want.snap.drive;
+    if (!resolveSpeedPresetForLimit(drive.speedLimitMax, drive.speedPresetSlow,
+                                    drive.speedPresetNormal, drive.speedPresetTurbo,
+                                    &drive.speedPresetActive)) {
+        drive.speedPresetActive = SpeedPresetId::Normal;
+    }
+
+    // Every Output row Setting moved on some row, so one added to the
+    // declarations without a value here is caught rather than carried untested.
+    for (size_t s = 0; s < outputRowSettingCount(); ++s) {
+        const OutputRowSetting& setting = outputRowSettingAt(s);
+        if (setting.store != RowSettingStore::Row) {
+            continue;
+        }
+        bool moved = false;
+        for (uint8_t r = 0; r < want.rows.count; ++r) {
+            moved = moved || outputRowSettingNumber(setting, want.rows.rows[r]) !=
+                                 outputRowSettingNumber(setting, base.rows.rows[r]);
+        }
+        TEST_ASSERT_TRUE_MESSAGE(moved, setting.key);
+    }
+
+    // Every Record field at its example, stated through the Records' own
+    // checks, then kept in its stored form; the live Records go back to base.
+    const std::string baseAnswers = recordAnswers();
+    stateEveryRecordExample();
+    assertEveryRecordExampleAnswered(baseAnswers);
+    want.records = saveRecords();
+    loadRecords(base.records);
+    return want;
+}
+
+void assertSameConfiguration(const Configuration& want, const Configuration& got) {
+    TEST_ASSERT_EQUAL_MEMORY_MESSAGE(&want.snap, &got.snap, sizeof(ConfigSnapshot),
+                                     "a scalar GET reported did not come back through POST");
+    TEST_ASSERT_TRUE_MESSAGE(want.records.data() == got.records.data(),
+                             "a Record field GET reported did not come back through POST");
+    assertSameRows(want.rows, got.rows);
+}
+
+}  // namespace
+
+// The restore is the reader that matters most (ADR 0068): a Configuration read
+// through GET - the scalars, and every Output row - and posted back, unchanged,
+// through POST /api/config must come back equal. Drop any one field's POST
+// handling - its entry in the GET shape, a row key, or its check - and that
+// field stays at the setUp() value and this goes red.
+void test_a_configuration_read_by_get_comes_back_whole_through_post() {
+    loadServoOutputTable(rowsLikeSetUp());
+    loadRecords(MapWriter{});  // the Records a fresh controller boots with
+    const Configuration base = readConfiguration();
+    const Configuration want = configurationUnlikeSetUp(base);
+    applyConfiguration(want);
+    const std::string backup = readBackupBody();
+
+    applyConfiguration(base);
+    WebRequestTestBackend backend;
+    backend.body = backup.c_str();
+    WebRequest req(&backend);
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, backend.sentCode, backend.sentBody);
+    assertSameConfiguration(want, readConfiguration());
+}
+
+// Every Record field survives the NVS save and load, stated at its example
+// like the round trip above, so a field a Record's save or load leaves out
+// fails here with no test edit (include/config_records.h).
+void test_every_record_field_survives_a_save_and_load() {
+    stateEveryRecordExample();
+    const std::string stated = recordAnswers();
+    const MapWriter stored = saveRecords();
+
+    loadRecords(MapWriter{});  // a controller with nothing stored
+    TEST_ASSERT_FALSE_MESSAGE(recordAnswers() == stated, "the examples are a fresh controller's");
+    loadRecords(stored);
+    TEST_ASSERT_EQUAL_STRING(stated.c_str(), recordAnswers().c_str());
+}
+
+// A restore of the Configuration lands whole or not at all (ADR 0068): the
+// scalars and the rows share one Write Window, so a row set that is refused
+// leaves the scalars beside it unwritten too. One Part on two Outputs is that
+// refusal's case, and it is a conflict (#425).
+void test_a_refused_row_set_leaves_the_scalars_beside_it_unwritten() {
+    loadServoOutputTable(rowsLikeSetUp());
+    const ServoOutputTable rowsBefore = readServoOutputTable();
+    WebRequestTestBackend backend;
+    backend.body =
+        "{\"drive\":{\"speedLimitMax\":250},\"outputs\":["
+        "{\"address\":\"ledc:0\",\"throwMs\":800,\"parts\":[\"utilUp\"]},"
+        "{\"address\":\"ledc:3\",\"parts\":[\"utilUp\"]}]}";
+    WebRequest req(&backend);
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_STRING("conflict", doc["reason"] | "");
+    TEST_ASSERT_EQUAL_STRING("ledc:3.parts", doc["field"] | "");
+    TEST_ASSERT_EQUAL_INT(100, readSnapshot().drive.speedLimitMax);
+    assertSameRows(rowsBefore, readServoOutputTable());
+}
+
+// A row field outside what the stored row takes is refused with the row's
+// address and key as its field, its reason and its range - never clamped.
+void test_a_row_field_out_of_range_is_refused_with_field_reason_and_accepts() {
+    loadServoOutputTable(rowsLikeSetUp());
+    WebRequestTestBackend backend;
+    backend.body = "{\"outputs\":[{\"address\":\"ledc:0\",\"throwMs\":5}]}";
+    WebRequest req(&backend);
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_STRING("ledc:0.throwMs", doc["field"] | "");
+    TEST_ASSERT_EQUAL_STRING("out-of-range", doc["reason"] | "");
+    TEST_ASSERT_EQUAL_STRING("20..10000", doc["accepts"] | "");
+    ServoOutputRow row = {};
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(0, &row));
+    TEST_ASSERT_EQUAL_UINT16(SERVO_THROW_MS_DEFAULT, row.throw_ms);
+}
+
 // --- GET/POST /api/rc/map ---------------------------------------------------
 
 void test_rc_map_get_returns_the_map_shape() {
@@ -193,11 +709,38 @@ void test_rc_map_post_applies_an_empty_map_and_persists() {
 
     handleRcMapPost(req);
 
-    // persistSystemConfig() (ADR 0036, WebRequest-free since #226) reports its
+    // configPersistSystem() (ADR 0036, WebRequest-free since #226) reports its
     // own failure through this success path unchanged: 200 on a valid empty
     // map, matching the async-era handler's success shape.
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
+}
+
+// The RC Map save lands in the config namespace. It opens its own handle, so
+// until the NVS double kept its keys per namespace no test could see what it
+// wrote (#424). A log level no controller can hold, seeded there, is what the
+// system field set the save writes must replace.
+void test_rc_map_post_lands_in_the_config_namespace() {
+    const uint8_t kUnheldLogLevel = 0xEE;
+    Preferences nvs;
+    nvs.begin(NVS_NAMESPACE, false);
+    nvs.putUChar("log_level", kUnheldLogLevel);
+    nvs.end();
+
+    const WebRequestTestParam params[] = {{"plain", "{\"map\":[]}"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 1;
+    WebRequest req(&backend);
+    handleRcMapPost(req);
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_NOT_EQUAL(kUnheldLogLevel, snap.system.logLevel);
+    nvs.begin(NVS_NAMESPACE, true);
+    TEST_ASSERT_EQUAL_UINT8(snap.system.logLevel, nvs.getUChar("log_level", kUnheldLogLevel));
+    nvs.end();
 }
 
 void test_rc_map_post_rejects_a_bad_entry_with_the_cores_message() {
@@ -293,16 +836,648 @@ void test_wifi_post_commit_step_persists_and_reports_runtime_state() {
     TEST_ASSERT_TRUE(doc["wifi"]["networkRecovery"].as<bool>());
 }
 
+// --- the calibration write reaches the addressed rows (#342) ----------------
+
+// A builder's endpoints arrive as a row (ADR 0068), and every reader of them is
+// the row. Drop configCacheApplyServoOutputEdits() from the Commit Step and this
+// goes red: the droid keeps driving to the old number, and the next read hands
+// the old one back.
+void test_a_calibration_write_lands_on_the_addressed_row() {
+    seedServoOutputRows();
+
+    WebRequestTestBackend backend;
+    backend.body = "{\"outputs\":[{\"address\":\"ledc:0\",\"openUs\":1750,\"closeUs\":1250}]}";
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    ServoOutputRow row = {};
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(0, &row));
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM1, row.channel);
+    TEST_ASSERT_EQUAL_UINT16(1750, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1250, row.close_us);
+    TEST_ASSERT_EQUAL_UINT16(1500, row.centre_us);
+}
+
+// Any end within what a servo takes is legal to send. The row's component type
+// governs the clamp (#286), so a value an MG996R cannot reach does not reach
+// it - and the write still succeeds rather than being refused, because clamping
+// is not refusing (ADR 0044), and a restored end may have been recorded before
+// the band narrowed (ADR 0068).
+void test_a_write_the_component_band_cannot_take_is_moved_not_refused() {
+    seedServoOutputRows();
+
+    WebRequestTestBackend backend;
+    backend.body =
+        "{\"outputs\":[{\"address\":\"ledc:3\",\"component\":\"mg996r\",\"openUs\":2500}]}";
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    ServoOutputRow row = {};
+    const uint8_t aux1 = 2;  // the third default row is LEDC_CH_AUX1
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(aux1, &row));
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX1, row.channel);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG996R, row.component);
+    TEST_ASSERT_EQUAL_UINT16(2000, row.open_us);
+}
+
+// What comes back has to be what the droid will do. The row holds the clamped
+// number, so the answer names it - an answer that let the request stand would
+// tell a builder their 500 us landed while the arm moved to 1000.
+void test_the_echo_reports_what_the_row_holds_not_what_was_asked() {
+    seedServoOutputRows();
+
+    WebRequestTestBackend backend;
+    backend.body =
+        "{\"outputs\":[{\"address\":\"ledc:0\",\"component\":\"mg996r\",\"openUs\":500}]}";
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_INT(1000, doc["clamped"]["ledc:0"]["openUs"] | 0);
+
+    ServoOutputRow row = {};
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(0, &row));
+    TEST_ASSERT_EQUAL_UINT16(1000, row.open_us);
+}
+
+// The clamp is not silent (#417). A type change pulls both ends of a pair the
+// new band cannot take - ends the request never named - and the answer says
+// which fields were stored at what, so a builder sees their 2400 us became
+// 2000 without comparing numbers. A write that clamped nothing says nothing.
+void test_the_answer_names_every_end_the_band_moved() {
+    seedServoOutputRows();
+
+    WebRequestTestBackend first;
+    first.body = "{\"outputs\":[{\"address\":\"ledc:4\",\"component\":\"mg90s\","
+                 "\"openUs\":2400,\"closeUs\":600}]}";
+    WebRequest firstReq(&first);
+    handleConfigPost(firstReq);
+    TEST_ASSERT_EQUAL_INT(200, first.sentCode);
+    JsonDocument firstDoc;
+    TEST_ASSERT_FALSE(deserializeJson(firstDoc, first.sentBody));
+    TEST_ASSERT_TRUE(firstDoc["clamped"].isNull());
+
+    // A type change narrows the band under ends it did not name, and a restored
+    // centre outside the new band moves with them: the answer names each, by
+    // the row key the request would name it by (ADR 0068).
+    WebRequestTestBackend backend;
+    backend.body = "{\"outputs\":[{\"address\":\"ledc:4\",\"component\":\"mg996r\","
+                   "\"centreUs\":2300}]}";
+    WebRequest req(&backend);
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    JsonObject clamped = doc["clamped"].as<JsonObject>();
+    TEST_ASSERT_EQUAL_UINT32(1u, (uint32_t)clamped.size());
+    JsonObject aux2 = clamped["ledc:4"].as<JsonObject>();
+    TEST_ASSERT_EQUAL_UINT32(3u, (uint32_t)aux2.size());
+    TEST_ASSERT_EQUAL_INT(2000, aux2["openUs"] | 0);
+    TEST_ASSERT_EQUAL_INT(2000, aux2["centreUs"] | 0);
+    TEST_ASSERT_EQUAL_INT(1000, aux2["closeUs"] | 0);
+}
+
+// An Output's Motion Profile goes out on its row and comes back on it (#414,
+// ADR 0068), and GET /api/servo/outputs reads what the row now holds.
+void test_a_motion_profile_round_trips_on_its_row() {
+    seedServoOutputRows();
+
+    WebRequestTestBackend backend;
+    backend.body = "{\"outputs\":[{\"address\":\"ledc:1\",\"throwMs\":800,\"accelMs\":150,"
+                   "\"ease\":\"overshoot\",\"boot\":\"home-release\"}]}";
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    ServoOutputRow row = {};
+    const uint8_t arm2 = 1;  // the second default row is LEDC_CH_ARM2
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(arm2, &row));
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM2, row.channel);
+    TEST_ASSERT_EQUAL_UINT16(800, row.throw_ms);
+    TEST_ASSERT_EQUAL_UINT16(150, row.accel_ms);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_OVERSHOOT, row.easing);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_HOME_RELEASE, row.boot);
+
+    WebRequestTestBackend rowsBackend;
+    WebRequest rowsReq(&rowsBackend);
+    handleServoOutputsGet(rowsReq);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, rowsBackend.sentBody));
+    JsonObject arm2Row = doc["outputs"][arm2];
+    TEST_ASSERT_EQUAL_STRING("home-release", arm2Row["boot"] | "");
+    TEST_ASSERT_EQUAL_UINT(800, arm2Row["throwMs"].as<unsigned>());
+    TEST_ASSERT_EQUAL_UINT(150, arm2Row["accelMs"].as<unsigned>());
+    // The builder's choice, not the ease that runs: this row is unmeasured, so
+    // it moves as `none`, and the page is the one that says so.
+    TEST_ASSERT_EQUAL_STRING("overshoot", arm2Row["ease"] | "");
+    // A neighbour nobody touched still reports its own defaults.
+    JsonObject arm1Row = doc["outputs"][0];
+    TEST_ASSERT_EQUAL_UINT(SERVO_THROW_MS_DEFAULT, arm1Row["throwMs"].as<unsigned>());
+    TEST_ASSERT_EQUAL_STRING("none", arm1Row["ease"] | "");
+    // Limp is the default, and a neighbour nobody set stays limp.
+    TEST_ASSERT_EQUAL_STRING("limp", arm1Row["boot"] | "");
+}
+
+// An Output's release time goes out on its row, comes back on it, and is the
+// one number ServoTask reads at an arrival (#443) - except on a light, which
+// can fight nothing and so never lets go, though the row keeps the time.
+void test_a_release_time_round_trips_and_a_light_never_lets_go() {
+    seedServoOutputRows();
+
+    WebRequestTestBackend backend;
+    backend.body = "{\"outputs\":[{\"address\":\"ledc:1\",\"release\":2000},"
+                   "{\"address\":\"ledc:3\",\"component\":\"rgb\",\"release\":2000}]}";
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, backend.sentCode, backend.sentBody);
+    ServoOutputRow row = {};
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(1, &row));
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM2, row.channel);
+    TEST_ASSERT_EQUAL_UINT16(2000, row.release_ms);
+    TEST_ASSERT_EQUAL_UINT16(2000, configCacheReadServoOutputReleaseMs(SERVO_DRIVER_LEDC, LEDC_CH_ARM2));
+    TEST_ASSERT_EQUAL_UINT16(SERVO_RELEASE_MS_NEVER,
+                             configCacheReadServoOutputReleaseMs(SERVO_DRIVER_LEDC, LEDC_CH_AUX1));
+    // A neighbour nobody set holds where it stops, as every droid did.
+    TEST_ASSERT_EQUAL_UINT16(SERVO_RELEASE_MS_NEVER,
+                             configCacheReadServoOutputReleaseMs(SERVO_DRIVER_LEDC, LEDC_CH_ARM1));
+
+    WebRequestTestBackend rowsBackend;
+    WebRequest rowsReq(&rowsBackend);
+    handleServoOutputsGet(rowsReq);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, rowsBackend.sentBody));
+    TEST_ASSERT_EQUAL_UINT(2000, doc["outputs"][1]["release"].as<unsigned>());
+    TEST_ASSERT_EQUAL_UINT(0, doc["outputs"][0]["release"].as<unsigned>());
+    TEST_ASSERT_TRUE(doc["outputs"][0]["release"].is<unsigned>());
+}
+
+// Out of range is refused with the field and its range, never clamped into it:
+// the bounds are the stored row's own, and nothing of the request lands.
+void test_a_motion_profile_out_of_range_is_refused_not_clamped() {
+    seedServoOutputRows();
+
+    const struct {
+        const char* key;
+        const char* value;
+    } kRefused[] = {
+        {"throwMs", "5"},         // under one ServoTask frame
+        {"throwMs", "20000"},     // over SERVO_THROW_MS_MAX
+        {"accelMs", "0"},         // no time at all to get up to speed
+        {"ease", "\"wobble\""},   // not one of the three
+        {"boot", "\"home\""},     // not one of the three boot modes
+        {"release", "60001"},     // over a minute, SERVO_RELEASE_MS_MAX
+    };
+    for (const auto& refused : kRefused) {
+        // A good ease rides along with every bad value, so a refusal that let
+        // the rest of the request land would show up on the row.
+        const bool easeRefused = strcmp(refused.key, "ease") == 0;
+        char body[160] = {};
+        snprintf(body, sizeof(body), "{\"outputs\":[{\"address\":\"ledc:0\",\"%s\":%s,%s}]}",
+                 refused.key, refused.value, easeRefused ? "\"throwMs\":700" : "\"ease\":\"soft\"");
+        WebRequestTestBackend backend;
+        backend.body = body;
+        WebRequest req(&backend);
+
+        handleConfigPost(req);
+
+        TEST_ASSERT_EQUAL_INT_MESSAGE(400, backend.sentCode, refused.value);
+        char field[32] = {};
+        snprintf(field, sizeof(field), "ledc:0.%s", refused.key);
+        JsonDocument doc;
+        TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(field, doc["field"] | "", backend.sentBody);
+        ServoOutputRow row = {};
+        TEST_ASSERT_TRUE(configCacheReadServoOutput(0, &row));
+        TEST_ASSERT_EQUAL_UINT16(SERVO_THROW_MS_DEFAULT, row.throw_ms);
+        TEST_ASSERT_EQUAL_UINT16(SERVO_ACCEL_MS_DEFAULT, row.accel_ms);
+        TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_NONE, row.easing);
+        TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_LIMP, row.boot);
+        TEST_ASSERT_EQUAL_UINT16(SERVO_RELEASE_MS_NEVER, row.release_ms);
+    }
+}
+
+// --- the Droid Build through the whole route (ADR 0047) -----------------------
+
+// The commit step is the only place a stated Droid Build meets the live one,
+// and the only place a half the request did not name has to survive.
+void test_a_stated_droid_build_reaches_the_live_answer_and_the_echo() {
+    DroidBuildConfig before = {};
+    droidBuildDefaults(&before);
+    {
+        const ConfigWriteWindowForTest seed;
+        configRecordDroidBuildMerge(before, ~0u);
+    }
+
+    const WebRequestTestParam params[] = {
+        {"domeDesign", "mk4"}, {"domeVariant", "basic"},
+        {"fittedParts", "utilUp,gripArm"},
+    };
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 3;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    DroidBuildConfig after = {};
+    configRecordDroidBuildRead(&after);
+    TEST_ASSERT_EQUAL_STRING("basic", after.dome.variant);
+    TEST_ASSERT_EQUAL_UINT32(2u, (uint32_t)droidFittedPartsCount(after.fitted));
+    // The half the request said nothing about is untouched: changing a Dome
+    // Design says nothing about the body.
+    TEST_ASSERT_EQUAL_STRING(before.body.design, after.body.design);
+    TEST_ASSERT_EQUAL_STRING(before.body.variant, after.body.variant);
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_STRING("basic", doc["droidBuild"]["domeVariant"]);
+    TEST_ASSERT_EQUAL_UINT32(2u, (uint32_t)doc["droidBuild"]["fitted"].as<JsonArray>().size());
+}
+
+// A backup saved before MK4's sparse variant was renamed carries `simple`.
+// Restoring it goes through this route, and the answer lands as `basic` rather
+// than being refused or reset (#409).
+void test_a_restored_legacy_variant_lands_as_the_variant_it_became() {
+    DroidBuildConfig before = {};
+    droidBuildDefaults(&before);
+    {
+        const ConfigWriteWindowForTest seed;
+        configRecordDroidBuildMerge(before, ~0u);
+    }
+
+    const WebRequestTestParam params[] = {
+        {"bodyDesign", "mk4"}, {"bodyVariant", "simple"},
+    };
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    DroidBuildConfig after = {};
+    configRecordDroidBuildRead(&after);
+    TEST_ASSERT_EQUAL_STRING("mk4", after.body.design);
+    TEST_ASSERT_EQUAL_STRING("basic", after.body.variant);
+}
+
+// The criterion this whole decision turns on, asked of the running route: after
+// any Droid Build change, Protocol Check still accepts every Part the catalog
+// declares. A design seeds the Parts; it never fences them.
+void test_the_part_vocabulary_is_unchanged_by_a_droid_build_write() {
+    size_t before = 0;
+    for (size_t i = 0; i < DROID_PART_COUNT; ++i) {
+        if (droidPartIdIsKnown(droidPartIdAt(i))) {
+            before++;
+        }
+    }
+
+    // The narrowest droid a builder can state: one design that seeds nothing,
+    // and not a single Part fitted.
+    const WebRequestTestParam params[] = {
+        {"domeDesign", "own"}, {"domeVariant", ""},
+        {"bodyDesign", "own"}, {"bodyVariant", ""},
+        {"fittedParts", ""},
+    };
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 5;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    DroidBuildConfig after = {};
+    configRecordDroidBuildRead(&after);
+    TEST_ASSERT_EQUAL_UINT32(0u, (uint32_t)droidFittedPartsCount(after.fitted));
+
+    size_t afterCount = 0;
+    for (size_t i = 0; i < DROID_PART_COUNT; ++i) {
+        if (droidPartIdIsKnown(droidPartIdAt(i))) {
+            afterCount++;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)before, (uint32_t)afterCount);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)DROID_PART_COUNT, (uint32_t)afterCount);
+}
+
+void test_a_droid_build_the_catalog_cannot_name_is_refused_without_applying() {
+    DroidBuildConfig before = {};
+    droidBuildDefaults(&before);
+    {
+        const ConfigWriteWindowForTest seed;
+        configRecordDroidBuildMerge(before, ~0u);
+    }
+
+    const WebRequestTestParam params[] = {{"domeDesign", "mk9"}, {"domeVariant", "complex"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    DroidBuildConfig after = {};
+    configRecordDroidBuildRead(&after);
+    TEST_ASSERT_EQUAL_STRING(before.dome.design, after.dome.design);
+}
+
+// A roadmap design is a card nobody can pick (#368). The route refuses it as a
+// stated half exactly the way it refuses a design the catalog never declared,
+// because it asks the same predicate - and applies nothing of the request.
+void test_a_roadmap_design_is_refused_as_a_stated_half() {
+    DroidBuildConfig before = {};
+    droidBuildDefaults(&before);
+    {
+        const ConfigWriteWindowForTest seed;
+        configRecordDroidBuildMerge(before, ~0u);
+    }
+
+    const WebRequestTestParam params[] = {{"bodyDesign", "mk3"}, {"bodyVariant", ""}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    DroidBuildConfig after = {};
+    configRecordDroidBuildRead(&after);
+    TEST_ASSERT_EQUAL_STRING(before.body.design, after.body.design);
+    TEST_ASSERT_EQUAL_STRING(before.body.variant, after.body.variant);
+}
+
+// The mixed droid the ticket names: a dome from one design on a body from
+// another saves without complaint, both halves as stated (#368).
+void test_an_mk41_dome_on_an_mk4_basic_body_saves_as_stated() {
+    DroidBuildConfig before = {};
+    droidBuildDefaults(&before);
+    {
+        const ConfigWriteWindowForTest seed;
+        configRecordDroidBuildMerge(before, ~0u);
+    }
+
+    const WebRequestTestParam params[] = {
+        {"domeDesign", "mk41"}, {"domeVariant", ""},
+        {"bodyDesign", "mk4"}, {"bodyVariant", "basic"},
+    };
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 4;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    DroidBuildConfig after = {};
+    configRecordDroidBuildRead(&after);
+    TEST_ASSERT_EQUAL_STRING("mk41", after.dome.design);
+    TEST_ASSERT_EQUAL_STRING("", after.dome.variant);
+    TEST_ASSERT_EQUAL_STRING("mk4", after.body.design);
+    TEST_ASSERT_EQUAL_STRING("basic", after.body.variant);
+}
+
+// --- Part moves through the whole route (ADR 0050, #347) ---------------------
+
+// Five empty rows, whatever an earlier test left in storage: a move persists,
+// so every test here starts from a controller nobody has wired.
+void seedUnwiredServoOutputRows() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+}
+
+int postMove(const char* part, const char* from, const char* to, WebRequestTestBackend* backend) {
+    const WebRequestTestParam params[] = {
+        {"movePart", part}, {"movePartFrom", from}, {"movePartTo", to}};
+    backend->params = params;
+    backend->paramCount = 3;
+    WebRequest req(backend);
+    handleConfigPost(req);
+    backend->params = nullptr;
+    backend->paramCount = 0;
+    return backend->sentCode;
+}
+
+uint8_t rowDriving(const char* part) {
+    ServoOutputRow row = {};
+    for (uint8_t i = 0; configCacheReadServoOutput(i, &row); ++i) {
+        if (servoOutputDrivesPart(row, part)) {
+            return row.channel;
+        }
+    }
+    return SERVO_OUTPUT_CHANNEL_UNSET;
+}
+
+// A Part is on at most one Output (ADR 0050). A row that states a Part another
+// Output drives takes it - the other row is not in the request, so nothing
+// else would take it off there, and the Part would be on two Outputs.
+void test_a_part_a_row_states_comes_off_the_output_it_was_on() {
+    loadServoOutputTable(rowsLikeSetUp());  // doorFL on ARM2
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM2, rowDriving("doorFL"));
+
+    WebRequestTestBackend backend;
+    backend.body = "{\"outputs\":[{\"address\":\"ledc:0\",\"parts\":[\"doorFL\"]}]}";
+    WebRequest req(&backend);
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM1, rowDriving("doorFL"));
+    ServoOutputRow arm2 = {};
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(1, &arm2));
+    TEST_ASSERT_EQUAL_UINT8(0, servoOutputPartCount(arm2));
+}
+
+// A move lands on both rows it touches and runs the Commit Step to its end.
+// The status broadcast is the last thing that step does, after the rows are
+// written, so seeing it is seeing a commit that did not stop short. (The row
+// record the save writes is test_servo_output_row's.)
+void test_a_part_move_takes_it_off_one_output_and_is_committed() {
+    seedUnwiredServoOutputRows();
+
+    WebRequestTestBackend first;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFL", "none", "ledc:0", &first));
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM1, rowDriving("doorFL"));
+
+    const unsigned broadcastsBefore = g_test_status_broadcast_count;
+    WebRequestTestBackend second;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFL", "ledc:0", "ledc:3", &second));
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX1, rowDriving("doorFL"));
+    ServoOutputRow arm1 = {};
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(0, &arm1));
+    TEST_ASSERT_EQUAL_UINT8(0, servoOutputPartCount(arm1));
+    TEST_ASSERT_EQUAL_UINT(broadcastsBefore + 1, g_test_status_broadcast_count);
+}
+
+// An Output with a Part on it is wired and one with none is free, with no
+// separate switch (GLOSSARY.md "Wiring", #411). The tick is what ServoTask
+// reads at start, so a move writes it: on for the Output the Part lands on,
+// off for the one it leaves empty, and left on for one that keeps a Part.
+void test_a_part_move_writes_the_wired_tick_of_each_output_it_touches() {
+    seedUnwiredServoOutputRows();
+    TEST_ASSERT_FALSE(readSnapshot().system.enable_arm1);
+
+    WebRequestTestBackend onArm1;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFL", "none", "ledc:0", &onArm1));
+    TEST_ASSERT_TRUE(readSnapshot().system.enable_arm1);
+    WebRequestTestBackend alsoArm1;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFR", "none", "ledc:0", &alsoArm1));
+
+    WebRequestTestBackend toAux1;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFL", "ledc:0", "ledc:3", &toAux1));
+    TEST_ASSERT_TRUE_MESSAGE(readSnapshot().system.enable_arm1, "ARM1 still carries doorFR");
+    TEST_ASSERT_TRUE(readSnapshot().system.enable_aux1);
+
+    WebRequestTestBackend offAll;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFR", "ledc:0", "none", &offAll));
+    TEST_ASSERT_FALSE_MESSAGE(readSnapshot().system.enable_arm1, "ARM1 has no Part left");
+    TEST_ASSERT_TRUE(readSnapshot().system.enable_aux1);
+
+    // Saved with the move, so it is what the next start reads.
+    Preferences prefs;
+    prefs.begin("proto", true);
+    ConfigSnapshot stored = {};
+    configLoad(prefs, &stored);
+    prefs.end();
+    TEST_ASSERT_FALSE(stored.system.enable_arm1);
+    TEST_ASSERT_TRUE(stored.system.enable_aux1);
+}
+
+// The rows door moves Parts too, and the tick follows them there as it does
+// after a move (#411). A row that takes a Part another Output holds leaves that
+// one free; a row's own `wired` yields to its Parts (the Part wins), and a row
+// that states only `wired` on an Output with no Part wires nothing.
+void test_the_rows_door_sets_each_tick_from_the_parts_and_the_part_wins() {
+    loadServoOutputTable(rowsLikeSetUp());  // doorFL on ARM2
+    WebRequestTestBackend seed;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFR", "none", "ledc:1", &seed));
+    TEST_ASSERT_TRUE(readSnapshot().system.enable_arm2);
+
+    WebRequestTestBackend backend;
+    backend.body =
+        "{\"outputs\":[{\"address\":\"ledc:0\",\"wired\":false,\"parts\":[\"doorFL\",\"doorFR\"]},"
+        "{\"address\":\"ledc:3\",\"wired\":true}]}";
+    WebRequest req(&backend);
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    const ConfigSnapshot after = readSnapshot();
+    TEST_ASSERT_TRUE_MESSAGE(after.system.enable_arm1, "ARM1 has two Parts, whatever its row said");
+    TEST_ASSERT_FALSE_MESSAGE(after.system.enable_arm2, "ARM2 lost both to ARM1's row, so it is free");
+    TEST_ASSERT_FALSE_MESSAGE(after.system.enable_aux1, "ARM3 has no Part, so its row's wired wires nothing");
+}
+
+// No door sets a tick on its own (#411): the Console's and the form's
+// enableArm1..enableAux3 would leave a tick the Parts contradict, so every
+// such write is refused, as a conflict naming the field, and changes nothing -
+// not the tick, and not a field riding beside it.
+void test_a_wired_tick_written_on_its_own_is_refused_and_changes_nothing() {
+    seedUnwiredServoOutputRows();
+    const WebRequestTestParam params[] = {{"enableArm1", "true"}, {"speedLimitMax", "250"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_STRING("enableArm1", doc["field"] | "");
+    TEST_ASSERT_EQUAL_STRING("conflict", doc["reason"] | "");
+    TEST_ASSERT_NOT_NULL(strstr(doc["error"] | "", "put a Part on it on Wiring"));
+    TEST_ASSERT_FALSE(readSnapshot().system.enable_arm1);
+    TEST_ASSERT_EQUAL_INT(100, readSnapshot().drive.speedLimitMax);
+}
+
+// The steal nobody announced. The request says the door is on nothing, the
+// table says ARM1: the whole request is refused, the field riding beside the
+// move included, and nothing reaches storage.
+void test_a_move_from_an_output_the_part_is_not_on_changes_nothing() {
+    seedUnwiredServoOutputRows();
+    WebRequestTestBackend seed;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFL", "none", "ledc:0", &seed));
+    const unsigned broadcastsBefore = g_test_status_broadcast_count;
+
+    const WebRequestTestParam params[] = {{"movePart", "doorFL"},
+                                          {"movePartFrom", "none"},
+                                          {"movePartTo", "ledc:3"},
+                                          {"speedLimitMax", "250"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 4;
+    WebRequest req(&backend);
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(409, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    // Refused like any other refusal, with the act field it is about and why,
+    // so the page words it from those rather than from the sentence (#432).
+    TEST_ASSERT_EQUAL_STRING("movePartFrom", doc["field"] | "");
+    TEST_ASSERT_EQUAL_STRING("conflict", doc["reason"] | "");
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM1, rowDriving("doorFL"));
+    TEST_ASSERT_EQUAL_INT(100, readSnapshot().drive.speedLimitMax);
+    // The Commit Step stopped before its save, so it never broadcast either.
+    TEST_ASSERT_EQUAL_UINT(broadcastsBefore, g_test_status_broadcast_count);
+}
+
 int main() {
     UNITY_BEGIN();
+    RUN_TEST(test_a_part_move_takes_it_off_one_output_and_is_committed);
+    RUN_TEST(test_a_move_from_an_output_the_part_is_not_on_changes_nothing);
+    RUN_TEST(test_a_part_move_writes_the_wired_tick_of_each_output_it_touches);
+    RUN_TEST(test_the_rows_door_sets_each_tick_from_the_parts_and_the_part_wins);
+    RUN_TEST(test_a_wired_tick_written_on_its_own_is_refused_and_changes_nothing);
+    RUN_TEST(test_a_part_a_row_states_comes_off_the_output_it_was_on);
     RUN_TEST(test_config_post_applies_a_field_and_echoes_the_snapshot);
     RUN_TEST(test_config_post_rejects_an_out_of_range_value_without_applying_it);
+    RUN_TEST(test_the_log_level_takes_its_words_over_http_and_reads_back_as_its_number);
+    RUN_TEST(test_config_post_refuses_clashing_speed_presets_as_a_conflict);
     RUN_TEST(test_config_post_accepts_a_raw_json_body_under_the_plain_name);
+    RUN_TEST(test_a_configuration_read_by_get_comes_back_whole_through_post);
+    RUN_TEST(test_every_record_field_survives_a_save_and_load);
+    RUN_TEST(test_a_refused_row_set_leaves_the_scalars_beside_it_unwritten);
+    RUN_TEST(test_a_row_field_out_of_range_is_refused_with_field_reason_and_accepts);
     RUN_TEST(test_config_post_syncs_stationary_and_broadcasts_status);
     RUN_TEST(test_config_commit_leaves_working_agreeing_with_the_config_cache);
     RUN_TEST(test_config_post_body_matches_a_read_of_the_committed_config);
+    RUN_TEST(test_a_calibration_write_lands_on_the_addressed_row);
+    RUN_TEST(test_a_write_the_component_band_cannot_take_is_moved_not_refused);
+    RUN_TEST(test_the_echo_reports_what_the_row_holds_not_what_was_asked);
+    RUN_TEST(test_the_answer_names_every_end_the_band_moved);
+    RUN_TEST(test_a_motion_profile_round_trips_on_its_row);
+    RUN_TEST(test_a_release_time_round_trips_and_a_light_never_lets_go);
+    RUN_TEST(test_a_motion_profile_out_of_range_is_refused_not_clamped);
+    RUN_TEST(test_a_stated_droid_build_reaches_the_live_answer_and_the_echo);
+    RUN_TEST(test_a_restored_legacy_variant_lands_as_the_variant_it_became);
+    RUN_TEST(test_the_part_vocabulary_is_unchanged_by_a_droid_build_write);
+    RUN_TEST(test_a_droid_build_the_catalog_cannot_name_is_refused_without_applying);
+    RUN_TEST(test_a_roadmap_design_is_refused_as_a_stated_half);
+    RUN_TEST(test_an_mk41_dome_on_an_mk4_basic_body_saves_as_stated);
     RUN_TEST(test_rc_map_get_returns_the_map_shape);
     RUN_TEST(test_rc_map_post_applies_an_empty_map_and_persists);
+    RUN_TEST(test_rc_map_post_lands_in_the_config_namespace);
     RUN_TEST(test_rc_map_post_rejects_a_bad_entry_with_the_cores_message);
     RUN_TEST(test_wifi_post_stages_settings_without_leaking_the_password);
     RUN_TEST(test_wifi_post_rejects_invalid_settings);

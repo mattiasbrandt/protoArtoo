@@ -1,0 +1,13 @@
+diff --git i/data/seq.js w/data/seq.js
+index 73cfbedc..05934af8 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -204,7 +204,7 @@
+     // that got no answer is left to PASurface.poll(), which reports it.
+     const poll = window.PASurface.poll(() => {
+       const now = Date.now();
+-      if (run.unheardSince !== null && now - run.unheardSince >= RUN_QUIET_MS) {
++      if (run.unheardSince !== null && now - run.unheardSince < 0) {
+         // Nothing was asked this time, so nothing is handed back to be read
+         // as an answer.
+         end("lost");

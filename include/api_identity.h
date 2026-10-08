@@ -11,18 +11,27 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "config_store.h"  // ConfigSnapshot
+#include "component_registry.h"  // ComponentCategoryId
+#include "config_store.h"         // ConfigSnapshot
 #include "web_request.h"
 
 // Format JSON response for identity endpoints.
 // Output includes the operator identity plus the complete compile-time Feature
-// Availability manifest from board_capabilities.inc and build_flags.inc.
+// Availability manifest from board_capabilities.inc and build_flags.inc, and
+// the Board Lanes from board_lanes.inc -- where the running firmware routes
+// each signal, so no operator surface keeps its own copy of one board's wiring
+// (GLOSSARY.md "Board Lane"). It also carries the board's Learned Sequence
+// save cap, learned_sequence_cap (SEQ_STORE_CAP, include/seq_store_util.h), and
+// the per-file byte cap, learned_sequence_max_bytes (SEQ_FILE_MAX_BYTES).
 // Returns false if the payload does not fit in buf.
 bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool mdnsUseName);
 
 // One fixed upper bound shared by the handler and its native contract test.
 // Manifest additions that outgrow it fail serialization instead of allocating.
-constexpr size_t IDENTITY_JSON_MAX_BYTES = 384;
+// 576 since protoR2link's baud and protocol joined its Board Lane (#369): 35 B
+// against the 24 B the 512 B bound had left. The arithmetic is at the handler
+// (src/web/api_identity.cpp); the buffer is on the httpd task's 8 KB stack.
+constexpr size_t IDENTITY_JSON_MAX_BYTES = 576;
 
 // Commit Step (ADR 0036 criterion 1): publishes `working` (already carrying
 // the caller's validated droid_name/mdns_use_name - normalizeDroidName() and
@@ -37,5 +46,40 @@ struct IdentitySetCommitOutcome {
 };
 IdentitySetCommitOutcome identitySetCommitApplied(ConfigSnapshot* working);
 
+// Write Window for an identity write (ADR 0011, amended 2026-09-24; GLOSSARY.md
+// "Write Window"): take the config write lock, read the cache into
+// `*working`, set the already-validated `droidName` and `mdnsUseName` on it,
+// run identitySetCommitApplied(), release. POST /api/identity and the
+// Console's identity write both call this and hold no lock of their own: the
+// Commit Step writes the whole snapshot back.
+//
+// False -> busy: nothing read or written; `*working` and `*commit` untouched.
+bool identitySetWriteWindow(const char* droidName, bool mdnsUseName, ConfigSnapshot* working,
+                            IdentitySetCommitOutcome* commit);
+
 void handleIdentityGet(WebRequest& req);
 void handleIdentityPost(WebRequest& req);
+
+// -----------------------------------------------------------------------------
+// The Component Registry lineup, on its own route.
+//
+// It is identity's payload -- firmware is the runtime source of the lineup and
+// the `data/` copy is only a fallback (ADR 0042 as amended 2026-09-09) -- but
+// not identity's response: the manifest above is bounded at
+// IDENTITY_JSON_MAX_BYTES with 18 B spare at worst, and the lineup runs to
+// around 3 KB. It streams by offset instead, so no backend holds it whole.
+// -----------------------------------------------------------------------------
+
+// Pin each family's active Component Member for the send that follows.
+// sendChunked() re-walks the body once per chunk, so the value has to be
+// snapshotted before the send rather than read live inside it
+// (include/web_json_slice_writer.h). Call once per category that has one,
+// immediately before sendChunked(); a category never pinned reports
+// active_member null.
+void componentRegistryJsonPinActiveMember(ComponentCategoryId category, uint8_t memberValue);
+
+// WebResponseBodyFiller for the lineup. Reads the registry tables and whatever
+// componentRegistryJsonPinActiveMember() last pinned.
+size_t fillComponentRegistryJson(uint8_t* output, size_t capacity, size_t offset);
+
+void handleComponentsGet(WebRequest& req);

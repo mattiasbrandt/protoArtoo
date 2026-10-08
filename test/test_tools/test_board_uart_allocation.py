@@ -33,8 +33,10 @@ INCLUDE_DIR = REPO_ROOT / "include"
 CONFIG_HEADER_SET = (
     "config.h",
     "board_capabilities.inc",
+    "board_lanes.inc",
     "build_flags.inc",
     "firebeetle_required_pins.inc",
+    "task_stack_figures.h",
 )
 
 # The allocation each board is expected to declare, independent of config.h so

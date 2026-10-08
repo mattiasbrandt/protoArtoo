@@ -18,74 +18,74 @@ void tearDown() {
 
 void test_formatWifiJson_contains_apSsid() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, false);
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"apSsid\":\"protoArtoo\""));
+    formatWifiJson(out, sizeof(out), "protoR2", "192.168.4.1", false, false, "", "", 0, false);
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"apSsid\":\"protoR2\""));
 }
 
 void test_formatWifiJson_contains_apIp() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, false);
+    formatWifiJson(out, sizeof(out), "protoR2", "192.168.4.1", false, false, "", "", 0, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"apIp\":\"192.168.4.1\""));
 }
 
 void test_formatWifiJson_staEnabled_true() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, false, "", "", 0, false);
+    formatWifiJson(out, sizeof(out), "protoR2", "192.168.4.1", true, false, "", "", 0, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staEnabled\":true"));
 }
 
 void test_formatWifiJson_staEnabled_false() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, false);
+    formatWifiJson(out, sizeof(out), "protoR2", "192.168.4.1", false, false, "", "", 0, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staEnabled\":false"));
 }
 
 void test_formatWifiJson_staConnected_true() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", "", -65, false);
+    formatWifiJson(out, sizeof(out), "protoR2", "192.168.4.1", true, true, "10.0.0.42", "", -65, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staConnected\":true"));
 }
 
 void test_formatWifiJson_staConnected_false() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, false);
+    formatWifiJson(out, sizeof(out), "protoR2", "192.168.4.1", false, false, "", "", 0, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staConnected\":false"));
 }
 
 void test_formatWifiJson_staIp_present_when_connected() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", "", -65, false);
+    formatWifiJson(out, sizeof(out), "protoR2", "192.168.4.1", true, true, "10.0.0.42", "", -65, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staIp\":\"10.0.0.42\""));
 }
 
 void test_formatWifiJson_staIp_empty_when_disconnected() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, false);
+    formatWifiJson(out, sizeof(out), "protoR2", "192.168.4.1", false, false, "", "", 0, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staIp\":\"\""));
 }
 
 void test_formatWifiJson_wifiRssi_present() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", "", -72, false);
+    formatWifiJson(out, sizeof(out), "protoR2", "192.168.4.1", true, true, "10.0.0.42", "", -72, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiRssi\":-72"));
 }
 
 void test_formatWifiJson_is_valid_json_object() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, false);
+    formatWifiJson(out, sizeof(out), "protoR2", "192.168.4.1", false, false, "", "", 0, false);
     TEST_ASSERT_EQUAL_CHAR('{', out[0]);
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
 }
 
 void test_formatWifiJson_networkRecovery_false_by_default() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", "", -65, false);
+    formatWifiJson(out, sizeof(out), "protoR2", "192.168.4.1", true, true, "10.0.0.42", "", -65, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"networkRecovery\":false"));
 }
 
 void test_formatWifiJson_networkRecovery_true_when_recovering() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, true);
+    formatWifiJson(out, sizeof(out), "protoR2", "192.168.4.1", false, false, "", "", 0, true);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"networkRecovery\":true"));
 }
 
@@ -101,7 +101,7 @@ void test_formatWifiJson_worst_case_size_fits_status_buffer() {
 
 void test_formatWifiJson_staSsid_present_when_connected() {
     char out[256];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42",
+    formatWifiJson(out, sizeof(out), "protoR2", "192.168.4.1", true, true, "10.0.0.42",
                    "HomeNetwork", -65, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staSsid\":\"HomeNetwork\""));
 }
@@ -112,7 +112,7 @@ void test_formatWifiJson_staSsid_present_when_connected() {
 // (never a password — that stays write-only via /api/config).
 void test_formatWifiJson_staSsid_empty_when_disconnected() {
     char out[256];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, false);
+    formatWifiJson(out, sizeof(out), "protoR2", "192.168.4.1", false, false, "", "", 0, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staSsid\":\"\""));
 }
 
@@ -121,20 +121,20 @@ void test_wifiStatusApSsid_prefers_active_saved_ap_ssid() {
 }
 
 void test_wifiStatusApSsid_falls_back_to_default_when_active_empty() {
-    TEST_ASSERT_EQUAL_STRING("protoArtoo", wifiStatusApSsid(""));
+    TEST_ASSERT_EQUAL_STRING("protoR2", wifiStatusApSsid(""));
 }
 
 // --- formatSerialJson() tests ---
 
 void test_formatSerialJson_dome_active_true() {
     char out[768];
-    formatSerialJson(out, sizeof(out), true, 10, 20);
+    formatSerialJson(out, sizeof(out), "S1", "S2", "S3", true, 10, 20);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"active\":true"));
 }
 
 void test_formatSerialJson_dome_active_false() {
     char out[768];
-    formatSerialJson(out, sizeof(out), false, 0, 0);
+    formatSerialJson(out, sizeof(out), "S1", "S2", "S3", false, 0, 0);
     const char* dome = strstr(out, "\"dome\"");
     TEST_ASSERT_NOT_NULL(dome);
     TEST_ASSERT_NOT_NULL(strstr(dome, "\"active\":false"));
@@ -142,19 +142,19 @@ void test_formatSerialJson_dome_active_false() {
 
 void test_formatSerialJson_heartbeatRx() {
     char out[768];
-    formatSerialJson(out, sizeof(out), true, 42, 0);
+    formatSerialJson(out, sizeof(out), "S1", "S2", "S3", true, 42, 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"heartbeatRx\":42"));
 }
 
 void test_formatSerialJson_heartbeatTx() {
     char out[768];
-    formatSerialJson(out, sizeof(out), true, 0, 99);
+    formatSerialJson(out, sizeof(out), "S1", "S2", "S3", true, 0, 99);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"heartbeatTx\":99"));
 }
 
 void test_formatSerialJson_debug_always_active() {
     char out[768];
-    formatSerialJson(out, sizeof(out), false, 0, 0);
+    formatSerialJson(out, sizeof(out), "S1", "S2", "S3", false, 0, 0);
     const char* debug = strstr(out, "\"debug\"");
     TEST_ASSERT_NOT_NULL(debug);
     TEST_ASSERT_NOT_NULL(strstr(debug, "\"active\":true"));
@@ -162,7 +162,7 @@ void test_formatSerialJson_debug_always_active() {
 
 void test_formatSerialJson_sound_always_inactive() {
     char out[768];
-    formatSerialJson(out, sizeof(out), true, 0, 0);
+    formatSerialJson(out, sizeof(out), "S1", "S2", "S3", true, 0, 0);
     const char* sound = strstr(out, "\"sound\"");
     TEST_ASSERT_NOT_NULL(sound);
     TEST_ASSERT_NOT_NULL(strstr(sound, "\"active\":false"));
@@ -170,9 +170,49 @@ void test_formatSerialJson_sound_always_inactive() {
 
 void test_formatSerialJson_is_valid_json_object() {
     char out[768];
-    formatSerialJson(out, sizeof(out), false, 0, 0);
+    formatSerialJson(out, sizeof(out), "S1", "S2", "S3", false, 0, 0);
     TEST_ASSERT_EQUAL_CHAR('{', out[0]);
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
+}
+
+// A surface that states one board's wiring as fact is a defect this repo has
+// shipped: GET /api/serial told every builder to look for "S1", "S2" and "S3",
+// which is the Artoo PCB's silkscreen and nothing a FireBeetle 2 has (#339
+// left these as copy for #348). The response carries whatever legend the
+// caller read off the running board, and a board declaring none carries "" -
+// never a fallback to another board's.
+void test_formatSerialJson_carries_the_boards_own_legend() {
+    char out[768];
+    formatSerialJson(out, sizeof(out), "GPIO 20/21", "GPIO 34/36", "GPIO 22/23", true, 0, 0);
+
+    const char* hoverboard = strstr(out, "\"hoverboard\"");
+    TEST_ASSERT_NOT_NULL(hoverboard);
+    TEST_ASSERT_NOT_NULL(strstr(hoverboard, "\"label\":\"GPIO 20/21\""));
+    const char* sound = strstr(out, "\"sound\"");
+    TEST_ASSERT_NOT_NULL(sound);
+    TEST_ASSERT_NOT_NULL(strstr(sound, "\"label\":\"GPIO 34/36\""));
+    const char* dome = strstr(out, "\"dome\"");
+    TEST_ASSERT_NOT_NULL(dome);
+    TEST_ASSERT_NOT_NULL(strstr(dome, "\"label\":\"GPIO 22/23\""));
+
+    // No S-legend survives anywhere in a response from a board that prints
+    // none - the one exception is S0, USB debug serial, which no board
+    // declares a Component Label for.
+    TEST_ASSERT_NULL(strstr(out, "\"S1\""));
+    TEST_ASSERT_NULL(strstr(out, "\"S2\""));
+    TEST_ASSERT_NULL(strstr(out, "\"S3\""));
+    TEST_ASSERT_NULL(strstr(out, "Artoo"));
+}
+
+void test_formatSerialJson_undeclared_label_is_empty_never_another_boards() {
+    char out[768];
+    formatSerialJson(out, sizeof(out), nullptr, "", nullptr, false, 0, 0);
+    const char* hoverboard = strstr(out, "\"hoverboard\"");
+    TEST_ASSERT_NOT_NULL(hoverboard);
+    TEST_ASSERT_NOT_NULL(strstr(hoverboard, "\"label\":\"\""));
+    const char* sound = strstr(out, "\"sound\"");
+    TEST_ASSERT_NOT_NULL(sound);
+    TEST_ASSERT_NOT_NULL(strstr(sound, "\"label\":\"\""));
 }
 
 // --- formatHealthJson() tests ---
@@ -181,122 +221,131 @@ void test_formatSerialJson_is_valid_json_object() {
 // convention the rest of this block already uses for the other fixed args.
 
 void test_formatHealthJson_estop_true() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), true, false, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0, 500000, "SOFTWARE");
+                     90000, 75000UL, 0, 0, 0, 0, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"estop\":true"));
 }
 
 void test_formatHealthJson_estop_false() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0, 500000, "SOFTWARE");
+                     90000, 75000UL, 0, 0, 0, 0, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"estop\":false"));
 }
 
 void test_formatHealthJson_sbusSignalLost_true() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, true, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0, 500000, "SOFTWARE");
+                     90000, 75000UL, 0, 0, 0, 0, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"sbusSignalLost\":true"));
 }
 
 void test_formatHealthJson_sbusHwFailsafe_true() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, true, false, false, false, false, 100000,
-                     90000, 75000UL, 0, 500000, "SOFTWARE");
+                     90000, 75000UL, 0, 0, 0, 0, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"sbusHwFailsafe\":true"));
 }
 
 void test_formatHealthJson_webControlEnabled_true() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, true, false, false, false, 100000,
-                     90000, 75000UL, 0, 500000, "SOFTWARE");
+                     90000, 75000UL, 0, 0, 0, 0, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"webControlEnabled\":true"));
 }
 
 void test_formatHealthJson_wifiConnected_true() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, false, true, true, false, 100000, 90000,
-                     75000UL, -65, 500000, "SOFTWARE");
+                     75000UL, 0, 0, 0, 0, -65, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiConnected\":true"));
 }
 
 void test_formatHealthJson_wifiClientConnected_false() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0, 500000, "SOFTWARE");
+                     90000, 75000UL, 0, 0, 0, 0, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiClientConnected\":false"));
 }
 
 void test_formatHealthJson_littleFsReady_true() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, true, 100000,
-                     90000, 75000UL, 0, 500000, "SOFTWARE");
+                     90000, 75000UL, 0, 0, 0, 0, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"littleFsReady\":true"));
 }
 
 void test_formatHealthJson_heapFree() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 123456,
-                     90000, 75000UL, 0, 500000, "SOFTWARE");
+                     90000, 75000UL, 0, 0, 0, 0, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"heapFree\":123456"));
 }
 
 void test_formatHealthJson_heapMin() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     77777, 75000UL, 0, 500000, "SOFTWARE");
+                     77777, 75000UL, 0, 0, 0, 0, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"heapMin\":77777"));
 }
 
 void test_formatHealthJson_heapLargestBlock() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0, 500000, "SOFTWARE");
+                     90000, 75000UL, 0, 0, 0, 0, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"heapLargestBlock\":75000"));
 }
 
+// The Buffer Reading rides beside the Internal Data Heap's largest block, so a
+// serial session with HTTP dark still sees what admission judges by.
+void test_formatHealthJson_heapLargest8bit() {
+    char out[HEALTH_JSON_BUFFER_BYTES];
+    formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
+                     90000, 75000UL, 33000000UL, 0, 0, 0, 0, 500000, "SOFTWARE");
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"heapLargestBlock\":75000,\"heapLargest8bit\":33000000"));
+}
+
 void test_formatHealthJson_wifiRssi_negative() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, false, true, true, false, 100000, 90000,
-                     75000UL, -72, 500000, "SOFTWARE");
+                     75000UL, 0, 0, 0, 0, -72, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiRssi\":-72"));
 }
 
 void test_formatHealthJson_wifiRssi_zero_when_disconnected() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0, 500000, "SOFTWARE");
+                     90000, 75000UL, 0, 0, 0, 0, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiRssi\":0"));
 }
 
 void test_formatHealthJson_uptimeMs() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0, 4242424242UL, "SOFTWARE");
+                     90000, 75000UL, 0, 0, 0, 0, 0, 4242424242UL, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"uptimeMs\":4242424242"));
 }
 
 void test_formatHealthJson_resetReason() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0, 500000, "DEEPSLEEP");
+                     90000, 75000UL, 0, 0, 0, 0, 0, 500000, "DEEPSLEEP");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"resetReason\":\"DEEPSLEEP\""));
 }
 
 void test_formatHealthJson_is_valid_json_object() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0, 500000, "SOFTWARE");
+                     90000, 75000UL, 0, 0, 0, 0, 0, 500000, "SOFTWARE");
     TEST_ASSERT_EQUAL_CHAR('{', out[0]);
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
 }
 
 void test_formatHealthJson_is_valid_json_with_largest_block() {
-    char out[384];
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, false, true, false, true, 200000,
-                     180000, 75000UL, -70, 500000, "SOFTWARE");
+                     180000, 75000UL, 0, 0, 0, 0, -70, 500000, "SOFTWARE");
     TEST_ASSERT_EQUAL_CHAR('{', out[0]);
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
 }
@@ -306,11 +355,12 @@ void test_formatHealthJson_worst_case_fits_the_buffer() {
     // literal resetReasonName() returns, include/reset_reason.h), so this is
     // the one case that used to be impossible - every fixed-width field at
     // its maximum, together with the longest string field. Proves the
-    // caller's sizing comment (handleHealthGet(), src/web/api_status.cpp)
-    // against the real formatter rather than by hand-counting bytes.
-    char out[384];
+    // sizing comment on HEALTH_JSON_BUFFER_BYTES (include/api_status.h), the
+    // buffer handleHealthGet() formats into, against the real formatter
+    // rather than by hand-counting bytes.
+    char out[HEALTH_JSON_BUFFER_BYTES];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 4294967295UL,
-                     4294967295UL, 4294967295UL, -2147483648L, 4294967295UL, "DEEPSLEEP");
+                     4294967295UL, 4294967295UL, 0, 4294967295UL, -2147483647 - 1, 4294967295U, -2147483648L, 4294967295UL, "DEEPSLEEP");
     TEST_ASSERT_EQUAL_CHAR('{', out[0]);
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
     TEST_ASSERT_LESS_THAN(sizeof(out), strlen(out) + 1);
@@ -372,6 +422,8 @@ int main() {
     RUN_TEST(test_formatSerialJson_debug_always_active);
     RUN_TEST(test_formatSerialJson_sound_always_inactive);
     RUN_TEST(test_formatSerialJson_is_valid_json_object);
+    RUN_TEST(test_formatSerialJson_carries_the_boards_own_legend);
+    RUN_TEST(test_formatSerialJson_undeclared_label_is_empty_never_another_boards);
 
     RUN_TEST(test_deriveWiFiConnectivityFields_ap_only_no_clients);
     RUN_TEST(test_deriveWiFiConnectivityFields_ap_only_with_client);
@@ -389,6 +441,7 @@ int main() {
     RUN_TEST(test_formatHealthJson_heapFree);
     RUN_TEST(test_formatHealthJson_heapMin);
     RUN_TEST(test_formatHealthJson_heapLargestBlock);
+    RUN_TEST(test_formatHealthJson_heapLargest8bit);
     RUN_TEST(test_formatHealthJson_wifiRssi_negative);
     RUN_TEST(test_formatHealthJson_wifiRssi_zero_when_disconnected);
     RUN_TEST(test_formatHealthJson_uptimeMs);

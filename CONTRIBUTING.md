@@ -1,6 +1,6 @@
-# Contributing to protoArtoo
+# Contributing to protoR2
 
-Thank you for your interest in contributing. protoArtoo is safety-critical
+Thank you for your interest in contributing. protoR2 is safety-critical
 firmware for a 20 kg wheeled robot. Quality, clarity, and traceability are not
 optional here — they are part of the deliverable.
 
@@ -96,8 +96,8 @@ Always include one:
 | Scope | Covers |
 |---|---|
 | `drive` | DriveTask, hoverboard UART, failsafe |
-| `sbus` | SBUSInputTask, both receivers, CH8 dial |
-| `failsafe` | Any of the 5 safety layers, estop, TWDT |
+| `sbus` | RCInputTask, the RC receivers (SBUS, PWM) |
+| `failsafe` | Any of the five Failsafe Layers, estop, TWDT |
 | `dome` | DomeLinkTask, bidirectional serial, heartbeat |
 | `audio` | AudioTask, AudioDriver, DY-SV5W, track mapping |
 | `servo` | ServoTask, arm servos, LEDC PWM |
@@ -112,13 +112,19 @@ Always include one:
 ### Examples
 
 ```
-feat(drive): add CH8 speed-limit dial with linear scaling
+feat(sbus): a puppet string moves a Part in proportion to its RC stick (#442)
 
-CH8 on receiver #1 scales drive output linearly from 0 to SPEED_LIMIT_MAX.
-CH8 at minimum completely locks drive. Gives the operator a physical
-confidence dial for tight spaces.
-
-NVS key ch8_mode_lock (default false) enables optional binary mode-lock.
+An RC Map entry whose action is puppet_part and whose payload is a Part id.
+Half the stick's travel spans the Part's close-to-open throw; a released
+stick commands the close end. Nothing moves until the stick does: a string
+takes a baseline on its first frame and engages past 5% of the throw, so a
+save, a boot, an estop clearing or a signal gap moves no Part. Targets go
+out on a 1% step at most once per ServoTask frame, never into the last four
+servoCmdQueue places, and a target extending a move in progress waits for
+it to arrive (ServoTask plans every move from rest). SERVO_CMD_PUPPET is
+dropped on an Output the dial or a Find by Moving run holds. A latched estop
+lets a string go. Strings never touch a drive or dome-speed binding; a
+channel stays one binding, so a control is a string or a cue, never both.
 ```
 
 ```
@@ -169,7 +175,7 @@ These will not be accepted in a pull request.
 
 ## Branch strategy
 
-Through the `v1.0.0` release, protoArtoo used a phase-oriented branch model:
+Through the `v1.0.0` release, protoR2 used a phase-oriented branch model:
 all work for a development phase landed on a single long-lived
 `phase/vX.Y.Z` branch, merged into `main` (non-fast-forward, PM-approved) at
 phase completion. That model is retired as of `v1.0.0` — documented below
@@ -215,7 +221,7 @@ doesn't apply to ongoing feature-branch PRs.)
 
 ### Current practice
 
-In practice, protoArtoo is maintained solo, with AI coding agents doing much
+In practice, protoR2 is maintained solo, with AI coding agents doing much
 of the implementation work under human review directly on feature branches.
 Mattias approves and merges every PR into `main`, unconditionally — no
 agent self-merge regardless of how low-risk a change appears.
@@ -229,10 +235,13 @@ merged, your branch will be deleted.
 Pushing a branch you own (`feature/`, `fix/`, `refactor/`, `chore/`, `docs/`,
 `test/`, `exp/`, or a `gh issue develop` branch) needs no approval, and is
 encouraged: commits that exist only in one local worktree have no backup, and
-origin is the backup. No workflow triggers on a branch push — `verification` and
-`dependency-review` run on pull requests into `main`, `verification`,
-`version-sync` and `auto-release` additionally on pushes to `main`, `release` on
-`v*.*.*` tags — so a branch push consumes no CI and publishes no project state.
+origin is the backup. A push to a branch you own triggers no workflow —
+`verification` and `dependency-review` run on pull requests into `main`,
+`verification` also on pushes to `main` and to `epic/**` branches, `version-sync`
+and `auto-release` on pushes to `main`, `release` on `v*.*.*` tags — so it
+consumes no CI and publishes no project state. `verification` and `release` can
+also be dispatched by hand on any branch; a dispatched `release` is a dry run
+that builds and stages the images and never publishes.
 Pushing to a shared integration branch, opening or merging a PR, and pushing a
 tag by hand each need explicit operator approval; pushing to `main` or
 self-merging a PR never happens. CI tagging `main` after an approved merge is
@@ -258,7 +267,7 @@ the "Scopes" table.
 
 Before opening a PR from your branch to `main`, confirm the items that apply. These are risk-scaled per `AGENTS.md`'s
 verification policy, not a flat checklist every PR must clear in full: a
-docs-only or copy change needs inspection, not a full `pio test` run; a
+docs-only or copy change needs inspection, not a full test run; a
 change touching a failsafe layer, protocol parsing, or shared state needs
 the full build/test/check pass below. When in doubt, scale up.
 
@@ -269,8 +278,18 @@ the full build/test/check pass below. When in doubt, scale up.
 **Tests** — required when safety, protocol parsing, shared state, config
 persistence, or JSON/API contracts are touched (see `AGENTS.md`
 "Verification and Reporting" for the full rule)
-- [ ] `pio test -e native` — all native tests pass
-- [ ] `pio test -e artoo_esp32` — all on-device tests pass (if hardware available)
+- [ ] `make test` (native), `make test-web` (web behaviour) and `make test-tools`
+  (tooling) pass. There is no on-device suite.
+- [ ] Through 2026-10-31 the local native and web suites are paused (#464,
+  `tools/suite_pause.py`): `make test` and `make test-web` return at once, a
+  second reviewer's read of the diff stands in for them. On a pull request
+  into `main`, CI runs the web and tooling tests every time, and the native
+  tests when the pull request changes anything but Markdown or `LICENSE`
+
+**Drift checks** - CI fails a pull request on any of them
+- [ ] The `make check-*` drift targets `.github/workflows/verification.yml` runs
+  (`make check-action-drift` after any registry or RC token change) and
+  `tools/check_build_budgets.py` pass
 
 **Verification status**
 - [ ] PR notes classify verification using the project labels:
@@ -311,7 +330,8 @@ SBUS/RMT spec compliance gate:
 - [ ] Any `pio check` suppression or analysis-only build flag in `platformio.ini` has an inline comment explaining rationale and scope (no broad/global suppressions unless unavoidable)
 
 **Code style** — required for firmware source changes
-- [ ] `clang-format -i src/**/*.cpp src/**/*.h` applied
+- [ ] `clang-format -i` (the repo's `.clang-format`) applied to the changed `.cpp` and `.h`
+  files under `src/` and `include/`; CI does not run it
 - [ ] All new functions have a header comment (see "Code standards summary" below)
 - [ ] No inline `//TODO` items that disable or bypass safety logic
 
@@ -352,13 +372,16 @@ real-time tasks use timeout 0 (non-blocking). Core assignment is documented
 in each `xTaskCreatePinnedToCore()` call.
 
 **Memory** — no dynamic allocation (`new` / `malloc`) inside task loops. All
-buffers are statically sized. Free heap monitored in `SafetyMonitorTask`.
+buffers are statically sized. Free heap is monitored by the `SafetyMonitor` task
+(`src/tasks/safety.cpp`).
 
 **Defensive** — bounds-check every buffer write. `static_assert` for
 compile-time invariants. `constrain()` on all external inputs before use.
 
-**Logging** — TAG-prefixed format `[TAG] event — value`. Per-frame verbose
-logging gated by `#ifdef PA_VERBOSE_<TASK>` build flag.
+**Logging** - through the `PA_LOG_ERROR` / `WARN` / `INFO` / `DEBUG` macros
+(`include/logging.h`), which print `[<millis>][<E|W|I|D>][<tag>] <message>`.
+Per-frame verbose logging gated by a `#ifdef PA_VERBOSE_<TASK>` build flag
+(for example `PA_VERBOSE_DRIVE`).
 
 ---
 
@@ -378,12 +401,14 @@ logging gated by `#ifdef PA_VERBOSE_<TASK>` build flag.
 
 ## Versioning and releases
 
-protoArtoo uses [Semantic Versioning 2.0.0](https://semver.org/).
+protoR2 uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 **A merge to `main` releases itself.** Nobody tags by hand.
 `.github/workflows/auto-release.yml` runs on every push to `main`, reads the
 Conventional Commits since the last release tag, and applies the "Version
-effect" column of the type table above:
+effect" column of the type table above. A patch is tagged on the push. A minor
+or major waits for a green Verification of the commit it tags, and is tagged
+when that run completes; while Verification on `main` is red, none is cut:
 
 | What landed | What happens |
 |---|---|
@@ -407,9 +432,12 @@ reached `main` and stopped there (#285).
 | Tier | Tag shape | Release notes | Artifacts |
 |---|---|---|---|
 | **Patch** | `vX.Y.Z` with `Z > 0` | Generated from the commit subjects in the range. Terse and clearly machine-written. | None. The source tag only. |
-| **Minor / major** | `vX.Y.0` | The curated `CHANGELOG.md` section, in maker voice. | All eight firmware and filesystem images plus `SHA256SUMS.txt`. |
+| **Minor / major** | `vX.Y.0` | The curated `CHANGELOG.md` section, in maker voice. | Per board: the firmware and filesystem images an update uses, the blank-board parts (bootloader, partition table, `boot_app0`) and a manifest of every file's flash address, size and SHA-256. `SHA256SUMS.txt` over all of them. |
 
-A fix should reach people quickly, and rebuilding four environments for a
+A minor or major also retakes the README's page pictures from the commit it
+tagged and commits them to `main` (#480). A patch leaves them alone.
+
+A fix should reach people quickly, and rebuilding every board's image for a
 one-line change should not gate that. A patch release therefore carries no
 binaries, and its notes say so in as many words — an empty release otherwise
 reads as a broken one. The tier is decided by the tag alone: semver says a

@@ -43,22 +43,21 @@ const INDEX_REQUIRED_APIS = Object.freeze([
   "/api/identity", "/api/logs", "/api/config", "/api/actions",
 ]);
 
+// Script groups are fetched as their staged bundles (#461,
+// tools/gzip_fsdata.py SCRIPT_BUNDLES); the member files are not on the image.
 const INDEX_REQUIRED_RESOURCES = Object.freeze([
   "/index.html",
   "/style.css",
   "/page_bootstrap.js",
   "/web_api.js",
-  "/diagnostics.js",
-  "/status_stream.js",
-  "/shell.js",
-  "/health_signals.js",
+  "/bundle_shell.js",
+  "/droid_parts.js",
+  "/droid_build.js",
   "/dome_command_map.js",
   "/dome_panel_model.js",
   "/dome_layout.js",
   "/dome_layout_render.js",
-  "/dome_control.js",
-  "/app.js",
-  "/footer.js",
+  "/bundle_dashboard.js",
 ]);
 
 // Every served page now has this shape: no loader script of its own, an inline
@@ -72,10 +71,8 @@ const WIFI_REQUIRED_RESOURCES = Object.freeze([
   "/style.css",
   "/page_bootstrap.js",
   "/web_api.js",
-  "/status_stream.js",
-  "/shell.js",
+  "/bundle_shell.js",
   "/wifi.js",
-  "/footer.js",
 ]);
 
 // The three sections wifi.js registers with the bootstrap (data/wifi.js:391,

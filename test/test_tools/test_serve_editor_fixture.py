@@ -168,7 +168,30 @@ class FixtureRouteTest(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertIn("text/html", content_type)
-        self.assertIn(b"log-console", body, "the dashboard shell must still be served")
+        # Since ADR 0048 the document at "/" is the Operator Shell frame, and
+        # the Dashboard's markup -- Live Logs included -- lives in the surface
+        # file the shell mounts. Both halves are pinned: a page route must
+        # still answer with the shell rather than being swallowed by the API
+        # routing, and the surface must still be reachable at its own address.
+        self.assertIn(b"shell-content", body, "a page route must still answer with the shell")
+
+        status, content_type, body = self.get("/dashboard.html")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/html", content_type)
+        self.assertIn(b"log-console", body, "the Dashboard surface must still be served")
+
+    def test_pages_that_include_an_asset_set_partial_are_served(self):
+        # _product_art.html lives in data/asset-sets/<set>/ since #382, and
+        # Wiring names it with the #board fragment (#411). A server that only
+        # looked in data/ answered every one of these pages 500.
+        for page in ("/configuration.html", "/rc.html", "/wiring.html"):
+            with self.subTest(page=page):
+                status, content_type, body = self.get(page)
+
+                self.assertEqual(status, 200)
+                self.assertIn("text/html", content_type)
+                self.assertNotIn(b"PA:INCLUDE", body, "every directive must be expanded")
 
 
 if __name__ == "__main__":

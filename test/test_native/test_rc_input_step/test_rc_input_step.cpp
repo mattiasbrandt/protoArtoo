@@ -12,6 +12,12 @@
 #define RC_INPUT_STANDARD_PWM 0
 #define RC_INPUT_SINGLE_SBUS 1
 #define RC_INPUT_DUAL_SBUS 2
+// include/robot_state.h RC_INPUT_ELRS: an ELRS receiver is fitted and the
+// controller reads no input from it yet (#369).
+#define RC_INPUT_ELRS 3
+// include/robot_state.h RC_INPUT_NOT_FITTED: no Radio Controller at all, a
+// droid driven from the web alone (#369).
+#define RC_INPUT_NOT_FITTED 4
 
 void setUp() {}
 void tearDown() {}
@@ -83,6 +89,50 @@ void test_task_enabled_at_boot_when_rc_component_6_is_on() {
                                            false, false, false, true);
 
     TEST_ASSERT_TRUE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+// ELRS is a stored answer the controller reads nothing from (#369). With
+// every channel switched on and both routes tried, it must plan exactly what
+// no receiver plans: no RC task, no SBUS decoder on either pin and no drive
+// watchdog source. DriveTask then keeps sending its own 50 Hz zero frames and
+// the estop latch is untouched, because nothing in the RC path runs at all.
+void test_elrs_plans_no_input_whatever_is_switched_on() {
+    for (int route = 0; route < 2; ++route) {
+        RcInputActiveConfig in = makeActiveRc(RC_INPUT_ELRS, route == 1, true, true, true,
+                                               true, true, true);
+        const RcInputStartupPlan plan = rcInputStepStartupPlan(in);
+
+        TEST_ASSERT_FALSE(plan.taskEnabled);
+        TEST_ASSERT_FALSE(plan.driveSbusEnabled);
+        TEST_ASSERT_FALSE(plan.domeSbusEnabled);
+        TEST_ASSERT_TRUE(plan.driveWatchdogSource == DriveWatchdogSource::NONE);
+    }
+}
+
+// No Radio Controller fitted (#369, GLOSSARY.md "Failsafe Layer"): the two
+// radio layers stand down, so the plan must start nothing - no RC task, no
+// SBUS decoder, no drive watchdog source, whatever channel is switched on -
+// and main.cpp's boot SBUS lock, which fires only for a watchdog source, stays
+// off. The same droid with a radio fitted keeps the lock: dual SBUS with CH1
+// on, the fresh-NVS default, still plans the SBUS1 watchdog.
+void test_not_fitted_plans_no_input_and_a_fitted_radio_keeps_its_boot_lock() {
+    for (int route = 0; route < 2; ++route) {
+        RcInputActiveConfig in = makeActiveRc(RC_INPUT_NOT_FITTED, route == 1, true, true, true,
+                                               true, true, true);
+        const RcInputStartupPlan plan = rcInputStepStartupPlan(in);
+
+        TEST_ASSERT_FALSE(plan.taskEnabled);
+        TEST_ASSERT_FALSE(plan.driveSbusEnabled);
+        TEST_ASSERT_FALSE(plan.domeSbusEnabled);
+        TEST_ASSERT_TRUE(plan.driveWatchdogSource == DriveWatchdogSource::NONE);
+    }
+
+    const RcInputStartupPlan fitted = rcInputStepStartupPlan(
+        makeActiveRc(RC_INPUT_DUAL_SBUS, false, true, true, false, false, false, false));
+    TEST_ASSERT_TRUE(fitted.taskEnabled);
+    TEST_ASSERT_TRUE(fitted.driveSbusEnabled);
+    TEST_ASSERT_TRUE(fitted.domeSbusEnabled);
+    TEST_ASSERT_TRUE(fitted.driveWatchdogSource == DriveWatchdogSource::SBUS1);
 }
 
 void test_single_sbus_parks_when_only_unselected_receiver_is_on() {
@@ -566,54 +616,6 @@ void test_drive_watchdog_disabled_decoder_emits_no_actions() {
 }
 
 // ============================================================================
-// Zero-Frame Submission Decisions on Signal Loss
-// ============================================================================
-
-void test_zero_frame_submitted_on_pwm_signal_lost() {
-    RcInputStepZeroFrameInputs in = {
-        .pwmSignalLost = true,
-        .sbusHwFailsafe = false,
-    };
-
-    RcInputStepZeroFrameActions out = rcInputStepZeroFrame(in);
-
-    TEST_ASSERT_TRUE(out.submitDriveZeroFrame);
-}
-
-void test_zero_frame_submitted_on_sbus_hw_failsafe() {
-    RcInputStepZeroFrameInputs in = {
-        .pwmSignalLost = false,
-        .sbusHwFailsafe = true,
-    };
-
-    RcInputStepZeroFrameActions out = rcInputStepZeroFrame(in);
-
-    TEST_ASSERT_TRUE(out.submitDriveZeroFrame);
-}
-
-void test_zero_frame_submitted_on_both_pwm_and_sbus_fail() {
-    RcInputStepZeroFrameInputs in = {
-        .pwmSignalLost = true,
-        .sbusHwFailsafe = true,
-    };
-
-    RcInputStepZeroFrameActions out = rcInputStepZeroFrame(in);
-
-    TEST_ASSERT_TRUE(out.submitDriveZeroFrame);
-}
-
-void test_zero_frame_not_submitted_when_both_ok() {
-    RcInputStepZeroFrameInputs in = {
-        .pwmSignalLost = false,
-        .sbusHwFailsafe = false,
-    };
-
-    RcInputStepZeroFrameActions out = rcInputStepZeroFrame(in);
-
-    TEST_ASSERT_FALSE(out.submitDriveZeroFrame);
-}
-
-// ============================================================================
 // Per-Frame Decisions: SBUS1 (drive) receiver frames
 // ============================================================================
 
@@ -942,6 +944,8 @@ int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_task_disabled_at_boot_when_all_rc_components_off);
+    RUN_TEST(test_elrs_plans_no_input_whatever_is_switched_on);
+    RUN_TEST(test_not_fitted_plans_no_input_and_a_fitted_radio_keeps_its_boot_lock);
     RUN_TEST(test_task_enabled_at_boot_when_rc_component_1_is_on);
     RUN_TEST(test_task_enabled_at_boot_when_rc_component_2_is_on);
     RUN_TEST(test_task_enabled_at_boot_when_rc_component_3_is_on);
@@ -1000,11 +1004,6 @@ int main(void) {
     RUN_TEST(test_sbus2_routed_sustained_failsafe_triggers_and_zeroes_every_frame);
     RUN_TEST(test_sbus2_routed_latch_latches_across_lost_frame);
     RUN_TEST(test_sbus2_routed_frame_failsafe_logs_warn_on_rising_edge_only);
-
-    RUN_TEST(test_zero_frame_submitted_on_pwm_signal_lost);
-    RUN_TEST(test_zero_frame_submitted_on_sbus_hw_failsafe);
-    RUN_TEST(test_zero_frame_submitted_on_both_pwm_and_sbus_fail);
-    RUN_TEST(test_zero_frame_not_submitted_when_both_ok);
 
     return UNITY_END();
 }

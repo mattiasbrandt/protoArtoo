@@ -2,8 +2,10 @@
 
 Status: accepted (2026-09-13, issue #395; identity direction continued by the
 operator on 2026-09-14; **amended 2026-09-16** - see *Amendment: health signals
-read as droid LEDs*). Describes the **target**; the first mockups exist locally
-and none of it ships yet.
+read as droid LEDs*; **amended 2026-09-18** - see *Amendment: the title is the
+name, and the copy is short droid English*). Describes the **target**; the
+anatomy sweep has landed on `epic/operator-experience`; the 2026-09-18 copy
+amendment has not.
 
 ## Context
 
@@ -20,7 +22,7 @@ rules laid out in 2026-06.
 The gap was decided into existence rather than drifted into. #325 settled the
 frame (pages under a persistent shell, Activity Groups, the estop everywhere)
 and recorded, verbatim, *"layout stays with the frontend work"*. #327 settled
-the state system (four Availability Families, two Status Colours, dark only,
+the state system (four Availability Families, two Status Colors, dark only,
 computer resolution) and folded *"which four treatments carry the families -
 pixels, for the frontend work"*. No ticket owned where things sit on a page,
 and "the frontend work" was each slice's worker under the fence above.
@@ -37,18 +39,19 @@ of those patterns; nothing had adopted the layout half.
 
 ## Decision
 
-**Every surface follows one Surface Anatomy** (`GLOSSARY.md`): title with the
-question it answers, sections whose heading carries a count, a state, a
-provenance or a purpose, the work area, the acts named beside what they act on,
-a feedback line. The structure is the reference project's, adapted to a live
-controller and to the shell #325 decided; it is not a pane composition and it
-does not reopen #325 or #327.
+**Every surface follows one Surface Anatomy** (`GLOSSARY.md`): a title that is
+the name in the nav (the page-question line was retired on 2026-09-18),
+sections whose heading carries a count, a state or a provenance, the work
+area, the acts named beside what they act on, a feedback line. The structure
+is the reference project's, adapted to a live controller and to the shell
+#325 decided; it is not a pane composition and it does not reopen #325 or
+#327.
 
 **The identity is the inside of the droid: an instrument panel.** Dark surfaces,
 the dome's panel lines as structure, the droid's blue as the single accent, mono
 readouts, bezelled plates, restrained and modern; not a generic web application.
 Amber and red stay reserved for state. **No emoji on surfaces**: icons come from
-one small drawn SVG set that inherits text colour and keeps its label. The
+one small drawn SVG set that inherits text color and keeps its label. The
 AGENTS.md rule that preferred emoji over verbose labels is retired.
 
 **The shell chrome is in scope** with all thirteen page bodies: the topbar, nav
@@ -71,7 +74,7 @@ rules and runs alone among UI slices in the files it holds.
 
 The Decision above says *"the droid's blue as the single accent"* and *"amber
 and red stay reserved for state"*, and states that it does not reopen #327. On
-seeing the mockups the operator reversed the colour half of that, on the Status
+seeing the mockups the operator reversed the color half of that, on the Status
 Plate first and then for health generally:
 
 > "I dont like the blue color choise of the footer signal lights [...] for the
@@ -81,10 +84,10 @@ Plate first and then for health generally:
 > correct" - and, confirming the reading: *"green representing good and working
 > makes much more sense than the blue color"*.
 
-So **#327's two-colour rule is superseded for health**, and `GLOSSARY.md` gains
-**Health Signal** beside a rewritten **Status Colour**: green nominal, amber
+So **#327's two-color rule is superseded for health**, and `GLOSSARY.md` gains
+**Health Signal** beside a rewritten **Status Color**: green nominal, amber
 degraded and actionable, red stopped or refused, grey not reporting. A chosen
-posture - a speed preset, a sleep state, a control mode - still takes no colour,
+posture - a speed preset, a sleep state, a control mode - still takes no color,
 which is the Status Plate's existing *values, not exceptions*.
 
 **Blue stops carrying state entirely** and returns to interaction alone:
@@ -96,7 +99,7 @@ this* and *this is alive* - one hue with two meanings, which is the overload
 
 What the amendment does **not** touch: **Availability Family** is still told
 apart by treatment and never by hue, so a roadmap card, a `checking` state and
-a refusal take no colour; the palette is still dark only; a colour literal
+a refusal take no color; the palette is still dark only; a color literal
 outside `:root` is still a defect. The instrument-panel identity is unchanged -
 an instrument panel is exactly where lit indicators belong, and a droid's own
 LEDs are the least generic thing on it.
@@ -107,7 +110,7 @@ already doing this and the written decision had drifted away from it.**
 `#e85454` and a dim `--text-dim`, wired to `.indicator.ok` / `.warn` / `.fail` /
 `.off` as a glowing traffic-light grid, with a comment already arguing amber's
 place on a health signal; `data/health_signals.js` derives exactly those four
-states. So #327's *"colour carries exactly two meanings"* described neither the
+states. So #327's *"color carries exactly two meanings"* described neither the
 operator's intent nor the code, and the mockups' blue indicator dots were a
 regression against what ships rather than a proposal. This amendment brings the
 written model back to the stylesheet, and the sweep reuses those tokens and
@@ -117,6 +120,42 @@ The failure to watch for is a green that means *we did not check*; **Health
 Signal** answers it by making a thing never asked read grey, which is the one
 thing `health_signals.js` does not currently distinguish - it folds unknown into
 `warn`.
+
+## Amendment (2026-09-18): the title is the name, and the copy is short droid English
+
+The Decision above, and `docs/ui-copy-voice.md` rules 2, 14 and 19, licensed a
+literary register: a question under every title, a why-paragraph on every
+card, and contrast-and-feel essays as the model line. On seeing the first
+anatomy pages in Playwright, the operator reversed the copy half:
+
+> "I actually dont like it very much... way too narrative and almost
+> philosophical in its wording... end up with just bad phrase. Basically I
+> want the text note/descriptions to be short and concise. simple and star
+> wars droid/astromech themed"
+
+Settled in the same grilling, 2026-09-18:
+
+- **Register:** short droid English. One or two dry sentences. Droid, dome,
+  feet, bay. Physical. The model line is *Off: the droid is a statue. Sticks
+  move, wheels don't.*
+- **Title:** the name in the nav. The `.question` line is gone.
+- **`.prose`:** only where the act is irreversible or can strand the droid
+  (flash, restore, wipe). Still one or two sentences.
+- **Subtitles:** a count, a state or a provenance, computed from the droid.
+  A static section gets a 2-4 word label, never a clause.
+- **Scope:** everything a builder reads — UI, action-registry descriptions,
+  console help, wizard why-strings, operator docs.
+
+This does **not** reopen the instrument-panel identity, the slots (title,
+section, work area, acts, feedback), ADR 0059's required explanation field,
+or the ban on firmware vocabulary. The field stays; the sentence gets
+shorter. The prototype (`prototypes/395-surface-anatomy/`, in git history at
+`83acf0db`; local copies now live under the gitignored `tasks/prototypes/`)
+still shows the question line; that line is historical.
+
+The copy sweep that lands this is [#407](https://github.com/mattiasbrandt/protoArtoo/issues/407). D1 (#348) still
+owns "every no names your next move"; this amendment owns the register of
+the words, not the routing of a no.
 
 ## Considered options
 
@@ -143,9 +182,12 @@ thing `health_signals.js` does not currently distinguish - it folds unknown into
 
 - `GLOSSARY.md` gains **Surface Anatomy**; `AGENTS.md`'s emoji rule is retired.
 - Per the 2026-09-16 amendment, `GLOSSARY.md` also gains **Health Signal** and a
-  rewritten **Status Colour**; the sweep ticket (#399) owns landing the tokens
+  rewritten **Status Color**; the sweep ticket (#399) owns landing the tokens
   in `data/style.css`, and every brief that describes a status indicator in
   blue is repaired at its next refresh.
+- Per the 2026-09-18 amendment, `GLOSSARY.md` **Surface Anatomy** drops the
+  page question; **Maker Voice** is the register; `docs/ui-copy-voice.md`
+  replaces the literary examples. The live strings wait on [#407](https://github.com/mattiasbrandt/protoArtoo/issues/407).
 - A prototype ticket under #175 owns the mockup pass and carries the anatomy's
   pattern library with its citations, so an implementer does not re-derive it;
   the sweep ticket is minted from the approved mockup and inherits it.

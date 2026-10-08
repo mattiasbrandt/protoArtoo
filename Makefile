@@ -1,5 +1,5 @@
 # =============================================================================
-# protoArtoo — build facade
+# protoR2 — build facade
 #
 # Running bare `make` launches the interactive wizard (tools/deploy.py).
 #
@@ -9,7 +9,7 @@
 # Variables (CLI or user.mk):
 #   make ota OTA_IP=192.168.4.1
 #   make flash UPLOAD_PORT=/dev/ttyACM0   (required when two boards are attached)
-#   make ota BUILD_ENV=artoo_esp32_chirp
+#   make ota BUILD_ENV=artoo_esp32_profiler
 #   make ota OTA_HOST_PORT=32000   (only if 32320 is taken; firewall it instead if you can)
 # =============================================================================
 
@@ -87,7 +87,7 @@ endif
 PIO_CORE_DIR = $(if $(filter $(P4_ENVS),$(BUILD_ENV)),$(PIO_CORE_DIR_P4),$(PIO_CORE_DIR_ARTOO))
 
 # Use $(PIO) for BUILD_ENV-parameterised firmware targets. Targets that hard-code
-# an artoo-esp32 env (chirp, mp3trigger, dysv5w, check*) keep bare `pio` on
+# an artoo-esp32 env (`check`) keep bare `pio` on
 # purpose: they must stay on the artoo-esp32 core dir even when BUILD_ENV points
 # at P4.
 PIO = PLATFORMIO_CORE_DIR=$(PIO_CORE_DIR) $(FLOCK) pio
@@ -98,17 +98,14 @@ PIO = PLATFORMIO_CORE_DIR=$(PIO_CORE_DIR) $(FLOCK) pio
 # holds the lock for exactly as long as the command it execs. Deliberately not
 # `?=`: a lock that is one `make FLOCK= build` away from being off is a habit
 # again. The escape hatch for a contiguous multi-command window is
-# `PROTOARTOO_PIO_LOCK_HELD=1 flock /tmp/protoartoo-pio.lock <commands>`.
+# `PROTOR2_PIO_LOCK_HELD=1 flock /tmp/protor2-pio.lock <commands>`.
 FLOCK := python3 tools/pio_lock.py
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift check-build-budgets flash ota uploadfs \
-        flash-chirp ota-chirp ota-mp3trigger \
-        flash-dysv5w ota-dysv5w \
-        flash-monitor flash-chirp-monitor \
-        check-chirp check-mp3trigger \
-        setup setup-wifi clean monitor console bench-rows check-deps
+.PHONY: all help build test test-web test-tools check check-action-drift check-setting-words check-parts-drift check-products-drift check-wiring-cards-drift check-console-catalog-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-servo-motion-drift check-build-budgets check-protocol-mirror pw-fixture flash ota uploadfs \
+        flash-monitor \
+        setup setup-wifi clean monitor console bench-rows bench-auto check-deps
 
 # Default target — launches the interactive wizard
 all:
@@ -130,6 +127,7 @@ build: ## Compile firmware  (BUILD_ENV=artoo_esp32 by default)
 	@python3 tools/check_framework_envelope.py --env $(BUILD_ENV) --quiet
 
 test: ## Run native unit tests
+	@python3 tools/suite_pause.py --check && exit 0; \
 	$(FLOCK) pio test -e native
 
 # Canonical web-suite invocation. The quoted glob is expanded by node itself:
@@ -138,16 +136,111 @@ test: ## Run native unit tests
 # a counted failure instead of a vanished `cancelledByParent` entry.
 # tools/slice_verify.py runs the same invocation; keep the flags in sync.
 test-web: ## Run web behavioral tests (node:test)
+	@python3 tools/suite_pause.py --check && exit 0; \
 	node --test --test-reporter=tap --test-timeout=10000 'test/test_web/test_*.js'
 
-test-tools: ## Run Python tooling tests (incl. slice gate self-tests)
+# unittest discovery never picks up the node:test files beside the Python
+# ones, so each test/test_tools/*.js runs on its own; the first failure fails
+# the target. CI runs this target, so the two cannot drift.
+test-tools: ## Run tooling tests: Python unittest (incl. slice gate self-tests), then the JS files
 	python3 -m unittest discover -s test/test_tools -q
+	@for f in test/test_tools/*.js; do \
+		[ -e "$$f" ] || continue; \
+		echo "node $$f"; \
+		node "$$f" || exit 1; \
+	done
 
-check: ## Static analysis with cppcheck
-	$(FLOCK) pio check -e artoo_esp32
+pw-fixture: ## Run fixture Playwright scripts in DIR (make pw-fixture DIR=seq)
+	python3 tools/pw_fixture.py --dir $(DIR)
+
+check-protocol-mirror: ## Browser half of the protocol-check corpus (firmware half: --native)
+	python3 tools/check_protocol_mirror.py
+
+# --fail-on-defect=high as in CI: check_severity only filters what is printed,
+# and cppcheck exits 0 whatever it finds without it (#473).
+check: ## Static analysis with cppcheck (fails on a HIGH defect, as CI does)
+	$(FLOCK) pio check -e artoo_esp32 --fail-on-defect=high
 
 check-action-drift: ## Ad hoc check that action YAML, C++, and RC fallback metadata align
 	python3 tools/check_action_registry_drift.py
+
+# Every Setting the firmware declares has words in the browser (ADR 0068).
+# check-action-drift runs it too, which is how the slice gate carries it.
+check-setting-words: ## Check every declared Setting has browser words for its refusals
+	python3 tools/check_setting_words.py
+
+# Report, never rewrite - the same convention check-action-drift follows, and
+# an operator reads the two the same way. It runs the real generator with its
+# writes intercepted and byte-compares, so a corrupted output fails twice
+# rather than being quietly repaired by the first run.
+check-parts-drift: ## Ad hoc check that the parts catalog and its generated outputs align
+	python3 tools/check_droid_parts_drift.py
+
+# The Component Registry manifest against docs/products.yaml (#475), in the
+# same report-never-rewrite shape: the real generator with its writes
+# intercepted, byte-compared, so a hand edit to the manifest fails. check-action-drift
+# runs it too, which is how the slice gate carries it.
+# To regenerate: python3 tools/generate_component_registry.py
+check-products-drift: ## Check the Component Registry manifest against docs/products.yaml
+	python3 tools/check_products_drift.py
+
+# Wiring's product cards against the wiring_card entries in docs/products.yaml
+# (#458, #475), in the same report-never-rewrite shape, and every card's
+# citations against its spec sheet's headings. check-action-drift runs it too,
+# which is how the slice gate carries it. To regenerate: python3 tools/generate_wiring_cards.py
+check-wiring-cards-drift: ## Check Wiring's product cards against docs/products.yaml
+	python3 tools/check_wiring_cards_drift.py
+
+# The Operation Catalog against the registry it is generated from (#474), in the
+# same report-never-rewrite shape: the real generator's render functions,
+# byte-compared. check-action-drift runs it too, which is how the slice gate
+# carries it. To regenerate: python3 tools/generate_console_catalog.py
+check-console-catalog-drift: ## Check the Console's Operation Catalog against the action registry
+	python3 tools/check_console_catalog_drift.py
+
+# The Component Registry's own report-never-rewrite check, beside the ones above so an
+# operator reads them all the same way (#340).
+check-component-drift: ## Check the Component Registry manifest against the firmware and the browser
+	python3 tools/check_component_registry_drift.py
+
+# include/config.h against docs/pin_map.md, board by board, in the same
+# report-never-rewrite shape. Which file is right on which board is read from
+# the document's Source of Truth Contract, and each finding names it (#367).
+check-pin-drift: ## Check the pins in config.h against the wiring in docs/pin_map.md
+	python3 tools/check_pin_drift.py
+
+# The Surface Anatomy's two mechanical rules - no pictograph on a swept surface,
+# and every icon reference resolving against the sprite - in the same
+# report-never-rewrite shape as the four above (#399, ADR 0066).
+check-surface-anatomy: ## Check the operator surfaces against the Surface Anatomy
+	python3 tools/check_surface_anatomy.py
+
+# The three D2 guards (#353), in the same report-never-rewrite shape as the five
+# above. They keep #298's, #327's and ADR 0033's sweeps from unravelling: a bare
+# "controller", a board's own silkscreen baked into copy, and a color literal
+# outside :root are each one careless edit away and none of them breaks a test.
+check-vocabulary-drift: ## Check that operator copy says which controller it means
+	python3 tools/check_vocabulary_drift.py
+
+# Board Component Labels read from include/component_labels.inc, the components
+# whose naming is the board's read from BOARD_OUTPUTS[] and the Lane manifest,
+# and the config.h/pin_map.md half delegated to check_pin_drift.check() rather
+# than implemented a second time (#353, #367).
+check-board-label-drift: ## Check that no operator copy carries one board's own labels
+	python3 tools/check_board_label_drift.py
+
+# The palette is declared once, in data/style.css :root. This reads everything
+# ELSE data/ paints with - an inline <style>, a style attribute, an SVG paint
+# attribute, a color constant - because test_style_token_layer.js already walks
+# the stylesheet itself through the real cascade (#353, #327).
+check-color-drift: ## Check that no surface paints with a color :root has not
+	python3 tools/check_color_drift.py
+
+# docs/servo-motion.yaml against the two planners it generates,
+# include/servo_motion_model.h and data/servo_motion.js, in the same
+# report-never-rewrite shape (#439). To regenerate: python3 tools/generate_servo_motion.py
+check-servo-motion-drift: ## Check the generated servo motion planners against docs/servo-motion.yaml
+	python3 tools/check_servo_motion_drift.py
 
 check-build-budgets: ## Verify all supported envs stay within flash/RAM budgets
 	$(FLOCK) python3 tools/check_build_budgets.py
@@ -196,55 +289,13 @@ uploadfs: ## Upload LittleFS web UI  (OTA to OTA_IP; P4 envs: USB, port resolved
 	  python3 tools/ota_upload.py --env $(UPLOADFS_ENV) --spiffs --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT); \
 	fi
 
-# ── Flash: CHIRP audio module ────────────────────────────────────────────────
-
-flash-chirp: test ## Flash CHIRP build via USB
-	@port=$$($(RESOLVE_PORT) --env artoo_esp32_chirp) && \
-	  echo "==> flashing artoo_esp32_chirp to $$port" && \
-	  PLATFORMIO_UPLOAD_PORT=$$port $(FLOCK) pio run -e artoo_esp32_chirp -t upload --upload-port $$port
+# ── Flash: boot log ──────────────────────────────────────────────────────────
 
 flash-monitor: test ## Flash default build via USB then capture boot log
 	@port=$$($(RESOLVE_PORT) --env $(BUILD_ENV)) && \
 	  echo "==> flashing $(BUILD_ENV) to $$port" && \
 	  PLATFORMIO_UPLOAD_PORT=$$port $(PIO) run -e $(BUILD_ENV) -t upload --upload-port $$port && \
 	  python3 tools/console_client.py --port $$port --until "init complete" --timeout 30
-
-flash-chirp-monitor: test ## Flash CHIRP build via USB then capture boot log
-	@port=$$($(RESOLVE_PORT) --env artoo_esp32_chirp) && \
-	  echo "==> flashing artoo_esp32_chirp to $$port" && \
-	  PLATFORMIO_UPLOAD_PORT=$$port $(FLOCK) pio run -e artoo_esp32_chirp -t upload --upload-port $$port && \
-	  python3 tools/console_client.py --port $$port --until "init complete" --timeout 30
-
-ota-chirp: test ## Flash CHIRP build via OTA
-	$(FLOCK) pio run -e artoo_esp32_chirp_ota
-	python3 tools/ota_upload.py --env artoo_esp32_chirp_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT)
-
-# ── Flash: MP3 Trigger ───────────────────────────────────────────────────────
-
-ota-mp3trigger: test ## Flash MP3 Trigger build via OTA
-	$(FLOCK) pio run -e artoo_esp32_mp3trigger_ota
-	python3 tools/ota_upload.py --env artoo_esp32_mp3trigger_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT)
-
-# ── Flash: DY-SV5W (named env) ───────────────────────────────────────────────
-# Same driver as the default artoo_esp32 env — these targets exist so DY-SV5W
-# has the same explicit, discoverable build/flash surface as CHIRP and MP3 Trigger.
-
-flash-dysv5w: test ## Flash DY-SV5W build via USB
-	@port=$$($(RESOLVE_PORT) --env artoo_esp32_dysv5w) && \
-	  echo "==> flashing artoo_esp32_dysv5w to $$port" && \
-	  PLATFORMIO_UPLOAD_PORT=$$port $(FLOCK) pio run -e artoo_esp32_dysv5w -t upload --upload-port $$port
-
-ota-dysv5w: test ## Flash DY-SV5W build via OTA
-	$(FLOCK) pio run -e artoo_esp32_dysv5w_ota
-	python3 tools/ota_upload.py --env artoo_esp32_dysv5w_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT)
-
-# ── Compile-check only ───────────────────────────────────────────────────────
-
-check-chirp: ## Compile-check CHIRP backend  (no flash)
-	$(FLOCK) pio run -e artoo_esp32_chirp_check
-
-check-mp3trigger: ## Compile-check MP3Trigger backend  (no flash)
-	$(FLOCK) pio run -e artoo_esp32_mp3trigger_check
 
 # ── Setup & tools ────────────────────────────────────────────────────────────
 
@@ -273,11 +324,18 @@ monitor: ## Open serial monitor  (UPLOAD_PORT=/dev/... to pick a board)
 BENCH_ROWS  ?=
 ROWS        ?=
 SKIP_MANUAL ?=
+# A sheet's `http` steps go to the droid's own routes: HTTP_BASE is where
+# (http://<droid>), RUN_DIR is where answers kept with `> FILE` are written,
+# NO_HTTP=1 asserts the board has no network and skips them. The client
+# refuses a run whose selected rows need one of these and were not given it.
+HTTP_BASE   ?=
+RUN_DIR     ?=
+NO_HTTP     ?=
 
 console: ## Interactive Console session  (UPLOAD_PORT=/dev/... to pick a board)
 	@port=$$($(RESOLVE_PORT)) && python3 tools/console_client.py --port $$port --interactive
 
-bench-rows: ## Replay a Console bench sheet  (BENCH_ROWS=tools/bench_rows/<board>.txt [ROWS=a,b] [SKIP_MANUAL=1])
+bench-rows: ## Replay a Console bench sheet  (BENCH_ROWS=tools/bench_rows/<board>.txt [ROWS=a,b] [SKIP_MANUAL=1] [HTTP_BASE=http://<droid>] [RUN_DIR=dir] [NO_HTTP=1])
 	@if [ -z "$(BENCH_ROWS)" ]; then \
 	  echo "BENCH_ROWS is required: a bench sheet is board-specific and is never guessed."; \
 	  echo "  make bench-rows BENCH_ROWS=tools/bench_rows/firebeetle2.txt"; \
@@ -286,7 +344,27 @@ bench-rows: ## Replay a Console bench sheet  (BENCH_ROWS=tools/bench_rows/<board
 	  exit 1; \
 	fi
 	@port=$$($(RESOLVE_PORT)) && python3 tools/console_client.py --port $$port \
-	  --script $(BENCH_ROWS) $(if $(ROWS),--rows $(ROWS)) $(if $(SKIP_MANUAL),--skip-manual)
+	  --script $(BENCH_ROWS) $(if $(ROWS),--rows $(ROWS)) $(if $(SKIP_MANUAL),--skip-manual) \
+	  $(if $(HTTP_BASE),--http-base $(HTTP_BASE)) $(if $(RUN_DIR),--run-dir $(RUN_DIR)) \
+	  $(if $(NO_HTTP),--no-http)
+
+# The automated half of a bench session (phase 1 of the bench-verification
+# skill): the sheet's agent-runnable rows, the console sweep and every
+# Playwright script, with a memory log polled the whole way through and a
+# table at the end of what each step did to the heap. The Console goes over the
+# resolved serial port, exactly as bench-rows. IMAGE is the product image on the
+# board (artoo or shipping, as tools/soak.py names it); it is declared, never
+# guessed from the payload. Reference: the header of tools/bench_auto.py.
+IMAGE       ?=
+
+bench-auto: ## Run a bench session's automated half with a memory log  (BENCH_ROWS=... HTTP_BASE=http://<droid> IMAGE=artoo|shipping [ROWS=a,b] [RUN_DIR=dir])
+	@if [ -z "$(BENCH_ROWS)" ] || [ -z "$(HTTP_BASE)" ] || [ -z "$(IMAGE)" ]; then \
+	  echo "BENCH_ROWS, HTTP_BASE and IMAGE are required: the board, the droid and its image are never guessed."; \
+	  echo "  make bench-auto BENCH_ROWS=tools/bench_rows/artoo_esp32.txt HTTP_BASE=http://10.0.0.22 IMAGE=artoo"; \
+	  exit 1; \
+	fi
+	@port=$$($(RESOLVE_PORT)) && python3 tools/bench_auto.py --port $$port --sheet $(BENCH_ROWS) \
+	  --droid $(HTTP_BASE) --image $(IMAGE) $(if $(ROWS),--rows $(ROWS)) $(if $(RUN_DIR),--run-dir $(RUN_DIR))
 
 check-deps: ## Check required OS commands and Python packages are installed
 	@command -v python3 >/dev/null 2>&1 || { \

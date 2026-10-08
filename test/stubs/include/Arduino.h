@@ -134,13 +134,20 @@ unsigned long millis();
 inline void delay(unsigned long) {}
 inline void delayMicroseconds(unsigned int) {}
 
-// GPIO stubs — no-ops; used by audio_soft_uart_tx.h inline functions
+// GPIO stubs — no-ops; used by audio_soft_uart_tx.h / audio_soft_uart_rx.h
 static constexpr uint8_t OUTPUT = 1;
 static constexpr uint8_t INPUT  = 0;
 static constexpr uint8_t HIGH   = 1;
 static constexpr uint8_t LOW    = 0;
+static constexpr int FALLING = 2;
+#ifndef IRAM_ATTR
+#define IRAM_ATTR
+#endif
 inline void pinMode(uint8_t, uint8_t) {}
 inline void digitalWrite(uint8_t, uint8_t) {}
+inline int digitalRead(uint8_t) { return HIGH; }
+inline int digitalPinToInterrupt(uint8_t pin) { return (int)pin; }
+inline void attachInterrupt(int, void (*)(), int) {}
 
 // SERIAL_8N1 constant stub
 static constexpr uint8_t SERIAL_8N1 = 0x06;
@@ -165,11 +172,3 @@ inline T constrain(T value, T min_val, T max_val) {
     return value;
 }
 
-// ESP stub — provides heap info methods used by console_module.cpp
-// Minimal stub with default zero values to avoid affecting other tests.
-struct ESPClass {
-    unsigned long getFreeHeap() const { return 0; }
-    unsigned long getMinFreeHeap() const { return 0; }
-    unsigned long getMaxAllocHeap() const { return 0; }
-};
-extern ESPClass ESP;

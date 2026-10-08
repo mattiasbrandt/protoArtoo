@@ -1,13 +1,12 @@
 # HOTRC SBUS-A Receiver and DS-650 Transmitter
 
 > [!IMPORTANT]
-> **Superseded by [`hotrc-ds650-radio.md`](hotrc-ds650-radio.md)** (2026-09-12,
-> [#389](https://github.com/mattiasbrandt/protoArtoo/issues/389)). That sheet is
-> the product and profile authority; `AGENTS.md` and `CONTRIBUTING.md` now point
-> at it. Three claims below were contradicted by the T19 bench work and are kept
-> only as a record of what was believed before it: the wire is **~115 kbaud**,
-> not 100; the footer is **`0x04`**, not `0x00`; and CH2 is a trigger that rests
-> at an **endpoint**, not a centring axis.
+> **Superseded by [`hotrc-ds650-radio.md`](hotrc-ds650-radio.md).** That sheet
+> covers the product and its measured SBUS profile. Three claims below were
+> contradicted by bench measurement of a DS-650 with an SBUS-A receiver and are
+> kept only as a record of the earlier summary: the wire is **~115 kbaud**, not
+> 100; the footer is **`0x04`**, not `0x00`; and CH2 is a trigger that rests at
+> an **endpoint**, not a centring axis.
 
 ## Purpose
 

@@ -3,14 +3,15 @@
 //
 // Dome page controller.
 // - Live RC dome target status (read-only)
-// - Dome motor configuration load/save
+// - Where the dome believes it points, Front is here and Go home (#445)
+// - Dome motor configuration load/save, and the full turn the bearing is
+//   integrated against
 // - Shared API helper error handling
 // =============================================================================
 (() => {
   const domeFeedback = document.getElementById("dome-feedback");
   const domeDisabledCard = document.getElementById("dome-disabled-card");
-  const domeHardwarePill = document.getElementById("dome-hardware-pill");
-  const domeWebPill = document.getElementById("dome-web-pill");
+  const domeHardwareState = document.getElementById("dome-hardware-state");
   const domeSpeedDisplay = document.getElementById("dome-speed-display");
   const domeRotationState = document.getElementById("dome-rotation-state");
   const domeLiveFill = document.getElementById("dome-live-fill");
@@ -30,11 +31,27 @@
   const reloadRndButton = document.getElementById("reload-rnd-button");
   const rndFeedback = document.getElementById("rnd-feedback");
 
-  let domeHardwareEnabled = true;
-  let webControlEnabled = false;
-  let webControlStatusKnown = false;
+  const domeBearingValue = document.getElementById("dome-bearing-value");
+  const domeBearingWord = document.getElementById("dome-bearing-word");
+  const domeFrontButton = document.getElementById("dome-front-button");
+  const domeHomeButton = document.getElementById("dome-home-button");
 
-  const FEEDBACK_BASE_CLASS = "feedback mt-12";
+  const domeTurnState = document.getElementById("dome-turn-state");
+  const domeTurnMs = document.getElementById("dome-turn-ms");
+  const domeTurnPct = document.getElementById("dome-turn-pct");
+  const domeTurnDir = document.getElementById("dome-turn-dir");
+  const domeTurnDirButtons = Array.from(domeTurnDir?.querySelectorAll("button[data-value]") || []);
+  const turnFeedback = document.getElementById("turn-feedback");
+
+  let domeHardwareEnabled = true;
+  // Only WHETHER the droid has sent a reading yet, not what it said about web
+  // control: this surface has no control web control gates, so the value
+  // itself is the plate's to report (#348).
+  let statusHeard = false;
+  // What the feedback line last said about the dome itself (updateDomeControlsEnabled()).
+  let feedbackState = null;
+
+  const FEEDBACK_BASE_CLASS = "feedback";
 
   const showFeedback = (el, text, level = "") => {
     if (!el) return;
@@ -42,17 +59,25 @@
     el.className = level ? `${FEEDBACK_BASE_CLASS} ${level}` : FEEDBACK_BASE_CLASS;
   };
 
-  const setPillState = (el, text, state = "info", compact = true) => {
-    if (!el) return;
-    const classMap = {
-      ok: "pill-ok",
-      warn: "pill-warn",
-      error: "pill-error",
-      info: "pill-info",
-    };
-    const sizeClass = compact ? "status-pill status-pill-compact" : "status-pill";
-    el.textContent = text;
-    el.className = `${sizeClass} ${classMap[state] || classMap.info}`;
+  // The three readouts this surface used to paint as colored pills are now
+  // words, and the setPillState that painted them is gone with them. None of
+  // the three was a health signal, which is the only thing that may take a
+  // signal color (GLOSSARY.md "Status Color"):
+  //
+  //   the dome motor switched on or off in Configuration is an AVAILABILITY FAMILY,
+  //   "change it here", and those are told apart by treatment and never by hue
+  //   - it read green when on and amber when off, and amber promises the
+  //     builder something is wrong rather than that they made a choice;
+  //
+  //   which way the dome is being turned is a VALUE - it read green forward
+  //     and amber reverse, so turning left looked like a symptom;
+  //
+  //   whether this browser may command the droid is a CHOSEN POSTURE and
+  //     takes no color at all. It is also the Status Plate's CONTROL chip, so
+  //     what is left here is the half the plate cannot carry: that the consent
+  //     is the feet's and the dome turns either way.
+  const setText = (el, text) => {
+    if (el) el.textContent = text;
   };
 
 
@@ -70,6 +95,11 @@
 
     if (domeSpeedDisplay) domeSpeedDisplay.textContent = `${percent}%`;
 
+    // Which side of centre the bar fills is what says the direction; the bar's
+    // own color is one color, declared in the stylesheet, the same one Foot
+    // Drive's live output bars take. It used to be mixed towards green going
+    // forward and towards amber going back, which made one of the two
+    // directions look like a fault.
     if (domeLiveFill) {
       domeLiveFill.style.width = `${widthPct}%`;
       if (widthPct < 0.5) {
@@ -78,20 +108,21 @@
       } else if (percent >= 0) {
         domeLiveFill.style.opacity = "1";
         domeLiveFill.style.left = "50%";
-        domeLiveFill.style.background = "color-mix(in srgb, var(--success) 80%, var(--accent-bright))";
       } else {
         domeLiveFill.style.opacity = "1";
         domeLiveFill.style.left = `calc(50% - ${widthPct}%)`;
-        domeLiveFill.style.background = "color-mix(in srgb, var(--warning) 85%, var(--accent-bright))";
       }
     }
 
+    // The word, and only the word. The signed percentage sits beside it in
+    // #dome-speed-display, and printing the number in both put the same fact on
+    // the plate twice - once as "-42%" and once as "Reverse 42%".
     if (Math.abs(percent) < 2) {
-      setPillState(domeRotationState, "⏸️ Idle", "info", false);
+      setText(domeRotationState, "Idle");
     } else if (percent > 0) {
-      setPillState(domeRotationState, `↻ Forward ${percent}%`, "ok", false);
+      setText(domeRotationState, "Forward");
     } else {
-      setPillState(domeRotationState, `↺ Reverse ${Math.abs(percent)}%`, "warn", false);
+      setText(domeRotationState, "Reverse");
     }
   };
 
@@ -99,34 +130,28 @@
     const configEnabled = domeHardwareEnabled;
     window.PAApi.gateControls(
       [domeNeutral, domeMinPulse, domeMaxPulse, domeSpeedLimit, reloadEscButton,
-       domeRndEnable, domeRndSpeed, domeRndPauseMin, domeRndPauseMax, domeRndMoveMs, reloadRndButton],
+       domeRndEnable, domeRndSpeed, domeRndPauseMin, domeRndPauseMax, domeRndMoveMs, reloadRndButton,
+       domeFrontButton, domeHomeButton, domeTurnMs, domeTurnPct, ...domeTurnDirButtons],
       configEnabled,
     );
 
     domeDisabledCard?.classList.toggle("hidden", domeHardwareEnabled);
 
-    setPillState(
-      domeHardwarePill,
-      domeHardwareEnabled ? "🧩 DOME enabled" : "🧩 DOME disabled in Setup",
-      domeHardwareEnabled ? "ok" : "warn",
-      true,
+    setText(
+      domeHardwareState,
+      domeHardwareEnabled ? "switched on" : "switched off in Configuration",
     );
 
-    if (!webControlStatusKnown) {
-      setPillState(domeWebPill, "🕹️ Drive web lock status pending", "info", true);
-    } else {
-      setPillState(
-        domeWebPill,
-        webControlEnabled ? "🕹️ Drive web lock ON (drive only)" : "🕹️ Drive web lock OFF (drive only)",
-        "info",
-        true,
-      );
-    }
-
-    if (!domeHardwareEnabled) {
-      showFeedback(domeFeedback, "Dome controls unavailable: enable DOME — Dome ESC in Setup.", "warning");
-    } else if (!webControlStatusKnown) {
-      showFeedback(domeFeedback, "Waiting for live status frame...");
+    // Written when the state it reports changes, not on every reading: the
+    // line also carries the answer to Front is here and Go home, and a reading
+    // a second later would otherwise wipe the droid's clause before it is read.
+    const state = !domeHardwareEnabled ? "off" : !statusHeard ? "waiting" : "ready";
+    if (state === feedbackState) return;
+    feedbackState = state;
+    if (state === "off") {
+      showFeedback(domeFeedback, "Dome ESC is switched off. Switch it on in Configuration.", "warning");
+    } else if (state === "waiting") {
+      showFeedback(domeFeedback, "Waiting for the droid.");
     } else {
       showFeedback(domeFeedback, "Dome ready.");
     }
@@ -156,11 +181,9 @@
     return clampSpeed(direct);
   };
 
-  const renderStatusFrame = (payload) => {
-    webControlStatusKnown = typeof payload?.webControlEnabled === "boolean";
-    if (webControlStatusKnown) {
-      webControlEnabled = payload.webControlEnabled;
-    }
+  const renderReading = (reading) => {
+    const payload = reading.status;
+    statusHeard = payload !== null;
 
     const statusDomeEnabled = resolveDomeEnabledFromStatus(payload);
     if (typeof statusDomeEnabled === "boolean") {
@@ -170,6 +193,100 @@
     renderDomeTargetSpeed(resolveDomeTargetSpeed(payload));
     updateDomeControlsEnabled();
   };
+
+  // ---------------------------------------------------------------------------
+  // Where the dome points (#445). The number comes from the one accessor every
+  // dome drawing reads (data/dome_bearing.js), with "believed" beside it in its
+  // own row; unknown is a word in the number's place, never a number.
+  // ---------------------------------------------------------------------------
+  const renderBearing = (bearing) => {
+    if (!domeBearingValue) return;
+    if (bearing?.believed) {
+      domeBearingValue.textContent = `${bearing.deg.toFixed(1)}°`;
+      domeBearingValue.classList.remove("is-unknown");
+      if (domeBearingWord) domeBearingWord.hidden = false;
+    } else {
+      domeBearingValue.textContent = "Unknown";
+      domeBearingValue.classList.add("is-unknown");
+      if (domeBearingWord) domeBearingWord.hidden = true;
+    }
+  };
+
+  // A press goes to the droid, which decides; a refusal comes back as its one
+  // clause (include/dome_bearing_act.h) and is shown as it is.
+  const pressBearingAct = async (route, done) => {
+    if (!window.PAApi) return;
+    try {
+      await window.PAApi.postForm(route, {}, { timeoutMs: 3000 });
+      showFeedback(domeFeedback, done, "success");
+    } catch (error) {
+      showFeedback(domeFeedback, window.PAApi.messageFor(error), "warning");
+    }
+  };
+
+  domeFrontButton?.addEventListener("click", () => pressBearingAct("/api/dome/front", "Front set."));
+  domeHomeButton?.addEventListener("click", () => pressBearingAct("/api/dome/home", "Turning home."));
+
+  // ---------------------------------------------------------------------------
+  // The full turn: three numbers the droid cannot measure. 0 and `unset` are
+  // "never recorded", so a box holding 0 is shown empty and the subtitle says
+  // so until all three are set.
+  // ---------------------------------------------------------------------------
+  let turnDir = "unset";
+
+  const paintTurnDir = () => {
+    domeTurnDirButtons.forEach((button) => {
+      const on = button.dataset.value === turnDir;
+      button.classList.toggle("active", on);
+      button.setAttribute("aria-pressed", on ? "true" : "false");
+      button.setAttribute("aria-checked", on ? "true" : "false");
+    });
+  };
+
+  const paintTurnState = () => {
+    const set = Number(domeTurnMs?.value) > 0 && Number(domeTurnPct?.value) > 0 && turnDir !== "unset";
+    setText(domeTurnState, set ? "set" : "not set");
+  };
+
+  const renderTurnSnapshot = (domeEsc) => {
+    const shown = (value) => (Number(value) > 0 ? String(value) : "");
+    if (domeTurnMs && domeEsc.fullTurnMs !== undefined) domeTurnMs.value = shown(domeEsc.fullTurnMs);
+    if (domeTurnPct && domeEsc.fullTurnPct !== undefined) domeTurnPct.value = shown(domeEsc.fullTurnPct);
+    if (domeEsc.positiveTurn !== undefined) turnDir = String(domeEsc.positiveTurn);
+    paintTurnDir();
+    paintTurnState();
+  };
+
+  // What the builder typed; an empty box is left out rather than sent as 0.
+  const turnPayload = (extra = {}) => {
+    const payload = { ...extra };
+    if (typed(domeTurnMs) !== "") payload.domeEscFullTurnMs = typed(domeTurnMs);
+    if (typed(domeTurnPct) !== "") payload.domeEscFullTurnPct = typed(domeTurnPct);
+    return payload;
+  };
+
+  const saveTurn = async (extra = {}) => {
+    if (!window.PAApi || !domeHardwareEnabled) return;
+    const payload = turnPayload(extra);
+    if (Object.keys(payload).length === 0) return;
+    showFeedback(turnFeedback, "Saving...");
+    try {
+      await window.PAApi.postForm("/api/config", payload, { timeoutMs: 3000 });
+      paintTurnState();
+      showFeedback(turnFeedback, `Saved at ${new Date().toLocaleTimeString()}`, "success");
+    } catch (error) {
+      showFeedback(turnFeedback, `Failed to save the full turn: ${window.PAApi.messageFor(error, payload)}`, "error");
+    }
+  };
+
+  domeTurnDirButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.value === turnDir) return;
+      turnDir = button.dataset.value;
+      paintTurnDir();
+      saveTurn({ domeEscPositiveTurn: turnDir });
+    });
+  });
 
   const renderEscConfigSnapshot = (data) => {
     const domeEsc = data?.domeEsc || {};
@@ -185,6 +302,7 @@
     if (domeRndPauseMin && domeEsc.rndPauseMin !== undefined) domeRndPauseMin.value = domeEsc.rndPauseMin;
     if (domeRndPauseMax && domeEsc.rndPauseMax !== undefined) domeRndPauseMax.value = domeEsc.rndPauseMax;
     if (domeRndMoveMs && domeEsc.rndMoveMs !== undefined) domeRndMoveMs.value = domeEsc.rndMoveMs;
+    renderTurnSnapshot(domeEsc);
 
     setDomeHardwareEnabled(Boolean(components.domeEsc?.enabled));
   };
@@ -201,68 +319,30 @@
       const ts = new Date().toLocaleTimeString();
       showFeedback(escFeedback, `Motor settings loaded at ${ts}`, "success");
       showFeedback(rndFeedback, `Loaded at ${ts}`, "success");
+      showFeedback(turnFeedback, `Loaded at ${ts}`, "success");
     } catch (error) {
       showFeedback(escFeedback, `Failed to load motor settings: ${window.PAApi.messageFor(error)}`, "error");
+      showFeedback(turnFeedback, "Failed to load the full turn.", "error");
       throw error;
     }
   };
 
-  const clampInt = (value, min, max) => Math.max(min, Math.min(max, value));
+  // What goes out is what the builder typed: the droid holds the ranges and
+  // the pulse order, and a value it will not take comes back as a refusal
+  // worded by PAApi.messageFor() (ADR 0068, amended 2026-09-26).
+  const typed = (input) => String(input?.value ?? "").trim();
 
-  const parseEscField = (input, min, max, label) => {
-    const rawText = String(input?.value ?? "").trim();
-    if (!rawText) {
-      return { error: `${label} is required.` };
-    }
-    const parsed = Number.parseInt(rawText, 10);
-    if (!Number.isFinite(parsed)) {
-      return { error: `${label} must be a whole number.` };
-    }
-    const clamped = clampInt(parsed, min, max);
-    return { value: clamped };
-  };
-
-  const validateEscConfig = () => {
-    const neutral = parseEscField(domeNeutral, 1000, 2000, "Neutral pulse");
-    if (neutral.error) return { ok: false, error: neutral.error };
-
-    const minPulse = parseEscField(domeMinPulse, 1000, 2000, "Minimum pulse");
-    if (minPulse.error) return { ok: false, error: minPulse.error };
-
-    const maxPulse = parseEscField(domeMaxPulse, 1000, 2000, "Maximum pulse");
-    if (maxPulse.error) return { ok: false, error: maxPulse.error };
-
-    const speedLimit = parseEscField(domeSpeedLimit, 0, 100, "Speed limit");
-    if (speedLimit.error) return { ok: false, error: speedLimit.error };
-
-    if (minPulse.value > maxPulse.value) {
-      return { ok: false, error: "Minimum pulse must be less than or equal to maximum pulse." };
-    }
-    if (neutral.value < minPulse.value || neutral.value > maxPulse.value) {
-      return { ok: false, error: "Neutral pulse must be within the minimum and maximum pulse range." };
-    }
-
-    return {
-      ok: true,
-      payload: {
-        domeEscNeutralUs: String(neutral.value),
-        domeEscMinPulseUs: String(minPulse.value),
-        domeEscMaxPulseUs: String(maxPulse.value),
-        domeEscSpeedLimitPct: String(speedLimit.value),
-      },
-    };
-  };
+  const escPayload = () => ({
+    domeEscNeutralUs: typed(domeNeutral),
+    domeEscMinPulseUs: typed(domeMinPulse),
+    domeEscMaxPulseUs: typed(domeMaxPulse),
+    domeEscSpeedLimitPct: typed(domeSpeedLimit),
+  });
 
   const saveEscConfig = async () => {
     if (!window.PAApi) return;
     if (!domeHardwareEnabled) {
-      showFeedback(escFeedback, "Dome settings unavailable: enable DOME — Dome ESC in Setup.", "warning");
-      return;
-    }
-
-    const validation = validateEscConfig();
-    if (!validation.ok) {
-      showFeedback(escFeedback, validation.error, "warning");
+      showFeedback(escFeedback, "Dome settings unavailable: enable DOME — Dome ESC in Configuration.", "warning");
       return;
     }
 
@@ -271,7 +351,7 @@
     try {
       await window.PAApi.postForm(
         "/api/config",
-        validation.payload,
+        escPayload(),
         { timeoutMs: 3000 },
       );
 
@@ -281,55 +361,18 @@
     }
   };
 
-  const refreshStatus = async () => {
-    if (!window.PAApi) return;
-    try {
-      const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
-      renderStatusFrame(result.data);
-    } catch {
-      // Keep pending/last-known UI state when status is temporarily unavailable.
-    }
-  };
-
-  const validateRndDomeConfig = () => {
-    const speedVal = parseEscField(domeRndSpeed, 5, 100, "Speed");
-    if (speedVal.error) return { ok: false, error: speedVal.error };
-
-    const pauseMinVal = parseEscField(domeRndPauseMin, 1, 120, "Min pause");
-    if (pauseMinVal.error) return { ok: false, error: pauseMinVal.error };
-
-    const pauseMaxVal = parseEscField(domeRndPauseMax, 1, 120, "Max pause");
-    if (pauseMaxVal.error) return { ok: false, error: pauseMaxVal.error };
-
-    const moveVal = parseEscField(domeRndMoveMs, 500, 10000, "Move duration");
-    if (moveVal.error) return { ok: false, error: moveVal.error };
-
-    if (pauseMinVal.value > pauseMaxVal.value) {
-      return { ok: false, error: "Min pause must be less than or equal to max pause." };
-    }
-
-    return {
-      ok: true,
-      payload: {
-        domeEscRndEnable: domeRndEnable?.checked ? "true" : "false",
-        domeEscRndSpeedPct: String(speedVal.value),
-        domeEscRndPauseMin: String(pauseMinVal.value),
-        domeEscRndPauseMax: String(pauseMaxVal.value),
-        domeEscRndMoveMs: String(moveVal.value),
-      },
-    };
-  };
+  const rndPayload = () => ({
+    domeEscRndEnable: domeRndEnable?.checked ? "true" : "false",
+    domeEscRndSpeedPct: typed(domeRndSpeed),
+    domeEscRndPauseMin: typed(domeRndPauseMin),
+    domeEscRndPauseMax: typed(domeRndPauseMax),
+    domeEscRndMoveMs: typed(domeRndMoveMs),
+  });
 
   const saveRndDomeConfig = async () => {
     if (!window.PAApi) return;
     if (!domeHardwareEnabled) {
-      showFeedback(rndFeedback, "Random dome controls unavailable: enable DOME — Dome ESC in Setup.", "warning");
-      return;
-    }
-
-    const validation = validateRndDomeConfig();
-    if (!validation.ok) {
-      showFeedback(rndFeedback, validation.error, "warning");
+      showFeedback(rndFeedback, "Random dome controls unavailable: enable DOME — Dome ESC in Configuration.", "warning");
       return;
     }
 
@@ -338,7 +381,7 @@
     try {
       await window.PAApi.postForm(
         "/api/config",
-        validation.payload,
+        rndPayload(),
         { timeoutMs: 3000 },
       );
 
@@ -350,6 +393,7 @@
 
   const debouncedSave = window.PAUtils.debounce(saveEscConfig, 500);
   const debouncedRndSave = window.PAUtils.debounce(saveRndDomeConfig, 500);
+  const debouncedTurnSave = window.PAUtils.debounce(() => saveTurn(), 500);
 
   domeNeutral?.addEventListener("input", debouncedSave);
   domeMinPulse?.addEventListener("input", debouncedSave);
@@ -364,26 +408,13 @@
   domeRndMoveMs?.addEventListener("input", debouncedRndSave);
   reloadRndButton?.addEventListener("click", loadEscConfig);
 
-  if (window.PAStatusStream?.isSupported()) {
-    window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType !== "status") return;
-      renderStatusFrame(payload);
-    });
-    if (!window.PAStatusStream.getLastStatus()) {
-      refreshStatus().catch(() => {});
-    }
-  } else {
-    refreshStatus().catch(() => {});
-    window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      refreshStatus().catch(() => {});
-    }, 5000);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "hidden") {
-        refreshStatus().catch(() => {});
-      }
-    });
-  }
+  domeTurnMs?.addEventListener("input", debouncedTurnSave);
+  domeTurnPct?.addEventListener("input", debouncedTurnSave);
+
+  // The dome's live state rides the Live Reading, which owns the stream or the
+  // one fallback poll for the whole shell (data/live_reading.js).
+  window.PALiveReading.subscribe(renderReading);
+  window.PADomeBearing?.subscribe(renderBearing);
 
   // -------------------------------------------------------------------------
   // Boot — load config then start status subscription
@@ -402,11 +433,12 @@
       return;
     }
     window.PABootstrap.setResourceLabels?.({
-      "/web_api.js": "controller connection",
+      "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
+      "/live_reading.js": "live updates",
+      "/dome_bearing.js": "where the dome points",
       "/shell.js": "page layout",
       "/dome.js": "dome control",
-      "/footer.js": "page footer",
     });
     SECTIONS.forEach(([name, load, label]) =>
       window.PABootstrap.registerSection(name, load, { label })

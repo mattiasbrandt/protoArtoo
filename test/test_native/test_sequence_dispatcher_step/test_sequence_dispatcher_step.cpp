@@ -241,17 +241,25 @@ void test_dome_rotate_receives_timestamp_parameter() {
 // =============================================================================
 
 void test_wait_ms_active_sequence_returns_10() {
-    uint32_t waitMs = sequence_dispatcher_wait_ms(true, false);
+    uint32_t waitMs = sequence_dispatcher_wait_ms(true, false, false);
     TEST_ASSERT_EQUAL_UINT32(10, waitMs);
 }
 
 void test_wait_ms_resync_close_pending_returns_10() {
-    uint32_t waitMs = sequence_dispatcher_wait_ms(false, true);
+    uint32_t waitMs = sequence_dispatcher_wait_ms(false, true, false);
+    TEST_ASSERT_EQUAL_UINT32(10, waitMs);
+}
+
+// A bulk centre sweeping wakes the task at the same cadence (#365). At the idle
+// 250 ms the wake would decide the spacing between two Outputs instead of the
+// Cadence Floor, which is a number in milliseconds.
+void test_wait_ms_bulk_centre_sweeping_returns_10() {
+    uint32_t waitMs = sequence_dispatcher_wait_ms(false, false, true);
     TEST_ASSERT_EQUAL_UINT32(10, waitMs);
 }
 
 void test_wait_ms_idle_returns_250() {
-    uint32_t waitMs = sequence_dispatcher_wait_ms(false, false);
+    uint32_t waitMs = sequence_dispatcher_wait_ms(false, false, false);
     TEST_ASSERT_EQUAL_UINT32(250, waitMs);
 }
 
@@ -290,6 +298,7 @@ int main(int /*argc*/, char** /*argv*/) {
 
     RUN_TEST(test_wait_ms_active_sequence_returns_10);
     RUN_TEST(test_wait_ms_resync_close_pending_returns_10);
+    RUN_TEST(test_wait_ms_bulk_centre_sweeping_returns_10);
     RUN_TEST(test_wait_ms_idle_returns_250);
 
     return UNITY_END();

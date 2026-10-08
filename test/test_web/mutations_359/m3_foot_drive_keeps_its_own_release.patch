@@ -1,0 +1,12 @@
+diff --git i/data/drive.js w/data/drive.js
+index 36e4a396..b0a81bd5 100644
+--- i/data/drive.js
++++ w/data/drive.js
+@@ -466,6 +466,7 @@
+     }
+   };
+ 
++  document.getElementById("clear-estop-button")?.addEventListener("click", () => window.PAApi.estopPostForm("/api/estop/clear", {}, { timeoutMs: 3000 }));
+   enableWebControlButton?.addEventListener("click", () => postCommand("/api/web-control/enable", "Web control enable"));
+   disableWebControlButton?.addEventListener("click", () => postCommand("/api/web-control/disable", "Web control disable"));
+   presetButtons.forEach((button) => {

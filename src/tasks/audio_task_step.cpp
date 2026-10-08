@@ -21,7 +21,8 @@ static bool intentExecutable(const AudioPlaybackIntent& intent) {
     if (intent.kind == AUDIO_PLAYBACK_INTENT_PLAY_FLAT && intent.track == 0) {
         return false;
     }
-    if (intent.kind == AUDIO_PLAYBACK_INTENT_PLAY_BANKED &&
+    if ((intent.kind == AUDIO_PLAYBACK_INTENT_PLAY_BANKED ||
+         intent.kind == AUDIO_PLAYBACK_INTENT_BACKGROUND_TRACK_START) &&
         (intent.index == 0 || intent.bank == 0 || intent.page < 'A' || intent.page > 'Z')) {
         return false;
     }
@@ -52,6 +53,17 @@ static void applyIntentToState(AudioStepState& state, const AudioPlaybackIntent&
             break;
         case AUDIO_PLAYBACK_INTENT_RANDOM_OFF:
             state.randomMode = false;
+            break;
+        case AUDIO_PLAYBACK_INTENT_PLAY_FLAT:
+            // Where CHIRP plays a flat track; a flat module reads the index alone.
+            state.currentBank = AUDIO_FLAT_BANK;
+            state.currentPage = AUDIO_FLAT_PAGE;
+            state.currentIndex = intent.track;
+            break;
+        case AUDIO_PLAYBACK_INTENT_PLAY_BANKED:
+            state.currentBank = intent.bank;
+            state.currentPage = intent.page;
+            state.currentIndex = intent.index;
             break;
         default:
             break;
@@ -147,6 +159,136 @@ static void resolvePlayback(AudioStepState& state, const AudioStepCommandInputs&
     applyIntentToState(state, actions->intent, in.nowMs);
 }
 
+// The bank/page/index a Background Track's '$' names. A Named Track's letter is
+// that Named Track: its CHIRP binding where one is valid, else its numbered
+// track (audioPlaybackResolveSlot()). Otherwise the '$' is read as a vocal's is
+// (AUDIO_CMD_DOLLAR above): $8nn is bank 8 where the module has one, and any
+// other number is that track. A numbered track goes to AUDIO_FLAT_BANK /
+// AUDIO_FLAT_PAGE (include/audio_driver.h), the address the CHIRP driver plays
+// it at as a vocal. No anti-spam gate on any of it: a Background Track is
+// authored, not chatter.
+//
+// The letter goes to its Named Track directly rather than through
+// parseAudioDollar(), so the names Protocol Check accepts for a Background
+// Track (audioDollarNamesSound(), the same letter table) are the names that
+// play, whatever the vocal parser covers.
+//
+// True with the address in request->backgroundTrack. False when there is
+// nothing to play, with the reason in actions: an ignore reason, or a NONE
+// intent carrying the policy's reason for a Named Track set to nothing.
+//
+// Out of line on purpose: audioStepCommand() is on AudioTask's recorded stack
+// chain (its log line, tools/task_stack_recipes.json), and nothing under this
+// logs, so its locals stay off that route.
+static bool __attribute__((noinline)) backgroundTrackAddress(const AudioStepCommandInputs& in,
+                                                             const char* dollar,
+                                                             AudioPlaybackRequest* request,
+                                                             AudioStepCommandActions* actions) {
+    const AudioPlaybackSlot slot =
+        (dollar[0] == '$' && dollar[1] != '\0' && dollar[2] == '\0') ? audioSlotForDollar(dollar)
+                                                                     : AUDIO_SLOT_NONE;
+    if (slot != AUDIO_SLOT_NONE) {
+        AudioPlaybackContext context{in.playback, in.bindings, in.catalogCapable, in.nowMs, 0};
+        const AudioPlaybackIntent named = audioPlaybackResolveSlot(context, slot);
+        if (named.kind == AUDIO_PLAYBACK_INTENT_PLAY_BANKED) {
+            request->backgroundTrack.index = named.index;
+            request->backgroundTrack.bank = named.bank;
+            request->backgroundTrack.page = named.page;
+            return true;
+        }
+        if (named.kind == AUDIO_PLAYBACK_INTENT_PLAY_FLAT) {
+            request->backgroundTrack.index = named.track;
+            request->backgroundTrack.bank = AUDIO_FLAT_BANK;
+            request->backgroundTrack.page = AUDIO_FLAT_PAGE;
+            return true;
+        }
+        actions->intent = named;
+        actions->intent.requestKind = AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_START;
+        actions->hasIntent = true;
+        return false;
+    }
+    const AudioAction action = parseAudioDollar(dollar, *in.named);
+    if (action.type == AUDIO_ACTION_PLAY_BANKED) {
+        if (!in.catalogCapable || action.bank != AUDIO_DOLLAR_BANK || in.dollarBankPage == '\0') {
+            actions->ignored = AUDIO_STEP_IGNORE_BANK_NOT_FITTED;
+            return false;
+        }
+        request->backgroundTrack.index = action.track;
+        request->backgroundTrack.bank = action.bank;
+        request->backgroundTrack.page = in.dollarBankPage;
+        return true;
+    }
+    if (action.type == AUDIO_ACTION_PLAY_TRACK) {
+        request->backgroundTrack.index = action.track;
+        request->backgroundTrack.bank = AUDIO_FLAT_BANK;
+        request->backgroundTrack.page = AUDIO_FLAT_PAGE;
+        return true;
+    }
+    actions->ignored = AUDIO_STEP_IGNORE_NOT_A_SOUND;
+    return false;
+}
+
+// The play request for next (step > 0) or previous sound, from the sound the
+// droid last played (AudioStepState::currentIndex). ADR 0054 specific 4: next
+// means within the current bank and page on a module with a catalog, within
+// the current category range on a flat module.
+//
+// - With a catalog: the same bank and page, wrapping at the count the module
+//   reported for it (in.currentPageCount). With no count - no catalog read
+//   yet, or a page the catalog does not list - next goes up by one and
+//   previous stops at 1, rather than guess where the page ends.
+// - Flat: the first category range that holds the track, wrapping at its
+//   ends. A track no range holds steps by one, never below 1.
+// - Nothing played since boot: sound 1, Bank 1 Page A with a catalog.
+//
+// Out of line for the same reason as backgroundTrackAddress() above.
+static AudioPlaybackRequest __attribute__((noinline)) soundStepRequest(const AudioStepState& state,
+                                                                       const AudioStepCommandInputs& in,
+                                                                       int8_t step) {
+    AudioPlaybackRequest request{};
+    const uint16_t current = state.currentIndex;
+    if (in.catalogCapable) {
+        request.kind = AUDIO_PLAYBACK_REQ_DIRECT_BANKED;
+        request.banked.bank = current == 0 ? AUDIO_FLAT_BANK : state.currentBank;
+        request.banked.page = current == 0 ? AUDIO_FLAT_PAGE : state.currentPage;
+        const uint16_t count = in.currentPageCount;
+        uint16_t index = 1;
+        if (current != 0 && step > 0) {
+            index = (count != 0 && current >= count) ? 1 : (uint16_t)(current + 1);
+        } else if (current != 0) {
+            index = current > 1 ? (uint16_t)(current - 1) : (count != 0 ? count : 1);
+        }
+        request.banked.index = index;
+        return request;
+    }
+
+    request.kind = AUDIO_PLAYBACK_REQ_DIRECT_TRACK;
+    request.track = 1;
+    if (current == 0) {
+        return request;
+    }
+    if (in.playback != nullptr) {
+        for (uint8_t c = 0; c < AUDIO_CATEGORY_COUNT; ++c) {
+            const SoundCategoryRange& range = in.playback->categoryRanges[c];
+            if (range.lo == 0 || range.lo > range.hi || current < range.lo || current > range.hi) {
+                continue;
+            }
+            if (step > 0) {
+                request.track = current >= range.hi ? range.lo : (uint16_t)(current + 1);
+            } else {
+                request.track = current <= range.lo ? range.hi : (uint16_t)(current - 1);
+            }
+            return request;
+        }
+    }
+    if (step > 0) {
+        request.track = current < 65535u ? (uint16_t)(current + 1) : current;
+    } else {
+        request.track = current > 1 ? (uint16_t)(current - 1) : 1;
+    }
+    return request;
+}
+
 AudioStepCommandActions audioStepCommand(AudioStepState& state,
                                          const AudioStepCommandInputs& in,
                                          const AudioCommand& cmd) {
@@ -188,6 +330,19 @@ AudioStepCommandActions audioStepCommand(AudioStepState& state,
             } else if (action.type == AUDIO_ACTION_VOLUME_UP) {
                 request.kind = AUDIO_PLAYBACK_REQ_SET_VOLUME;
                 request.volume = audioClampVolume(state.currentVol + 1);
+            } else if (action.type == AUDIO_ACTION_PLAY_BANKED) {
+                // Played only where the module has the bank: a module that has
+                // none would otherwise be sent a sound it cannot find, and a
+                // raw-track reading is the wrong file this form replaced.
+                if (!in.catalogCapable || action.bank != AUDIO_DOLLAR_BANK ||
+                    in.dollarBankPage == '\0') {
+                    actions.ignored = AUDIO_STEP_IGNORE_BANK_NOT_FITTED;
+                    break;
+                }
+                request.kind = AUDIO_PLAYBACK_REQ_DIRECT_BANKED;
+                request.banked.index = action.track;
+                request.banked.bank = action.bank;
+                request.banked.page = in.dollarBankPage;
             } else if (action.type == AUDIO_ACTION_VOLUME_DOWN) {
                 request.kind = AUDIO_PLAYBACK_REQ_SET_VOLUME;
                 request.volume = (state.currentVol > AUDIO_VOLUME_MIN)
@@ -252,17 +407,53 @@ AudioStepCommandActions audioStepCommand(AudioStepState& state,
             break;
         }
 
-        case AUDIO_CMD_STOP: {
+        case AUDIO_CMD_TRACK_STOP: {
             AudioPlaybackRequest request{};
-            request.kind = AUDIO_PLAYBACK_REQ_STOP;
+            request.kind = AUDIO_PLAYBACK_REQ_TRACK_STOP;
+            request.backgroundTrackHeld = in.backgroundTrackHeld;
             resolvePlayback(state, in, request, false, &actions);
             break;
         }
 
-        case AUDIO_CMD_TRACK_STOP: {
+        case AUDIO_CMD_BACKGROUND_TRACK_START: {
+            if (in.sleepMode) {
+                actions.ignored = AUDIO_STEP_IGNORE_SLEEP;
+                break;
+            }
+            // The one audio seam a Background Track passes (ADR 0054): a module
+            // that cannot mix is never asked, and the reason is reported rather
+            // than lost.
+            if (!in.mixCapable) {
+                actions.ignored = AUDIO_STEP_IGNORE_CANNOT_MIX;
+                break;
+            }
             AudioPlaybackRequest request{};
-            request.kind = AUDIO_PLAYBACK_REQ_TRACK_STOP;
+            request.kind = AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_START;
+            if (!backgroundTrackAddress(in, cmd.backgroundTrack.dollar, &request, &actions)) {
+                break;
+            }
+            request.backgroundTrack.volume = cmd.backgroundTrack.volume;
             resolvePlayback(state, in, request, false, &actions);
+            break;
+        }
+
+        case AUDIO_CMD_BACKGROUND_TRACK_STOP: {
+            // Not gated on mixCapable: on a module that cannot mix no
+            // Background Track is playing, and the driver's
+            // stopBackgroundTrack() sends nothing.
+            AudioPlaybackRequest request{};
+            request.kind = AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_STOP;
+            request.vocalHeld = in.vocalHeld;
+            resolvePlayback(state, in, request, false, &actions);
+            break;
+        }
+
+        case AUDIO_CMD_STEP_SOUND: {
+            if (in.sleepMode) {
+                actions.ignored = AUDIO_STEP_IGNORE_SLEEP;
+                break;
+            }
+            resolvePlayback(state, in, soundStepRequest(state, in, cmd.step), true, &actions);
             break;
         }
 
@@ -307,7 +498,8 @@ AudioStepIdleActions audioStepIdle(AudioStepState& state, const AudioStepIdleInp
         AudioPlaybackRandomContext context{in.playback,     in.bindings, in.catalogCapable,
                                            state.randomMode, in.domeSeqActive,
                                            in.nowMs,        state.lastRandMs,
-                                           in.activeMood,   in.randomValue};
+                                           in.activeMood,   in.randomValue,
+                                           in.driving};
         actions.intent = audioPlaybackResolveRandomTick(context);
         actions.hasIntent = true;
         applyIntentToState(state, actions.intent, in.nowMs);

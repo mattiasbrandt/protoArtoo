@@ -19,6 +19,18 @@
 //   - Frequency: Standard RC servo/ESC frequency
 //   - Pulse range: 500-2500us (servos), 1000-2000us (ESC +/-500us from neutral)
 //
+// ARM1 and ARM2 are Output Addresses and a board legend, not Part names. The
+// Droid Parts Catalog calls the two utility arms `utilUp` and `utilLo`
+// (docs/droid-parts.yaml, "one of the two MG996R utility arm servos protoR2
+// already drives"), and those are Parts: identity, not wiring. The two
+// vocabularies are not a duplicate to be reconciled -- ADR 0041 and ADR 0050
+// keep them apart deliberately, because which Part a wire moves is the
+// builder's own droid's answer, not this header's. What joins them is the Part
+// list on the Servo Output row addressed to a channel, and since #345 that list
+// can only hold an id the compiled catalog vocabulary models
+// (servoOutputPartIdIsValid). So: nothing here claims ARM1 drives `utilUp`, and
+// nothing should -- a row records it once a builder says so.
+//
 // Pure-math helpers (pulseUsToDuty, clampPulseWidth) are inline so they can
 // be exercised by native unit tests without pulling in ESP32 LEDC headers.
 //
@@ -146,7 +158,9 @@ inline uint16_t clampPulseWidth(uint8_t channel, uint16_t pulseUs) {
 // enabledMask: bitmask where bit N corresponds to LedcChannel N.
 // A bit set to 1 includes the channel; 0 excludes it.
 // Bit positions: 0=ARM1, 1=ARM2, 2=DOME, 3=AUX1, 4=AUX2, 5=AUX3.
-// Pass 0 to skip initialization entirely.
+// The timer is configured whatever the mask, so a channel left out can be
+// attached later (ledcPwmAttach()); a mask of 0 configures no channel.
+// Servo channels start with no pulse (limp); the DOME channel starts at neutral.
 // Must be called once before using any PWM outputs.
 // Returns true on success, false if LEDC setup fails.
 bool ledcPwmInit(uint8_t enabledMask);
@@ -156,21 +170,32 @@ bool ledcPwmInit(uint8_t enabledMask);
 // Returns true on success, false if channel invalid or LEDC write fails.
 bool ledcPwmSetPulseWidth(uint8_t channel, uint16_t pulseUs);
 
-// Set pulse width as a percentage of range (0.0-1.0).
-// 0.0 = minimum pulse, 1.0 = maximum pulse.
-// Useful for mapping normalized SBUS commands to servo positions.
-bool ledcPwmSetPercent(uint8_t channel, float percent);
+// Take the pulse off a channel (ADR 0043, #364): duty 0, so the pin sits low
+// for the whole period and the servo sees no pulse at all -- it goes limp
+// where it is. The channel stays configured, so the next
+// ledcPwmSetPulseWidth() puts a pulse back. Returns false silently if the
+// channel is not in the configured mask, false with a log if the LEDC write
+// fails.
+//
+// This is what a halt does to a servo output: ServoTask releases every enabled
+// one on the estop and Sleep Mode edge and commands no position at all, because
+// a held drive grinds a fought part and driving many outputs at once is the
+// documented brownout. The dome ESC is the deliberate exception and is not
+// released: a floating signal line reads as Receiver Lost to an ESC70, so
+// dome_task.cpp drives it to its CONFIGURED neutral instead
+// (setDomeNeutral(); docs/spec-sheets/isdt-esc70-dome-esc.md, "What the ESC
+// watches, and what it says").
+bool ledcPwmRelease(uint8_t channel);
 
-// Set channel to neutral position (1500us).
-bool ledcPwmSetNeutral(uint8_t channel);
+// Attach one servo channel left out at init, with no pulse on it (duty 0), so
+// the next ledcPwmSetPulseWidth() drives it: a Find by Moving run taking a free
+// Output (include/servo_run.h, #411). Safe on ServoTask's Core 1 loop once
+// ledcPwmInit() has run: the timer's init created the driver's context, so
+// ledc_channel_config() allocates nothing here and takes only its own brief
+// locks (read in both IDF pools, esp_driver_ledc/src/ledc.c). Never the DOME
+// channel, which init owns. True when the channel is configured, already or
+// now; false with a log if LEDC refuses.
+bool ledcPwmAttach(uint8_t channel);
 
 // Get the GPIO pin associated with a channel. Returns 0 if channel invalid.
 uint8_t getChannelGpio(uint8_t channel);
-
-// Initialize all outputs to neutral position.
-// Call after ledcPwmInit() to ensure servos/ESC start in a known state.
-void ledcPwmInitNeutralPositions();
-
-// Emergency stop  --  set all channels to neutral immediately.
-// Safe to call from any context; does not log.
-void ledcPwmEmergencyStop();

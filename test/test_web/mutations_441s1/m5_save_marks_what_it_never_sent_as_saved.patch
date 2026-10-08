@@ -1,0 +1,13 @@
+diff --git i/data/seq.js w/data/seq.js
+index 9d711b71..e2f83c81 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -3604,7 +3604,7 @@
+       showRehearsalReport("Saved.", "ok", sent, "list");
+       editorState.isNew = false;
+       editorState.tuningFactory = null;
+-      editorState.original = sent;
++      editorState.original = JSON.parse(JSON.stringify(editorState.current));
+       refreshLearned();
+     } catch (error) {
+       showEditorFeedback("Save failed: " + PAApi.messageFor(error), "error");

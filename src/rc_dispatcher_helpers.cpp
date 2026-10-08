@@ -13,6 +13,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
+#include "audio_dollar_parser.h"  // audioDollarBankForm()
 #include "audio_task.h"
 #include "commanded_modes.h"
 #include "config.h"
@@ -24,6 +25,7 @@
 #include "failsafe_gate.h"
 #include "logging.h"
 #include "marcduino_helpers.h"
+#include "marcduino_router.h"  // routeMarcduinoLine()
 #include "queue_drop_tracker.h"
 #include "rc_action_dispatcher.h"
 #include "rc_input_processor.h"
@@ -78,27 +80,29 @@ void rcDispatchAudioTrigger(const char* audioTrigger) {
 // Servo Command Queue Helpers
 // =============================================================================
 
-static bool queueServoSequence(uint8_t sequenceId, CommandSource src) {
-    ServoCommand cmd = {};
-    cmd.type = SERVO_CMD_SEQUENCE;
-    cmd.sequenceId = sequenceId;
-    cmd.source = src;
-    cmd.timestampMs = millis();
-    if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
-        logQueueDrop(QUEUE_SERVO_CMD, "servo sequence command");
-        return false;
-    }
-    return true;
+// A numbered body routine, :SE30..:SE36, is a Factory Sequence built from Body
+// Steps (ADR 0049), so it starts through the Sequence Coordinator like any other
+// DM:* name -- which is also what lets a Retrained Sequence of that name shadow
+// it. False when the id is not a body routine or the request queue is full.
+static bool startBodyRoutine(uint8_t sequenceId, CommandSource src) {
+    const char* name = sequenceBodyRoutineName(sequenceId);
+    return name != nullptr && sequenceStart(name, src);
 }
 
-static bool queueServoCommand(uint8_t armId, ServoCommandType type, uint16_t positionUs,
-                              CommandSource src) {
+// `boardIndex` is the RC action's arm/aux index, which counts the board's own
+// Outputs in their table's order; it goes out as that Output's address.
+//
+// noinline, deliberately: rcDispatchSingleAction() is on RCInputTask's measured
+// chain (ADR 0040), and inlined there the address lookup grew its frame by 16 B
+// (#444). Out of line its own route - one queue send and the drop's log line -
+// is far shallower than the Marcduino route that sets the chain.
+static __attribute__((noinline)) bool queueServoCommand(uint8_t boardIndex, ServoCommandType type,
+                                                        uint16_t positionUs, CommandSource src) {
     ServoCommand cmd = {};
-    cmd.armId = armId;
+    cmd.output = boardOutputAddress(boardIndex);
     cmd.type = type;
     cmd.positionUs = positionUs;
     cmd.source = src;
-    cmd.timestampMs = millis();
     if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
         logQueueDrop(QUEUE_SERVO_CMD, "servo command");
         return false;
@@ -127,10 +131,17 @@ RcDispatchOutcome rcDispatchSingleAction(const RcActionResult& res, CommandSourc
         }
     }
 
+    if (res.audioStep != 0) {
+        if (!audioQueueStepSound(res.audioStep, src)) {
+            PA_LOG_WARN(TAG, "%s sound dropped: queue full", res.audioStep > 0 ? "next" : "previous");
+            queueFull = true;
+        }
+    }
+
     if (res.servoIndex >= 0) {
         if (res.servoIsSequence) {
-            if (!queueServoSequence(res.servoSequenceId, src)) {
-                PA_LOG_WARN(TAG, "droid sequence servo queue full: seq=%u",
+            if (!startBodyRoutine(res.servoSequenceId, src)) {
+                PA_LOG_WARN(TAG, "droid sequence body routine not started: :SE%02u",
                             (unsigned)res.servoSequenceId);
                 queueFull = true;
             }
@@ -165,15 +176,29 @@ RcDispatchOutcome rcDispatchSingleAction(const RcActionResult& res, CommandSourc
         }
     }
 
+    // A Marcduino binding's line goes where Command Ownership sends it: the
+    // body runs what it owns and the rest is forwarded to the dome (ADR 0055,
+    // include/marcduino_router.h). A '$' line - the one other prefix
+    // rcPayloadValidForMarcduinoCommand() admits - is audio, queued as such.
+    // The binding carries this line and nothing else, so its outcome is the
+    // answer; the live RC loop still discards it, and the Console action
+    // executor reports it (#221).
     if (res.marcduinoCmd[0] != '\0') {
-        if (!parseMarcduinoCommand(res.marcduinoCmd)) {
-            PA_LOG_DEBUG(TAG, "marcduino command not recognized: %s", res.marcduinoCmd);
-            // Not a queue-full - the payload itself failed validation. This
-            // branch is unreachable for #220's in-scope action set
-            // (DOME_ACTION_MARCDUINO_SEQ/CMD require an argument, fenced to
-            // #221/#226); folded into queueFull here only so the live RC
-            // path (which can reach it) still reports a non-silent outcome
-            // rather than a new, #220-unused outcome value.
+        uint16_t bankSound = 0;
+        if (res.marcduinoCmd[0] == ':' || res.marcduinoCmd[0] == '#') {
+            const RcDispatchOutcome routed = rcDispatchOutcomeForMarcduinoRoute(
+                routeMarcduinoLine(res.marcduinoCmd));
+            if (routed != RcDispatchOutcome::kQueued) {
+                // A refused queue earlier in this result still reads as one.
+                return queueFull ? RcDispatchOutcome::kQueueFull : routed;
+            }
+        } else if (audioDollarBankForm(res.marcduinoCmd, nullptr, &bankSound) && bankSound == 0) {
+            // "$800": the bank form naming sound 00, which no bank has.
+            // Whether a bank 8 is fitted is AudioTask's to answer - the bank
+            // table is not read from RCInputTask.
+            return queueFull ? RcDispatchOutcome::kQueueFull : RcDispatchOutcome::kNotExecutable;
+        } else if (!audioQueueDollar(res.marcduinoCmd, src)) {
+            PA_LOG_WARN(TAG, "marcduino audio dropped: %s", res.marcduinoCmd);
             queueFull = true;
         }
     }
@@ -205,6 +230,13 @@ void rcDispatchTriggerResults(const RcProcessorOutput& output,
             PA_LOG_INFO(TAG, "[RC] sound %s CH%u %s -> seq %s",
                         rcBindingSourceToLabel(b.source), (unsigned)b.channel,
                         robotActionIdToString(b.target), res.audioDollarCmd);
+        }
+
+        if (res.audioStep != 0) {
+            const RcTriggerBinding& b = triggers[i];
+            PA_LOG_INFO(TAG, "[RC] sound %s CH%u %s -> %s", rcBindingSourceToLabel(b.source),
+                        (unsigned)b.channel, robotActionIdToString(b.target),
+                        res.audioStep > 0 ? "next" : "previous");
         }
 
         // Dispatch audio, servo, dome, marcduino commands. This loop is the

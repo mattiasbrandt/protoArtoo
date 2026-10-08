@@ -50,6 +50,56 @@ enum SeqStepType : uint8_t {
                               // STEP_CLEAR_LATCHES: no JSON/wire form, the seq_json
                               // parser cannot produce it, and serialization omits it,
                               // so it never reaches Protocol Check.
+    STEP_BODY           = 9,  // Body Step (ADR 0049): move one body Part. payload
+                              // carries the Droid Parts Catalog id -- the Part, not
+                              // an Output Address, so a recording survives a
+                              // re-address; params carries the Move Shape, how far
+                              // it goes as a fraction of that Part's own throw, and
+                              // for a flutter how long it goes on. Its own type
+                              // rather than a body target smuggled into
+                              // STEP_DOME_CMD's payload, on the precedent
+                              // STEP_DOME_ROTATE set for a body-owned motion step.
+    STEP_GESTURE        = 10, // Gesture (ADR 0046, include/sequence_gesture.h):
+                              // one authored move spread across many Parts.
+                              // payload carries the set token or the listed
+                              // Part ids, resolved when the step RUNS; params
+                              // carry the shape, how far and the spread, in
+                              // members the other types leave idle (the table
+                              // in sequence_gesture.h). The engine hands it to
+                              // the Sequence Coordinator whole: a dome Gesture
+                              // is one `$` command, a body Gesture a paced
+                              // expansion on the Coordinator's own cursor, so
+                              // it never holds this engine's single cursor.
+    STEP_SEQUENCE       = 11, // A sequence inside a sequence (ADR 0046): payload
+                              // carries the stable reference to it -- a Learned
+                              // Sequence's `id`, or a Factory Sequence's name,
+                              // which is fixed by construction. The store splices
+                              // the referenced steps in when the sequence is
+                              // loaded to RUN (seqStorePrepare()), so what runs
+                              // is always the phrase as it stands and the engine
+                              // never nests its cursor. One that reaches the
+                              // engine was not spliced -- its sequence is gone --
+                              // and fires nothing.
+    STEP_DOME_BEARING   = 12, // A bearing step (ADR 0051, #445): turn the dome
+                              // until a target faces front. payload carries the
+                              // target -- `front`, or a dome Part's catalog id,
+                              // whose bearing is resolved when the step RUNS so
+                              // a corrected `bearing_deg` reaches every saved
+                              // step (include/dome_bearing_act.h). Beside
+                              // STEP_DOME_ROTATE, which is untouched: a duration
+                              // always completes and a bearing may not, so they
+                              // are different contracts. No params.
+    STEP_BACKGROUND_TRACK = 13, // Start a Background Track (ADR 0054): music
+                              // playing under the routine at its own volume,
+                              // which vocals fire over without stopping it.
+                              // payload carries the sound as a '$' command, the
+                              // address STEP_AUDIO uses; params.backgroundTrackVol
+                              // its volume (0-30) and params.audioBounded whether
+                              // the run's normal end stops it (Bounded Audio,
+                              // ADR 0010: default yes). A module that cannot mix
+                              // does not play it, and the run says why.
+    STEP_BACKGROUND_TRACK_STOP = 14, // Stop the Background Track and nothing
+                              // else. No payload, no params.
 };
 
 // -----------------------------------------------------------------------------
@@ -61,7 +111,8 @@ enum SeqStepType : uint8_t {
 enum SeqEffectClass : uint8_t {
     FX_NONE      = 0,
     FX_LOGIC_PSI = 1 << 0,  // @0T* / @0P*   --  reset with @0T1 + @0P1
-    FX_PANEL     = 1 << 1,  // panel opens    --  reset with :CL00 (close + release)
+    FX_PANEL     = 1 << 1,  // panel opens    --  ring panels left open close one at a
+                            // time; never a group close, never a pie
     FX_HOLO      = 1 << 2,  // holo effects   --  reset with *ST00
     FX_AUDIO     = 1 << 3,  // long audio     --  Track Stop on ABNORMAL termination only
                             // (ring-out preserved on normal completion)
@@ -70,7 +121,22 @@ enum SeqEffectClass : uint8_t {
                                // Track Stop on normal termination as well as abnormal.
                                // Sibling to FX_AUDIO; SEQ_AUDIO_CAT keeps plain FX_AUDIO
                                // so short category vocalizations always ring out.
+    // A Background Track (STEP_BACKGROUND_TRACK, ADR 0054), the same pair as
+    // FX_AUDIO / FX_AUDIO_BOUNDED for the Background Track's own stop, because
+    // a Track Stop never reaches it. FX_BACKGROUND_TRACK (boundAudio:false)
+    // stops it on an abnormal end only; FX_BACKGROUND_TRACK_BOUNDED (the
+    // default) on every end. These are the last two bits activeFx has.
+    FX_BACKGROUND_TRACK         = 1 << 6,
+    FX_BACKGROUND_TRACK_BOUNDED = 1 << 7,
 };
+
+// The dome's whole visual reset: logics, PSIs and holos, one command each
+// (docs/dome-visual-presets.md names the three together as the body-owned
+// visual teardown). Sent where the body cannot say which visual families are
+// running: terminal cleanup of a dome-native :SE## sequence, and the dome
+// resync after an estop clears or the dome (re)connects. A family added here
+// reaches all of them.
+inline constexpr const char* const SEQ_DOME_VISUAL_RESETS[] = {"@0T1", "@0P1", "*ST00"};
 
 // -----------------------------------------------------------------------------
 // Random logical target sets.
@@ -93,6 +159,61 @@ enum SeqRandomMode : uint8_t {
 };
 
 // -----------------------------------------------------------------------------
+// Move Shape  --  what a step says one Part does (ADR 0049, GLOSSARY.md).
+//
+// These are the dome's own three words, so one word means one thing across the
+// droid: a builder who has learned that a dome panel opens, closes and flutters
+// has learned the body too, and a Gesture that spreads a shape never has to ask
+// which half of the droid it is on.
+//
+// A LIGHT PART STORES THE SAME TOKEN. The surface names them by Part Kind  -- 
+// a servo Part reads open/close/flutter and a light Part reads on/off/flash,
+// and "how far" reads as travel on one and brightness on the other  --  but the
+// stored shape is one token either way, which is what lets a Gesture spread one
+// shape across a mixed set. There is deliberately no second vocabulary here to
+// translate between.
+//
+// OPEN is 0 because it is the default: a step that says nothing about its shape
+// is an open, so absence and the default are the same value in storage. Every
+// reader goes through seqBodyShape() so the default is written once.
+// -----------------------------------------------------------------------------
+enum SeqBodyShape : uint8_t {
+    BODY_SHAPE_OPEN    = 0,
+    BODY_SHAPE_CLOSE   = 1,
+    BODY_SHAPE_FLUTTER = 2,
+    BODY_SHAPE_COUNT   = 3,
+};
+
+constexpr SeqBodyShape SEQ_BODY_SHAPE_DEFAULT = BODY_SHAPE_OPEN;
+
+// The stored token's spelling, beside the enum it spells, so the wire codec and
+// the run record read the same three words instead of each keeping a table.
+// The wire direction loops over this one rather than repeating the words
+// (seq_json.cpp), the way the audio category labels already do.
+inline const char* seqBodyShapeToString(uint8_t shape) {
+    switch (shape) {
+        case BODY_SHAPE_CLOSE:   return "close";
+        case BODY_SHAPE_FLUTTER: return "flutter";
+        case BODY_SHAPE_OPEN:
+        default:                 return "open";
+    }
+}
+
+// How far a Body Step moves its Part, as a percentage of that Part's OWN throw
+// (the Endpoint Pair recorded on the Output that drives it), so the same step
+// means the same gesture on a different linkage and a recalibration changes the
+// microseconds without touching the routine.
+//
+// Zero means the wire said nothing, and absence is the whole throw. A stated
+// value below the floor is FLOORED rather than refused: the model has no way to
+// mean "does not move", and refusing 3% would be a judgement about intent,
+// which is the Rehearsal's and never Protocol Check's (ADR 0044).
+constexpr uint8_t SEQ_BODY_HOWFAR_UNSET   = 0;
+constexpr uint8_t SEQ_BODY_HOWFAR_DEFAULT = 100;
+constexpr uint8_t SEQ_BODY_HOWFAR_FLOOR   = 5;
+constexpr uint8_t SEQ_BODY_HOWFAR_MAX     = 100;
+
+// -----------------------------------------------------------------------------
 // Per-type step parameters. All-zero for flat steps. Kept as one flat POD
 // (not a union) so static tables stay aggregate-initializable on the firmware
 // toolchain and the layout maps cleanly to a future serial format.
@@ -110,22 +231,75 @@ struct SeqStepParams {
     uint8_t  audioCategory;     // AUDIO_CATEGORY: AudioPlaybackCategory value
     uint8_t  audioFallbackSlot; // AUDIO_CATEGORY: AudioPlaybackSlot fallback
     int8_t   speedPct;          // DOME_ROTATE: signed -100..100 speed percentage
-    uint8_t  audioBounded;      // AUDIO (STEP_AUDIO), Learned Sequences only: parsed
-                                 // JSON boundAudio carrier, consumed by
-                                 // protocolCheckBranch() to stamp FX_AUDIO_BOUNDED vs
-                                 // FX_AUDIO (ADR 0010). Factory catalog entries set
+    uint8_t  audioBounded;      // AUDIO (STEP_AUDIO) and STEP_BACKGROUND_TRACK, Learned
+                                 // Sequences only: parsed JSON boundAudio carrier,
+                                 // consumed by protocolCheckBranch() to stamp
+                                 // FX_AUDIO_BOUNDED vs FX_AUDIO, or
+                                 // FX_BACKGROUND_TRACK_BOUNDED vs FX_BACKGROUND_TRACK
+                                 // (ADR 0010). Factory catalog entries set
                                  // effectClass directly via SEQ_AUDIO_FX and ignore
                                  // this field. Appended last so existing positional
-                                 // catalog-macro initializers stay valid (aggregate
-                                 // init zero-fills trailing members).
+                                 // catalog-macro initializers keep meaning what they
+                                 // meant; they still had to name it, because the
+                                 // firmware targets build with
+                                 // -Werror=missing-field-initializers.
+    // BODY (STEP_BODY), appended last for the same reason audioBounded was, and
+    // the rule is the same for whoever comes next: a new member goes on the END
+    // of this struct, so every positional initializer that already exists keeps
+    // meaning what it meant. A sequence saved by a prior build carries no body
+    // step at all, so it loads unchanged.
+    //
+    // Appending is two edits, not one: the catalog macros below name every
+    // member explicitly because the firmware targets build with
+    // -Werror=missing-field-initializers, so a list that stops short is a build
+    // failure rather than a trailing zero-fill.
+    uint8_t  shape;             // BODY: SeqBodyShape. Read through seqBodyShape()
+    uint8_t  howFar;            // BODY: 0..100 pct of that Part's own throw,
+                                 // SEQ_BODY_HOWFAR_UNSET when the wire said nothing.
+                                 // Read through seqBodyHowFar()
+    uint16_t flutterMs;         // BODY: how long a flutter goes on. Zero on every
+                                 // other shape -- Protocol Check refuses a duration
+                                 // on a shape that has nowhere to spend it
+    // BACKGROUND_TRACK (STEP_BACKGROUND_TRACK), appended last by the rule above:
+    // the Background Track's volume, 0-30, the audio interface's range. It sits
+    // in what was tail padding, so a step is no larger for it.
+    uint8_t  backgroundTrackVol;
 };
+
+// -----------------------------------------------------------------------------
+// seqBodyShape() / seqBodyHowFar()
+// The two readers of a Body Step's Move Shape and how-far, and the only place
+// either default lives. Total on purpose: both are safe to call on a zero-filled
+// params block, and a stored value the vocabulary does not model degrades to the
+// default rather than reaching the drive path as a number nobody meant.
+//
+// seqBodyHowFar() FLOORS rather than refusing (SEQ_BODY_HOWFAR_FLOOR): the model
+// has no way to say "does not move", and deciding that 3% was not what the
+// author meant is the Rehearsal's judgement, never this one's (ADR 0044).
+// -----------------------------------------------------------------------------
+inline SeqBodyShape seqBodyShape(const SeqStepParams& p) {
+    return (p.shape < BODY_SHAPE_COUNT) ? (SeqBodyShape)p.shape : SEQ_BODY_SHAPE_DEFAULT;
+}
+
+inline uint8_t seqBodyHowFar(const SeqStepParams& p) {
+    if (p.howFar == SEQ_BODY_HOWFAR_UNSET) {
+        return SEQ_BODY_HOWFAR_DEFAULT;
+    }
+    if (p.howFar < SEQ_BODY_HOWFAR_FLOOR) {
+        return SEQ_BODY_HOWFAR_FLOOR;
+    }
+    return (p.howFar > SEQ_BODY_HOWFAR_MAX) ? SEQ_BODY_HOWFAR_MAX : p.howFar;
+}
 
 // -----------------------------------------------------------------------------
 // SeqStep  --  POD step, statically allocated, serializable-ready.
 //
 // tMs:  Milliseconds from sequence start (or from iteration start for steps
 //       inside a STEP_LOOP body) when this step fires.
-// payload: Dome command (STEP_DOME_CMD) or audio $-command (STEP_AUDIO).
+// payload: Dome command (STEP_DOME_CMD), audio $-command (STEP_AUDIO, and the
+//          sound a STEP_BACKGROUND_TRACK starts), the Droid Parts Catalog id of
+//          the Part a STEP_BODY moves, or the target a STEP_DOME_BEARING turns
+//          to front.
 //          64 bytes  --  matches DomeTxCmd.buf.
 // -----------------------------------------------------------------------------
 struct SeqStep {
@@ -139,25 +313,42 @@ struct SeqStep {
 // -----------------------------------------------------------------------------
 // Catalog authoring macros  --  keep the positional SeqStepParams ordering in one
 // place. The firmware toolchain cannot rely on C++20 designated initializers.
-// All explicit initializer lists include audioBounded (new field, ADR 0010) as the
-// last element, initialized to 0. Factory catalog entries ignore this field and set
-// effectClass directly via SEQ_AUDIO_FX.
+//
+// Every explicit initializer list below names EVERY member, trailing ones as 0.
+// That is not belt-and-braces: the firmware targets build with
+// -Werror=missing-field-initializers, so a list that stops short of the last
+// member is a build failure rather than a zero-fill. Appending a member is
+// therefore two edits -- the struct, and one 0 on each of these lists.
+// Factory catalog entries ignore audioBounded and set effectClass directly via
+// SEQ_AUDIO_FX.
 // -----------------------------------------------------------------------------
 #define SEQ_DOME(t, fx, cmd)  { (t), STEP_DOME_CMD, (uint8_t)(fx), cmd, {} }
 #define SEQ_AUDIO(t, cmd)     { (t), STEP_AUDIO, FX_NONE, cmd, {} }
 #define SEQ_AUDIO_FX(t, fx, cmd) { (t), STEP_AUDIO, (uint8_t)(fx), cmd, {} }
 #define SEQ_AUDIO_CAT(t, cat, fb) \
     { (t), STEP_AUDIO_CATEGORY, FX_AUDIO, "", \
-      { 0, 0, 0, 0, 0, 0, 0, 0, 0, (uint8_t)(cat), (uint8_t)(fb), 0, 0 } }
+      { 0, 0, 0, 0, 0, 0, 0, 0, 0, (uint8_t)(cat), (uint8_t)(fb), 0, 0, 0, 0, 0, 0 } }
 #define SEQ_DOME_ROTATE(t, speed, dur) \
     { (t), STEP_DOME_ROTATE, FX_NONE, "", \
-      { (dur), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (int8_t)(speed), 0 } }
+      { (dur), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (int8_t)(speed), 0, 0, 0, 0, 0 } }
 #define SEQ_LOOP(t, body, period, dur) \
     { (t), STEP_LOOP, FX_NONE, "", \
-      { (dur), (period), (body), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } }
+      { (dur), (period), (body), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } }
 #define SEQ_RAND(t, set, mode, _unused, mv, jit, distinct) \
     { (t), STEP_RANDOM, FX_PANEL, "", \
-      { 0, 0, 0, (uint8_t)(set), (uint16_t)(mode), 0, (mv), (jit), (distinct), 0, 0, 0, 0 } }
+      { 0, 0, 0, (uint8_t)(set), (uint16_t)(mode), 0, (mv), (jit), (distinct), 0, 0, 0, 0, \
+        0, 0, 0, 0 } }
+// A Body Step. `part` is a Droid Parts Catalog id ("doorFL"), `shape` a
+// SeqBodyShape, `howFar` a percentage of that Part's own throw (0 for the whole
+// throw), `flutter` how long a flutter goes on (0 on every other shape).
+// The thirteen leading zeros are the members every other step type uses.
+// FX_NONE is the decision, not an omission: the engine undoes nothing a body
+// step did, so there is no effect class for terminal cleanup to act on
+// (ADR 0049).
+#define SEQ_BODY(t, part, shape, howFar, flutter) \
+    { (t), STEP_BODY, FX_NONE, part, \
+      { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
+        (uint8_t)(shape), (uint8_t)(howFar), (uint16_t)(flutter), 0 } }
 #define SEQ_TERM(t)           { (t), STEP_END, FX_NONE, "", {} }
 #define SEQ_CLEAR_LATCHES(t)  { (t), STEP_CLEAR_LATCHES, FX_NONE, "", {} }
 #define SEQ_AUDIO_STOP(t)     { (t), STEP_AUDIO_STOP, FX_NONE, "", {} }
@@ -207,16 +398,75 @@ enum SeqActionKind : uint8_t {
     SEQ_ACT_AUDIO_CATEGORY = 3,  // audioCategory/audioFallbackSlot -> audioQueuePlayCategory()
     SEQ_ACT_AUDIO_STOP     = 4,  // audioQueueTrackStop() (ADR 0010)
     SEQ_ACT_DOME_ROTATE    = 5,  // domeSpeedPct/domeDurationMs -> domeCmdQueue
+    SEQ_ACT_BODY_MOVE      = 6,  // payload (Part id) + bodyShape/bodyHowFar/
+                                 // bodyFlutterMs -> the body servo path. The
+                                 // Part is resolved to an Output by the
+                                 // Sequence Coordinator at dispatch, every
+                                 // time, because wiring the arm must start the
+                                 // step working with nothing re-authored
+                                 // (include/droid_part_availability.h).
+    SEQ_ACT_GESTURE        = 7,  // `gesture` -> the Sequence Coordinator, which
+                                 // resolves the set against the droid as it is
+                                 // and performs it by owner (ADR 0046).
+    SEQ_ACT_DOME_BEARING   = 8,  // payload (`front` or a dome Part id) -> the
+                                 // Sequence Coordinator, which resolves it and
+                                 // the dome's belief at dispatch and sends a
+                                 // turn to that Dome Bearing, or reports why
+                                 // not and carries on (#445).
+    SEQ_ACT_BACKGROUND_TRACK_START = 9, // payload (a '$' sound) and its volume
+                                 // (audioCategory, reused) ->
+                                 // audioQueueBackgroundTrackStart(). The
+                                 // Coordinator reports why where the fitted
+                                 // module cannot mix (ADR 0054).
+    SEQ_ACT_BACKGROUND_TRACK_STOP  = 10, // audioQueueBackgroundTrackStop(): the
+                                 // stop step, and the run's end per the
+                                 // Background Track's FX bit.
 };
 
 struct SeqAction {
     SeqActionKind kind;
     char          payload[64];
-    uint8_t       audioCategory;
+    uint8_t       audioCategory;   // AUDIO_CATEGORY: the category.
+                                   // BACKGROUND_TRACK_START: the volume, 0-30,
+                                   // in a member the other kinds leave idle
+                                   // rather than a new one: a SeqAction sits on
+                                   // the dispatcher's measured root frame.
     uint8_t       audioFallbackSlot;
     int8_t        domeSpeedPct;
-    uint32_t      domeDurationMs;
+    uint32_t      domeDurationMs;  // DOME_ROTATE: how long the turn runs.
+                                   // GESTURE, and a BODY_MOVE that is a
+                                   // flutter: the absolute ms the end step of
+                                   // the run that fired it falls at, 0 when the
+                                   // branch has none -- no move of the Gesture
+                                   // goes out at or after it (#438), and a
+                                   // flutter is over by it (#453).
+    // BODY_MOVE. Already resolved through seqBodyShape()/seqBodyHowFar(), so a
+    // consumer reads a shape and a percentage rather than the two defaults.
+    uint8_t       bodyShape;
+    uint8_t       bodyHowFar;
+    uint16_t      bodyFlutterMs;
+    // GESTURE. The step itself, valid only while the run that fired it is
+    // still active: a Learned run's steps live in heap run buffers the
+    // dispatcher frees when the run ends, and the Gesture runs on past the
+    // step that fired it. So the Coordinator copies what it needs AT
+    // DISPATCH, never later.
+    const SeqStep* gesture;
 };
+
+// The most terminal actions one finish queues (beginFinish(),
+// src/tasks/sequence_engine.cpp), every class at once:
+//   logic and PSI reset (@0T1, @0P1) and holo reset (*ST00)   3
+//   DV:RESET_VISUALS after a dome visual preset                1
+//   a :SE## sequence's three visual resets                     3
+//   the vocal Track Stop                                       1
+//   the Background Track's stop (ADR 0054)                     1
+//   the dome turn's neutral                                    1
+//   one close per ring panel the run left open                 7
+//                                                             --
+//                                                             17
+// A class added to beginFinish() raises this, or addFinal() drops an action,
+// which the dispatcher reports (seqEngineTakeFinalDrops()).
+constexpr uint8_t SEQ_FINAL_Q_CAP = 17;
 
 // Latched per-group panel state. Owned by the engine; the dispatcher task
 // resets it on estop-clear and dome-reconnect resync via seqEngineClearLatches().
@@ -267,22 +517,28 @@ struct SeqEngineState {
     // Terminal auto-reset drain. finalDueRel[i] is finalQ[i]'s fire offset (ms)
     // relative to finishStartMs, so staggered individual ring closes drain at a
     // safe cadence while instant resets use 0. finishStartMs is set lazily on the
-    // first finishing peek (seqEngineAbort carries no nowMs). The queue is sized
-    // for the worst case: a few effect resets plus one individual close per ring
-    // panel (7) with margin.
+    // first finishing peek (seqEngineAbort carries no nowMs). The queue holds
+    // SEQ_FINAL_Q_CAP, the worst case beginFinish() can queue.
     bool      finishing;
     bool      finishAbnormal;
     bool      finishStartSet;
     uint32_t  finishStartMs;
-    SeqAction finalQ[16];
-    uint16_t  finalDueRel[16];
+    SeqAction finalQ[SEQ_FINAL_Q_CAP];
+    uint16_t  finalDueRel[SEQ_FINAL_Q_CAP];
     uint8_t   finalCount;
     uint8_t   finalCursor;
+    // What beginFinish() could not queue, which would mean SEQ_FINAL_Q_CAP is
+    // wrong: how many, and the first one's kind. This module does not log, so
+    // the dispatcher takes it with seqEngineTakeFinalDrops() and says so.
+    uint8_t       finalDropped;
+    SeqActionKind finalDroppedKind;
 
     SeqToggleState latches;
 
-    // True after a committed non-zero STEP_DOME_ROTATE. Terminal and abnormal
-    // cleanup emit a neutral rotation action through the same body-owned path.
+    // True after a committed non-zero STEP_DOME_ROTATE, or a STEP_DOME_BEARING.
+    // Terminal and abnormal cleanup emit a neutral rotation action through the
+    // same body-owned path, so a bearing turn still running when the sequence
+    // ends is stopped the way a timed one is.
     bool      domeRotateActive;
 
     // True once this run dispatched any DV:<name> dome visual preset. Terminal
@@ -299,8 +555,9 @@ void seqEngineInit(SeqEngineState& st);
 // True while a sequence is running or draining terminal resets.
 bool seqEngineActive(const SeqEngineState& st);
 
-// Name of the active sequence, or nullptr when idle.
-const char* seqEngineName(const SeqEngineState& st);
+// True once after a finish that could not queue every terminal action, with
+// how many it dropped and the first one's kind; clears the record.
+bool seqEngineTakeFinalDrops(SeqEngineState& st, uint8_t* count, SeqActionKind* firstKind);
 
 // Force all toggle latches to closed (estop-clear / dome-reconnect resync).
 void seqEngineClearLatches(SeqEngineState& st);
@@ -328,6 +585,15 @@ void seqEngineCommit(SeqEngineState& st);
 // for the ring panel set lives in sequence_engine.cpp.
 uint8_t seqEngineRingPanelCount(void);
 bool    seqEngineRingCloseCmd(uint8_t i, char* buf, uint8_t bufLen);
+
+// Every dome panel a sequence can name by Panel Intent target, ring panels
+// first and then pies ("01".."13", "P1".."P6"): the set a random step picks
+// from (SLOTSET_ALL). Target i < seqEngineRingPanelCount() is a ring panel.
+// nullptr for an out-of-range index. Single source for callers outside the
+// engine that expand a group target into its members, one command each (the
+// timeline's pose press, include/sequence_pose.h).
+uint8_t     seqEnginePanelTargetCount(void);
+const char* seqEnginePanelTarget(uint8_t i);
 
 // Ring panel NUMBER (e.g. 1, 2, 13) for ring index i (0..count-1), or -1 if out
 // of range. Single source of the ring panel set for callers that need to map a

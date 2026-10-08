@@ -1,7 +1,7 @@
 // =============================================================================
 // include/logging.h
 //
-// Logging macros for protoArtoo  --  shared between tasks, drivers, and web layer.
+// Logging macros for protoR2  --  shared between tasks, drivers, and web layer.
 // Centralizes log formatting to ensure consistent output across the system.
 //
 // Log level is checked at runtime against the config cache log level, which is
@@ -59,7 +59,7 @@ inline uint8_t paCurrentLogLevel() {
 #define _PA_LOG_FORMAT(level, tag, fmt, ...)                                      \
     do {                                                                          \
         char _pa_log_buf[PA_LOG_SERIAL_LINE_MAX];                                 \
-        /* Serial lines are bounded here; the retained SSE ring truncates to LOG_LINE_MAX. */ \
+        /* Lines are bounded here; the ring continues a longer one across slots. */ \
         _Pragma("GCC diagnostic push")                                            \
         _Pragma("GCC diagnostic ignored \"-Wformat-truncation\"")                 \
         snprintf(_pa_log_buf, sizeof(_pa_log_buf), "[%lu][" level "][%s] " fmt,               \

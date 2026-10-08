@@ -15,10 +15,10 @@ OTA_IP      = 10.0.0.22
 
 # PlatformIO build environment for 'make build', 'make flash', 'make ota'.
 # Supported values:
-#   artoo_esp32             DY-SV5W audio (default — confirmed hardware)
-#   artoo_esp32_chirp       CHIRP audio backend
-#   artoo_esp32_mp3trigger  MP3 Trigger audio backend
+#   artoo_esp32             artoo-esp32 board (default)
 #   firebeetle2             DFRobot FireBeetle 2 ESP32-P4 (the other board)
+# One build per board. The sound module is not a build choice: pick it on
+# Configuration (Hardware components -> Sound); it takes effect at the next start.
 BUILD_ENV   = artoo_esp32
 
 # Serial port for USB flash ('make flash').

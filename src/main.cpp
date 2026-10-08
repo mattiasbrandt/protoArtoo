@@ -1,7 +1,7 @@
 // =============================================================================
 // src/main.cpp
 //
-// protoArtoo  --  ESP32 body controller for MK4 astromech droid.
+// protoR2  --  ESP32 body controller for MK4 astromech droid.
 // Boot: config load, safety defaults, task creation.
 // =============================================================================
 
@@ -15,20 +15,24 @@
 #include <esp_task_wdt.h>
 
 #include "audio_dollar_parser.h"
+#include "audio_sound_member.h"
 #include "audio_task.h"
 #include "aux_led.h"
 #include "config_store.h"
+#include "component_registry.h"
 #include "config_cache.h"
+#include "config_write_window_check.h"  // configWriteWindowArm()
 #include "console_module.h"
 #include "console_serial_output.h"
 #include "console_task.h"
+#include "reaction_task.h"
 #include "dome_link.h"
 #include "dome_task.h"
 #include "drive.h"
 #include "drive_arbiter.h"
-#include "failsafe_boot_sbus.h"
 #include "failsafe_boot_twdt.h"
 #include "failsafe_gate.h"
+#include "heap_reading.h"
 #include "ledc_pwm.h"
 #include "log_buffer.h"
 #include "mood.h"
@@ -39,6 +43,8 @@
 #include "safety.h"
 #include "seq_store.h"
 #include "sequence_dispatcher.h"
+#include "pca9685.h"        // the PCA9685's bring-up and sender (#444)
+#include "servo_backend.h"  // servoBackendMemberIsPca9685()
 #include "servo_task.h"
 #include "web_server.h"
 
@@ -49,9 +55,6 @@ QueueHandle_t servoCmdQueue = nullptr;
 QueueHandle_t domeCmdQueue = nullptr;
 QueueHandle_t audioCmdQueue = nullptr;
 QueueHandle_t domeTxQueue = nullptr;
-static volatile bool restartRequested = false;
-static volatile uint32_t restartAtMs = 0;
-static portMUX_TYPE restartMux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE logMux = portMUX_INITIALIZER_UNLOCKED;
 // Who owns the serial wire, and how far the owner has drained the ring
 // (ADR 0039). Both live under logMux with the ring itself, which is what makes
@@ -87,14 +90,14 @@ namespace {
 void logBootHealth() {
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
-    PA_LOG_INFO("main", "protoArtoo boot begin");
+    PA_LOG_INFO("main", "protoR2 boot begin");
     PA_LOG_INFO("main", "reset_reason=%s (%d)", resetReasonName(esp_reset_reason()),
                 (int)esp_reset_reason());
     PA_LOG_INFO("main",
                 "config speed_limit_max=%d sbus_timeout_ms=%lu web_timeout_ms=%lu audio_volume=%u",
                 cfg.drive.speedLimitMax, (unsigned long)cfg.drive.sbusTimeoutMs,
                 (unsigned long)cfg.drive.webDriveTimeoutMs, cfg.audio.audioVolume);
-    PA_LOG_DEBUG("main", "heap_free=%lu", (unsigned long)ESP.getFreeHeap());
+    PA_LOG_DEBUG("main", "heap_free=%lu", (unsigned long)heapReadInternalDataFree());
 }
 
 }  // namespace
@@ -248,8 +251,11 @@ size_t copyRecentLogs(char* buffer, size_t bufferSize) {
 }
 
 // Copy up to maxLines new log lines written since lastSent into out[][LOG_LINE_MAX].
-// Returns new totalWritten. Sets *linesCopied to number of entries filled.
-// Lines that have already been overwritten by the ring are silently skipped.
+// Returns the cursor just past the last line copied, so lines beyond maxLines
+// wait for the next call instead of being skipped; it used to return
+// totalWritten, which dropped every line of a burst past the batch (and, once
+// a long line spans several slots, its tail). Sets *linesCopied to the number
+// of entries filled. Lines the ring has already overwritten are skipped.
 uint32_t copyNewLogLinesSince(uint32_t lastSent, char out[][LOG_LINE_MAX], size_t maxLines,
                               size_t* linesCopied) {
     taskENTER_CRITICAL(&logMux);
@@ -270,7 +276,7 @@ uint32_t copyNewLogLinesSince(uint32_t lastSent, char out[][LOG_LINE_MAX], size_
     }
     *linesCopied = (size_t)n;
     taskEXIT_CRITICAL(&logMux);
-    return total;
+    return from + n;
 }
 
 // Return current number of lines in the log ring buffer.
@@ -306,6 +312,17 @@ void loadConfigToState() {
     prefs.begin(NVS_NAMESPACE, true);
     ConfigSnapshot snap;
     bool configOk = configLoad(prefs, &snap);
+    // Addressed Servo Output rows load on their own keys, beside the snapshot
+    // (ADR 0041). Their table never crosses this frame -- see
+    // configLoadServoOutputs().
+    ServoOutputRepairReport servoOutputRepair = {};
+    configLoadServoOutputs(prefs, &servoOutputRepair);
+    // The Records - the Droid Build and guided Setup's record - load the same
+    // way and for the same reason (include/config_records.h). Nothing below
+    // reads them: they are loaded here so the surfaces that draw a builder's
+    // droid meet the answer this controller holds, from any browser, and each
+    // says out loud what a stored value this image cannot name cost.
+    configLoadRecords(prefs);
     uint8_t lastMood = prefs.getUChar("last_mood", 0);  // read BEFORE prefs.end()
     prefs.end();
 
@@ -313,35 +330,66 @@ void loadConfigToState() {
         PA_LOG_ERROR("config", "failed to load NVS config (schema or migration error); using safe defaults");
     }
 
+    // A fitted PCA9685's sixteen Outputs are rows beside the board's own
+    // (#444): with it the chosen body servo controller, every one of its
+    // channels the table does not hold yet is appended at its defaults. Every
+    // start, and idempotent - a row a builder has calibrated and saved is
+    // found and kept - so the stored count can stay at the board's five until
+    // the first save writes the rest. Before the ticks below and before any
+    // task reads the table. The member is resolved, not trusted, exactly as
+    // setup() latches it.
+    if (servoBackendMemberIsPca9685(componentResolveMember(COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER,
+                                                           snap.system.body_servo_member))) {
+        uint8_t missing = 0;
+        const uint8_t added =
+            configCacheAddServoOutputRows(SERVO_DRIVER_PCA9685, PCA9685_CHANNEL_COUNT, &missing);
+        if (added > 0) {
+            PA_LOG_INFO("config", "PCA9685 chosen: %u output row(s) added for %s", (unsigned)added,
+                        PCA9685_OUTPUT_SPAN);
+        }
+        if (missing > 0) {
+            PA_LOG_ERROR("config", "the output table is full - %u of %s have no row and cannot move",
+                         (unsigned)missing, PCA9685_OUTPUT_SPAN);
+        }
+    }
+
+    // A stored row that could not be read has already taken its safe defaults.
+    // Say so: a value changing under somebody is the thing this project says
+    // out loud, and an output that quietly lost its calibration is exactly the
+    // case a builder needs told.
+    if (servoOutputRepair.countRepaired) {
+        PA_LOG_WARN("config", "stored servo output count out of range; keeping the default %u rows",
+                    (unsigned)SERVO_OUTPUT_ROW_DEFAULT_COUNT);
+    }
+    if (servoOutputRepair.rowsRepaired > 0) {
+        char note[96] = {};
+        servoOutputRepairNote(servoOutputRepair.firstRowMask, true, note, sizeof(note));
+        PA_LOG_WARN("config",
+                    "servo outputs repaired: %u row(s), %u field(s); output %u: %s",
+                    (unsigned)servoOutputRepair.rowsRepaired,
+                    (unsigned)servoOutputRepair.fieldsRepaired,
+                    (unsigned)servoOutputRepair.firstRow, note);
+    }
+
+    // Every board Output's wired tick from the Parts on its row, before
+    // anything reads it: an Output with a Part on it is wired and one with none
+    // is free (GLOSSARY.md "Wiring", #411). Every start, and idempotent: it
+    // clears a tick stored with no Part - one saved before the tick followed
+    // the Parts, or the wire `main` lit from its retired slot, which now waits
+    // for a light Part on Wiring - and ticks an Output a Part is on. The rows
+    // are already in the cache (configLoadServoOutputs() above).
+    configCacheTicksFollowParts(&snap.system);
+
     // Apply all config fields to robotState (no mutex needed  --  called before tasks start)
     // All validation and clamping is now performed within configLoad()
-    configCacheApply(snap);
+    // Replace, not Apply: nothing on Core 1 has written the RC live fields yet,
+    // so the loaded values are the ones to take (include/config_cache.h).
+    configCacheReplace(snap);
 
     robotState.activeMood = lastMood;
 
     // Initialize runtime state from config
     robotState.stationary = snap.system.stationary;
-}
-
-bool saveConfigToNvs() {
-    ConfigSnapshot snap;
-    configCacheRead(&snap);
-
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, false)) {
-        return false;
-    }
-
-    bool ok = configSave(prefs, snap);
-    prefs.end();
-    return ok;
-}
-
-void requestSystemRestart(uint32_t delayMs) {
-    taskENTER_CRITICAL(&restartMux);
-    restartRequested = true;
-    restartAtMs = millis() + delayMs;
-    taskEXIT_CRITICAL(&restartMux);
 }
 
 void setup() {
@@ -397,6 +445,29 @@ void setup() {
     configCacheSetActiveDomeEnabled(bootCfg.system.enable_dome_esc);
     configCacheSetActiveAudioEnabled(bootCfg.system.enable_audio);
     configCacheSetActiveComponentToggles(bootCfg.system);
+    // Resolve, do not copy: a saved member this image no longer carries a
+    // driver for becomes the one it does, so the active value is always a
+    // module the firmware can actually bind to. nullptr means this image has no
+    // selectable sound module at all, which a static_assert in
+    // src/tasks/audio_sound_member.cpp already makes unbuildable -- the check is
+    // here so that assert being relaxed one day is a quiet 0 rather than a boot
+    // crash in setup().
+    const ComponentPartEntry* bootSoundMember =
+        componentResolveMember(COMPONENT_CATEGORY_SOUND, bootCfg.system.sound_member);
+    configCacheSetActiveSoundMember(bootSoundMember != nullptr ? bootSoundMember->value : 0);
+    // Bind the member to its driver here, not in AudioTask: the task is created
+    // only when audio output is enabled at boot (ADR 0027), and every status
+    // surface -- sound.status.current, /api/audio/status, buildStatusJson --
+    // asks which module is fitted whether or not it was. Binding it before any
+    // task exists is also what lets those Core 0 readers take the pointer
+    // without a lock (#380).
+    audioBindSoundMember(configCacheReadActiveSoundMember());
+    // The body servo controller, latched the same way and for the same reason
+    // (#444): ServoTask reads which one this boot runs, and the surfaces show
+    // it beside the saved choice.
+    const ComponentPartEntry* bootServoMember = componentResolveMember(
+        COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, bootCfg.system.body_servo_member);
+    configCacheSetActiveBodyServoMember(bootServoMember != nullptr ? bootServoMember->value : 0);
     RcInputStartupPlan rcPlan = rcInputStepStartupPlan(activeRc);
 
     // Layer 4: Task Watchdog Timer.
@@ -454,6 +525,18 @@ void setup() {
     domeTxQueue = xQueueCreate(16, sizeof(DomeTxCmd));
     sequenceDispatcherInit();
 
+    // The PCA9685, when it is this boot's body servo controller (#444):
+    // brought up here, before servoTaskInit() reads whether it answered, and
+    // its sender started on Core 0 only once it has. Not answering is
+    // reported, never escalated (ADR 0043): pca9685Begin() logs the board,
+    // its span and the consequence, its Outputs read unreachable, and drive,
+    // estop and failsafe are untouched. This is where the I2C driver takes its
+    // buffers and its device handle, so nothing on the bus allocates after
+    // setup() (include/pca9685.h).
+    if (servoBackendMemberIsPca9685(bootServoMember) && pca9685Begin(bootCfg.system.pca_address)) {
+        pca9685StartSender();
+    }
+
     // ServoTask owns LEDC hardware init and applies AUX LED channel skip policy.
     servoTaskInit();
     domeTaskInit();
@@ -462,31 +545,39 @@ void setup() {
         PA_LOG_ERROR("main", "aux LED task init failed; AUX LED API will report unavailable");
     }
 
+    // Every config write from here on runs in a Write Window (ADR 0011, amended
+    // 2026-09-24): the boot load above is done and no task that writes config
+    // has started yet, so the holder check starts counting now. A writer that
+    // misses its window is logged, never refused (config_write_window_check.h).
+    configWriteWindowArm(true);
+
     // Real-time / core pinning contract: see docs/failsafe.md "Real-Time / Core Pinning Contract".
     // Core 1 real-time (heap-allocation-free): DriveTask, RCInputTask, ServoTask, DomeTask, DomeLinkTask.
-    // Core 0 non-RT: AudioTask, AuxLedTask, SafetyMonitorTask, SequenceDispatcherTask, WebEvents, ArduinoOTA.
+    // Core 0 non-RT: AudioTask, AuxLedTask, SafetyMonitorTask, SequenceDispatcherTask, ReactionTask,
+    // WebEvents, ArduinoOTA.
 
     // Launch real-time tasks on Core 1
-    // DriveTask: 50 Hz hoverboard frames, feeds TWDT, Layer 3 web timeout
+    // DriveTask: 50 Hz drive backend frames, feeds TWDT, Layer 3 web timeout
     // RcInputTask: ~200 Hz RC poll (all modes), Layer 1+2 failsafe; omitted
     // when no RC input is active for the boot-selected mode and routing.
     // ServoTask: 50 Hz servo PWM updates
     // DomeTask: 50 Hz ESC PWM updates; omitted when dome output is disabled
     // at boot (ADR 0027: not spawning the owning task at all is the preferred form).
-    // Size is chip-target specific; DRIVE_TASK_STACK_BYTES in include/config.h carries
+    // Size is chip-target specific; DRIVE_TASK_STACK_BYTES (tools/task_stack_recipes.json) carries
     // the measured worst-case chain for both chips and why ESP32 is raised too even
     // though its own figure reads as 32 B under (that figure is a lower bound).
     xTaskCreatePinnedToCore(driveTask, "DriveTask", DRIVE_TASK_STACK_BYTES, nullptr, 5,
                             nullptr, 1);
     if (rcPlan.taskEnabled) {
-        // Size is chip-target specific; RC_INPUT_TASK_STACK_BYTES in include/config.h
-        // carries the measured chain. The #248 rule lands on 7168 on both chips
-        // (ESP32-P4 5376 * 1.25 = 6720 -> 7168); ESP32 is the existing 7168, not
-        // a lowering to its own 5248-chain figure, which is a Xtensa lower bound.
+        // The SBUS decoders this boot's RC mode reads, and no others, here
+        // rather than in the task: nothing on Core 1 allocates after setup().
+        rcInputAllocateDecoders(rcPlan);
+        // Size is chip-target specific; RC_INPUT_TASK_STACK_BYTES (tools/task_stack_recipes.json)
+        // carries the measured chain and the sizing rule on each chip.
         xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", RC_INPUT_TASK_STACK_BYTES,
                                 nullptr, 5, nullptr, 1);
     }
-    // Size is chip-target specific; SERVO_TASK_STACK_BYTES in include/config.h
+    // Size is chip-target specific; SERVO_TASK_STACK_BYTES (tools/task_stack_recipes.json)
     // carries the measured chain and the sizing rule. What this line used to say
     // -- "HWM: code fix (ConfigSnapshot->ServoConfig in hot paths) + 3072->4096"
     // -- was a high-water mark, the same evidence class that let the Console
@@ -495,7 +586,7 @@ void setup() {
     xTaskCreatePinnedToCore(servoTask, "ServoTask", SERVO_TASK_STACK_BYTES, nullptr, 4, nullptr,
                             1);
     if (bootCfg.system.enable_dome_esc) {
-        // Size is chip-target specific; DOME_TASK_STACK_BYTES in include/config.h
+        // Size is chip-target specific; DOME_TASK_STACK_BYTES (tools/task_stack_recipes.json)
         // carries the measured chain and the sizing rule. The note this line used
         // to carry -- "sized from profiler HWM: 108 B free at 2048 B" -- was an
         // artoo-esp32 reading, and on the ESP32-P4 the same source needs 3280 B,
@@ -509,16 +600,16 @@ void setup() {
     // Omitted when audio output is disabled at boot (ADR 0027: not spawning the owning
     // task at all is the preferred form).
     if (bootCfg.system.enable_audio) {
-        // Size is chip-target specific; AUDIO_TASK_STACK_BYTES in include/config.h
-        // carries the measured chain. The #248 rule lands on 6144 on both chips
-        // (ESP32-P4 4848 * 1.25 = 6060 -> 6144).
+        // Size is chip-target specific; AUDIO_TASK_STACK_BYTES (tools/task_stack_recipes.json)
+        // carries the measured chain and, per chip, the sizing rule or why it is
+        // declined.
         xTaskCreatePinnedToCore(audioTask, "AudioTask", AUDIO_TASK_STACK_BYTES, nullptr, 3,
                                 nullptr, 0);
     }
 
     // AuxLedTask: Core 0 (non-RT) - WS2812B effects and API-driven color/effect updates.
     // Runs independently of Core 1 control loops.
-    // Size is chip-target specific; AUX_LED_TASK_STACK_BYTES in include/config.h
+    // Size is chip-target specific; AUX_LED_TASK_STACK_BYTES (tools/task_stack_recipes.json)
     // carries the measured chain and the sizing rule.
     if (auxLedTaskReady) {
         xTaskCreatePinnedToCore(auxLedTask, "AuxLedTask", AUX_LED_TASK_STACK_BYTES, nullptr, 2,
@@ -527,16 +618,17 @@ void setup() {
 
     // DomeLinkTask: Core 1  --  bidirectional Marcduino serial to AstroPixelsPlus.
     // UART2 TX/RX are non-blocking hardware operations; Core 1 at priority 3.
-    // Size is chip-target specific; DOME_LINK_TASK_STACK_BYTES in include/config.h.
+    // Size is chip-target specific; DOME_LINK_TASK_STACK_BYTES (tools/task_stack_recipes.json).
     // The old note here -- "4096: profiler measured 988 B free at 3072 B ... HTTPClient
     // call-chain needs 3 KB+" -- was reasoned from a high-water mark, which only ever
-    // reports the deepest path that actually ran. The static worst case is 5856 B on
-    // ESP32 and 7360 B on ESP32-P4, so 6144 never covered the P4 at all (#250).
+    // reports the deepest path that actually ran. The static worst case is
+    // DOME_LINK_TASK_MEASURED_CHAIN_BYTES there, per chip, and on the ESP32-P4 it is
+    // past 6144, so 6144 never covered the P4 at all (#250).
     xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", DOME_LINK_TASK_STACK_BYTES,
                             nullptr, 3, nullptr, 1);
 
     // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority).
-    // Size is chip-target specific; SAFETY_MONITOR_STACK_BYTES in include/config.h
+    // Size is chip-target specific; SAFETY_MONITOR_STACK_BYTES (tools/task_stack_recipes.json)
     // carries the per-target frame evidence, the margin and how to reproduce it.
     //
     // What this comment used to say was wrong in both halves, and both errors
@@ -558,7 +650,7 @@ void setup() {
     // SequenceDispatcherTask: Core 0 (non-RT)  --  body-side DM:* sequence coordinator.
     // 10 ms tick. Dispatches to domeQueueTx / audioQueueDollar / domeCmdQueue.
     // Core 0 keeps the 50 Hz safety loops on Core 1 unburdened (ADR 0004).
-    // Size is chip-target specific; SEQ_DISPATCHER_TASK_STACK_BYTES in include/config.h
+    // Size is chip-target specific; SEQ_DISPATCHER_TASK_STACK_BYTES (tools/task_stack_recipes.json)
     // carries the measured chain and the sizing rule. The depth is the Learned Sequence
     // load on this task's own stack (seqStorePrepare -> protocolCheck -> pcFailAt ->
     // snprintf float formatting -> first-use heap/log-mutex tail), 240 B past the 4096
@@ -570,7 +662,7 @@ void setup() {
     // ADR 0036: persistent Controller Console, no network dependency, no dynamic
     // allocation in its loop. Created on both boards (P4 USB CDC, artoo UART0 bridge).
     //
-    // Size is chip-target specific; CONSOLE_TASK_STACK_BYTES in include/config.h
+    // Size is chip-target specific; CONSOLE_TASK_STACK_BYTES (tools/task_stack_recipes.json)
     // carries the measured chain and the sizing rule. What this line used to say --
     // "stack sized from measured high-water mark with margin" -- is why 5120 stood:
     // a high-water mark reports only the paths that have actually run, and no
@@ -578,6 +670,16 @@ void setup() {
     // overflowed the stack on the board (#226).
     xTaskCreatePinnedToCore(consoleTask, "Console", CONSOLE_TASK_STACK_BYTES, nullptr, 2, nullptr,
                             0);
+
+    // ReactionTask: Core 0 (non-RT), 20 Hz - fires the Reactions the builder
+    // bound to the droid's own conditions (ADR 0053, #450). Created on every
+    // droid and not only one with a radio: with no RC source there is no
+    // RCInputTask above, and a Reaction must fire all the same. It reads the
+    // drive from RobotState and adds nothing to DriveTask.
+    // Size is chip-target specific; REACTION_TASK_STACK_BYTES (tools/task_stack_recipes.json)
+    // carries the measured chain and the sizing rule.
+    xTaskCreatePinnedToCore(reactionTask, "ReactionTask", REACTION_TASK_STACK_BYTES, nullptr, 2,
+                            nullptr, 0);
 
     // Restore last mood  --  audio component only.
     // - Dome link is not yet established at boot, so dome TX is intentionally skipped.
@@ -652,32 +754,23 @@ void setup() {
     // host had not yet picked up (ADR 0038's Consequences named these two
     // sites; src/tasks/console_task.cpp:#265 reported them as out of scope
     // then, and this ticket owns src/main.cpp).
+
+    // The Arduino loopTask has run setup() and has nothing left to do: loop()
+    // only ever polled for a requested restart, which SafetyMonitor now does
+    // (src/tasks/safety.cpp). Deleting it gives its ARDUINO_LOOP_STACK_SIZE
+    // stack (platformio.ini) back to the heap (#428).
+    //
+    // No esp_task_wdt_delete() first, deliberately: this task is not on the
+    // task watchdog. Both installed arduino-esp32 cores (3.3.7, 3.3.11) start
+    // it with loopTaskWDTEnabled = false and subscribe it only through
+    // enableLoopWDT(), which nothing here calls, and neither sdkconfig sets
+    // CONFIG_ARDUINO_LOOP_WDT. A task deleted while subscribed would trip the
+    // watchdog; one never subscribed cannot.
+    vTaskDelete(nullptr);
 }
 
+// Never runs. setup() ends by deleting the task that calls both (the Arduino
+// loopTask), so its stack goes back to the heap; the Arduino core still calls
+// loop() by name, so it has to exist.
 void loop() {
-    bool shouldRestart = false;
-
-    taskENTER_CRITICAL(&restartMux);
-    if (restartRequested && (int32_t)(millis() - restartAtMs) >= 0) {
-        shouldRestart = true;
-    }
-    taskEXIT_CRITICAL(&restartMux);
-
-    if (shouldRestart) {
-        PA_LOG_INFO("main", "restarting controller");
-        // No Serial.flush() here either, for the reason setup()'s tail gives:
-        // the Arduino loop task does not own this wire. The line above is in
-        // the ring, the Console task drains it within its 10 ms poll, and the
-        // delay(100) below is well past the ~4 ms a line of this length takes
-        // at 115200 8N1 - so the restart notice still reaches the operator,
-        // and on the CDC it now reaches them at all (flush() there discarded
-        // the ring rather than draining it).
-        // Deinit TWDT before restart  --  prevents esp_restart() from being
-        // misclassified as ESP_RST_TASK_WDT and triggering a boot-time estop.
-        esp_task_wdt_deinit();
-        delay(100);
-        ESP.restart();
-    }
-
-    vTaskDelay(pdMS_TO_TICKS(100));
 }

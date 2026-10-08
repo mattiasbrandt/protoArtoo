@@ -2,7 +2,7 @@
 """
 Lightweight fixture server for offline editor development and Playwright tests.
 
-Serves the protoArtoo editor (data/) + fixture APIs locally on :4173.
+Serves the protoR2 editor (data/) + fixture APIs locally on :4173.
 
 Usage:
   python3 tools/serve_editor_fixture.py
@@ -11,7 +11,10 @@ Usage:
   # GET /api/dome/layout -> tests/fixtures/dome_layout_mk4.json
 
 Ports:
-  - :4173 (dev server, matches Vite convention)
+  - :4173 (dev server, matches Vite convention), or PA_FIXTURE_PORT. Two
+    worktrees serving at once must each pick a port of their own: on a shared
+    port the second server fails to bind, and a browser pointed there reads
+    the FIRST worktree's data/ without any error saying so.
 
 Routes:
   - /api/dome/layout -> tests/fixtures/dome_layout_mk4.json
@@ -29,6 +32,7 @@ matches src/web/web_request_psychic.cpp's onNotFound() and makes the next
 missing fixture route announce itself instead of hiding.
 """
 
+import argparse
 import json
 import os
 import re
@@ -40,14 +44,14 @@ from urllib.parse import parse_qs
 REPO_ROOT = Path(__file__).parent.parent
 DATA_DIR = REPO_ROOT / "data"
 FIXTURE_FILE = REPO_ROOT / "tests" / "fixtures" / "dome_layout_mk4.json"
-PORT = 4173
+PORT = int(os.environ.get("PA_FIXTURE_PORT", "4173"))
 HOST = "localhost"
 
 # Shaped like what GET /api/logs actually returns: the log ring copied out
 # newline-separated (src/web/api_logs.cpp), one line per entry in the
 # "[<millis>][<level>][<tag>] message" form include/logging.h emits.
 FIXTURE_LOG_LINES = (
-    "[312][I][boot] protoArtoo starting, reset reason POWERON",
+    "[312][I][boot] protoR2 starting, reset reason POWERON",
     "[418][I][config] loaded from NVS, log level 3",
     "[1204][I][wifi] connecting to bench-ap",
     "[2530][I][wifi] connected, ip 192.168.1.42",
@@ -234,8 +238,15 @@ def _console_answer(command, request_id):
     }], False
 
 
-# PA:INCLUDE pattern matching, same as gzip_fsdata.py
-INCLUDE_RE = re.compile(r"[ \t]*<!--\s*PA:INCLUDE\s+([A-Za-z0-9_.\-/]+)\s*-->[ \t]*\n?")
+# PA:INCLUDE pattern matching, same as gzip_fsdata.py, including the one
+# optional fragment (`_product_art.html#board`, #411).
+INCLUDE_RE = re.compile(r"[ \t]*<!--\s*PA:INCLUDE\s+([A-Za-z0-9_.\-/]+(?:#[a-z]+)?)\s*-->[ \t]*\n?")
+
+# The asset set this fixture serves: the build's default (gzip_fsdata.py
+# DEFAULT_ASSET_SET). A partial resolves in the set first, then the common data
+# root - the order gzip_fsdata.py searches - since #382 moved _product_art.html
+# into the sets.
+ASSET_SET_DIR = DATA_DIR / "asset-sets" / "default"
 
 
 def _expand_includes(content, src_root):
@@ -243,11 +254,24 @@ def _expand_includes(content, src_root):
 
     Replaces <!-- PA:INCLUDE filename --> with the contents of that file.
     Single-pass, non-recursive like gzip_fsdata.py.
+
+    A `#board` fragment inlines the running board's one symbol on a device.
+    The fixture has no board, and the default set's sprite carries no symbols
+    (gzip_fsdata.py BOARD_FRAGMENT), so it inlines nothing - what the default
+    image ships.
     """
     def _replace(match):
-        target = src_root / match.group(1)
-        if not target.is_file():
-            raise ValueError(f"PA:INCLUDE target not found: {target}")
+        name, _, fragment = match.group(1).partition("#")
+        for root in (ASSET_SET_DIR, src_root):
+            target = root / name
+            if target.is_file():
+                break
+        else:
+            raise ValueError(f"PA:INCLUDE target not found: {name} in {ASSET_SET_DIR} or {src_root}")
+        if fragment:
+            if fragment != "board":
+                raise ValueError(f"PA:INCLUDE fragment #{fragment} is not one this server can select")
+            return ""
         return target.read_text(encoding="utf-8")
 
     return INCLUDE_RE.sub(_replace, content)
@@ -388,6 +412,13 @@ class FixtureHandler(SimpleHTTPRequestHandler):
 
 def main():
     """Start the fixture server."""
+    # No options: the port is PA_FIXTURE_PORT. The parser is here so that
+    # --help prints and exits, and anything else on the command line is refused,
+    # where both used to be ignored and a server started on the default port.
+    argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    ).parse_args()
+
     if not DATA_DIR.exists():
         print(f"Error: {DATA_DIR} not found", file=sys.stderr)
         sys.exit(1)

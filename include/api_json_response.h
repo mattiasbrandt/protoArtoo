@@ -27,6 +27,7 @@
 #include <ArduinoJson.h>
 #include <stddef.h>
 
+#include "api_apply_refusal.h"
 #include "web_request.h"
 
 // Serialize doc and answer application/json with it, under `code`.
@@ -59,3 +60,18 @@ void webSendJsonDocument(WebRequest& req, const JsonDocument& doc, size_t maxByt
 // If hint or field is present, the caller must ensure it fits in the response.
 void webSendJsonError(WebRequest& req, int status, const char* errorToken,
                       const char* hint = nullptr, const char* field = nullptr);
+
+// Send an Apply Core's refusal (ADR 0011, amended 2026-09-25):
+//   {"ok":false,"error":"<message>","field":"...","reason":"...","accepts":"..."}
+//
+// `error` is the core's sentence word for word, as it always was. `field` and
+// `accepts` are left out when the refusal has none; `reason` is always there,
+// because every refusal has one. A page words the refusal from these keys and
+// never reads the sentence for them (data/outputs.js sayRefusal()).
+//
+// Bounded like webSendJsonError(), at WEB_APPLY_REFUSAL_MAX_BYTES: the longest
+// sentence a core writes (192 B), the field (32 B) and accepts (48 B) buffers
+// and the keys come to about 350 B.
+constexpr size_t WEB_APPLY_REFUSAL_MAX_BYTES = 512;
+void webSendApplyRefusal(WebRequest& req, int status, const char* message,
+                         const ApplyRefusal& refusal);

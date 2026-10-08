@@ -2,8 +2,12 @@
 // src/web/api_identity.cpp
 //
 // Droid identity API endpoints
-//   GET  /api/identity  - current cosmetic droid name and mDNS opt-in
-//   POST /api/identity  - persist validated droid name and mDNS opt-in
+//   GET  /api/identity             - cosmetic droid name, mDNS opt-in, and the
+//                                    compile-time Feature Availability manifest
+//   POST /api/identity             - persist validated droid name and mDNS opt-in
+//   GET  /api/identity/components  - the Component Registry lineup: every
+//                                    product the project supports or plans,
+//                                    and what this image can drive
 //
 // First route ported to the WebRequest seam (ADR 0021): the same handler
 // source compiles and serves under every backend and names no vendor type.
@@ -11,14 +15,15 @@
 
 #include "api_identity.h"
 
-#include <Preferences.h>
 #include <stdio.h>
 
 #include "api_helpers.h"
 #include "api_json_response.h"
+#include "component_registry.h"
 #include "config.h"
 #include "config_store.h"
 #include "config_cache.h"
+#include "config_write_lock.h"  // identitySetWriteWindow() lives here
 #include "logging.h"
 #include "web_request.h"
 
@@ -28,14 +33,26 @@ namespace {
 
 void sendIdentityResponse(WebRequest& req, const SystemConfig& system) {
     // Fixed buffer for identity JSON serialization including the manifest.
-    // IDENTITY_JSON_MAX_BYTES = 384 B; usable JSON is 383 B (1 byte for NUL).
+    // IDENTITY_JSON_MAX_BYTES = 576 B; usable JSON is 575 B (1 byte for NUL).
     // Worst case is a 32-char droid name (DROID_NAME_MAX_LEN), mdnsUseName false,
     // and every manifest value false (false is 5 chars, true is 4). With today's
-    // manifest -- 4 capabilities, 3 flags -- that worst case is 334 B of JSON,
-    // leaving 383 - 334 = 49 B of headroom.
-    // Each row emits ,"<name>":false, so it costs name_len + 9 bytes at worst
-    // (name_len + 8 for the first row in an object, which has no leading comma).
-    // Every capability or flag added grows this payload toward the ceiling.
+    // manifest -- 4 capabilities, 3 flags, 3 Board Lanes (protoR2link's with its
+    // baud and protocol), the Learned Sequence cap and its per-file byte cap --
+    // that worst case is 557 B of JSON on firebeetle2, leaving 575 - 557 = 18 B
+    // of headroom; the artoo-esp32 is one byte shorter, its cap being one digit
+    // (5) where firebeetle2's is two (10). The byte cap is five digits on both
+    // (12288, 24576), so ,"learned_sequence_max_bytes":NNNNN costs 35 B on
+    // either (#439). Every lane's UART index is one digit and every lane pin is
+    // two on both boards.
+    // A capability or flag row emits ,"<name>":false, so it costs name_len + 9
+    // bytes at worst (name_len + 8 for the first row in an object, which has no
+    // leading comma). A Board Lane row emits
+    // ,"<name>":{"uart":N,"tx":NN,"rx":NN} and costs name_len + 29 at worst,
+    // one more for each extra digit in a pin or controller index. A lane that
+    // carries its wire contract (include/board_lane_wire.h) adds
+    // ,"baud":NNNN,"protocol":"<word>": 22 B plus the baud's digits and the
+    // word, 35 B for protoR2link's 9600 and "marcduino".
+    // Every capability, flag or lane added grows this payload toward the ceiling.
     char body[IDENTITY_JSON_MAX_BYTES] = {};
     if (!formatIdentityJson(body, sizeof(body), system.droid_name, system.mdns_use_name)) {
         webSendJsonError(req, 500, "identity response overflow");
@@ -57,21 +74,58 @@ IdentitySetCommitOutcome identitySetCommitApplied(ConfigSnapshot* working) {
     IdentitySetCommitOutcome outcome;
     configCacheApply(*working);
 
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, false)) {
+    if (!configPersistSystem(working->system)) {
         return outcome;
     }
-
-    if (!configSaveSystem(prefs, working->system)) {
-        prefs.end();
-        return outcome;
-    }
-    prefs.end();
 
     PA_LOG_INFO(TAG, "[IDENTITY] name=%s mdnsUseName=%s", working->system.droid_name,
                 working->system.mdns_use_name ? "true" : "false");
     outcome.persisted = true;
     return outcome;
+}
+
+// See include/api_identity.h for the full contract.
+bool identitySetWriteWindow(const char* droidName, bool mdnsUseName, ConfigSnapshot* working,
+                            IdentitySetCommitOutcome* commit) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return false;
+    }
+    configCacheRead(working);
+    snprintf(working->system.droid_name, sizeof(working->system.droid_name), "%s", droidName);
+    working->system.mdns_use_name = mdnsUseName;
+    *commit = identitySetCommitApplied(working);
+    return true;
+}
+
+// GET /api/identity/components -- the Component Registry lineup.
+//
+// Every row, including the parts nothing drives: a builder sees a product we
+// have not written a driver for as PLANNED rather than as silently absent, and
+// a Component Picker reads one lineup from the controller instead of keeping
+// its own (ADR 0042 as amended 2026-09-09).
+void handleComponentsGet(WebRequest& req) {
+    // Pin the active members before the send. Sound, the body servo
+    // controller and the Radio Controller have one; a family without a member
+    // setting reports active_member null, which is what never pinning it
+    // gives. The body servo controller's is the one ServoTask runs since the
+    // boot, as Sound's is (#444).
+    componentRegistryJsonPinActiveMember(COMPONENT_CATEGORY_SOUND,
+                                         configCacheReadActiveSoundMember());
+    componentRegistryJsonPinActiveMember(COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER,
+                                         configCacheReadActiveBodyServoMember());
+    // The radio member drives nothing on the controller, so there is no boot
+    // latch to report: the saved choice is the active one. No radio fitted
+    // pins none, which reads as active_member null.
+    const ComponentPartEntry* radio = componentResolveRadio(configCacheReadRcMember());
+    componentRegistryJsonPinActiveMember(COMPONENT_CATEGORY_RADIO_CONTROLLER,
+                                         radio != nullptr ? radio->value : COMPONENT_MEMBER_NONE);
+
+    if (!req.sendChunked("application/json", fillComponentRegistryJson)) {
+        webSendJsonError(req, 500, "response alloc failed");
+        return;
+    }
+    PA_LOG_DEBUG(TAG, "GET /api/identity/components (%u parts)", (unsigned)COMPONENT_PART_COUNT);
 }
 
 void handleIdentityPost(WebRequest& req) {
@@ -100,11 +154,11 @@ void handleIdentityPost(WebRequest& req) {
     }
 
     ConfigSnapshot working = {};
-    configCacheRead(&working);
-    snprintf(working.system.droid_name, sizeof(working.system.droid_name), "%s", normalized);
-    working.system.mdns_use_name = mdnsUseName;
-
-    IdentitySetCommitOutcome commit = identitySetCommitApplied(&working);
+    IdentitySetCommitOutcome commit;
+    if (!identitySetWriteWindow(normalized, mdnsUseName, &working, &commit)) {
+        webSendJsonError(req, 503, "config write busy");
+        return;
+    }
     if (!commit.persisted) {
         webSendJsonError(req, 500, "failed to persist identity");
         return;

@@ -6,6 +6,7 @@
 // =============================================================================
 
 #include "drive_arbiter.h"
+#include "drive_arbiter_test_hooks.h"  // driveArbiterReset(), defined below for tests only
 
 #include <Arduino.h>
 
@@ -144,8 +145,20 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
     if (webValid) {
         uint32_t webAge = (uint32_t)(nowMs - g_arbiter.webTimestampMs);
         if (webAge > cfg.webDriveTimeoutMs) {
-            webTimedOut = true;
             webValid = false;  // Stale web is not valid for arbitration
+
+            // The web timeout is a dead-man hold, and it counts only while the
+            // browser sent the LAST drive command (docs/failsafe.md, Layer 3).
+            // Any newer command ends it, the radio's included: without this a
+            // single expired browser command held the feet, radio and all,
+            // until the browser drove again (#394). The raw RC timestamp is
+            // used, not rcValid: a radio that took over and then went quiet
+            // still ended the browser's claim, and its own silence is Layer 2's
+            // to handle. Same wrap-safe comparison and the same tie rule
+            // (radio wins) as the arbitration below.
+            bool rcIsNewer = (g_arbiter.rcTimestampMs != 0) &&
+                             (int32_t)(g_arbiter.rcTimestampMs - g_arbiter.webTimestampMs) >= 0;
+            webTimedOut = !rcIsNewer;
         }
     }
 
@@ -186,6 +199,8 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
 
     // Check if any failsafe is active and zero output if so.
     // Note: rcTimedOut is diagnostics only; web timeout still triggers failsafe.
+    // webTimedOut is asserted directly as well as through the gate, so the hold
+    // takes effect on the tick it expires, before DriveTask syncs the gate.
     bool failsafeActive = failsafeIsActive() || webTimedOut;
     if (failsafeActive) {
         outputSpeed = 0;

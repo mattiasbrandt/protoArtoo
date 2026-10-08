@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""First-run setup wizard for protoArtoo.
+"""First-run setup wizard for protoR2.
 
 Modes:
   - Default (no flags): writes user.mk with local build overrides only.
@@ -51,13 +51,6 @@ SECRETS_DEFAULTS = {
     "PA_STA_PASSWORD": "",
 }
 
-# (display label, BUILD_ENV value)
-AUDIO_BACKENDS = [
-    ("DY-SV5W (default — confirmed hardware)", "artoo_esp32"),
-    ("CHIRP", "artoo_esp32_chirp"),
-    ("MP3 Trigger", "artoo_esp32_mp3trigger"),
-]
-
 # ---------------------------------------------------------------------------
 # questionary — optional; stdlib fallback when absent
 # ---------------------------------------------------------------------------
@@ -68,22 +61,6 @@ try:
 except ImportError:
     _q = None  # type: ignore[assignment]
     _HAS_Q = False
-
-
-def _select(message: str, choices: list[str], default: str) -> str | None:
-    """Prompt the user to pick from a list. Returns None on cancellation."""
-    if _HAS_Q:
-        return _q.select(message, choices=choices, default=default).ask()
-    print(message)
-    for i, choice in enumerate(choices, 1):
-        marker = " (default)" if choice == default else ""
-        print(f"  {i}) {choice}{marker}")
-    raw = input(f"Select [1-{len(choices)}] (Enter for default): ").strip()
-    if not raw:
-        return default
-    if raw.isdigit() and 1 <= int(raw) <= len(choices):
-        return choices[int(raw) - 1]
-    return default
 
 
 def _text(message: str, default: str) -> str | None:
@@ -368,21 +345,11 @@ def run() -> int:
             return 1
         print()
 
-    # --- Q1: Audio backend ---
-    audio_labels = [label for label, _ in AUDIO_BACKENDS]
-    default_build_env = existing.get("BUILD_ENV", DEFAULTS["BUILD_ENV"])
+    # No sound-module question: the module is picked on Configuration
+    # (Hardware components -> Sound), and there is one build per board.
+    build_env = DEFAULTS["BUILD_ENV"]
 
-    default_label = next(
-        (label for label, env in AUDIO_BACKENDS if env == default_build_env),
-        audio_labels[0],
-    )
-    chosen_label = _select("Audio backend:", audio_labels, default=default_label)
-    if chosen_label is None:
-        print("\nCancelled.")
-        return 1
-    build_env = dict(AUDIO_BACKENDS)[chosen_label]
-
-    # --- Q2: OTA IP ---
+    # --- Q1: OTA IP ---
     ota_ip = _text(
         "OTA target IP address:",
         default=existing.get("OTA_IP", DEFAULTS["OTA_IP"]),
@@ -391,7 +358,7 @@ def run() -> int:
         print("\nCancelled.")
         return 1
 
-    # --- Q3: USB upload port ---
+    # --- Q2: USB upload port ---
     # Blank is the good answer on a single-board bench and the only safe answer
     # when the bench grows a second board: it defers to the flash-time resolver.
     upload_port = _text(
@@ -402,7 +369,7 @@ def run() -> int:
         print("\nCancelled.")
         return 1
 
-    # --- Q4: Confirm and write ---
+    # --- Q3: Confirm and write ---
     content = _render_user_mk(ota_ip, build_env, upload_port)
     print()
     print("Will write user.mk:")
@@ -435,7 +402,7 @@ def run() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="protoArtoo local setup wizard")
+    parser = argparse.ArgumentParser(description="protoR2 local setup wizard")
     parser.add_argument(
         "--wifi",
         action="store_true",

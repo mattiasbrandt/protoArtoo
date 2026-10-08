@@ -1,0 +1,1054 @@
+// =============================================================================
+// test/test_web/test_surface_polls.js
+//
+// Leaving a screen stops it asking, and changes nothing on the droid
+// (ADR 0048, #360).
+//
+// Three levels, because the claim is made in three places: the registry in the
+// shipped page_bootstrap.js decides whether a poll is wanted, each shipped
+// surface module hands its poll to that registry, and the shipped shell is what
+// names the surface on screen. Every assertion here is about an observed timer,
+// an observed request or an observed node -- never about a flag the code under
+// test reports on itself.
+// =============================================================================
+
+import { test } from "node:test";
+import assert from "node:assert";
+import vm from "node:vm";
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+import { createRequire } from "node:module";
+
+import { loadPageModule, ApiError, PARTS_CHAIN } from "./helpers/page_module_env.js";
+import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
+import { shippedWords } from "./helpers/shipped_words.cjs";
+
+const require = createRequire(import.meta.url);
+const { createFeatureAvailability } = require("../../data/feature_availability.js");
+
+// Configuration and Maintenance read the identity manifest through the shipped
+// Feature Availability module their pages load first (#404). A module run on
+// its own is handed a fresh one of those, for real, the way the Dashboard's
+// tests take health_signals.js.
+const withAvailability = (extra = {}) => ({ PAFeatureAvailability: createFeatureAvailability(), ...extra });
+
+// Servos, Parts, Maintenance and the Dashboard read the Outputs through the
+// shipped data/outputs.js their pages load first (#415). It is chained into
+// every module's own context here, as the page's data-scripts load it, so a
+// surface that reads the Outputs reads them for real - through the same
+// surface registry and Live Reading the page has (#421) - and one that does
+// not never notices.
+const OUTPUTS_CHAIN = ["outputs.js"];
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const dataDir = join(__dirname, "../../data");
+const readData = (name) => readFileSync(join(dataDir, name), "utf-8");
+
+const bootstrapFile = readData("page_bootstrap.js");
+const part2Marker = bootstrapFile.indexOf("// =========================== PART 2");
+const part3Marker = bootstrapFile.indexOf("// ============================ PART 3");
+const part1Src = bootstrapFile.substring(bootstrapFile.indexOf("(() => {"), part2Marker);
+const part3Src = bootstrapFile.substring(part3Marker);
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// =============================================================================
+// The registry, driven directly
+//
+// Timers are recorded rather than run, so "the poll stopped" is a clearInterval
+// this suite watched happen.
+// =============================================================================
+
+const makeRegistry = () => {
+  const intervals = [];
+  const cleared = { intervals: [] };
+  const events = [];
+  const documentListeners = [];
+
+  const documentMock = {
+    visibilityState: "visible",
+    addEventListener: (type, handler) => documentListeners.push({ type, handler }),
+    removeEventListener: (type, handler) => {
+      const at = documentListeners.findIndex((l) => l.type === type && l.handler === handler);
+      if (at >= 0) documentListeners.splice(at, 1);
+    },
+  };
+
+  const windowMock = {
+    setInterval: (fn, ms) => {
+      const id = intervals.length + 1;
+      intervals.push({ id, fn, ms });
+      return id;
+    },
+    clearInterval: (id) => cleared.intervals.push(id),
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (id) => clearTimeout(id),
+    dispatchEvent: (event) => events.push(event),
+  };
+
+  const context = {
+    window: windowMock,
+    document: documentMock,
+    console: { log: () => {}, warn: () => {}, error: () => {} },
+    Math,
+    Promise,
+    Set,
+    Map,
+    Object,
+    String,
+    Error,
+    CustomEvent: class {
+      constructor(type, opts = {}) {
+        this.type = type;
+        this.detail = opts.detail;
+      }
+    },
+  };
+  context.globalThis = context;
+  vm.runInNewContext(part1Src, context);
+
+  return {
+    surface: windowMock.PASurface,
+    intervals,
+    cleared,
+    events,
+    document: documentMock,
+    live: () => intervals.filter((timer) => !cleared.intervals.includes(timer.id)),
+    fire: (timer) => timer.fn(),
+  };
+};
+
+test("a surface's poll runs only while its surface is the one on screen", () => {
+  const env = makeRegistry();
+  env.surface.showing("rc");
+  env.surface.poll(() => Promise.resolve(), { cadenceMs: 1000 }).start();
+
+  assert.equal(env.live().length, 1, "RC is on screen, so its poll is running");
+
+  env.surface.showing("maintenance");
+  assert.equal(env.live().length, 0, "leaving RC stops what RC was asking for");
+
+  env.surface.showing("rc");
+  assert.equal(env.live().length, 1, "and coming back starts it again");
+});
+
+test("a surface that turns its own poll on while it is off screen does not start asking", () => {
+  const env = makeRegistry();
+  env.surface.showing("maintenance");
+  const poll = env.surface.poll(() => Promise.resolve(), { cadenceMs: 5000 });
+
+  env.surface.showing("home");
+  poll.start();
+
+  assert.equal(env.live().length, 0, "the manifest said yes; the operator is elsewhere, so nothing runs");
+
+  env.surface.showing("maintenance");
+  assert.equal(env.live().length, 1, "it starts when the operator opens the surface that owns it");
+});
+
+test("a left surface shows what it last read until it has answered again", async () => {
+  const env = makeRegistry();
+  env.surface.showing("rc");
+  let answer = null;
+  env.surface.poll(() => new Promise((resolve) => { answer = resolve; }), { cadenceMs: 1000 }).start();
+
+  env.surface.showing("maintenance");
+  assert.equal(env.surface.isStale("rc"), true, "what RC is showing is from before the operator left");
+
+  env.surface.showing("rc");
+  assert.equal(env.surface.isStale("rc"), true, "being on screen again is not an answer");
+
+  env.fire(env.live()[0]);
+  answer({});
+  await sleep(0);
+
+  assert.equal(env.surface.isStale("rc"), false, "the answer is what makes it current");
+  const fresh = env.events.filter((event) => event.type === "pa:surface-fresh");
+  assert.equal(fresh.length, 1, "and the shell is told, so the note it put up can come down");
+  assert.equal(fresh[0].detail.surface, "rc");
+});
+
+test("a refresh that did not land is not an answer: the surface stays as it was", async () => {
+  const env = makeRegistry();
+  env.surface.showing("rc");
+  let fail = null;
+  env.surface.poll(() => new Promise((_resolve, reject) => { fail = reject; }), { cadenceMs: 1000 }).start();
+
+  env.surface.showing("maintenance");
+  env.surface.showing("rc");
+  assert.equal(env.surface.isStale("rc"), true, "RC is showing what it read before the operator left");
+
+  env.fire(env.live()[0]);
+  fail(new Error("the controller did not answer"));
+  await sleep(0);
+
+  assert.equal(
+    env.surface.isStale("rc"),
+    true,
+    "a refresh that never landed must not report the screen as current",
+  );
+  assert.equal(
+    env.events.filter((event) => event.type === "pa:surface-fresh").length,
+    0,
+    "and the shell is not told to take the note down",
+  );
+  // The rejection reaching this far without node reporting an unhandled one is
+  // the other half of the claim: the registry catches it, so no polling site
+  // has to -- and a site that did would hide the failure from the registry.
+});
+
+test("a poll that hands back nothing at all has not answered either", async () => {
+  const env = makeRegistry();
+  env.surface.showing("rc");
+  // The shape that marked a surface fresh unconditionally before #360 was
+  // reopened: an attempt that returns something which is not a promise.
+  env.surface.poll(() => undefined, { cadenceMs: 1000 }).start();
+
+  env.surface.showing("maintenance");
+  env.surface.showing("rc");
+  env.fire(env.live()[0]);
+  await sleep(0);
+
+  assert.equal(
+    env.surface.isStale("rc"),
+    true,
+    "something that never said it asked cannot be read as having been told",
+  );
+});
+
+test("a surface with two polls is not current until both have answered", async () => {
+  const env = makeRegistry();
+  env.surface.showing("sound");
+  let moduleAnswers = false;
+  const status = env.surface.poll(() => Promise.resolve({}), { cadenceMs: 1000 });
+  const module = env.surface.poll(
+    () => (moduleAnswers ? Promise.resolve({}) : Promise.reject(new Error("the module did not answer"))),
+    { cadenceMs: 2000 },
+  );
+  status.start();
+  module.start();
+
+  env.surface.showing("maintenance");
+  assert.equal(env.surface.isStale("sound"), true, "leaving Sound stops both of the polls it owns");
+
+  env.surface.showing("sound");
+  const [statusTimer, moduleTimer] = env.live();
+  env.fire(statusTimer);
+  await sleep(0);
+
+  assert.equal(
+    env.surface.isStale("sound"),
+    true,
+    "the status read answered and the module has not, so Sound is not current",
+  );
+  assert.equal(
+    env.events.filter((event) => event.type === "pa:surface-fresh").length,
+    0,
+    "and the shell is not told to take the note down",
+  );
+
+  env.fire(moduleTimer);
+  await sleep(0);
+  assert.equal(env.surface.isStale("sound"), true, "a refresh that failed is still not an answer");
+
+  moduleAnswers = true;
+  env.fire(moduleTimer);
+  await sleep(0);
+
+  assert.equal(env.surface.isStale("sound"), false, "everything Sound asks for has answered");
+  const fresh = env.events.filter((event) => event.type === "pa:surface-fresh");
+  assert.equal(fresh.length, 1, "told once, when the surface answered -- not once per poll");
+  assert.equal(fresh[0].detail.surface, "sound");
+});
+
+test("a poll the surface turned off does not hold the note up", async () => {
+  const env = makeRegistry();
+  env.surface.showing("maintenance");
+  const serial = env.surface.poll(() => Promise.resolve({}), { cadenceMs: 5000 });
+  const profiler = env.surface.poll(() => Promise.resolve({}), { cadenceMs: 5000 });
+  serial.start();
+  profiler.start();
+
+  env.surface.showing("rc");
+  env.surface.showing("maintenance");
+  // What the memory profiler does when the manifest says it is not in this
+  // build: the surface stops asking. It is not waiting for an answer, so it
+  // must not pin the note up on a surface that is otherwise current.
+  profiler.stop();
+
+  env.fire(env.live()[0]);
+  await sleep(0);
+
+  assert.equal(
+    env.surface.isStale("maintenance"),
+    false,
+    "the only poll Maintenance still wants has answered, so Maintenance is current",
+  );
+});
+
+test("a surface that stopped its own poll has not been left, and is not stale", () => {
+  const env = makeRegistry();
+  env.surface.showing("maintenance");
+  const poll = env.surface.poll(() => Promise.resolve(), { cadenceMs: 5000 });
+  poll.start();
+  poll.stop();
+
+  assert.equal(env.live().length, 0, "the surface's own stop() stops it");
+  assert.equal(env.surface.isStale("maintenance"), false, "nobody left this screen; it is showing what it means to show");
+});
+
+test("a surface can hold its own unmount, and the hold belongs to that surface alone", () => {
+  const env = makeRegistry();
+  env.surface.showing("seq");
+  let unsaved = true;
+  env.surface.holdUnmount(() => unsaved);
+
+  assert.equal(env.surface.unmountHeld("seq"), true, "the surface with the unsaved edit is held");
+  assert.equal(env.surface.unmountHeld("rc"), false, "and no other surface is");
+
+  unsaved = false;
+  assert.equal(env.surface.unmountHeld("seq"), false, "the hold ends when the surface says it has");
+
+  env.surface.releaseUnmount();
+  assert.ok(
+    env.events.some((event) => event.type === "pa:surface-release"),
+    "releasing asks the shell to try the navigation again",
+  );
+});
+
+test("a hold that throws does not trap the operator on the screen", () => {
+  const env = makeRegistry();
+  env.surface.showing("seq");
+  env.surface.holdUnmount(() => { throw new Error("the guard is broken"); });
+
+  assert.equal(env.surface.unmountHeld("seq"), false, "an unmount nobody could decide is allowed");
+});
+
+// =============================================================================
+// The shipped surface modules
+//
+// Each of these ran a raw setInterval of its own before #360. The assertion is
+// that the poll it installs now belongs to a surface: naming a different one
+// stops it. A module that went back to its own timer fails here.
+//
+// These run without a shell, so the registry has heard no surface name when the
+// module loads and the poll it creates is owned by nobody -- which is exactly
+// the state a page opened on its own is in, and why it polls at all.
+//
+// The droid's status is not one of them: no surface polls it any more. The
+// Live Reading's one fallback poll is chrome and outlives every surface
+// (data/live_reading.js, #419), which "the Live Reading's poll is chrome"
+// below holds.
+// =============================================================================
+
+const SURFACE_POLLS = [
+  { file: "servo.js", cadenceMs: 1000, what: "the outputs", chain: PARTS_CHAIN },
+  { file: "sound.js", cadenceMs: 2000, what: "the sound module's status" },
+  { file: "rc.js", cadenceMs: 1000, what: "the RC diagnostics" },
+];
+
+for (const { file, cadenceMs, what, overrides = () => ({}), chain = OUTPUTS_CHAIN } of SURFACE_POLLS) {
+  test(`${file}: ${what} poll stops when the operator is reading another surface`, async () => {
+    let env = null;
+    env = loadPageModule(file, { respond: () => ({}), overrides: overrides(), chain });
+    await env.settle();
+
+    const polls = env.intervals.filter((timer) => timer.ms === cadenceMs);
+    assert.ok(polls.length > 0, `${file} installs a ${cadenceMs} ms poll`);
+
+    env.window.PASurface.showing("some-other-surface");
+
+    assert.ok(
+      polls.every((poll) => env.cleared.intervals.includes(poll.id)),
+      `${file}'s ${cadenceMs} ms polling must stop when its surface is not the one on screen`,
+    );
+  });
+}
+
+// =============================================================================
+// ... and none of them reads the droid's status on its own
+//
+// Every one of these used to: a one-shot /api/status when the stream had not
+// delivered yet, or a fallback poll of its own at 2, 3 or 5 s, each spending
+// one of the controller's three client slots to ask what the shell had just
+// asked. The status is the Live Reading's to read now, once, for every reader
+// (data/live_reading.js, #419).
+// =============================================================================
+
+const READS_NO_STATUS_OF_ITS_OWN = [
+  { file: "app.js" },
+  { file: "dome.js" },
+  { file: "drive.js" },
+  { file: "sound.js" },
+  { file: "rc.js" },
+  { file: "maintenance.js", overrides: withAvailability },
+  { file: "configuration.js", overrides: withAvailability },
+  { file: "servo.js", chain: PARTS_CHAIN },
+  { file: "parts.js", chain: PARTS_CHAIN },
+];
+
+for (const { file, overrides = () => ({}), chain = OUTPUTS_CHAIN } of READS_NO_STATUS_OF_ITS_OWN) {
+  test(`${file}: asks the droid for no status of its own`, async () => {
+    let env = null;
+    env = loadPageModule(file, { respond: () => ({}), overrides: overrides(), chain });
+    await env.settle(8);
+
+    assert.deepEqual(
+      env.requests.filter((request) => request.path === "/api/status").map((request) => request.path),
+      [],
+      `${file} read /api/status itself; the Live Reading is the one reader`,
+    );
+  });
+}
+
+// =============================================================================
+// ... and what each of them shows after a refresh that did not land
+//
+// This is the defect that reopened #360. Every one of these sites caught its
+// own rejection, so the registry was handed a fulfilled promise for a read
+// that never happened and took the "Last reading from before you left" note
+// down over values from before the operator left. The assertion is made
+// against the shipped module, through its own failing transport, because that
+// is the only place the swallow could hide.
+// =============================================================================
+
+const STALE_AFTER_A_FAILED_REFRESH = [
+  { file: "rc.js", what: "RC diagnostics" },
+  { file: "servo.js", what: "Servos", chain: PARTS_CHAIN },
+  { file: "parts.js", what: "Parts", chain: PARTS_CHAIN },
+];
+
+for (const { file, what, overrides = () => ({}), chain = OUTPUTS_CHAIN } of STALE_AFTER_A_FAILED_REFRESH) {
+  test(`${file}: a refresh that fails leaves ${what} showing what it last read`, async () => {
+    let answering = true;
+    let env = null;
+    env = loadPageModule(file, {
+      respond: () => {
+        if (!answering) throw new ApiError("the controller did not answer");
+        return {};
+      },
+      overrides: overrides(),
+      chain,
+    });
+    await env.settle();
+
+    // The operator leaves: everything this module owns stops, and what is on
+    // the screen is from before.
+    env.window.PASurface.showing("some-other-surface");
+    assert.equal(env.window.PASurface.isStale(null), true, `${file} is left showing what it last read`);
+
+    // The link drops while they are away, and they come back to it.
+    answering = false;
+    env.window.PASurface.showing(null);
+    env.emit("document", "visibilitychange", {});
+    await env.settle(8);
+
+    assert.equal(
+      env.window.PASurface.isStale(null),
+      true,
+      `${file}: a refresh that never landed must not report the screen as current`,
+    );
+  });
+}
+
+// Sound's own poll is the audio module's. Its status fallback went to the Live
+// Reading (#419), so a failed module read is the one way Sound can be left
+// showing what it last read.
+test("sound.js: a module that did not answer leaves Sound showing what it last read", async () => {
+  let answering = true;
+  const env = loadPageModule("sound.js", {
+    respond: (path) => {
+      if (path === "/api/audio" && !answering) throw new ApiError("the module did not answer");
+      return {};
+    },
+  });
+  await env.settle();
+
+  env.window.PASurface.showing("some-other-surface");
+  assert.equal(env.window.PASurface.isStale(null), true, "Sound is left showing what it last read");
+
+  answering = false;
+  env.window.PASurface.showing(null);
+  env.emit("document", "visibilitychange", {});
+  await env.settle(8);
+
+  assert.equal(
+    env.window.PASurface.isStale(null),
+    true,
+    "the module never answered, so Sound must not report itself as current",
+  );
+});
+
+test("maintenance.js: a memory reading nobody could take does not come back as a fresh one", async () => {
+  let answering = true;
+  const availability = createFeatureAvailability();
+  const env = loadPageModule("maintenance.js", {
+    respond: (path) => {
+      if (path === "/api/profiler" && !answering) throw new ApiError("the controller did not answer");
+      return path === "/api/profiler"
+        ? { heapFree: 1, heapMin: 1, heapLargest: 1, fragRatio: 0, taskStacks: [], snapshots: [] }
+        : {};
+    },
+    // The live-update stream is available here, so Maintenance's serial fallback
+    // poll is never created and the profiler's is the only poll on the surface
+    // -- isStale() answers for a surface, not for one poll of several.
+    overrides: {
+      PAFeatureAvailability: availability,
+      PAStatusStream: { isSupported: () => true, subscribe: () => () => {}, getLastStatus: () => ({}) },
+    },
+  });
+  env.element("profiler-card").dataset.buildFlag = "PA_HEAP_PROFILE";
+  await env.settle();
+  availability.setIdentity({
+    board: "artoo_esp32",
+    board_capabilities: { PA_CAP_NATIVE_WIFI: true },
+    build_flags: { PA_HEAP_PROFILE: true, PA_HEAP_TRACING: false, PA_ADMISSION_TRACE: false },
+  });
+  await env.settle();
+  assert.ok(
+    env.requests.some((request) => request.path === "/api/profiler"),
+    "the profiler is polling, which is what makes the rest of this test mean anything",
+  );
+
+  env.window.PASurface.showing("rc");
+  assert.equal(env.window.PASurface.isStale(null), true, "leaving Maintenance stops the profiler");
+
+  answering = false;
+  env.window.PASurface.showing(null);
+  env.emit("document", "visibilitychange", {});
+  await env.settle(8);
+
+  assert.equal(
+    env.window.PASurface.isStale(null),
+    true,
+    "the readings on screen are the ones from before, and must not read as current",
+  );
+});
+
+test("wifi.js: the diagnostics poll it starts on settling stops when the operator leaves", async () => {
+  const env = loadPageModule("wifi.js", {
+    respond: (path) => (path === "/api/wifi" ? { wifi: { mode: "client", staSsid: "bench" } } : {}),
+    overrides: { PAAssetsReady: true },
+  });
+  await env.settle();
+  env.emit("window", "pa:bootstrap-change", {
+    detail: {
+      sections: [{ name: "wifi-config", status: "done" }],
+      resourcesReady: true,
+      sectionsStable: true,
+    },
+  });
+
+  const poll = env.intervals.find((timer) => timer.ms === 10000);
+  assert.ok(poll, "wifi.js installs its 10 s diagnostics poll");
+
+  env.window.PASurface.showing("some-other-surface");
+
+  assert.ok(env.cleared.intervals.includes(poll.id), "and it stops when WiFi is not the surface on screen");
+});
+
+test("wifi.js: a refresh that fails leaves WiFi showing what it last read", async () => {
+  let answering = true;
+  const env = loadPageModule("wifi.js", {
+    respond: (path) => {
+      if (!answering) throw new ApiError("the controller did not answer");
+      return path === "/api/wifi" ? { wifi: { mode: "client", staSsid: "bench" } } : {};
+    },
+    overrides: { PAAssetsReady: true },
+  });
+  await env.settle();
+  env.emit("window", "pa:bootstrap-change", {
+    detail: {
+      sections: [{ name: "wifi-config", status: "done" }],
+      resourcesReady: true,
+      sectionsStable: true,
+    },
+  });
+  await env.settle();
+
+  env.window.PASurface.showing("some-other-surface");
+  assert.equal(env.window.PASurface.isStale(null), true, "WiFi is left showing what it last read");
+
+  answering = false;
+  env.window.PASurface.showing(null);
+  env.emit("document", "visibilitychange", {});
+  await env.settle(8);
+
+  assert.equal(
+    env.window.PASurface.isStale(null),
+    true,
+    "the diagnostics read never landed, so WiFi must not report itself as current",
+  );
+});
+
+test("maintenance.js: the memory profiler stops asking when the operator reads another surface", async () => {
+  const availability = createFeatureAvailability();
+  const env = loadPageModule("maintenance.js", {
+    respond: (path) => (path === "/api/profiler"
+      ? { heapFree: 1, heapMin: 1, heapLargest: 1, fragRatio: 0, taskStacks: [], snapshots: [] }
+      : {}),
+    overrides: { PAFeatureAvailability: availability },
+  });
+  env.element("profiler-card").dataset.buildFlag = "PA_HEAP_PROFILE";
+  await env.settle();
+
+  const intervalsBefore = env.intervals.length;
+  availability.setIdentity({
+    board: "artoo_esp32",
+    board_capabilities: { PA_CAP_NATIVE_WIFI: true },
+    build_flags: { PA_HEAP_PROFILE: true, PA_HEAP_TRACING: false, PA_ADMISSION_TRACE: false },
+  });
+  await env.settle();
+
+  // Only what the manifest switched on: the Live Reading's poll, installed
+  // before it, is chrome and is not the profiler's.
+  const profilerPolls = env.intervals.slice(intervalsBefore).filter((timer) => timer.ms === 5000);
+  assert.equal(profilerPolls.length, 1, "the profiler's own cadence");
+
+  const before = env.requests.filter((request) => request.path === "/api/profiler").length;
+  env.window.PASurface.showing("rc");
+  await env.settle();
+
+  assert.ok(
+    profilerPolls.every((timer) => env.cleared.intervals.includes(timer.id)),
+    "leaving Maintenance stops the profiler -- the surface that asks hardest is the point of the ticket",
+  );
+  assert.equal(
+    env.requests.filter((request) => request.path === "/api/profiler").length,
+    before,
+    "and nothing is asked of the controller on the way out",
+  );
+});
+
+// =============================================================================
+// The shipped shell
+//
+// index.html's frame, the shipped page_bootstrap.js driving it, and the shipped
+// shell.js executed for real. Surface scripts are answered as loads, so a
+// surface's poll is created here the way a surface script creates one.
+// =============================================================================
+
+const boot = async ({ hash = "", withEventSource = true } = {}) => {
+  const document = new MiniDocument();
+  const indexHtml = readData("index.html");
+  const parsedIndex = new MiniDOMParser().parseFromString(indexHtml);
+  parsedIndex.body.children.forEach((child) => document.body.appendChild(document.importNode(child, true)));
+  const chain = /data-scripts="([^"]*)"/.exec(indexHtml)[1];
+  document.documentElement.setAttribute("data-scripts", chain);
+  document.body.setAttribute("data-page", "home");
+  document.currentScript = { dataset: { scripts: chain } };
+
+  const env = { document, requests: [], writes: [], events: [], store: new Map(), streamsOpened: [], hashSets: 0 };
+
+  const windowListeners = new Map();
+  const windowMock = {
+    setTimeout: (fn, ms) => {
+      const timer = setTimeout(fn, ms);
+      timer.unref?.();
+      return timer;
+    },
+    clearTimeout: (id) => clearTimeout(id),
+    setInterval: (fn, ms) => {
+      const timer = setInterval(fn, ms);
+      timer.unref?.();
+      env.liveIntervals.add(timer);
+      return timer;
+    },
+    clearInterval: (id) => {
+      env.liveIntervals.delete(id);
+      clearInterval(id);
+    },
+    addEventListener: (type, fn) => {
+      if (!windowListeners.has(type)) windowListeners.set(type, []);
+      windowListeners.get(type).push(fn);
+    },
+    removeEventListener: () => {},
+    dispatchEvent: (event) => {
+      env.events.push({ type: event.type, detail: event.detail });
+      (windowListeners.get(event.type) || []).forEach((fn) => fn(event));
+      return true;
+    },
+    location: {
+      origin: "http://device",
+      _hash: hash,
+      get hash() {
+        return this._hash;
+      },
+      set hash(value) {
+        const text = String(value);
+        const next = text === "" || text.startsWith("#") ? text : `#${text}`;
+        if (next === this._hash) return;
+        this._hash = next;
+        env.hashSets += 1;
+        (windowListeners.get("hashchange") || []).forEach((fn) => fn(new FakeEvent("hashchange")));
+      },
+    },
+    history: {
+      replaceState: (_state, _title, url) => {
+        windowMock.location._hash = String(url);
+      },
+    },
+    localStorage: {
+      getItem: (key) => (env.store.has(key) ? env.store.get(key) : null),
+      setItem: (key, value) => env.store.set(key, String(value)),
+      removeItem: (key) => env.store.delete(key),
+    },
+    PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
+      // Every write the session makes, so "nothing the droid is doing changes"
+      // is counted rather than argued about.
+      postForm: async (path, body) => {
+        env.writes.push({ path, body });
+        return { data: {} };
+      },
+      postJson: async (path, body) => {
+        env.writes.push({ path, body });
+        return { data: {} };
+      },
+      estopPostForm: async (path, body) => {
+        env.writes.push({ path, body });
+        return { data: {} };
+      },
+      messageFor: (error) => String(error?.message || error),
+      get: async (path) => {
+        env.requests.push(path);
+        if (path === "/api/identity") {
+          return { data: { droidName: "artoo", board: "artoo_esp32", board_capabilities: {}, build_flags: {} } };
+        }
+        if (path === "/api/status") return { data: { estop: false } };
+        if (path.endsWith(".html")) return { data: readData(path.slice(1)) };
+        throw new Error(`unexpected request ${path}`);
+      },
+    },
+    PAUtils: { escapeHtml: (value) => String(value) },
+  };
+
+  env.liveIntervals = new Set();
+
+  class FakeEvent {
+    constructor(type) {
+      this.type = type;
+    }
+  }
+  class FakeCustomEvent extends FakeEvent {
+    constructor(type, opts = {}) {
+      super(type);
+      this.detail = opts.detail;
+    }
+  }
+
+  const context = {
+    window: windowMock,
+    document,
+    console: { warn: () => {}, log: () => {}, error: () => {} },
+    AbortController,
+    Date,
+    JSON,
+    Object,
+    Array,
+    Set,
+    Map,
+    String,
+    Number,
+    Boolean,
+    Promise,
+    Error,
+    Math,
+    Event: FakeEvent,
+    CustomEvent: FakeCustomEvent,
+    DOMParser: class {
+      parseFromString(html, type) {
+        return new MiniDOMParser().parseFromString(html, type);
+      }
+    },
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+  };
+  context.globalThis = context;
+
+  if (withEventSource) {
+    context.EventSource = class {
+      constructor(url) {
+        env.streamsOpened.push(url);
+      }
+      addEventListener() {}
+      close() {}
+    };
+  }
+
+  const REAL_SCRIPTS = {
+    "/shell.js": readData("shell.js"),
+    "/status_stream.js": readData("status_stream.js"),
+    "/live_reading.js": readData("live_reading.js"),
+  };
+  document.onAttach = (node) => {
+    if (node.nodeType !== 1 || node.tagName !== "SCRIPT" || !node.src) return;
+    const src = node.src;
+    setTimeout(() => {
+      if (REAL_SCRIPTS[src]) vm.runInNewContext(REAL_SCRIPTS[src], context, { filename: src });
+      node.onload?.();
+    }, 2).unref?.();
+  };
+
+  vm.runInNewContext(part1Src, context, { filename: "page_bootstrap.part1.js" });
+  vm.runInNewContext(part3Src, context, { filename: "page_bootstrap.part3.js" });
+
+  env.window = windowMock;
+  env.context = context;
+  env.navigate = (to) => {
+    windowMock.location.hash = to;
+  };
+  env.mountedSurface = () => document.querySelectorAll("[data-surface]")[0]?.dataset.surface;
+  // How many times the address was set as a navigation - a new history entry
+  // and a hashchange - rather than replaced in place.
+  env.hashChanges = () => env.hashSets;
+  env.noteText = () => document.querySelector(".surface-resumed")?.textContent ?? null;
+
+  await sleep(140);
+  return env;
+};
+
+// What a surface script does: create a poll while its own surface is mounted.
+const surfacePoll = (env, onAttempt = () => Promise.resolve(), options = {}) => {
+  const calls = { count: 0 };
+  const handle = env.window.PASurface.poll(() => {
+    calls.count += 1;
+    return onAttempt();
+  }, { cadenceMs: 1000, ...options });
+  handle.start();
+  return { handle, calls };
+};
+
+test("the shell stops the surface being left before it swaps the screen, and starts it again on return", async () => {
+  const env = await boot();
+  assert.equal(env.mountedSurface(), "home");
+  const poll = surfacePoll(env);
+  assert.equal(env.window.PASurface.isStale("home"), false);
+
+  env.navigate("#wifi");
+  await sleep(140);
+
+  assert.equal(env.mountedSurface(), "wifi");
+  assert.equal(
+    env.window.PASurface.isStale("home"),
+    true,
+    "the Dashboard's poll was stopped by the shell, so what it shows is no longer current",
+  );
+
+  env.navigate("#home");
+  await sleep(140);
+  assert.equal(env.mountedSurface(), "home");
+  poll.handle.stop();
+});
+
+test("a surface that came back says it is showing what it last read, until it answers again", async () => {
+  const env = await boot();
+  let answer = null;
+  // runOnStart is what every converted surface poll passes: coming back to a
+  // screen asks straight away rather than waiting out a cadence.
+  const poll = surfacePoll(env, () => new Promise((resolve) => { answer = resolve; }), { runOnStart: true });
+
+  env.navigate("#wifi");
+  await sleep(140);
+  assert.equal(env.noteText(), null, "the note belongs to the surface that was left, not to the one that is up");
+
+  env.navigate("#home");
+  await sleep(140);
+  assert.match(
+    env.noteText() || "",
+    /Last reading from before you left/,
+    "a returned surface must not let values from before read as live ones",
+  );
+
+  // Its poll asked again on the way in; the note comes down when that answers.
+  assert.ok(answer, "the poll ran on the way back in");
+  answer({});
+  await sleep(10);
+  assert.equal(env.noteText(), null, "and the note goes when the surface is current again");
+  poll.handle.stop();
+});
+
+test("a returned surface whose refresh fails keeps saying what it is showing", async () => {
+  const env = await boot();
+  let answering = true;
+  const poll = surfacePoll(
+    env,
+    () => (answering
+      ? Promise.resolve({})
+      : Promise.reject(new Error("the controller did not answer"))),
+    { runOnStart: true },
+  );
+  // Let that first read land while the operator is still here: a read that
+  // answers after they have left has still put a current value on the screen,
+  // and this test is about the one that never answers at all.
+  await sleep(10);
+
+  env.navigate("#wifi");
+  await sleep(140);
+  // The link drops while the operator is reading something else -- which is
+  // the case the note exists for, and the one that used to clear it.
+  answering = false;
+  const asked = poll.calls.count;
+
+  env.navigate("#home");
+  await sleep(140);
+
+  assert.equal(env.mountedSurface(), "home");
+  assert.ok(poll.calls.count > asked, "the poll asked again on the way back in");
+  assert.match(
+    env.noteText() || "",
+    /Last reading from before you left/,
+    "nothing answered, so the note stays up over the values from before",
+  );
+});
+
+test("a surface with two polls keeps its note up until both have answered", async () => {
+  const env = await boot();
+  let moduleAnswers = false;
+  const status = surfacePoll(env, () => Promise.resolve({}), { runOnStart: true });
+  const module = surfacePoll(
+    env,
+    () => (moduleAnswers
+      ? Promise.resolve({})
+      : Promise.reject(new Error("the module did not answer"))),
+    { runOnStart: true },
+  );
+  // Both first reads land while the operator is still on the screen.
+  await sleep(10);
+
+  env.navigate("#wifi");
+  await sleep(140);
+  env.navigate("#home");
+  await sleep(140);
+
+  // Both asked again on the way back in. One answered; the other did not.
+  assert.ok(status.calls.count > 1 && module.calls.count > 1, "both polls asked again");
+  assert.match(
+    env.noteText() || "",
+    /Last reading from before you left/,
+    "one poll of two answering is not the surface answering",
+  );
+
+  moduleAnswers = true;
+  await sleep(1100);
+
+  assert.equal(env.noteText(), null, "and the note goes once everything the surface asks for has answered");
+  status.handle.stop();
+  module.handle.stop();
+});
+
+test("the Live Reading's poll is chrome: navigating never stops it", async () => {
+  const env = await boot({ withEventSource: false });
+  const statusReads = () => env.requests.filter((path) => path === "/api/status").length;
+  const before = env.liveIntervals.size;
+  assert.ok(before > 0, "with no stream the shell polls for the droid's status");
+
+  env.navigate("#wifi");
+  await sleep(140);
+  env.navigate("#rc");
+  await sleep(140);
+
+  assert.ok(env.liveIntervals.size > 0, "the status poll survived two navigations");
+  const seen = statusReads();
+  await sleep(0);
+  assert.ok(seen >= 1, `the shell kept reading status (${seen} reads)`);
+});
+
+test("opening RC, leaving, and opening the profiler leaves one surface asking, not three", async () => {
+  const env = await boot();
+  const home = surfacePoll(env);
+
+  env.navigate("#rc");
+  await sleep(140);
+  const rc = surfacePoll(env);
+
+  env.navigate("#maintenance");
+  await sleep(140);
+  const maintenance = surfacePoll(env);
+
+  const homeBefore = home.calls.count;
+  const rcBefore = rc.calls.count;
+  await sleep(1100);
+
+  assert.equal(home.calls.count, homeBefore, "the Dashboard stopped asking when it was left");
+  assert.equal(rc.calls.count, rcBefore, "RC diagnostics stopped asking when it was left");
+  assert.ok(maintenance.calls.count > 0, "the surface the operator is reading is the one asking");
+  assert.equal(env.streamsOpened.length, 1, "and the session still holds one live-update slot, not three");
+  maintenance.handle.stop();
+});
+
+test("leaving a surface writes nothing to the droid", async () => {
+  const env = await boot();
+  const poll = surfacePoll(env);
+
+  env.navigate("#drive");
+  await sleep(140);
+  env.navigate("#rc");
+  await sleep(140);
+  env.navigate("#home");
+  await sleep(140);
+
+  assert.deepEqual(
+    env.writes,
+    [],
+    "unmounting must never stop a sequence, release an output, drop a drive frame or clear a latch -- "
+      + "what changes is only what the browser asks for",
+  );
+  // The shell's own reads at boot are not the way out: its identity, the
+  // status, and the bundle's version for the rail's foot line (shell.js since
+  // #466 merged footer.js into it).
+  const shellBoot = new Set(["/api/identity", "/api/status", "/fs-version.json"]);
+  assert.deepEqual(
+    env.requests.filter((path) => !path.endsWith(".html") && !shellBoot.has(path)),
+    [],
+    "and it asks the controller for nothing of its own on the way out",
+  );
+  poll.handle.stop();
+});
+
+test("a surface can hold its own unmount, and releasing it lands where the operator asked to go", async () => {
+  const env = await boot();
+  let unsaved = true;
+  env.window.PASurface.holdUnmount(() => unsaved);
+
+  env.navigate("#wifi");
+  await sleep(140);
+  assert.equal(env.mountedSurface(), "home", "the surface held itself while it asks about unsaved work");
+
+  unsaved = false;
+  env.window.PASurface.releaseUnmount();
+  await sleep(140);
+
+  assert.equal(env.mountedSurface(), "wifi", "and releasing takes the operator where they were going");
+});
+
+// The other answer to the same question (#441): the operator keeps the unsaved
+// work. The shell moved the address to where they were going before it asked,
+// so until it is put back the address names a surface that is not on screen,
+// and a reload would land on it and drop the work the operator just chose to
+// keep.
+test("a surface that stays put gets the address back, and is still held", async () => {
+  const env = await boot();
+  env.window.PASurface.holdUnmount(() => true);
+
+  env.navigate("#wifi");
+  await sleep(140);
+  assert.equal(env.mountedSurface(), "home", "the surface held itself");
+  assert.equal(env.window.location.hash, "#wifi", "the fixture: the address went ahead to where the operator was going");
+
+  const navigations = env.hashChanges();
+  env.window.PASurface.stayOnSurface();
+  await sleep(140);
+
+  assert.equal(env.window.location.hash, "#home", "staying puts the address back on the surface on screen");
+  assert.equal(env.mountedSurface(), "home");
+  assert.equal(
+    env.hashChanges(), navigations,
+    "the address was put back as a navigation: that leaves the refused address one Back away, and Back asks again",
+  );
+});

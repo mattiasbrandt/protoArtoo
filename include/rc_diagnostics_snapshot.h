@@ -84,6 +84,14 @@ struct RcDiagnosticsSnapshot {
 void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out);
 bool populateRcDiagnosticsJson(JsonDocument& doc, const RcDiagnosticsSnapshot& snap);
 
+// Adds `reactions` to a document populateRcDiagnosticsJson() built: what each
+// Reaction is doing (#450), as ReactionTask last published it in RobotState.
+// Its own step, reading its own copy in its own frame, rather than a field of
+// RcDiagnosticsSnapshot: the snapshot is a local of the SSE task's root frame,
+// and eleven more entries there walked that task's chain 80 B past its
+// recorded one. False when the document has no room.
+bool appendRcReactionsJson(JsonDocument& doc);
+
 // Exposed for unit testing  --  determines whether a source is active in a given mode.
 bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enableRcCh1,
                             bool enableRcCh2, bool anyPwmEnabled, bool useCh2);

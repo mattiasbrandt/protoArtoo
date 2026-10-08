@@ -64,21 +64,27 @@ socket layer; this is parity with the prior stack's behavior, not a regression
 The request-admission middleware (`src/web/web_admission_psychic.cpp`) enforces three
 distinct classes:
 
-- **Diagnostic** (`/api/status`, `/api/profiler`, `/api/coredump`, and `/api/events`):
-  gated by the looser `PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG` floor (7500) so
-  operators can still see what's happening during a rejection window. These routes
-  should remain reachable even under heap pressure.
+- **Diagnostic** (`/api/status`, `/api/profiler`, `/api/coredump`,
+  `/api/admission/trace` and `/api/events`; `webPathIsDiagnostic()` in
+  `src/web/web_admission.cpp`): gated by the looser
+  `PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG` floor (7500) so operators can still
+  see what's happening during a rejection window. These routes should remain
+  reachable even under heap pressure. `/api/admission/trace` is listed on every
+  build, though only a `PA_ADMISSION_TRACE` build serves it.
 - **Non-diagnostic** (everything else -- static assets, ordinary `/api/*` calls,
   uploads): gated by `PA_ADMISSION_MIN_LARGEST_FREE_BLOCK` (9000) and the inflight cap
-  (`PA_ADMISSION_MAX_INFLIGHT_REQUESTS`, typically 6).
+  (`PA_ADMISSION_MAX_INFLIGHT_REQUESTS`, typically 6). Diagnostic requests are
+  checked against the same cap, apart from `/api/events`: a stream is long-lived,
+  so it is neither checked against the cap nor counted in it (the event stream has
+  its own cap of 3).
 - **Estop** (`/api/estop`): the sole exception path -- bypasses request admission
   entirely, never counted against the cap, never refused. This is not new; it is the
   existing invariant this architecture must preserve, not change.
 
 ## Connection-lifetime accounting
 
-An admitted (non-refused) request is counted in the inflight cap from the request
-middleware's entry point until the handler returns (via an RAII `InflightSlot` guard
+An admitted (non-refused) request, other than estop and `/api/events`, is counted in
+the inflight cap from the request middleware's entry point until the handler returns (via an RAII `InflightSlot` guard
 in `src/web/web_admission_psychic.cpp`). The server writes the response synchronously
 from the handler, so this timing covers the whole request-response cycle. A refused
 attempt is released immediately via connection closure or the Busy Recovery Page,
@@ -89,15 +95,30 @@ Deadline model is a client-side concept layered on top, not a replacement for it
 ## Recovery Capacity boundary
 
 Specified in ADR 0016 (wire contract) and ADR 0024 (implementation on esp_http_server).
-When a request-admission floor or cap is exceeded, the middleware attempts to send a
-Busy Recovery Page (503 status, `Retry-After: 5` header) before closing the connection.
+When a request-admission floor or cap is exceeded and the refused request is a
+main-frame navigation (`webIsMainFrameNavigation()`, read from its `Sec-Fetch-Mode`
+and `Accept` headers), the middleware attempts to send a Busy Recovery Page (503
+status, `Retry-After: 5` header) before closing the connection. Any other refused
+request - a script, a stylesheet, an `/api/*` fetch - gets the bare close with no
+body: its caller never renders one, and spending bytes on it during a pressure window
+is what this layer exists to avoid (`src/web/web_admission_psychic.cpp`).
 
-The response is one `static constexpr` byte buffer (status line + headers + HTML body)
-written directly to the socket via `httpd_socket_send()`, bypassing the normal
-`PsychicResponse` chain. This allocates nothing at rejection time, which is load-bearing:
-the header-list allocation that breaks normal response paths under heap pressure (ADR 0016)
-is sidestepped by writing directly to the socket. After the buffer is sent, the
-middleware returns non-`ESP_OK` so the server closes the connection.
+The response is one `static constexpr` byte buffer (status line + headers + HTML body,
+`kBusyRecoveryResponse` in `include/web_busy_page.h`, `Retry-After` from
+`PA_RECOVERY_RETRY_SECONDS`) written directly to the socket by
+`webBusyRecoveryPageSend()` (`src/web/web_response_deadline_psychic.cpp`), bypassing
+the normal `PsychicResponse` chain. The send is non-blocking (`MSG_DONTWAIT`) and gives
+up after 250 ms (`kBusyRecoverySendDeadlineMs`), so a client too stalled to take the
+page gets the close it was already headed for. This allocates nothing at rejection
+time, which is load-bearing: the header-list allocation that breaks normal response
+paths under heap pressure (ADR 0016) is sidestepped by writing directly to the socket.
+After the buffer is sent, the middleware returns non-`ESP_OK` so the server closes the
+connection.
+
+So the browser sees an admission refusal of an API call or an asset as a dropped
+connection - the bootstrap's `no-response` - never as `busy`. `busy` (503) reaches a
+section loader only from a handler that answers 503 itself (a full queue, a link that
+is down, a config write window held; [api.md](api.md)).
 
 On this stack (unlike the prior AsyncWebServer stack), no Recovery Capacity slot needs
 to be reserved: the server services all connections from a single task, so at most one
@@ -135,7 +156,7 @@ merged). The shape to implement for real:
 - `data/web_api.js` is the real host for this reducer's I/O: its `ApiError` kind
   classification (`timeout`/`network`/`http`/`bad-json`) and 503 -> "Device
   unavailable" mapping already exist and should be read by the reducer's outcome
-  classification, not duplicated. Its `MAX_CONCURRENT_REQUESTS` narrows from 2 to 1
+  classification, not duplicated. Its `MAX_CONCURRENT_REQUESTS` is 1
   (ADR 0019). Its `Retry-After` header should be read directly for API-class busy
   outcomes rather than guessed.
 - `data/page_loader.js`'s 3-attempt script retry-with-backoff was the prior art for
@@ -148,12 +169,46 @@ merged). The shape to implement for real:
   separate fix, not something this bootstrap rollout should paper over or wait on
   before generalizing the *gating* logic (see Stop and rollback rules).
 
+### Mounting a surface (ADR 0048, #344)
+
+Under the **Operator Shell** resources no longer arrive once. The shell's own
+chain loads at boot; each surface a builder opens then adds a **wave** through
+`PABootstrap.mountResources(entries)`:
+
+- A wave is appended to the same single Resource Step Recovery cursor, in
+  declared order, behind whatever is already loading. A name already in the
+  chain is skipped, so a script shared with an earlier surface loads once for
+  the session and its module state is never re-created.
+- An entry is a script URL, or `{ name, load }` for a resource the host cannot
+  load by itself. The surface's **markup** is the second kind: it must arrive
+  before the scripts that bind to it, and a shed connection must be retried
+  rather than abandoned, so it is a resource step rather than a second retry
+  mechanism beside one -- the mistake ADR 0019 records `page_loader.js` making.
+- The surface's scripts are read from the document that has just arrived, not
+  restated by the shell, and are declared by the markup step itself once it
+  lands. Its sections are declared as those scripts execute, exactly as they
+  were when the surface was a page: `DECLARE_SECTIONS` is additive at any time,
+  and a name already known is left alone, so no in-progress or completed
+  section state can be discarded.
+- **Page Startup Order is a session-level fact, not a per-mount one.**
+  `liveUpdatesStarted` is sticky, so `pa:assets-ready` is announced once and
+  `/api/events` is opened once for the session however many surfaces are
+  visited. A surface that mounts afterwards is handed the session's settled
+  facts by the shell instead (`data/shell.js`, `replaySessionFacts`), because a
+  once-per-session event it registered for after the fact would never reach it.
+  A page module that keys off `pa:assets-ready` must therefore guard on
+  `window.PAAssetsReady` for the already-ready case, or read its own state from
+  `pa:bootstrap-change` (`data/wifi.js` does the latter).
+
 ## Section Loader Outcomes
 
-A section loader concludes with one of three outcome kinds:
+A section loader concludes in success or one of three failure outcome kinds
+(`data/page_bootstrap.js`):
 
 - **success**: the loader ran to completion without throwing.
 - **busy** (HTTP 503): the server explicitly requested backoff via `Retry-After` header.
+  A handler's own 503 only; an admission refusal of a fetch is a dropped connection and
+  lands in `no-response` (see Recovery Capacity boundary).
   The bootstrap schedules a retry at the server's requested interval.
 - **no-response** (network/timeout/HTTP non-503/malformed JSON): no usable result arrived.
   The bootstrap schedules a retry with exponential backoff, since no server-given interval
@@ -169,7 +224,7 @@ A section loader concludes with one of three outcome kinds:
 - Network loss / connection timeout / truncated JSON → `no-response` (retryable backoff)
 - HTTP 404 or 2xx with missing/invalid required keys → `failed-terminal` (incompatible)
 - HTTP 503 → `busy` (honor Retry-After)
-- Deterministic HTTP 500 (e.g., `api_identity.cpp:32` "identity response overflow") → `failed-terminal` (device-error)
+- Deterministic HTTP 500 (e.g., `GET /api/identity`'s "identity response overflow") -> `failed-terminal` (device-error)
 
 **Fault-Injection Coverage:**
 Page bootstrap behavior is verified via deterministic fault-injection fixtures in the web
@@ -188,24 +243,29 @@ live-hardware iteration. Each page slice requires coverage of:
 
 ## Page, resource, and section inventory
 
-All 10 controller pages declare their script chain via `data-scripts` on `<html>`,
-consumed by the inline recovery kernel (`data/_recovery_kernel.html`), which fetches
-`page_bootstrap.js` with retry and hands it that chain. Every page shares the same base chain
-(`web_api.js`, `status_stream.js`, `shell.js`, then page-specific script(s), then
-`footer.js`); `index.html` and `setup.html` additionally load `diagnostics.js`.
+Every surface declares its script chain via `data-scripts` on `<html>`. Since
+ADR 0048 the browser loads exactly one document -- `index.html`, the Operator
+Shell -- and its inline recovery kernel (`data/_recovery_kernel.html`) fetches
+`page_bootstrap.js` with retry and hands it the shell's own chain (the
+`data-scripts` of `index.html`). Each surface's chain is then
+handed over as a wave when that surface is first opened, and the shared prefix
+in it is skipped as already loaded. `overlay.js` (the shared question, Escape
+and receipt, #456) is in the shell's chain and, after `web_api.js`, in the
+chain of every surface that calls it; the loader runs it once. Every surface shares the
+shell's prefix, then its own scripts.
 
-| Page | Script count | Notes |
-|---|---|---|
-| `wifi.html` | 5 | Tracer -- fixed first by #52 |
-| `firmware.html` | 5 | OTA/filesystem upload flow exempt from Operation Deadline (see below) |
-| `sound.html` | 5 | CHIRP catalog load uses the 12000ms deadline category |
-| `servo.html` | 5 | |
-| `dome.html` | 5 | |
-| `setup.html` | 6 | Adds `diagnostics.js` |
-| `rc.html` | 5 | Safety-adjacent (RC mapping) |
-| `drive.html` | 5 | Safety-adjacent (live vehicle control) |
-| `seq.html` | 10 | Adds `seq_protocol_check.js` plus the dome layout/panel-model chain |
-| `index.html` | 11 | Heaviest, highest-traffic dashboard |
+Which scripts a surface adds is its own `data-scripts` attribute; this page
+does not keep a copy of the list. Two surfaces carry a rule of their own here:
+Firmware's upload flow is exempt from the Operation Deadline, and Sound's catalog
+load uses the Catalog deadline (both below).
+
+Each surface's file also carries a thin delegate that hands a direct visit to
+the shell at that surface's hash route, so every address that worked before
+ADR 0048 still opens what it names. A delegate carries **no** recovery kernel:
+its `<head>` never runs, so only `index.html` inlines it (ADR 0048 amendment,
+2026-09-13, #382). `setup.html` is the exception: since #404 it is a
+forwarder with no body and no chain, kept so the old address opens
+Configuration through the `setup` alias.
 
 ## Page rollout order
 
@@ -223,11 +283,12 @@ Locked in ADR 0019: exactly two categories, no more.
    `web_api.js` `DEFAULT_TIMEOUT_MS` and the validated prototype's
    `OPERATION_DEADLINE_MS`.
 2. **Catalog** (12000ms) -- `GET /api/audio/catalog` only, matching its
-   already-established real value (`sound.js:1322`).
+   already-established real value (`CATALOG_DEADLINE_MS` in
+   `data/page_bootstrap.js`, which `data/sound.js` passes for that request).
 
 `firmware.html`'s OTA/filesystem-upload flow is exempt from both -- it is not a
 deadline-governed flow, it is a separate bespoke progress-and-reconnect mechanism
-(`fsProgressBar`, `otaProgress`, `waitForReconnect`) predating this epic.
+(`fsProgressBar`, `waitForReconnect` in `data/firmware.js`) predating this epic.
 
 ## WiFi-first tracer gate
 

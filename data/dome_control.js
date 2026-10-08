@@ -1,14 +1,22 @@
 /**
  * data/dome_control.js
  *
- * Live dome control section for the home page.
- * Provides:
- *   - Interactive SVG dome with click-to-toggle panel actuation
- *   - Quick-sequence dropdown + Play/Stop buttons
- *   - Lazy loading on first card expand
- *   - Accessibility: aria-expanded, keyboard support, status announcements
+ * The Dashboard's Moving parts, under the three controls in Controls: the
+ * droid's two drawings and nothing else (operator, 2026-09-28 on #372; moved
+ * into Controls 2026-09-29 on #399).
+ *   - The body, Front and Rear (data/body_view.js). A click on a drawn door,
+ *     panel or arm opens or closes it - the Parts picture's decision and
+ *     request, from data/droid_picture.js, not a copy of them.
+ *   - The dome, top-down, from the layout the dome reports or the built-in
+ *     map, with click-to-toggle panel actuation, and the Dome Bearing's
+ *     marker for where the dome points (data/dome_bearing.js, #445).
+ *   - Both drawn once, when the Dashboard mounts: they are not behind a
+ *     disclosure any more, so there is no first expand to wait for.
+ *   - Accessibility: keyboard support, status announcements.
+ * A refused click sends nothing and says why in the drawings' feedback line.
  *
- * Reuses: DomeCommandMap, DomeLayout, DomeLayoutRender, PAApi
+ * Reuses: BodyView, PADroidPicture, DomeCommandMap, DomeLayout,
+ * DomeLayoutRender, PADomeBearing, PAApi
  */
 
 (() => {
@@ -17,64 +25,84 @@
   // Only initialize on home page
   if (document.body.dataset.page !== 'home') return;
 
-  // Wait for assets to be loaded
+  // The card is found now, while this script runs, and not when the drawing
+  // starts. The Operator Shell runs a surface's scripts with that surface in
+  // the document, and only then: on a first load pa:assets-ready waits for
+  // every section of the session, so an operator who has moved on by then has
+  // the Dashboard detached (ADR 0048), where getElementById finds nothing - and
+  // the Dashboard came back with no drawing at all (#472).
+  const cardEl = document.getElementById('dome-control-card');
+
+  // The one armed wait for the sections, so a second one replaces it instead
+  // of joining it: two waiting would mean two draws when the sections settle.
+  // Defensive: the shell mounts a surface once and keeps its nodes (data/
+  // shell.js detach()), so this script arms one wait a session today.
+  let armedSettle = null;
+
+  // Wait for assets to be loaded. Already loaded means the Operator Shell is
+  // mounting this surface after the page's first one (ADR 0048).
   if (!window.PAAssetsReady) {
-    window.addEventListener('pa:assets-ready', initDomeControl);
+    window.addEventListener('pa:assets-ready', () => initDomeControl(cardEl, false), { once: true });
   } else {
-    initDomeControl();
+    initDomeControl(cardEl, true);
   }
 
-  function initDomeControl() {
-    const cardEl = document.getElementById('dome-control-card');
+  // Runs `draw` once the Dashboard's own sections have settled - done, or
+  // failed and waiting to retry. On a first page load this script starts from
+  // pa:assets-ready, which fires only after that, so it draws at once. Under
+  // the Operator Shell it runs while the surface is still mounting, before
+  // app.js has declared its sections, so it waits for the next stable change,
+  // the pattern data/wifi.js already uses.
+  function afterSectionsSettle(mountedLate, draw) {
+    if (!mountedLate || !window.PABootstrap) {
+      draw();
+      return;
+    }
+    if (armedSettle) window.removeEventListener('pa:bootstrap-change', armedSettle);
+    const onChange = (event) => {
+      if (!event.detail?.sectionsStable) return;
+      window.removeEventListener('pa:bootstrap-change', onChange);
+      armedSettle = null;
+      draw();
+    };
+    armedSettle = onChange;
+    window.addEventListener('pa:bootstrap-change', onChange);
+  }
+
+  function initDomeControl(cardEl, mountedLate) {
     if (!cardEl) return;
 
-    const headerBtn = cardEl.querySelector('.dome-control-header');
-    const bodyEl = cardEl.querySelector('.dome-control-body');
     const feedbackEl = cardEl.querySelector('.dome-control-feedback');
+    const bodyDrawingEl = cardEl.querySelector('.moving-parts-body');
+    const domeEl = cardEl.querySelector('.moving-parts-dome');
 
-    if (!headerBtn || !bodyEl || !feedbackEl) return;
+    if (!feedbackEl || !bodyDrawingEl || !domeEl) return;
 
-    // State tracking
-    let isExpanded = false;
-    let isRendered = false;
     const openPanels = new Set(); // Track which panels are currently open
-
-    // Keyboard and click to toggle expand
-    const toggleExpand = async (e) => {
-      // Ignore if target is an interactive element inside the body
-      if (isExpanded && bodyEl.contains(e.target) && e.target !== headerBtn) {
-        return;
-      }
-
-      isExpanded = !isExpanded;
-      headerBtn.setAttribute('aria-expanded', isExpanded);
-
-      if (isExpanded && !isRendered) {
-        // Lazy render on first expand
-        await renderDomePanel();
-        isRendered = true;
-      }
-
-      bodyEl.classList.toggle('hidden', !isExpanded);
-    };
-
-    // Header is a native <button>, so Enter/Space already fire a click — a
-    // separate keydown handler would double-toggle (Space activates on keyup
-    // after the keydown handler already ran). Rely on the click event alone.
-    headerBtn.addEventListener('click', toggleExpand);
 
     let bannerEl = null;
     let pickerContainer = null;
+    // Releases the one DomeLayout subscription this drawing holds.
+    let releaseLayout = null;
 
     // Build the picker SVG for the current model. Live/cached tiers have real
-    // elements and render through DomeLayoutRender; vendored/unsupported tiers
-    // have an empty elements[] (geometry from an unsupported schema is never
-    // trusted), so fall back to the vendored MK4 SVG — same fallback seq.js
-    // uses for the sequence editor picker.
+    // elements and render through DomeLayoutRender; the offline tiers have an
+    // empty elements[] (geometry from an unsupported schema is never trusted),
+    // so they fall back to the built-in MK4 SVG — same fallback seq.js uses for
+    // the sequence editor picker.
+    //
+    // The built-in drawing is shown only where it IS the dome the builder says
+    // they built (ADR 0047): a drawing of somebody else's design presented as
+    // theirs is worse than no drawing, because every panel on it is one they
+    // would go looking for. `usesVendoredDrawing` is set by tier 3; a model
+    // without it is an older shape and keeps the old behaviour.
     function pickerHtmlFor(model) {
       const hasLiveElements = model?.elements?.length > 0;
       if (hasLiveElements && window.DomeLayoutRender?.renderPicker) {
         return window.DomeLayoutRender.renderPicker(model);
+      }
+      if (model?.usesVendoredDrawing === false) {
+        return '';
       }
       return window.DOME_PANEL_MAP_SVG || '';
     }
@@ -87,14 +115,16 @@
         bannerEl.remove();
         bannerEl = null;
       }
-      const bannerHtml = renderSourceBanner(source);
+      const bannerHtml = renderSourceBanner(source, model);
       if (bannerHtml) {
-        bodyEl.insertAdjacentHTML('afterbegin', bannerHtml);
-        bannerEl = bodyEl.firstElementChild;
+        domeEl.insertAdjacentHTML('afterbegin', bannerHtml);
+        bannerEl = domeEl.firstElementChild;
       }
 
       pickerContainer.innerHTML = pickerHtmlFor(model);
       attachPanelClickHandlers(pickerContainer, model);
+      // Where the dome points, on whichever drawing this is, in its own frame.
+      window.PADomeBearing?.mount(pickerContainer.querySelector('svg'));
 
       const svg = pickerContainer.querySelector('svg');
       if (svg) {
@@ -120,8 +150,8 @@
       }
     }
 
-    // Render the dome SVG and attach click handlers
-    async function renderDomePanel() {
+    // Render the dome drawing and attach its click handlers
+    async function renderDome() {
       try {
         // Load the dome layout if available
         if (window.DomeLayout) {
@@ -130,21 +160,25 @@
           });
         }
 
+        // One drawing, whatever drew before: a draw replaces the container it
+        // finds rather than adding a second beside it (#472, the operator saw
+        // the dome twice). Looked up in the card, not held, so a draw that
+        // overlapped another's await is replaced too.
+        domeEl.querySelectorAll('.dome-svg-container').forEach((stale) => stale.remove());
         pickerContainer = document.createElement('div');
         pickerContainer.className = 'dome-svg-container';
-        bodyEl.appendChild(pickerContainer);
+        domeEl.appendChild(pickerContainer);
 
         renderInto(window.DomeLayout?.getModel?.(), window.DomeLayout?.getSource?.() || 'vendored');
 
-        // Subscribe to layout changes for live reconnect
+        // Subscribe to layout changes for live reconnect, once: the previous
+        // draw's subscription goes before this one is taken.
         if (window.DomeLayout) {
-          window.DomeLayout.onChange(() => {
+          releaseLayout?.();
+          releaseLayout = window.DomeLayout.onChange(() => {
             renderInto(window.DomeLayout.getModel(), window.DomeLayout.getSource());
           });
         }
-
-        // Render sequence quick controls
-        await renderSequenceControls(bodyEl);
 
         showFeedback('');
       } catch (error) {
@@ -170,7 +204,7 @@
             // Show advisory for non-selectable panel
             const advisory = buildAdvisory(elementId, model);
             if (advisory) {
-              showFeedback(advisory, 'warn');
+              showFeedback(advisory, 'warning');
             }
             return;
           }
@@ -210,7 +244,73 @@
       });
     }
 
+    // The estop holds every servo move a picture of the droid can start
+    // (operator, 2026-09-19, #372): a panel press is refused while the estop is
+    // latched, and while the droid has not said whether it is. The hold and its
+    // words are data/droid_picture.js's, the same the Parts picture and the
+    // body drawing above keep; the answer is the Live Reading's
+    // (data/live_reading.js). Returns the sentence to say instead, or null
+    // when the press may go.
+    function estopHold() {
+      return window.PADroidPicture.estopRefusal(window.PALiveReading.current().estop);
+    }
+
+    // The body drawing: Front and Rear, the Parts this droid carries, each in
+    // the state the droid was last told. A click is the act here, not a pick:
+    // it opens or closes the Part when Parts' own decision allows it, and says
+    // that decision's reason and sends nothing when it does not. The drawing
+    // never writes (data/body_view.js); this is where a click becomes a request.
+    function renderBody() {
+      if (!window.BodyView || !window.PADroidPicture) {
+        // Never swallowed: the card then shows the dome alone, and says why here.
+        console.error('[dome-control] /body_view.js or /droid_picture.js did not load; no body drawing');
+        return;
+      }
+      const drawing = window.BodyView.mountDrawing(bodyDrawingEl, {
+        parts: window.DroidParts.parts,
+        art: window.BodyArt,
+        faces: ['front', 'rear'],
+        onPick: (markerId) => {
+          pressBody(markerId);
+        },
+      });
+      const picture = window.PADroidPicture.caller(drawing);
+
+      const paint = () => {
+        const onPicture = picture.pictureFor();
+        drawing.update({
+          kind: window.BodyView.STATE_KINDS.LIVE,
+          marks: picture.marks(),
+          shown: onPicture.shown,
+          fitted: picture.fittedNow(),
+          domePending: onPicture.domePending,
+        });
+      };
+
+      // openClose() sends only what the decision allows, and otherwise hands
+      // back the decision's reason, so this is the one guard, in shared code.
+      const pressBody = (markerId) => {
+        const decision = picture.decide(markerId, window.PALiveReading.current().estop);
+        picture.openClose(decision).then((result) => {
+          showFeedback(result.text, result.level);
+          paint();
+        });
+      };
+
+      // Painted from the Outputs the Dashboard already reads (data/app.js) and
+      // the Droid Build it already holds; this card asks the droid for nothing
+      // on its own clock.
+      window.PAOutputs.onChange(paint);
+      window.DroidBuild?.onChange?.(paint);
+      paint();
+    }
+
     async function togglePanel(elementId, svgElement) {
+      const held = estopHold();
+      if (held) {
+        showFeedback(held, 'error');
+        return;
+      }
       try {
         // Resolve the open command first to get the canonical key for openPanels
         const openCmd = window.DomeCommandMap?.resolvePanelCommand?.(elementId, 'open');
@@ -247,6 +347,11 @@
     }
 
     async function togglePanelVendored(target, svgElement) {
+      const held = estopHold();
+      if (held) {
+        showFeedback(held, 'error');
+        return;
+      }
       try {
         // Canonical key for openPanels is the open command
         const openCmd = `:OP${target}`;
@@ -279,140 +384,45 @@
       const elem = model.elements?.find((e) => e.id === elementId);
       if (!elem) return null;
 
-      const severity = elem.severity;
-      if (!severity) return null; // Element is available
+      // The state clause is data/dome_layout.js's, where severity is computed
+      // and where the sequence editor reads it too (#348). What this surface
+      // adds is its own consequence: the button still sends, so a builder
+      // pressing it is owed the fact that the dome may do nothing.
+      //
+      // No warning glyph in front of the sentence: an operator surface carries
+      // no pictograph (ADR 0066), and the amber the feedback line takes is the
+      // second reading the sentence already gives on its own.
+      const clause = window.DomeLayout?.severityClause?.(elem);
+      if (!clause) return null; // Element is available
 
-      let message = '';
-      if (severity === 'disabled') {
-        const reason = elem.disabled_reason ? ` (${elem.disabled_reason})` : '';
-        message = `⚠ ${elementId} is disabled${reason} — dome may ignore this command`;
-      } else if (severity === 'inactive') {
-        message = `⚠ ${elementId} is not currently active — dome may ignore this command`;
-      } else if (severity === 'unverified') {
-        message = `⚠ ${elementId} availability unverified — dome state is unknown`;
-      } else if (severity === 'unmapped') {
-        message = `⚠ ${elementId} is unmapped — cannot actuate`;
-      } else {
-        message = `⚠ ${elementId} is not available`;
-      }
-
-      return message;
+      const stillSends = elem.severity === 'disabled' || elem.severity === 'inactive';
+      return stillSends ? `${clause} The dome may ignore it.` : clause;
     }
 
-    async function renderSequenceControls(container) {
-      try {
-        // Fetch sequence lists
-        const learnedResult = await PAApi.get('/api/seq/list');
-        const builtinsResult = await PAApi.get('/api/seq/builtins');
-
-        const learned = learnedResult.data || [];
-        const builtins = builtinsResult.data || [];
-
-        // Merge and de-dupe: learned name shadows factory name
-        const merged = [];
-        const seen = new Set();
-
-        // Add learned first (higher priority)
-        learned.forEach((seq) => {
-          merged.push(seq);
-          seen.add(seq.name);
-        });
-
-        // Add builtins not in learned
-        builtins.forEach((seq) => {
-          if (!seen.has(seq.name)) {
-            merged.push(seq);
-          }
-        });
-
-        // Render controls
-        const controlsHtml = `
-          <div class="dome-sequence-row">
-            <select id="dome-seq-selector" class="dome-seq-select" aria-label="Select sequence">
-              <option value="">Choose sequence...</option>
-              ${merged.map((seq) => `<option value="${window.PAUtils.escapeAttr(seq.name)}">${window.PAUtils.escapeHtml(seq.name)}</option>`).join('')}
-            </select>
-            <button id="dome-seq-play" class="btn" aria-label="Play selected sequence" title="Send sequence to droid">▶ Play</button>
-            <button id="dome-seq-stop" class="btn" aria-label="Stop running sequence" title="Abort sequence">⏹ Stop</button>
-          </div>
-        `;
-
-        container.insertAdjacentHTML('beforeend', controlsHtml);
-
-        // Attach event listeners
-        const selector = document.getElementById('dome-seq-selector');
-        const playBtn = document.getElementById('dome-seq-play');
-        const stopBtn = document.getElementById('dome-seq-stop');
-
-        if (playBtn && selector) {
-          playBtn.addEventListener('click', async () => {
-            const seqName = selector.value;
-            if (!seqName) {
-              showFeedback('Choose a sequence first', 'warn');
-              return;
-            }
-
-            playBtn.disabled = true;
-            showFeedback(`Playing ${seqName}...`, 'info');
-
-            try {
-              await PAApi.postJson('/api/seq/test', { name: seqName });
-              showFeedback(`${seqName} dispatched`, 'success');
-            } catch (error) {
-              showFeedback(`Play failed: ${PAApi.messageFor(error)}`, 'error');
-            } finally {
-              playBtn.disabled = false;
-            }
-          });
-        }
-
-        if (stopBtn) {
-          stopBtn.addEventListener('click', async () => {
-            stopBtn.disabled = true;
-            showFeedback('Stopping sequence...', 'info');
-
-            try {
-              await PAApi.postForm('/api/seq/stop', {});
-              showFeedback('Sequence stopped', 'success');
-            } catch (error) {
-              showFeedback(`Stop failed: ${PAApi.messageFor(error)}`, 'error');
-            } finally {
-              stopBtn.disabled = false;
-            }
-          });
-        }
-
-        // Update selector disabled state based on list
-        if (selector) {
-          selector.disabled = merged.length === 0;
-          selector.addEventListener('change', () => {
-            showFeedback('');
-          });
-        }
-
-        // Disable play if no selection
-        if (playBtn && selector) {
-          const updatePlayState = () => {
-            playBtn.disabled = !selector.value;
-          };
-          selector.addEventListener('change', updatePlayState);
-          updatePlayState();
-        }
-      } catch (error) {
-        showFeedback('Failed to load sequences: ' + PAApi.messageFor(error), 'error');
-      }
-    }
-
-    function renderSourceBanner(source) {
+    function renderSourceBanner(source, model) {
+      // The two treatments are the anatomy's own note voices rather than a
+      // second spelling of them: a provenance line takes the plain note, and a
+      // dome the builder can go and plug in takes the amber "act on this" one.
+      // The cached banner used to be blue, and blue reports no state at all
+      // (GLOSSARY.md "Status Color").
       let banner = '';
       if (source === 'live') {
         // No banner for live
       } else if (source === 'cached') {
-        banner = '<div class="dome-source-banner info">📦 Last known layout (runtime unverified)</div>';
+        banner = '<div class="note dome-source-banner">Last layout the dome sent. It may have changed since.</div>';
       } else if (source === 'unsupported') {
-        banner = '<div class="dome-source-banner warn">⚠ Unsupported layout schema — showing built-in fallback</div>';
+        banner = '<div class="note note-act dome-source-banner">The dome sent a layout this page cannot read. Showing the built-in map.</div>';
+      } else if (source === 'stated-design') {
+        // Tier 3 with a dome the built-in drawing is not of. Two different
+        // jobs for the builder, so two different sentences: one is "we have no
+        // picture of your dome", the other is "we do not know what your dome
+        // carries at all" — and the second is the one somebody has to go and
+        // read out of the design files (ADR 0047).
+        banner = model?.complementKnown === false
+          ? '<div class="note note-act dome-source-banner">Dome not reachable. This build does not know which panels your dome carries.</div>'
+          : '<div class="note note-act dome-source-banner">Dome not reachable. No built-in map for your dome design.</div>';
       } else if (source === 'vendored') {
-        banner = '<div class="dome-source-banner warn">🔌 Dome not reachable — showing MK4 built-in layout</div>';
+        banner = '<div class="note note-act dome-source-banner">Dome not reachable. Showing the built-in MK4 map.</div>';
       }
       return banner;
     }
@@ -422,5 +432,16 @@
       feedbackEl.className = level ? `dome-control-feedback feedback ${level}` : 'dome-control-feedback feedback';
       feedbackEl.classList.toggle('hidden', !text);
     }
+
+    // Drawn once, on mount, rather than on a first expand: the drawings sit
+    // open in Controls. The body asks the droid for nothing, so it is drawn at
+    // once. The dome's layout read first joins the Droid Build this page reads
+    // with its log level (data/droid_build.js load()), so it waits for the
+    // Dashboard's sections: started before app.js had read the config, it
+    // opened a second GET /api/config beside that one, on a controller that
+    // sheds connections under load. renderDome() reports its own failure in
+    // the feedback line.
+    renderBody();
+    afterSectionsSettle(mountedLate, renderDome);
   }
 })();

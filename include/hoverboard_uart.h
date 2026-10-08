@@ -3,7 +3,7 @@
 //
 // Gen2.x hoverboard UART frame builder interface.
 // Protocol: 8-byte frame  --  [0xABCD start][int16 steer][int16 speed][uint16 XOR checksum]
-// Reference: https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x
+// Reference: https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32/blob/main/HoverBoardGigaDevice/Src/RemoteROS2.c
 // =============================================================================
 #pragma once
 #include <stdint.h>
@@ -59,17 +59,6 @@ struct HoverboardFeedback {
 // Frame length constants (used by parser and tests)
 inline constexpr int kHoverFocFrameLen  = 18;
 inline constexpr int kHoverGen2xFrameLen = 26;
-
-// parseHoverboardFeedbackFrame()
-// Pure logic  --  no hardware, no FreeRTOS. Testable on native.
-// Validates and parses a single complete feedback frame.
-// buf: exactly kHoverFocFrameLen (18) or kHoverGen2xFrameLen (26) bytes,
-//      starting with start marker 0xABCD (little-endian: 0xCD 0xAB).
-// len: must be exactly kHoverFocFrameLen or kHoverGen2xFrameLen.
-// Returns true if the XOR checksum is valid and out is populated.
-// Returns false if checksum invalid or len is unrecognised.
-// thread-safe: yes (no globals  --  state is in caller's variables)
-bool parseHoverboardFeedbackFrame(const uint8_t* buf, int len, HoverboardFeedback* out);
 
 // -----------------------------------------------------------------------------
 // HoverboardFeedbackParser

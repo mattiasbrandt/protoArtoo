@@ -9,6 +9,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "api_apply_refusal.h"
 #include "console_module.h"
 
 // Buffer size for a single formatted record line, its CR LF excluded.
@@ -35,10 +36,6 @@
 // so raising this alone cannot silently start clipping records.
 #define CONSOLE_RECORD_LINE_MAX 384
 
-// Format a single key=value pair for a record
-// Returns number of bytes written (not including NUL terminator)
-size_t consoleFormatPair(char* buffer, size_t bufferSize, const char* key, const char* value);
-
 // -----------------------------------------------------------------------------
 // Record line formatting (the serial wire grammar, docs/console-protocol.md 3.1)
 //
@@ -50,9 +47,9 @@ size_t consoleFormatPair(char* buffer, size_t bufferSize, const char* key, const
 // past ~213 bytes while the browser adapter returned it (#282).
 //
 // Every one of these returns the byte count written (terminator excluded) or
-// 0 when the record does not fit, exactly like consoleFormatPair above. A
-// caller must treat 0 as a DROPPED RECORD - counted on the request's closing
-// line as `dropped=<n>` - and never as an empty line.
+// 0 when the record does not fit. A caller must treat 0 as a DROPPED RECORD -
+// counted on the request's closing line as `dropped=<n>` - and never as an
+// empty line.
 //
 // They live here rather than in the serial adapter so the wire rule is
 // provable on the host: src/tasks/console_task.cpp is not native-compiled.
@@ -92,6 +89,13 @@ const char* consoleOutcomeString(ConsoleOutcome outcome);
 
 // Get the string representation of a reason
 const char* consoleReasonString(ConsoleReason reason);
+
+// The Console reason for an Apply Core's refusal reason
+// (include/api_apply_refusal.h). The two share one token spelling, so a
+// refusal reads the same on the Console and over HTTP; a native test walks
+// every ApplyRefusalReason and pins it. ApplyRefusalReason::None maps to
+// CONSOLE_REASON_NONE.
+ConsoleReason consoleReasonFromApplyRefusal(ApplyRefusalReason reason);
 
 // Whether a record should carry a reason= field at all.
 //

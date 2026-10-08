@@ -306,23 +306,46 @@
         return settleActive(prev, action.outcome);
       }
 
+      case "ADD_RESOURCES": {
+        // Under the Operator Shell resources arrive in waves: the shell's own
+        // chain first, then one wave per surface that mounts. Appending keeps
+        // Resource Step Recovery exactly as it was -- one cursor, in declared
+        // order -- and simply gives it further to walk. Completed steps are
+        // never revisited, so a shared script loads once for the session, and
+        // sections wait behind the new wave the way they waited behind the
+        // first.
+        const known = new Set(prev.resources.map((r) => r.name));
+        const added = action.names.filter((name) => !known.has(name)).map(makeStep);
+        if (added.length === 0) return prev;
+        const resources = [...prev.resources, ...added];
+        return pump({
+          ...prev,
+          resources,
+          resourcesReady: prev.resourceCursor >= resources.length,
+        });
+      }
+
       case "DECLARE_SECTIONS": {
         // Page scripts declare their own sections as they execute, which is
-        // during resource loading -- before any section work may start. Only
-        // additive, and only while no section has run yet, so this can never
-        // discard in-progress or completed section state.
+        // during resource loading -- before any section work of their own may
+        // start. Additive only: a name already known is left alone, so this can
+        // never discard in-progress or completed section state.
+        //
+        // Declaring is deliberately NOT restricted to the first wave. A surface
+        // mounted into the Operator Shell runs its scripts long after the
+        // earlier surfaces' sections are done, and its own sections are new
+        // names appended to a settled list (ADR 0048).
         const known = new Set(prev.sections.map((s) => s.name));
         const added = action.names.filter((name) => !known.has(name)).map(makeStep);
         if (added.length === 0) return prev;
-        if (prev.sections.some((s) => s.status !== "pending")) return prev;
         // recomputeSectionsStable re-derives the flag from the new list, so a
         // page that was momentarily stable with nothing to do becomes unstable
         // again as soon as it declares real work.
-        return recomputeSectionsStable({
+        return pump(recomputeSectionsStable({
           ...prev,
           sections: [...prev.sections, ...added],
           deadlines: { ...prev.deadlines, ...(action.deadlines || {}) },
-        });
+        }));
       }
 
       case "REFRESH_SECTIONS": {
@@ -466,6 +489,234 @@
     return { start, cancelRetry, stop };
   };
 
+  // ---------------------------------------------------------------------------
+  // Surface-owned polling: what a left surface stops asking for
+  //
+  // ADR 0048 departs from the reference's "a hidden pane changes visibility
+  // only, never behavior" on purpose. The controller carries a fixed budget of
+  // three live-update clients on a 250 ms send deadline, and a stalled client
+  // is evicted rather than buffered (include/web_event_stream.h:11-34), so a
+  // screen nobody is reading must stop asking. What changes is only what the
+  // browser asks for: nothing the droid is doing changes when a surface is
+  // left -- no sequence stops, no output releases, no drive frame is dropped,
+  // no latch clears (#360).
+  //
+  // ONE named predicate decides whether a surface's polling is wanted, and one
+  // reconciler is the only thing that reads it. That is the reference's own
+  // shape: hwWanted() is three lines and hwTick() is the only caller
+  // (r2d2-astromech-simulator v1.79.0, src/js/maestro/hw-host.js:341). The same
+  // rule written as a test inside each of the polling sites would be one rule
+  // with a dozen places to get it wrong.
+  //
+  // WHY THIS LIVES HERE rather than in the Operator Shell, which is what
+  // actually knows about surfaces: every page module has the bootstrap and not
+  // every context has the shell, so a surface module can create its poll
+  // unconditionally, and a page opened without a shell -- a direct document, a
+  // test host -- polls exactly as it did before the shell existed. This file
+  // holds no idea of what a surface is beyond its name. The shell supplies the
+  // policy: it is the only caller of showing(), and the only reader of
+  // isStale() and unmountHeld().
+  // ---------------------------------------------------------------------------
+
+  const surfacePolls = new Set();
+  const unmountHolds = new Set();
+
+  // The surface the shell says is on screen. `null` means no shell has said
+  // anything yet, which is not the same as "no surface": see the predicate.
+  let showingSurface = null;
+
+  // The predicate. Null means nobody is routing, so a page that is simply
+  // itself keeps polling; otherwise a poll runs only while its own surface is
+  // the one on screen.
+  const surfacePollWanted = (owner) => showingSurface === null || owner === showingSurface;
+
+  // The reconciler. Every start, every stop and every change of what is on
+  // screen comes through here, so the predicate has exactly one reader.
+  const syncSurfacePoll = (entry) => {
+    const run = entry.wanted && surfacePollWanted(entry.owner);
+    if (run === entry.running) return;
+    entry.running = run;
+    if (run) entry.poll.start();
+    else entry.poll.stop();
+  };
+
+  // True while a surface has polling that stopped when the operator left it and
+  // has not answered since.
+  //
+  // It answers for a SURFACE, not for one poll of it: a surface may own more
+  // than one -- Sound and Maintenance each owned two until the droid's status
+  // moved to the Live Reading's one shell-wide poll (#419). A surface is
+  // current only when everything it asks for has answered, so one poll of two
+  // is not an answer from the surface (#360).
+  //
+  // Only polling the surface still WANTS counts. A poll the surface turned off
+  // itself -- the way the memory profiler does when the manifest says it is not
+  // in this build -- is not waiting for an answer, so it must not hold the
+  // note up for a surface that is otherwise current.
+  const surfaceIsStale = (page) => {
+    for (const entry of surfacePolls) {
+      if (entry.owner === page && entry.stale && entry.wanted) return true;
+    }
+    return false;
+  };
+
+  // A poll that was stopped for being off screen is stale until it answers
+  // again: what is on the surface is from before the operator left it. The
+  // reference stops the packet clock whenever it clamps an output, for exactly
+  // this reason -- a live-looking zero is worse than a stale value
+  // (r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:896-901).
+  //
+  // A read already on the wire when the operator left still clears the mark
+  // when it lands, and that is the intent rather than a hole: stopping a poll
+  // does not cancel a request, the answer renders into the nodes the shell
+  // kept, and the surface really is showing a reading taken since. It is only
+  // a refresh that never answered that has to leave the mark up (#360).
+  const markSurfaceFresh = (entry) => {
+    if (!entry.stale) return;
+    entry.stale = false;
+    // The note belongs to the surface, so it comes down only when the surface
+    // has answered -- every poll it still wants. One poll landing while
+    // another the surface still wants has answered nothing is not the surface
+    // answering, and taking the note down there says current over values that
+    // are not: the same untruth, in the same direction, as the swallow above
+    // (#360).
+    if (surfaceIsStale(entry.owner)) return;
+    if (typeof window.dispatchEvent !== "function") return;
+    window.dispatchEvent(new CustomEvent("pa:surface-fresh", { detail: { surface: entry.owner } }));
+  };
+
+  // Creates a background poll owned by the surface currently on screen. Same
+  // handle as createBackgroundPoll -- start(), stop(), cancelRetry() -- except
+  // that start() means "this surface wants this running", not "run now": the
+  // reconciler decides, so a surface may turn its own poll on from an event
+  // that arrives while the operator is looking at something else.
+  //
+  // Create it in the surface's script body. That is the only moment the shell
+  // guarantees is inside the surface's own mount, and it costs nothing: the
+  // poll does not run until start().
+  //
+  // THE CONTRACT WITH attempt(): hand back a promise, and let it reject when
+  // the surface did not get an answer. A promise that fulfils is the only
+  // thing that clears the stale mark.
+  //
+  // THE REJECTION IS CAUGHT HERE, and that is why no polling site may catch
+  // its own. Every site used to, because a background refresh has nobody to
+  // hand a rejection to and an unhandled one is console noise -- but catching
+  // it there flattens the failure into a fulfilled promise, and the surface
+  // was then marked fresh by a refresh that never landed: "Showing what this
+  // screen last read" came down over values from before the operator left
+  // (#360, reopened 2026-09-17). One swallow in one place keeps the console
+  // quiet AND keeps the note up; a swallow at each site cannot do both.
+  const createSurfacePoll = (attempt, options = {}) => {
+    const entry = { owner: showingSurface, wanted: false, running: false, stale: false };
+    entry.poll = createBackgroundPoll(() => {
+      const result = attempt();
+      // Something that is not a promise never said it asked, so it cannot be
+      // read as having been answered: the mark stays up.
+      if (!result || typeof result.then !== "function") return result;
+      return result.then(
+        (value) => {
+          markSurfaceFresh(entry);
+          return value;
+        },
+        (error) => {
+          // Reported, never rethrown, and deliberately NOT marked fresh: what
+          // is on screen is still the reading from before.
+          console.warn(`[surface] ${entry.owner || "page"} refresh failed:`, error);
+        },
+      );
+    }, options);
+    surfacePolls.add(entry);
+    return {
+      start: () => {
+        entry.wanted = true;
+        syncSurfacePoll(entry);
+      },
+      stop: () => {
+        entry.wanted = false;
+        syncSurfacePoll(entry);
+      },
+      cancelRetry: () => entry.poll.cancelRetry(),
+    };
+  };
+
+  // The shell names the surface now on screen. Everything owned by anything
+  // else stops here, and stopping is the only thing that marks a surface's
+  // values as no longer current -- a surface that turned its own poll off, the
+  // way the memory profiler does when the manifest says it is not in this
+  // build, has not been left and is not stale.
+  const showingSurfaceIs = (page) => {
+    const next = page === undefined || page === null ? null : String(page);
+    if (next === showingSurface) return;
+    showingSurface = next;
+    surfacePolls.forEach((entry) => {
+      const wasRunning = entry.running;
+      syncSurfacePoll(entry);
+      if (wasRunning && !entry.running) entry.stale = true;
+    });
+  };
+
+  // A surface can hold its own unmount open: decide() returns true while it
+  // must not be taken off screen yet. Sequences holds it over an unsaved edit
+  // (data/seq.js, #441) and owns the question it asks; the other surfaces
+  // that register one never hold, and only hear that they are being left.
+  //
+  // decide() being called is also how a surface learns it is being asked to
+  // leave, which is the moment it puts that question on screen. It is called
+  // again on every attempt to leave, so a surface already asking must not ask
+  // twice. When it has an answer it calls releaseUnmount() and the navigation
+  // goes through, or stayOnSurface() and the address comes back to it.
+  //
+  // A hold cannot strand the operator: the estop is chrome the shell renders
+  // once and never unmounts, so it stays live behind a surface that is holding.
+  const holdUnmount = (decide) => {
+    if (typeof decide !== "function") return;
+    unmountHolds.add({ owner: showingSurface, decide });
+  };
+
+  const unmountHeld = (page) => {
+    for (const hold of unmountHolds) {
+      if (hold.owner !== page) continue;
+      try {
+        if (hold.decide() === true) return true;
+      } catch (error) {
+        // A guard that throws must not trap the operator on a screen: an
+        // unmount nobody could decide is allowed, and the failure is reported
+        // rather than swallowed.
+        console.warn("[surface] unmount guard failed:", error);
+      }
+    }
+    return false;
+  };
+
+  // The surface that was holding has finished asking. The shell re-reads the
+  // address rather than being told where to go, so a hold that is released
+  // long after the operator moved on lands where they actually are.
+  const releaseUnmount = () => {
+    if (typeof window.dispatchEvent !== "function") return;
+    window.dispatchEvent(new CustomEvent("pa:surface-release"));
+  };
+
+  // The surface that was holding has its answer, and it is to stay. The shell
+  // put the address on where the operator was going before it asked, so the
+  // address and the nav say one surface while another is on screen; this asks
+  // the shell to put them back.
+  const stayOnSurface = () => {
+    if (typeof window.dispatchEvent !== "function") return;
+    window.dispatchEvent(new CustomEvent("pa:surface-stay"));
+  };
+
+  window.PASurface = {
+    poll: createSurfacePoll,
+    holdUnmount,
+    releaseUnmount,
+    stayOnSurface,
+    // The shell's half of the contract; nothing else calls these.
+    showing: showingSurfaceIs,
+    isStale: surfaceIsStale,
+    unmountHeld,
+  };
+
   window.PageBootstrap = {
     DEFAULT_BUSY_RETRY_MS,
     OPERATION_DEADLINE_MS,
@@ -512,9 +763,9 @@
 
   const REASON_DETAIL = {
     timeout: "Connection timed out. Attempting to reconnect.",
-    network: "Connection to the controller was lost. Attempting to reconnect.",
-    http: "The controller rejected the request. Retrying.",
-    "bad-json": "The controller sent an incomplete reply. Retrying.",
+    network: "Connection to the Body Controller was lost. Attempting to reconnect.",
+    http: "The Body Controller rejected the request. Retrying.",
+    "bad-json": "The Body Controller sent an incomplete reply. Retrying.",
   };
 
   // ---------------------------------------------------------------------------
@@ -618,12 +869,12 @@
       banner.appendChild(el("span", "indicator warn"));
       banner.appendChild(el("span", null, "REQUEST REFUSED"));
       panel.appendChild(banner);
-      panel.appendChild(el("div", "recovery-status-reason", "Controller busy"));
+      panel.appendChild(el("div", "recovery-status-reason", "Body Controller busy"));
       panel.appendChild(
         el(
           "p",
           "recovery-message",
-          "Controller is handling other requests. Try again in a moment."
+          "It is handling other requests. Try again in a moment."
         )
       );
       panel.appendChild(countdownPanel("Retry interval", view.waitSeconds));
@@ -640,11 +891,11 @@
     if (view.mode === "loading") {
       headerText.appendChild(el("div", "recovery-status-reason", "Loading page resources"));
       headerText.appendChild(
-        el("div", "recovery-status-detail", "Preparing the controller page")
+        el("div", "recovery-status-detail", "Preparing the page")
       );
     } else {
       headerText.appendChild(
-        el("div", "recovery-status-reason", "No response from controller")
+        el("div", "recovery-status-reason", "No response from the Body Controller")
       );
       headerText.appendChild(
         el(
@@ -691,7 +942,7 @@
         el(
           "p",
           "recovery-message",
-          "Retry intervals are increasing so the controller is not overwhelmed."
+          "Retry intervals are increasing so the Body Controller is not overwhelmed."
         )
       );
     }
@@ -706,6 +957,50 @@
   let focusedBeforeOverlay = null;
   let overlayIsVisible = false;
 
+  // Where the view is drawn: the Operator Shell's work area, so the chrome
+  // around it -- and the Latching Estop on it -- stays lit and stays pressable
+  // while a surface is failing to load (ADR 0048). The inline kernel in
+  // data/_recovery_kernel.html reads the same element, so whichever of the two
+  // creates the backdrop, it lands in the same place. A build with no work
+  // area has no frame to keep live either, and the body is the honest fallback
+  // rather than nowhere to render at all.
+  const recoveryHost = () => document.getElementById("shell-content") || document.body;
+
+  // The surfaces this view has taken out of the tab order, so they can be put
+  // back even after the shell has detached them. The operator can navigate
+  // while recovery is up -- that is the point of keeping the chrome live -- and
+  // a surface left inert on the way out would come back dead.
+  const inertSurfaces = new Set();
+
+  // While the view is up, the surface underneath is unreachable: by pointer
+  // through the kernel's rule, and by keyboard through this.
+  //
+  // `inert` is what replaced the Tab trap this view used to run. A trap holds
+  // focus inside the panel, which also held it away from the Latching Estop on
+  // the chrome -- and a surface that cannot load is exactly the moment an
+  // operator reaches for that control (#359). Marking the failed surface keeps
+  // #115's concern, that Tab must not wander into a page which is not there,
+  // without reaching past the work area to do it.
+  //
+  // Re-applied on every visible render because the surface's markup arrives
+  // while the view is up: the shell attaches an empty node, then fills it.
+  const holdSurfacesInert = (backdrop) => {
+    const host = backdrop.parentElement;
+    if (!host || host === document.body) return;
+    for (const child of host.children) {
+      if (child === backdrop) continue;
+      child.inert = true;
+      inertSurfaces.add(child);
+    }
+  };
+
+  const releaseSurfaces = () => {
+    inertSurfaces.forEach((node) => {
+      node.inert = false;
+    });
+    inertSurfaces.clear();
+  };
+
   const ensureBackdrop = () => {
     let backdrop = document.getElementById(BACKDROP_ID);
     let isNewElement = false;
@@ -714,16 +1009,21 @@
       // Create the element if it doesn't exist
       backdrop = el("div", "recovery-backdrop");
       backdrop.id = BACKDROP_ID;
-      document.body.appendChild(backdrop);
+      recoveryHost().appendChild(backdrop);
       isNewElement = true;
     }
 
     // Upgrade (or maintain) dialog semantics. Whether the element came from the
     // kernel or was just created, after this function it must always have:
-    // role="dialog", aria-modal="true", aria-label, tabindex, an announcer child,
-    // and a Tab handler. This is idempotent -- calling it multiple times is safe.
+    // role="dialog", aria-label, tabindex and an announcer child. This is
+    // idempotent -- calling it multiple times is safe.
+    //
+    // Deliberately NOT aria-modal. A modal dialog tells a screen reader that
+    // everything outside it is inert, and the chrome outside this one carries
+    // the Latching Estop, which ADR 0048 keeps live precisely for the surface
+    // that failed to load. What is actually inert is the surface, and
+    // holdSurfacesInert() below says so on the element it is true of.
     backdrop.setAttribute("role", "dialog");
-    backdrop.setAttribute("aria-modal", "true");
     backdrop.setAttribute("aria-label", "Page recovery overlay");
     backdrop.setAttribute("tabindex", "-1");
 
@@ -744,43 +1044,15 @@
       backdrop.appendChild(announcer);
     }
 
-    // Attach keyboard containment handler if not already present.
-    // Identify by a marker on the backdrop so we never attach it twice.
-    if (!backdrop.dataset.tabHandlerAttached) {
-      backdrop.addEventListener("keydown", (event) => {
-        if (event.key !== "Tab") return;
-
-        const focusableElements = backdrop.querySelectorAll(
-          "button, [href], input, select, textarea, [tabindex]:not([tabindex=\"-1\"])"
-        );
-
-        // If there are no focusable children (e.g., loading state), keep focus
-        // on the backdrop itself and prevent Tab from escaping.
-        if (focusableElements.length === 0) {
-          event.preventDefault();
-          backdrop.focus();
-          return;
-        }
-
-        const firstElement = focusableElements[0];
-        const lastElement = focusableElements[focusableElements.length - 1];
-
-        if (event.shiftKey) {
-          // Shift+Tab: cycle backwards
-          if (document.activeElement === firstElement) {
-            event.preventDefault();
-            lastElement.focus();
-          }
-        } else {
-          // Tab: cycle forwards
-          if (document.activeElement === lastElement) {
-            event.preventDefault();
-            firstElement.focus();
-          }
-        }
-      });
-      backdrop.dataset.tabHandlerAttached = "true";
-    }
+    // No Tab handler. This view used to contain Tab inside the panel and wrap
+    // it at both ends; containment now lives on the surface, as `inert`, for
+    // the reason holdSurfacesInert() gives. Tab out of the panel walks the
+    // chrome and never the failed surface: forward, the Status Plate's eight
+    // cells (its ESTOP cell first), one stop on the page body, the brand link,
+    // Sleep and Reboot, then the topbar's STOP on the 13th press, then the nav.
+    // That is the containment #115 asked for and the reach #359 asked for.
+    // The empty stop on the page body was looked at and accepted by the
+    // operator on 2026-10-06 (#355 grilling Q7, hands-on item 13a).
 
     return backdrop;
   };
@@ -809,7 +1081,9 @@
   };
 
   // Signature kept stable across renders so the countdown can repaint without
-  // rebuilding the panel and stealing focus from the Retry now button.
+  // rebuilding the panel. A change here rebuilds it (a retry's new attempt
+  // number among them); render() decides separately whether the rebuild may
+  // move focus.
   const signatureOf = (view) =>
     view.visible
       ? `${view.mode}|${view.kind}|${view.stepName}|${view.attempt ?? 0}|${view.longRunning ? 1 : 0}`
@@ -824,6 +1098,7 @@
     if (!view.visible) {
       backdrop.classList.remove("active");
       document.body.classList.remove("recovery-active");
+      releaseSurfaces();
       // Preserve the announcer but clear the panel content
       const announcer = backdrop.querySelector(".recovery-countdown-announcer");
       if (announcer) {
@@ -842,24 +1117,37 @@
     // Transitioning from hidden to visible: save focus and make visible first.
     // Elements with display:none cannot receive focus, so the backdrop must be
     // visible before any focus move attempts.
-    if (!overlayIsVisible) {
+    const entering = !overlayIsVisible;
+    if (entering) {
       overlayIsVisible = true;
       focusedBeforeOverlay = document.activeElement;
       backdrop.classList.add("active");
       document.body.classList.add("recovery-active");
     }
 
+    // Every render, not only the transition: the shell attaches the surface's
+    // node before its markup arrives, so a surface that mounted while the view
+    // was already up would otherwise keep its controls in the tab order.
+    holdSurfacesInert(backdrop);
+
     const signature = signatureOf(view);
     if (signature !== lastSignature) {
-      // New panel content: rebuild it, keeping the announcer if it exists
+      // New panel content: rebuild it, keeping the announcer if it exists.
+      // Read before replaceChildren: if focus was in the panel, the rebuild
+      // detaches the focused node and focus afterwards reads as the body, which
+      // says nothing about where it was.
+      const focusWasInside = backdrop.contains(document.activeElement);
       const announcer = backdrop.querySelector(".recovery-countdown-announcer");
       backdrop.replaceChildren(buildPanel(view, onRetryNow));
       if (announcer) {
         backdrop.appendChild(announcer);
       }
       lastSignature = signature;
-      // Focus moved into the overlay for new content
-      setFocus(backdrop);
+      // Focus enters the panel when it appears, or follows the content it was
+      // in. Focus the operator put outside it -- STOP, the Status Plate's ESTOP
+      // cell -- stays there: a retry rebuilds the panel every few seconds, and
+      // pulling focus off STOP each time undoes the reach #359 asked for.
+      if (entering || focusWasInside) setFocus(backdrop);
     } else {
       // Only countdown changed: update both the display and the announcement
       const value = backdrop.querySelector(".recovery-countdown-value");
@@ -888,6 +1176,11 @@
 // Drives the Common Page Bootstrap reducer against the real browser: owns the
 // clock, loads the stylesheet and the page's script chain, runs page-declared
 // section loads, renders the Page Recovery View, and gates Live Page Updates.
+//
+// Under the Operator Shell (ADR 0048) the chain arrives in waves rather than
+// once: the shell's own chain at boot, then one wave per surface that mounts,
+// each declaring its own sections as its scripts execute. mountResources() is
+// that seam, and Resource Step Recovery covers every wave the same way.
 //
 // Replaces page_loader.js on pages that have adopted the bootstrap. It keeps
 // that file's contract intact -- one resource at a time, retry a failed load
@@ -943,6 +1236,24 @@
       done({ kind: "network" });
     };
     document.body.appendChild(script);
+  };
+
+  // Every resource in a page's declared chain is a script, so loadScript is the
+  // default. A surface mounted by the Operator Shell also needs its markup, and
+  // that is a resource in exactly the same sense: it must arrive before the
+  // scripts that bind to it, and a shed connection must be retried rather than
+  // abandoned. Registering a loader for that one step keeps markup and scripts
+  // under one Resource Step Recovery instead of two retry mechanisms (the
+  // mistake ADR 0019 records page_loader.js making).
+  const resourceLoaders = new Map();
+
+  const loadResource = (name, done) => {
+    const custom = resourceLoaders.get(name);
+    if (custom) {
+      custom(done);
+      return;
+    }
+    loadScript(name, done);
   };
 
   const runSection = (name, done) => {
@@ -1036,7 +1347,10 @@
   const cancelActive = (active) => {
     if (!active) return;
     if (active.kind === "resource") {
-      // Remove the pending script tag if it's still loading
+      // Remove the pending script tag if it's still loading. A resource with a
+      // custom loader has no tag to pull; its late result is discarded by the
+      // attempt-id check in settle(), so the reducer's accounting stays honest
+      // either way.
       document.querySelectorAll(`script[src="${active.name}"]`).forEach((script) => {
         if (!script.hasLoaded) {
           script.remove();
@@ -1065,7 +1379,7 @@
     const id = active.id;
 
     if (active.kind === "resource") {
-      loadScript(active.name, (error) => settle(id, error));
+      loadResource(active.name, (error) => settle(id, error));
     } else if (active.kind === "section") {
       const controller = runSection(active.name, (error) => settle(id, error));
       activeSectionRun = controller ? { id, controller } : null;
@@ -1125,13 +1439,6 @@
 
   let clockTimer = null;
 
-  const stopClock = () => {
-    if (clockTimer !== null) {
-      window.clearTimeout(clockTimer);
-      clockTimer = null;
-    }
-  };
-
   const startClock = () => {
     if (clockTimer !== null || !hasPendingWork()) return;
     clockTimer = window.setTimeout(tick, TICK_MS);
@@ -1174,8 +1481,12 @@
   // Page-facing API
   // ---------------------------------------------------------------------------
   window.PABootstrap = {
-    // Page scripts call this as they execute, which is during resource
-    // loading -- before any section work is allowed to start.
+    // Page scripts call this as they execute, which is while the wave of
+    // resources carrying them is still loading -- so their own sections are
+    // always declared before any of their section work may start. Under the
+    // Operator Shell that wave is the surface's mount rather than the initial
+    // page load, which is why declaring is no longer restricted to the first
+    // one (ADR 0048).
     registerSection(name, load, { label = null, deadlineMs = null } = {}) {
       sectionLoaders.set(name, load);
       if (label) window.PARecoveryView?.setLabels({ [name]: label });
@@ -1184,15 +1495,21 @@
         names: [name],
         deadlines: deadlineMs ? { [name]: deadlineMs } : undefined,
       });
-      // Sections may only be declared before any section work starts, so a
-      // late registration is refused. Silently dropping it would leave a page
-      // whose data simply never loads and no indication why.
-      if (!state.sections.some((s) => s.name === name)) {
-        console.warn(
-          `[page-bootstrap] section "${name}" registered after section work began; it will not load. ` +
-            "Register sections while the page script is executing."
-        );
-      }
+    },
+
+    // Adds a wave of resources for a surface the Operator Shell is mounting.
+    // An entry is either a script URL or { name, load } for a resource this
+    // host cannot load by itself -- the surface's markup. A name already in
+    // the chain is skipped, so a script shared with an earlier surface loads
+    // once for the session and its module state is never re-created.
+    mountResources(entries) {
+      const wave = entries.map((entry) => (typeof entry === "string" ? { name: entry } : entry));
+      // Register loaders before dispatching: the reducer may start the first
+      // of them synchronously, and syncActive then looks the loader up.
+      wave.forEach(({ name, load }) => {
+        if (load) resourceLoaders.set(name, load);
+      });
+      apply({ type: "ADD_RESOURCES", names: wave.map((entry) => entry.name) });
     },
     setResourceLabels(entries) {
       window.PARecoveryView?.setLabels(entries);

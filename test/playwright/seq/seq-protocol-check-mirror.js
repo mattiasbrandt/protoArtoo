@@ -1,3 +1,4 @@
+// bench-auto: fixture seq.html
 /**
  * test/playwright/seq/seq-protocol-check-mirror.js
  *
@@ -25,7 +26,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     }
   };
 
-  const browser = await chromium.launch({ headless: process.env.HEADLESS === 'true' });
+  const browser = await chromium.launch({ headless: process.env.HEADLESS !== 'false' });
   const context = await browser.newContext();
   const page = await context.newPage();
 
@@ -51,19 +52,28 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
     }, testSeq);
     await page.waitForSelector('#seq-editor-view:not(.hidden)', { timeout: 5000 });
+    // The name is in the drawer's Sequence pane.
+    await page.click('#seq-editor-tab-sequence');
+
+    // Protocol Check's verdict carries no glyph: its status class says which
+    // it is (seq-validation-valid / seq-validation-error), and the sentence
+    // says why.
+    const verdict = () => page.evaluate(() => {
+      const el = document.querySelector('#seq-editor-validation-summary .seq-validation-status');
+      return {
+        valid: !!el && el.classList.contains('seq-validation-valid'),
+        error: !!el && el.classList.contains('seq-validation-error'),
+        text: (el?.textContent || '').trim(),
+      };
+    });
 
     // Test name validation
     await test('Name validation: valid DM:XXXX format passes', async () => {
       const nameInput = page.locator('#seq-editor-name');
       await nameInput.fill('DM:VALID');
 
-      const summaryEl = page.locator('#seq-editor-validation-summary');
-      const text = await summaryEl.textContent();
-      if (text.includes('✓') && text.includes('valid')) {
-        // Good, validation passed
-      } else {
-        throw new Error(`Expected validation to pass for DM:VALID, got: ${text}`);
-      }
+      const v = await verdict();
+      if (!v.valid) throw new Error(`Expected validation to pass for DM:VALID, got: ${v.text}`);
     });
 
     await test('Name validation: invalid format shows error', async () => {
@@ -72,13 +82,8 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       await nameInput.blur();
       await page.waitForTimeout(100);
 
-      const summaryEl = page.locator('#seq-editor-validation-summary');
-      const text = await summaryEl.textContent();
-      if (text.includes('⚠') || text.includes('error') || text.includes('must match')) {
-        // Good, validation failed as expected
-      } else {
-        throw new Error(`Expected validation to fail for dm:invalid, got: ${text}`);
-      }
+      const v = await verdict();
+      if (!v.error) throw new Error(`Expected validation to fail for dm:invalid, got: ${v.text}`);
     });
 
     // Test suppressMs validation
@@ -94,13 +99,8 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       });
       await page.waitForTimeout(100);
 
-      const summaryEl = page.locator('#seq-editor-validation-summary');
-      const text = await summaryEl.textContent();
-      if (text.includes('⚠') || text.includes('1000')) {
-        // Good, validation failed as expected
-      } else {
-        throw new Error(`Expected validation to fail for suppressMs=500, got: ${text}`);
-      }
+      const v = await verdict();
+      if (!v.error) throw new Error(`Expected validation to fail for suppressMs=500, got: ${v.text}`);
     });
 
     await test('suppressMs validation: valid value clears error', async () => {
@@ -110,67 +110,48 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       });
       await page.waitForTimeout(100);
 
-      const summaryEl = page.locator('#seq-editor-validation-summary');
-      const text = await summaryEl.textContent();
-      if (text.includes('✓') && text.includes('valid')) {
-        // Good, validation passed
-      } else {
-        throw new Error(`Expected validation to pass for suppressMs=8000, got: ${text}`);
-      }
+      const v = await verdict();
+      if (!v.valid) throw new Error(`Expected validation to pass for suppressMs=8000, got: ${v.text}`);
     });
 
     // Test suppressMs vs end time constraint
     await test('suppressMs vs end time: shows error if suppressMs < end-t', async () => {
-      // Add an end step with t=10000
-      const addStepBtn = page.locator('#seq-editor-add-step');
-      await addStepBtn.click();
-      await page.waitForTimeout(100);
+      // Move the sequence's own end step to t=10000. The timeline draws the
+      // end as a line, not a block (data/seq_timeline.js, .tl-end): a press on
+      // it picks the end step, and the drawer's Picked block pane offers its
+      // Starts at. The inspector writes itself again after every edit, so the
+      // field is found afresh each time it is used.
+      const endType = await page.evaluate(() => {
+        const list = window.__seqEditorForTesting.editorState.current.steps;
+        return list[list.length - 1].type;
+      });
+      if (endType !== 'end') throw new Error(`Expected the last step to be the end step, got ${endType}`);
 
-      const steps = page.locator('.step-card');
-      const count = await steps.count();
-      const lastStep = steps.nth(count - 1);
+      await page.locator('#seq-editor-timeline .tl-end').click();
+      const startsAt = () => page.locator('#seq-picked input[data-picked="start"]');
+      const setEnd = async (ms) => {
+        await startsAt().fill(String(ms));
+        await startsAt().press('Enter');
+        await page.waitForTimeout(100);
+      };
+      const endAt = () => page.evaluate(() => {
+        const list = window.__seqEditorForTesting.editorState.current.steps;
+        return list[list.length - 1].t;
+      });
 
-      // Expand the last card to see the type chips
-      const header = lastStep.locator('.step-card-header');
-      await header.click();
-      await page.waitForTimeout(100);
+      await setEnd(10000);
+      if ((await endAt()) !== 10000) throw new Error(`Expected the end step at 10000 ms, got ${await endAt()}`);
 
-      // Set type to 'end'
-      const typeChip = lastStep.locator('[data-type="end"]');
-      await typeChip.click();
-      await page.waitForTimeout(100);
-
-      // Set time to 10000
-      const tInput = lastStep.locator('.step-t');
-      await tInput.fill('10000');
-      await tInput.blur();
-      await page.waitForTimeout(100);
-
-      // Now set suppressMs to 8000 (less than 10000)
-      const suppressInput = page.locator('#seq-editor-suppress');
-      await suppressInput.fill('8000');
-      await suppressInput.blur();
-      await page.waitForTimeout(100);
-
-      const summaryEl = page.locator('#seq-editor-validation-summary');
-      const text = await summaryEl.textContent();
-      if (text.includes('⚠') || text.includes('>=')) {
-        // Good, validation failed as expected
-      } else {
-        throw new Error(`Expected validation to fail for suppressMs=8000 with end-t=10000, got: ${text}`);
+      // suppressMs stays 8000, less than the 10000 ms the sequence now runs.
+      const v = await verdict();
+      if (!v.error) {
+        throw new Error(`Expected validation to fail for suppressMs=8000 with end-t=10000, got: ${v.text}`);
       }
 
-      // Clean up: remove the end step and reset suppressMs
-      page.once('dialog', async (dialog) => {
-        await dialog.accept();
-      });
-      const removeBtn = lastStep.locator('.step-remove');
-      await removeBtn.click();
-      await page.waitForTimeout(100);
-
-      await suppressInput.fill('8000');
-      await suppressInput.blur();
-      await page.waitForTimeout(100);
+      // Clean up: put the end step back.
+      await setEnd(1000);
+      const after = await verdict();
+      if (!after.valid) throw new Error(`Expected the sequence to be valid again, got: ${after.text}`);
     });
 
     // Regression: audioCat "fallback" is a NAMED SLOT, not a "$" sound. Factory

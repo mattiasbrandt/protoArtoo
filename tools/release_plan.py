@@ -26,12 +26,18 @@ notes <tag>       Generated release notes for a patch tag, from the commit
                   subjects in the range. Terse and clearly machine-written --
                   a patch cannot wait for someone to write maker-voice prose,
                   which is the whole reason the two tiers exist.
+verified <sha>    May main's tip be tagged on the strength of a green
+                  Verification run of <sha>? Only when <sha> is on main and
+                  every commit after it is release machinery: a bot commit
+                  touching only the version JSON, CHANGELOG.md (#473) or the
+                  README Showcase pictures (#480).
 
 Every subcommand is safe to run standalone against a checkout:
 
     python3 tools/release_plan.py decide
     python3 tools/release_plan.py tier v1.2.1
     python3 tools/release_plan.py notes v1.2.1
+    python3 tools/release_plan.py verified 1a2b3c4
 
 Tag vocabulary matches tools/extract_version.py: only `v[0-9]*` names a
 release. The repo's other tags (safepoint markers, sync-conflict leftovers)
@@ -93,6 +99,32 @@ _NOTES_HEADING = {"fix": "Fixed"}
 # Must stay in step with the author guard in version-sync.yml,
 # verification.yml and auto-release.yml.
 VERSION_SYNC_BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
+
+# Everything that bot commits to main, and nothing else: version-sync.yml's
+# two version JSON files, auto-release.yml's CHANGELOG promotion, and its
+# README Showcase recapture (#480). None of them changes the firmware or the
+# tooling Verification checked, so a verified commit followed only by such
+# commits still describes the tip. The exemption is the author AND these
+# files: a bot commit touching anything else, or any human commit, is code
+# Verification has not seen (#473).
+RELEASE_MACHINERY_FILES = frozenset({
+    "CHANGELOG.md",
+    "data/fw-version.json",
+    "data/fs-version.json",
+})
+
+# The Showcase recapture lands after a minor or major tag and takes minutes, so
+# a merge in the meantime puts it after a commit Verification is still running
+# on. Without it here, that run's green would not reach the tip and the next
+# minor would wait for a Verification run a bot commit never gets. The
+# directory, not the twenty names: tools/readme_showcase.mjs owns which files
+# it holds, and the showcase job refuses a capture that writes anything else.
+RELEASE_MACHINERY_DIRS = ("docs/images/readme/",)
+
+
+def is_release_machinery_file(path):
+    """Does a bot commit touching `path` leave Verification's verdict standing?"""
+    return path in RELEASE_MACHINERY_FILES or path.startswith(RELEASE_MACHINERY_DIRS)
 
 
 class ReleasePlanError(Exception):
@@ -361,7 +393,7 @@ def patch_notes(repo, tag, commits, previous_tag, full_tag, repo_url=None):
         lines.append(
             "**There are no files to download here, and that is on purpose.** A patch "
             "release ships the source tag and these notes, so a one-line fix does not "
-            f"wait on four firmware builds. The newest flashable images are on {where}, "
+            f"wait on every board's firmware build. The newest flashable images are on {where}, "
             "and they were built before this fix -- to run it now, build from this tag; "
             "otherwise it reaches you with the next feature release."
         )
@@ -369,10 +401,45 @@ def patch_notes(repo, tag, commits, previous_tag, full_tag, repo_url=None):
         lines.append(
             "**There are no files to download here, and that is on purpose.** A patch "
             "release ships the source tag and these notes, so a one-line fix does not "
-            "wait on four firmware builds. Build from this tag to run it now; otherwise "
+            "wait on every board's firmware build. Build from this tag to run it now; otherwise "
             "it reaches you with the next feature release."
         )
     return "\n".join(lines) + "\n"
+
+
+# ── the tag gate ─────────────────────────────────────────────────────────────
+
+
+def unverified_commits(repo, verified, to="HEAD"):
+    """Why `to` cannot be tagged on a green Verification of `verified`.
+
+    Returns a list of reasons, empty when it can: `verified` is `to` or an
+    ancestor of it, and every commit in `verified..to` is release machinery
+    -- authored by VERSION_SYNC_BOT_EMAIL, one parent, and touching only
+    release machinery files (is_release_machinery_file). Anything else means main moved on with code that
+    run never checked, so the tag waits for that commit's own run.
+    """
+    try:
+        _git(repo, "merge-base", "--is-ancestor", verified, to)
+    except subprocess.CalledProcessError:
+        return [f"{verified} is not on {to}"]
+    reasons = []
+    out = _git(repo, "rev-list", "--parents", f"{verified}..{to}")
+    for line in out.splitlines():
+        sha, *parents = line.split()
+        author = _git(repo, "log", "-1", "--format=%ae", sha)
+        short = sha[:8]
+        if author != VERSION_SYNC_BOT_EMAIL:
+            reasons.append(f"{short} is by {author}, not release machinery")
+            continue
+        if len(parents) != 1:
+            reasons.append(f"{short} is a merge")
+            continue
+        files = _git(repo, "diff-tree", "--no-commit-id", "--name-only", "-r", sha).splitlines()
+        other = sorted(path for path in set(files) if not is_release_machinery_file(path))
+        if other:
+            reasons.append(f"{short} is a bot commit that also changes {', '.join(other)}")
+    return reasons
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -454,6 +521,23 @@ def _cmd_notes(args):
     return 0
 
 
+def _cmd_verified(args):
+    """Print {"verified", "reason"} as JSON and exit 0 either way.
+
+    A "not yet" is an answer, not a failure: auto-release.yml's gate reads the
+    JSON's `verified` and logs its `reason`. A non-zero exit means the
+    question itself could not be asked (git failed).
+    """
+    reasons = unverified_commits(args.repo, args.sha, args.to)
+    verified = not reasons
+    if verified:
+        reason = f"{args.to} is {args.sha} or only release machinery after it"
+    else:
+        reason = "; ".join(reasons)
+    print(json.dumps({"verified": verified, "reason": reason}, indent=2))
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument(
@@ -481,6 +565,13 @@ def main(argv=None):
     notes.add_argument("--from", dest="frm", help="range start (default: previous tag)")
     notes.add_argument("--repo-url", help="override the origin URL used for links")
     notes.set_defaults(func=_cmd_notes)
+
+    verified = sub.add_parser(
+        "verified", help="may main's tip be tagged on a green Verification of <sha>?"
+    )
+    verified.add_argument("sha", help="the commit the Verification run checked")
+    verified.add_argument("--to", default="HEAD", help="the tip to tag (default: HEAD)")
+    verified.set_defaults(func=_cmd_verified)
 
     args = parser.parse_args(argv)
     try:

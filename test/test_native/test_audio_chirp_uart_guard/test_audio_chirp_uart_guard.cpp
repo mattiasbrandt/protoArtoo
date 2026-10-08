@@ -17,17 +17,16 @@
 
 #include "../../../include/audio_serial_io.h"
 #include "../../../include/audio_chirp.h"
-#include "../../../include/dome_link.h"
-
-// Seam declared in native_test_stubs.cpp — set DOME_UART_DOME to simulate
-// DomeLink holding UART2; reset to DOME_UART_NONE in tearDown.
-extern DomeUartOwner g_test_dome_uart_owner;
+// Seam defined in native_test_stubs.cpp, declared in this header - set
+// DOME_UART_DOME to simulate DomeLink holding UART2; reset to DOME_UART_NONE
+// in tearDown.
+#include "../../../include/dome_uart_test_hooks.h"
 
 // =============================================================================
 // Minimal recording IO
 // Records TX bytes and delay calls; RX always empty (simulates no module reply).
-// millisNow() advances by 200 ms per call so all 300 ms query timeouts
-// expire within 2-3 iterations.
+// millisNow() advances by 200 ms per call, so each query's own deadline expires
+// on the first reading and the no-reply path is taken immediately.
 // =============================================================================
 
 struct MinRec {
@@ -96,12 +95,13 @@ void test_query_emits_stat_command_when_uart_available() {
     AudioModuleState ms{};
     drv.queryModuleState(ms);
 
-    // sendCommand("STAT:0") emits 'S','T','A','T',':','0','\n' = 7 bytes
-    const char expected[] = "STAT:0\n";
+    // One STAT per stream in the module's default three-stream configuration:
+    // stream 0 going idle while 1 or 2 play is the state a single query missed.
+    const char expected[] = "STAT:0\nSTAT:1\nSTAT:2\n";
     TEST_ASSERT_EQUAL_INT_MESSAGE((int)strlen(expected), g_rec.txCount,
-        "queryModuleState must emit exactly STAT:0\\n when UART2 is available");
+        "queryModuleState must ask each of the three default streams once");
     TEST_ASSERT_EQUAL_MEMORY_MESSAGE(expected, g_rec.txBuf, (int)strlen(expected),
-        "queryModuleState TX content must be STAT:0\\n");
+        "queryModuleState TX content must be STAT:0, STAT:1 and STAT:2");
 }
 
 // =============================================================================

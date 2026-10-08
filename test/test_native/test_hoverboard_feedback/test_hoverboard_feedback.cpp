@@ -64,13 +64,32 @@ static void buildValidGen2xFrame(uint8_t* buf) {
     writeFrame(buf, fields, 13);
 }
 
+// Feed a complete byte array through the streaming parser.
+// Returns the number of frames decoded.
+static int feedAll(HoverboardFeedbackParser* p, const uint8_t* data, size_t len,
+                   HoverboardFeedback* out) {
+    int frames = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (feedHoverboardFeedbackByte(p, data[i], out)) frames++;
+    }
+    return frames;
+}
+
+// Feed one frame through a freshly initialised streaming parser -- the path
+// readHoverboardFeedback() runs. Returns the number of frames decoded.
+static int feedFresh(const uint8_t* data, size_t len, HoverboardFeedback* out) {
+    HoverboardFeedbackParser p;
+    initHoverboardFeedbackParser(&p);
+    return feedAll(&p, data, len, out);
+}
+
 void test_foc_valid_frame() {
     uint8_t frame[kHoverFocFrameLen] = {};
     HoverboardFeedback out = {};
 
     buildValidFocFrame(frame);
 
-    TEST_ASSERT_TRUE(parseHoverboardFeedbackFrame(frame, kHoverFocFrameLen, &out));
+    TEST_ASSERT_EQUAL_INT(1, feedFresh(frame, kHoverFocFrameLen, &out));
     TEST_ASSERT_EQUAL_INT16(3650, out.batteryRaw);
     TEST_ASSERT_EQUAL_INT16(280, out.boardTempRaw);
     TEST_ASSERT_EQUAL_INT16(100, out.speedR);
@@ -85,7 +104,7 @@ void test_gen2x_valid_frame() {
 
     buildValidGen2xFrame(frame);
 
-    TEST_ASSERT_TRUE(parseHoverboardFeedbackFrame(frame, kHoverGen2xFrameLen, &out));
+    TEST_ASSERT_EQUAL_INT(1, feedFresh(frame, kHoverGen2xFrameLen, &out));
     TEST_ASSERT_EQUAL_INT16(3700, out.batteryRaw);
     TEST_ASSERT_EQUAL_INT16(310, out.boardTempRaw);
     TEST_ASSERT_EQUAL_INT16(200, out.speedR);
@@ -95,13 +114,20 @@ void test_gen2x_valid_frame() {
 }
 
 void test_foc_bad_checksum() {
-    uint8_t frame[kHoverFocFrameLen] = {};
+    uint8_t good[kHoverFocFrameLen] = {};
+    uint8_t bad[kHoverFocFrameLen] = {};
+    HoverboardFeedbackParser p;
+    initHoverboardFeedbackParser(&p);
     HoverboardFeedback out = {};
 
-    buildValidFocFrame(frame);
-    frame[kHoverFocFrameLen - 2] ^= 0x01;  // corrupt checksum LSB
+    buildValidFocFrame(good);
+    memcpy(bad, good, sizeof(bad));
+    bad[kHoverFocFrameLen - 2] ^= 0x01;  // corrupt checksum LSB
 
-    TEST_ASSERT_FALSE(parseHoverboardFeedbackFrame(frame, kHoverFocFrameLen, &out));
+    // Lock the parser onto FOC first, so the corrupt frame is judged at
+    // 18 bytes as FOC rather than accumulated towards a Gen2.x length.
+    TEST_ASSERT_EQUAL_INT(1, feedAll(&p, good, sizeof(good), &out));
+    TEST_ASSERT_EQUAL_INT(0, feedAll(&p, bad, sizeof(bad), &out));
 }
 
 void test_gen2x_bad_checksum() {
@@ -111,24 +137,7 @@ void test_gen2x_bad_checksum() {
     buildValidGen2xFrame(frame);
     frame[kHoverGen2xFrameLen - 2] ^= 0x01;  // corrupt checksum LSB
 
-    TEST_ASSERT_FALSE(parseHoverboardFeedbackFrame(frame, kHoverGen2xFrameLen, &out));
-}
-
-void test_unrecognised_length() {
-    uint8_t frame[kHoverGen2xFrameLen] = {};
-    HoverboardFeedback out = {};
-
-    buildValidFocFrame(frame);
-
-    TEST_ASSERT_FALSE(parseHoverboardFeedbackFrame(frame, 20, &out));
-}
-
-void test_null_out_returns_false() {
-    uint8_t frame[kHoverFocFrameLen] = {};
-
-    buildValidFocFrame(frame);
-
-    TEST_ASSERT_FALSE(parseHoverboardFeedbackFrame(frame, kHoverFocFrameLen, nullptr));
+    TEST_ASSERT_EQUAL_INT(0, feedFresh(frame, kHoverGen2xFrameLen, &out));
 }
 
 void test_foc_neutral_values() {
@@ -149,7 +158,7 @@ void test_foc_neutral_values() {
     fields[8] = xorChecksum(fields, 8);
     writeFrame(frame, fields, 9);
 
-    TEST_ASSERT_TRUE(parseHoverboardFeedbackFrame(frame, kHoverFocFrameLen, &out));
+    TEST_ASSERT_EQUAL_INT(1, feedFresh(frame, kHoverFocFrameLen, &out));
     TEST_ASSERT_EQUAL_INT16(3600, out.batteryRaw);
     TEST_ASSERT_EQUAL_INT16(250, out.boardTempRaw);
     TEST_ASSERT_EQUAL_INT16(0, out.speedR);
@@ -180,7 +189,7 @@ void test_gen2x_negative_speed() {
     fields[12] = xorChecksum(fields, 12);
     writeFrame(frame, fields, 13);
 
-    TEST_ASSERT_TRUE(parseHoverboardFeedbackFrame(frame, kHoverGen2xFrameLen, &out));
+    TEST_ASSERT_EQUAL_INT(1, feedFresh(frame, kHoverGen2xFrameLen, &out));
     TEST_ASSERT_EQUAL_INT16(-150, out.speedR);
     TEST_ASSERT_EQUAL_INT16(-145, out.speedL);
     TEST_ASSERT_EQUAL_INT16(230, out.currentL);
@@ -190,17 +199,6 @@ void test_gen2x_negative_speed() {
 // =============================================================================
 // feedHoverboardFeedbackByte — streaming parser state machine tests
 // =============================================================================
-
-// Feed a complete byte array through the streaming parser.
-// Returns the number of frames decoded.
-static int feedAll(HoverboardFeedbackParser* p, const uint8_t* data, size_t len,
-                   HoverboardFeedback* out) {
-    int frames = 0;
-    for (size_t i = 0; i < len; i++) {
-        if (feedHoverboardFeedbackByte(p, data[i], out)) frames++;
-    }
-    return frames;
-}
 
 void test_stream_foc_byte_by_byte() {
     uint8_t frame[kHoverFocFrameLen] = {};
@@ -299,8 +297,6 @@ int main() {
     RUN_TEST(test_gen2x_valid_frame);
     RUN_TEST(test_foc_bad_checksum);
     RUN_TEST(test_gen2x_bad_checksum);
-    RUN_TEST(test_unrecognised_length);
-    RUN_TEST(test_null_out_returns_false);
     RUN_TEST(test_foc_neutral_values);
     RUN_TEST(test_gen2x_negative_speed);
     // --- streaming parser ---

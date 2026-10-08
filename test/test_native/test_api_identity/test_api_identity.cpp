@@ -12,35 +12,82 @@
 #include <cstring>
 
 #include "api_identity.h"
+#include "board_lane_wire.h"
+#include "component_registry.h"
 #include "config.h"
 #include "config_cache.h"
+#include "seq_store_util.h"  // seqStoreCapacityCheck() - what refuses a file over the cap
 #include "web_request_test_backend.h"
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
+#include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
 
 namespace {
 
-constexpr const char* kAvailabilitySuffix =
-    ",\"board\":\"artoo_esp32\",\"board_capabilities\":{"
+// learned_sequence_cap is written out, not composed from SEQ_STORE_CAP: it is
+// the board fact the Sequences page reads (ADR 0065, amended 2026-09-25), and
+// the native env builds the artoo-esp32, which stores five. Its per-file byte
+// cap is written out the same way: 12 KB on the artoo-esp32.
+constexpr const char* kCapabilities =
+    ",\"board\":\"artoo_esp32\",\"learned_sequence_cap\":5,"
+    "\"learned_sequence_max_bytes\":12288,\"board_capabilities\":{"
     "\"PA_CAP_NATIVE_WIFI\":true,\"PA_CAP_HOSTED_WIFI\":false,"
     "\"PA_CAP_DRIVE_BACKEND_HOVERBOARD\":true,"
-    "\"PA_CAP_DEDICATED_AUDIO_UART\":false},"
-    "\"build_flags\":{\"PA_HEAP_PROFILE\":false,\"PA_HEAP_TRACING\":false,"
+    "\"PA_CAP_DEDICATED_AUDIO_UART\":false}";
+
+constexpr const char* kBuildFlags =
+    ",\"build_flags\":{\"PA_HEAP_PROFILE\":false,\"PA_HEAP_TRACING\":false,"
     "\"PA_ADMISSION_TRACE\":true}}";
+
+// The Board Lane rows are composed from the pin-map constants rather than
+// restated as literals here. A test that copies the GPIO numbers would be a
+// second home for them, which is the defect the Lane exists to close -- and it
+// would pass while the manifest reported a stale board's wiring.
+void buildAvailabilitySuffix(char* out, size_t outSize) {
+    snprintf(out, outSize,
+             "%s,\"board_lanes\":{"
+             "\"drive\":{\"uart\":%u,\"tx\":%u,\"rx\":%u},"
+             "\"audio\":{\"uart\":%u,\"tx\":%u,\"rx\":%u},"
+             "\"protor2link\":{\"uart\":%u,\"tx\":%u,\"rx\":%u,"
+             "\"baud\":%lu,\"protocol\":\"%s\"}}%s",
+             kCapabilities,
+             (unsigned)UART_PORT_DRIVE, (unsigned)PIN_DRIVE_TX, (unsigned)PIN_DRIVE_RX,
+             (unsigned)UART_PORT_AUDIO, (unsigned)PIN_AUDIO_TX, (unsigned)PIN_AUDIO_RX,
+             (unsigned)UART_PORT_DOME, (unsigned)PIN_DOME_TX, (unsigned)PIN_DOME_RX,
+             (unsigned long)kBoardLaneWire_protor2link.baud, kBoardLaneWire_protor2link.protocol,
+             kBuildFlags);
+}
+
+void buildExpectedIdentity(char* out, size_t outSize, const char* droidName, bool mdnsUseName) {
+    char suffix[IDENTITY_JSON_MAX_BYTES] = {};
+    buildAvailabilitySuffix(suffix, sizeof(suffix));
+    snprintf(out, outSize, "{\"droidName\":\"%s\",\"mdnsUseName\":%s%s", droidName,
+             mdnsUseName ? "true" : "false", suffix);
+}
 
 void applyIdentity(const char* name, bool mdnsUseName) {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snprintf(snap.system.droid_name, sizeof(snap.system.droid_name), "%s", name);
     snap.system.mdns_use_name = mdnsUseName;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 }
 
 }  // namespace
 
 void setUp() {
     applyIdentity("artoo", false);
+    // Armed after this setUp()'s own seeding: from here every config write
+    // must run inside a Write Window, as it must on the droid after boot (#418).
+    configWriteWindowArm(true);
 }
 
 void tearDown() {
+    const uint32_t misses = configWriteWindowMisses();
+    configWriteWindowArm(false);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, misses, "a config write ran outside its Write Window");
 }
 
 void test_get_returns_identity_json() {
@@ -53,8 +100,7 @@ void test_get_returns_identity_json() {
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     TEST_ASSERT_EQUAL_STRING("application/json", backend.sentContentType);
     char expected[IDENTITY_JSON_MAX_BYTES] = {};
-    snprintf(expected, sizeof(expected), "{\"droidName\":\"r2-d2\",\"mdnsUseName\":true%s",
-             kAvailabilitySuffix);
+    buildExpectedIdentity(expected, sizeof(expected), "r2-d2", true);
     TEST_ASSERT_EQUAL_STRING(expected, backend.sentBody);
     TEST_ASSERT_EQUAL_UINT(1, backend.sendCalls);
 }
@@ -108,8 +154,7 @@ void test_post_valid_name_applies_and_echoes() {
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     char expected[IDENTITY_JSON_MAX_BYTES] = {};
-    snprintf(expected, sizeof(expected), "{\"droidName\":\"chopper\",\"mdnsUseName\":true%s",
-             kAvailabilitySuffix);
+    buildExpectedIdentity(expected, sizeof(expected), "chopper", true);
     TEST_ASSERT_EQUAL_STRING(expected, backend.sentBody);
 
     ConfigSnapshot snap = {};
@@ -120,21 +165,27 @@ void test_post_valid_name_applies_and_echoes() {
 
 void test_identity_manifest_fits_fixed_budget_and_overflow_fails() {
     char body[IDENTITY_JSON_MAX_BYTES] = {};
-    TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), "protoartoo", false));
+    TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), "protor2", false));
     TEST_ASSERT_LESS_THAN(sizeof(body), strlen(body));
     TEST_ASSERT_NOT_NULL(strstr(body, "\"board_capabilities\""));
+    TEST_ASSERT_NOT_NULL(strstr(body, "\"board_lanes\""));
     TEST_ASSERT_NOT_NULL(strstr(body, "\"build_flags\""));
 
     char tooSmall[64] = {};
-    TEST_ASSERT_FALSE(formatIdentityJson(tooSmall, sizeof(tooSmall), "protoartoo", false));
+    TEST_ASSERT_FALSE(formatIdentityJson(tooSmall, sizeof(tooSmall), "protor2", false));
 }
 
 // The handler's headroom arithmetic (src/web/api_identity.cpp) is stated for
 // the worst case -- a DROID_NAME_MAX_LEN name -- but the case above uses a
 // 10-character one, so it would keep passing with 22 bytes less headroom than
 // the comment claims. Adding a fourth board capability (#254) spent 36 of the
-// 85 bytes that arithmetic had, leaving 49, so assert the worst case directly:
-// the next manifest row must not be able to overflow at 32 characters while a
+// 85 bytes that arithmetic had; the three Board Lanes (#339) then spent 127 of
+// what a 512 B budget carries, leaving 50, and the Learned Sequence cap
+// (#426) spent 26 of those, leaving 24 on firebeetle2 (25 on the artoo-esp32,
+// whose cap is one digit). protoR2link's baud and protocol (#369) cost 35,
+// so the bound went to 576 B, leaving 53, and the per-file byte cap (#439)
+// cost 35 more, leaving 18. Assert the worst case directly: the
+// next manifest row must not be able to overflow at 32 characters while a
 // short name still fits.
 void test_identity_manifest_fits_with_longest_droid_name() {
     char longName[DROID_NAME_MAX_LEN + 1];
@@ -144,7 +195,155 @@ void test_identity_manifest_fits_with_longest_droid_name() {
     char body[IDENTITY_JSON_MAX_BYTES] = {};
     TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), longName, false));
     TEST_ASSERT_LESS_OR_EQUAL_UINT(sizeof(body) - 1, strlen(body));
+    // Measured exactly, so the headroom src/web/api_identity.cpp hands the next
+    // manifest row is the real one. This build reports three manifest values
+    // true (NATIVE_WIFI, DRIVE_BACKEND_HOVERBOARD, ADMISSION_TRACE), each a byte
+    // shorter than false, so it is 3 B under that comment's all-false worst
+    // case of 556 B for the artoo-esp32.
+    TEST_ASSERT_EQUAL_UINT(553, strlen(body));
     TEST_ASSERT_NOT_NULL(strstr(body, "\"PA_CAP_DEDICATED_AUDIO_UART\":false"));
+    // The last Board Lane row is the first thing an overflow would eat, and a
+    // truncated payload must not reach the browser as a shorter valid one.
+    TEST_ASSERT_NOT_NULL(strstr(body, "\"protor2link\":{"));
+}
+
+// The per-file cap the droid reports is the byte count its store refuses above,
+// so the Rehearsal's size figure cannot tell a builder a sequence fits when the
+// save would be refused, or the other way round (#439). Read back out of the
+// payload rather than compared with SEQ_FILE_MAX_BYTES, because the number the
+// browser sees is the one that has to agree with the refusal.
+void test_identity_byte_cap_is_the_size_a_save_is_refused_above() {
+    char body[IDENTITY_JSON_MAX_BYTES] = {};
+    TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), "artoo", false));
+    const char* key = strstr(body, "\"learned_sequence_max_bytes\":");
+    TEST_ASSERT_NOT_NULL(key);
+    unsigned reported = 0;
+    TEST_ASSERT_EQUAL_INT(1, sscanf(key, "\"learned_sequence_max_bytes\":%u", &reported));
+
+    const size_t plenty = 1024u * 1024u;
+    TEST_ASSERT_TRUE(seqStoreCapacityCheck(false, 0, reported, plenty).ok);
+    const ProtocolCheckResult over = seqStoreCapacityCheck(false, 0, reported + 1u, plenty);
+    TEST_ASSERT_FALSE(over.ok);
+    TEST_ASSERT_EQUAL_STRING("json", over.field);
+}
+
+// A Board Lane must report what the board's own pin-map arm declares. The
+// manifest is an unguarded X-macro expanded twice in the serializer's
+// translation unit, and the expensive failure there is a silently EMPTY object
+// -- valid JSON, 200 OK, and no routing reaching the browser at all.
+void test_identity_reports_the_drive_lane_from_the_pin_map() {
+    char body[IDENTITY_JSON_MAX_BYTES] = {};
+    TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), "artoo", false));
+    TEST_ASSERT_NULL(strstr(body, "\"board_lanes\":{}"));
+
+    char lane[64] = {};
+    snprintf(lane, sizeof(lane), "\"drive\":{\"uart\":%u,\"tx\":%u,\"rx\":%u}",
+             (unsigned)UART_PORT_DRIVE, (unsigned)PIN_DRIVE_TX, (unsigned)PIN_DRIVE_RX);
+    TEST_ASSERT_NOT_NULL(strstr(body, lane));
+}
+
+// protoR2link's fixed facts reach the page from the firmware (#369): the lane
+// carries the baud the dome link opens its UART with and the protocol it
+// speaks, from the one row both read (include/board_lane_wire.h). A lane whose
+// contract is its Component Member's must not carry one, or the page would
+// state a second, possibly stale, answer for the drive or the sound module.
+void test_identity_protor2link_lane_carries_its_wire_contract() {
+    char body[IDENTITY_JSON_MAX_BYTES] = {};
+    TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), "artoo", false));
+
+    char lane[128] = {};
+    snprintf(lane, sizeof(lane),
+             "\"protor2link\":{\"uart\":%u,\"tx\":%u,\"rx\":%u,\"baud\":9600,\"protocol\":\"marcduino\"}",
+             (unsigned)UART_PORT_DOME, (unsigned)PIN_DOME_TX, (unsigned)PIN_DOME_RX);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(body, lane), body);
+
+    char drive[64] = {};
+    snprintf(drive, sizeof(drive), "\"drive\":{\"uart\":%u,\"tx\":%u,\"rx\":%u}",
+             (unsigned)UART_PORT_DRIVE, (unsigned)PIN_DRIVE_TX, (unsigned)PIN_DRIVE_RX);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(body, drive), body);
+    char audio[64] = {};
+    snprintf(audio, sizeof(audio), "\"audio\":{\"uart\":%u,\"tx\":%u,\"rx\":%u}",
+             (unsigned)UART_PORT_AUDIO, (unsigned)PIN_AUDIO_TX, (unsigned)PIN_AUDIO_RX);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(body, audio), body);
+}
+
+// -----------------------------------------------------------------------------
+// GET /api/identity/components -- the Component Registry lineup
+// -----------------------------------------------------------------------------
+
+// Every row reaches the browser, including the parts nothing drives. That is
+// what makes a product we have not written a driver for visible as planned
+// rather than silently absent (ADR 0042 amended 2026-09-09).
+void test_components_payload_carries_every_row_with_its_name() {
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleComponentsGet(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("application/json", backend.sentContentType);
+    TEST_ASSERT_TRUE(backend.sentChunked);
+
+    for (size_t i = 0; i < COMPONENT_PART_COUNT; ++i) {
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(backend.sentBody, COMPONENT_PARTS[i].id),
+                                     COMPONENT_PARTS[i].id);
+        // The operator-visible name travels too: firmware and web assets are
+        // uploaded separately, so a bare id would reach a builder as a bare id.
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(backend.sentBody, COMPONENT_PARTS[i].name),
+                                     COMPONENT_PARTS[i].name);
+    }
+    for (size_t i = 0; i < COMPONENT_CATEGORY_TABLE_SIZE; ++i) {
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(backend.sentBody, COMPONENT_CATEGORIES[i].name),
+                                     COMPONENT_CATEGORIES[i].name);
+    }
+}
+
+// A roadmap row travels with no driver; a supported one this image carries
+// travels with one. Both are asserted on the wire, because "included" is the
+// field a picker decides selectability from.
+void test_components_payload_separates_status_from_what_the_image_carries() {
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleComponentsGet(req);
+
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody,
+                                "\"id\":\"dfplayer_mini\",\"value\":21,\"name\":\"DFPlayer Mini\","
+                                "\"category\":\"sound\",\"protocol\":\"dfplayer_serial\","
+                                "\"status\":\"roadmap\",\"confirmed_on_droid\":false,"
+                                "\"capabilities\":0,\"included\":false,"
+                                "\"board_capability\":null}"));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody,
+                                "\"id\":\"chirp\",\"value\":20,\"name\":\"CHIRP Audio Trigger\","
+                                "\"category\":\"sound\",\"protocol\":\"chirp_ascii_uart\","
+                                "\"status\":\"supported\",\"confirmed_on_droid\":true,"
+                                "\"capabilities\":127,\"included\":true,"
+                                "\"board_capability\":null}"));
+    // The one row that names a Board Capability Gate reports it, so a builder
+    // is told which board fact a missing part turns on rather than only that it
+    // is missing.
+    TEST_ASSERT_NOT_NULL(
+        strstr(backend.sentBody, "\"board_capability\":\"PA_CAP_DRIVE_BACKEND_HOVERBOARD\""));
+}
+
+// The member half: which families offer a choice, and what is running.
+void test_components_payload_reports_the_member_setting_and_active_member() {
+    const ComponentPartEntry* mp3 = componentPartById("mp3_trigger");
+    TEST_ASSERT_NOT_NULL(mp3);
+    configCacheSetActiveSoundMember(mp3->value);
+
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleComponentsGet(req);
+
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody,
+                                "\"id\":\"sound\",\"name\":\"Sound\",\"selectable\":3,"
+                                "\"member_key\":\"snd_member\",\"active_member\":\"mp3_trigger\"}"));
+    // A family with one member offers no choice and says so, rather than
+    // reporting a member setting nobody can act on.
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody,
+                                "\"id\":\"foot_drive\",\"name\":\"Foot Drive\",\"selectable\":1,"
+                                "\"member_key\":null,\"active_member\":null}"));
 }
 
 int main() {
@@ -156,5 +355,11 @@ int main() {
     RUN_TEST(test_post_valid_name_applies_and_echoes);
     RUN_TEST(test_identity_manifest_fits_fixed_budget_and_overflow_fails);
     RUN_TEST(test_identity_manifest_fits_with_longest_droid_name);
+    RUN_TEST(test_identity_byte_cap_is_the_size_a_save_is_refused_above);
+    RUN_TEST(test_identity_reports_the_drive_lane_from_the_pin_map);
+    RUN_TEST(test_identity_protor2link_lane_carries_its_wire_contract);
+    RUN_TEST(test_components_payload_carries_every_row_with_its_name);
+    RUN_TEST(test_components_payload_separates_status_from_what_the_image_carries);
+    RUN_TEST(test_components_payload_reports_the_member_setting_and_active_member);
     return UNITY_END();
 }

@@ -2,30 +2,49 @@
 // test/test_native/test_audio_status_json/test_audio_status_json.cpp
 //
 // Native tests for formatAudioStatusJson().
-// Verifies content correctness and that the output fits within the 256-byte
-// buffer used by GET /api/audio.
+// Verifies content correctness and that the response GET /api/audio actually
+// sends is a complete document within AUDIO_STATUS_JSON_BUF_SIZE -- the 256
+// bytes it used to carry were not enough for a blocked-RX CHIRP answer.
 // =============================================================================
 
+#include <ArduinoJson.h>
 #include <string.h>
 #include <unity.h>
 
 #include "api_audio.h"
+#include "component_registry.h"
 
 static constexpr uint8_t AUDIO_CAP_STATUS_QUERY = 0x01;
 static constexpr uint8_t AUDIO_CAP_DEVICE_TYPE = 0x02;
 static constexpr uint8_t AUDIO_CAP_TRACK_COUNT = 0x04;
 static constexpr uint8_t AUDIO_CAP_CURRENT_TRACK = 0x08;
 static constexpr uint8_t AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
+static constexpr uint8_t AUDIO_CAP_CATALOG = 0x20;
+static constexpr uint8_t AUDIO_CAP_MIXES = 0x40;
 static constexpr uint8_t CAPS_DY_SV5W = 0x0F;
-static constexpr uint8_t CAPS_CHIRP   = 0x1F;
+// Read from the product's Component Registry row rather than restated, the same
+// way the driver reads it: a hand-copied 0x1F here is what let the test agree
+// with itself while disagreeing with the registry's 0x3F.
+static constexpr uint8_t CAPS_CHIRP = componentPartCapabilities("chirp");
 
-static void formatAudioStatusJsonDefault(char* buf, size_t bufSize, const char* driverName,
-                                         uint8_t capabilities, bool linkOk, bool active,
-                                         uint8_t playState, uint8_t device,
-                                         uint16_t totalTracks, uint16_t currentTrack) {
-    formatAudioStatusJson(buf, bufSize, driverName, capabilities, linkOk, active, playState,
-                          device, totalTracks, currentTrack, "available",
-                          "Sound module RX is available");
+// The longest values every field of this response can carry today. Both RX
+// pairs are the real ones AudioTask sends (src/tasks/audio_task.cpp
+// audioRxStatusToken/audioRxStatusDetail). The blocked pair is the #397 case;
+// since its detail became the table's "Held by protoR2link" (#422) the
+// no-response pair is the longer of the two, so the size tests use that.
+static const char* kFullDriverName = "CHIRP Audio Trigger";
+static const char* kBlockedRxToken = "blocked_by_dome_uart";
+static const char* kBlockedRxDetail = "Held by protoR2link";
+static const char* kLongestRxToken = "no_response";
+static const char* kLongestRxDetail = "Sound module did not respond on RX";
+
+static int formatAudioStatusJsonDefault(char* buf, size_t bufSize, const char* driverName,
+                                        uint8_t capabilities, bool linkOk, bool active,
+                                        uint8_t playState, uint8_t device,
+                                        uint16_t totalTracks, uint16_t currentTrack) {
+    return formatAudioStatusJson(buf, bufSize, driverName, true, capabilities, linkOk, active, playState,
+                                 device, totalTracks, currentTrack, 0, "available",
+                                 "Sound module RX is available");
 }
 
 #define formatAudioStatusJson(...) formatAudioStatusJsonDefault(__VA_ARGS__)
@@ -35,19 +54,18 @@ void setUp() {
 void tearDown() {
 }
 
-// Worst-case response: driver = "DY-SV5W", play_state = "unknown",
-// device = "unknown", max uint16 values.
-// {"driver":"DY-SV5W","link_ok":false,"active":false,
-//  "play_state":"unknown","device":"unknown",
-//  "total_tracks":65535,"current_track":65535}
-// ~137 bytes + null = 138 — well within 192.
+// The cases below pass a driver name explicitly, so they are sized by the
+// values they carry rather than by the endpoint's worst case; the three tests
+// at the end of the file own that.
 
 void test_buffer_fits_with_capabilities() {
-    char buf[256];
-    formatAudioStatusJson(buf, sizeof(buf), "DY-SV5W", 0xFF, true, true, 0xFF, 0xFF, 65535, 65535);
-    size_t len = strlen(buf);
-    TEST_ASSERT_LESS_THAN(256u, len);
-    TEST_ASSERT_GREATER_THAN(0u, len);
+    char buf[AUDIO_STATUS_JSON_BUF_SIZE];
+    int needed =
+        formatAudioStatusJson(buf, sizeof(buf), "DY-SV5W", 0xFF, true, true, 0xFF, 0xFF, 65535,
+                              65535);
+    TEST_ASSERT_GREATER_THAN(0, needed);
+    TEST_ASSERT_LESS_THAN_UINT(AUDIO_STATUS_JSON_BUF_SIZE, (unsigned)needed);
+    TEST_ASSERT_EQUAL_UINT((unsigned)needed, (unsigned)strlen(buf));
 }
 
 void test_typical_case_link_ok_sd_playing() {
@@ -106,22 +124,26 @@ void test_capabilities_field_present() {
 }
 
 void test_chirp_capabilities_field() {
-    char buf[256];
-    // 0x1F = all five bits: STATUS_QUERY | DEVICE_TYPE | TRACK_COUNT | CURRENT_TRACK | QUERY_SAFE_PLAYING
-    TEST_ASSERT_EQUAL_UINT8(CAPS_CHIRP,
+    char buf[AUDIO_STATUS_JSON_BUF_SIZE];
+    // 0x7F = all seven bits. CATALOG is the sixth, and the word the page reads
+    // to decide which status rows exist at all; MIXES is the seventh (#447).
+    TEST_ASSERT_EQUAL_UINT8(
         (uint8_t)(AUDIO_CAP_STATUS_QUERY | AUDIO_CAP_DEVICE_TYPE | AUDIO_CAP_TRACK_COUNT |
-                  AUDIO_CAP_CURRENT_TRACK | AUDIO_CAP_QUERY_SAFE_PLAYING));
-    formatAudioStatusJson(buf, sizeof(buf), "CHIRP", CAPS_CHIRP, true, false, 0x00, 0x03, 61, 5);
-    TEST_ASSERT_NOT_NULL(strstr(buf, "\"capabilities\":31"));
-    TEST_ASSERT_NOT_NULL(strstr(buf, "\"driver\":\"CHIRP\""));
+                  AUDIO_CAP_CURRENT_TRACK | AUDIO_CAP_QUERY_SAFE_PLAYING | AUDIO_CAP_CATALOG |
+                  AUDIO_CAP_MIXES),
+        CAPS_CHIRP);
+    formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, CAPS_CHIRP, true, false, 0x00, 0x03,
+                          61, 5);
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"capabilities\":127"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"driver\":\"CHIRP Audio Trigger\""));
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"device\":\"Flash+SD\""));
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"total_tracks\":61"));
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"current_track\":5"));
 }
 
 void test_device_flash_sd() {
-    char buf[256];
-    formatAudioStatusJson(buf, sizeof(buf), "CHIRP", CAPS_CHIRP, true, false, 0x00, 0x03, 61, 0);
+    char buf[AUDIO_STATUS_JSON_BUF_SIZE];
+    formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, CAPS_CHIRP, true, false, 0x00, 0x03, 61, 0);
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"device\":\"Flash+SD\""));
 }
 
@@ -133,15 +155,80 @@ void test_capabilities_zero_driver() {
 
 #undef formatAudioStatusJson
 
-void test_rx_diagnostics_fields_present() {
+void test_missing_track_field() {
     char buf[256];
-    formatAudioStatusJson(buf, sizeof(buf), "CHIRP", CAPS_CHIRP, false, false, 0xFF, 0x03,
-                          0, 0, "blocked_by_dome_uart",
-                          "Status unavailable: DomeLink is using UART");
-    TEST_ASSERT_NOT_NULL(strstr(buf, "\"rx_status\":\"blocked_by_dome_uart\""));
-    TEST_ASSERT_NOT_NULL(strstr(buf, "\"rx_detail\":\"Status unavailable: DomeLink is using UART\""));
+    formatAudioStatusJson(buf, sizeof(buf), "MP3 Trigger", true, 0x0D, true, true, 0x00, 0xFF,
+                          10, 99, 99, "available", "Sound module RX is available");
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"missing_track\":99"));
 }
 
+void test_rx_diagnostics_fields_present() {
+    char buf[AUDIO_STATUS_JSON_BUF_SIZE];
+    formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, true, CAPS_CHIRP, false, false, 0xFF, 0x03,
+                          0, 0, 0, kBlockedRxToken, kBlockedRxDetail);
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"rx_status\":\"blocked_by_dome_uart\""));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"rx_detail\":\"Held by protoR2link\""));
+}
+
+
+// -----------------------------------------------------------------------------
+// The response the endpoint actually sends is a whole document
+// -----------------------------------------------------------------------------
+
+void test_blocked_rx_answer_parses_and_fits() {
+    char buf[AUDIO_STATUS_JSON_BUF_SIZE];
+    // The case reproduced on #397: RX blocked by protoR2link, so link_ok and
+    // active are both false. Its detail was then the longest one AudioTask sent.
+    int needed = formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, true, CAPS_CHIRP, false, false,
+                                       0xFF, 0x03, 24, 0, 0, kBlockedRxToken, kBlockedRxDetail);
+
+    TEST_ASSERT_LESS_THAN_UINT(AUDIO_STATUS_JSON_BUF_SIZE, (unsigned)needed);
+    TEST_ASSERT_EQUAL_CHAR_MESSAGE('}', buf[strlen(buf) - 1],
+                                   "a response missing its closing brace is not JSON");
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE_MESSAGE(deserializeJson(doc, buf), "the sent body must parse");
+    TEST_ASSERT_EQUAL_STRING(kFullDriverName, doc["driver"]);
+    TEST_ASSERT_EQUAL_UINT8(CAPS_CHIRP, (uint8_t)doc["capabilities"]);
+    TEST_ASSERT_EQUAL_STRING("Flash+SD", doc["device"]);
+    TEST_ASSERT_EQUAL_STRING(kBlockedRxToken, doc["rx_status"]);
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(kBlockedRxDetail, doc["rx_detail"],
+                                     "the detail is where the old buffer cut the #397 response");
+}
+
+void test_the_old_256_byte_buffer_was_too_small_and_says_so() {
+    char buf[256];
+    // The worst case below: the #397 answer itself fits 256 bytes once its
+    // detail is the short table word, but the longest answer still does not.
+    int needed = formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, false, 0xFF, false, false, 0xFF,
+                                       0xFE, 65535, 65535, 65535, kLongestRxToken, kLongestRxDetail);
+
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT_MESSAGE(
+        sizeof(buf), (unsigned)needed,
+        "this answer does not fit 256 bytes; the serializer must report that rather than "
+        "leave the caller to send what it wrote");
+    JsonDocument doc;
+    TEST_ASSERT_TRUE_MESSAGE(deserializeJson(doc, buf),
+                             "and what it wrote is genuinely not parsable JSON");
+}
+
+void test_worst_case_every_field_still_fits() {
+    char buf[AUDIO_STATUS_JSON_BUF_SIZE];
+    // Sound off answers "off", the longer of the two output words.
+    int needed = formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, false, 0xFF, false, false, 0xFF,
+                                       0xFE, 65535, 65535, 65535, kLongestRxToken,
+                                       kLongestRxDetail);
+
+    TEST_ASSERT_LESS_THAN_UINT(AUDIO_STATUS_JSON_BUF_SIZE, (unsigned)needed);
+    TEST_ASSERT_GREATER_THAN_UINT_MESSAGE(
+        256u, (unsigned)needed,
+        "the worst case is larger than the buffer this endpoint used to carry");
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, buf));
+    TEST_ASSERT_EQUAL_STRING("unknown", doc["play_state"]);
+    TEST_ASSERT_EQUAL_STRING("unknown", doc["device"]);
+    TEST_ASSERT_EQUAL_UINT16(65535, (uint16_t)doc["missing_track"]);
+}
 
 int main(int argc, char** argv) {
     UNITY_BEGIN();
@@ -157,7 +244,11 @@ int main(int argc, char** argv) {
     RUN_TEST(test_chirp_capabilities_field);
     RUN_TEST(test_capabilities_zero_driver);
     RUN_TEST(test_device_flash_sd);
+    RUN_TEST(test_missing_track_field);
     RUN_TEST(test_rx_diagnostics_fields_present);
+    RUN_TEST(test_blocked_rx_answer_parses_and_fits);
+    RUN_TEST(test_the_old_256_byte_buffer_was_too_small_and_says_so);
+    RUN_TEST(test_worst_case_every_field_still_fits);
 
     return UNITY_END();
 }

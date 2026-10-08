@@ -41,6 +41,37 @@ SequenceDispatcherStepActions sequenceDispatcherStep(const SeqAction& act,
             actions.target = SEQ_DISPATCH_AUDIO_STOP;
             break;
 
+        case SEQ_ACT_BODY_MOVE:
+            // Route only. The Part -> Output resolution needs the live Servo
+            // Output table, which this pure core cannot reach; the adapter does
+            // that walk and sequenceBodyStepPlan() decides from the row.
+            actions.target = SEQ_DISPATCH_BODY_MOVE;
+            break;
+
+        case SEQ_ACT_DOME_BEARING:
+            // Route only. The target's bearing, the dome's belief and its
+            // calibration are the droid's as it is when the step runs, which
+            // this pure core cannot read; domeBearingStepPlan() decides.
+            actions.target = SEQ_DISPATCH_DOME_BEARING;
+            break;
+
+        case SEQ_ACT_BACKGROUND_TRACK_START:
+            // Route only. Whether the fitted module can mix is the droid's as it
+            // is now, which this pure core cannot read.
+            actions.target = SEQ_DISPATCH_BACKGROUND_TRACK_START;
+            break;
+
+        case SEQ_ACT_BACKGROUND_TRACK_STOP:
+            actions.target = SEQ_DISPATCH_BACKGROUND_TRACK_STOP;
+            break;
+
+        case SEQ_ACT_GESTURE:
+            // Route only. Resolving the set against the droid, and pacing a body
+            // Gesture, need the live Output rows and ServoTask's reports, which
+            // this pure core cannot reach.
+            actions.target = SEQ_DISPATCH_GESTURE;
+            break;
+
         default:
             // Unknown action: silent success (fail-safe behavior).
             actions.target = SEQ_DISPATCH_NONE;
@@ -53,13 +84,16 @@ SequenceDispatcherStepActions sequenceDispatcherStep(const SeqAction& act,
     return actions;
 }
 
-uint32_t sequence_dispatcher_wait_ms(bool engineActive, bool resyncClosePending) {
-    // Active choreography and staged ring-close drain require 10 ms cadence for
-    // absolute step timing and smooth servo motion. Otherwise the task blocks on
-    // the request queue and only wakes to feed the TWDT reset (3 s timeout) and
-    // to poll estop/dome-connect edges, whose resync latency tolerance is
-    // operator-scale (250 ms idle is acceptable).
-    if (engineActive || resyncClosePending) {
+uint32_t sequence_dispatcher_wait_ms(bool engineActive, bool resyncClosePending,
+                                     bool bulkCentreActive) {
+    // Active choreography, staged ring-close drain and a bulk centre sweep all
+    // require 10 ms cadence: the first two for absolute step timing and smooth
+    // servo motion, the third because the Cadence Floor is a number in
+    // milliseconds and a 250 ms wake would decide the spacing instead of it.
+    // Otherwise the task blocks on the request queue and only wakes to feed the
+    // TWDT reset (3 s timeout) and to poll estop/dome-connect edges, whose
+    // resync latency tolerance is operator-scale (250 ms idle is acceptable).
+    if (engineActive || resyncClosePending || bulkCentreActive) {
         return 10;
     }
     return 250;

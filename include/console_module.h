@@ -98,6 +98,48 @@ typedef enum {
     // the operation, from the registry's `read_only: true` through the
     // generated catalog - never from a list of names in the dispatcher.
     CONSOLE_REASON_READ_ONLY = 16,
+    // A known Part that no Output on this droid claims, so nothing moves when
+    // a step names it (#301). The sixth Availability Reason, and the only one
+    // that is a fact about the builder's wiring rather than about the image,
+    // the board or a toggle - which is why reporting an unwired Part as
+    // COMPONENT_DISABLED would be wrong: that names a deliberate choice.
+    //
+    // Never cached from discovery. Authoring a step for an arm that is not
+    // wired yet is legal, and the same saved step starts working the moment an
+    // Output records the Part, with no re-authoring - so the question is asked
+    // of the Servo Output table at execution, every time
+    // (droidPartAvailabilityFromRow(), include/droid_part_availability.h).
+    CONSOLE_REASON_PART_NOT_ASSIGNED = 17,
+    // The value is fine on its own and clashes with another one, sent or
+    // saved - speed presets that are not distinct, dome pulses out of order
+    // (ADR 0011 amended 2026-09-25, #425). Distinct from OUT_OF_RANGE because
+    // nothing is out of range, and no `accepts=` can say what would be taken.
+    // Names the argument that was sent.
+    CONSOLE_REASON_CONFLICT = 18,
+    // The dome does not know where it points, so there is nothing to turn
+    // from: an estop, Sleep Mode or a boot forgot it, and only the builder's
+    // "front is here" makes it believed again (ADR 0051, #445). Go home and a
+    // bearing step report it; neither moves the dome.
+    CONSOLE_REASON_BEARING_UNKNOWN = 19,
+    // The dome's full turn has not been timed, or which way positive turns it
+    // has not been said, so no turn can be planned and no bearing believed
+    // (#445). A fact about the builder's calibration, the way part-not-assigned
+    // is one about their wiring.
+    CONSOLE_REASON_DOME_NOT_CALIBRATED = 20,
+    // The fitted sound module plays one sound at a time, so a Background Track
+    // a Sequence starts does not play; the rest of the routine runs (ADR 0054).
+    // A fact about the module the builder fitted, the way part-not-assigned is
+    // one about their wiring, read from its registry row's AUDIO_CAP_MIXES.
+    CONSOLE_REASON_MODULE_CANNOT_MIX = 21,
+    // The operation is never on the Console - a file transfer, a step of the
+    // Sequences editor, an act that only orders a browser page, the browser
+    // Console Adapter itself - and the builder does it on a page instead
+    // (ADR 0037 Amendment 2026-10-06, #474). Declared on the registry row and
+    // carried by the catalog (console_excluded/console_page), so unlike
+    // EXECUTOR_NOT_READY it is known at discovery and never becomes work.
+    // Distinct from NOT_EXECUTABLE, which is a row that only describes a field
+    // of another query: these operations exist on the droid.
+    CONSOLE_REASON_NOT_ON_CONSOLE = 22,
 } ConsoleReason;
 
 // =============================================================================

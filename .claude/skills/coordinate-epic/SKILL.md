@@ -1,6 +1,7 @@
 ---
 name: coordinate-epic
 description: Run a multi-worker remediation epic as planner-orchestrator + critic - create the epic and sub-issues, dispatch workers in isolated worktrees, review as critic, integrate serially, coordinate device verification. Use when the user asks to coordinate an epic, slice findings into parallel sub-issues, or dispatch worker agents on a ticket pool.
+effort: high
 ---
 
 You are the coordinator: assignment, integration, and ruthless review. You do
@@ -81,15 +82,34 @@ the same pass - never left open for one unobtainable number.
 ## Assignment (you set up, then hand the worker its worktree)
 
 `<base>` throughout this skill is the epic's integration branch - read it
-from the epic's coordination section (it changes at Phase 5 closure).
+from the epic's coordination section rather than from memory.
 
-- `gh issue develop <n> --base <base> --name <type>/<slug>`, then
-  `git worktree add ../wt-<n> <branch>`.
-- **Stale-base trap:** `gh issue develop` branches from ORIGIN's ref, which
-  can be many commits behind the local integration branch. After creating the
-  worktree, `git -C ../wt-<n> rev-parse HEAD` must equal the local
-  `<base>` tip; if not, `reset --hard` it there before the worker
-  starts. Every worktree, every time.
+- **Make the branch and worktree with the tool, not by hand:**
+  `python3 tools/epic_worktree.py <n> --base <base> --name <type>/<slug> --path ../wt-<n>`.
+  It fetches first and fast-forwards the local `<base>` when another
+  session pushed it ahead (refusing, with the command, on a dirty checkout or
+  a divergence), creates the linked branch, adds `../wt-<n>`, puts it on the
+  local `<base>` tip, verifies that it landed there (exit 1 if not), pushes the
+  branch so the issue's Development section names the real base, and prints
+  how far `origin/<base>` is behind. `--check <path> --base <base>` re-verifies
+  an existing worktree before a re-dispatch; `--dry-run` reports and creates
+  nothing.
+- **Why the tool exists, so nobody "simplifies" it away.** `gh issue develop`
+  creates the branch **server-side, from the remote ref** - its own help says
+  so. An epic's integration branch advances **locally**, because AGENTS.md
+  "Push and remote policy" makes pushing a shared integration branch an
+  operator-approved act. So `origin/<base>` runs N merges behind `<base>` and
+  every hand-made worktree starts at the wrong commit. This used to be a
+  sentence here telling the coordinator to `reset --hard` after every worktree,
+  every time; it was obeyed, and it was still the wrong shape, because a rule
+  that must be remembered on every repetition is a defect waiting for the
+  repetition where it is not.
+- **The gap itself is the operator's call, and not the tool's to close.**
+  Pushing `<base>` after each accepted merge would remove the divergence at
+  source and make `gh issue develop --base` correct by construction. That is an
+  approved act, not a coordinator convenience: ask for it once per epic rather
+  than assuming it, and until it is granted let the tool report the gap on
+  every run.
 - **Seed only the research this ticket cites.** From the repo root,
   `cp --parents <cited paths> ../wt-<n>/` - which reproduces each path exactly
   as the ticket and the epic write it, screenshots included. Copy the files
@@ -112,12 +132,19 @@ from the epic's coordination section (it changes at Phase 5 closure).
 - One sub-issue per worker. A worker operates ONLY inside its own worktree;
   any out-of-tree edit, checkout, stash, restore, or clean is an automatic
   reject. This repo has lost work to exactly that.
-- **Start every worker memory-capped:** `python3 tools/herdr_capped_agent.py
-  --pane <id> --name <agent> --brief <brief-file> [-- --resume <session-id>]`
-  (exit 0 means Herdr saw the agent go `working` on the brief; on a stall it
-  prints the pane and does not re-send - read it first, the prompt may have
-  landed). An idle worker's history: `herdr agent read <agent> --source
-  recent-unwrapped --lines 200`. Never a bare
+- **One command each, so the next session does not re-read `--help`.**
+  `herdr tab create --workspace <name> --cwd <path> --label <label> --focus`.
+  `python3 tools/herdr_capped_agent.py --pane <id> --name <agent> --brief <brief-file> [-- --resume <session-id>]`
+  (exit 0 means Herdr saw the agent go `working` on the brief; on a stall it prints the pane and
+  does not re-send - read it first, the prompt may have landed).
+  A worker's own transcript, when it is idle: `herdr agent read <agent> --source recent-unwrapped --lines 200`
+  (Herdr scrolls a full-screen agent's history for that read; `pane read` without `--lines` shows one screen).
+  `python3 tools/make_brief.py --issue <n> --slug <s> --worktree <path> --base <base>`.
+  `python3 tools/pane_run.py /tmp/gate-<s>.log --cwd <path> -- python3 tools/slice_verify.py --base <base> --json /tmp/slice-<s>.json`
+  (a pane, `tools/gate_in_pane.sh`, the wait for `GATE_EXIT=` and the tail, in one call).
+  `python3 tools/accept_slice.py --json /tmp/slice-<s>.json --worktree <path> --base <base> [--allow-gate-edit]`.
+  The JSON field is `ok`. During the pause do not pass `--mutations`. Do not pipe the gate through `tee`.
+- **Start every worker memory-capped** with the `herdr_capped_agent.py` line above, never a bare
   `herdr agent start`. It puts the pane's shell in its own systemd scope
   (MemoryMax 10G, no swap, OOMPolicy=continue) and refuses to start the agent
   if the cap is not in place. **Why:** on 2026-09-29 one worker's test grew
@@ -129,27 +156,37 @@ from the epic's coordination section (it changes at Phase 5 closure).
   agent's last command first. The second kill that evening happened because
   the coordinator told the worker to "re-run the interrupted step" - which
   was the command that had blown up memory.
-- Render the worker prompt from [worker-brief.md](worker-brief.md), never by
-  copying an older brief:
-  `python3 tools/make_brief.py --issue <n> --slug <s> --worktree <path> --base <branch>`.
-  It fills the pin marker `<!-- coordinator-pin-<s> -->` and the status marker
+- Render the worker prompt from [worker-brief.md](worker-brief.md) with the
+  `make_brief.py` line above, never by copying an older brief. It fills the
+  pin marker `<!-- coordinator-pin-<s> -->` and the status marker
   `<!-- worker-status-<n>-<s> -->`, so start the slice's pinned comment with
   that pin marker. Ticket-specific knowledge lives in the ticket, not the
   prompt - the brief's first step sends the worker to the issue body and the
   pinned coordinator comment.
-- Fence files mechanically, not just in prose: put the exact gate invocation
-  in the ticket's pinned comment — `--fenced <pathspecs>`, the `--mutations`
-  expectation for web slices, and any waiver flag you are sanctioning
-  (`--expect-no-new-tests`, `--expect-no-mutations`). The gate then rejects a
-  fenced-file edit, a flat test total, or missing mutation coverage in the
-  worker's own run, before review.
+- Fence files mechanically, not just in prose: put `--fenced <pathspecs>` in
+  the ticket's pinned comment when a slice must not touch a path. Through
+  2026-10-31 (#464) do not put a `--mutations` expectation in the brief and
+  do not grant a waiver so the worker can write a test. A flat test total is
+  the normal result. The gate's suite rows skip themselves.
+
+## Pins
+
+A pin quotes an excerpt you measured. Cite the symbol (`pickedHtml()`). A line number is a hint and will move. When a contract owns the rule, cite the contract (`docs/dome-visual-authoring-contract.md`, `docs/api.md`), not an implementation that nothing calls. Open the cited symbol and confirm a caller reaches it before the pin says it is the reference.
+
+A date-limited caveat names the command whose output retires it. "Comment PATCH returned 403 on 2026-10-01" stays only while `gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id> --input <file>` still fails. When that command succeeds, delete the caveat.
 
 ## Critic protocol (before accepting any slice - no exceptions)
+
+**Through 2026-10-31 (#464) the suite is not the acceptance.** Do not require a pasted suite block, a mutation table, a red run, or a per-wave re-run of `slice_verify` for the suites. Step 0 below is the acceptance. A worker who added tests or mutation patches the ticket did not name goes back to delete them. A missing `make test` is not a reject. The build still matters when the diff compiles. On 2026-11-01 this paragraph stops, and "From 2026-11-01" below is the rule. Until then, do not follow that section.
 
 Worker summaries are claims, not evidence; this repo has caught agents
 reporting passes that never ran. In the worker's worktree, personally:
 
-0. **Read the production diff first, and weight it heaviest.** The source is
+0. **Read the rule files yourself. The reviewer subagent reads the bulk diff.**
+   You open the contract, the mirror, and the header the pin names, and you
+   check the cited symbol is one a caller reaches. You do not page the whole
+   diff in parallel with that reviewer. Then read the production paths the
+   ticket touches, and weight that heaviest. The source is
    what ships; tests are scaffolding. `git diff <base>...HEAD -- <prod paths>`
    and ask: is the new code actually *wired in and called*, or added beside
    what it was meant to replace? Were the old rules **deleted**, or are there
@@ -160,6 +197,10 @@ reporting passes that never ran. In the worker's worktree, personally:
    step-core module nothing referenced, and left a hand-rolled poll in place
    through an epic that claimed to consolidate polling. Both were invisible
    to a green gate.
+
+### From 2026-11-01
+
+The suite pause has ended. Steps 1 and 2 below are the acceptance again. Until that date, skip this section: step 0, a clean tree, and a build when the diff compiles are the acceptance, and a worker does not pass `--mutations`.
 
 1. **Check the block's provenance against the branch - do not re-run the gate
    behind every slice.** Read the worker's pasted block and verify, in its
@@ -210,8 +251,12 @@ reporting passes that never ran. In the worker's worktree, personally:
 
    Then read the block itself: every changed web production JS file appears in
    the mutation table, every row KILLED, and **no waiver ACK you did not grant**
-   (`--expect-gate-edit`, `--expect-no-new-tests`, `--expect-no-mutations` - an
-   unsanctioned ACK is an automatic reject). Any of those disagreeing is the
+   (`--expect-gate-edit`, `--expect-no-new-tests`, `--expect-no-mutations`,
+   `--expect-test-shrink`, `--expect-heap-growth` - an unsanctioned ACK is an
+   automatic reject; under a granted `--expect-test-shrink`, read the deleted
+   files the ACK names against the list you granted, and under a granted
+   `--expect-heap-growth`, the bytes the ACK names against the spend the ticket
+   decided). Any of those disagreeing is the
    trigger to re-run the full gate on that one slice, with the worker's exact
    invocation, and compare character for character.
 
@@ -223,9 +268,9 @@ reporting passes that never ran. In the worker's worktree, personally:
    **Why, so nobody restores the duplicate.** Measured on #175, 2026-09-17: the
    coordinator re-ran the full gate behind **18** accepted slices and found **0**
    divergences. Each re-run was a second copy of the most expensive thing in the
-   repo - the mutation stage runs the whole web suite once per patch, 28 times
-   on a slice like #346 - serialised behind a machine-wide build lock, while
-   every rejection that epic produced came from step 0, which costs nothing.
+   repo - the mutation stage ran the whole web suite once per patch (until
+   #405), 28 times on a slice like #346 - serialised behind a machine-wide
+   build lock, while every rejection that epic produced came from step 0, which costs nothing.
    Spend the iteration on the production diff, not on a second identical block.
    Then every remaining acceptance check.
 2. For new or changed tests, demand the prove-it-can-fail evidence: red
@@ -239,13 +284,22 @@ reporting passes that never ran. In the worker's worktree, personally:
 
    The gate is a mechanical floor, and it is automated - running it costs no
    iterations. **Do not spend rejection cycles on top of it arguing test
-   design.** Never reject a slice for test naming, structure, tidiness or
-   volume; ask for focused tests, not exhaustive suites. Test quality is
+   design.** Never reject a slice for test naming, structure or tidiness,
+   or for the number of real invariants it covers. Test quality is
    minor next to source quality - if a rejection is about the tests rather
    than the code, it had better be because the tests prove nothing, not
    because they could be prettier. Iteration spent on test design is
    iteration not spent on the change itself.
-3. Read the full diff (`git diff <base>...HEAD`): scope creep,
+
+   **Ticket receipts are the exception, and they are a reject** (#406,
+   `test/test_web/README.md` "What earns a test here"): web tests that
+   transcribe the acceptance list - copy, heading words, chip order, timing
+   constants, visual anatomy - a `test_*_<ticket>.js` as the slice's only
+   coverage, or a mutation patch per checkbox. Ask for the one invariant
+   (safety, a shipped defect, harness-only) in the surface's file with one
+   kill, and for the rest to be deleted, not tidied. An ugly name on a real
+   invariant still passes.
+3. The reviewer subagent reads the full diff (`git diff <base>...HEAD`): scope creep,
    shortcuts, behaviour change in tickets that promise none, comment
    degradation, core guardrails (no heap alloc or blocking on Core 1 paths,
    RobotState via portMUX/zone discipline).
@@ -258,6 +312,24 @@ reporting passes that never ran. In the worker's worktree, personally:
    checkboxes when, and only when, you have re-verified the criterion
    yourself; tick the remainder in the same pass as the evidence-bearing
    closing comment.
+
+7. **Route every finding onto the ticket that will act on it, in the same
+   pass.** A worker reports what it could not fix - a fenced file, a decision
+   above its pay grade, another target's problem. Those die in a closed
+   ticket, in your acceptance comment, or in a session summary unless they are
+   written where the work is: a comment on the open sub-issue that owns those
+   files, naming what was found, `file:line`, which ticket found it, and **what
+   this ticket has to do about it**; or an acceptance criterion on that
+   sub-issue where the work is definite; or a handover to the epic that owns
+   the target, never a ticket minted on yours. Only when none of those exist
+   does it go back to the operator to place. Naming a finding is not routing
+   it - "belongs to C3" in a closing comment is how it is lost. Doing this at
+   acceptance, while you still hold the context, is the difference between a
+   pointer and a cold start.
+
+   Routing happens BEFORE anything about the finding reaches the operator, and
+   for most findings it is the whole of the handling - see Reporting for what
+   is left to escalate and what is not.
 
 ## Rejection bookkeeping and escalation
 
@@ -278,10 +350,9 @@ reporting passes that never ran. In the worker's worktree, personally:
 
 Merge reviewed branches into `<base>` one at a time, oldest-reviewed
 first; later conflicting branches rebase onto the updated base before their
-review completes. After the final merge, **run the slice gate on the merged
-tree** with the union of the wave's fences, plus any epic-level acceptance
-sweeps - line numbers and stragglers move, and this is the run that stands
-behind every slice in the wave (critic protocol step 1).
+review completes. After the final merge, through 2026-10-31 (#464), do not re-run the slice
+gate for its suites. The production diffs were the acceptance. The native
+and web suites run when the epic's pull request into `main` opens.
 
 **Measure the filesystem image in the same pass**, with `make
 check-build-budgets` - it images the filesystem and counts allocated blocks for
@@ -296,6 +367,32 @@ another write order, is `tools/fs_price.py` (`--order` is required, #462).
 That number is not this measurement, and a worker does not grow a private
 imager to answer it.
 Nothing is pushed to origin until the operator explicitly says so.
+
+**A slice is not finished until its pane is closed.** The sequence is one
+motion, in this order: accept -> tick the criteria -> merge -> close the
+ticket -> **close the worker's Herdr pane** (and its tab once that was its
+last pane). Before closing, check the worker is genuinely done rather than
+merely idle: `git status` clean in its worktree, its branch listed by
+`git branch --merged <base>`, its ticket closed. An idle pane left open reads
+as a worker still holding the slice, and the next wave's tab lands beside a
+ghost. Close only panes and tabs you created; another session may be in a
+neighbouring workspace.
+
+**A web slice's worker may also have left a browser open.** Playwright runs
+HEADED here, so a visual check leaves a real window on the operator's desktop.
+Check before you close the pane:
+
+```
+ps -o pid=,cmd= -C chrome | grep ms-playwright     # the browsers
+readlink /proc/<claude-pid>/cwd                    # names the worktree that owns one
+```
+
+Trace the owner through the MCP server's parent chain to the worker's `claude`
+process; its cwd is the worktree. **A window owned by a worker that is still
+running is IN USE - never kill it mid-slice.** One owned by the slice you are
+closing should die with its pane; if it does not, kill the browser process and
+say so in the status comment. Never kill a browser you cannot trace to a
+worktree you own - it may be the operator's own session.
 
 ## Device verification (serialized - coordinator + operator, never workers)
 
@@ -325,37 +422,36 @@ build a path to X.
 
 Only one PlatformIO build may run on the machine, and the tooling now enforces
 that rather than asking every agent to remember it: `make` and the slice gate
-take `/tmp/protoartoo-pio.lock` themselves (AGENTS.md "The build lock"). Brief
+take `/tmp/protor2-pio.lock` themselves (AGENTS.md "The build lock"). Brief
 workers to run `make build` and the gate **plainly** - do not paste `flock` in
 front, which is now the nested case and is refused rather than waited on. For a
 contiguous multi-command window, brief
-`PROTOARTOO_PIO_LOCK_HELD=1 flock /tmp/protoartoo-pio.lock <commands>`.
+`PROTOR2_PIO_LOCK_HELD=1 flock /tmp/protor2-pio.lock <commands>`.
 
-`cat /tmp/protoartoo-pio.lock` names the current or last holder and the chip
+`cat /tmp/protor2-pio.lock` names the current or last holder and the chip
 target it was building. That is where to start when an image size moves.
 
-**The lock covers pio, and NOTHING else - the web and mutation stages run
-unserialised.** `tools/slice_verify.py` passes `lock=True` at exactly two call
-sites, both PlatformIO; `run_web_tests()` does not, and neither does the
-mutation stage, which runs the **whole web suite once per patch**. So two
-workers finishing slices at the same time run two full web suites - and on a
-mutation slice, dozens - against one machine's memory, with nothing holding
-them apart.
+**The pio lock covers pio, and nothing else; the gate's web stages have their
+own lock (#405).** `tools/slice_verify.py` passes `lock=True` only at its
+PlatformIO call sites. `run_web_tests()` and the mutation stage hold
+`/tmp/protor2-webtest.lock` instead - a separate lock, never nested in the
+pio one - so two workers' gates run their web suites and mutation stages one
+after the other rather than side by side. A hand-typed `make test-web` takes
+neither lock.
 
-Measured 2026-09-18: two concurrent `test-web` runs from two worktrees put
-eight V8 isolates on an 8-core box while `app.slice` sat against its
-`MemoryMax`; the cgroup returned ENOMEM to userspace, and V8 treats an
+Measured 2026-09-18, before that lock: two concurrent `test-web` runs from two
+worktrees put eight V8 isolates on an 8-core box while `app.slice` sat against
+its `MemoryMax`; the cgroup returned ENOMEM to userspace, and V8 treats an
 allocation failure inside the scavenger as fatal. **A test process died that
 had nothing wrong with it** - run alone, the same file passed 25/25 in 1.5 s.
 The victim is whoever allocates next, not whoever is greedy, so the crash
 names an innocent slice.
 
-**This is the coordinator's to manage, not the worker's.** A worker running the
-gate plainly is doing what its brief says. Until the web and mutation stages
-take the lock too, **stagger the gate runs**: do not let two workers reach
-their verification step together, and treat a slice's gate run as a serialised
-resource in the same way a device session is. A memory-starvation failure in
-another worker's slice is not a defect in the slice it lands on.
+**What is left is the coordinator's to manage, not the worker's.** The gate now
+serialises its own web stages, so gate runs no longer need staggering for that.
+A web suite someone runs by hand, outside the gate, still is not serialised
+against anything. A memory-starvation failure in another worker's slice is not
+a defect in the slice it lands on.
 
 The framework packages are shared by every worktree and are rebuilt **in
 place**, so one worktree's build changes what another links. The rebuild is
@@ -381,8 +477,9 @@ a budgets file's `baseline_*` fields are stamped at one commit, so comparing
 against them charges earlier slices' bytes to this one.
 
 **The gate hashes itself into every block**, and you accept a slice by matching
-blocks character for character. Land changes to the verifier scripts between
-waves, with no worker mid-slice - otherwise its block and your re-run diverge
+blocks character for character. Land changes to the three verifier scripts
+(`tools/slice_verify.py`, `tools/mutation_verify.py`,
+`tools/web_load_trace.cjs`) between waves, with no worker mid-slice - otherwise its block and your re-run diverge
 on the hash, and a clean slice reads as tampered.
 
 ### Parallel epics
@@ -426,16 +523,60 @@ for `MEMPALACE_MCP_IDLE_HOURS`, default 8. Ten panes plus their node processes
 is how this box OOM-killed a Claude session at 8.3 GB on 2026-09-11. Closing a
 slice's pane promptly (see Integration) returns that memory.
 
-**Worktree wings fragment memory.** Auto-save derives the wing from cwd and
-only folds a worktree into its project for `<project>/.claude/worktrees/<wt>`;
-`epic_worktree.py` makes `../wt-<issue>`, a sibling, so every worker mints
-`wing_wt_<issue>`. Measured 2026-09-17: 65 such wings, 220 drawers, invisible
-to the `--wing protoArtoo` search this repo's protocol prescribes. So search
-unscoped, and never read a wing-scoped miss as "no prior art".
+**Search `wing_protoartoo` from every worktree.** `epic_worktree.py` makes
+`../wt-<issue>`, a sibling checkout, and a wing named after that directory
+matches nothing. AGENTS.md "Memory (MemPalace)" names the one wing; a miss
+against any other wing means *no such wing*, never *no prior art*.
 
 ## Reporting
 
 Keep one evolving status comment per epic with the frontier state (running /
-in review / rework / merged). Interrupt the operator only when: a ticket is
-rejected twice, the frontier stalls, an integration conflict is non-trivial,
-or a device session is needed. Otherwise work autonomously.
+in review / rework / merged). Keep it under about 20 KB. When the next edit
+would pass that, post the current body as a new history comment and reset the
+evolving one to the frontier. History comments are append-only.
+
+A worker is done when the last line of its status comment is `WORKER_DONE: ok`
+or `WORKER_DONE: blocked` (a trailing `//` signature does not count). The gate
+JSON alone is not that signal: a gate run made mid-slice writes
+`{"ok": true}` while the worker is still writing its report, and a `--file`
+watcher fired on exactly that on 2026-10-05. Wait on the comment, adding the
+file when the brief names one - with both, ok needs both:
+`python3 tools/wait_worker.py --issue <n> --marker '<!-- worker-status-<n>-<s> -->' [--file /tmp/slice-<s>.json]`.
+An idle pane is not that signal: the gate runs in a sibling pane.
+
+**Record first, escalate second, and escalate only the residue.** A finding is
+written onto the ticket that will act on it (critic protocol step 7) BEFORE
+anything about it reaches the operator - and most findings stop there. Telling
+the operator about a concern you have not recorded converts their attention
+into the only place it lives, which is the failure this rule exists to prevent.
+What reaches them is then the decision, in one line, with the record already
+linked.
+
+**Reaches the operator, batched, with a recommended default:**
+
+- a **decision that is theirs**: product scope, a term or vocabulary, what a
+  droid should do, which hardware is supported, priority between tickets;
+- an **error or a defect that blocks**: the frontier stalled, a ticket rejected
+  twice with the same signature, a non-trivial integration conflict, a
+  toolchain or bench fault nobody can work around, a safety invariant at risk;
+- an act that **needs their approval**: a device session, a shared build
+  configuration or budget change, pushing a shared integration branch, minting
+  a ticket on an epic that is not yours, anything outward-facing or expensive.
+
+**Does NOT reach the operator - route it and carry on:**
+
+- a worker's find you can place on an open sub-issue that owns those files;
+- a ticket defect of your own making: repair the body, say so on the ticket;
+- a criterion that is unreachable from the slice in hand because the files
+  belong to another ticket - move it, with the reason recorded;
+- an acceptance detail, a cut you are entitled to make, a fence you re-cut,
+  a rework you are sending back;
+- another target's or another epic's problem, once it is written on the ticket
+  that owns that target and named in your status comment.
+
+The test before typing a concern to the operator: **"if they say nothing, does
+the work still happen?"** If yes, it was routing, not escalation - the sub-issue
+carries it and the status comment mentions it. If no, ask, and make the ask a
+decision with options and a default rather than a description of a worry.
+
+Otherwise work autonomously.

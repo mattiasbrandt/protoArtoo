@@ -23,7 +23,46 @@ enum RcBindingSource : uint8_t {
     RC_BINDING_PWM,
     RC_BINDING_SBUS1,
     RC_BINDING_SBUS2,
+    // Droid conditions (ADR 0053, #450): the source of a Reaction, a trigger
+    // binding the droid fires itself. None of them is a radio channel, so
+    // none is legal on an axis binding - rcBindingIsValid() below refuses
+    // every one, and nothing on the drive path can be sourced from the drive.
+    // Appended, never inserted: the wire strings are what is stored, but the
+    // radio sources keep their numbers for anything that printed one.
+    RC_BINDING_DROID_SPEED,        // resolved drive speed at or over a threshold
+    RC_BINDING_DROID_HARD_STOP,    // the drive output dropping to zero from speed
+    RC_BINDING_DROID_REST,         // the drive coming to rest and staying there
+    RC_BINDING_DROID_TRACK,        // the sound module starting a track
+    RC_BINDING_DROID_WHEEL_SPEED,  // one wheel's reported speed (feedback drives)
+    RC_BINDING_DROID_WHEEL_AMPS,   // one wheel's reported current (feedback drives)
 };
+
+// Whether a source is a droid condition rather than a radio channel.
+inline bool rcBindingSourceIsDroidCondition(RcBindingSource source) {
+    switch (source) {
+        case RC_BINDING_DROID_SPEED:
+        case RC_BINDING_DROID_HARD_STOP:
+        case RC_BINDING_DROID_REST:
+        case RC_BINDING_DROID_TRACK:
+        case RC_BINDING_DROID_WHEEL_SPEED:
+        case RC_BINDING_DROID_WHEEL_AMPS:
+            return true;
+        case RC_BINDING_NONE:
+        case RC_BINDING_PWM:
+        case RC_BINDING_SBUS1:
+        case RC_BINDING_SBUS2:
+            break;
+    }
+    return false;
+}
+
+// A droid condition has no channel. The stored field still has to hold
+// something, and (source, channel) is what one binding is known by on every
+// surface, so: a per-wheel source carries the wheel there, and every other
+// droid condition carries 1.
+static constexpr uint8_t RC_REACTION_CHANNEL = 1;
+static constexpr uint8_t RC_REACTION_WHEEL_LEFT = 1;
+static constexpr uint8_t RC_REACTION_WHEEL_RIGHT = 2;
 
 struct RcBindingConfig {
     RcBindingSource source;
@@ -78,6 +117,20 @@ inline const char* rcBindingSourceToString(RcBindingSource source) {
             return "sbus1";
         case RC_BINDING_SBUS2:
             return "sbus2";
+        // At most seven characters each: the stored colon form reads the
+        // source into an eight-byte buffer (parseRcTriggerBinding()).
+        case RC_BINDING_DROID_SPEED:
+            return "speed";
+        case RC_BINDING_DROID_HARD_STOP:
+            return "hstop";
+        case RC_BINDING_DROID_REST:
+            return "rest";
+        case RC_BINDING_DROID_TRACK:
+            return "track";
+        case RC_BINDING_DROID_WHEEL_SPEED:
+            return "wspeed";
+        case RC_BINDING_DROID_WHEEL_AMPS:
+            return "wamps";
         case RC_BINDING_NONE:
         default:
             return "none";
@@ -91,6 +144,12 @@ inline const char* rcBindingSourceToLabel(RcBindingSource source) {
         case RC_BINDING_PWM:   return "PWM";
         case RC_BINDING_SBUS1: return "SBUS1";
         case RC_BINDING_SBUS2: return "SBUS2";
+        case RC_BINDING_DROID_SPEED:       return "SPEED";
+        case RC_BINDING_DROID_HARD_STOP:   return "HARD-STOP";
+        case RC_BINDING_DROID_REST:        return "REST";
+        case RC_BINDING_DROID_TRACK:       return "TRACK";
+        case RC_BINDING_DROID_WHEEL_SPEED: return "WHEEL-SPEED";
+        case RC_BINDING_DROID_WHEEL_AMPS:  return "WHEEL-CURRENT";
         case RC_BINDING_NONE:
         default:               return "NONE";
     }
@@ -100,21 +159,20 @@ inline bool parseRcBindingSource(const char* raw, RcBindingSource* out) {
     if (raw == nullptr || out == nullptr) {
         return false;
     }
-    if (strcmp(raw, "none") == 0) {
-        *out = RC_BINDING_NONE;
-        return true;
-    }
-    if (strcmp(raw, "pwm") == 0) {
-        *out = RC_BINDING_PWM;
-        return true;
-    }
-    if (strcmp(raw, "sbus1") == 0) {
-        *out = RC_BINDING_SBUS1;
-        return true;
-    }
-    if (strcmp(raw, "sbus2") == 0) {
-        *out = RC_BINDING_SBUS2;
-        return true;
+    // Every source by the string rcBindingSourceToString() gives it, so the two
+    // cannot name different sets.
+    static constexpr RcBindingSource kSources[] = {
+        RC_BINDING_NONE,              RC_BINDING_PWM,
+        RC_BINDING_SBUS1,             RC_BINDING_SBUS2,
+        RC_BINDING_DROID_SPEED,       RC_BINDING_DROID_HARD_STOP,
+        RC_BINDING_DROID_REST,        RC_BINDING_DROID_TRACK,
+        RC_BINDING_DROID_WHEEL_SPEED, RC_BINDING_DROID_WHEEL_AMPS,
+    };
+    for (RcBindingSource source : kSources) {
+        if (strcmp(raw, rcBindingSourceToString(source)) == 0) {
+            *out = source;
+            return true;
+        }
     }
     return false;
 }
@@ -128,6 +186,14 @@ inline bool rcBindingChannelIsValid(RcBindingSource source, uint8_t channel) {
         case RC_BINDING_SBUS1:
         case RC_BINDING_SBUS2:
             return channel >= 1 && channel <= 18;
+        case RC_BINDING_DROID_SPEED:
+        case RC_BINDING_DROID_HARD_STOP:
+        case RC_BINDING_DROID_REST:
+        case RC_BINDING_DROID_TRACK:
+            return channel == RC_REACTION_CHANNEL;
+        case RC_BINDING_DROID_WHEEL_SPEED:
+        case RC_BINDING_DROID_WHEEL_AMPS:
+            return channel == RC_REACTION_WHEEL_LEFT || channel == RC_REACTION_WHEEL_RIGHT;
         default:
             return false;
     }
@@ -148,7 +214,14 @@ inline bool rcBindingSupportsAnalog(const RcBindingConfig& binding) {
     return false;
 }
 
+// An axis binding (drive speed, drive steer, dome speed, arm, audio). A droid
+// condition is refused here, by name and before anything else: this is the one
+// validator the stored form, POST /api/rc/map and the channel mapper all ask,
+// so an axis can never be sourced from the droid's own state (#450).
 inline bool rcBindingIsValid(const RcBindingConfig& binding) {
+    if (rcBindingSourceIsDroidCondition(binding.source)) {
+        return false;
+    }
     if (!rcBindingChannelIsValid(binding.source, binding.channel)) {
         return false;
     }

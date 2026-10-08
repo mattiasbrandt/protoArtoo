@@ -83,13 +83,3 @@ test("a missing or unrecognized outcome never reads as success", () => {
   assert.strictEqual(feedbackFor("some-future-outcome").kind, "error");
 });
 
-test("every outcome maps to operator-visible text distinct from the others", () => {
-  const feedbackFor = loadActionTestFeedbackForOutcome();
-  const texts = new Set([
-    feedbackFor("queued").text,
-    feedbackFor("queue-full").text,
-    feedbackFor("unavailable").text,
-    feedbackFor("some-future-outcome").text,
-  ]);
-  assert.strictEqual(texts.size, 4, "outcomes must not collapse onto the same operator-visible text");
-});

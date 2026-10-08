@@ -2,9 +2,27 @@
 // data/health_signals.js
 //
 // Shared health indicator derivation for the dashboard traffic-light grid.
-// - Explicit state semantics: off=disabled, warn=degraded/unknown, fail=hard fault
-// - Exposes concise operator summary plus richer backend tooltip detail
-// - Supports stale-data override without mutating transport payloads
+// - Explicit state semantics (GLOSSARY.md "Status Color"): ok=nominal,
+//   warn=degraded and the builder can do something about it, fail=hard fault,
+//   off=not reporting, never asked, not fitted
+// - A field the status frame does not carry reads the Live Reading's Unknown
+//   (GLOSSARY.md "Live Reading"). The word is handed in by the caller rather
+//   than written here, so this model and every surface say the same one
+// - A reading we do not have is off, never warn: amber promises a next move,
+//   and "we have not heard" offers none (#402)
+// - Staleness is not a health state. A stale row keeps the state the
+//   controller last reported; the Status Plate carries the one freshness
+//   statement for the whole surface (GLOSSARY.md "Health Signal", _Avoid_)
+// - A signal is a state and one word. It carries no key=value detail: a raw
+//   field name is not something a builder reads (#298, #422)
+// - protoR2link and the sound link are answered from one word table, which
+//   every page that shows either link reads (readProtoR2link, readSoundLink)
+// - The Dome ESC and the Foot Drive are answered the same way (readDomeEsc,
+//   readFootDrive): green only for something heard back, and what the droid
+//   commands is the detail, never the light (#399)
+// - Memory is judged by its largest free block against one table of heap
+//   floors (HEAP_FLOORS) by one judge (largestBlockState), which
+//   Maintenance's memory rows read too
 // =============================================================================
 (() => {
   const INDICATOR_STATE_LABELS = Object.freeze({
@@ -23,230 +41,337 @@
     "rcCh6",
   ]);
 
-  const hasOwnKey = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
-  const boolText = (value) => (value === true ? "true" : value === false ? "false" : "unknown");
-  const healthSignal = (state, reason = "", detail = reason) => ({ state, reason, detail });
+  // The heap floors, in bytes: the one table, for both chips, that the health
+  // grid here and Maintenance's memory rows both judge by (largestBlockState
+  // below). A reading at or below the warn floor is Low, at or below the
+  // critical floor Critical.
+  //
+  // Only the Internal Data Heap's largest free block (heapLargestBlock) is
+  // judged. The failed requests were 1,552-1,696 B (GET /api/profiler
+  // lastFail, output/bench-auto/artoo-20261005-144651); at the 1 Hz
+  // /api/status samples where failedAllocs advanced in the 2026-10-05 artoo
+  // runs (artoo-20261005-*/samples.jsonl) the largest block read 8,692 to
+  // 21,492, so (inferred) it ran short between samples. The runs with no
+  // failure bottomed at 12,276 (artoo-20261005-112400) and 12,788 (-151007),
+  // so 12,000 / 16,000 stay as they were.
+  //
+  // heapFree has no floor (#355 grilling Q2b): it does not separate a healthy
+  // droid from a failing one. Where allocations failed it read 19,084 to
+  // 29,404 (highest at artoo-20261005-141337 line 322), and on the clean run
+  // artoo-20261005-151007 (0 failures) it read 24,864 in the console sweep,
+  // 27,712 in a shell script and 28,852 on Maintenance. Any floor that caught
+  // the failures would colour a healthy artoo whenever a page is open.
+  //
+  // heapMin has no floor either (#355 grilling Q2): it is the lowest since the
+  // last restart, so after any page load it reads low until a reboot with
+  // nothing failing. That is the plain image's meaning; on a _profiler build
+  // it is a window that restarts on every stream connect
+  // (docs/troubleshooting.md). Both are readings, shown as numbers and never
+  // coloured.
+  const HEAP_FLOORS = Object.freeze({
+    largestCritical: 12000,
+    largestWarn: 16000,
+  });
 
-  const applyStaleHealth = (signal, stale) => {
-    if (!stale || signal.state === "off") return signal;
-    return healthSignal(
-      "warn",
-      "Stale data",
-      "Status stream interrupted; showing last known values"
-    );
+  // The largest free block in bytes, judged against the floors: "ok" above
+  // the warn floor, "warn" at or below it, "fail" at or below the critical.
+  // Every surface judges through this, so a reading on a floor reads the same
+  // on each.
+  const largestBlockState = (bytes) => {
+    if (bytes > HEAP_FLOORS.largestWarn) return "ok";
+    if (bytes > HEAP_FLOORS.largestCritical) return "warn";
+    return "fail";
   };
+
+  const HEAP_WORDS = Object.freeze({ ok: "Normal", warn: "Low", fail: "Critical" });
+
+  const hasOwnKey = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+  const healthSignal = (state, reason = "") => ({ state, reason });
 
   const evaluateSbus = (payload) => {
-    const anyRcEnabled = RC_CHANNEL_KEYS.some((key) => hasOwnKey(payload, key));
-    if (!anyRcEnabled) {
-      return healthSignal(
-        "off",
-        "No RC input",
-        "No rcCh1-rcCh6 keys in payload; RC receiver likely disabled"
-      );
-    }
-    if (payload.sbusHwFailsafe === true) {
-      return healthSignal(
-        "fail",
-        "HW failsafe",
-        `sbusHwFailsafe=true, sbusSignalLost=${boolText(payload.sbusSignalLost)}`
-      );
-    }
-    if (payload.sbusSignalLost === true) {
-      return healthSignal(
-        "fail",
-        "Signal lost",
-        `sbusSignalLost=true, sbusHwFailsafe=${boolText(payload.sbusHwFailsafe)}`
-      );
-    }
-    return healthSignal(
-      "ok",
-      "Frames ok",
-      `sbusSignalLost=${boolText(payload.sbusSignalLost)}, sbusHwFailsafe=${boolText(payload.sbusHwFailsafe)}`
-    );
+    const { state, word } = readRcLink(payload);
+    return healthSignal(state, word);
   };
 
-  const evaluateWifi = (payload) => {
+  // An AP-only droid is a normal droid, so "not joined" is not "degraded" -
+  // and a payload that never carried these keys is one we have not heard from.
+  // Both read off. There is no warn branch here on purpose: the payload
+  // carries no measure of a join that exists and is unhealthy (wifiRssi is 0
+  // whenever the station is not connected - deriveWiFiConnectivityFields,
+  // src/web/api_status_serializers.cpp), and no threshold is defined for it.
+  const evaluateWifi = (payload, unknown) => {
+    const reported = hasOwnKey(payload, "wifiConnected") || hasOwnKey(payload, "wifiClientConnected");
     const connected = payload.wifiConnected === true || payload.wifiClientConnected === true;
-    const wifiRssi = Number(payload.wifiRssi);
-    const rssiText = Number.isFinite(wifiRssi) ? `${wifiRssi} dBm` : "unknown";
-    const detail = `wifiConnected=${boolText(payload.wifiConnected)}, wifiClientConnected=${boolText(payload.wifiClientConnected)}, wifiRssi=${rssiText}`;
-    return connected ? healthSignal("ok", "Connected", detail) : healthSignal("warn", "Disconnected", detail);
+    if (connected) return healthSignal("ok", "Connected");
+    if (reported) return healthSignal("off", "Not joined");
+    return healthSignal("off", unknown);
   };
 
-  const evaluateFilesystem = (payload) => {
-    const ready = payload.littleFsReady === true;
-    return ready
-      ? healthSignal("ok", "Mounted", "littleFsReady=true")
-      : healthSignal("fail", "Not ready", `littleFsReady=${boolText(payload.littleFsReady)}`);
+  // A payload that never carried littleFsReady has not told us the mount
+  // failed; it has told us nothing. Red is "stopped or refused", and claiming
+  // it for a key we were never sent is the same defect as claiming amber.
+  const evaluateFilesystem = (payload, unknown) => {
+    if (!hasOwnKey(payload, "littleFsReady")) return healthSignal("off", unknown);
+    return payload.littleFsReady === true
+      ? healthSignal("ok", "Mounted")
+      : healthSignal("fail", "Not ready");
   };
 
-  const evaluateHeap = (payload) => {
-    const heapBytes = Number(payload.heapFree);
-    const t = (typeof window !== "undefined" && window.PA_HEAP) || {};
-
-    // Judge memory health by the largest allocatable DRAM block — the value
-    // the device's admission control keys on (requests are shed below its
-    // floors: 14000 for new work, 12000 at accept). heapLargestBlock is NOT
-    // used here: it reads a capability mask dominated by leftover IRAM that
-    // malloc can never allocate, so it sits frozen regardless of pressure.
-    const largest = Number(payload.heapLargest8bit);
-    if (Number.isFinite(largest) && largest >= 0) {
-      const warnAt = t.largestWarn ?? 16000;
-      const failAt = t.largestCritical ?? 12000;
-      const free = Number.isFinite(heapBytes) ? `, heapFree=${heapBytes} B` : "";
-      const detail = `heapLargest8bit=${largest} B (warn <=${warnAt} B, fail <=${failAt} B${free})`;
-      if (largest > warnAt) return healthSignal("ok", "Normal", detail);
-      if (largest > failAt) return healthSignal("warn", "Low", detail);
-      return healthSignal("fail", "Critical", detail);
-    }
-
-    // Older firmware without heapLargest8bit: fall back to total free heap.
-    if (!Number.isFinite(heapBytes) || heapBytes < 0) {
-      return healthSignal(
-        "warn",
-        "No data",
-        `heapFree=${String(payload.heapFree ?? "missing")} (expected non-negative bytes)`
-      );
-    }
-
-    const warnAt = t.freeWarn ?? 65000;
-    const failAt = t.freeCritical ?? 40000;
-    const detail = `heapFree=${heapBytes} B (warn <=${warnAt} B, fail <=${failAt} B)`;
-    if (heapBytes > warnAt) return healthSignal("ok", "Normal", detail);
-    if (heapBytes > failAt) return healthSignal("warn", "Low", detail);
-    return healthSignal("fail", "Critical", detail);
+  const evaluateHeap = (payload, unknown) => {
+    // Judge memory health by the Internal Data Heap's largest free block
+    // (heapLargestBlock, include/heap_reading.h): the droid's own RAM, which
+    // counts no IRAM on the artoo-esp32 and no PSRAM on the ESP32-P4. NOT
+    // heapLargest8bit: that is the Buffer Reading admission sheds requests by,
+    // and on the P4 it counts megabytes of PSRAM, so it stays high while the
+    // internal heap runs out.
+    //
+    // A payload without heapLargestBlock (older firmware) is not judged from
+    // heapFree, which has no floor (HEAP_FLOORS): it is a reading we cannot
+    // judge, so grey.
+    const largest = Number(payload.heapLargestBlock);
+    if (!Number.isFinite(largest) || largest < 0) return healthSignal("off", unknown);
+    const state = largestBlockState(largest);
+    return healthSignal(state, HEAP_WORDS[state]);
   };
 
-  const evaluateDomeLink = (payload) => {
-    if (!payload.dome_link || typeof payload.dome_link !== "object") {
-      return healthSignal("off", "Disabled", "dome_link block absent from payload");
-    }
+  // ---------------------------------------------------------------------------
+  // protoR2link and the sound link: one word table for both
+  //
+  // The two share one serial line. protoR2link hands it to sound only while it
+  // runs on WiFi fallback and takes it back at will (src/tasks/dome_link.cpp,
+  // releaseUartToAudioRx and domeUartAcquire), so sound can be held by
+  // protoR2link and protoR2link is never held by sound: a protoR2link "lost"
+  // is always a real loss. The droid already says which state each link is in
+  // - dome_link.state, and the sound block's rx_status - and this is the one
+  // place a page turns that into a word and a light. No page reads the line
+  // owner or combines it with a state to reach a verdict of its own (#422,
+  // GLOSSARY.md "Health Signal").
+  //
+  // Each answer is { state, word, short }: `state` is the light (ok green,
+  // fail red, off grey - neither table has an amber row), `word` is what a
+  // page prints, and `short` is the Status Plate's form of it, set there in
+  // capitals. `short` is the word itself wherever the table gives no short
+  // form.
+  //
+  // `words` carries the Live Reading's two words (window.PALiveReading):
+  // `unknown` for a link the frames never carry, and `waiting` for a
+  // status of null, before the droid has sent a good frame.
+  // ---------------------------------------------------------------------------
+  const linkAnswer = (state, word, short = word) => ({ state, word, short });
 
-    const linkState = payload.dome_link.state;
-    const linkDetail = typeof payload.dome_link.detail === "string" && payload.dome_link.detail.length > 0
-      ? payload.dome_link.detail
-      : "n/a";
+  // While linked, the transport IS the value: the glossary's operator labels,
+  // and the chip's short form of each (GLOSSARY.md "protoR2link Transport
+  // Visibility").
+  const PROTO_R2LINK_TRANSPORT_WORDS = Object.freeze({
+    uart: linkAnswer("ok", "UART (slip ring)", "UART"),
+    wifi: linkAnswer("ok", "WiFi (fallback)", "WIFI"),
+  });
 
-    if (linkState === "disabled") {
-      return healthSignal(
-        "off",
-        "Disabled",
-        "state=disabled (protoR2link disabled in config)"
-      );
+  const PROTO_R2LINK_WORDS = Object.freeze({
+    disabled: linkAnswer("off", "Off"),
+    // Enabled and never answered: a droid with no dome board fitted reads
+    // exactly this, so it is not reporting rather than degraded.
+    not_seen: linkAnswer("off", "Not seen"),
+    // Heard, then stopped.
+    lost: linkAnswer("fail", "Lost"),
+  });
+
+  const SOUND_LINK_WORDS = Object.freeze({
+    off: linkAnswer("off", "Off"),
+    // protoR2link holds the shared line, so nobody can ask the module. Not
+    // reporting, and never the module's fault.
+    held: linkAnswer("off", "Held by protoR2link"),
+    noAnswer: linkAnswer("fail", "No answer"),
+  });
+
+  const requireLinkWords = (words, status) => {
+    const { unknown, waiting } = words || {};
+    if (typeof unknown !== "string" || unknown === "") {
+      throw new TypeError("a link reading needs the Live Reading's word for an unknown field");
     }
-    if (linkState === "connected") {
-      const transport = payload.dome_link.transport;
-      const transportLabel = transport === "uart" ? " - UART (slip ring)"
-        : transport === "wifi" ? " - WiFi (fallback)"
-        : "";
-      const ownerDetail = payload.dome_link.uart_owned_by_dome === true
-        ? ", UART2 owned by protoR2link"
-        : "";
-      return healthSignal(
-        "ok",
-        `Connected${transportLabel}`,
-        `state=connected, detail=${linkDetail}${ownerDetail}`
-      );
+    if (status === null && (typeof waiting !== "string" || waiting === "")) {
+      throw new TypeError("a link reading of no frame needs the Live Reading's Waiting word");
     }
-    if (linkState === "lost") {
-      return healthSignal("fail", "Heartbeat lost", `state=lost, detail=${linkDetail}`);
-    }
-    if (linkState === "not_seen") {
-      return healthSignal("warn", "Not seen", `state=not_seen, detail=${linkDetail}`);
-    }
-    if (typeof linkState === "string" && linkState.length > 0) {
-      return healthSignal(
-        "warn",
-        `Unknown (${linkState})`,
-        `state=${linkState}, detail=${linkDetail}`
-      );
-    }
-    return healthSignal("warn", "No status", `state=missing, detail=${linkDetail}`);
+    return { unknown, waiting };
   };
 
-  const evaluateSound = (payload) => {
-    if (!hasOwnKey(payload, "audio")) {
-      return healthSignal("off", "Disabled", "audio block absent from payload");
-    }
-    if (!payload.audio || typeof payload.audio !== "object") {
-      return healthSignal(
-        "warn",
-        "Invalid payload",
-        `audio type=${typeof payload.audio} (expected object)`
-      );
-    }
+  const isObject = (value) => value !== null && typeof value === "object";
 
-    const soundState = payload.audio.state;
-    const soundDetail = typeof payload.audio.detail === "string" && payload.audio.detail.length > 0
-      ? payload.audio.detail
-      : "n/a";
-    const soundRxStatus = payload.audio.rx_status;
-    const soundRxDetail = typeof payload.audio.rx_detail === "string" && payload.audio.rx_detail.length > 0
-      ? payload.audio.rx_detail
-      : soundDetail;
-
-    if (soundRxStatus === "blocked_by_dome_uart") {
-      return healthSignal("warn", "Status unavailable", soundRxDetail);
+  // protoR2link, read from the status frame's dome_link block. The firmware
+  // emits that block on every frame (src/web/web_server.cpp), so a frame
+  // without it is one that never carries it.
+  const readProtoR2link = (status, words) => {
+    const { unknown, waiting } = requireLinkWords(words, status);
+    if (status === null) return linkAnswer("off", waiting);
+    const link = isObject(status) ? status.dome_link : undefined;
+    if (!isObject(link)) return linkAnswer("off", unknown);
+    if (link.state === "connected") {
+      return PROTO_R2LINK_TRANSPORT_WORDS[link.transport] || linkAnswer("ok", unknown);
     }
-
-    if (payload.audio.link_ok === false) {
-      return healthSignal(
-        "fail",
-        "No module response",
-        `link_ok=false, state=${soundState}, rx_status=${soundRxStatus ?? "unknown"}`
-      );
-    }
-
-    if (soundState === "playing") {
-      return healthSignal("ok", "Playing", `state=playing, detail=${soundDetail}`);
-    }
-    if (soundState === "idle") {
-      return healthSignal("ok", "Idle", `state=idle, detail=${soundDetail}`);
-    }
-    if (typeof soundState === "string" && soundState.length > 0) {
-      return healthSignal(
-        "warn",
-        `Unknown (${soundState})`,
-        `state=${soundState}, detail=${soundDetail}`
-      );
-    }
-    return healthSignal("warn", "No state", `state=missing, detail=${soundDetail}`);
+    return PROTO_R2LINK_WORDS[link.state] || linkAnswer("off", unknown);
   };
 
-  const evaluateDomeEsc = (payload) => {
-    if (payload.domeEnabled !== true) {
-      return healthSignal(
-        "off",
-        "Disabled",
-        `domeEnabled=${boolText(payload.domeEnabled)}`
-      );
+  // The sound link, read from a sound block: the status frame's `audio`, or
+  // the same fields as GET /api/audio answers them (the Sound page reads
+  // both). The frame has no `audio` key when the sound component is switched
+  // off in config, so an absent block is Off rather than Unknown.
+  const readSoundBlock = (audio, { unknown }) => {
+    if (audio === undefined) return SOUND_LINK_WORDS.off;
+    if (!isObject(audio)) return linkAnswer("off", unknown);
+    // Saved on but off this boot: no module is behind it (#370).
+    if (audio.output === "off") return SOUND_LINK_WORDS.off;
+    // Ahead of link_ok on purpose: a held line also reports link_ok false,
+    // and only rx_status tells it from a module that did not answer.
+    if (audio.rx_status === "blocked_by_dome_uart") return SOUND_LINK_WORDS.held;
+    if (audio.link_ok === true) {
+      // The fitted module's registry display name, as its driver reports it.
+      const name = typeof audio.driver === "string" && audio.driver !== "" ? audio.driver : unknown;
+      return linkAnswer("ok", name);
     }
+    if (audio.link_ok === false) return SOUND_LINK_WORDS.noAnswer;
+    return linkAnswer("off", unknown);
+  };
 
-    const domeData = payload.domeEsc && typeof payload.domeEsc === "object" ? payload.domeEsc : null;
-    const domeState = domeData ? domeData.state : null;
-    const domeDetail = domeData && typeof domeData.detail === "string" && domeData.detail.length > 0
-      ? domeData.detail
-      : "n/a";
+  const readSoundLink = (status, words) => {
+    const checked = requireLinkWords(words, status);
+    if (status === null) return linkAnswer("off", checked.waiting);
+    return readSoundBlock(isObject(status) ? status.audio : undefined, checked);
+  };
 
-    if (domeState === "spinning") {
-      return healthSignal("ok", "Spinning", `domeEnabled=true, state=spinning, detail=${domeDetail}`);
-    }
-    if (domeState === "idle") {
-      return healthSignal("ok", "Idle", `domeEnabled=true, state=idle, detail=${domeDetail}`);
-    }
+  // ---------------------------------------------------------------------------
+  // The Dome ESC and the Foot Drive: one word table each, the shape Sound's is
+  //
+  // Both rows used to light green on what the droid COMMANDS - a target speed,
+  // a drive command - which is not a report (GLOSSARY.md "Status Color": green
+  // is nominal and reporting). Each answer is linkAnswer()'s { state, word,
+  // short } plus `detail`, the firmware's own line for what is commanded
+  // (src/web/status_json.cpp: "Target 0%", "Command 120/0"), which a page may
+  // print under the word and never lights.
+  // ---------------------------------------------------------------------------
+  const commanded = (answer, entry) =>
+    ({ ...answer, detail: isObject(entry) && typeof entry.detail === "string" ? entry.detail : "" });
+
+  // A PWM ESC has no return wire, so nothing is ever heard from it: fitted, it
+  // is grey and its word says what is commanded. Never green, never red.
+  const DOME_ESC_DISABLED = linkAnswer("off", "Disabled");
+  const DOME_ESC_WORDS = Object.freeze({
+    idle: linkAnswer("off", "Idle"),
+    spinning: linkAnswer("off", "Spinning"),
+  });
+
+  const readDomeEsc = (status, { unknown }) => {
+    if (!isObject(status) || status.domeEnabled !== true) return { ...DOME_ESC_DISABLED, detail: "" };
+    const entry = isObject(status.domeEsc) ? status.domeEsc : null;
+    const domeState = entry ? entry.state : null;
+    if (Object.hasOwn(DOME_ESC_WORDS, domeState)) return commanded(DOME_ESC_WORDS[domeState], entry);
+    // A state we have no branch for is one we do not understand, which is not
+    // reporting rather than degraded. The state string stays in the word so
+    // the row still says what arrived.
     if (typeof domeState === "string" && domeState.length > 0) {
-      return healthSignal(
-        "warn",
-        `Unknown (${domeState})`,
-        `domeEnabled=true, state=${domeState}, detail=${domeDetail}`
-      );
+      return commanded(linkAnswer("off", `${unknown} (${domeState})`), entry);
     }
-    return healthSignal(
-      "warn",
-      "No status",
-      "domeEnabled=true, dome block missing state"
-    );
+    return { ...linkAnswer("off", unknown), detail: "" };
+  };
+
+  // The Foot Drive is heard only through its backend's feedback: the frame
+  // carries the `hoverboard` block while those readings are valid, and drops it
+  // once they go stale (src/web/status_json.cpp, src/tasks/drive.cpp).
+  //
+  // The `drive` key follows the SAVED Foot Drive toggle, not what this boot
+  // started: the frame reads it from the live config cache
+  // (src/web/web_server.cpp captureStatusJsonInputs), while DriveTask reads it
+  // once at boot (enableDrive applies at reboot). So no key is "switched off
+  // in Configuration", and a toggle saved on and not yet restarted carries the
+  // key with no drive running behind it - which reads "No answer" here until
+  // the restart. Telling those apart needs a boot-state field in the frame.
+  //
+  // The word for a drive heard is keyed off that block's own name: the frame
+  // carries no name for the backend, and the hoverboard is the only one the
+  // firmware builds (include/drive_backend.h). A second backend needs a name
+  // field in the frame before this word can be its. "No answer" is red for the
+  // same reason: the hoverboard declares that it reports back
+  // (DRIVE_CAP_REPORTS_FEEDBACK), so its silence is a fault. A backend that
+  // declares no feedback must read grey instead, as Wiring's Foot Drive row
+  // does from GET /api/identity/components; this reader does not ask, so
+  // such a backend needs that question added here.
+  const FOOT_DRIVE_WORDS = Object.freeze({
+    off: linkAnswer("off", "Off"),
+    hoverboard: linkAnswer("ok", "Hoverboard"),
+    noAnswer: linkAnswer("fail", "No answer"),
+  });
+
+  const readFootDrive = (status) => {
+    const entry = isObject(status) ? status.drive : undefined;
+    if (entry === undefined) return { ...FOOT_DRIVE_WORDS.off, detail: "" };
+    if (isObject(status.hoverboard)) return commanded(FOOT_DRIVE_WORDS.hoverboard, entry);
+    return commanded(FOOT_DRIVE_WORDS.noAnswer, entry);
+  };
+
+  // ---------------------------------------------------------------------------
+  // The RC receiver's link: one word table, read by Health, the Status Plate's
+  // RC LINK chip (`short`) and Wiring's receiver row (#399)
+  //
+  // Every receiver input is read, rcCh1..rcCh6. rcCh1 is the drive receiver
+  // except in single_sbus + useCh2, where the firmware routes it to rcCh2 and
+  // omits rcCh1 entirely (src/web/web_server.cpp, the enableRcCh1 guard), so
+  // reading rcCh1 alone would say "no RC" on a working droid. rcCh3..rcCh6
+  // only ever report `ready` or `standby`, so they never outrank a link state;
+  // with no rcCh1/rcCh2 on they say a spare wire is on, not that nothing is.
+  //
+  // The worst state across every receiver input that reports one, plus the
+  // hardware failsafe bit - the half that would otherwise be missed: a radio
+  // switched off makes the receiver assert failsafe while it keeps sending
+  // frames, so the channel still reads `active` and only `sbusHwFailsafe` says
+  // the link is dead. The channel states are the firmware's
+  // (src/web/status_json.cpp). `sbusSignalLost` is not read: the boot arms
+  // the SBUS watchdog before any frame (src/main.cpp), so it is true while a
+  // receiver has simply not been heard yet, which `not_seen` already says.
+  //
+  // Standard PWM inputs say `ready`: the firmware publishes that they are
+  // enabled and nothing whatever about whether pulses arrive (PWM loss submits
+  // a zero frame and raises no failsafe, src/tasks/rc_input.cpp
+  // dispatchStandardPwmInputs). So they read Unmeasured, grey - nothing is
+  // wrong, nothing was measured. The plate said "PWM" until the operator
+  // settled that word on 2026-09-17: a mode reads like a thing that is fine.
+  // ---------------------------------------------------------------------------
+  const RC_LINK_WORDS = Object.freeze({
+    failsafe: linkAnswer("fail", "HW failsafe", "Failsafe"),
+    lost: linkAnswer("fail", "Signal lost", "Lost"),
+    noFrames: linkAnswer("off", "No frames"),
+    framesOk: linkAnswer("ok", "Frames ok", "OK"),
+    unmeasured: linkAnswer("off", "Unmeasured"),
+    standby: linkAnswer("off", "Standby"),
+    // No receiver input switched on at all.
+    noInput: linkAnswer("off", "No RC input", "Off"),
+  });
+
+  const readRcLink = (status) => {
+    if (isObject(status) && status.sbusHwFailsafe === true) return RC_LINK_WORDS.failsafe;
+    const states = RC_CHANNEL_KEYS.filter((key) => isObject(status) && hasOwnKey(status, key))
+      .map((key) => (isObject(status[key]) ? status[key].state : undefined));
+    if (states.length === 0) return RC_LINK_WORDS.noInput;
+    if (states.includes("signal_lost")) return RC_LINK_WORDS.lost;
+    if (states.includes("not_seen")) return RC_LINK_WORDS.noFrames;
+    if (states.includes("active")) return RC_LINK_WORDS.framesOk;
+    if (states.includes("ready")) return RC_LINK_WORDS.unmeasured;
+    return RC_LINK_WORDS.standby;
+  };
+
+  const evaluateDomeLink = (payload, unknown) => {
+    const { state, word } = readProtoR2link(payload, { unknown });
+    return healthSignal(state, word);
+  };
+
+  const evaluateSound = (payload, unknown) => {
+    const { state, word } = readSoundLink(payload, { unknown });
+    return healthSignal(state, word);
+  };
+
+  // Health's row is one line, so the commanded detail rides after the word
+  // ("Idle, Target 0%"): it says what the grey is about.
+  const evaluateDomeEsc = (payload, unknown) => {
+    const { state, word, detail } = readDomeEsc(payload, { unknown });
+    return healthSignal(state, detail ? `${word}, ${detail}` : word);
   };
 
   const HEALTH_EVALUATORS = Object.freeze({
@@ -259,28 +384,39 @@
     "h-dome-esc": evaluateDomeEsc,
   });
 
-  const deriveHealthSignals = (payload, options = {}) => {
-    const stale = options && options.stale === true;
+  // `unknown` is the Live Reading's word for a field the frame does not carry
+  // (window.PALiveReading.UNKNOWN). Required: a model that fell back to a word
+  // of its own is exactly the drift the Live Reading exists to stop.
+  const deriveHealthSignals = (payload, { unknown } = {}) => {
+    if (typeof unknown !== "string" || unknown === "") {
+      throw new TypeError("deriveHealthSignals needs the Live Reading's word for an unknown field");
+    }
     const safePayload = payload && typeof payload === "object" ? payload : {};
 
     return Object.entries(HEALTH_EVALUATORS).map(([id, evaluate]) => {
-      const signal = evaluate(safePayload);
-      const normalized = signal && typeof signal === "object"
+      const signal = evaluate(safePayload, unknown);
+      const resolved = signal && typeof signal === "object"
         ? signal
-        : healthSignal("warn", "Invalid state", "Health evaluator returned invalid shape");
-      const resolved = applyStaleHealth(normalized, stale);
+        : healthSignal("off", "Invalid state");
       return {
         id,
         state: resolved.state,
         reason: resolved.reason || "",
-        detail: resolved.detail || "",
       };
     });
   };
 
   const api = Object.freeze({
     INDICATOR_STATE_LABELS,
+    HEAP_FLOORS,
+    largestBlockState,
     deriveHealthSignals,
+    readProtoR2link,
+    readSoundLink,
+    readDomeEsc,
+    readFootDrive,
+    readRcLink,
+    RC_LINK_WORDS,
   });
 
   if (typeof window !== "undefined") {

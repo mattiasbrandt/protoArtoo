@@ -264,7 +264,7 @@ bool webIsMainFrameNavigation(const char* secFetchMode, const char* accept) {
         return strcmp(secFetchMode, "navigate") == 0;
     }
 
-    // Fallback for clients that omit the mode. A navigating browser leads its
+    // Fallback for clients that omit the mode. A navigating browser wires its
     // Accept with text/html; asset and API callers do not.
     if (accept == nullptr) {
         return false;
@@ -278,13 +278,43 @@ bool webIsMainFrameNavigation(const char* secFetchMode, const char* accept) {
 
 // The opaque session bundles the rate limiter, heap cache, and sampler function,
 // so the calling layer owns one handle rather than threading through separate
-// parameters. The pure decision functions remain directly reachable for tests.
+// parameters. The decision itself is webAcceptDecide(); the session only adds
+// the cache in front of the sampler.
 struct WebAdmissionSession {
     WebAcceptRateLimiter limiter;
     WebHeapSampleCache heapSample;
     size_t (*sampler)(void* ctx);
     void* samplerCtx;
 };
+
+namespace {
+
+// The cache interval is a constant for now; future work may make it
+// configurable. It defaults to 100ms, matching PA_ACCEPT_HEAP_SAMPLE_MIN_INTERVAL_MS.
+constexpr uint32_t kHeapSampleIntervalMs = 100;
+
+// What webAcceptDecide() samples through when a session decides: the session
+// and the decision's clock, so the sampler can refresh the cache on the same
+// nowMs the rate check used.
+struct SessionSampleCtx {
+    WebAdmissionSession* session;
+    uint32_t nowMs;
+};
+
+// Refresh the session's cached sample if it is due, then return it. Walking
+// the heap happens here and only here, and webAcceptDecide() calls this only
+// after the rate check has passed.
+size_t sessionCachedSample(void* ctx) {
+    SessionSampleCtx* c = static_cast<SessionSampleCtx*>(ctx);
+    WebAdmissionSession* session = c->session;
+    if (webHeapSampleDue(&session->heapSample, c->nowMs, kHeapSampleIntervalMs)) {
+        const size_t largest = session->sampler(session->samplerCtx);
+        webHeapSampleStore(&session->heapSample, c->nowMs, largest);
+    }
+    return session->heapSample.value;
+}
+
+}  // namespace
 
 WebAdmissionSession* webAdmissionSessionCreate(uint32_t nowMs, size_t (*sampler)(void* ctx),
                                                void* samplerCtx) {
@@ -303,48 +333,14 @@ WebAcceptDecision webAdmissionSessionConnectionDecide(WebAdmissionSession* sessi
                                                       uint32_t nowMs, uint32_t burst,
                                                       uint32_t perSecond,
                                                       size_t minLargestFreeBlock) {
-    // Implement the connection admission decision, encapsulating the rate
-    // limiter, heap cache, and sampler. Rate is checked before heap: the rate
-    // check is arithmetic on state already in the limiter, whereas sampling the
-    // heap may cost a walk. A paced-out connection must never trigger that walk.
-    //
-    // This reimplements the core logic of webAcceptDecide() with cache
-    // management built in, so the caller owns one opaque session reference.
-    // The pure function webAcceptDecide() remains directly reachable for native
-    // tests, keeping the decision logic independently testable (ADR 0011).
-
-    // Refill the rate limiter for elapsed time, clamped to burst size.
-    // Unsigned subtraction handles millisecond counter rollover correctly.
-    constexpr uint32_t kTokenMilli = 1000u;
-    const uint32_t elapsedMs = nowMs - session->limiter.lastRefillMs;
-    session->limiter.lastRefillMs = nowMs;
-
-    const uint32_t capMilli = burst * kTokenMilli;
-    const uint64_t refilled =
-        (uint64_t)session->limiter.tokensMilli + (uint64_t)elapsedMs * (uint64_t)perSecond;
-    session->limiter.tokensMilli = refilled > capMilli ? capMilli : (uint32_t)refilled;
-
-    // Rate check: this is the only thing a paced-out connection does.
-    if (session->limiter.tokensMilli < kTokenMilli) {
-        return WebAcceptDecision::kRejectRate;
-    }
-
-    // Heap check: refresh the cache if needed, then check against the floor.
-    // The cache interval is a constant for now; future work may make it
-    // configurable. It defaults to 100ms, matching PA_ACCEPT_HEAP_SAMPLE_MIN_INTERVAL_MS.
-    constexpr uint32_t kHeapSampleIntervalMs = 100;
-    if (webHeapSampleDue(&session->heapSample, nowMs, kHeapSampleIntervalMs)) {
-        const size_t largest = session->sampler(session->samplerCtx);
-        webHeapSampleStore(&session->heapSample, nowMs, largest);
-    }
-
-    if (session->heapSample.value < minLargestFreeBlock) {
-        return WebAcceptDecision::kRejectHeap;
-    }
-
-    // Admitted: take a token and accept the connection.
-    session->limiter.tokensMilli -= kTokenMilli;
-    return WebAcceptDecision::kAdmit;
+    // One copy of the decision: webAcceptDecide() refills, checks the rate,
+    // and only then calls the sampler, so a paced-out connection never walks
+    // the heap. The session supplies the cache through sessionCachedSample(),
+    // which means the native tests of webAcceptDecide() cover the code the
+    // server runs.
+    SessionSampleCtx ctx{session, nowMs};
+    return webAcceptDecide(&session->limiter, nowMs, burst, perSecond, sessionCachedSample, &ctx,
+                           minLargestFreeBlock);
 }
 
 size_t webAdmissionSessionGetCachedHeapSample(WebAdmissionSession* session) {

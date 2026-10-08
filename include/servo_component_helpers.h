@@ -1,11 +1,11 @@
 // =============================================================================
 // include/servo_component_helpers.h
 //
-// Pure helpers for servo component type conversion and default calibration.
+// Pure helpers for servo component type conversion.
 // No Arduino, no FreeRTOS, no queues  --  safe to include in native unit tests.
 //
-// Extracted from src/web/api_estop.cpp so type conversion and default
-// logic can be exercised without hardware dependencies.
+// Extracted from src/web/api_estop.cpp so type conversion can be exercised
+// without hardware dependencies.
 // =============================================================================
 #pragma once
 
@@ -65,61 +65,5 @@ inline ServoComponentType parseServoCompType(const char* s) {
         return SERVO_COMP_MG90S;
     if (strcmp(s, "rgb") == 0)
         return SERVO_COMP_RGB;
-    return SERVO_COMP_NONE;
-}
-
-// -----------------------------------------------------------------------------
-// servoTypeDefaultOpen()
-// Return default "open" pulse width in microseconds for a given servo type.
-//
-//   MG996R: 2000 us (standard hobby servo range)
-//   MG90S:  2500 us (micro servo full range)
-//   RGB/none: 1500 us (neutral position)
-// -----------------------------------------------------------------------------
-inline uint16_t servoTypeDefaultOpen(ServoComponentType t) {
-    if (t == SERVO_COMP_MG996R)
-        return 2000;
-    if (t == SERVO_COMP_MG90S)
-        return 2500;
-    return 1500;  // neutral for rgb/none
-}
-
-// -----------------------------------------------------------------------------
-// servoTypeDefaultClose()
-// Return default "close" pulse width in microseconds for a given servo type.
-//
-//   MG996R: 1000 us (standard hobby servo range)
-//   MG90S:  500 us (micro servo full range)
-//   RGB/none: 1500 us (neutral position)
-// -----------------------------------------------------------------------------
-inline uint16_t servoTypeDefaultClose(ServoComponentType t) {
-    if (t == SERVO_COMP_MG996R)
-        return 1000;
-    if (t == SERVO_COMP_MG90S)
-        return 500;
-    return 1500;  // neutral for rgb/none
-}
-
-// -----------------------------------------------------------------------------
-// isValidServoCompType()
-// Validate that a type value is within the valid enum range.
-//
-// Valid range: SERVO_COMP_NONE (0) through SERVO_COMP_RGB (3)
-// Returns false for values > SERVO_COMP_RGB
-// -----------------------------------------------------------------------------
-inline bool isValidServoCompType(uint8_t rawValue) {
-    return rawValue <= SERVO_COMP_RGB;
-}
-
-// -----------------------------------------------------------------------------
-// clampServoCompType()
-// Clamp an arbitrary value to a valid ServoComponentType.
-//
-// Values > SERVO_COMP_RGB are clamped to SERVO_COMP_NONE
-// This is useful for sanitizing NVS/config values
-// -----------------------------------------------------------------------------
-inline ServoComponentType clampServoCompType(uint8_t rawValue) {
-    if (rawValue <= SERVO_COMP_RGB)
-        return static_cast<ServoComponentType>(rawValue);
     return SERVO_COMP_NONE;
 }

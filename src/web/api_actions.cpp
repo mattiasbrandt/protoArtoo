@@ -136,7 +136,14 @@ void handleActionsTestPost(WebRequest& req) {
             outcomeStr = "queue-full";
             ok = false;
             break;
+        // The last three answer a Marcduino binding's line (#449), which this
+        // route never dispatches: it sends no payload, and the guard above
+        // refuses both payload-needing Marcduino targets first. Mapped onto
+        // the existing token rather than a new one the page would not know.
         case RcDispatchOutcome::kBlockedByState:
+        case RcDispatchOutcome::kBlockedByEstop:
+        case RcDispatchOutcome::kOutputUndriven:
+        case RcDispatchOutcome::kNotExecutable:
             outcomeStr = "unavailable";
             ok = false;
             break;

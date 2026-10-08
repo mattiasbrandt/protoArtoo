@@ -3,7 +3,6 @@
 //
 // Native tests for T11 mood-map helpers.
 // Covers:
-// - mask validation bounds (0..0x0FFF)
 // - API JSON payload format and size budget
 // - round-trip JSON decode fidelity for quiet/mid/full/awakeplus
 // =============================================================================
@@ -17,12 +16,6 @@ void setUp() {
 }
 
 void tearDown() {
-}
-
-void test_mask_validation_bounds() {
-    TEST_ASSERT_TRUE(isValidMoodCategoryMaskValue(0));
-    TEST_ASSERT_TRUE(isValidMoodCategoryMaskValue(0x0FFF));
-    TEST_ASSERT_FALSE(isValidMoodCategoryMaskValue(0x1000));
 }
 
 void test_format_mood_map_json_expected_keys_and_values() {
@@ -74,7 +67,6 @@ void test_mood_map_json_round_trip() {
 
 int main() {
     UNITY_BEGIN();
-    RUN_TEST(test_mask_validation_bounds);
     RUN_TEST(test_format_mood_map_json_expected_keys_and_values);
     RUN_TEST(test_format_mood_map_json_budget_under_128_bytes);
     RUN_TEST(test_mood_map_json_round_trip);

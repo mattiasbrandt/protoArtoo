@@ -17,6 +17,7 @@ import vm from "node:vm";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { shippedWords } from "./shipped_words.cjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../../data");
@@ -25,6 +26,20 @@ const dataDir = join(__dirname, "../../../data");
 const bootstrapFile = readFileSync(join(dataDir, "page_bootstrap.js"), "utf-8");
 const part2Marker = bootstrapFile.indexOf("// =========================== PART 2");
 const bootstrapPart1Src = bootstrapFile.substring(bootstrapFile.indexOf("(() => {"), part2Marker);
+
+// The status stream and the Live Reading every surface reads the droid's state
+// from, run for real rather than stubbed: a stub here once answered "no stream,
+// nothing cached" to every surface, so no test through this harness could see
+// what a surface did with a frame (#419).
+const statusStreamSrc = readFileSync(join(dataDir, "status_stream.js"), "utf-8");
+const liveReadingSrc = readFileSync(join(dataDir, "live_reading.js"), "utf-8");
+
+// What every surface's document loads after data/web_api.js, as data/index.html
+// orders it: the overlay (Escape, the question, the receipt; window.PAOverlay)
+// and the Operator Shell, which publishes the act every surface draws its
+// buttons with (window.PAUi, #460).
+const overlaySrc = readFileSync(join(dataDir, "overlay.js"), "utf-8");
+const shellSrc = readFileSync(join(dataDir, "shell.js"), "utf-8");
 
 // A stub element that answers any property access with something plausible, so
 // module-level wiring never crashes on an element this test does not care
@@ -81,6 +96,55 @@ const escapeForTest = (value) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
+// The Operator Shell's window.PAUi, from the shipped shell.js run in a context
+// of its own. This harness's document is one surface with no shell chrome
+// around it, and under the permissive stub every #shell-* lookup would answer:
+// run in the surface's own context, the shell would render its rail, load the
+// droid's identity and register a section of its own, all of it in the
+// request log a test asserts on. So the shell runs beside the surface, the way
+// partsGlobals() below runs the parts catalog, and only what it publishes is
+// handed over. Its transport never answers and its timers never run.
+export const operatorShellUi = () => {
+  const never = () => new Promise(() => {});
+  const shellWindow = {
+    PAApi: { ...shippedWords(), ApiError, request: never, get: never, postForm: never, postJson: never },
+    PAUtils: { escapeHtml: escapeForTest, escapeAttr: escapeForTest },
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    location: { origin: "http://device", href: "http://device/", hash: "" },
+    localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    matchMedia: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+  };
+  const noTimer = () => 0;
+  const shellContext = {
+    window: shellWindow,
+    document: {
+      readyState: "complete",
+      visibilityState: "visible",
+      body: makeElement(),
+      documentElement: makeElement(),
+      getElementById: () => null,
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: () => makeElement(),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    },
+    console: { log: () => {}, warn: () => {}, error: () => {}, info: () => {} },
+    setTimeout: noTimer,
+    clearTimeout: () => {},
+    setInterval: noTimer,
+    clearInterval: () => {},
+  };
+  Object.assign(shellWindow, { setTimeout: noTimer, clearTimeout: () => {}, setInterval: noTimer, clearInterval: () => {} });
+  shellContext.globalThis = shellContext;
+  vm.createContext(shellContext);
+  for (const [name, src] of [["status_stream.js", statusStreamSrc], ["live_reading.js", liveReadingSrc], ["shell.js", shellSrc]]) {
+    vm.runInContext(src, shellContext, { filename: name });
+  }
+  return shellWindow.PAUi;
+};
+
 class ApiError extends Error {
   constructor(message, { kind = "network", status = 0 } = {}) {
     super(message);
@@ -96,7 +160,14 @@ class ApiError extends Error {
 // call with (wrapped as { data } unless it already looks like a response), or
 // throw to fail it. Every call is appended to `requests` first, so a rejected
 // call is still visible to the test.
-export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, overrides = {} } = {}) => {
+//
+// chain names shipped data/ files the surface's document loads between the Live
+// Reading and the surface itself (its data-scripts), run in this same context
+// as a browser runs them. A module the page shares a window with - data/outputs.js
+// reads the surface registry and the Live Reading from it - is chained rather
+// than handed in as an override built in a context of its own, where neither
+// exists.
+export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, overrides = {}, chain = [] } = {}) => {
   const source = readFileSync(join(dataDir, file), "utf-8");
   const requests = [];
   const fetches = [];
@@ -156,7 +227,12 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
 
   const windowMock = {
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       ApiError,
+      // data/web_api.js's own request(): the method is the caller's, as a
+      // DELETE is sent (data/seq.js, data/maintenance.js).
+      request: (path, opts = {}) => call(opts.method || "GET", path, opts),
       get: (path, opts) => call("GET", path, opts),
       postForm: (path, body, opts) => call("POST", path, { ...opts, body }),
       postJson: (path, body, opts) => call("POST", path, { ...opts, body }),
@@ -181,11 +257,6 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
       refreshSections: () => {},
       getState: () => ({}),
     },
-    PAStatusStream: {
-      isSupported: () => false,
-      subscribe: () => () => {},
-      getLastStatus: () => null,
-    },
     setInterval: (fn, ms) => addTimer(intervals, fn, ms),
     clearInterval: (id) => cleared.intervals.push(id),
     setTimeout: (fn, ms) => addTimer(timeouts, fn, ms),
@@ -202,6 +273,7 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
     matchMedia: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
     requestAnimationFrame: (fn) => addTimer(timeouts, fn, 0),
     getSelection: () => null,
+    PAUi: operatorShellUi(),
     ...overrides,
   };
 
@@ -264,12 +336,38 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
   context.globalThis = context;
   // Page modules read globals both as `window.X` and bare `X`, the way a
   // browser resolves them. Mirror the published objects onto the context.
-  for (const key of ["PAApi", "PAUtils", "PABootstrap", "PAStatusStream"]) {
+  // A browser resolves every window property as a bare global, so what a test
+  // hands in as an override (a FileReader, a published module) is mirrored the
+  // same way the built-in objects are.
+  for (const key of ["PAApi", "PAUtils", "PABootstrap", "PAUi", ...Object.keys(overrides)]) {
     context[key] = windowMock[key];
   }
 
   // Load PART 1 of page_bootstrap.js first to populate window.PageBootstrap
   vm.runInNewContext(bootstrapPart1Src, context);
+  vm.runInNewContext(overlaySrc, context, { filename: "overlay.js" });
+  context.PAOverlay = windowMock.PAOverlay;
+  // Then the chain every document loads ahead of a surface: the stream (unless
+  // a test hands in its own) and the Live Reading, started the way the
+  // Operator Shell starts it. This context has no EventSource, so the Live
+  // Reading runs its one fallback poll, recorded like every other timer.
+  if (!overrides.PAStatusStream) vm.runInNewContext(statusStreamSrc, context, { filename: "status_stream.js" });
+  context.PAStatusStream = windowMock.PAStatusStream;
+  vm.runInNewContext(liveReadingSrc, context, { filename: "live_reading.js" });
+  context.PALiveReading = windowMock.PALiveReading;
+  windowMock.PALiveReading.start();
+  // A browser's window is the global: what a chained script publishes on
+  // window is a bare name to every script after it (data/parts.js reads
+  // PAParts bare).
+  const publishBare = () => {
+    for (const key of Object.keys(windowMock)) {
+      if (!(key in context)) context[key] = windowMock[key];
+    }
+  };
+  chain.forEach((name) => {
+    vm.runInNewContext(readFileSync(join(dataDir, name), "utf-8"), context, { filename: name });
+    publishBare();
+  });
   // Then load the page module itself
   vm.runInNewContext(source, context, { filename: file });
 
@@ -323,7 +421,28 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
       matching.forEach(({ handler }) => handler(event));
     },
     pathsRequested: () => requests.map((r) => r.path),
+    // A status frame reaching the page the way the Operator Shell's read hands
+    // one over: through the real stream, into the real Live Reading.
+    pushStatus: (frame) => windowMock.PAStatusStream.seed(frame),
   };
 };
 
 export { ApiError };
+
+// The shipped parts catalog and the shared mapping module, in the order
+// data/servo.html loads them before a surface that reads them - Servos names
+// each Output's Parts and moves a Part through PAParts. Chained, not handed in
+// as overrides: PAParts asks its move question through the page's own
+// window.PAOverlay and window.PAUi (#456, #460), which a context of its own
+// does not have.
+export const PARTS_CHAIN = ["droid_parts.js", "droid_part_kind.js", "outputs.js", "parts_mapping.js"];
+
+// The same catalog evaluated on its own, for a test that only reads it.
+export const partsGlobals = () => {
+  const context = { window: {}, console };
+  for (const file of ["droid_parts.js", "droid_part_kind.js", "parts_mapping.js"]) {
+    vm.runInNewContext(readFileSync(join(dataDir, file), "utf-8"), context, { filename: file });
+  }
+  const { DroidParts, DroidPartKind, PAParts } = context.window;
+  return { DroidParts, DroidPartKind, PAParts };
+};

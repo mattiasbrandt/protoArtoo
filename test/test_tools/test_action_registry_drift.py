@@ -18,6 +18,7 @@ const ActionEntry ACTION_REGISTRY[] = {
     { ACTION_BOARD, "board", "Board", "system", "Board row", false, "PA_CAP_NATIVE_WIFI" },
     { ACTION_BUILD, "build", "Build", "system", "Build row", false, nullptr, "PA_HEAP_PROFILE" },
     { ACTION_BOTH, "both", "Both", "system", "Both row", true, "PA_CAP_NATIVE_WIFI", "PA_HEAP_PROFILE" },
+    { ACTION_OUTPUT, "output", "{output} Toggle", "servo", "On {output}.", false, nullptr, nullptr, "aux1" },
 };
 """
         with tempfile.TemporaryDirectory() as tmp:
@@ -25,12 +26,14 @@ const ActionEntry ACTION_REGISTRY[] = {
             registry.write_text(source, encoding="utf-8")
             parsed = check_action_registry_drift.parse_action_registry(registry)
 
-        self.assertEqual(parsed["ACTION_UNIVERSAL"][5:], (None, None))
-        self.assertEqual(parsed["ACTION_BOARD"][5:], ("PA_CAP_NATIVE_WIFI", None))
-        self.assertEqual(parsed["ACTION_BUILD"][5:], (None, "PA_HEAP_PROFILE"))
+        # board_capability, build_flag, and the Output an action is about (#412).
+        self.assertEqual(parsed["ACTION_UNIVERSAL"][5:], (None, None, None))
+        self.assertEqual(parsed["ACTION_BOARD"][5:], ("PA_CAP_NATIVE_WIFI", None, None))
+        self.assertEqual(parsed["ACTION_BUILD"][5:], (None, "PA_HEAP_PROFILE", None))
         self.assertEqual(
-            parsed["ACTION_BOTH"][5:], ("PA_CAP_NATIVE_WIFI", "PA_HEAP_PROFILE")
+            parsed["ACTION_BOTH"][5:], ("PA_CAP_NATIVE_WIFI", "PA_HEAP_PROFILE", None)
         )
+        self.assertEqual(parsed["ACTION_OUTPUT"][5:], (None, None, "aux1"))
 
 
 if __name__ == "__main__":
@@ -669,3 +672,17 @@ class TestNoBoolEnumValues(unittest.TestCase):
             f"docs/action-registry.yaml carries a boolean enum value - "
             f"quote it (#249 regression): {errors}"
         )
+
+
+class StaticAssetHandlersAreNotApiRoutes(unittest.TestCase):
+    def test_product_photograph_paths_are_not_demanded_of_the_registry(self):
+        """The Component Picker photographs (#316) register /<id>.webp ahead of
+        serveStatic() so the MIME type is image/webp. That is not an API
+        endpoint and must not fail the api_path drift check."""
+        routes = check_action_registry_drift.find_registered_routes()
+        self.assertNotIn("/hotrc_ds650.webp", routes)
+        for route in routes:
+            self.assertTrue(
+                route.startswith("/api/") or route.startswith("/upload/"),
+                f"{route} is not an API path and should not be in the registry check",
+            )

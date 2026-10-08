@@ -1,0 +1,12 @@
+diff --git i/data/seq.js w/data/seq.js
+index d93a4e29..e84ba270 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -1557,7 +1557,6 @@
+     historyCommit(before);
+     rerenderStepTable();
+     edited();
+-    if (pickedSteps.length > 0) sessionTimeline?.pick(pickedSteps);
+   };
+ 
+   // Retime to the grid (ADR 0060), with its receipt: how many steps actually

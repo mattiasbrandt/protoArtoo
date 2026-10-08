@@ -117,34 +117,6 @@ void test_status_string_err(void) {
     TEST_ASSERT_EQUAL_STRING("err", consoleStatusString(CONSOLE_STATUS_ERR));
 }
 
-// Test: Format key=value pair
-void test_format_pair_simple(void) {
-    char buffer[256];
-    size_t len = consoleFormatPair(buffer, sizeof(buffer), "key", "value");
-    TEST_ASSERT_EQUAL(9, len);  // strlen("key=value")
-    TEST_ASSERT_EQUAL_STRING("key=value", buffer);
-}
-
-void test_format_pair_with_number(void) {
-    char buffer[256];
-    size_t len = consoleFormatPair(buffer, sizeof(buffer), "id", "42");
-    TEST_ASSERT_EQUAL(5, len);  // strlen("id=42")
-    TEST_ASSERT_EQUAL_STRING("id=42", buffer);
-}
-
-void test_format_pair_empty_value(void) {
-    char buffer[256];
-    size_t len = consoleFormatPair(buffer, sizeof(buffer), "key", "");
-    TEST_ASSERT_EQUAL(4, len);  // strlen("key=")
-    TEST_ASSERT_EQUAL_STRING("key=", buffer);
-}
-
-void test_format_pair_buffer_too_small(void) {
-    char buffer[5];
-    size_t len = consoleFormatPair(buffer, sizeof(buffer), "key", "value");
-    TEST_ASSERT_EQUAL(0, len);  // Should return 0 if buffer too small
-}
-
 // Test: Quote value only when needed
 void test_quote_value_simple_no_quote(void) {
     char buffer[256];
@@ -199,19 +171,39 @@ void test_reason_is_present_for_every_real_reason_and_absent_for_none(void) {
     TEST_ASSERT_FALSE_MESSAGE(consoleReasonIsPresent(CONSOLE_REASON_NONE),
                               "NONE must not render a reason field");
 
-    const ConsoleReason kReal[] = {
-        CONSOLE_REASON_NOT_IN_THIS_BUILD,      CONSOLE_REASON_NOT_ON_THIS_BOARD,
-        CONSOLE_REASON_COMPONENT_DISABLED,     CONSOLE_REASON_BLOCKED_BY_STATE,
-        CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, CONSOLE_REASON_LINE_TOO_LONG,
-        CONSOLE_REASON_SECRET_NOT_SETTABLE,    CONSOLE_REASON_UNKNOWN_OPERATION,
-        CONSOLE_REASON_UNKNOWN_ARGUMENT,       CONSOLE_REASON_MISSING_ARGUMENT,
-        CONSOLE_REASON_OUT_OF_RANGE,           CONSOLE_REASON_NOT_EXECUTABLE,
-        CONSOLE_REASON_EXECUTOR_NOT_READY,     CONSOLE_REASON_QUEUE_FULL,
-    };
-    for (size_t i = 0; i < sizeof(kReal) / sizeof(kReal[0]); ++i) {
-        TEST_ASSERT_TRUE_MESSAGE(consoleReasonIsPresent(kReal[i]),
+    // Walked as a range rather than listed. The hand-kept list this replaces
+    // had already fallen two reasons behind the enum - MALFORMED_ARGUMENT and
+    // READ_ONLY were appended and never added here - so it was asserting about
+    // whichever reasons happened to exist when someone last remembered. The
+    // enum's values are contiguous from NONE, so the only thing to keep in step
+    // is the last enumerator, and getting that wrong is visible: a reason with
+    // no string renders "unknown", which is asserted below.
+    for (int reason = CONSOLE_REASON_NONE + 1; reason <= CONSOLE_REASON_NOT_ON_CONSOLE; ++reason) {
+        const ConsoleReason real = (ConsoleReason)reason;
+        TEST_ASSERT_TRUE_MESSAGE(consoleReasonIsPresent(real),
                                  "a real reason must render a reason field");
+        TEST_ASSERT_TRUE_MESSAGE(strcmp(consoleReasonString(real), "unknown") != 0,
+                                 "every reason in the enum needs its own token");
     }
+}
+
+// An Apply Core's refusal reason reaches the Console as a ConsoleReason, and
+// HTTP spells it with applyRefusalReasonToken(). One refusal must read the same
+// on both (ADR 0011 amended 2026-09-25, #425), so every core reason - conflict
+// included - maps to a real Console reason whose token is the HTTP token.
+// Walked to Count, so a reason added to the core without a Console answer fails
+// here rather than rendering a record with no reason.
+void test_every_apply_refusal_reason_maps_to_the_console_token_http_uses(void) {
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_NONE, consoleReasonFromApplyRefusal(ApplyRefusalReason::None));
+    for (int raw = (int)ApplyRefusalReason::None + 1; raw < (int)ApplyRefusalReason::Count; ++raw) {
+        const ApplyRefusalReason reason = (ApplyRefusalReason)raw;
+        const ConsoleReason console = consoleReasonFromApplyRefusal(reason);
+        TEST_ASSERT_TRUE_MESSAGE(consoleReasonIsPresent(console),
+                                 "a refusal reason must reach the Console as a real reason");
+        TEST_ASSERT_EQUAL_STRING(applyRefusalReasonToken(reason), consoleReasonString(console));
+    }
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_CONFLICT,
+                      consoleReasonFromApplyRefusal(ApplyRefusalReason::Conflict));
 }
 
 // A synchronously answered query reports completed, not queued.
@@ -294,6 +286,7 @@ int main(void) {
     RUN_TEST(test_outcome_string_internal_error);
 
     // Reason tests
+    RUN_TEST(test_every_apply_refusal_reason_maps_to_the_console_token_http_uses);
     RUN_TEST(test_reason_string_not_in_this_build);
     RUN_TEST(test_reason_string_not_on_this_board);
     RUN_TEST(test_reason_string_component_disabled);
@@ -310,12 +303,6 @@ int main(void) {
     // Status tests
     RUN_TEST(test_status_string_ok);
     RUN_TEST(test_status_string_err);
-
-    // Format tests
-    RUN_TEST(test_format_pair_simple);
-    RUN_TEST(test_format_pair_with_number);
-    RUN_TEST(test_format_pair_empty_value);
-    RUN_TEST(test_format_pair_buffer_too_small);
 
     // Quote tests
     RUN_TEST(test_quote_value_simple_no_quote);

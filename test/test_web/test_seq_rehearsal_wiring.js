@@ -1,0 +1,345 @@
+// The Rehearsal's three appearances in the sequence editor (#354, #287
+// specific 6): live counts beside Protocol Check's verdict, the full list at
+// save and at a clone, and a folded badge beside a run -- and none of them ever
+// standing in the way of the save or the run it reports on (ADR 0044).
+//
+// The harness runs the shipped chain data/seq.html declares, in one vm context,
+// and drives it through the controls a builder presses: the Save and Test
+// buttons' own click handlers, a Factory card's Tune button, a Learned card's
+// Test button. The transport is recorded, so "the run went first" is an
+// assertion about call order rather than a reading of the source.
+//
+// Per test_web/README.md: everything is executed, nothing is pattern-matched.
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const test = require("node:test");
+const vm = require("node:vm");
+const { shippedWords } = require("./helpers/shipped_words.cjs");
+const { operatorShellUi } = require("./helpers/page_module_env.js");
+const { MiniDocument } = require("./helpers/mini_dom.js");
+
+const root = path.resolve(__dirname, "../..");
+const read = (name) => fs.readFileSync(path.join(root, "data", name), "utf8");
+
+// PART 1 of data/page_bootstrap.js publishes window.PASurface, which the run
+// watch and the editor hold the surface's unmount through (#441, #451).
+const bootstrapSrc = read("page_bootstrap.js");
+const bootstrapPart1 = bootstrapSrc.substring(
+  bootstrapSrc.indexOf("(() => {"),
+  bootstrapSrc.indexOf("// =========================== PART 2"),
+);
+
+const PAGE_MODULES = [
+  // Escape and the question every surface asks with (#456).
+  "overlay.js",
+  // The status stream and the run watch data/seq.js reads from the Live
+  // Reading (#451). Loaded, not started: starting it is the Operator Shell's
+  // call, and no frame reaches these tests.
+  "status_stream.js",
+  "live_reading.js",
+  "droid_parts.js",
+  "droid_build.js",
+  "dome_command_map.js",
+  "dome_panel_model.js",
+  "dome_layout.js",
+  "dome_lights.js",
+  "seq_protocol_check.js",
+  "seq_tempo.js",
+  "seq_gesture.js",
+  "servo_motion.js",
+  "seq_rehearsal.js",
+  "outputs.js",
+  // The stage that draws each step since the cards went (9b71d736, #441).
+  "seq_timeline.js",
+  "seq.js",
+];
+
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+function makeElement(extra = {}) {
+  const element = {
+    dataset: {},
+    style: {},
+    value: "",
+    innerHTML: "",
+    textContent: "",
+    className: "",
+    disabled: false,
+    listeners: {},
+    classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+    setAttribute() {},
+    getAttribute: () => null,
+    addEventListener(name, fn) {
+      (element.listeners[name] = element.listeners[name] || []).push(fn);
+    },
+    removeEventListener() {},
+    appendChild: (child) => child,
+    insertAdjacentHTML() {},
+    remove() {},
+    focus() {},
+    closest: () => null,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    ...extra,
+  };
+  return element;
+}
+
+// DM:HELLO as it shipped before #354: two Rehearsal Warnings and nothing
+// Protocol Check refuses.
+const helloBefore = () => ({
+  name: "DM:HELLO",
+  suppressMs: 4000,
+  toggleGroup: "none",
+  steps: [
+    { t: 0, type: "audio", cmd: "$H" },
+    { t: 0, type: "dome", cmd: "@1MHello There" },
+    { t: 0, type: "dome", cmd: "@3MGeneral Kenobi" },
+    { t: 0, type: "dome", cmd: ":OP01" },
+    { t: 160, type: "dome", cmd: ":OP01" },
+    { t: 320, type: "dome", cmd: ":OP01" },
+    { t: 480, type: "dome", cmd: ":OP01" },
+    { t: 640, type: "dome", cmd: ":OP01" },
+    { t: 800, type: "dome", cmd: ":CL01" },
+    { t: 950, type: "end" },
+  ],
+});
+
+function newPage({ sequence = helloBefore(), failRead = false, outputs = [], config = {} } = {}) {
+  const calls = [];
+  const dialogs = [];
+  // The stage the editor draws the sequence on, and the strip's Stop act,
+  // are real nodes: the timeline builds its lanes into them, and a run under
+  // way renames Stop through PAUi.setAct(), which reads the act's own markup.
+  const mini = new MiniDocument();
+  const ui = operatorShellUi();
+  const real = (tag = "div", html = "") => {
+    const node = mini.body.appendChild(mini.createElement(tag));
+    node.innerHTML = html;
+    return node;
+  };
+  const elements = new Map([
+    ["seq-editor-tlbar", real()],
+    ["seq-editor-timeline", real()],
+    ["seq-editor-droid", real()],
+    ["seq-editor-stop", real("button", ui.actFace("stop", "Stop"))],
+  ]);
+  const byId = (id) => {
+    if (!elements.has(id)) elements.set(id, makeElement());
+    return elements.get(id);
+  };
+
+  // The row acts renderListView() binds, handed back the way the browser
+  // would find them in the markup it just wrote.
+  const cardFeedback = makeElement();
+  const cardRehearsal = makeElement();
+  const card = makeElement({
+    querySelector: (selector) =>
+      selector === ".seq-item-feedback" ? cardFeedback : selector === ".seq-item-rehearsal" ? cardRehearsal : null,
+  });
+  const testButton = makeElement({ dataset: { action: "test", seqName: sequence.name }, closest: () => card });
+  const tuneButton = makeElement({ dataset: { action: "tune", builtinName: sequence.name } });
+  byId("seq-cards-container").querySelectorAll = (selector) =>
+    (selector === "[data-action]" ? [testButton, tuneButton] : []);
+
+  const get = (url) => {
+    calls.push(["get", url]);
+    if (url.startsWith("/api/seq/builtins?name=")) return Promise.resolve({ ok: true, data: sequence });
+    if (url.startsWith("/api/seq?name=")) {
+      return failRead ? Promise.reject(new Error("controller not reachable")) : Promise.resolve({ ok: true, data: sequence });
+    }
+    if (url.startsWith("/api/dome/layout")) return Promise.resolve({ ok: false, status: 503, data: null });
+    if (url === "/api/servo/outputs") return Promise.resolve({ ok: true, status: 200, data: { outputs } });
+    return Promise.resolve({ ok: true, status: 200, data: url.startsWith("/api/config") ? config : [] });
+  };
+
+  const sandbox = {
+    PAAssetsReady: true,
+    PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
+      get,
+      postForm: () => Promise.resolve({ ok: true, data: {} }),
+      postJson: (url, body) => {
+        calls.push(["post", url, body]);
+        return Promise.resolve({ ok: true, data: {} });
+      },
+      messageFor: (error) => String(error && error.message),
+    },
+    // The act the pages draw their buttons with, from the shipped shell (#460).
+    PAUi: ui,
+    PAUtils: { escapeHtml, escapeAttr: escapeHtml, showFeedback() {}, debounce: (fn) => fn },
+    PABootstrap: {
+      registerSection() {},
+      setResourceLabels() {},
+      declareSections() {},
+      retryNow() {},
+      refreshSections() {},
+    },
+    localStorage: { length: 0, key: () => null, getItem: () => null, setItem() {}, removeItem() {} },
+    document: {
+      readyState: "complete",
+      body: makeElement(),
+      documentElement: makeElement(),
+      getElementById: byId,
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: () => makeElement(),
+      addEventListener() {},
+      removeEventListener() {},
+    },
+    addEventListener() {},
+    removeEventListener() {},
+    alert: (text) => dialogs.push(["alert", text]),
+    confirm: (text) => {
+      dialogs.push(["confirm", text]);
+      return false;
+    },
+    AbortController, // the browser's own; the editor cancels a read it leaves
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    Promise,
+    console,
+  };
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(bootstrapPart1, sandbox, { filename: "page_bootstrap.part1.js" });
+  PAGE_MODULES.forEach((name) => vm.runInContext(read(name), sandbox, { filename: name }));
+
+  const seam = sandbox.window.__seqEditorForTesting;
+  const settle = async (turns = 8) => {
+    for (let i = 0; i < turns; i += 1) await new Promise((resolve) => setImmediate(resolve));
+  };
+  const click = async (element) => {
+    (element.listeners.click || []).forEach((fn) => fn());
+    await settle();
+  };
+
+  return {
+    seam,
+    calls,
+    dialogs,
+    byId,
+    // What the stage says of each step it draws: every block's title.
+    stageSays: () => byId("seq-editor-timeline").querySelectorAll(".tl-item").map((item) => item.getAttribute("title")),
+    card: { feedback: cardFeedback, rehearsal: cardRehearsal, testButton, tuneButton },
+    settle,
+    click,
+    open(seq = sequence) {
+      seam.renderEditorView(seq);
+    },
+  };
+}
+
+test("the editor counts the Rehearsal's findings beside Protocol Check, and the count never disables Save", () => {
+  const page = newPage();
+  page.open();
+
+  const counts = page.byId("seq-editor-rehearsal").innerHTML;
+  // Its three: the same-timestamp dispatch, the panel burst and the repeated open.
+  assert.match(counts, /data-count="warning">3 warnings/);
+  // Protocol Check passes this sequence, so Save stays live however many
+  // warnings the Rehearsal has.
+  assert.equal(page.byId("seq-editor-save").disabled, false);
+});
+
+test("Test on Droid runs first, then folds a badge for what the droid holds, not the edits on screen", async () => {
+  const page = newPage();
+  page.open();
+  // Unsaved edits that would clear both warnings: the droid still runs the
+  // saved copy, so the badge must still report that copy.
+  page.seam.editorState.current.steps.splice(1, 7);
+  await page.click(page.byId("seq-editor-test"));
+
+  const runAt = page.calls.findIndex(([method, url]) => method === "post" && url === "/api/seq/test");
+  assert.ok(runAt >= 0, "the run was held back");
+  const feedback = page.byId("seq-editor-feedback").innerHTML;
+  // Accepted, the run is the strip's lamp: no line about it is left to outlive it.
+  assert.doesNotMatch(feedback, /DM:HELLO/, "the strip still carries a line about the run after the droid accepted it");
+  assert.match(feedback, /<details class="seq-rehearsal-badge seq-rehearsal-badge-warning"/);
+  assert.match(feedback, /Rehearsal: 3 warnings, 0 notes/);
+});
+
+test("a card whose sequence cannot be read back says so instead of looking all clear", async () => {
+  const page = newPage({ failRead: true });
+  page.seam.renderListWithMocks([{ name: "DM:HELLO", stepCount: 10, valid: true }], []);
+  await page.click(page.card.testButton);
+
+  // The run was accepted, so the row's own line has nothing left to say.
+  assert.equal(page.card.feedback.textContent, "");
+  assert.equal(page.card.rehearsal.innerHTML, "");
+  assert.match(page.card.rehearsal.textContent, /Could not read DM:HELLO back to rehearse it: controller not reachable/);
+});
+
+// A step that falls back to a sound action's track names that track as the
+// Sound page does, by its Setting's one entry (data/web_api.js labelOf, #432).
+// The editor kept its own spellings until then, and they disagreed: "Faint"
+// here was "Short Circuit" there, "Startup" was "Boot Sound".
+test("a fallback track is named by its Setting's label, as the Sound page names it", () => {
+  const page = newPage();
+  const sequence = helloBefore();
+  sequence.steps.splice(1, 0, { t: 0, type: "audioCat", category: "alert", fallback: "faint" });
+  page.open(sequence);
+  const label = shippedWords().labelOf("faint");
+  assert.ok(page.stageSays().some((said) => said.includes(`(fallback ${label})`)), `the step does not name ${label}`);
+});
+
+// The line beside Test on the droid (#439, #287 specific 6). It names the
+// Servo Outputs nobody has calibrated, whose first move is a jump rather than
+// a ramp -- and it is never a gate: an acknowledgement dialog was rejected
+// because the second time an operator sees it they click through without
+// reading, which turns a Warning into furniture.
+test("an uncalibrated Output is named before a run, and the run is never held or asked about", async () => {
+  const row = (name, parts, calibrated) => ({
+    address: `ledc:${name}`,
+    name,
+    id: name.toLowerCase(),
+    switchable: true,
+    wired: true,
+    component: "mg996r",
+    openUs: 2000,
+    centreUs: 1500,
+    closeUs: 1000,
+    bandLoUs: 1000,
+    bandHiUs: 2000,
+    throwMs: 900,
+    accelMs: 225,
+    ease: "none",
+    calibrated,
+    parts,
+  });
+  const sequence = {
+    name: "DM:DOORS",
+    suppressMs: 4000,
+    toggleGroup: "none",
+    steps: [
+      { t: 0, type: "body", part: "doorFL" },
+      { t: 2000, type: "body", part: "doorFR" },
+      { t: 4000, type: "body", part: "doorFL", shape: "close" },
+      { t: 4000, type: "body", part: "doorFR", shape: "close" },
+      { t: 5000, type: "end" },
+    ],
+  };
+  const page = newPage({ sequence, outputs: [row("ARM1", ["doorFL"], false), row("ARM2", ["doorFR"], true)] });
+  await page.settle();
+  page.open(sequence);
+
+  const prerun = page.byId("seq-editor-prerun");
+  assert.match(prerun.innerHTML, /ARM1/, "the uncalibrated Output is not named");
+  assert.doesNotMatch(prerun.innerHTML, /ARM2/, "a calibrated Output is named as unmeasured");
+  const test = page.byId("seq-editor-test");
+  assert.equal(test.disabled, false);
+
+  await page.click(test);
+  assert.ok(page.calls.some(([method, url]) => method === "post" && url === "/api/seq/test"), "the run was held back");
+  assert.deepEqual(page.dialogs, []);
+});

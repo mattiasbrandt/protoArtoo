@@ -18,7 +18,7 @@
  *
  * SSE fidelity boundary — read before interpreting a stalled stream:
  * This sketch streams /api/events through PsychicEventSource, the vendor class
- * production deliberately does NOT use. protoArtoo's own stream evicts a client
+ * production deliberately does NOT use. protoR2's own stream evicts a client
  * that misses its send deadline (ADR 0030, include/web_event_stream.h);
  * PsychicEventSourceClient::sendEvent() instead retries httpd_socket_send() in
  * an unbounded loop against a five-second socket timeout, so ONE slow reader
@@ -82,7 +82,7 @@
 #if defined(BENCH_HAVE_LOCAL_SECRETS) && defined(PA_STA_SSID)
 #define BENCH_SSID PA_STA_SSID
 #else
-#define BENCH_SSID "protoArtoo-bench"
+#define BENCH_SSID "protoR2-bench"
 #endif
 #endif
 
@@ -90,7 +90,7 @@
 #if defined(BENCH_HAVE_LOCAL_SECRETS) && defined(PA_STA_PASSWORD)
 #define BENCH_PASS PA_STA_PASSWORD
 #else
-#define BENCH_PASS "protoArtoo-bench"
+#define BENCH_PASS "protoR2-bench"
 #endif
 #endif
 
@@ -1161,7 +1161,7 @@ void setup() {
   Serial.println("[BENCH] LED_BUILTIN is unavailable in this build pass; heartbeat disabled.");
 #endif
 
-  Serial.println("\n[BENCH] protoArtoo P4 ESP-Hosted bench initialized.");
+  Serial.println("\n[BENCH] protoR2 P4 ESP-Hosted bench initialized.");
   // Printed before anything else identifying: the pre-flight identity check for
   // an acceptance run reads this line, not the ESP-IDF app descriptor.
   Serial.printf("[BENCH] Firmware: %s\n", PA_FIRMWARE_VERSION);

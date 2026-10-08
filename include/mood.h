@@ -1,18 +1,26 @@
 // =============================================================================
 // include/mood.h
 //
-// Mood preset system  --  dual-path execution for R2-D2 idle behaviour.
+// Mood preset system  --  how alive the droid is at rest.
 //
-// Each mood (`:SE10`/`:SE11`/`:SE13`/`:SE14`) has two independent execution
-// paths that run in parallel:
+// A mood (`:SE10`/`:SE11`/`:SE13`/`:SE14`) reaches three places. applyMood()
+// sends the first two; the third reads the stored Mood on its own:
 //
 //   Audio path (body-local, always):
 //     Dispatches `$s` (stop chatter) or `$R` (resume chatter) directly to
 //     AudioTask. Body is the sole audio source and does not wait for the dome.
+//     AudioTask also reads robotState.activeMood every idle tick to pick the
+//     chatter interval (audioPlaybackIntervalForMood()).
 //
 //   Dome visual path (requires active dome link):
 //     Enqueues `:SE1x\r` to domeTxQueue -> DomeLinkTask -> UART2 -> AstroPixelsPlus.
-//     If the dome link is not active, this step is silently skipped.
+//     If the dome link is not active, this step is skipped (debug log only).
+//
+//   Resting dome movement (body, DomeTask):
+//     DomeTask reads robotState.activeMood every tick and scales the random
+//     dome pause window by it (domeRndPauseMsForMood(), dome_math.h): Quiet
+//     starts no move, Mid-Awake pauses longer, Awake+ shorter. The stored
+//     window is Full-Awake's, and dome_rnd_enable still switches it off.
 //
 // Valid mood IDs: 10 (Quiet), 11 (Full-Awake), 13 (Mid-Awake), 14 (Awake+).
 // ID 0 means "unset" (no mood applied this session).
@@ -99,10 +107,11 @@ inline const char* moodAudioCommand(uint8_t moodId) {
 
 // -----------------------------------------------------------------------------
 // applyMood()
-// Execute a mood preset via the dual audio + dome TX path.
+// Execute a mood preset via the audio + dome TX paths, and store it where
+// AudioTask and DomeTask read it.
 //
 // moodId    : SE1x index  --  must be 10, 11, 13, or 14. Invalid values are
-//             silently ignored.
+//             ignored with a warning log.
 // fromDome  : set true when called from the dome RX parser to suppress
 //             echoing the command back to the dome (avoid command loop).
 //

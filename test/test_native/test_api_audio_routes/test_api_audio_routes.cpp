@@ -26,14 +26,18 @@
 #include <cstring>
 
 #include "api_audio.h"
+#include "audio_catalog_gate.h"
 #include "audio_driver.h"
 #include "audio_test_hooks.h"  // g_test_audio_queue_ok/play_track/volume/stop/query/dollar -
                                 // shared with test_console_module.cpp's #221 remainder
                                 // sound.action.* executors and #258's remainder, the same
                                 // stubs this file already drove
+#include "commanded_modes_test_hooks.h"  // g_test_applied_mood, g_test_status_broadcast_count
 #include "config_cache.h"
 #include "robot_state.h"
 #include "web_request_test_backend.h"
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
+#include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
 
 // Recorded side effects and controls from src/native_test_stubs.cpp.
 extern uint8_t g_test_audio_capabilities;
@@ -49,8 +53,6 @@ extern AudioCatalogBank g_test_audio_catalog_banks[8];
 extern uint8_t g_test_audio_catalog_bank_count;
 extern AudioCatalogEntry g_test_audio_catalog_entries[16];
 extern uint16_t g_test_audio_catalog_entry_count;
-extern unsigned g_test_applied_mood;
-extern unsigned g_test_status_broadcast_count;
 
 namespace {
 
@@ -94,9 +96,13 @@ void setSleeping(bool sleeping) {
 
 void setUp() {
     resetBackend();
+    audioCatalogGateResetForTest();
     robotState = RobotState{};
     ConfigSnapshot snap = {};
-    configCacheApply(snap);
+    configCacheReplace(snap);
+    // Audio output on for this boot, so the routes below reach their queue
+    // stubs; the sound-off test switches it off itself (#370).
+    configCacheSetActiveAudioEnabled(true);
 
     g_test_audio_capabilities = 0;
     g_test_audio_driver_name = "TEST";
@@ -119,17 +125,39 @@ void setUp() {
     g_test_audio_catalog_entry_count = 0;
     g_test_applied_mood = 0;
     g_test_status_broadcast_count = 0;
+    // Armed after this setUp()'s own seeding: from here every config write
+    // must run inside a Write Window, as it must on the droid after boot (#418).
+    configWriteWindowArm(true);
 }
 
 void tearDown() {
+    const uint32_t misses = configWriteWindowMisses();
+    configWriteWindowArm(false);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, misses, "a config write ran outside its Write Window");
 }
 
 // -----------------------------------------------------------------------------
 // GET /api/audio
 // -----------------------------------------------------------------------------
 
+void test_audio_get_refuses_to_send_a_truncated_status_body() {
+    // Nothing the firmware carries today overruns the response buffer, so the
+    // guard is reached through the driver-name seam: an answer that cannot be
+    // completed must be an error, never JSON that stops mid-string under 200.
+    static char longName[400];
+    memset(longName, 'x', sizeof(longName) - 1);
+    longName[sizeof(longName) - 1] = '\0';
+    g_test_audio_driver_name = longName;
+    g_test_audio_capabilities = 0x3F;
+
+    callGet(handleAudioGet, nullptr, 0);
+
+    TEST_ASSERT_EQUAL_INT(500, backend.sentCode);
+    TEST_ASSERT_TRUE(bodyContains("audio status response overflow"));
+}
+
 void test_audio_get_reports_module_status() {
-    g_test_audio_driver_name = "CHIRP";
+    g_test_audio_driver_name = "CHIRP Audio Trigger";
     g_test_audio_capabilities = AudioDriver::AUDIO_CAP_STATUS_QUERY;
     robotState.audio_module_link_ok = true;
     robotState.audio_module_play_state = 1;
@@ -140,8 +168,9 @@ void test_audio_get_reports_module_status() {
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     TEST_ASSERT_EQUAL_STRING("application/json", backend.sentContentType);
-    TEST_ASSERT_TRUE(bodyContains("\"driver\":\"CHIRP\""));
+    TEST_ASSERT_TRUE(bodyContains("\"driver\":\"CHIRP Audio Trigger\""));
     TEST_ASSERT_TRUE(bodyContains("\"rx_status\":\"available\""));
+    TEST_ASSERT_EQUAL_CHAR('}', backend.sentBody[strlen(backend.sentBody) - 1]);
 }
 
 // -----------------------------------------------------------------------------
@@ -169,6 +198,23 @@ void test_audio_post_play_queues_the_track() {
     TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
     TEST_ASSERT_EQUAL_UINT(1u, g_test_audio_play_track_calls);
     TEST_ASSERT_EQUAL_UINT16(7, g_test_audio_last_track);
+}
+
+// Sound switched off at boot (#370): nothing drains the queue, so a play is
+// refused with the reason the Console gives, and nothing is queued. The status
+// read names the picked module and says sound is off.
+void test_audio_is_refused_and_says_so_while_sound_is_off() {
+    configCacheSetActiveAudioEnabled(false);
+
+    const WebRequestTestParam play[] = {{"action", "play"}, {"track", "7"}};
+    callPost(handleAudioPost, play, 2);
+    TEST_ASSERT_EQUAL_INT(409, backend.sentCode);
+    TEST_ASSERT_TRUE(bodyContains("Sound is off. Switch it on in Configuration, then restart the droid."));
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_play_track_calls);
+
+    callGet(handleAudioGet, nullptr, 0);
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_TRUE(bodyContains("\"output\":\"off\""));
 }
 
 void test_audio_post_play_while_sleeping_is_locked() {
@@ -232,11 +278,28 @@ void test_audio_post_volume_rejects_out_of_range_levels() {
     const WebRequestTestParam tooLoud[] = {{"action", "volume"}, {"level", "31"}};
     callPost(handleAudioPost, tooLoud, 2);
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
-    TEST_ASSERT_TRUE(bodyContains("level must be"));
+    // The volume Setting's refusal, with its field, reason and range as data
+    // (#431): a page words it, and the sentence carries no wire name it reads.
+    TEST_ASSERT_TRUE(bodyContains("\"field\":\"volume\""));
+    TEST_ASSERT_TRUE(bodyContains("\"reason\":\"out-of-range\""));
+    TEST_ASSERT_TRUE(bodyContains("\"accepts\":\"0..30\""));
 
     const WebRequestTestParam negative[] = {{"action", "volume"}, {"level", "-1"}};
     callPost(handleAudioPost, negative, 2);
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_volume_calls);
+}
+
+// A level that is not a number at all is the volume Setting's to refuse too,
+// with its field and range - the same answer the Console gives for
+// `volume=abc` (ADR 0068, amended 2026-09-26), so neither door has a check the
+// other lacks.
+void test_audio_post_volume_refuses_a_non_number_with_its_range() {
+    const WebRequestTestParam word[] = {{"action", "volume"}, {"level", "loud"}};
+    callPost(handleAudioPost, word, 2);
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_TRUE(bodyContains("\"field\":\"volume\""));
+    TEST_ASSERT_TRUE(bodyContains("\"accepts\":\"0..30\""));
     TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_volume_calls);
 }
 
@@ -271,7 +334,10 @@ void test_tracks_get_serializes_every_field_from_the_config_snapshot() {
     snap.audio.snd_rand_max = 9;
     snap.audio.audioVolume = 21;
     snap.audio.snd_int_awake = 45;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 
     callGet(handleAudioTracksGet, nullptr, 0);
 
@@ -304,7 +370,7 @@ void test_tracks_get_matches_the_pre_port_payload_byte_for_byte() {
     TEST_ASSERT_EQUAL_STRING(
         "{\"scream\":0,\"faint\":0,\"leia\":0,"
         "\"cantina_s\":0,\"sw_theme\":0,\"imp_march\":0,"
-        "\"cantina_l\":0,\"startup\":0,"
+        "\"cantina_l\":0,\"startup\":0,\"happy\":0,"
         "\"doodoo\":0,\"failure\":0,\"disco\":0,\"mahna\":0,"
         "\"inlove\":0,\"macho\":0,\"gangnam\":0,\"uptown\":0,"
         "\"celebr\":0,\"stayin\":0,\"harlem\":0,\"pbjtime\":0,"
@@ -411,7 +477,10 @@ void test_mood_map_get_returns_the_configured_masks() {
     snap.audio.snd_moodcat_mid = 6;
     snap.audio.snd_moodcat_full = 7;
     snap.audio.snd_moodcat_awakeplus = 8;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 
     callGet(handleAudioMoodMapGet, nullptr, 0);
 
@@ -506,7 +575,14 @@ void test_catalog_get_reports_an_unready_catalog_as_empty_arrays() {
     g_test_audio_catalog_ready = false;
     callGet(handleAudioCatalogGet, nullptr, 0);
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
-    TEST_ASSERT_EQUAL_STRING("{\"ready\":false,\"banks\":[],\"entries\":[]}", backend.sentBody);
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"ready\":false,\"busy\":false,\"complete\":false,"
+        "\"limits\":{\"manifest_incomplete\":true,\"missing_names\":0,"
+        "\"entry_cap_reached\":false},"
+        "\"refresh\":{\"request\":0,\"active\":0,\"settled\":0,\"state\":\"none\"},"
+        "\"bindings\":{\"sound_list_changed\":false,\"sound_list_checked\":false},"
+        "\"banks\":[],\"entries\":[]}",
+        backend.sentBody);
 }
 
 void test_catalog_get_serializes_banks_and_entries() {
@@ -534,10 +610,110 @@ void test_catalog_get_serializes_banks_and_entries() {
     TEST_ASSERT_TRUE(backend.sentChunked);
     TEST_ASSERT_TRUE(bodyIsComplete());
     TEST_ASSERT_EQUAL_STRING(
-        "{\"ready\":true,"
+        "{\"ready\":true,\"busy\":false,\"complete\":false,"
+        "\"limits\":{\"manifest_incomplete\":true,\"missing_names\":0,"
+        "\"entry_cap_reached\":false},"
+        "\"refresh\":{\"request\":0,\"active\":0,\"settled\":0,\"state\":\"none\"},"
+        "\"bindings\":{\"sound_list_changed\":false,\"sound_list_checked\":false},"
         "\"banks\":[{\"bank\":1,\"page\":\"A\",\"dir\":\"01 Chatter\",\"count\":2}],"
         "\"entries\":[{\"bank\":1,\"page\":\"A\",\"index\":1,\"name\":\"beep\"}]}",
         backend.sentBody);
+}
+
+// The lease must be returned on every path, including the many-chunk one: a
+// leaked lease blocks every later refresh for good.
+//
+// That the lease SPANS the send is the other half of the same invariant, and
+// the host backend has no hook inside the chunk loop to sample it from -- a
+// hook added to the shared harness for this one assertion would be the harness
+// accommodating the code. What the tests here can prove is that the handler
+// consults the gate at all (the busy case below), and that it lets go
+// afterwards; the bracketing itself is one acquire and one release either side
+// of sendChunked() in handleAudioCatalogGet, and the overlap it protects
+// against is exercised at the gate in test_audio_catalog_gate.
+void test_catalog_get_returns_its_reader_lease() {
+    setCatalogSupported(true);
+    g_test_audio_catalog_ready = true;
+    for (uint16_t i = 0; i < 16; ++i) {
+        g_test_audio_catalog_entries[i] = AudioCatalogEntry{};
+        g_test_audio_catalog_entries[i].bank = 1;
+        g_test_audio_catalog_entries[i].index = (uint16_t)(i + 1);
+        snprintf(g_test_audio_catalog_entries[i].name,
+                 sizeof(g_test_audio_catalog_entries[i].name), "entry-%u-padding-padding",
+                 (unsigned)i);
+    }
+    g_test_audio_catalog_entry_count = 16;
+
+    callGet(handleAudioCatalogGet, nullptr, 0);
+    callGet(handleAudioCatalogGet, nullptr, 0);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+        0, audioCatalogReadersInside(),
+        "a lease the handler never returns blocks every later refresh for good");
+}
+
+// A reader refused while a refresh holds the gate has learned nothing about the
+// catalog. Saying "not ready" alone would read as "the catalog is gone" and
+// blank a listing that is still perfectly good.
+void test_catalog_get_reports_busy_rather_than_an_empty_catalog_during_a_refresh() {
+    setCatalogSupported(true);
+    g_test_audio_catalog_ready = true;
+    audioCatalogGateClose();
+
+    callGet(handleAudioCatalogGet, nullptr, 0);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_TRUE(bodyContains("\"busy\":true"));
+    TEST_ASSERT_TRUE_MESSAGE(bodyContains("\"ready\":false"),
+                             "nothing was read, so nothing may be claimed about the catalog");
+    audioCatalogGateOpen();
+}
+
+void test_catalog_get_reports_what_the_last_discovery_could_not_see() {
+    setCatalogSupported(true);
+    g_test_audio_catalog_ready = true;
+    AudioCatalogObservation observation{};
+    observation.completeness.manifestComplete = false;
+    observation.completeness.missingNameCount = 3;
+    observation.completeness.entryCapReached = true;
+    audioCatalogObservationPublish(observation);
+
+    callGet(handleAudioCatalogGet, nullptr, 0);
+
+    TEST_ASSERT_TRUE(bodyContains("\"complete\":false"));
+    TEST_ASSERT_TRUE(bodyContains("\"manifest_incomplete\":true"));
+    TEST_ASSERT_TRUE(bodyContains("\"missing_names\":3"));
+    TEST_ASSERT_TRUE(bodyContains("\"entry_cap_reached\":true"));
+}
+
+void test_catalog_get_reports_a_complete_catalog_as_complete() {
+    setCatalogSupported(true);
+    g_test_audio_catalog_ready = true;
+    AudioCatalogObservation observation{};
+    observation.completeness.manifestComplete = true;
+    audioCatalogObservationPublish(observation);
+
+    callGet(handleAudioCatalogGet, nullptr, 0);
+
+    TEST_ASSERT_TRUE(bodyContains("\"complete\":true"));
+}
+
+void test_catalog_get_carries_the_saved_bindings_warning() {
+    setCatalogSupported(true);
+    g_test_audio_catalog_ready = true;
+    AudioSoundListIdentity saved{};
+    saved.observed = true;
+    saved.checksum = 11u;
+    AudioSoundListIdentity observed{};
+    observed.observed = true;
+    observed.checksum = 22u;
+    audioBindingWarningEvaluate(saved, observed);
+
+    callGet(handleAudioCatalogGet, nullptr, 0);
+
+    TEST_ASSERT_TRUE(bodyContains("\"sound_list_changed\":true"));
+    TEST_ASSERT_TRUE(bodyContains("\"sound_list_checked\":true"));
 }
 
 // A body longer than one host chunk is where an offset-split bug would show.
@@ -607,6 +783,39 @@ void test_catalog_refresh_post_enqueues_on_a_catalog_backend() {
     TEST_ASSERT_EQUAL_UINT(1u, g_test_audio_refresh_catalog_calls);
 }
 
+// The answer names the request, so a caller can tell ITS refresh completing
+// from an older catalog that merely happens to still be ready.
+void test_catalog_refresh_post_names_the_request_it_accepted() {
+    setCatalogSupported(true);
+    callPost(handleAudioCatalogRefreshPost, nullptr, 0);
+    TEST_ASSERT_TRUE(bodyContains("\"request\":1"));
+
+    resetBackend();
+    callPost(handleAudioCatalogRefreshPost, nullptr, 0);
+    TEST_ASSERT_TRUE_MESSAGE(bodyContains("\"request\":2"),
+                             "a second ask is a second request, not the first one again");
+
+    AudioCatalogRefreshLedger ledger{};
+    audioCatalogRefreshLedgerRead(&ledger);
+    TEST_ASSERT_EQUAL_UINT32(2u, ledger.requestId);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ledger.settledId,
+                                     "accepting a command onto the queue settles nothing");
+}
+
+// Nothing will ever run a refresh the queue refused, so it settles here rather
+// than leaving a caller polling for a completion that cannot arrive.
+void test_a_refused_refresh_settles_as_blocked() {
+    setCatalogSupported(true);
+    g_test_audio_queue_ok = false;
+    callPost(handleAudioCatalogRefreshPost, nullptr, 0);
+    TEST_ASSERT_EQUAL_INT(503, backend.sentCode);
+
+    AudioCatalogRefreshLedger ledger{};
+    audioCatalogRefreshLedgerRead(&ledger);
+    TEST_ASSERT_EQUAL_UINT32(1u, ledger.settledId);
+    TEST_ASSERT_EQUAL_INT(AudioCatalogRefreshState::Blocked, ledger.settledState);
+}
+
 void test_catalog_refresh_post_is_not_found_without_a_catalog_backend() {
     setCatalogSupported(false);
     callPost(handleAudioCatalogRefreshPost, nullptr, 0);
@@ -671,17 +880,20 @@ int main() {
     UNITY_BEGIN();
 
     RUN_TEST(test_audio_get_reports_module_status);
+    RUN_TEST(test_audio_get_refuses_to_send_a_truncated_status_body);
 
     RUN_TEST(test_audio_post_without_action_is_rejected);
     RUN_TEST(test_audio_post_unknown_action_is_rejected);
     RUN_TEST(test_audio_post_play_queues_the_track);
     RUN_TEST(test_audio_post_play_while_sleeping_is_locked);
+    RUN_TEST(test_audio_is_refused_and_says_so_while_sound_is_off);
     RUN_TEST(test_audio_post_play_without_track_is_rejected);
     RUN_TEST(test_audio_post_play_rejects_unparseable_and_out_of_range_tracks);
     RUN_TEST(test_audio_post_stop_queues_a_stop);
     RUN_TEST(test_audio_post_stop_reports_a_full_queue);
     RUN_TEST(test_audio_post_volume_applies_and_persists);
     RUN_TEST(test_audio_post_volume_rejects_out_of_range_levels);
+    RUN_TEST(test_audio_post_volume_refuses_a_non_number_with_its_range);
     RUN_TEST(test_audio_post_dollar_requires_a_dollar_prefixed_command);
 
     RUN_TEST(test_tracks_get_serializes_every_field_from_the_config_snapshot);
@@ -708,11 +920,18 @@ int main() {
     RUN_TEST(test_catalog_get_is_not_found_without_a_catalog_backend);
     RUN_TEST(test_catalog_get_reports_an_unready_catalog_as_empty_arrays);
     RUN_TEST(test_catalog_get_serializes_banks_and_entries);
+    RUN_TEST(test_catalog_get_returns_its_reader_lease);
+    RUN_TEST(test_catalog_get_reports_busy_rather_than_an_empty_catalog_during_a_refresh);
+    RUN_TEST(test_catalog_get_reports_what_the_last_discovery_could_not_see);
+    RUN_TEST(test_catalog_get_reports_a_complete_catalog_as_complete);
+    RUN_TEST(test_catalog_get_carries_the_saved_bindings_warning);
     RUN_TEST(test_catalog_get_survives_a_body_spanning_many_chunks);
     RUN_TEST(test_catalog_get_filters_by_bank);
     RUN_TEST(test_catalog_get_rejects_a_bank_outside_one_to_six);
 
     RUN_TEST(test_catalog_refresh_post_enqueues_on_a_catalog_backend);
+    RUN_TEST(test_catalog_refresh_post_names_the_request_it_accepted);
+    RUN_TEST(test_a_refused_refresh_settles_as_blocked);
     RUN_TEST(test_catalog_refresh_post_is_not_found_without_a_catalog_backend);
 
     RUN_TEST(test_play_banked_post_queues_bank_page_index);

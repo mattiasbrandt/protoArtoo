@@ -13,7 +13,7 @@
 
 #include "config.h"            // PA_CHIP_TARGET_* (chip-target selection)
 #include "protocol_check.h"    // ProtocolCheckResult, PC_MAX_STEPS, PC_CMD_MAX
-#include "seq_store_index.h"   // SEQ_STORE_MAX
+#include "seq_store_index.h"   // SEQ_INDEX_CAPACITY
 
 // Capacity guards (issue #2 grill decision 5), sized per chip target.
 //
@@ -38,7 +38,7 @@
 //   every step a dome command at PC_CMD_MAX = 63); 24 KB rounds that up and
 //   leaves 5733 B for the `meta` block, whose origin/license/notes/purpose
 //   fields are free text no validator bounds. The 49 KB transient peak is 43%
-//   of the ~114 KB internal free heap measured on the P4 (heap_health.h and
+//   of the ~114 KB internal free heap measured on the P4 (heap_reading.h and
 //   tasks/safety.cpp record that figure from #245), and an over-large document
 //   still fails gracefully: deserializeJson returns NoMemory and seqStoreSave
 //   answers a field-level error with nothing written.
@@ -65,12 +65,49 @@
   #error "the Learned Sequence per-file cap has no value for this chip target"
 #endif
 
+// STORE CAP: how many Learned Sequences this board lets a builder save. It is a
+// Board Variant fact, the first thing a builder can do that depends on which
+// board they bought (ADR 0065, amended 2026-09-25), so it is selected on
+// PA_BOARD rather than on the chip target. The droid reports it in GET
+// /api/identity (learned_sequence_cap) and the Sequences page reads it from
+// there, so no page carries a copy of its own.
+//
+//   artoo-esp32: 5. Its 160-block filesystem partition holds the web image,
+//   the saved sequences and one take (TAKE_STORE_CAP, take_store_util.h), and
+//   tools/build_budgets.json derives the image's budget from these numbers:
+//   four full-size sequences, one full take, plus the free space the last save
+//   demands (SEQ_FS_FREE_FLOOR + the file). Changing it means redoing that
+//   arithmetic.
+//
+//   firebeetle2: 10. Its partition is 9.88 MB; the web image never competes.
+//
+// A save is refused only when it is NEW and the store already holds at least
+// the cap. `>=` rather than `==` is load-bearing: a firmware-only update can
+// boot an artoo-esp32 holding more than five (the index capacity above the cap
+// is what keeps them), and such a droid must refuse new saves until the
+// builder has deleted down below the cap, while overwriting one it already
+// holds still saves.
+#if PA_BOARD == PA_BOARD_ARTOO_ESP32
+  #define PA_SEQ_STORE_CAP 5
+#elif PA_BOARD == PA_BOARD_FIREBEETLE2
+  #define PA_SEQ_STORE_CAP 10
+#else
+  #error "the Learned Sequence store cap has no value for this board"
+#endif
+
+static const uint8_t SEQ_STORE_CAP = PA_SEQ_STORE_CAP;
+static_assert(PA_SEQ_STORE_CAP <= SEQ_INDEX_CAPACITY,
+              "a board's Learned Sequence cap cannot exceed what the index holds:"
+              " a save the cap accepts would then be dropped by seqStoreIndexAdd");
+
 // Stringified from the same macro as the constant so the operator-visible size
 // in the rejection message cannot drift from the size actually enforced.
 #define PA_SEQ_STR_INNER(x) #x
 #define PA_SEQ_STR(x) PA_SEQ_STR_INNER(x)
 #define SEQ_FILE_TOO_LARGE_MESSAGE \
     "file too large (" PA_SEQ_STR(PA_SEQ_FILE_MAX_KB) " KB max)"
+#define SEQ_STORE_FULL_MESSAGE \
+    "store full (" PA_SEQ_STR(PA_SEQ_STORE_CAP) " sequences max)"
 
 static const size_t SEQ_FILE_MAX_BYTES = PA_SEQ_FILE_MAX_KB * 1024;  // per-file cap
 static const size_t SEQ_FS_FREE_FLOOR  = 2 * SEQ_FILE_MAX_BYTES;  // LittleFS free-space floor
@@ -86,3 +123,89 @@ bool seqStoreNameToFile(const char* name, char* out, size_t cap);
 // free space. Returns ok when the save may proceed, else a field-level error.
 ProtocolCheckResult seqStoreCapacityCheck(bool isNew, uint8_t count,
                                           size_t fileLen, size_t freeBytes);
+
+// How long a run of a branch is: its end step's time. Read after the parse, so
+// a beat is already the millisecond it resolves to (seq_json.cpp), and from the
+// same step protocolCheck() takes the end time from - one reading of a length,
+// not two. 0 for a branch that does not end in an end step: a stored file the
+// boot scan indexes as invalid, the only place one reaches here.
+uint32_t seqStoreRunLengthMs(const SeqStep* steps, uint8_t count);
+
+// The start of a purpose, for a list row: as much of `purpose` as fits `cap`
+// (terminator included), ending on a whole UTF-8 character, so a cut never
+// leaves half of one for the JSON writer to send. Returns true when there was
+// more than was kept. A null purpose is an empty one.
+bool seqStoreCutPurpose(const char* purpose, char* out, size_t cap);
+
+// -----------------------------------------------------------------------------
+// seqStoreSplicePhrase()
+// A sequence inside a sequence, spliced when it is loaded to run (ADR 0046):
+// replaces (*buf)[at] - a phrase step - by `child`'s steps without their end
+// step, each timed from the phrase step (a step inside one of the phrase's own
+// loop bodies keeps its pass-relative time), then puts the branch's top-level
+// units back in time order, stably, a loop header travelling with its body.
+// Anything sorted after the branch's end step is cut: the engine never runs
+// it. A null child removes the phrase step - its sequence is gone. On success
+// *buf is a new heap block (the old one freed) and *count its length. Returns
+// false, leaving the branch untouched, when the result would pass PC_MAX_STEPS
+// or the heap refuses the two working blocks.
+// -----------------------------------------------------------------------------
+bool seqStoreSplicePhrase(SeqStep** buf, uint8_t* count, uint8_t at, const SeqStep* child,
+                          uint8_t childCount);
+
+// -----------------------------------------------------------------------------
+// seqStoreSplicePhrases()
+// Every phrase a branch holds, spliced in one level per pass, down to
+// PC_NEST_DEPTH_MAX: a phrase still there on the pass past it is nested too
+// deep, and is left out. `load(ref, deep, &child, &childCount)` finds the
+// phrase a step names - a null child leaves it out - and `release()` frees what
+// load() took, once the splice is done with it. Returns false when a splice
+// would not fit (seqStoreSplicePhrase()), leaving the branch as the splices
+// before it made it.
+//
+// A template, so seqStorePrepare()'s loader inlines into its own frame rather
+// than stacking one more on the Sequence Coordinator's measured chain
+// (ADR 0040), and a native test drives the real loop with a fake loader.
+// -----------------------------------------------------------------------------
+// Marks a phrase step a pass still owes. Scoped to the step's type, not to the
+// SeqEffectClass values: 0x80 is also FX_BACKGROUND_TRACK_BOUNDED, and that is
+// safe because the mark is only ever written to, and only ever read from, a
+// STEP_SEQUENCE step, whose effectClass Protocol Check stamps FX_NONE and the
+// engine never reads -- such a step is spliced out, or refused, before a run.
+// What must hold is that a marked phrase step reads differently from an
+// unmarked one.
+static const uint8_t SEQ_PHRASE_OWED = 0x80;
+static_assert(SEQ_PHRASE_OWED != FX_NONE, "a marked phrase step must differ from an unmarked one");
+
+template <typename Load, typename Release>
+inline bool seqStoreSplicePhrases(SeqStep** buf, uint8_t* count, Load&& load, Release&& release) {
+    for (uint8_t pass = 0; pass <= PC_NEST_DEPTH_MAX && *buf != nullptr; ++pass) {
+        // A pass splices exactly the phrases the branch held when it began:
+        // the ones a splice brings in are the next pass's, one level down,
+        // even where they sort ahead of one this pass still owes. Re-sorting
+        // moves steps, so the owed ones are marked and found afresh by mark.
+        // A phrase step's effectClass is otherwise FX_NONE and never read.
+        uint8_t todo = 0;
+        for (uint8_t k = 0; k < *count; ++k) {
+            if ((*buf)[k].type == STEP_SEQUENCE) {
+                (*buf)[k].effectClass = SEQ_PHRASE_OWED;
+                ++todo;
+            }
+        }
+        for (; todo > 0; --todo) {
+            uint8_t at = 0;
+            while (at < *count && !((*buf)[at].type == STEP_SEQUENCE &&
+                                    (*buf)[at].effectClass == SEQ_PHRASE_OWED)) {
+                ++at;
+            }
+            if (at >= *count) break;
+            const SeqStep* child = nullptr;
+            uint8_t childCount = 0;
+            load((const char*)(*buf)[at].payload, pass == PC_NEST_DEPTH_MAX, &child, &childCount);
+            const bool ok = seqStoreSplicePhrase(buf, count, at, child, childCount);
+            release();
+            if (!ok) return false;
+        }
+    }
+    return true;
+}

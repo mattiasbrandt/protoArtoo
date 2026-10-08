@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" data-scripts="/web_api.js,/overlay.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/dome_bearing.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/dome_panel_model.js,/body_art.js,/body_view.js,/outputs.js,/parts_mapping.js,/droid_picture.js,/parts.js">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Parts - protoR2</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- Thin delegate: a direct visit is handed to the shell at this route (ADR 0048). -->
+    <script>window.PAShellDelegate = true; location.replace("/#parts");</script>
+  </head>
+  <body data-page="parts">
+
+    <!-- The title is the name in the nav (ADR 0066). Every act on this page is named beside the row it acts on, so the title carries
+         none of its own. -->
+    <div class="title">
+      <div>
+        <h1>Parts</h1>
+        <!-- A moved thing leaves a forwarding address. Calibration and back to
+             centre went to Servos with the output table (operator, 2026-09-19
+             on #412); the parts wiring table and Find by Moving are on Wiring
+             (#411, #463). A Part's output is picked here too, in the panel
+             and on each Unused row (operator, 2026-10-04 on #463). -->
+        <p class="forward"><a href="#wiring">Wiring</a> has every wire and Find by Moving. Calibrate an output on <a href="#servo">Servos</a>.</p>
+      </div>
+    </div>
+
+    <!-- The picture, at the head of the surface: a builder reads what the whole
+         droid is doing off it before they read a row (ADR 0063, #352, #372).
+         One card, three faces - Front, Rear and Dome (Top) - with the
+         selection panel, the legend and the Parts list in the rail beside it.
+         All of it is written into this card by data/body_view.js; a click on
+         the picture only ever selects, and the acts are the named buttons in
+         the panel. -->
+    <div class="card">
+      <div class="bv-layout">
+        <div class="bv-drawing" id="bodyview-drawing"></div>
+        <div class="bv-rail" id="bodyview-panel"></div>
+      </div>
+      <p class="feedback" id="parts-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
+    </div>
+
+    <!-- Unused: the Parts no Output claims, moved here from Wiring (operator,
+         2026-09-28 on #411). Each row carries the Output bar the picture's
+         panel and Wiring's table carry (data/parts_mapping.js
+         outputChooser(); operator, 2026-10-04 on #463). Written by
+         data/parts.js. -->
+    <div class="card">
+      <div class="sect">
+        <h2>Unused</h2>
+        <span class="sub waiting" id="parts-unused-summary" role="status" aria-live="polite"></span>
+      </div>
+      <div id="parts-unused"></div>
+      <p class="feedback" id="parts-unused-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
+    </div>
+
+    <!-- The move question, asked before a Part is taken off another Output
+         (#347): the same question Wiring and Servos ask, worded by
+         data/parts_mapping.js announcement(). -->
+    <dialog class="question-dialog" id="parts-move-dialog" role="alertdialog" aria-labelledby="parts-move-title" aria-describedby="parts-move-body">
+      <h4 class="move-title" id="parts-move-title"></h4>
+      <p class="move-body" id="parts-move-body"></p>
+      <div class="button-row">
+        <button class="btn move-cancel icon-act act-keeps-words" type="button" id="parts-move-cancel"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-close"/></svg><span class="act-label"></span></button>
+        <button class="btn accent move-confirm icon-act act-keeps-words" type="button" id="parts-move-confirm"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-transfer"/></svg><span class="act-label"></span></button>
+      </div>
+    </dialog>
+
+  </body>
+</html>

@@ -1,196 +1,195 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/drive.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/drive.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Drive - protoArtoo</title>
+    <title>Foot Drive - protoR2</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
-    <!-- PA:INCLUDE _recovery_kernel.html -->
+    <!-- Thin delegate. This file is the one copy of this surface's markup and
+         the Operator Shell fetches it; fetching never runs scripts, so this
+         line is inert for the shell. A browser that lands here directly -- a
+         bookmark, an old link, a support conversation -- is handed to the shell
+         at this surface's route instead, so the address keeps opening what it
+         names (ADR 0048). -->
+    <script>window.PAShellDelegate = true; location.replace("/#drive");</script>
   </head>
   <body data-page="drive">
-    <div id="shell-top"></div>
 
+    <!-- The title is the name in the nav (ADR 0066). Every act here is named
+         beside the thing it acts on, so the title carries none of its own; the three that act on the droid rather than on this screen are
+         the Dashboard's and ride the topbar (#344). -->
+    <div class="title">
+      <div>
+        <h1>Foot Drive</h1>
+      </div>
+    </div>
 
-    <!-- Disabled notice (hidden when S1 Drive is enabled) -->
+    <!-- Foot Drive switched off in Configuration. An Availability Family "change it
+         here" (GLOSSARY.md): the card names the move and routes to it, and the
+         treatment comes from .disabled-card rather than from a hue. -->
     <div id="drive-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
-      <h3>🚗 Drive Hardware Disabled</h3>
-      <div class="desc">Wheel commands are unavailable because Drive is disabled.</div>
-      <div class="desc disabled-reason"><strong>Required component:</strong> S1 — Drive</div>
-      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable <strong>S1 — Drive</strong> to restore drive controls.</div>
+      <div class="sect"><h2>Foot Drive</h2><span class="sub">switched off in Configuration</span></div>
+      <p class="note"><b>Off:</b> the droid is a statue. <a class="setup-link" href="/configuration.html">Switch Foot Drive on in Configuration</a></p>
     </div>
 
-    <!-- Safety Controls - ALWAYS FIRST -->
-    <div class="card danger">
-      <h3>🛑 Safety Controls</h3>
-      <div class="button-row drive-safety-actions">
-        <button id="estop-button" class="btn danger" type="button" aria-label="Emergency Stop">
-          🛑 Latch Estop
-        </button>
-        <button id="enable-web-control-button" class="btn accent" type="button" aria-label="Enable Web Control">
-          ✓ Enable Web Control
-        </button>
-        <button id="disable-web-control-button" class="btn" type="button" aria-label="Disable Web Control">
-          ✕ Disable Web Control
-        </button>
-      </div>
-      <div id="control-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
-      <div class="recovery-row mt-12">
-        <span class="desc">Recovery: only available when estop is latched</span>
-        <button id="clear-estop-button" class="btn" type="button" aria-label="Clear Emergency Stop">🟢 Clear Estop</button>
-      </div>
-      <div class="safety-status-strip mt-12">
-        <span>Failsafe: <span id="status-failsafe-label">--</span></span>
-      </div>
-    </div>
+    <!-- The drive station: one plate, the consent acts across its head, then
+         three columns - the pad, the two meters it moves over what the wheel
+         controller says back, and the speed the droid is held to. One
+         surface for one job, divided by seams rather than by a card per part
+         (#399, operator review 2026-09-28).
 
-    <!-- Speed Preset -->
-    <div class="card">
-      <h3>🚦 Speed Preset</h3>
-      <div class="desc">Choose a drive speed profile for one-tap limit switching.</div>
-      <div class="drive-preset-section mt-16" aria-label="Speed preset controls">
-        <div class="rc-mode-grid drive-preset-grid">
-          <button class="rc-mode-card drive-preset-card preset-btn" data-speed-preset="slow" type="button" aria-label="Apply slow speed preset" aria-pressed="false">
-            <div class="rc-mode-icon" aria-hidden="true">🐌</div>
-            <div class="rc-mode-title">Slow</div>
-            <div class="rc-mode-desc">Precision / indoor pace</div>
-            <span class="preset-limit-value" id="preset-value-slow"></span>
-          </button>
-          <button class="rc-mode-card drive-preset-card preset-btn" data-speed-preset="normal" type="button" aria-label="Apply normal speed preset" aria-pressed="false">
-            <div class="rc-mode-title">Normal</div>
-            <div class="rc-mode-desc">Balanced default profile</div>
-            <span class="preset-limit-value" id="preset-value-normal"></span>
-          </button>
-          <button class="rc-mode-card drive-preset-card preset-btn" data-speed-preset="turbo" type="button" aria-label="Apply turbo speed preset" aria-pressed="false">
-            <div class="rc-mode-icon" aria-hidden="true">⚡</div>
-            <div class="rc-mode-title">Turbo</div>
-            <div class="rc-mode-desc">Fast profile for open runs</div>
-            <span class="preset-limit-value" id="preset-value-turbo"></span>
-          </button>
+         Stopping the droid and releasing the latch are the Operator Shell's
+         STOP, one toggle on every screen (ADR 0048, 2026-09-29 amendment);
+         what stays here is the consent that lets a browser drive at all. The failsafe reading is the head's subtitle,
+         because a section head carries a state rather than appearing bare
+         (docs/ui-copy-voice.md rule 8). -->
+    <div class="card drive-station">
+      <div class="sect"><h2>Drive</h2><span class="sub">Failsafe &middot; <span class="waiting" id="status-failsafe-label"></span></span></div>
+
+      <div class="drive-consent">
+        <div class="drive-consent-acts">
+          <button id="enable-web-control-button" class="btn btn-sm accent icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-lan-connect"/></svg><span class="act-label">Enable web control</span></button>
+          <button id="disable-web-control-button" class="btn btn-sm btn-quiet icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-lan-disconnect"/></svg><span class="act-label">Disable web control</span></button>
+        </div>
+        <p class="hint">Off, the pad below sends nothing. The radio drives either way.</p>
+      </div>
+      <div id="control-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
+
+      <div class="drive-cockpit">
+        <!-- The pad, as a round instrument: where each key sits on the ring is
+             what says which way it goes, and the word on it says it out loud.
+             The arrows are the sprite's own (docs/icon-set-provenance.md);
+             forward and reverse are the horizontal arrow turned a quarter,
+             because the vertical pair is not among the paths this image
+             carries. Stop deliberately carries NO icon: the one stop-circle in
+             this product is the Latching Estop in the topbar, and a second one
+             here would read as a safety control it is not. Each key is placed
+             by its own class, not by its order, so the markup may be re-read in
+             any order a screen reader wants. -->
+        <div class="drive-pad-wrap">
+          <div class="drive-pad" role="group" aria-label="Drive pad, hold to drive">
+            <button class="pad-key pad-fwd" data-drive-speed="260" data-drive-steer="0"
+              type="button"><svg class="i pad-icon pad-up" aria-hidden="true" focusable="false"><use href="#i-arrow-right"/></svg>Forward</button>
+            <button class="pad-key pad-lft" data-drive-speed="0" data-drive-steer="-220"
+              type="button"><svg class="i pad-icon" aria-hidden="true" focusable="false"><use href="#i-arrow-left"/></svg>Left</button>
+            <button class="pad-key pad-stop" data-drive-speed="0" data-drive-steer="0"
+              type="button">Stop</button>
+            <button class="pad-key pad-rgt" data-drive-speed="0" data-drive-steer="220"
+              type="button"><svg class="i pad-icon" aria-hidden="true" focusable="false"><use href="#i-arrow-right"/></svg>Right</button>
+            <button class="pad-key pad-rev" data-drive-speed="-260" data-drive-steer="0"
+              type="button"><svg class="i pad-icon pad-down" aria-hidden="true" focusable="false"><use href="#i-arrow-right"/></svg>Reverse</button>
+          </div>
+          <p class="hint">A frozen browser stops the feet after the <b>web control timeout</b> below.</p>
+        </div>
+
+        <!-- The meters - what the controller is sending the wheels - and under
+             them what the wheels' own board says back. The meters are a
+             readout, never a control: nothing here is draggable, because
+             nothing on this droid reads a wheel back and a meter you could
+             move would promise that it did. -->
+        <div class="drive-console">
+          <div class="drive-meters" id="live-output-card">
+            <div class="drive-meter">
+              <div class="drive-meter-head">
+                <span class="drive-meter-label">Throttle</span>
+                <span class="drive-meter-value" id="throttle-value">0</span>
+              </div>
+              <div class="drive-vslider-track">
+                <div class="drive-vslider-fill" id="throttle-fill"></div>
+                <div class="drive-vslider-thumb" id="throttle-thumb"></div>
+              </div>
+            </div>
+            <div class="drive-meter">
+              <div class="drive-meter-head">
+                <span class="drive-meter-label">Steer</span>
+                <span class="drive-meter-value" id="steer-value">0</span>
+              </div>
+              <div class="drive-vslider-track">
+                <div class="drive-vslider-fill" id="steer-fill"></div>
+                <div class="drive-vslider-thumb" id="steer-thumb"></div>
+              </div>
+            </div>
+            <p class="hint drive-meters-hint">A jammed wheel reads the same as a free one.</p>
+          </div>
+
+          <!-- The wheel controller's own readings, not this droid's Body
+               Controller's. Hidden until the fitted Foot Drive declares that
+               it reports them (data/drive.js loadFootDrive). -->
+          <div class="drive-side-part" id="wheel-controller-card" hidden>
+            <div class="drive-side-head"><span class="drive-side-label">Wheel controller</span><span class="drive-side-state">last reply</span></div>
+            <p class="hint" id="hb-no-data">Nothing from the wheel controller yet.</p>
+            <dl class="drive-telemetry" id="hb-data-grid">
+              <div>
+                <dt>Battery</dt>
+                <dd id="hb-battery">—</dd>
+              </div>
+              <div>
+                <dt>Board temp</dt>
+                <dd id="hb-board-temp">—</dd>
+              </div>
+              <div>
+                <dt>Speed R / L</dt>
+                <dd id="hb-speed">—</dd>
+              </div>
+              <div id="hb-current-row">
+                <dt>Current L / R</dt>
+                <dd id="hb-current">—</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+
+        <!-- The speed the droid is held to: the third column of the station,
+             its three presets stacked like the gates of a gearbox. -->
+        <div class="drive-side">
+          <div class="drive-side-part">
+            <div class="drive-side-head"><span class="drive-side-label">Speed preset</span><span class="drive-side-state waiting" id="preset-summary"></span></div>
+            <div class="seg drive-preset-seg" role="group" aria-label="Speed preset">
+              <button class="preset-btn" data-speed-preset="slow" type="button" title="Tight spaces, indoors" aria-label="Apply slow speed preset" aria-pressed="false">Slow<span class="preset-limit-value" id="preset-value-slow"></span></button>
+              <button class="preset-btn" data-speed-preset="normal" type="button" title="Everyday pace" aria-label="Apply normal speed preset" aria-pressed="false">Normal<span class="preset-limit-value" id="preset-value-normal"></span></button>
+              <button class="preset-btn" data-speed-preset="turbo" type="button" title="Open floor only" aria-label="Apply turbo speed preset" aria-pressed="false">Turbo<span class="preset-limit-value" id="preset-value-turbo"></span></button>
+            </div>
+            <div id="preset-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+          </div>
         </div>
       </div>
-      <div id="preset-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
-    <!-- Live Drive Output -->
-    <div class="card" id="live-output-card">
-      <h3>📊 Live Drive Output</h3>
-      <div class="drive-sliders-row">
-        <div class="drive-vslider-wrap">
-          <div class="drive-vslider-track">
-            <div class="drive-vslider-fill" id="steer-fill"></div>
-            <div class="drive-vslider-thumb" id="steer-thumb"></div>
-          </div>
-          <div class="drive-vslider-label">STEER</div>
-          <div class="drive-vslider-value" id="steer-value">0</div>
-        </div>
-        <div class="drive-vslider-wrap">
-          <div class="drive-vslider-track">
-            <div class="drive-vslider-fill" id="throttle-fill"></div>
-            <div class="drive-vslider-thumb" id="throttle-thumb"></div>
-          </div>
-          <div class="drive-vslider-label">THROTTLE</div>
-          <div class="drive-vslider-value" id="throttle-value">0</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Drive Controller -->
-    <div class="card" id="hoverboard-card">
-      <h3>🤖 Drive Controller</h3>
-      <div class="desc" id="hb-no-data">No data — controller feedback not yet received.</div>
-      <div class="status-grid" id="hb-data-grid">
-        <dl>
-          <div class="status-item">
-            <dt>Battery</dt>
-            <dd id="hb-battery">—</dd>
-          </div>
-          <div class="status-item">
-            <dt>Board Temp</dt>
-            <dd id="hb-board-temp">—</dd>
-          </div>
-          <div class="status-item">
-            <dt>Speed R / L</dt>
-            <dd id="hb-speed">—</dd>
-          </div>
-          <div class="status-item" id="hb-current-row">
-            <dt>Current L / R</dt>
-            <dd id="hb-current">—</dd>
-          </div>
-        </dl>
-      </div>
-    </div>
-
-    <!-- Drive Controls - D-Pad Grid Layout -->
+    <!-- Drive settings, as rows: the name, the fader, the number it is on. -->
     <div class="card">
-      <h3>🎮 Drive Controls</h3>
-      <div class="desc">Hold to drive, release to stop. Command timeout follows the configured Web Control Timeout setting.</div>
-      <div class="drive-control-hints mt-10">
-        <span class="status-pill pill-info status-pill-compact">🎯 Hold = command</span>
-        <span class="status-pill pill-info status-pill-compact">🛑 Release = stop</span>
-      </div>
-      <div class="dpad-grid mt-16">
-        <button class="btn dpad-btn" data-drive-speed="260" data-drive-steer="0"
-          type="button" aria-label="Drive Forward">⬆️</button>
-        <button class="btn dpad-btn" data-drive-speed="0" data-drive-steer="-220"
-          type="button" aria-label="Steer Left">⬅️</button>
-        <button class="btn dpad-btn stop" data-drive-speed="0" data-drive-steer="0"
-          type="button" aria-label="Stop">⏹️</button>
-        <button class="btn dpad-btn" data-drive-speed="0" data-drive-steer="220"
-          type="button" aria-label="Steer Right">➡️</button>
-        <button class="btn dpad-btn" data-drive-speed="-260" data-drive-steer="0"
-          type="button" aria-label="Drive Reverse">⬇️</button>
-      </div>
-    </div>
-
-    <!-- Drive Settings -->
-    <div class="card">
-      <h3>⚙️ Drive Settings</h3>
-      <div class="desc">Speed cap and web control timeout settings. Speed presets are switched from the buttons above or via RC Speed preset cycle trigger.</div>
-      <form id="config-form" class="form-grid mt-16">
-        <label class="field">
-          <span>Maximum Speed Limit</span>
-          <div class="slider-container">
-            <input id="speed-limit-max" name="speedLimitMax" type="range" min="0" max="600" step="5"
-              title="Maximum speed value sent to the hoverboard controller (0–600). Lower values make the droid slower and safer.">
-          </div>
-          <span class="drive-readout" id="speed-limit-max-readout">—</span>
+      <div class="sect"><h2>Drive settings</h2><span class="sub">saved as you change</span></div>
+      <form id="config-form" class="setting-rows">
+        <label class="setting-row">
+          <span class="setting-name">Maximum speed limit<span class="hint">The most the Body Controller ever sends the wheels.</span></span>
+          <input id="speed-limit-max" class="fader" name="speedLimitMax" type="range" min="0" max="600" step="5">
+          <span class="setting-value" id="speed-limit-max-readout">—</span>
         </label>
-        <label class="field">
-          <span>Web Control Timeout (ms)</span>
-          <input id="web-drive-timeout" name="webDriveTimeoutMs" type="number" min="100" max="5000" step="50"
-            title="Web drive commands expire after this many milliseconds. The droid stops if no new command arrives within this window.">
+        <label class="setting-row">
+          <span class="setting-name">Slow preset limit</span>
+          <input id="speed-preset-slow" class="fader preset-input" name="speedPresetSlow" aria-describedby="preset-distinct-hint" type="range" min="0" max="600" step="5">
+          <span class="setting-value" id="speed-preset-slow-readout">—</span>
         </label>
-        <label class="field">
-          <span>Slow Preset Limit</span>
-          <div class="slider-container">
-            <input id="speed-preset-slow" name="speedPresetSlow" class="preset-input" aria-describedby="preset-distinct-hint" type="range" min="0" max="600" step="5"
-              title="Drive speed limit applied by Slow preset.">
-          </div>
-          <span class="drive-readout" id="speed-preset-slow-readout">—</span>
+        <label class="setting-row">
+          <span class="setting-name">Normal preset limit</span>
+          <input id="speed-preset-normal" class="fader preset-input" name="speedPresetNormal" aria-describedby="preset-distinct-hint" type="range" min="0" max="600" step="5">
+          <span class="setting-value" id="speed-preset-normal-readout">—</span>
         </label>
-        <label class="field">
-          <span>Normal Preset Limit</span>
-          <div class="slider-container">
-            <input id="speed-preset-normal" name="speedPresetNormal" class="preset-input" aria-describedby="preset-distinct-hint" type="range" min="0" max="600" step="5"
-              title="Drive speed limit applied by Normal preset.">
-          </div>
-          <span class="drive-readout" id="speed-preset-normal-readout">—</span>
+        <label class="setting-row">
+          <span class="setting-name">Turbo preset limit</span>
+          <input id="speed-preset-turbo" class="fader preset-input" name="speedPresetTurbo" aria-describedby="preset-distinct-hint" type="range" min="0" max="600" step="5">
+          <span class="setting-value" id="speed-preset-turbo-readout">—</span>
         </label>
-        <label class="field">
-          <span>Turbo Preset Limit</span>
-          <div class="slider-container">
-            <input id="speed-preset-turbo" name="speedPresetTurbo" class="preset-input" aria-describedby="preset-distinct-hint" type="range" min="0" max="600" step="5"
-              title="Drive speed limit applied by Turbo preset.">
-          </div>
-          <span class="drive-readout" id="speed-preset-turbo-readout">—</span>
+        <label class="setting-row">
+          <span class="setting-name">Web control timeout<span class="hint">How long the feet run on the last command heard.</span></span>
+          <span class="setting-number"><input id="web-drive-timeout" name="webDriveTimeoutMs" class="number-cell" type="number" min="100" max="5000" step="50"><span class="setting-unit">ms</span></span>
+          <span class="setting-value"></span>
         </label>
-        <div id="preset-distinct-hint" class="feedback warning preset-distinct-hint hidden" role="status" aria-live="polite" aria-atomic="true">Preset limits must be distinct. Duplicate values make preset switching ambiguous.</div>
+        <p class="hint">Use three different numbers, or two presets look the same.</p>
+        <div id="preset-distinct-hint" class="feedback warning hidden" role="status" aria-live="polite" aria-atomic="true">Two presets share a number.</div>
       </form>
-      <div id="config-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading settings...</div>
+      <div id="config-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading settings...</div>
     </div>
-
-    <div id="shell-status"></div>
 
     <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
          fetches /page_bootstrap.js itself, with retry, and hands it the script

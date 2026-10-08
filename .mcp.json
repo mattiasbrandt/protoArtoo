@@ -12,7 +12,7 @@
       "command": "npx",
       "args": [
         "@playwright/mcp@latest",
-        "--output-dir=/tmp/protoartoo-playwright"
+        "--output-dir=/tmp/protor2-playwright"
       ]
     }
   }

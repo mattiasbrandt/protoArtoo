@@ -1,10 +1,25 @@
-# protoArtoo Droid Parts Catalog — MrBaddeley MK4 (default model)
-# ================================================================
-# Source of truth for the physical parts of the default droid design: every
-# panel, door, arm, and fixture, with its community-standard shorthand and
-# position. This is DATA ONLY — mapping UI, body SVG views, and per-part
-# control land later (see issue #175). Code that needs a part vocabulary
-# (dome map, body views, sequence lanes, wiring sheet) reads from here.
+# protoR2 Droid Parts Catalog
+# ==============================
+# Source of truth for the physical parts of the droid designs protoR2
+# carries: every panel, door, arm, and fixture, with its community-standard
+# shorthand and position.
+#
+# AFTER EDITING THIS FILE, REGENERATE:
+#
+#     python3 tools/generate_droid_parts_catalog.py
+#
+# It rewrites two committed outputs: include/droid_parts.h, the id vocabulary
+# firmware resolves a Part against and the bearing each Part sits at, and
+# data/droid_parts.js, the names, shorthand, aliases and position every
+# operator surface labels a Part with.
+# Editing this file without regenerating them leaves the firmware's vocabulary
+# gate and every Part name on screen stale against the catalog they came from
+# — a Part a builder can see and not wire, or wire and not see (#301, #356).
+#
+# Nothing reads this file at runtime. It is generated into the firmware and the
+# browser at build time, so neither depends on a filesystem that can go missing
+# (#301). Code that needs a part vocabulary (dome map, body views, sequence
+# lanes, wiring sheet) reads a generated output, never this YAML.
 #
 # Naming policy (operator decision 2026-08-22):
 #   The BASE name for a part follows MrBaddeley's design part names (cad_name)
@@ -16,8 +31,118 @@
 #   design files (the dome CAD names are known to be unordered/duplicated,
 #   which is why ids here are position-ordered instead) — do not guess them.
 #
+# Designs and what they seed (ADR 0047, operator decision 2026-09-08):
+#   A part is declared ONCE below, with everything true about it wherever it
+#   appears. The `designs:` block names the designs and does one thing: it
+#   lists the part ids each design and variant SEEDS, so choosing MrBaddeley
+#   MK4 fits that complement in a single press.
+#   A design SEEDS, it never FENCES. The Fitted Parts on the builder's own
+#   droid are the truth; a design is a running start at them. A part outside
+#   the seeded set is still authorable, still saveable and still wirable, and
+#   nothing in this block narrows what Protocol Check accepts — that
+#   vocabulary is the union of every design's complement plus the parts no
+#   design lists.
+#   One seed list serves both halves of the answer. A builder states a Dome
+#   Design and a Body Design separately — an MK4 complex dome on an MK4 basic
+#   body is an ordinary droid, not an edge case — so a reader takes the dome
+#   half of a design's seeds for the Dome Design and the body half for the
+#   Body Design. Which half a part belongs to is the section it is declared in
+#   below, which is why no seed list repeats it.
+#   MrBaddeley MK4 is the design protoR2 pre-selects, recorded as an answer
+#   rather than an absence (#333). Which variant it pre-selects is its
+#   `default_variant`, one field per design rather than one per half: a Dome
+#   Design and a Body Design are answered separately and each carries its own
+#   design row, so one field already lets a builder run a complex dome on a
+#   basic body (operator decision 2026-09-10, #356).
+#   A part no design lists is a Common Addition, offered to every droid
+#   whatever it was built from and never fitted by default: all six body arms
+#   (the two utility arms, and the gripper and interface arms with their claw
+#   and tool; operator's verified mapping, 2026-09-18, #409). The
+#   `other_slots` escape hatch at the foot of this file sits outside every
+#   design too.
+#   Adding a design is one block here and no edit to any part row — the
+#   operation ADR 0047 exists to make cheap. Bearings are one drawing's
+#   geometry for the character rather than design geometry (the vendored dome
+#   map, see `bearing_deg` below), so no design carries coordinates of its own.
+#
+# Design entry fields:
+#   id:         stable design id — what a stored Droid Build refers to.
+#   preselected:
+#               true on the ONE design a fresh controller starts on, and absent
+#               on every other. It is a field rather than "the first row"
+#               because a stored Droid Build has to name a design the day the
+#               rows are reordered, and because MK4 shipping pre-selected is a
+#               decision (ADR 0047, #333) rather than an accident of order. The
+#               generator refuses a catalog with none or with two, and the
+#               design carrying it is the one a fresh flash records as its
+#               answer — together with its `default_variant` and the complement
+#               that variant seeds.
+#   card:       which of the three card kinds this design is (ADR 0047), and
+#               required on every design, because a card whose kind is guessed
+#               from its id or from an empty seed list is the one way `own` and
+#               an unread complement end up drawn alike:
+#                 supported  a design we carry: selectable, and choosing it
+#                            seeds its complement.
+#                 roadmap    a design we intend to carry: drawn, never
+#                            selectable, and never stored. Its complement is
+#                            unknown by definition, so its `seeds:` is `TBD`,
+#                            and the generator keeps it out of the firmware's
+#                            design table, which is what makes the controller
+#                            refuse it as a stored answer (#368). "Planned, not
+#                            built" must never read as "your board cannot do
+#                            this" (#297, #302).
+#                 own-build  "my own build": always selectable and seeds
+#                            nothing, so a droid that is nobody's published
+#                            design is never locked out. Its `seeds:` is `[]`.
+#   halves:     which halves of a droid the design is offered for, when it is
+#               not both: `[dome]` on a dome-only design. Absent means both. It
+#               decides which of the two card rows the design is drawn in; it
+#               is not a fence, and the firmware stores either half's answer
+#               whatever it says.
+#   label:      the operator-facing name on the card.
+#   short:      short form for chips and the wiring sheet's build summary.
+#   blurb:      the one sentence the card shows.
+#   variants:   this design's OWN variant set. A design with no variants omits
+#               the key rather than carrying an empty list, so the second
+#               control disappears instead of offering an empty axis.
+#   default_variant:
+#               which of this design's own variants a builder is pre-selected
+#               onto. Required exactly when `variants:` is present, and its
+#               value must be one of them; a design with no variants carries no
+#               default either, by the same rule that keeps it from carrying an
+#               empty `variants:` list. Pick the variant that actually seeds
+#               something, so nobody is ever pre-selected onto a complement
+#               that is empty or unknown.
+#   seeds:      the part ids a design — or one of its variants — puts on the
+#               droid. A variant carries its own seeds because a variant is
+#               not cosmetic: a basic dome cannot grow the complex pies, so
+#               drawing the maximal complement at a basic-dome builder would
+#               promise parts they can never fit.
+#               A variant may also give its seeds per half, as
+#               `{dome: ..., body: ...}`, each half a list or `TBD`, when one
+#               half is known and the other is not (MK4 Basic, #409).
+#               `seeds: TBD` means the complement is not known here and must
+#               not be guessed. It is a scalar rather than a short list on
+#               purpose: a reader expecting a list fails loudly instead of
+#               quietly seeding an empty droid. It generates as `null` — never
+#               as the string "TBD" and never as `[]` — so a consumer reaching
+#               for the complement throws instead of seeding an empty droid.
+#   legacy_ids: on a variant, the ids it was stored under before a rename.
+#               A stored Droid Build names its variant verbatim, so firmware
+#               reads each legacy id as the variant it became rather than
+#               resetting the droid (`simple` became `basic`, #409).
+#   dome_drawn_as:
+#               `{design: ..., variant: ...}`: the design whose dome drawing is
+#               shown for this one's dome, on a design whose dome seeds copy
+#               that design's because its own part list has not been read yet
+#               (MK4.1 is drawn as MK4 Complex, #409). Absent means the design
+#               is drawn as itself, or not at all. It names another supported
+#               dome design, at one of its variants, that is drawn as itself.
+#               Remove it the day the design's own dome list is read, together
+#               with the copied seeds.
+#
 # Field notes:
-#   id:         protoArtoo part id — stable, position-ordered per class
+#   id:         protoR2 part id — stable, position-ordered per class
 #   shorthand:  the community channel-naming standard from the Printed Droid
 #               R2-D2 terminology reference (printed-droid.com/kb/r2-d2-terminology):
 #               PP1..PP6 pie panels, P1..P14 lower dome panels, HPn-1/HPn-2
@@ -26,97 +151,402 @@
 #               no geometry from those files lives in this repository).
 #   aliases:    community/plain-English names that must match on import/search.
 #   bearing_deg: degrees clockwise viewed from above, 0 = dead astern,
-#               180 = dead ahead (Printed Droid drawing convention). Dome
-#               entries carry real bearings; body entries carry position
-#               words only until measured on our droid.
+#               180 = dead ahead (Printed Droid drawing convention). Seen from
+#               above, facing the way the droid faces, 90 is its left and 270
+#               its right. Dome entries carry bearings; body entries carry
+#               position words only until measured on our droid.
+#
+#               DECIDED (operator, 2026-09-30 (convention) and 2026-10-02
+#               (drawing), #445): the convention above stands, and the dome
+#               bearings are taken from the vendored dome drawing
+#               (data/dome_panel_model.js), which is right where the numbers
+#               this file used to carry disagreed with it.
+#
+#               HOW THEY WERE MEASURED, 2026-10-02 (#445). The drawing is
+#               viewed from above with the droid's front at the bottom, centred
+#               on (240, 240). A bearing is the angle of a point about that
+#               centre, clockwise on the page from straight up. A pie or a ring
+#               panel is the midpoint of its outer arc; a holoprojector is the
+#               centre of its mark. Rounded to the half degree.
+#               Two things the drawing does not settle:
+#                 - `panel6`, `magicPanel` and `panel5` are drawn as ONE fixed
+#                   piece ("P6/MP/P5", 67 to 80 degrees). They are that piece
+#                   split in thirds, in the order it names them clockwise, and
+#                   each carries its third's midpoint: 69, 73.5 and 78. They
+#                   are not measured separately.
+#                 - `domeBtn1` and `domeBtn2` are not on the drawing. Their
+#                   bearings are the ones this file carried before and were
+#                   never measured from it.
 #   position:   compass-ish word — easier to find on a real droid than a number.
-#   control:    how protoArtoo can reach the part TODAY:
+#               Left and right are the droid's own. On a dome row the word is
+#               derived from the row's `bearing_deg`, never chosen by hand:
+#               eight 45-degree sectors centred on dead ahead, the droid's
+#               right, dead astern and its left (dead ahead plus or minus 22.5
+#               is `front`, the next 45 clockwise `front-right`, and so on
+#               round). Whoever corrects a bearing re-derives its word. The
+#               drift check (tools/check_droid_parts_drift.py) guards
+#               staleness, never truth: it does not compare a word with a
+#               bearing.
+#   control:    how protoR2 can reach the part TODAY:
 #               dome-link  = AstroPixelsPlus serial (:OPnn/:CLnn panel numbers)
 #               body-ledc  = local LEDC PWM channel on the Artoo PCB
 #               none       = present on the droid design, nothing drives it yet
+#               It says what is DRIVABLE, never what is NAMEABLE. EVERY part
+#               declared here reaches both generated outputs, so a builder who
+#               wires a spare output to the front-left breadpan door records
+#               `doorFL` on that row rather than an `otherN` slot, and a part
+#               nothing drives reports part-not-assigned instead of reading as
+#               an id the build never heard of (operator decision 2026-09-11,
+#               #358). Which part an output actually moves is the builder's own
+#               droid's answer, held on the Servo Output rows; the dome still
+#               owns execution of panel intent under Catalog Authority, which
+#               is a statement about who drives, not about who may be named.
+#               The tokens are not this file's to invent: they are declared in
+#               include/droid_part_control.inc, and the generator refuses a
+#               control path the firmware does not define.
+#               A row that omits `control:` entirely is not a driven thing at
+#               all — the dome fixtures are orientation references, not servos
+#               — and is generated as `control: null` to keep it distinct from
+#               a `none` that is waiting to be wired.
 #   dome_link_panel: the :OPnn/:CLnn number our AstroPixelsPlus fork serves
 #               for this part. TBD until verified against the fork's panel
 #               table on hardware — do not guess.
+#   kind:       the Part Kind — what this part usually IS, as opposed to what
+#               drives it. `light` is the one kind declared today, and it is
+#               what makes a PSI, a logic display or the Magic Panel a part a
+#               builder names and choreographs for rather than a footnote on a
+#               panel row (#320, ADR 0045). A surface branches on this field,
+#               never on an id prefix or a name match, and it is ADVISORY: it
+#               earns a part its own treatment and lets a surface query a
+#               surprising mapping. It never refuses one. A row with no `kind:`
+#               is one this catalog does not classify — the escape-hatch slots
+#               are whatever the builder wired to them.
+#               The tokens are the generator's PART_KINDS, not this file's to
+#               invent: firmware has no use for a Kind, so unlike `control:`
+#               there is no manifest to read it from.
+#   sits_on:    the part this one is carried by — a light and the dome panel it
+#               lights. It must name a declared part, and that part must stand
+#               on its own. A part that sits on another takes its `position`
+#               and `bearing_deg` from it unless it declares its own, so the
+#               two can never disagree about where they both are.
 #
-# Dome panel notes ("lit"): panels Printed Droid lists as carrying lights or
-# displays rather than a servo. A mapping onto one of these is unusual but
-# legal — query it, never refuse it.
+# `TBD` is a declared unknown and never reaches a generated output as a value:
+# the generator omits the key instead, so a consumer sees "not known here"
+# rather than a part whose CAD name is literally the word TBD. A `cad_name:`
+# that is explicitly null is a different statement — the part HAS no CAD name,
+# which is what marks a Common Addition (ADR 0047) — and does generate.
+#
+# Lit dome panels: the panels Printed Droid lists as carrying lights or
+# displays rather than a servo are the ones a `dome_lights` row sits on. What
+# each carries used to be a `lit:` note on the panel itself; it is a part of its
+# own now, so the light has a name of its own, a Part Kind, and a place in every
+# sequence and picker a door or an arm appears in. A servo mapping onto one of
+# those panels is unusual but legal — query it, never refuse it.
 
-model:
-  design: MrBaddeley MK4
-  dome_pies_large: 6      # PP1..PP6 — the six primary pie panels
-  dome_pies_small: 6      # MK4 design also has 6 small inner pies (no PP shorthand)
-  dome_lower_panels: 14   # P1..P14
-  holoprojectors: 3       # HP1..HP3, pan+tilt each
+designs:
+  - id: mk4
+    # The design a fresh controller starts on, recorded as an answer rather
+    # than left absent (ADR 0047): a builder reads MK4 and corrects it, which
+    # an empty droid map would never prompt them to do.
+    preselected: true
+    card: supported
+    label: MrBaddeley MK4
+    # One picture for every MrBaddeley design: his "Printed Droids" poster in
+    # the default asset set, an R2 blueprint drawing in the legacy set (#369).
+    picture: mrbaddeley
+    short: MK4
+    blurb: The MK4 astromech most builders here printed — six pie panels, fourteen side panels, three holoprojectors, and the breadpan and body doors that go with them.
+    note: >-
+      The MK4 dome also carries 6 small inner pies, which have no PP shorthand.
+      This catalog declares no part ids for them, so no variant can seed them
+      yet; the count lived in the header block this section replaced and is
+      kept here until they are declared as parts.
+    # Complex, because it is the only MK4 variant whose whole complement is
+    # known: Basic's dome half is still unread (operator decisions 2026-09-10,
+    # #356, and 2026-09-18, #409).
+    default_variant: complex
+    variants:
+      - id: basic
+        label: Basic
+        # MrBaddeley's name for MK4's sparse variant. It was stored as `simple`
+        # until 2026-09-18, and a stored `simple` still reads as `basic` (#409).
+        legacy_ids: [simple]
+        seeds:
+          # A Basic dome carries fewer parts than a Complex one, and which ones
+          # is not yet read out of MrBaddeley's files — do not guess it (#337,
+          # operator 2026-09-18).
+          dome: TBD
+          # The operator's verified mapping, 2026-09-18 (#409): the four
+          # breadpans, the Data Port, the Small Door and the Charge Bay.
+          body: [doorFL, doorFR, doorRL, doorRR, dataport, smallDoor, chargebay]
+      - id: complex
+        label: Complex
+        # The maximal MK4 complement. Every arm is a Common Addition and is
+        # never seeded (operator's verified mapping, 2026-09-18, #409).
+        seeds: [pie1, pie2, pie3, pie4, pie5, pie6,                       # PP1..PP6
+                panel1, panel2, panel3, panel4, panel5, panel6, panel7,   # P1..P14
+                panel8, panel9, panel10, panel11, panel12, panel13, panel14,
+                magicPanel, upperPanel, psiRear,                          # dome lights
+                logicRear, logicFront, psiFront,
+                hp1Pan, hp1Tilt, hp2Pan, hp2Tilt, hp3Pan, hp3Tilt,        # HP1..HP3
+                domeBtn1, domeBtn2,                                       # dome fixtures
+                doorFL, doorFR, doorRL, doorRR,                           # breadpans
+                dataport, smallDoor, chargebay,                           # body doors
+                bodyPanel1, bodyPanel2, bodyPanel3, bodyPanel4,           # Body Panels 1-8
+                bodyPanel5, bodyPanel6, bodyPanel7, bodyPanel8]
+
+  - id: mk41
+    card: supported
+    # Offered as a Dome Design only: MK4.1 is a dome, and a body card for it
+    # would be a body nobody can build (#409).
+    halves: [dome]
+    label: MrBaddeley MK4.1
+    # One picture for every MrBaddeley design: his "Printed Droids" poster in
+    # the default asset set, an R2 blueprint drawing in the legacy set (#369).
+    picture: mrbaddeley
+    short: MK4.1
+    blurb: MrBaddeley's latest dome, one shared form close to the MK4 Complex dome. A dome design only — pick MK4 Basic or Complex for the body.
+    note: >-
+      Added on the operator's direction, 2026-09-18 (#409). MK4.1 has no
+      variant split, so it declares no variants. Its dome half copies the MK4
+      Complex dome because no MK4.1 part list has been read yet — unverified,
+      replace it when one is. It is a dome design only, so its body half seeds
+      nothing, on purpose.
+    # Drawn as the dome its seeds copy, so the Dashboard's dome card and Parts
+    # show the MK4 Complex drawing for an MK4.1 dome rather than none (#409).
+    # Goes when the seeds below are replaced by MK4.1's own list.
+    dome_drawn_as: {design: mk4, variant: complex}
+    seeds:
+      dome: [pie1, pie2, pie3, pie4, pie5, pie6,
+             panel1, panel2, panel3, panel4, panel5, panel6, panel7,
+             panel8, panel9, panel10, panel11, panel12, panel13, panel14,
+             magicPanel, upperPanel, psiRear,
+             logicRear, logicFront, psiFront,
+             hp1Pan, hp1Tilt, hp2Pan, hp2Tilt, hp3Pan, hp3Tilt,
+             domeBtn1, domeBtn2]
+      body: []
+
+  - id: mk3
+    # The operator's decision, 2026-09-18 (#368): MK3 is a design we intend to
+    # carry and do not yet. Drawn so a builder with an MK3 droid sees it is
+    # coming; never selectable, so nobody is started on a complement nobody
+    # has read.
+    card: roadmap
+    label: MrBaddeley MK3
+    # One picture for every MrBaddeley design: his "Printed Droids" poster in
+    # the default asset set, an R2 blueprint drawing in the legacy set (#369).
+    picture: mrbaddeley
+    short: MK3
+    blurb: We intend to carry it. Not yet.
+    # Which parts an MK3 carries has not been read out of MrBaddeley's files -
+    # do not guess it.
+    seeds: TBD
+
+  - id: own
+    card: own-build
+    label: My own build
+    short: Own build
+    blurb: For a droid that is nobody's published design — nothing is fitted for you, and each part joins the list as you build it.
+    # No `variants:` key: this design has no variant set, and an empty list
+    # would put a second control on the card with nothing in it. No
+    # `default_variant:` either, for the same reason — there is nothing to
+    # default to.
+    seeds: []
 
 dome_pies:
-  - { id: pie1, cad_name: TBD, shorthand: PP1, aliases: ["PP1", "Dome pie 1"], bearing_deg: 150, position: rear-right,  control: dome-link, dome_link_panel: TBD }
-  - { id: pie2, cad_name: TBD, shorthand: PP2, aliases: ["PP2", "Dome pie 2"], bearing_deg: 90,  position: right,       control: dome-link, dome_link_panel: TBD }
-  - { id: pie3, cad_name: TBD, shorthand: PP3, aliases: ["PP3", "Dome pie 3"], bearing_deg: 30,  position: front-right, control: dome-link, dome_link_panel: TBD,
+  - { id: pie1, cad_name: TBD, shorthand: PP1, aliases: ["PP1", "Dome pie 1"], bearing_deg: 179.5, position: front,       control: dome-link, dome_link_panel: TBD }
+  - { id: pie2, cad_name: TBD, shorthand: PP2, aliases: ["PP2", "Dome pie 2"], bearing_deg: 119.5, position: front-left,  control: dome-link, dome_link_panel: TBD }
+  - { id: pie3, cad_name: TBD, shorthand: PP3, aliases: ["PP3", "Dome pie 3"], bearing_deg: 59.5,  position: rear-left,   control: dome-link, dome_link_panel: TBD,
       note: usually carries holoprojector 3 }
-  - { id: pie4, cad_name: TBD, shorthand: PP4, aliases: ["PP4", "Dome pie 4"], bearing_deg: 330, position: front-left,  control: dome-link, dome_link_panel: TBD,
+  - { id: pie4, cad_name: TBD, shorthand: PP4, aliases: ["PP4", "Dome pie 4"], bearing_deg: 359.5, position: rear,        control: dome-link, dome_link_panel: TBD,
       note: usually the periscope }
-  - { id: pie5, cad_name: TBD, shorthand: PP5, aliases: ["PP5", "Dome pie 5"], bearing_deg: 270, position: left,        control: dome-link, dome_link_panel: TBD }
-  - { id: pie6, cad_name: TBD, shorthand: PP6, aliases: ["PP6", "Dome pie 6"], bearing_deg: 210, position: rear-left,   control: dome-link, dome_link_panel: TBD }
+  - { id: pie5, cad_name: TBD, shorthand: PP5, aliases: ["PP5", "Dome pie 5"], bearing_deg: 299.5, position: rear-right,  control: dome-link, dome_link_panel: TBD }
+  - { id: pie6, cad_name: TBD, shorthand: PP6, aliases: ["PP6", "Dome pie 6"], bearing_deg: 239.5, position: front-right, control: dome-link, dome_link_panel: TBD }
 
 dome_panels:
-  - { id: panel1,  cad_name: TBD, shorthand: P1,  aliases: ["P1",  "Dome side panel 1"],  bearing_deg: 142.5, position: rear-right,  control: dome-link, dome_link_panel: TBD }
-  - { id: panel2,  cad_name: TBD, shorthand: P2,  aliases: ["P2",  "Dome side panel 2"],  bearing_deg: 128,   position: rear-right,  control: dome-link, dome_link_panel: TBD }
-  - { id: panel3,  cad_name: TBD, shorthand: P3,  aliases: ["P3",  "Dome side panel 3"],  bearing_deg: 114,   position: right,       control: dome-link, dome_link_panel: TBD }
-  - { id: panel4,  cad_name: TBD, shorthand: P4,  aliases: ["P4",  "Dome side panel 4"],  bearing_deg: 94,    position: right,       control: dome-link, dome_link_panel: TBD }
-  - { id: panel5,  cad_name: TBD, shorthand: P5,  aliases: ["P5",  "Dome side panel 5"],  bearing_deg: 75.5,  position: right,       control: none,
-      lit: Magic Panel }
-  - { id: panel6,  cad_name: TBD, shorthand: P6,  aliases: ["P6",  "Dome side panel 6"],  bearing_deg: 62.5,  position: front-right, control: none,
-      lit: small upper panel }
-  - { id: panel7,  cad_name: TBD, shorthand: P7,  aliases: ["P7",  "Dome side panel 7"],  bearing_deg: 45,    position: front-right, control: dome-link, dome_link_panel: TBD }
-  - { id: panel8,  cad_name: TBD, shorthand: P8,  aliases: ["P8",  "Dome side panel 8"],  bearing_deg: 24,    position: front,       control: none,
-      lit: Rear PSI }
-  - { id: panel9,  cad_name: TBD, shorthand: P9,  aliases: ["P9",  "Dome side panel 9"],  bearing_deg: 300,   position: rear-left,   control: none,
-      lit: Rear Logic Display }
-  - { id: panel10, cad_name: TBD, shorthand: P10, aliases: ["P10", "Dome side panel 10"], bearing_deg: 242,   position: left,        control: dome-link, dome_link_panel: TBD }
-  - { id: panel11, cad_name: TBD, shorthand: P11, aliases: ["P11", "Dome side panel 11"], bearing_deg: 217,   position: rear-left,   control: dome-link, dome_link_panel: TBD }
-  - { id: panel12, cad_name: TBD, shorthand: P12, aliases: ["P12", "Dome side panel 12"], bearing_deg: 204,   position: rear,        control: none,
-      lit: Front Logic Displays }
-  - { id: panel13, cad_name: TBD, shorthand: P13, aliases: ["P13", "Dome side panel 13"], bearing_deg: 194,   position: rear,        control: dome-link, dome_link_panel: TBD }
-  - { id: panel14, cad_name: TBD, shorthand: P14, aliases: ["P14", "Dome side panel 14"], bearing_deg: 184,   position: rear,        control: none,
-      lit: Front PSI }
+  - { id: panel1,  cad_name: TBD, shorthand: P1,  aliases: ["P1",  "Dome side panel 1"],  bearing_deg: 162.5, position: front,       control: dome-link, dome_link_panel: TBD }
+  - { id: panel2,  cad_name: TBD, shorthand: P2,  aliases: ["P2",  "Dome side panel 2"],  bearing_deg: 144.5, position: front-left,  control: dome-link, dome_link_panel: TBD }
+  - { id: panel3,  cad_name: TBD, shorthand: P3,  aliases: ["P3",  "Dome side panel 3"],  bearing_deg: 126.5, position: front-left,  control: dome-link, dome_link_panel: TBD }
+  - { id: panel4,  cad_name: TBD, shorthand: P4,  aliases: ["P4",  "Dome side panel 4"],  bearing_deg: 100,   position: left,        control: dome-link, dome_link_panel: TBD }
+  - { id: panel5,  cad_name: TBD, shorthand: P5,  aliases: ["P5",  "Dome side panel 5"],  bearing_deg: 78,    position: left,        control: none }
+  - { id: panel6,  cad_name: TBD, shorthand: P6,  aliases: ["P6",  "Dome side panel 6"],  bearing_deg: 69,    position: left,        control: none }
+  - { id: panel7,  cad_name: TBD, shorthand: P7,  aliases: ["P7",  "Dome side panel 7"],  bearing_deg: 47,    position: rear-left,   control: dome-link, dome_link_panel: TBD }
+  - { id: panel8,  cad_name: TBD, shorthand: P8,  aliases: ["P8",  "Dome side panel 8"],  bearing_deg: 19,    position: rear,        control: none }
+  - { id: panel9,  cad_name: TBD, shorthand: P9,  aliases: ["P9",  "Dome side panel 9"],  bearing_deg: 324,   position: rear-right,  control: none }
+  - { id: panel10, cad_name: TBD, shorthand: P10, aliases: ["P10", "Dome side panel 10"], bearing_deg: 279,   position: right,       control: dome-link, dome_link_panel: TBD }
+  - { id: panel11, cad_name: TBD, shorthand: P11, aliases: ["P11", "Dome side panel 11"], bearing_deg: 251,   position: right,       control: dome-link, dome_link_panel: TBD }
+  - { id: panel12, cad_name: TBD, shorthand: P12, aliases: ["P12", "Dome side panel 12"], bearing_deg: 235,   position: front-right, control: none }
+  - { id: panel13, cad_name: TBD, shorthand: P13, aliases: ["P13", "Dome side panel 13"], bearing_deg: 219,   position: front-right, control: dome-link, dome_link_panel: TBD }
+  - { id: panel14, cad_name: TBD, shorthand: P14, aliases: ["P14", "Dome side panel 14"], bearing_deg: 202,   position: front,       control: none }
+
+dome_lights:              # what a lit panel carries — a part, not a footnote
+  # Each of these is the lit device on the panel it sits on, and each is a part
+  # in its own right for the same reason a holoprojector's pan and tilt are:
+  # a part is one thing an Output drives, and a light is driven separately from
+  # the panel around it (ADR 0045). They carry `control: none` — present on the
+  # droid, nothing protoR2 drives yet — so they reach the browser alone and
+  # the firmware id table is untouched by them. The raw MarcDuino families
+  # (`*MO99`, `@0T1`) keep forwarding to the dome uninterpreted regardless; a
+  # part here claims commanded intent, never device truth.
+  #
+  # No `shorthand:`, because these are not Printed Droid channels — the panel
+  # each sits on carries the P-number. The aliases are the tokens this project
+  # already answers to: FLD, RLD, FPSI and RPSI are DL:/DT: targets
+  # (src/protocol_check.cpp), and MP is how the vendored dome map labels the
+  # Magic Panel (data/dome_panel_model.js).
+  # The one light with a bearing of its own: the drawing puts P6, the Magic
+  # Panel and P5 in one piece, split here in thirds, and the Magic Panel is the
+  # middle third rather than where its host panel's third sits (see
+  # `bearing_deg` in the header). Its position word is still its host's.
+  - { id: magicPanel, label: Magic Panel,          aliases: ["MP"], bearing_deg: 73.5, kind: light, control: none, sits_on: panel5 }
+  # The one lit panel no reference gives a device name to. "Small upper panel"
+  # is this catalog's own wording for it, kept rather than replaced by a name
+  # no builder would recognise.
+  - { id: upperPanel, label: Small upper panel,    aliases: [],                       kind: light, control: none, sits_on: panel6 }
+  - { id: psiRear,    label: Rear PSI,             aliases: ["RPSI"],                 kind: light, control: none, sits_on: panel8 }
+  - { id: logicRear,  label: Rear Logic Display,   aliases: ["RLD", "Rear display"],  kind: light, control: none, sits_on: panel9 }
+  - { id: logicFront, label: Front Logic Displays, aliases: ["FLD", "Front display"], kind: light, control: none, sits_on: panel12 }
+  - { id: psiFront,   label: Front PSI,            aliases: ["FPSI"],                 kind: light, control: none, sits_on: panel14 }
 
 holoprojectors:
-  - { id: hp1Pan,  cad_name: TBD, shorthand: HP1-1, aliases: ["HP1-1", "Holoprojector 1 pan"],  unit: 1, axis: pan,  bearing_deg: 165, position: rear,  control: none }
-  - { id: hp1Tilt, cad_name: TBD, shorthand: HP1-2, aliases: ["HP1-2", "Holoprojector 1 tilt"], unit: 1, axis: tilt, bearing_deg: 165, position: rear,  control: none }
-  - { id: hp2Pan,  cad_name: TBD, shorthand: HP2-1, aliases: ["HP2-1", "Holoprojector 2 pan"],  unit: 2, axis: pan,  bearing_deg: 350, position: front, control: none }
-  - { id: hp2Tilt, cad_name: TBD, shorthand: HP2-2, aliases: ["HP2-2", "Holoprojector 2 tilt"], unit: 2, axis: tilt, bearing_deg: 350, position: front, control: none }
-  - { id: hp3Pan,  cad_name: TBD, shorthand: HP3-1, aliases: ["HP3-1", "Holoprojector 3 pan"],  unit: 3, axis: pan,  bearing_deg: 38,  position: front-right, control: none,
+  - { id: hp1Pan,  cad_name: TBD, shorthand: HP1-1, aliases: ["HP1-1", "Holoprojector 1 pan"],  unit: 1, axis: pan,  bearing_deg: 181, position: front,     control: none }
+  - { id: hp1Tilt, cad_name: TBD, shorthand: HP1-2, aliases: ["HP1-2", "Holoprojector 1 tilt"], unit: 1, axis: tilt, bearing_deg: 181, position: front,     control: none }
+  - { id: hp2Pan,  cad_name: TBD, shorthand: HP2-1, aliases: ["HP2-1", "Holoprojector 2 pan"],  unit: 2, axis: pan,  bearing_deg: 0,   position: rear,      control: none }
+  - { id: hp2Tilt, cad_name: TBD, shorthand: HP2-2, aliases: ["HP2-2", "Holoprojector 2 tilt"], unit: 2, axis: tilt, bearing_deg: 0,   position: rear,      control: none }
+  - { id: hp3Pan,  cad_name: TBD, shorthand: HP3-1, aliases: ["HP3-1", "Holoprojector 3 pan"],  unit: 3, axis: pan,  bearing_deg: 50,  position: rear-left, control: none,
       note: sits inside pie panel PP3 }
-  - { id: hp3Tilt, cad_name: TBD, shorthand: HP3-2, aliases: ["HP3-2", "Holoprojector 3 tilt"], unit: 3, axis: tilt, bearing_deg: 38,  position: front-right, control: none }
+  - { id: hp3Tilt, cad_name: TBD, shorthand: HP3-2, aliases: ["HP3-2", "Holoprojector 3 tilt"], unit: 3, axis: tilt, bearing_deg: 50,  position: rear-left, control: none }
 
 dome_fixtures:            # orientation references — not servos
-  - { id: domeBtn1, label: Dome button 1, bearing_deg: 8,  position: front }
-  - { id: domeBtn2, label: Dome button 2, bearing_deg: 20, position: front }
+  # Not on the vendored dome drawing, so these two bearings were not measured
+  # from it: they are the ones this file carried before (#445).
+  - { id: domeBtn1, label: Dome button 1, bearing_deg: 8,  position: rear }
+  - { id: domeBtn2, label: Dome button 2, bearing_deg: 20, position: rear }
 
+# The operator's verified mapping, 2026-09-18 (#409): each row carries
+# MrBaddeley's name for the part, and Printed Droid's where it has one, as
+# aliases beside the name protoR2 shows. `drawer` was removed on that
+# mapping: it is not a part of the droid. A stored Droid Build or Output that
+# still names it drops it on read and reports the drop.
 body_doors:
-  - { id: doorFL,    cad_name: FLBreadpanDoor,  aliases: ["Left body door", "FL door"],       position: front-left,  control: none }
-  - { id: doorFR,    cad_name: FRBreadpandoor,  aliases: ["Right body door", "FR door"],      position: front-right, control: none }
-  - { id: doorRL,    cad_name: RLBreadpanDoor,  aliases: ["Rear-left body door", "RL door"],  position: rear-left,   control: none }
-  - { id: doorRR,    cad_name: RRBreadpandoor,  aliases: ["Rear-right body door", "RR door"], position: rear-right,  control: none }
-  - { id: dataport,  cad_name: DataPortDoor,    aliases: ["Dataport door", "Dataport"],       position: front-left,  control: none }
-  - { id: chargebay, cad_name: ChargingBayDoor, aliases: ["Chargebay door", "Charge bay"],    position: front-right, control: none }
-  - { id: smallDoor, cad_name: SmallLongDoor,   aliases: ["Small long door"],                 position: front,       control: none }
-  - { id: drawer,    cad_name: Drawer,          aliases: ["Drawer"],                          position: front,       control: none }
+  - { id: doorFL,    cad_name: FLBreadpanDoor,  aliases: ["Left body door", "FL door", "Left Front Breadpan"],       position: front-left,  control: none }
+  - { id: doorFR,    cad_name: FRBreadpandoor,  aliases: ["Right body door", "FR door", "Right Front Breadpan"],     position: front-right, control: none }
+  - { id: doorRL,    cad_name: RLBreadpanDoor,  aliases: ["Rear-left body door", "RL door", "Left Rear Breadpan"],   position: rear-left,   control: none }
+  - { id: doorRR,    cad_name: RRBreadpandoor,  aliases: ["Rear-right body door", "RR door", "Right Rear Breadpan"], position: rear-right,  control: none }
+  # The Data Port sits on the right of the front and the Charge Bay on the
+  # left, where the operator placed them on the picked body picture (#408,
+  # #372); these two rows carried the sides swapped until then.
+  - { id: dataport,  cad_name: DataPortDoor,    aliases: ["Dataport door", "Dataport", "Data Port", "Large Data Port (LDP)", "LDP"], position: front-right, control: none }
+  - { id: chargebay, cad_name: ChargingBayDoor, aliases: ["Chargebay door", "Charge bay", "Charge Bay"],             position: front-left,  control: none }
+  - { id: smallDoor, cad_name: SmallLongDoor,   aliases: ["Small long door", "Small Door"],                         position: front,       control: none }
+  # MK4 Complex only. They carry no position word: where each sits is the
+  # picked body picture's placement (#408), held in the droid picture's one
+  # position table (data/body_view.js, #372) rather than here.
+  - { id: bodyPanel1, cad_name: TBD, aliases: ["Body panel 1"], control: none }
+  - { id: bodyPanel2, cad_name: TBD, aliases: ["Body panel 2"], control: none }
+  - { id: bodyPanel3, cad_name: TBD, aliases: ["Body panel 3"], control: none }
+  - { id: bodyPanel4, cad_name: TBD, aliases: ["Body panel 4"], control: none }
+  - { id: bodyPanel5, cad_name: TBD, aliases: ["Body panel 5"], control: none }
+  - { id: bodyPanel6, cad_name: TBD, aliases: ["Body panel 6"], control: none }
+  - { id: bodyPanel7, cad_name: TBD, aliases: ["Body panel 7"], control: none }
+  - { id: bodyPanel8, cad_name: TBD, aliases: ["Body panel 8"], control: none }
+
+body_lights:              # what the body carries that lights up — parts, not settings
+  # A body light is a Part for the reason a dome light is (ADR 0045): a light
+  # is one thing an Output drives, so it is named, choreographed and wired like
+  # any other part rather than living as a setting on some page. The section
+  # exists because the body had no light Parts at all, which left the LED strip
+  # with no vocabulary but the stored config key it is routed by (#410).
+  #
+  # ReelTwo puts the Charge Bay Indicator and the Data Panel under `body/`,
+  # they sit on the front of the body, and driving them from the dome would
+  # send MAX7219 clock and data through a rotating slip-ring contact, so the
+  # body owns them (ADR 0045). BadMotivator and FireStrip stay dome-side, where
+  # the fork already wires them, and are not declared here.
+  #
+  # `control: none` on the two indicators is measured, not assumed: the
+  # AstroPixelsPlus image protoR2 talks to compiles both out
+  # (`AP_ENABLE_CBI=0`, `AP_ENABLE_DATAPANEL=0`, docs/spec-sheets/
+  # astropixels-dome-controller.md section 4.4), and nothing on the body drives
+  # them yet either. It says what is DRIVABLE and never what is NAMEABLE.
+  #
+  # `cad_name: null` on every row: a body light is a Common Addition, offered
+  # to every droid and fitted by default on none, because a builder bolts these
+  # on rather than getting them with a design (ADR 0047, GLOSSARY.md "Common
+  # Addition"). No design seeds one.
+  #
+  # AN LED STRIP IS NOT A ROW HERE, AND NEVER WAS ONE TO WRITE. It is a Light
+  # Type - what protoR2 puts on the end of one of its own leads to light a
+  # Part, the light half of the answer a servo gives as its model (ADR 0067,
+  # GLOSSARY.md "Light Type"). The thing on the droid is the Data Panel or the
+  # Charge Bay Indicator; what lights it belongs to the wire it is on, and the
+  # Part inherits it. A row here for the strip would put a technology beside
+  # two things, which is the defect that cost this ticket three iterations -
+  # the operator, 2026-09-20: "LED strip is simply one of the differed light
+  # types we can assign to a droid part". The Light Types live where the wires
+  # are answered for (data/outputs.js); Lights reads them from there.
+  #
+  # The ids are short on purpose. A Servo Output row stores a part id in
+  # SERVO_OUTPUT_PART_ID_MAX = 12 characters (include/servo_output_row.h), so
+  # `chargeBayIndicator` could never be stored against an output; and every id
+  # here stays inside the DROID_PART_ID_MAX_LEN the catalog already generates,
+  # so no firmware buffer widens to carry them. `cbi` is the community
+  # shorthand, and the label spells it out.
+  - { id: cbi,       cad_name: null, label: Charge Bay Indicator, aliases: ["CBI"], kind: light, control: none, sits_on: chargebay }
+  - { id: dataPanel, cad_name: null, label: Data Panel,           aliases: ["Data panel"], kind: light, control: none, sits_on: dataport }
 
 body_arms:
+  # Every arm is a Common Addition: optional, never fitted by default, and
+  # offered to every droid (operator's verified mapping, 2026-09-18, #409).
   - { id: utilUp,    cad_name: UpperUtilityArm, aliases: ["Upper utility arm"], position: front, control: body-ledc,
-      note: one of the two MG996R utility arm servos protoArtoo already drives }
+      note: one of the two MG996R utility arm servos protoR2 already drives }
   - { id: utilLo,    cad_name: LowerUtilityArm, aliases: ["Lower utility arm"], position: front, control: body-ledc,
-      note: one of the two MG996R utility arm servos protoArtoo already drives }
-  - { id: gripArm,   cad_name: null, aliases: ["Gripper arm"],    position: front-left,  control: none,
+      note: one of the two MG996R utility arm servos protoR2 already drives }
+  # The gripper sits behind the right front door (doorFR) and the interface arm
+  # behind the left (doorFL): operator-confirmed on the real droid, 2026-09-18
+  # (#408, #372). These four rows carried the two sides swapped until then.
+  - { id: gripArm,   cad_name: null, aliases: ["Gripper arm"],    position: front-right, control: none,
       note: common MK4 addition; not in the base MK4 design exports }
-  - { id: gripClaw,  cad_name: null, aliases: ["Gripper claw"],   position: front-left,  control: none }
-  - { id: interArm,  cad_name: null, aliases: ["Interface arm"],  position: front-right, control: none }
-  - { id: interTool, cad_name: null, aliases: ["Interface tool"], position: front-right, control: none }
+  - { id: gripClaw,  cad_name: null, aliases: ["Gripper claw"],   position: front-right, control: none }
+  - { id: interArm,  cad_name: null, aliases: ["Interface arm"],  position: front-left,  control: none }
+  - { id: interTool, cad_name: null, aliases: ["Interface tool"], position: front-left,  control: none }
+
+# Sets a Gesture spreads across (ADR 0046, #438): one token a builder says - "the
+# ring" - that means these Parts, whichever of them the droid in front of it has
+# when the sequence runs. A saved Gesture stores the token and never the Parts
+# it meant on the day, so a Part added here joins every Gesture that names its
+# set with nothing re-authored.
+#   id:       the token a sequence stores. Stable: renaming one orphans every
+#             Gesture that names it.
+#   label:    what the editor calls it.
+#   sections: every Part declared in these sections, or
+#   members:  these Parts, by id.
+# A set is on ONE half of the droid, because who performs a Gesture is decided
+# by who owns its Parts (Coordinator Resolution): the dome performs a dome set,
+# the body expands a body set. The generator refuses a set that spans both.
+# Order is NOT declared here. It comes from where each Part sits (`bearing_deg`),
+# and a Part with no bearing goes last.
+sets:
+  - { id: ring,     label: The ring,            sections: [dome_panels] }
+  - { id: pies,     label: The pies,            sections: [dome_pies] }
+  - { id: dome,     label: Every dome panel,    sections: [dome_pies, dome_panels] }
+  - { id: breadpan, label: The breadpan doors,  members: [doorFL, doorFR, doorRL, doorRR] }
+  - { id: bodyDoors, label: Every body door,    sections: [body_doors] }
 
 # Escape hatch for off-model hardware wired to spare outputs (fire
 # extinguisher, custom rigs). Exists so a real output is never unnameable.
+# The slots are ids, not rows: the generator mints `other1`..`other<count>`
+# from the two fields below, so widening the hatch is a number here rather
+# than ten more rows to keep in step.
 other_slots:
   count: 10
   id_prefix: other        # other1..other10
+  # What the browser calls them. A Common Addition is a part we have a word
+  # for; these are the ones we do not, so the name says only which slot it is
+  # — "Other part 7" — and the builder's own hardware supplies the meaning.
+  label_prefix: Other part
+  # Declared, not assumed: a spare output is a body output, so this is what
+  # drives whatever a builder wired to one. It no longer decides whether the
+  # slots reach firmware - every declared part does, #358 - but leaving it out
+  # would say the slots are undriven, which is the opposite of what they are.
+  control: body-ledc

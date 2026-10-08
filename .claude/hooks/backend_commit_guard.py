@@ -6,7 +6,7 @@ import re
 import time
 from pathlib import Path
 
-STATE_FILE = Path("/tmp/protoartoo_backend_verify.json")
+STATE_FILE = Path("/tmp/protor2_backend_verify.json")
 MAX_AGE_SECONDS = 6 * 60 * 60
 REQUIRED = (
     "firmware_build",
@@ -67,7 +67,7 @@ def main() -> int:
         return 0
 
     label_map = {
-        "firmware_build": "pio run -e artoo_esp32",
+        "firmware_build": "make build BUILD_ENV=artoo_esp32",
     }
     missing_cmds = [label_map[m] for m in missing]
     _print_deny(

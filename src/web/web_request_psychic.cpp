@@ -28,14 +28,18 @@
 #include <string.h>
 
 #include "../../include/api_upload.h"
+#include "../../include/heap_reading.h"
 #include "../../include/logging.h"
 #include "../../include/web_admission.h"
+#include "../../include/web_body_ceiling.h"
 #include "../../include/web_backend_psychic.h"
 #include "../../include/web_event_stream.h"
 #include "../../include/web_request.h"
+#include "../../include/web_request_scratch.h"
 #include "../../include/web_response_deadline.h"
 #include "../../include/web_server.h"
 #include "../../include/web_server_psychic.h"
+#include "../../include/web_webp.h"
 
 static const char* TAG = "WebServer";
 
@@ -241,6 +245,36 @@ void streamCloseCallback(httpd_handle_t hd, int sockfd) {
         close(sockfd);
     }
 }
+
+// =============================================================================
+// Pictures (include/web_webp.h)
+//
+// Answers image/webp for every /<id>.webp the image carries, whichever page
+// names it: product photographs and Droid Build pictures alike (#355). One
+// global handler rather than an endpoint per id, so a picture added to an
+// asset set needs no route, and the server holds one handler object instead
+// of an endpoint, a PsychicWebHandler and a uri string per registry row.
+//
+// A plain PsychicHandler, not PsychicWebHandler: the web handler records every
+// client it sees in its own list, and the server only tells *endpoint*
+// handlers when a client closes (PsychicHttpServer::closeCallback), so a
+// global PsychicWebHandler would keep pointers to closed clients forever.
+// This one keeps no per-request state; canHandle() and handleRequest() run
+// back to back on the server task for the same request.
+// =============================================================================
+class WebpPictureHandler : public PsychicHandler {
+  public:
+    bool canHandle(PsychicRequest* request) override {
+        const String path = request->path();
+        return webWebpPictureRequestClaimed(request->method() == HTTP_GET, path.c_str()) &&
+               LittleFS.exists(path);
+    }
+
+    esp_err_t handleRequest(PsychicRequest* request, PsychicResponse* response) override {
+        PsychicFileResponse file(response, LittleFS, request->path(), String(webWebpContentType()));
+        return file.send();
+    }
+};
 
 }  // namespace
 
@@ -505,32 +539,205 @@ void webEventStreamBroadcast(const char* event, const char* data, uint32_t id) {
     }
 }
 
-void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler handler,
-                      size_t maxBodyBytes) {
-    // maxBodyBytes is the async backend's buffering bound; here the library
-    // does the buffering and enforces one server-wide ceiling
-    // (PsychicHttpServer::maxRequestBodySize), so the per-route value only has
-    // to fit under it. Raising the server ceiling to the largest route's need
-    // keeps the two backends agreeing on which bodies arrive at all; the
-    // matching 413 comes from the handler reading contentLength(), which is
-    // where both backends already agree.
-    if (maxBodyBytes > s_server.maxRequestBodySize) {
-        s_server.maxRequestBodySize = maxBodyBytes;
+// =============================================================================
+// Route dispatch (#467)
+//
+// Every webRegisterRoute() row lands in one fixed table, and three endpoints --
+// /api/* for GET, POST and DELETE -- look a request up in it. Before this, each
+// row was its own PsychicHttp endpoint: a PsychicWebHandler, a PsychicEndpoint,
+// a std::list node and, for a long path, a std::string copy, all allocated at
+// boot from artoo's one internal heap (~16 KB for the table, measured). A row
+// here is three words of static RAM.
+//
+// The rows hold no body bound: the server-wide ceiling is raised once at
+// registration, and a handler that checks its own bound answers 413 from
+// contentLength() (include/web_body_ceiling.h), so nothing at dispatch would
+// read one.
+// =============================================================================
+
+namespace {
+
+struct SeamRoute {
+    // The caller's string literal, never copied: every path in the seam table
+    // has static storage, which is what makes a row this small.
+    const char* path;
+    WebRequestHandler handler;
+    WebMethod method;
+};
+
+// Sized to the table: web_seam_routes.cpp registers 75 rows with every build
+// flag on (PA_ADMISSION_TRACE, PA_HEAP_PROFILE, PA_HEAP_TRACING), and 80 leaves
+// room for a few more. A row past it is refused at boot with an error naming
+// its path -- raise this then, not before.
+constexpr size_t kSeamRouteCapacity = 80;
+SeamRoute s_routes[kSeamRouteCapacity];
+size_t s_routeCount = 0;
+
+// The seam's not-found handler, called for the dispatcher's misses and, through
+// NotFoundHandler below, for everything no endpoint and no global handler
+// claimed: anything outside /api/, and under /api/ any method the dispatcher
+// has no endpoint for (HEAD, PUT, OPTIONS).
+WebRequestHandler s_notFoundHandler = nullptr;
+
+constexpr char kSeamRoutePrefix[] = "/api/";
+constexpr size_t kSeamRoutePrefixLength = sizeof(kSeamRoutePrefix) - 1;
+
+// The dispatcher's endpoint URI: everything under kSeamRoutePrefix, matched by
+// the vendor's httpd_uri_match_wildcard(). A pattern rather than a route, so
+// the action registry has no row for it.
+constexpr char kSeamDispatchUri[] = "/api/*";
+
+// Runs on the server task for every /api/ request no upload endpoint claimed.
+// Allocates nothing: the path is compared in place inside uriCStr(), not
+// through request->path() or pathCStr(), which both build a string.
+esp_err_t dispatchSeamRoute(PsychicRequest* vendorReq, PsychicResponse* vendorResp,
+                            WebMethod method) {
+    // The path is the URI up to its query string, as PsychicEndpoint::matches()
+    // cut it for the per-route endpoints this replaces.
+    const char* uri = vendorReq->uriCStr();
+    const char* query = strchr(uri, '?');
+    const size_t pathLength = query != nullptr ? (size_t)(query - uri) : strlen(uri);
+
+    WebRequestHandler handler = s_notFoundHandler;
+    for (size_t i = 0; i < s_routeCount; i++) {
+        const SeamRoute& route = s_routes[i];
+        // Exact match, as httpd_uri_match_wildcard() gave each endpoint for a
+        // template with no '*' or '?': equal length and equal bytes, so
+        // /api/identity never answers /api/identity/components. strncmp()
+        // returning 0 means route.path holds at least pathLength characters,
+        // so the terminator read after it stays inside the literal.
+        if (route.method == method && strncmp(route.path, uri, pathLength) == 0 &&
+            route.path[pathLength] == '\0') {
+            handler = route.handler;
+            break;
+        }
     }
 
-    http_method vendorMethod = HTTP_GET;
-    if (method == WebMethod::kPost) {
-        vendorMethod = HTTP_POST;
-    } else if (method == WebMethod::kDelete) {
-        vendorMethod = HTTP_DELETE;
+    if (handler == nullptr) {
+        // No not-found handler registered: hand the miss back to the vendor,
+        // whose requestHandler() routes HTTPD_404_NOT_FOUND to its own
+        // default. Unreachable while web_seam_routes.cpp ends with
+        // webRegisterNotFoundRoute().
+        return HTTPD_404_NOT_FOUND;
     }
-    s_server.on(path, vendorMethod,
-                [handler](PsychicRequest* vendorReq, PsychicResponse* vendorResp) -> esp_err_t {
-                    WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
-                    WebRequest req(&ctx);
-                    handler(req);
-                    return ctx.result;
+
+    // A miss -- an unknown /api/ path, or a known one with another method --
+    // answers through the seam's not-found handler here rather than returning
+    // HTTPD_404_NOT_FOUND. The answer is the one the fallthrough gave before
+    // (no static file lives under /api/), and once a handler has answered, a
+    // 404 return would make requestHandler() send a second response on top.
+    WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
+    WebRequest req(&ctx);
+    handler(req);
+    return ctx.result;
+}
+
+// Answers every request no endpoint and no global handler claimed: anything
+// outside /api/ (favicon.ico, a missing static file), and under /api/ any
+// method the dispatcher has no endpoint for (HEAD, PUT, OPTIONS). It sits on
+// the vendor's defaultEndpoint, which PsychicHttpServer::notFoundHandler() asks
+// through handler()->process() when a requestHandler() pass came back
+// HTTPD_404_NOT_FOUND. notFoundHandler() is also registered as IDF's 404 error
+// handler, but that route cannot be reached while "*" is registered for every
+// supported method: an unsupported method such as PATCH matches "*" with the
+// wrong method and gets IDF's 405 first (httpd_find_uri_handler(), httpd_uri.c).
+//
+// A plain PsychicHandler, not the PsychicWebHandler onNotFound() would build,
+// for the reason WebpPictureHandler above gives: PsychicWebHandler records each
+// new client in its own list, defaultEndpoint is not in the server's
+// _endpoints, so closeCallback() never prunes that list, and every connection
+// whose request reached not-found left a list node pointing at a deleted
+// PsychicClient (#467). This one keeps no per-request state.
+//
+// Unlike PsychicWebHandler it neither loads the body nor parses parameters:
+// handleNotFound() reads neither, and esp_http_server discards an unread body
+// when the request ends (httpd_req_delete()).
+class NotFoundHandler : public PsychicHandler {
+  public:
+    esp_err_t handleRequest(PsychicRequest* vendorReq, PsychicResponse* vendorResp) override {
+        if (s_notFoundHandler == nullptr) {
+            // The vendor's notFoundHandler() then sends its own plain 404.
+            return HTTPD_404_NOT_FOUND;
+        }
+        WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
+        WebRequest req(&ctx);
+        s_notFoundHandler(req);
+
+        // Keeps the oversize behaviour of PsychicWebHandler::handleRequest(),
+        // which answered a body over maxRequestBodySize and returned ESP_FAIL.
+        // A non-404 return passes through notFoundHandler(), and ESP_FAIL makes
+        // IDF close the session instead of httpd_req_delete() draining the
+        // whole unread body on the server task -- up to the socket's receive
+        // timeout per read, with no bound on the total.
+        if (vendorReq->contentLength() > s_server.maxRequestBodySize) {
+            return ESP_FAIL;
+        }
+        return ctx.result;
+    }
+};
+
+// The three endpoints every ordinary route is served through. Called once,
+// after webRegisterSeamRoutes() has filled the table.
+//
+// Order is load-bearing: PsychicHttpServer::_process() takes the first
+// endpoint that matches, in registration order. /api/take/file is a POST
+// upload endpoint (webRegisterUploadRoute()) under /api/, registered inside
+// webRegisterSeamRoutes(), so it has to precede /api/* POST here or every take
+// upload would reach the dispatcher instead of its PsychicUploadHandler.
+//
+// These calls add no method to the server's supported_methods, from which
+// start() registers one ESP-IDF wildcard handler per method: the vendor
+// initialises that list to GET, POST, DELETE, HEAD, PUT and OPTIONS
+// (PsychicHttpServer.h:51-57), and on() only appends a method it lacks. Static
+// files never depended on an endpoint here for their GET handler.
+//
+// Each is a PsychicWebHandler, the vendor's on(uri, method, fn): it keeps the
+// maxRequestBodySize refusal, loadBody(), loadParams(), and the client cleanup
+// closeCallback() runs for endpoint handlers only. A global PsychicWebHandler
+// would keep closed clients forever (WebpPictureHandler above).
+void registerSeamDispatcher() {
+    s_server.on(kSeamDispatchUri, HTTP_GET,
+                [](PsychicRequest* vendorReq, PsychicResponse* vendorResp) {
+                    return dispatchSeamRoute(vendorReq, vendorResp, WebMethod::kGet);
                 });
+    s_server.on(kSeamDispatchUri, HTTP_POST,
+                [](PsychicRequest* vendorReq, PsychicResponse* vendorResp) {
+                    return dispatchSeamRoute(vendorReq, vendorResp, WebMethod::kPost);
+                });
+    s_server.on(kSeamDispatchUri, HTTP_DELETE,
+                [](PsychicRequest* vendorReq, PsychicResponse* vendorResp) {
+                    return dispatchSeamRoute(vendorReq, vendorResp, WebMethod::kDelete);
+                });
+}
+
+}  // namespace
+
+void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler handler,
+                      size_t maxBodyBytes) {
+    // Refused before the body ceiling below, so a row that never serves
+    // cannot raise what every route buffers.
+    if (strncmp(path, kSeamRoutePrefix, kSeamRoutePrefixLength) != 0) {
+        // Only /api/ reaches the dispatcher; anywhere else this row would
+        // never be asked.
+        PA_LOG_ERROR(TAG, "route %s refused: seam routes live under %s", path, kSeamRoutePrefix);
+        return;
+    }
+    if (s_routeCount >= kSeamRouteCapacity) {
+        PA_LOG_ERROR(TAG, "route %s refused: route table full at %u rows", path,
+                     (unsigned)kSeamRouteCapacity);
+        return;
+    }
+
+    // The library does the buffering and enforces one server-wide ceiling
+    // (PsychicHttpServer::maxRequestBodySize), so the per-route value only has
+    // to fit under it. initPsychicWebServer() starts that ceiling at
+    // kDefaultMaxBodyBytes and each route raises it to its own bound, so it
+    // ends at the largest bound any route declares (include/web_body_ceiling.h).
+    // The matching 413 comes from the handler reading contentLength().
+    webBodyCeilingAdmitRoute(s_server.maxRequestBodySize, maxBodyBytes);
+
+    s_routes[s_routeCount] = {path, handler, method};
+    s_routeCount++;
 }
 
 void webRegisterUploadRoute(const char* path, WebUploadChunkHandler onChunk,
@@ -575,16 +782,20 @@ void webRegisterNotFoundRoute(WebRequestHandler handler) {
     // that exists never reaches this handler, and one for a file that does not
     // is a not-found like any other.
     //
-    // onNotFound() replaces the handler on the library's defaultEndpoint, which
-    // it consults for every method, not the HTTP_GET the endpoint was built
-    // with. A POST to a mistyped path answers in the same shape as a GET.
-    s_server.onNotFound(
-        [handler](PsychicRequest* vendorReq, PsychicResponse* vendorResp) -> esp_err_t {
-            WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
-            WebRequest req(&ctx);
-            handler(req);
-            return ctx.result;
-        });
+    // The handler goes on the library's defaultEndpoint, which the server
+    // consults for every method, not the HTTP_GET the endpoint was built with.
+    // A POST to a mistyped path answers in the same shape as a GET.
+    // setHandler() deletes the PsychicWebHandler the server's constructor put
+    // there. Not onNotFound(): that installs a PsychicWebHandler, which keeps a
+    // client list nothing prunes (NotFoundHandler above).
+    //
+    // Heap-allocated once and never freed, like WebpPictureHandler: the
+    // endpoint owns it for the life of the server.
+    //
+    // A GET/POST/DELETE miss under /api/ never gets this far: the route
+    // dispatcher calls the same handler itself (dispatchSeamRoute()).
+    s_notFoundHandler = handler;
+    s_server.defaultEndpoint->setHandler(new NotFoundHandler());
 }
 
 void initPsychicWebServer() {
@@ -632,7 +843,37 @@ void initPsychicWebServer() {
     // data/firmware.js reads. See uploadContentLengthFits() in api_upload.h.
     s_server.maxUploadSize = kUploadTransportCeiling;
 
+    // PsychicWebHandler buffers every body up to maxRequestBodySize before a
+    // handler sees it, and the library starts it at 16 KB. Start it at the
+    // smallest route bound instead, before any route registers, so it ends at
+    // the largest bound a route declares on this board (#427). Must precede
+    // webRegisterSeamRoutes(): every webRegisterRoute() raises from here.
+    webBodyCeilingReset(s_server.maxRequestBodySize);
+
+    // What the route table costs the Internal Data Heap (#467). An ordinary
+    // route is a row in a static table and costs no heap; what remains are
+    // the PsychicHttp endpoints -- the three upload routes and the
+    // dispatcher's three /api/* endpoints, each a handler, an endpoint and a
+    // list node -- and the not-found handler, which sits on the vendor's
+    // existing default endpoint. The two /upload/ paths (16 and 18
+    // characters) are longer than std::string's 15-character small buffer, so
+    // each of those endpoints also holds a heap copy of its path
+    // (PsychicEndpoint::_uri). A heap reading on either side counts the
+    // allocator's per-block overhead that sizeof() misses. The table cost
+    // 16,044 B in 243 blocks on artoo when every route was its own endpoint.
+    HeapInternalDataInfo routesBefore = {};
+    heapReadInternalDataInfo(&routesBefore);
+    const uint32_t routesFreeBefore = heapReadInternalDataFree();
+
     webRegisterSeamRoutes();
+    registerSeamDispatcher();
+
+    HeapInternalDataInfo routesAfter = {};
+    heapReadInternalDataInfo(&routesAfter);
+    const uint32_t routesFreeAfter = heapReadInternalDataFree();
+    PA_LOG_INFO(TAG, "Seam routes took %ld B of internal data heap in %ld blocks",
+                (long)routesFreeBefore - (long)routesFreeAfter,
+                (long)routesAfter.allocatedBlocks - (long)routesBefore.allocatedBlocks);
 
     // Endpoints registered above win: serveStatic() installs a global handler,
     // and the server only reaches global handlers after no endpoint matched.
@@ -647,6 +888,13 @@ void initPsychicWebServer() {
     // async stack did. Default file and cache-control are the async settings
     // from web_server.cpp verbatim.
     if (webLittleFsMounted()) {
+        // PsychicHttp's MIME table has no .webp and falls back to text/plain
+        // (PsychicFileResponse.cpp:107-133). One global handler, added ahead
+        // of serveStatic() so it is asked first, answers image/webp for every
+        // /<id>.webp picture the image carries (#316, #355, ADR 0065). Global
+        // handlers are consulted in the order they were added, after no
+        // endpoint matched (PsychicHttpServer::_process).
+        s_server.addHandler(new WebpPictureHandler());
         s_server.serveStatic("/", LittleFS, "/")->setDefaultFile("index.html")->setCacheControl("no-cache");
     } else {
         PA_LOG_WARN(TAG, "LittleFS not mounted; static serving unavailable");
@@ -658,4 +906,18 @@ void initPsychicWebServer() {
         return;
     }
     PA_LOG_INFO(TAG, "PsychicHttp server listening on port 80");
+
+    // The web request scratch belongs to the task that runs every handler
+    // (include/web_request_scratch.h). httpd_queue_work() runs a function on
+    // exactly that task, so the scratch learns its owner from the owner itself
+    // rather than from a task name. Until the work item runs, a scratch claim
+    // is refused and its handler answers 500 - a request would have to arrive
+    // in the moment after begin() to see it.
+    err = httpd_queue_work(
+        s_server.server,
+        [](void*) { webRequestScratchBindOwner(xTaskGetCurrentTaskHandle()); }, nullptr);
+    if (err != ESP_OK) {
+        PA_LOG_ERROR(TAG, "web request scratch not bound (%s): scratch routes will answer 500",
+                     esp_err_to_name(err));
+    }
 }

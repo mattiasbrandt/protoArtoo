@@ -3,15 +3,26 @@
 #
 # The replayable sheet for the artoo-esp32 Console bench runbook (#216),
 # commands only -- everything #216 lists that the Console Client's scripted
-# mode (#264) can express. Transport under test is the UART0 bridge,
-# unseated over USB-UART (#216's own scope: no seated or droid-mounted
-# hardware). Human-only steps are `pause` directives; what a row is expected
+# mode (#264) can express. Transport under test is the UART0 bridge over
+# USB-UART. Scope is Bench-Mode: nothing connected to the board (#216's own
+# scope). On THIS board that also means the ESP32 is out of the Artoo PCB,
+# because GPIO15 is shared with SBUS strapping and USB will not sync in the
+# socket -- an artoo-esp32 wiring fact, not a posture, and it says nothing
+# about firebeetle2 (GLOSSARY.md "Bench-Mode", 2026-09-17).
+# Human-only steps are `pause` directives; what a row is expected
 # to answer stays on #216's own criterion, never written here
-# (docs/console-protocol.md's "no expect directive" decision).
+# (docs/console-client.md "Bench sheets and @row": there is no expect directive).
+#
+# Plain requests to the droid's own routes (keep GET /api/config, POST
+# /api/config with a known value) are `http` steps, not pauses: they need the
+# droid's address in --http-base, and the answers a row keeps (`> FILE`) land
+# in --run-dir. A pause is left only where a person, a browser page, a flash
+# or a value only this droid knows is needed.
 #
 # Run (serial is this board's primary transport; --http only if this board's
 # own WiFi is up and reachable):
-#   python3 tools/console_client.py --port /dev/ttyUSB0 --script tools/bench_rows/artoo_esp32.txt
+#   python3 tools/console_client.py --port /dev/ttyUSB0 --http-base http://10.0.0.22 \
+#     --run-dir tasks/bench-run-artoo --script tools/bench_rows/artoo_esp32.txt
 #
 # Select rows (by name only, e.g. "safe-attach" -- not the ticket number):
 #   --rows safe-attach,grouped-wifi-config   (explicit order, not file order)
@@ -132,3 +143,577 @@ send system.config.log-level value=info
 # row's board_capability entirely. Agent-runnable - it needs nobody at the bench.
 @row 243 wifi-module-reboot-not-on-this-board
 send system.action.reboot-wifi-module
+
+# =============================================================================
+# Epic #175 Wave 0 -- the capability lines, replayed as a builder performs them
+#
+# Added 2026-09-11, operator direction. Every ticket in this epic carries a
+# capability line -- what a builder can newly do -- and until now nothing
+# converted one into an action anyone performs: a green suite proves the code
+# is right and proves nobody has used it. Each row below IS a capability line,
+# phrased as the action, written while the slice that delivered it was warm.
+#
+# What a row must answer stays on the Closing Ticket (#355), never here, in
+# keeping with this sheet's own rule. Rows needing a person carry `pause`.
+#
+# Two limits, stated rather than discovered at the bench:
+#   - The Console cannot SET a Component Member or an endpoint; those arrive on
+#     POST /api/config, and no page builds them until C3 (#351) and C1 (#347).
+#     So those steps are `http` steps where the sheet knows the value, and a
+#     `pause` naming the request where only the droid does -- never `send`.
+#   - Ceiling for the whole block is Controller Upload Verified. Bench-Mode
+#     means nothing is connected to the board, so a row wanting a moving arm
+#     is Not Assessed and says so.
+# =============================================================================
+
+# A7 (#340) - "Say which sound module is actually fitted, and change it later,
+# rather than it being decided when the firmware was built." The CHANGE is the
+# capability, so one reading proves nothing: read the lineup and the fitted
+# member, change it, reboot, and hear which module answers. The change stays a
+# pause: "the other supported member" depends on which one this droid reports
+# fitted in the answers above, which the sheet cannot know.
+@row 340 sound-member-survives-a-reboot
+send system.api.get-components
+send sound.status.current
+send sound.action.play-track track=1
+pause The audible half is Not Assessed at this bench - nothing is fitted, and sound.status.current reports link_ok:false device:none. Now POST /api/config with soundMember=<the other supported member id, e.g. mp3_trigger> - the write is accepted immediately and takes effect at reboot - then press Enter.
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send system.api.get-components
+send sound.status.current
+send sound.action.play-track track=1
+
+# A2/A3/A4 (#338 #342 #345) - "Your calibration survives the move to addressed
+# outputs", and there is only one place an endpoint is stored. The migration is
+# the capability and it is ONE-SHOT per board: a pre-migration NVS crosses once,
+# and A4 removes the legacy keys after the first successful save. The
+# distinctive pre-migration values are set BEFORE the Wave 0 image is flashed;
+# #355 carries that ordering and the numbers.
+#
+# The endpoints are NOT console-readable and no wording of this row can make
+# them so: servo.status.current is is_query:false in the catalog -- a row that
+# describes a field inside another response, never an independently executable
+# command -- so it answers err/unavailable/not-executable, as it did on
+# 2026-09-11. There is no servo.config.* operation either. Both reads are
+# therefore GET /api/config, kept as an http step.
+#
+# system.action.set-mode is the SAVE. It calls saveConfigToNvs(), which runs
+# configSaveServoOutputs() before configSave() (src/config_store.cpp), so an ordinary
+# mode change IS a full config save and is what performs the migration. That is
+# why "don't touch servo settings yet" is not sufficient guidance to a bench
+# operator: the first save of ANY kind migrates. With both reads now http
+# steps the row has no pause, so --skip-manual selects it: whether this
+# board's NVS still holds a crossing to make is #355's to say, not the sheet's.
+@row 345 calibration-crosses-onto-the-rows
+pause ONE-SHOT, and it SAVES the config and sets Stationary Mode: run this row only on a board whose NVS still holds pre-migration servo keys (the 2026-09-11 Wave 0 check already crossed both bench boards). Press Enter to run it, or Ctrl-C to stop.
+http GET /api/config > calibration-pre-migration-config.json
+send system.action.set-mode mode=stationary
+send system.status.health
+http GET /api/config > calibration-post-migration-config.json
+
+# A6 (#339) - "The controller says where it actually routes each signal." The
+# Lane manifest is HTTP-only by design and the console cannot stand in for it:
+# board_lanes is emitted by GET /api/identity alone
+# (src/web/api_identity_serializers.cpp), while the console's
+# system.api.get-identity deliberately answers with the two ConfigSnapshot
+# fields and NOT the board manifest (consoleExecuteSystemApiGetIdentity,
+# src/console/console_module.cpp). So the console sends prove the controller is
+# up and answering as itself, and the lane evidence is fetched over HTTP -- the
+# same split this sheet's header already uses for flash and heap figures that
+# are read from /api/status rather than typed at the console. #355 reads
+# board_lanes from the kept answer.
+@row 339 the-controller-says-where-it-routes
+send system.api.get-identity
+http GET /api/identity > routes-identity.json
+send system.status.health
+
+# A1a-A1d (#337 #356 #357 #358) - "Every part on your droid has a name the
+# firmware and the browser both know", and since #358 a Part is nameable
+# whether or not this body drives it. The browser half has no page until C1a
+# (#347), so this row proves the firmware half: what the controller answers
+# with, and that it is the whole catalog rather than the drivable subset.
+@row 358 the-part-vocabulary-the-controller-answers-with
+send system.api.get-components
+send sound.status.current
+
+# C3j (#416) - "One firmware module answers what a wire may do." The lit-wire
+# rules moved into include/output_wire.h without changing an answer, and the
+# native truth table is what proves that. What only the board shows is that the
+# reshaped image boots and the servo path still answers for its Outputs. Board
+# only: a strip or a servo on a wire is full-hardware-required, never a row.
+@row 416 the-outputs-answer-after-the-wire-module
+pause Upload this image over USB, let it boot, re-attach, then press Enter
+send system.status.health
+send servo.api.get-outputs
+http GET /api/servo/outputs > wire-module-servo-outputs.json
+
+# =============================================================================
+# Epic #175 closure session (#355) -- what Waves 0-3 left for the board
+#
+# Added 2026-09-27. #355's body is the checklist and says what each row must
+# answer; this block is only the commands, in the order that needs one
+# reflash: every artoo_esp32 row first, then the profiler-image row last.
+# Browser checks run as Playwright scripts (test/playwright/), and the row
+# around each one captures the Console's view of the same moment.
+#
+# Every row is Bench-Mode: the controller on USB and nothing else. A check
+# needing a servo, radio, strip or sound module is on #355's droid-only record
+# and never here. system.status.health carries heapFree, heapMin,
+# heapLargestBlock, heapLargest8bit, resetReason and estop, so memory and
+# restart evidence is read at the Console, not typed from a browser.
+# =============================================================================
+
+# #413 #409 #431 #423 - the one real-NVS crossing this bench can still make:
+# the board's NVS dates from the 2026-09-11 image, before #413, so the tip's
+# first boot runs the upgrade path (adoptRetiredAuxLedKeys, simple -> basic,
+# the load-time clamp). The main-lineage crossing is NOT reachable here: this
+# board's NVS is epic-lineage and a main-lineage image is never flashed to it.
+# Flashing the filesystem image replaces LittleFS, so stored Learned
+# Sequences are lost: back them up in this row. The three plain reads are http
+# steps; the pause keeps what a sheet cannot do: the Backup file is built by the
+# Maintenance page (it is what row restore-an-older-backup restores), and the
+# sequences are fetched by names only this droid's list knows.
+@row 413 before-the-flash
+send system.status.health
+http GET /api/config > before-flash-config.json
+http GET /api/servo/outputs > before-flash-servo-outputs.json
+http GET /api/seq/list > before-flash-seq-list.json
+pause BEFORE flashing: keep a Maintenance -> Backup file, and every Learned Sequence named in before-flash-seq-list.json (GET /api/seq?name=... each). Press Enter.
+pause Flash artoo_esp32 firmware AND filesystem images, let it boot, re-attach, then press Enter
+
+# The first browser visit after the flash, before anything else opens
+# Configuration: a droid configured before guided Setup existed is left alone,
+# and reading the page writes nothing (#351, data/setup.js).
+@row 351 first-visit-writes-nothing
+pause Run: BASE_URL=http://10.0.0.22 node test/playwright/configuration/configured-droid-writes-nothing.js, then press Enter
+send system.status.health
+
+# The comparison with the before-the-flash copies is #355's: the lit Output
+# reads component rgb with its old LED count and wired tick, a stored "simple"
+# reads "basic", and nothing else moved.
+@row 413 after-the-flash-nothing-moved
+send system.status.health
+send servo.api.get-outputs
+http GET /api/config > after-flash-config.json
+http GET /api/servo/outputs > after-flash-servo-outputs.json
+
+# Axis 1 - the image is what we think it is. firmwareVersion and the
+# filesystem stamp are HTTP-only; a -dirty or stale image voids the session.
+@row 355 the-image-is-what-we-think
+send system.status.health
+http GET /api/status
+http GET /fs-version.json
+
+# #381 row 39 - the idle Internal Data Heap after #427-#430, at the default log
+# level. Since ccf72dd3 the heap keys carry no IRAM, so the 2026-09-11 figures
+# are not a baseline for these. Which components are enabled changes the
+# answer, so it is recorded beside it.
+@row 381 idle-heap-baseline
+send system.status.health
+http GET /api/config > idle-heap-config.json
+send system.status.health
+
+# #371 - GET /api/config now measures, allocates and frees per request (up to
+# 6,144 B) instead of holding 3,072 B for good. The pages that read it are
+# the load; heapLargest8bit before and after is the reading.
+@row 371 config-allocates-per-request
+send system.status.health
+pause Load Dashboard, Configuration and Maintenance -> Backup, once each. Note any "payload too large" or "response buffer alloc failed". Press Enter.
+send system.status.health
+
+# #381 row 42 - the two largest request bodies, back to back. A shipped defect
+# class (OOM PANIC): the estimated peak is 25-32 KB against 20-40 KB free.
+@row 381 the-largest-bodies
+send system.status.health
+pause Restore a ~12 KB whole-configuration backup from Maintenance -> Backup. Keep the HTTP result. Press Enter.
+send system.status.health
+pause Save a Learned Sequence of close to 12 KB from Sequences (POST /api/seq). Keep the HTTP result; on a panic, fetch /api/coredump/status. Press Enter.
+send system.status.health
+
+# #423 + #351 - a restore sends back what the droid reads, including a backup
+# made before Output rows existed. The receipt must name what did not land
+# (no servo_outputs in that file), and the sound member, the Droid Build and
+# guidedSetup must come back whole (a restore once dropped two of them).
+#
+# The restore is the Maintenance page's own flow, so it stays a pause; the read
+# after it is an http step, and comparing components.audio.member, droidBuild
+# and guidedSetup with the backup is #355's.
+@row 423 restore-an-older-backup
+send system.status.health
+pause Restore the before-the-flash backup from Maintenance -> Backup. Keep the receipt text. Press Enter.
+http GET /api/config > after-restore-config.json
+send system.status.health
+send system.status.logs
+
+# #343 + #368 - a written Droid Build crosses a real reboot, and a mixed
+# design saves without complaint. The row #343's critic recorded was never
+# committed; this is it.
+#
+# The write stays a pause: fittedParts is sent whole, and "the fitted parts
+# plus gripArm" is this droid's current set, which the sheet cannot know. The
+# read after the reboot is an http step; body own, dome mk41, gripArm still
+# fitted and no seeded part removed is #355's to check in it.
+@row 343 droid-build-survives-a-reboot
+pause POST /api/config with bodyDesign=own and the fitted parts plus gripArm, and domeDesign=mk41 (an MK4.1 dome over the body). Keep the answer. Press Enter.
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+http GET /api/config > droid-build-after-reboot-config.json
+
+# #426 - artoo stores five Learned Sequences, the droid reports the cap, and
+# the sixth save is refused. The budget was re-derived because the earlier
+# figure was two blocks optimistic - a defect this repo shipped.
+# The saves stay a pause: a near-12 KB sequence body does not fit on a sheet line.
+@row 426 five-sequences-and-no-sixth
+send system.status.health
+http GET /api/identity
+pause Save five near-12 KB Learned Sequences (POST /api/seq), then a sixth: keep every HTTP result and the sixth's refusal text. Press Enter.
+send system.status.health
+send system.status.logs
+
+# #427 - a 12,289-16,384 B body is refused by PsychicHttp itself with a 400
+# and a closed connection, and nothing resets. A pause, not an http step: a
+# ~13 KB body does not fit on a sheet line.
+@row 427 an-oversize-body-is-refused
+send system.status.health
+pause POST a ~13 KB body to /api/config and keep the status code and body. Press Enter.
+send system.status.health
+
+# #381 - the same heap keys with the surfaces open: the other input to the
+# page heap thresholds #355 re-derives.
+@row 381 heap-under-page-load
+send system.status.health
+pause Open Dashboard, Parts and Sequences in three tabs and leave them live for 30 s. Press Enter.
+send system.status.health
+
+# #428 - an operator restart now runs esp_restart() on SafetyMonitor's stack,
+# not loopTask's. The shutdown handlers include closed-source esp_wifi_stop,
+# which no stack walk can bound, so this is the only evidence.
+@row 428 a-requested-restart-restarts-clean
+send system.status.health
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send system.status.health
+send system.status.logs
+
+# #430 - newlib nano printf, adopted on the condition that nothing is lost.
+# dome.status.current is a %.3f; the SafetyMonitor heap line carries frag= as
+# a decimal; GET /api/actions logs "(<n> entries)" at debug level. GET
+# /api/status must parse, with domeTargetSpeed a decimal.
+@row 430 nano-printf-keeps-its-numbers
+send dome.status.current
+send system.status.logs
+send system.config.log-level value=debug
+http GET /api/status
+http GET /api/actions
+send system.status.logs
+send system.config.log-level value=info
+
+# #370 - with Audio off at boot (the bench board's usual state) the sound
+# surface names the picked module and says sound is off, and a play is
+# refused rather than answering ok outcome=queued with no task to drain it.
+# The Wave 0 finding, replayed. Agent-runnable.
+@row 370 sound-off-says-so
+send system.action.enable-web-control
+send sound.status.current
+send sound.action.play-track track=1
+send system.action.disable-web-control
+
+# #364 - the dial's short expiry fires and the Output goes limp, read from
+# the firmware with nothing on the pin. Needs one enabled Output; if none is,
+# this row is Not Assessed and says so. The hold stays a pause: which Output is
+# enabled is this droid's (read it in the get-outputs answer above), not the
+# sheet's. The read after it is an http step; that row reading commandedUs
+# null, limp "expiry" is #355's to check.
+@row 364 a-hold-expires-limp
+send system.action.enable-web-control
+send servo.api.get-outputs
+pause POST /api/servo action=hold arm=<an enabled Output> positionUs=1500, wait 4 s, then press Enter.
+http GET /api/servo/outputs
+send servo.api.get-outputs
+
+# #443 (ADR 0043) - an Output with a release time lets go that long after its
+# move ARRIVES, and a later move starts the count again. Read from the firmware
+# with nothing on the pin: the pulse and the limp token are ServoTask's, so a
+# servo stopping its fight is droid-only and never here. Needs one enabled
+# Output, named from the get-outputs answer, as a-hold-expires-limp does. The
+# first read after each wait says limp:release, the read straight after the
+# second move says limp:- (a pulse, the count restarted); #355 checks them.
+@row 443 a-release-lets-go-after-it-arrives
+send system.action.enable-web-control
+send servo.api.get-outputs
+pause POST /api/config outputRow=<an enabled Output's address> release=3000, then POST /api/servo action=position arm=<it> positionUs=1500. Wait 5 s, then press Enter.
+send servo.api.get-outputs
+pause POST /api/servo action=position arm=<it> positionUs=1600, then press Enter at once.
+send servo.api.get-outputs
+listen 5
+send servo.api.get-outputs
+pause POST /api/config outputRow=<its address> release=0 to leave it holding again, then press Enter.
+send system.action.disable-web-control
+
+# #364 (ADR 0043) - estop and Sleep release every enabled Output, replacing
+# the park. The physical limp is droid-only; the firmware's state is not.
+# Every enabled row reading commandedUs null, limp "estop", then limp "sleep",
+# is #355's to check in the two reads.
+@row 364 estop-and-sleep-release-every-output
+send system.action.estop
+send servo.api.get-outputs
+http GET /api/servo/outputs
+send system.action.estop-clear
+send system.action.sleep
+http GET /api/servo/outputs
+send system.action.wake
+send system.action.disable-web-control
+
+# #365 - back to centre: the route answers, the run logs its pacing, and a
+# latched estop refuses it.
+@row 365 back-to-centre-and-its-refusal
+send system.action.enable-web-control
+send servo.action.centre-all
+listen 5
+send system.status.logs
+send system.action.estop
+send servo.action.centre-all
+send system.status.logs
+send system.action.estop-clear
+send system.action.disable-web-control
+
+# #379 - #st and #sm no longer report a mode change that never happened. The
+# routing is tested natively; the HTTP 400 in api_system.cpp is not.
+@row 379 st-and-sm-are-refused
+send system.status.health
+http POST /api/manual-command command=#st
+http POST /api/manual-command command=#sm
+http GET /api/status
+
+# #349 + #356 - a body step naming a Part no Output claims reports
+# part-not-assigned at run and the sequence carries on. Nothing moves: LEDC is
+# disabled on this bench. The route reads the sequence from `name`
+# (handleSeqTestPost, src/web/api_seq.cpp); the `command=` this step once
+# named is not a field it reads. `listen 20` is the 20 s the sequence runs for,
+# watching its log go past on serial.
+@row 349 an-unclaimed-part-is-skipped-not-fatal
+send system.config.log-level value=debug
+http POST /api/seq/test name=DM:SE30
+listen 20
+send system.status.logs
+send system.config.log-level value=info
+
+# #354 - the Factory catalog listing got its own ceiling after shipping a 500
+# at 4,359 B. #348 - /api/serial names this board's silk, not a hard-coded S3.
+# #355 reads the two answers: builtins a 200 listing DM:SE30 to DM:SE36, serial
+# labels equal to include/component_labels.inc for artoo.
+@row 354 factory-list-and-serial-labels
+http GET /api/seq/builtins
+http GET /api/serial
+send system.status.health
+
+# #369 - the stored RC Radio crosses a reboot and is the active member.
+@row 369 the-stored-radio-survives-a-reboot
+send system.api.get-components
+http POST /api/config rcMember=rc_radio
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send system.api.get-components
+http GET /api/config
+http GET /api/identity/components
+
+# #370 - the amber "restart required" line is cleared by a real restart, and
+# the new receiver is then the one running.
+@row 370 a-restart-clears-the-amber-line
+pause On Configuration, change the RC Receiver (amber "Saved at ... restart required") and the sound module ("Next start", not amber). Reload the page once: the change must still read as waiting. Press Enter.
+send system.action.reboot
+pause Wait for the board to come back, reload Configuration and confirm the line is gone. Press Enter.
+send system.api.get-components
+
+# #404 - Configuration and Maintenance load, the old addresses open
+# Configuration, and "Run guided Setup again" writes only guidedSetupRun.
+@row 404 configuration-and-maintenance
+pause Open /setup.html and /#setup (both must land on Configuration), then Maintenance. Press "Run guided Setup again" and keep the POST /api/config body from the browser's network panel. Press Enter.
+send system.status.health
+
+# #371 - guided Setup, one pass. The visited bits crossing a real reboot on
+# real NVS is the half no native test reaches.
+# The Setup pages are a person's; the reads between them are http steps, and
+# the second reboot is a send rather than a step inside a pause.
+@row 371 guided-setup-one-pass
+pause Run guided Setup to the end once (keep the summary card: changed / Waiting for a restart / Not asked, and "n of N questions answered"), then start it again and take the skip path. Press Enter.
+http GET /api/config > guided-setup-after-the-pass-config.json
+send system.action.reboot
+pause Wait for the board to come back: the summary card is still there until Done. Press Done, then press Enter.
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+http GET /api/config > guided-setup-after-done-config.json
+
+# #369 and #431 (fix 68ad608a) - ELRS reads nothing, and survives a reboot.
+# A stored ELRS mode used to load as dual SBUS. With every RC channel on, the
+# board must look exactly like one with no receiver: no RC task, no SBUS
+# decoder, drive keeping its zero frames, the estop latch untouched. Run late:
+# it leaves the board in ELRS mode, and the board is left as the test leaves it.
+# "Every RC channel" is enableRcCh1..enableRcCh6 (src/config_settings.cpp).
+# #428: with every RC channel on, the last GET /api/status must parse whole,
+# never "status payload overflow".
+@row 369 elrs-reads-nothing
+send rc.config.mode
+send system.status.health
+http POST /api/config rcInputMode=elrs enableRcCh1=true enableRcCh2=true enableRcCh3=true enableRcCh4=true enableRcCh5=true enableRcCh6=true
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send rc.config.mode
+send rc.status.snapshot
+send system.status.health
+send system.status.logs
+http GET /api/status
+
+# The browser pass (#355 section E), at 1440 px. Agents run it in phase 1,
+# headed so the operator can watch along (the per-surface scripts are headed
+# by default; the sweep needs HEADED=1), but never with STEP=1: that waits for
+# Enter, and nobody is at the keys. Each script is a general rule for its
+# surface (test/playwright/<surface>/<rule>.js); every pause runs one or a
+# group, and the sends around it are the Console's view of the same minutes.
+# Prefix every run with NODE_PATH=$HOME/.npm/_npx/e41f203b7505f1fb/node_modules
+# and close every browser. Order is by precondition: estop CLEAR first, then
+# the scripts that latch it, then the ones that need it latched.
+
+# B2a (#344) - the real 3-client SSE budget. The 4th client is refused with
+# 503 "event stream at capacity" (src/web/api_events.cpp), and a tab that
+# changes screen holds ONE slot for the whole session instead of taking and
+# releasing one per navigation. Both exist only on hardware; #344 left them
+# here. Run with no browser tab open on the board. Both steps stay pauses: the
+# GET /api/status reads have to happen while the streams or the tab are open,
+# which only the person holding them can time.
+@row 344 the-fourth-stream-is-refused
+send system.status.health
+pause Open three streams (for i in 1 2 3; do curl -sN http://10.0.0.22/api/events >/dev/null & done), then curl -s -o /dev/null -w '%{http_code}' http://10.0.0.22/api/events and keep the code. Fetch GET /api/status (sseClients, refusedSseCap), then kill the three curls. Press Enter.
+pause Open ONE tab, walk every surface in the nav, then fetch GET /api/status: keep sseClients and sseClientsPeak. Press Enter.
+send system.status.health
+
+# Estop CLEAR, nothing written: the read-only rule of every surface the epic
+# built or changed.
+@row 355 the-surfaces-read-only
+send system.status.health
+pause Run each with BASE_URL=http://10.0.0.22: test/playwright/configuration/*.js (except configured-droid-writes-nothing.js), maintenance/*.js, dashboard/*.js, wiring/*.js, rc/*.js, wifi/*.js, shell/nav-has-no-setup-entry.js, shell/config-read-once-per-mount.js, lights/dome-light-pick-survives-frames.js, then setup/setup-availability-families.js. Keep every table. Press Enter.
+send system.status.health
+
+# B3 (#346) + B2c (#360) + #419 - the Status Plate tells the truth. Shipped
+# defects. Its last check latches the estop from outside the browser.
+@row 346 the-plate-tells-the-truth
+pause Run: BASE_URL=http://10.0.0.22 node test/playwright/shell/status-plate-truth.js, then press Enter
+send system.status.health
+send system.action.estop-clear
+
+# C1a (#347) and the Parts surface.
+@row 347 the-parts-surface
+pause Run: BASE_URL=http://10.0.0.22 node test/playwright/parts/parts-surface.js, then press Enter
+send system.status.health
+
+# #415 - WRITES CONFIG and puts it back: a Light's LED count saves once.
+@row 415 an-led-count-saves-once
+pause Run: BASE_URL=http://10.0.0.22 node test/playwright/lights/led-count-saves-once.js, then press Enter
+send servo.api.get-outputs
+
+# SAFETY (ADR 0064, #417 F8) - the dial never re-takes a released Output.
+# Part 1 latches the estop; the Console clears it; Part 2 hides the tab.
+@row 417 the-dial-never-retakes
+pause Run: PART=1 BASE_URL=http://10.0.0.22 node test/playwright/servo/dial-never-retakes-a-released-output.js, then press Enter
+send system.status.health
+send system.action.estop-clear
+pause Run: PART=2 BASE_URL=http://10.0.0.22 node test/playwright/servo/dial-never-retakes-a-released-output.js, then press Enter
+send servo.api.get-outputs
+
+# B2b (#359) - STOP takes the press on every surface, dialogs open included.
+# A safety invariant and a shipped defect. It leaves the estop latched; the
+# health read proves the press reached the firmware.
+@row 359 stop-takes-the-press
+send system.status.health
+pause Run: BASE_URL=http://10.0.0.22 node test/playwright/shell/stop-every-surface.js, then press Enter
+send system.status.health
+
+# Estop LATCHED: what it must refuse (#363 #372 #364 #421), and the sweep, run
+# now so the plate's longest words (LATCHED, STOPPED) are the ones measured.
+@row 355 the-latched-droid
+send system.status.health
+pause Run with BASE_URL=http://10.0.0.22: test/playwright/shell/estop-latched-refusals.js and test/playwright/servo/estop-leaves-outputs-limp.js; then HEADED=1 BASE=http://10.0.0.22 node test/playwright/console-sweep.js. Press Enter.
+send system.action.estop-clear
+send system.status.health
+
+# The Console catalog against its pinned counts. The epic added routes, and a
+# new route moves these numbers where no targeted test run names them.
+@row 355 the-console-catalog
+send help
+send help servo.action.open
+send system.api.get-components
+
+# #441 slices 1-2 - WRITES A SEQUENCE and deletes it again. The editor's Save
+# was proven in a browser against stubs (the request it sends); this is what
+# the droid stores. Make DM:BENCH (Edit any sequence, or a Factory one through
+# Tune, and rename it), tap a tempo of about 120 BPM and press Use, set the
+# Interrupt group to Pies and the Mute period to 9 s, Save. Reload the page and
+# open it again: the tempo, the interrupt group and the mute period read back
+# as saved. The list read keeps what the store indexed.
+@row 441 a-sequence-round-trips-on-the-droid
+pause At http://10.0.0.22/#seq save DM:BENCH as above, reload, reopen it and check the three settings, then press Enter
+http GET /api/seq/list > seq-list-after-save.json
+http GET /api/seq?name=DM%3ABENCH > seq-bench.json
+send dome.api.list-sequences
+
+# #441 slice 2 - a duplicate is saved under an id of its own (a shipped defect:
+# Duplicate copied the original's id, and the firmware accepts that). A save
+# never refuses an id another row carries, and a nested reference by id goes
+# through nestResolve() in src/seq_store.cpp, which takes the first index slot
+# holding that id (seqStoreIndexFindRef()). With two rows sharing one, a phrase
+# plays whichever the index holds first, and a delete reorders the index.
+# Duplicate DM:BENCH, Save the copy as DM:BENCH_COPY. In the list read, the two
+# rows carry different ids.
+@row 441 a-duplicate-has-its-own-id
+pause Duplicate DM:BENCH, save DM:BENCH_COPY, then press Enter
+http GET /api/seq/list > seq-list-after-duplicate.json
+send dome.api.list-sequences
+
+# #441 - Running and its Stop against the real firmware. The droid writes a
+# run's record only when its dispatcher takes the run up, a moment after it
+# answers the press, and that gap is what a stub cannot show. On the list,
+# press Test on DM:BENCH: its row reads Running with the green lamp and offers
+# Stop DM:BENCH. Let it end by itself and press Test again: it reads Running
+# again, and does not flick straight back to Test on the earlier run's record.
+# Then press Stop DM:BENCH while it reads Running: the row goes back to Test.
+# The record then says aborted - or completed, when the routine was too short
+# to catch.
+@row 441 a-run-reads-running-and-its-stop-ends-it
+pause On the list press Test on DM:BENCH and let it end; press Test again, then Stop DM:BENCH while it reads Running, then press Enter
+http GET /api/seq/last-run > seq-last-run-after-stop.json
+
+# #441 slices 1-2 - Test and the pose press against the real firmware, not a
+# stub: the droid takes both and reports the run. Nothing is connected, so
+# nothing moves; the answer is what proves it. Then Memory Wipe both bench
+# sequences, so the board keeps its own Learned Sequences and room under the
+# cap.
+@row 441 test-and-pose-reach-the-droid
+pause Open DM:BENCH, press Test on the droid, then Move the droid to this moment at 1.00 s, then press Enter
+http GET /api/seq/last-run > seq-last-run.json
+send system.status.health
+pause Memory Wipe DM:BENCH_COPY and DM:BENCH from the list, then press Enter
+send dome.api.list-sequences
+
+# #418 + #427 - read once, after every write above and before the profiler
+# flash wipes the log: no config write ran
+# outside its Write Window (logged on device, never a reset), and whether the
+# SafetyMonitor low-heap warning fired during the big bodies. #355 searches the
+# kept log for "ran outside its Write Window" and "low heap entered".
+@row 418 no-write-outside-its-window
+http GET /api/logs > write-window-logs.json
+send system.status.health
+
+# #381 row 12 and #430 - the profiler image, flashed ONCE, last. It is the only
+# image that serves /api/profiler: taskStacks[] high-water marks (DomeTask,
+# WebEvents, DomeLinkTask, ArduinoOTA, SafetyMonitor - SafetyMonitor's decides
+# 4,608 or 4,096 B - plus SeqDisp, Console, RCInputTask and AuxLedTask, which
+# #414, #428 and #429 moved), and fragRatio as a nano-printed decimal.
+# loopTask is absent by design (deleted after setup()). A task reports a
+# mark only once it reaches its first loop; a silent task is recorded, not
+# read as a pass.
+@row 381 the-profiler-image
+pause Flash artoo_esp32_profiler (confirm firmwareVersion), open Dashboard in three tabs so SSE clients are connected, then press Enter
+send system.status.health
+send system.api.get-profiler
+http GET /api/profiler > profiler.json
+send system.api.get-profiler

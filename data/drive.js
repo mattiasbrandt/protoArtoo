@@ -7,9 +7,10 @@
 // - Config load/save via shared API helper
 // =============================================================================
 (() => {
-  const estopButton = document.getElementById("estop-button");
-  const clearEstopButton = document.getElementById("clear-estop-button");
-  if (clearEstopButton) clearEstopButton.disabled = true;
+  // Latching is the Operator Shell's control and is on every surface
+  // (ADR 0048); this surface keeps the release, because the direction that
+  // lets a latched droid move again should stay somewhere an operator went on
+  // purpose.
   const enableWebControlButton = document.getElementById("enable-web-control-button");
   const disableWebControlButton = document.getElementById("disable-web-control-button");
   const controlFeedback = document.getElementById("control-feedback");
@@ -21,6 +22,7 @@
   const throttleFill = document.getElementById("throttle-fill");
   const throttleThumb = document.getElementById("throttle-thumb");
   const throttleValue = document.getElementById("throttle-value");
+  const wheelControllerCard = document.getElementById("wheel-controller-card");
   const hbNoData    = document.getElementById("hb-no-data");
   const hbDataGrid  = document.getElementById("hb-data-grid");
   const hbBattery   = document.getElementById("hb-battery");
@@ -41,24 +43,43 @@
   const presetValueSlow = document.getElementById("preset-value-slow");
   const presetValueNormal = document.getElementById("preset-value-normal");
   const presetValueTurbo = document.getElementById("preset-value-turbo");
+  const presetSummary = document.getElementById("preset-summary");
   const webDriveTimeout = document.getElementById("web-drive-timeout");
   const configFeedback = document.getElementById("config-feedback");
   const presetFeedback = document.getElementById("preset-feedback");
   const presetDistinctHint = document.getElementById("preset-distinct-hint");
   const driveDisabledCard = document.getElementById("drive-disabled-card");
 
+  // The Foot Drive family's capability word (include/drive_capabilities.h),
+  // mirrored because a page cannot include a header. The page asks this one
+  // question of the fitted Foot Drive and never which controller it is
+  // (ADR 0042, #446).
+  const DRIVE_CAP_REPORTS_FEEDBACK = 0x01;
+
   const driveButtons = document.querySelectorAll("[data-drive-speed]");
   const presetButtons = document.querySelectorAll("[data-speed-preset]");
   let holdTimer = null;
   let driveHardwareEnabled = true;
   let webControlEnabled = false;
+  // The Live Reading's answers about the estop (data/live_reading.js): the
+  // feet's acts are live only on a heard, clear one, and a preset switch is
+  // held back on a heard latch.
+  let moveActsLive = false;
   let estopLatched = false;
+  // The radio's failsafe zeroes the browser's drive too, so the acts are held
+  // with it. The web-drive timeout is not: the next act is what ends it
+  // (data/live_reading.js, radioHoldsFeetIn).
+  let radioHoldsFeet = false;
   let saveInFlight = false;
   let saveQueued = false;
   let currentSpeedLimitMax = null;
   let currentSpeedPreset = null;
-  const setupActionText = window.PAUi?.setupActionText || ((action) => `${action} in Setup`);
-  const s1EnableInSetup = setupActionText("Enable S1 — Drive");
+  // Where a builder switches the feet on. The act names the component and not
+  // the connector it lands on: S1 is the Artoo PCB's silkscreen, and a
+  // FireBeetle 2 prints GPIO numbers there instead (#348). Which pins the lane
+  // uses is Wiring's answer, read from the running board.
+  const setupActionText = window.PAUi?.setupActionText || ((action) => `${action} in Configuration`);
+  const FEET_OFF_LINE = `Foot Drive is switched off. ${setupActionText("Switch it on")}.`;
 
   const FAILSAFE_SOURCE_LABELS = {
     0: "None",
@@ -70,19 +91,23 @@
     6: "Watchdog reset",
   };
 
+  // The preset's operator-facing name. It was a snail, a bare word and a
+  // lightning bolt, which is three treatments for three answers to one
+  // question; an operator surface carries no emoji at all (ADR 0066).
   const PRESET_LABELS = {
-    slow: "🐌 Slow",
+    slow: "Slow",
     normal: "Normal",
-    turbo: "⚡ Turbo",
+    turbo: "Turbo",
   };
 
   const formatFailsafeSource = (source) => {
     const parsed = Number(source);
     if (Number.isFinite(parsed)) {
-      const label = FAILSAFE_SOURCE_LABELS[parsed] || "Unknown";
+      const label = FAILSAFE_SOURCE_LABELS[parsed] || window.PALiveReading.UNKNOWN;
       return `${label} (${parsed})`;
     }
-    if (source === undefined || source === null || source === "") return "--";
+    // In the section head's subtitle, which is written in lower case.
+    if (source === undefined || source === null || source === "") return window.PALiveReading.UNKNOWN.toLowerCase();
     return String(source);
   };
 
@@ -96,8 +121,23 @@
     return null;
   };
 
+  // The Speed preset section's subtitle: which limit the droid is actually
+  // sitting on, computed from what it answered rather than typed into the
+  // markup (ADR 0066, docs/ui-copy-voice.md rule 8). A preset is a chosen
+  // posture, so this is a word and a number and never a color (GLOSSARY.md
+  // "Status Color"). A limit that matches no preset says so instead of
+  // rounding itself to the nearest one, because the buttons above would then
+  // disagree with the head.
+  const presetSummaryText = (activePreset) => {
+    if (currentSpeedLimitMax === null) return "";
+    if (!activePreset) return `limit ${currentSpeedLimitMax} · no preset matches`;
+    return `${PRESET_LABELS[activePreset]} · limit ${currentSpeedLimitMax}`;
+  };
+
   const updatePresetHighlight = () => {
-    if (!presetButtons.length) return;
+    // No early-out on an empty button list. The section head reports the LIMIT
+    // the droid is on, which exists whether or not the three preset buttons
+    // rendered, and forEach over an empty list is already a no-op.
     const slow = parsePresetNumber(speedPresetSlow?.value);
     const normal = parsePresetNumber(speedPresetNormal?.value);
     const turbo = parsePresetNumber(speedPresetTurbo?.value);
@@ -115,6 +155,8 @@
       button.classList.toggle("selected", isActive);
       button.setAttribute("aria-pressed", isActive ? "true" : "false");
     });
+
+    if (presetSummary) presetSummary.textContent = presetSummaryText(activePreset);
   };
 
   const presetsAreDistinct = () => {
@@ -145,9 +187,10 @@
   };
 
   const updateDriveControlsEnabled = () => {
-    const driveEnabled = driveHardwareEnabled && webControlEnabled && !estopLatched;
+    const presetsEnabled = driveHardwareEnabled && webControlEnabled && moveActsLive;
+    const driveEnabled = presetsEnabled && !radioHoldsFeet;
     window.PAApi.gateControls(Array.from(driveButtons), driveEnabled);
-    window.PAApi.gateControls(Array.from(presetButtons), driveEnabled);
+    window.PAApi.gateControls(Array.from(presetButtons), presetsEnabled);
 
     const controlsEnabled = driveHardwareEnabled;
     const gatedControls = [
@@ -167,15 +210,12 @@
   const postCommand = async (path, label) => {
     if (!window.PAApi) return;
     if (!driveHardwareEnabled && path.startsWith("/api/web-control")) {
-      window.PAUtils.showFeedback(controlFeedback, `Web control unavailable: ${s1EnableInSetup}.`, "warning");
+      window.PAUtils.showFeedback(controlFeedback, FEET_OFF_LINE, "warning");
       return;
     }
     window.PAUtils.showFeedback(controlFeedback, `${label}...`);
     try {
-      // Estop requests skip the slot and are never retried
-      const isEstop = path === "/api/estop" || path === "/api/estop/clear";
-      const apiMethod = isEstop ? window.PAApi.estopPostForm : window.PAApi.postForm;
-      await apiMethod(path, {}, { timeoutMs: 3000 });
+      await window.PAApi.postForm(path, {}, { timeoutMs: 3000 });
       window.PAUtils.showFeedback(controlFeedback, `${label} sent at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
       window.PAUtils.showFeedback(controlFeedback, `${label} failed: ${window.PAApi.messageFor(error)}`, "error");
@@ -185,11 +225,11 @@
   const postDriveCommand = async (speed, steer) => {
     if (!window.PAApi) return;
     if (!webControlEnabled) {
-      window.PAUtils.showFeedback(controlFeedback, "Drive unavailable: web control is disabled.", "warning");
+      window.PAUtils.showFeedback(controlFeedback, "Web control is off. Turn it on above.", "warning");
       return;
     }
     if (!driveHardwareEnabled) {
-      window.PAUtils.showFeedback(controlFeedback, `Drive controls unavailable: ${s1EnableInSetup}.`, "warning");
+      window.PAUtils.showFeedback(controlFeedback, FEET_OFF_LINE, "warning");
       return;
     }
     try {
@@ -202,11 +242,11 @@
   const postSpeedPreset = async (preset) => {
     if (!window.PAApi) return;
     if (!webControlEnabled) {
-      window.PAUtils.showFeedback(presetFeedback, "Preset switch unavailable: web control is disabled.", "warning");
+      window.PAUtils.showFeedback(presetFeedback, "Web control is off. Turn it on above.", "warning");
       return;
     }
     if (!driveHardwareEnabled) {
-      window.PAUtils.showFeedback(presetFeedback, `Preset switch unavailable: ${s1EnableInSetup}.`, "warning");
+      window.PAUtils.showFeedback(presetFeedback, FEET_OFF_LINE, "warning");
       return;
     }
     if (estopLatched) {
@@ -240,6 +280,10 @@
     }
   };
 
+  // A command loop, not a poll: it is what a held button is doing to the droid,
+  // so it is NOT owned by the shell's surface polling (#360). Unmounting a
+  // surface must never drop a drive frame, and the release handlers below --
+  // pointerup, pointerleave, pointercancel -- are what end it.
   const startHoldLoop = (speed, steer) => {
     stopHoldLoop();
     postDriveCommand(speed, steer);
@@ -308,9 +352,13 @@
       Number.isFinite(speedR) && Number.isFinite(speedL);
     if (!hasTelemetry) {
       if (hbNoData) {
+        // An empty state says why it is empty and offers the act that ends it.
+        // Which of the two it is matters: one is a wheel controller that has
+        // not spoken yet, the other is a droid whose feet were never switched
+        // on, and only the second has anything for the builder to do.
         hbNoData.textContent = driveHardwareEnabled
-          ? "Waiting for complete drive telemetry…"
-          : `Drive not enabled — ${s1EnableInSetup}.`;
+          ? "Nothing from the wheel controller yet."
+          : FEET_OFF_LINE;
         hbNoData.style.display = "";
       }
       if (hbDataGrid) hbDataGrid.style.display = "none";
@@ -330,11 +378,25 @@
     if (hbCurrent) hbCurrent.textContent = `L ${safeCurrentL.toFixed(1)} A / R ${safeCurrentR.toFixed(1)} A`;
   };
 
-  const renderStatus = (payload) => {
-    estopLatched = !!payload.estop;
-    if (clearEstopButton) clearEstopButton.disabled = !payload.estop;
+  const renderReading = (reading) => {
+    // The Live Reading decides the latch for every reader. This page used to
+    // answer it with a truthy read of the frame's own field, which is a
+    // different question: a field that did not arrive must not answer it at
+    // all, and a lost link is not a clear estop either (#346, #359, #419).
+    moveActsLive = reading.moveActsLive;
+    estopLatched = reading.estopLatched;
+    const payload = reading.status;
+    if (payload === null) {
+      updateDriveControlsEnabled();
+      return;
+    }
     webControlEnabled = !!payload.webControlEnabled;
-    updateDriveControlsEnabled();
+    radioHoldsFeet = window.PALiveReading.radioHoldsFeetIn(payload);
+    // /api/status omits the "drive" key entirely when the peripheral is
+    // disabled. Key presence = enabled; absence = disabled. This differs from
+    // renderConfig() which reads components.drive.enabled explicitly.
+    // setDriveHardwareEnabled() re-gates the controls.
+    setDriveHardwareEnabled(Boolean(payload.drive));
     if (statusFailsafeLabel) statusFailsafeLabel.textContent = formatFailsafeSource(payload.failsafeSource);
     const driveSpeed = Number(payload.driveSpeed);
     const driveSteer = Number(payload.driveSteer);
@@ -380,6 +442,29 @@
     }
   };
 
+  // The fitted Foot Drive is the one product of its family this image drives:
+  // the family has no Component Member, so the lineup's supported, included
+  // row is the one on the droid - the rule the Component Picker reads it by
+  // (data/component_picker.js). None, or a lineup that cannot say, is a Foot
+  // Drive that declares no readings.
+  const fittedFootDriveReportsFeedback = (lineup) => {
+    const parts = Array.isArray(lineup?.parts) ? lineup.parts : [];
+    const fitted = parts.filter((part) =>
+      part?.category === "foot_drive" && part.status === "supported" && part.included === true);
+    if (fitted.length !== 1) return false;
+    return (Number(fitted[0].capabilities) & DRIVE_CAP_REPORTS_FEEDBACK) !== 0;
+  };
+
+  // The wheel controller's card exists only for a Foot Drive that reports
+  // readings back. It starts hidden (data/drive.html), so a Foot Drive that
+  // reports nothing never shows a card waiting for readings that cannot come.
+  const loadFootDrive = async ({ handle = null } = {}) => {
+    if (!window.PAApi) throw new Error("API helper unavailable");
+    const api = handle || window.PAApi;
+    const result = await api.get("/api/identity/components");
+    if (wheelControllerCard) wheelControllerCard.hidden = !fittedFootDriveReportsFeedback(result.data);
+  };
+
   const saveConfig = async () => {
     if (!window.PAApi) return;
     if (saveInFlight) {
@@ -388,11 +473,6 @@
     }
 
     saveInFlight = true;
-    if (!updatePresetDistinctHint()) {
-      window.PAUtils.showFeedback(configFeedback, "Speed presets must be distinct values.", "warning");
-      saveInFlight = false;
-      return;
-    }
     window.PAUtils.showFeedback(configFeedback, "Saving...");
     try {
       const result = await window.PAApi.postForm("/api/config", {
@@ -416,18 +496,6 @@
     }
   };
 
-  const refreshStatusOnce = async () => {
-    if (!window.PAApi) return;
-    const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
-    renderStatus(result.data);
-    // /api/status omits the "drive" key entirely when the peripheral is
-    // disabled. Key presence = enabled; absence = disabled. This differs from
-    // renderConfig() which reads components.drive.enabled explicitly.
-    setDriveHardwareEnabled(Boolean(result.data.drive));
-  };
-
-  estopButton?.addEventListener("click", () => postCommand("/api/estop", "Estop latch"));
-  clearEstopButton?.addEventListener("click", () => postCommand("/api/estop/clear", "Estop clear"));
   enableWebControlButton?.addEventListener("click", () => postCommand("/api/web-control/enable", "Web control enable"));
   disableWebControlButton?.addEventListener("click", () => postCommand("/api/web-control/disable", "Web control disable"));
   presetButtons.forEach((button) => {
@@ -460,36 +528,10 @@
   speedPresetNormal?.addEventListener("input", presetInputHandler);
   speedPresetTurbo?.addEventListener("input", presetInputHandler);
   webDriveTimeout?.addEventListener("input", debouncedSave);
-  if (window.PAStatusStream?.isSupported()) {
-    window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") renderStatus(payload);
-    });
-
-    if (!window.PAStatusStream.getLastStatus()) {
-      refreshStatusOnce().catch((error) => {
-        window.PAUtils.showFeedback(controlFeedback, `Status load failed: ${window.PAApi?.messageFor(error) || "request failed"}`, "error");
-      });
-    }
-  } else {
-    const refreshFromFallback = () => {
-      refreshStatusOnce().catch(() => {
-        // Retry next cycle.
-      });
-    };
-
-    refreshFromFallback();
-
-    window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      refreshFromFallback();
-    }, 2000);
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "hidden") {
-        refreshFromFallback();
-      }
-    });
-  }
+  // The feet's live state rides the Live Reading, which owns the stream or the
+  // one fallback poll for the whole shell (data/live_reading.js). The hold
+  // loop above is a command loop, not a read, and is deliberately not its.
+  window.PALiveReading.subscribe(renderReading);
 
   // -------------------------------------------------------------------------
   // Boot — load config then start status subscription
@@ -500,19 +542,21 @@
   // See docs/page-load-recovery-architecture.md and ADR 0019.
   const SECTIONS = [
     ["drive-configuration", loadConfig, "drive configuration"],
+    ["foot-drive", loadFootDrive, "wheel controller"],
   ];
 
   const startPageLoad = () => {
     if (!window.PABootstrap) {
       loadConfig().catch(() => {});
+      loadFootDrive().catch(() => {});
       return;
     }
     window.PABootstrap.setResourceLabels?.({
-      "/web_api.js": "controller connection",
+      "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
+      "/live_reading.js": "live updates",
       "/shell.js": "page layout",
       "/drive.js": "drive control",
-      "/footer.js": "page footer",
     });
     SECTIONS.forEach(([name, load, label]) =>
       window.PABootstrap.registerSection(name, load, { label })

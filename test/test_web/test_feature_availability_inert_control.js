@@ -2,7 +2,11 @@
 // Feature Availability control interlock (issue #186).
 //
 // This issue-local host retains DOM listeners so it can drive the shipped
-// shell.js -> setup.js resource-order contract and Setup change handlers. The
+// resource-order contract - shell.js, then the Feature Availability module both
+// surfaces load, then the surfaces - and Configuration's change handlers. It
+// loads Configuration and Maintenance into one session, the way a builder who
+// has opened both has them: the component rows are Configuration's and the
+// Memory Profiler is Maintenance's, and one manifest reaches both (#404). The
 // shared page harness remains unchanged.
 // =============================================================================
 
@@ -10,6 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
+import { shippedWords } from "./helpers/shipped_words.cjs";
 
 const makeElement = () => {
   const listeners = new Map();
@@ -55,7 +60,7 @@ const makeElement = () => {
   return element;
 };
 
-const loadInteractiveSetup = ({ identity = null, failIdentity = false } = {}) => {
+const loadInteractiveSurfaces = ({ identity = null, failIdentity = false } = {}) => {
   const elements = new Map();
   const timers = [];
   const requests = [];
@@ -69,7 +74,7 @@ const loadInteractiveSetup = ({ identity = null, failIdentity = false } = {}) =>
     }
     return elements.get(id);
   };
-  const config = { components: { arm1: { enabled: true } }, system: {} };
+  const config = { components: { drive: { enabled: true } }, system: {} };
   const identityPayload = identity || {
     droidName: "artoo",
     mdnsUseName: true,
@@ -97,6 +102,8 @@ const loadInteractiveSetup = ({ identity = null, failIdentity = false } = {}) =>
 
   const windowMock = {
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       ApiError,
       get: (path) => call("GET", path),
       postForm: (path, body) => call("POST", path, body),
@@ -107,8 +114,10 @@ const loadInteractiveSetup = ({ identity = null, failIdentity = false } = {}) =>
       registerSection: (name, load, opts = {}) => sections.set(name, { load, opts }),
       setResourceLabels() {},
     },
-    PAStatusStream: { isSupported: () => false, getLastStatus: () => null, subscribe() {} },
     PageBootstrap: { createBackgroundPoll: () => ({ start() {}, stop() {} }) },
+    // data/page_bootstrap.js publishes window.PASurface in the browser; this
+    // context hand-rolls its globals, so it has to carry it too (#360).
+    PASurface: { poll: () => ({ start() {}, stop() {}, cancelRetry() {} }) },
     setTimeout(fn, ms) {
       const id = timers.length + 1;
       timers.push({ id, fn, ms, cleared: false });
@@ -128,12 +137,14 @@ const loadInteractiveSetup = ({ identity = null, failIdentity = false } = {}) =>
     dispatchEvent(event) {
       for (const handler of windowListeners.get(event.type) || []) handler(event);
     },
-    location: { origin: "http://device", href: "http://device/setup.html" },
+    location: { origin: "http://device", href: "http://device/configuration.html" },
     localStorage: { getItem: () => null, setItem() {} },
     requestAnimationFrame: () => 1,
   };
   const documentMock = {
     body: makeElement(),
+    // <html>, which the Operator Shell marks with the act-words switch (#460).
+    documentElement: makeElement(),
     visibilityState: "visible",
     getElementById: element,
     querySelector: () => makeElement(),
@@ -143,7 +154,7 @@ const loadInteractiveSetup = ({ identity = null, failIdentity = false } = {}) =>
     addEventListener() {},
     removeEventListener() {},
   };
-  documentMock.body.dataset.page = "setup";
+  documentMock.body.dataset.page = "configuration";
   const context = {
     window: windowMock,
     document: documentMock,
@@ -175,12 +186,17 @@ const loadInteractiveSetup = ({ identity = null, failIdentity = false } = {}) =>
     RegExp,
   };
   context.globalThis = context;
-  for (const key of ["PAApi", "PAUtils", "PABootstrap", "PAStatusStream", "PageBootstrap"]) {
+  for (const key of ["PAApi", "PAUtils", "PABootstrap", "PageBootstrap"]) {
     context[key] = windowMock[key];
   }
-  vm.runInNewContext(readFileSync("data/shell.js", "utf8"), context, { filename: "shell.js" });
+  // The shell's own chain: the status stream and the Live Reading it starts.
+  for (const file of ["status_stream.js", "live_reading.js", "shell.js"]) {
+    vm.runInNewContext(readFileSync(`data/${file}`, "utf8"), context, { filename: file });
+  }
   element("profiler-card").dataset.buildFlag = "PA_HEAP_PROFILE";
-  vm.runInNewContext(readFileSync("data/setup.js", "utf8"), context, { filename: "setup.js" });
+  for (const file of ["feature_availability.js", "apply_timing.js", "configuration.js", "maintenance.js"]) {
+    vm.runInNewContext(readFileSync(`data/${file}`, "utf8"), context, { filename: file });
+  }
 
   const settle = async () => {
     for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => setImmediate(resolve));
@@ -210,15 +226,15 @@ const loadInteractiveSetup = ({ identity = null, failIdentity = false } = {}) =>
   return { element, timers, requests, settle, publishIdentity, fireTimer, runSection, window: windowMock };
 };
 
-test("shell identity delivery reaches Setup after both shipped resources load", async () => {
-  const env = loadInteractiveSetup();
+test("shell identity delivery reaches Configuration and Maintenance after their shipped resources load", async () => {
+  const env = loadInteractiveSurfaces();
   await env.settle();
 
   assert.equal(env.element("profiler-card").dataset.featureState, "checking");
   await env.runSection("shell-identity");
 
   assert.equal(env.window.PAIdentity.droidName, "artoo", "the shell cache keeps the complete manifest");
-  assert.equal(env.element("droid-name-input").value, "artoo", "Setup received the shell event");
+  assert.equal(env.element("droid-name-input").value, "artoo", "Configuration received the shell event");
   assert.equal(env.element("profiler-card").dataset.featureState, "not-in-this-build");
   assert.equal(env.element("profiler-availability-status").textContent, "Not included");
   assert.equal(
@@ -228,8 +244,8 @@ test("shell identity delivery reaches Setup after both shipped resources load", 
   );
 });
 
-test("shell identity failure reaches Setup and keeps profiler traffic fail-closed", async () => {
-  const env = loadInteractiveSetup({ failIdentity: true });
+test("shell identity failure reaches Maintenance and keeps profiler traffic fail-closed", async () => {
+  const env = loadInteractiveSurfaces({ failIdentity: true });
   await env.settle();
 
   assert.equal(env.element("profiler-card").dataset.featureState, "checking");
@@ -244,22 +260,22 @@ test("shell identity failure reaches Setup and keeps profiler traffic fail-close
   assert.equal(
     env.requests.filter((request) => request.path === "/api/profiler").length,
     0,
-    "Setup must not probe or poll while manifest availability is unknown",
+    "Maintenance must not probe or poll while manifest availability is unknown",
   );
 });
 
 test("an unavailable component toggle ignores even a scripted change event", async () => {
-  const env = loadInteractiveSetup();
+  const env = loadInteractiveSurfaces();
   await env.settle();
-  const arm1 = env.element("enable-arm1");
-  arm1.dataset.buildFlag = "PA_HEAP_PROFILE";
+  const drive = env.element("enable-drive");
+  drive.dataset.buildFlag = "PA_HEAP_PROFILE";
   await env.publishIdentity(false);
 
-  assert.equal(arm1.disabled, true);
-  assert.equal(env.element("status-arm1").textContent, "Not included");
+  assert.equal(drive.disabled, true);
+  assert.equal(env.element("status-drive").textContent, "Not included");
 
-  arm1.checked = false;
-  await arm1.emit("change");
+  drive.checked = false;
+  await drive.emit("change");
   await env.settle();
 
   assert.equal(env.timers.some((timer) => timer.ms === 300), false);
@@ -267,18 +283,63 @@ test("an unavailable component toggle ignores even a scripted change event", asy
 });
 
 test("the same component toggle saves once its build requirement is present", async () => {
-  const env = loadInteractiveSetup();
+  const env = loadInteractiveSurfaces();
   await env.settle();
-  const arm1 = env.element("enable-arm1");
-  arm1.dataset.buildFlag = "PA_HEAP_PROFILE";
+  const drive = env.element("enable-drive");
+  drive.dataset.buildFlag = "PA_HEAP_PROFILE";
   await env.publishIdentity(true);
 
-  assert.equal(arm1.disabled, false);
-  arm1.checked = false;
-  await arm1.emit("change");
+  assert.equal(drive.disabled, false);
+  drive.checked = false;
+  await drive.emit("change");
   await env.fireTimer(300);
 
   const saves = env.requests.filter((request) => request.method === "POST" && request.path === "/api/config");
   assert.equal(saves.length, 1);
-  assert.equal(saves[0].body.get("enableArm1"), "false");
+  assert.equal(saves[0].body.get("enableDrive"), "false");
+});
+
+// B1's fourth answer (#341, applied on #369). An identity that failed is two
+// different answers: a controller that did not respond may yet, and one that
+// answered with a manifest this page cannot read never will. The copy always
+// told them apart; the paint said "waiting" for both, so a settled
+// no breathed as if an answer were coming. Both paint sites - a Configuration
+// row and the Maintenance profiler card - must carry the family.
+const tracked = (element) => {
+  const classes = new Set();
+  element.classList = {
+    add: (...names) => names.forEach((name) => classes.add(name)),
+    remove: (...names) => names.forEach((name) => classes.delete(name)),
+    contains: (name) => classes.has(name),
+    toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)),
+  };
+  return classes;
+};
+
+const paintFor = async (reason) => {
+  const env = loadInteractiveSurfaces();
+  await env.settle();
+  const drive = env.element("enable-drive");
+  drive.dataset.buildFlag = "PA_HEAP_PROFILE";
+  const row = { dataset: {}, querySelectorAll: () => [], appendChild() {} };
+  const rowClasses = tracked(row);
+  drive.closest = () => row;
+  const cardClasses = tracked(env.element("profiler-card"));
+  env.window.dispatchEvent({ type: "pa:identity-unavailable", detail: { reason } });
+  await env.settle();
+  return { rowClasses, cardClasses };
+};
+
+test("an identity that will never be read is painted settled, and one still connecting is waiting", async () => {
+  const terminal = await paintFor("incompatible");
+  const retrying = await paintFor("no-response");
+
+  for (const [where, classes] of [["row", terminal.rowClasses], ["card", terminal.cardClasses]]) {
+    assert.ok(classes.has("availability-settled-no"), `a terminal failure's ${where} is settled no`);
+    assert.ok(!classes.has("availability-waiting"), `and its ${where} is not waiting`);
+  }
+  for (const [where, classes] of [["row", retrying.rowClasses], ["card", retrying.cardClasses]]) {
+    assert.ok(classes.has("availability-waiting"), `a retryable failure's ${where} is waiting`);
+    assert.ok(!classes.has("availability-settled-no"), `and its ${where} is not settled`);
+  }
 });

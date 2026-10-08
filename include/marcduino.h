@@ -1,7 +1,7 @@
 // =============================================================================
 // include/marcduino.h
 //
-// Marcduino command string constants for protoArtoo body controller.
+// Marcduino command string constants for protoR2 body controller.
 // These are the commands sent TO the dome (body->dome) and received FROM
 // the dome (dome->body).
 //
@@ -9,7 +9,7 @@
 // Baud: 9600 on UART_PORT_DOME (Serial2, dome serial via slip ring). The dome
 //       side reads this from its own NVS key `mserial2`; its firmware default
 //       is 2400, so a freshly flashed dome must be set to 9600 to be heard.
-//       See docs/spec-sheets/astropixels-dome-controller.md section 7.2.
+//       See docs/spec-sheets/astropixels-dome-controller.md section 6.2.
 // =============================================================================
 #pragma once
 

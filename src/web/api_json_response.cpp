@@ -58,3 +58,20 @@ void webSendJsonError(WebRequest& req, int status, const char* errorToken,
     // with the caller's input (field/hint too long).
     webSendJsonDocument(req, doc, 256, "webSendJsonError", status);
 }
+
+// =============================================================================
+
+void webSendApplyRefusal(WebRequest& req, int status, const char* message,
+                         const ApplyRefusal& refusal) {
+    JsonDocument doc;
+    doc["ok"] = false;
+    doc["error"] = message;
+    if (refusal.field[0] != '\0') {
+        doc["field"] = refusal.field;
+    }
+    doc["reason"] = applyRefusalReasonToken(refusal.reason);
+    if (refusal.accepts[0] != '\0') {
+        doc["accepts"] = refusal.accepts;
+    }
+    webSendJsonDocument(req, doc, WEB_APPLY_REFUSAL_MAX_BYTES, "webSendApplyRefusal", status);
+}

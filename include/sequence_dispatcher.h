@@ -62,6 +62,34 @@ void sequenceDispatcherTask(void* pvParameters);
 // (queue full) or if the name is empty.
 bool sequenceStart(const char* name, CommandSource src);
 
+// Send the droid to one instant of a Learned or Factory sequence (#440). Hands
+// the request to the Coordinator (robotState.poseRequest), which works out the
+// pose from the stored steps and paces it; the estop and Sleep Mode refuse it
+// there. A second press before the Coordinator has taken the first replaces
+// it: the latest word is the operator's. Returns false for a name that is not
+// a body-owned sequence -- an alias or a name the dome runs has no steps here
+// to take a pose from.
+bool sequencePoseRequest(const char* name, uint32_t atMs, CommandSource src);
+
+// Flutter the Part on one Output for flutterMs, at its full throw (#453): what
+// a body-owned Marcduino `:OFnn` asks. Hands the request to the Coordinator
+// (robotState.flutterRequest), whose flutter run performs it like a Body
+// Step's: legs at the Output's own Motion Profile, the Cadence Floor between
+// Outputs, ending closed (include/sequence_flutter.h). `output` is an Output
+// Address, or SERVO_OUTPUT_BOTH_ARMS for the board's first two together. Safe
+// from any task. A second request before the Coordinator has taken the first
+// replaces it; the estop and Sleep Mode refuse it there, and a Stop cancels one
+// not yet taken. An Output with no Part on it has nothing to flutter, which
+// the Coordinator reports.
+void sequenceFlutterRequest(ServoOutputAddress output, uint16_t flutterMs);
+
+// The non-latching Stop (POST /api/seq/stop, the Console's sequence-stop).
+// Raises the transient flag the Coordinator clears once it has ended what it
+// was doing, and cancels a pose press and a flutter request it has not yet
+// taken: the Stop is the later word. A run started with sequenceStart()
+// cancels a pending pose the same way.
+void sequenceStopRequest();
+
 // Pure routing classification  --  no side effects. Safe to call from any context
 // including native tests. Returns SEQ_FALLBACK for non-DM:* names.
 SequenceLookupResult sequenceLookup(const char* name);
@@ -78,3 +106,8 @@ const SequenceEntry* sequenceCatalogFind(const char* name);
 // Catalog iteration  --  for GET /api/seq/builtins (clone-to-retrain) and tests.
 uint8_t sequenceCatalogCount();
 const SequenceEntry* sequenceCatalogAt(uint8_t i);
+
+// The Factory Sequence that is body routine :SE<seId> ("DM:SE30" for 30), or
+// nullptr outside 30..36. RC and dome RX hand the name to sequenceStart(), so
+// a Retrained Sequence of that name shadows it like any other (ADR 0049).
+const char* sequenceBodyRoutineName(int seId);

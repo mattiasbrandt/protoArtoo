@@ -1,0 +1,618 @@
+// =============================================================================
+// data/outputs.js
+//
+// What an Output is, answered once for the whole browser (#415). Wiring,
+// Servos, Parts, Lights, Backup and the Dashboard ask this module and none of
+// them works the answer out again.
+//
+// AN OUTPUT IS ITS ROW (ADR 0068). GET /api/servo/outputs answers one row per
+// Output, keyed by its Output Address (GLOSSARY.md "Output Address"), with
+// everything a builder sets on it - its wired tick, what is on the wire, its
+// light's LED count, its Motion Profile and boot behaviour, its ends and the
+// Parts on it - and what each row can save, as data: `switchable`,
+// `lightCapable`. POST /api/config takes the same rows back, in the same shape,
+// as `outputs`: that is the one door every Output save goes through, and this
+// module is what sends it. GET /api/config carries no Output at all.
+//
+// THIS FILE KNOWS NO OUTPUT (ADR 0065). It relays what the running firmware
+// reports - which Outputs exist, in its order, what each is called, which can
+// carry a light and what each can save - and never lists an id, a count or a
+// board label of its own (operator, 2026-09-19 on #411: "the outputs is
+// supposed to be dynamic").
+//
+// ONE WIRED RULE. `wired` is the droid's tick: an Output with a wired tick is
+// wired when its tick says so, and one with none - an expander's channel - has
+// no tick anybody could have turned off, so it reads as wired and is called by
+// its address (operator, 2026-09-23 on #415). The tick follows the Part: a
+// Part move writes it (docs/api.md, `movePart`), because an Output with a Part
+// on it is wired and one with none is free (GLOSSARY.md "Wiring", #411). It is
+// what the droid reads at start, so a page says whether a wire is used or free
+// from its Parts, and uses the tick only to say what waits for a restart.
+//
+// WHAT IS ON THE WIRE IS ONE ANSWER IN TWO VOCABULARIES (GLOSSARY.md "Output",
+// ADR 0067): a servo's model where the wire drives a servo, a Light Type where
+// it lights something. One stored field holds either, so `rgb` is not a servo
+// model - it is the LED strip Light Type. Both word lists live here and
+// nowhere else in data/.
+//
+// HOW A SERVO MOVES is its Motion Profile (ADR 0052, #414): time to full
+// throw, time to get up to speed and the ease. What it does at power-up - its
+// boot behaviour - rides the same row, and the ease and boot words live here
+// beside the other two vocabularies.
+//
+// WHAT AN OUTPUT IS DOING is answered here and nowhere else (#421): one state
+// and one word per Output, from one table, and Servos, Parts and Output
+// Settings all show that answer. It is the one reader of a row's live fields,
+// for the reason the research gives its CHPOS reader: a gauge and a dial
+// disagreeing about the same servo would be the worst possible outcome. A page
+// may still draw a heard position its own way - microseconds on Servos, Open
+// or Closed on Parts' picture - but whether there is one, and the word when
+// there is not, are this module's.
+//
+// It also runs the once-a-second follow of the table, as a handle the surface
+// that wants it starts, so the surface still owns its poll (#360).
+//
+// DATA ONLY. Nothing here touches the page: Wiring's parts table
+// (data/parts_mapping.js) draws from what this module holds.
+// =============================================================================
+(() => {
+  "use strict";
+
+  // The servos an Output can carry, and "nothing yet" on one that may carry a
+  // light instead. An Output that cannot carry a light always carries a servo.
+  const SERVO_MODELS = Object.freeze([
+    Object.freeze({ id: "mg996r", label: "MG996R" }),
+    Object.freeze({ id: "mg90s", label: "MG90S" }),
+  ]);
+  const NO_SERVO = Object.freeze({ id: "none", label: "None" });
+
+  // The Light Types protoR2 can put on one of its own wires (GLOSSARY.md
+  // "Light Type", ADR 0067). One today; the list is what grows when there are
+  // more, and the stored token stays the one the firmware already saves.
+  const LIGHT_TYPES = Object.freeze([Object.freeze({ id: "rgb", label: "LED strip" })]);
+
+  // The shape of a move (ADR 0052), in the words the firmware stores.
+  const EASES = Object.freeze([
+    Object.freeze({ id: "none", label: "none" }),
+    Object.freeze({ id: "soft", label: "soft" }),
+    Object.freeze({ id: "overshoot", label: "overshoot" }),
+  ]);
+
+  // What an Output does at power-up (ADR 0052), keyed by the token the firmware
+  // stores. Limp is the default and first.
+  const BOOTS = Object.freeze([
+    Object.freeze({ id: "limp", label: "limp" }),
+    Object.freeze({ id: "home-hold", label: "home and hold" }),
+    Object.freeze({ id: "home-release", label: "home and release" }),
+  ]);
+
+  const lightType = (token) => LIGHT_TYPES.find((type) => type.id === token) || null;
+  const servoModel = (token) => SERVO_MODELS.find((model) => model.id === token) || null;
+
+  const text = (value) => (typeof value === "string" ? value : "");
+
+  // Why an Output has no pulse, in the builder's words. The two firmware bounds
+  // on a calibration dial's hold each get their own sentence (#364), so does
+  // the Output's own release time running out after a move arrived (#443), and
+  // a reason this page does not know reads as the plain one.
+  const LIMP_WORDS = Object.freeze({
+    "off": "Limp - no pulse",
+    "pulses-off": "Limp - pulses off",
+    "expiry": "Went limp - the dial stopped asking",
+    "ceiling": "Went limp - ten minutes is the most a dial holds",
+    "estop": "Limp - the estop let go",
+    "sleep": "Limp - sleep mode let go",
+    "release": "Went limp - let go after it arrived",
+    // Its PCA9685 did not answer at start or stopped answering (#444); the
+    // droid's own refusal says the same (src/web/api_servo.cpp).
+    "unreachable": "Unreachable - the PCA9685 is not answering",
+  });
+
+  // The follow: one read of the table a second, while the surface that
+  // started it is on screen (#318, #360).
+  const FOLLOW_MS = 1000;
+
+  // ---------------------------------------------------------------------------
+  // The two reads, as the droid last answered them
+  // ---------------------------------------------------------------------------
+  let config = null; // GET /api/config's whole answer, or the last save's
+  let rows = null; // GET /api/servo/outputs rows, read by readRow()
+  // Table reads, numbered in the order they were ISSUED, and which of them the
+  // rows came from. Reads overlap - the follow's, an act's, a save's - so the
+  // order they land in says nothing about what the droid had done by then;
+  // readMark()/readSince() below are how a page asks the question that does.
+  let tableReads = 0;
+  let rowsRead = 0;
+  let outputs = Object.freeze([]);
+  // What each Output was first reported with this session: its wired tick,
+  // its Light Type and its LED count. All three are read once when the droid
+  // starts (ADR 0027, src/tasks/aux_led.cpp), so a later answer that differs
+  // from this is one waiting for a restart. Each of the three is replaced by
+  // the droid's own report of what it started with (`activeWired`,
+  // `activeLight`, `activeLedCount`, #364) wherever the row carries it: what a
+  // page first read is the saved value, and a reload after a save and before a
+  // restart took that for the running one and showed nothing waiting, the
+  // defect Configuration had in #371.
+  const started = new Map();
+  const listeners = new Set();
+  // Each Output's live fields, as its row reported them: whether the row
+  // carries a position at all, and why there is no pulse. Kept off the Output
+  // itself, so no page can read them and work out a state of its own; live()
+  // is the only reader.
+  const heard = new WeakMap();
+
+  const number = (value) => (typeof value === "number" ? value : null);
+
+  // One GET /api/servo/outputs row, in the shape every surface reads.
+  const readRow = (row) => ({
+    address: String(row.address),
+    // What the board prints beside it; "" for an address no board prints.
+    printed: text(row.name),
+    // The stored config id, where the board has one. Never shown.
+    id: text(row.id),
+    switchable: row.switchable === true,
+    wiredTick: row.wired === true,
+    lightCapable: row.lightCapable === true,
+    // The Part this Output usually carries on its board, or "" where the board
+    // suggests none (include/board_outputs.h): Wiring marks it in a Part's
+    // Output picker, and nothing refuses another Part.
+    suggestedPart: text(row.suggestedPart),
+    ledCount: number(row.ledCount),
+    throwMs: number(row.throwMs),
+    accelMs: number(row.accelMs),
+    ease: text(row.ease),
+    // How long it holds after a move arrives before it lets go, in ms; 0 is
+    // never (#443). null from a firmware that does not say.
+    release: number(row.release),
+    boot: text(row.boot),
+    parts: Array.isArray(row.parts) ? row.parts.map(String) : [],
+    // A firmware older than the output-first table reports no position at
+    // all, which is not the same as an Output with no pulse.
+    reported: "commandedUs" in row,
+    bandLoUs: Number(row.bandLoUs) || 0,
+    bandHiUs: Number(row.bandHiUs) || 0,
+    commandedUs: number(row.commandedUs),
+    targetUs: number(row.targetUs),
+    // How many nudges have ended on this Output (#363); null from a firmware
+    // that does not say, which a run must refuse rather than wait on.
+    nudgesDone: number(row.nudgesDone),
+    // What the calibration dial reads (#364). The three widths are the
+    // recorded positions, directional: openUs is whichever end the builder
+    // recorded as open, so nothing here sorts the pair.
+    component: text(row.component),
+    openUs: number(row.openUs),
+    centreUs: number(row.centreUs),
+    closeUs: number(row.closeUs),
+    calibrated: row.calibrated === true,
+    // The pair this Output held before the upgrade, when its part's range
+    // could not take it and the droid moved it in (#417); null otherwise, and
+    // from a firmware that does not say.
+    narrowedFrom:
+      row.narrowedFrom && typeof row.narrowedFrom.openUs === "number" &&
+      typeof row.narrowedFrom.closeUs === "number"
+        ? { openUs: row.narrowedFrom.openUs, closeUs: row.narrowedFrom.closeUs }
+        : null,
+    held: row.held === true,
+    // What the droid started with (#364): the wired tick it read at start, and
+    // whether it drives a servo on this Output since. null from a firmware
+    // that does not say, which nothing reads as a refusal.
+    activeWired: typeof row.activeWired === "boolean" ? row.activeWired : null,
+    // The Light Type on the wire at start, null for none; undefined when the
+    // row does not say, which is not the same as "no light".
+    activeLight: "activeLight" in row ? (text(row.activeLight) || null) : undefined,
+    activeLedCount: number(row.activeLedCount),
+    driven: typeof row.driven === "boolean" ? row.driven : null,
+    // Why there is no pulse, meaningful only while commandedUs is null.
+    limp: typeof row.limp === "string" ? row.limp : "off",
+  });
+
+  // One Output, from its row. Its live fields are not on it: see live().
+  //
+  //   address          its Output Address: what a command and a save name
+  //   id               the stored config id, where the board has one; "" for
+  //                    an expander's channel. Never shown.
+  //   label            what the board prints beside it, or "" where no board
+  //                    prints anything; also the word POST /api/servo moves it
+  //                    by (ADR 0033 Amendment 2026-09-19)
+  //   name             what a builder calls it: the label, else its address
+  //   fromConfig       the board declares it: it has a stored id, a label and
+  //                    a wired tick (the name dates from when its settings
+  //                    were read from GET /api/config)
+  //   switchable       it has a wired tick, so a page may offer one
+  //   wired            the one wired rule (header)
+  //   canLight         a Light Type may go on this wire at all
+  //   suggestedPart    the Part its board says it usually carries, or ""
+  //   type             the stored token: a servo model or a Light Type
+  //   light, servo     that token as a Light Type or as a servo model, or null
+  //   ledCount         how many LEDs its light has
+  //   ledCountSettable its row carries an LED count, which it does exactly
+  //                    where a light can go
+  //   throwMs, accelMs its Motion Profile's two times, or null where the row
+  //   ease             reports none; the ease as the builder chose it
+  //   motionSettable   its row carries all three
+  //   release          ms it holds after a move arrives, 0 for never, or null
+  //   releaseSettable  its row carries one
+  //   boot             what it does at power-up, as the builder chose it
+  //   bootSettable     its row carries one
+  //   started          what it was first reported with (above), or null
+  //   driven           the droid drives a servo on it since it started; false
+  //                    for a wired tick saved since, which waits for a restart
+  //                    and which POST /api/servo refuses; null when the
+  //                    firmware does not say
+  //   parts ...        the rest of its row, read by readRow()
+  const outputOf = (row) => {
+    const { printed, wiredTick, lightCapable, reported, limp, activeWired, activeLight, activeLedCount, ...table } = row;
+    const type = table.component || (lightCapable ? NO_SERVO.id : SERVO_MODELS[0].id);
+    const output = {
+      ...table,
+      label: printed,
+      name: printed || table.address,
+      fromConfig: table.id !== "",
+      wired: table.switchable ? wiredTick : true,
+      canLight: lightCapable,
+      type,
+      light: lightType(type),
+      servo: servoModel(type),
+      ledCount: table.ledCount || 1,
+      ledCountSettable: lightCapable && table.ledCount !== null,
+      motionSettable: table.throwMs !== null && table.accelMs !== null && table.ease !== "",
+      releaseSettable: table.release !== null,
+      bootSettable: table.boot !== "",
+    };
+    if (output.fromConfig && !started.has(output.address)) {
+      started.set(output.address, Object.freeze({
+        wired: output.wired,
+        light: output.light ? output.light.id : null,
+        ledCount: output.ledCount,
+      }));
+    }
+    const first = started.get(output.address) || null;
+    output.started = first && Object.freeze({
+      wired: activeWired !== null ? activeWired : first.wired,
+      light: activeLight !== undefined ? activeLight : first.light,
+      ledCount: activeLedCount !== null ? activeLedCount : first.ledCount,
+    });
+    output.parts = Object.freeze(output.parts.slice());
+    Object.freeze(output);
+    heard.set(output, { reported, limp });
+    return output;
+  };
+
+  // The Outputs, in the firmware's order (include/board_outputs.h BOARD_OUTPUTS
+  // first, then any the table alone holds).
+  const join = () => {
+    outputs = Object.freeze((rows || []).map(outputOf));
+  };
+
+  const publish = () => {
+    join();
+    // A refusal about one of an Output's Settings names the Output as this
+    // module does (data/web_api.js words the rest).
+    window.PAApi?.nameOutputsWith?.((address) => at(address)?.name ?? null);
+    listeners.forEach((listener) => listener(outputs));
+  };
+
+  const apiFor = (handle) => {
+    const api = handle || window.PAApi;
+    if (!api) throw new Error("no way to reach the Body Controller");
+    return api;
+  };
+
+  // Numbered before the request goes out, so the number is when the droid was
+  // asked, not when it answered. take() is the one way rows are set.
+  const readTable = async (api) => {
+    const read = ++tableReads;
+    const answer = await api.get("/api/servo/outputs");
+    const table = answer?.data?.outputs;
+    if (!Array.isArray(table)) throw new Error("the droid's outputs answer carries no table");
+    return { table: table.map(readRow), read };
+  };
+  const take = ({ table, read }) => {
+    rows = table;
+    rowsRead = read;
+  };
+
+  const readConfig = async (api) => {
+    const answer = await api.get("/api/config");
+    const data = answer?.data;
+    return data && typeof data === "object" ? data : {};
+  };
+
+  /**
+   * Read the droid: its servo table, which is the Outputs, and its config, as
+   * one snapshot. A surface that needs the config for anything else - its
+   * lanes, the Droid Build, the log level - takes it from the answer rather
+   * than reading GET /api/config a second time.
+   *
+   * Both are always read. There used to be a `rows: false` for a surface that
+   * wanted the config alone, while the Outputs' settings were on the config;
+   * an Output is its row now (ADR 0068), so a read without the table has no
+   * Outputs in it, and the option is ignored.
+   *
+   * @param {object} [opts]
+   * @param {object} [opts.handle] - the section's request handle, or PAApi
+   * @returns {Promise<{config: object, outputs: object[]}>}
+   */
+  const load = async ({ handle = null } = {}) => {
+    const api = apiFor(handle);
+    // Both answers land before either is taken, so a half-answered read never
+    // publishes a join of a new half with an old one.
+    const table = await readTable(api);
+    const answer = await readConfig(api);
+    take(table);
+    config = answer;
+    publish();
+    return { config, outputs };
+  };
+
+  /**
+   * Read the servo table alone: the bench feed's read, and the only read a
+   * surface that shows no config needs.
+   *
+   * @param {object} [opts]
+   * @param {object} [opts.handle] - the section's request handle, or PAApi
+   * @returns {Promise<object[]>} the Outputs
+   */
+  const refresh = async ({ handle = null } = {}) => {
+    take(await readTable(apiFor(handle)));
+    publish();
+    return outputs;
+  };
+
+  // What a surface may ask to save, and the row key each is saved under
+  // (POST /api/config `outputs`, docs/api.md). Each is offered only where the
+  // Output's row says it can be saved, and asking for anything else is refused
+  // rather than dropped.
+  const PATCH_FIELDS = {
+    wired: { key: "wired", can: (output) => output.switchable, value: (v) => v === true },
+    type: { key: "component", can: () => true, value: String },
+    ledCount: { key: "ledCount", can: (output) => output.ledCountSettable },
+    throwMs: { key: "throwMs", can: (output) => output.motionSettable },
+    accelMs: { key: "accelMs", can: (output) => output.motionSettable },
+    ease: { key: "ease", can: (output) => output.motionSettable, value: String },
+    release: { key: "release", can: (output) => output.releaseSettable },
+    boot: { key: "boot", can: (output) => output.bootSettable, value: String },
+  };
+
+  // A number goes as a number; anything else as the text it is, so the droid
+  // refuses it by its own check rather than this module guessing.
+  const asSent = (value) => (typeof value === "number" && Number.isFinite(value) ? value : String(value));
+
+  const at = (address) => outputs.find((output) => output.address === address) || null;
+
+  // The Part a refused row shares with another row that was sent, by the name
+  // the catalog gives it (data/droid_parts.js), or "" when the rows sent do not
+  // show one - the droid's refusal names the row, never the Part, and this page
+  // holds what it posted. Never the id: that is wire vocabulary too.
+  const sharedPartName = (address, sentRows) => {
+    const rowsSent = Array.isArray(sentRows) ? sentRows : [];
+    const refused = rowsSent.find((row) => row && row.address === address);
+    const listed = (row) => (row && Array.isArray(row.parts) ? row.parts : []);
+    const shared = listed(refused).find((part) =>
+      rowsSent.some((row) => row !== refused && listed(row).includes(part)));
+    const catalog = window.DroidParts && Array.isArray(window.DroidParts.parts) ? window.DroidParts.parts : [];
+    const entry = catalog.find((part) => part.id === shared);
+    return entry && typeof entry.name === "string" ? entry.name : "";
+  };
+
+  /**
+   * A refusal about one of an Output row's Settings, put in the page's words:
+   * the Output's name and the Setting's, and what it takes, worded from the
+   * keys the droid answers beside its sentence by the one Settings words table
+   * (data/web_api.js sayRefusal()). One sentence is this module's own: a Part
+   * a row set puts on two Outputs, named from the rows this page sent. Any
+   * other refusal is left exactly as it came, for web_api.js's messageFor().
+   *
+   * @param {Error} error - what PAApi threw
+   * @param {object[]} [sentRows] - the `outputs` rows the refused request sent,
+   *   so a Part the droid refused on two Outputs can be named
+   * @returns {Error} the same error, reworded where it was about a row
+   */
+  const sayRefusal = (error, sentRows = []) => {
+    const field = typeof error?.field === "string" ? error.field : "";
+    const dot = field.lastIndexOf(".");
+    const address = dot > 0 ? field.slice(0, dot) : "";
+    const output = address ? at(address) : null;
+    if (!output) return error;
+    // A Part is on at most one Output (GLOSSARY.md "Part"): a row set that puts
+    // one on two is refused as a conflict, and says so in a sentence of its own,
+    // naming the Part when the rows sent show which one it is.
+    if (error.reason === "conflict" && field.slice(dot + 1) === "parts") {
+      const part = sharedPartName(address, sentRows);
+      error.message = part
+        ? `${part} is on ${output.name} and another output`
+        : `${output.name} and another output list the same part`;
+      return error;
+    }
+    const said = window.PAApi?.sayRefusal?.(error);
+    if (said) error.message = said;
+    return error;
+  };
+
+  // The rows for a set of changes, in the shape POST /api/config takes them.
+  const rowsFor = (changes) => Object.keys(changes).map((address) => {
+    const output = at(address);
+    if (!output) throw new Error(`${address} is not an Output this droid saves settings for`);
+    const patch = changes[address];
+    const row = { address };
+    Object.keys(patch).forEach((key) => {
+      const field = PATCH_FIELDS[key];
+      if (!field) throw new Error(`an Output has no setting called ${key}`);
+      if (!field.can(output)) throw new Error(`${address} cannot save ${key}`);
+      row[field.key] = (field.value || asSent)(patch[key]);
+    });
+    return row;
+  });
+
+  // Saves go out one at a time, in the order they were asked for, so a later
+  // answer is never overtaken by an earlier one.
+  let queue = Promise.resolve();
+
+  /**
+   * Save Output settings: `{ [address]: { wired, type, ledCount, throwMs,
+   * accelMs, ease, release, boot } }`, any of them per Output, through the
+   * row door (POST /api/config `outputs`, ADR 0068). The droid's answer
+   * becomes what this module holds.
+   *
+   * @param {object} changes
+   * @param {object} [opts]
+   * @param {number} [opts.timeoutMs=5000]
+   * @returns {Promise<object[]>} the Outputs as the droid now holds them
+   */
+  const saveAll = (changes, { timeoutMs = 5000 } = {}) => {
+    const run = queue.then(async () => {
+      // Nothing has gone out yet, and an error from here says so (`unsent`):
+      // a page that words a failed save can then say nothing was sent and
+      // mean it, which no later error lets it (data/servo.js applyTicked()).
+      let api;
+      let body;
+      try {
+        api = apiFor(null);
+        body = { outputs: rowsFor(changes) };
+      } catch (error) {
+        error.unsent = true;
+        throw error;
+      }
+      try {
+        const result = await api.postJson("/api/config", body, { timeoutMs });
+        // The droid answers a save with the config it now holds
+        // (sendConfigSnapshot()); the rows are read again, since the Outputs
+        // are theirs.
+        const answer = result?.data;
+        config = answer && typeof answer === "object" && answer.drive ? answer : await readConfig(api);
+        take(await readTable(api));
+      } catch (error) {
+        // What the droid holds, not the answer it refused - it may have taken
+        // a save whose answer never arrived.
+        try {
+          take(await readTable(api));
+          config = await readConfig(api);
+          publish();
+        } catch (reloadError) {
+          console.error("[outputs] reading the outputs after a failed save failed:", reloadError);
+        }
+        throw sayRefusal(error, body.outputs);
+      }
+      publish();
+      return outputs;
+    });
+    // The queue only orders the saves. Each caller gets its own outcome from
+    // `run`; a failed save must not stop the next one from going out.
+    queue = run.catch(() => undefined);
+    return run;
+  };
+
+  const save = (address, patch, opts) => saveAll({ [address]: patch }, opts);
+
+  // The Output a Part is on. The firmware keeps a Part on at most one
+  // (GLOSSARY.md "Part"), so the first answer is the only answer. `among` is a
+  // list a surface is painting from, where it holds one.
+  const forPart = (partId, among = outputs) => among.find((output) => output.parts.includes(partId)) || null;
+
+  // Which reads the droid has answered this session. A plate that saves a
+  // wired tick needs the table; a surface that reads the lanes needs the
+  // config.
+  const known = () => ({ config: config !== null, table: rows !== null });
+
+  /**
+   * What an Output is doing, and the one word a page shows for it. The two
+   * words for no reading at all are the Live Reading's (data/live_reading.js),
+   * so a Part and a status field say the same thing when nothing is heard.
+   *
+   *   waiting      the table has not answered yet: `output` is null
+   *   unknown      the row carries no position: a firmware older than the
+   *                Output table, which is not the same as no pulse
+   *   pulsing      there is a pulse on it; `word` is null, and the page draws
+   *                the position its own way
+   *   limp         no pulse, and `word` says why; `reason` is the droid's
+   *                own token for it ("off" when it gave none)
+   *
+   * @param {object|null} output - one this module handed out, or null before
+   *   the table has answered
+   * @returns {{state: string, word: string|null, reason?: string}}
+   */
+  const live = (output) => {
+    const words = window.PALiveReading;
+    if (output === null || output === undefined) {
+      return Object.freeze({ state: "waiting", word: words.WAITING });
+    }
+    const facts = heard.get(output);
+    // A copy, or an Output from another read, has no answer here, and
+    // guessing one is how two pages come to disagree.
+    if (!facts) throw new Error(`${output.address} is not an Output this module handed out`);
+    if (!facts.reported) return Object.freeze({ state: "unknown", word: words.UNKNOWN });
+    if (output.commandedUs !== null) return Object.freeze({ state: "pulsing", word: null });
+    const reason = LIMP_WORDS[facts.limp] ? facts.limp : "off";
+    return Object.freeze({ state: "limp", word: LIMP_WORDS[reason], reason });
+  };
+
+  /**
+   * Where the table reads have got to: a mark to hand readSince() later.
+   * Taken when something is known to have reached the droid - an act it has
+   * answered - it lets a page tell a reading that could have seen that act
+   * from one the droid was asked for before it.
+   *
+   * @returns {number}
+   */
+  const readMark = () => tableReads;
+
+  /**
+   * Whether what this module holds was read by a read issued after `mark`
+   * (readMark()). Only such a reading can say anything about what happened
+   * at the mark; one issued before it may land later and still predate it.
+   *
+   * @param {number} mark
+   * @returns {boolean}
+   */
+  const readSince = (mark) => rowsRead > mark;
+
+  /**
+   * Follow the table: one read a second, while the surface that asked is on
+   * screen. The handle is that surface's (#360): the shell stops it when the
+   * operator leaves and starts it again on the way back, and a read that fails
+   * is the surface poll's to report, never caught here. Every read publishes,
+   * so a page paints from onChange() and nothing else.
+   *
+   * @returns {{start: function, stop: function}}
+   */
+  const follow = () => {
+    const surface = window.PASurface;
+    if (!surface) throw new Error("the surface registry (/page_bootstrap.js) is not loaded");
+    return surface.poll(() => refresh(), { cadenceMs: FOLLOW_MS, refreshOnReturn: true });
+  };
+
+  /**
+   * Be told whenever what this module holds changes: a read, a save, or a
+   * save's answer. The listener is handed the Outputs.
+   *
+   * @returns {function} stops the listener
+   */
+  const onChange = (listener) => {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  };
+
+  window.PAOutputs = Object.freeze({
+    SERVO_MODELS,
+    NO_SERVO,
+    LIGHT_TYPES,
+    EASES,
+    BOOTS,
+    lightType,
+    servoModel,
+    load,
+    refresh,
+    follow,
+    live,
+    readMark,
+    readSince,
+    list: () => outputs,
+    at,
+    forPart,
+    known,
+    save,
+    saveAll,
+    sayRefusal,
+    onChange,
+  });
+})();

@@ -1,10 +1,11 @@
 // =============================================================================
 // include/console_direct_action_servo.h
 //
-// Controller Console direct-action executors - servo domain: open, close and
-// set-position (#221 remainder). Split out of src/console/console_module.cpp
-// by #257 so this domain's rows can be extended without colliding with the
-// other domains' files.
+// Controller Console direct-action executors - servo domain: open, close,
+// set-position and stop (#221 remainder), nudge (#363), hold and release
+// (#364), the bulk centre (#365), and travel (#352). Split out of
+// src/console/console_module.cpp by #257 so this domain's rows can be extended
+// without colliding with the other domains' files.
 //
 // HEADER-ONLY DELIBERATELY - see include/console_direct_action_system.h's
 // header comment for the full reasoning (native's fenced build_src_filter
@@ -20,20 +21,31 @@
 // =============================================================================
 #pragma once
 
+#include <stdio.h>   // snprintf(), for centre-all's skipped list
 #include <stdlib.h>
 
 #include "console_direct_action_types.h"  // ConsoleDirectActionExecutorFn/Entry
 #include "console_module.h"               // ConsoleCommandSource, ConsoleRecordSink
 #include "console_args.h"                 // ConsoleArgs, consoleArgsFind(), schema validation
 #include "console_catalog.h"              // ConsoleCatalogEntry, consoleCatalogFindByName()
-#include "api_servo.h"                    // parseArmId(), servoSubmitCommand(), ServoSubmitOutcome
+#include "api_servo.h"                    // servoParseTarget(), servoSubmitCommand(), ServoSubmitOutcome
 #include "ledc_pwm.h"                     // SERVO_PULSE_MIN_US/MAX_US
 
-// servo.action.open/close/set-position/stop: target=<arm1|arm2|aux1|aux2|
-// aux3[|both]>, set-position also carries position_us=<500..2500>.
-// parseArmId() and servoSubmitCommand() (include/api_servo.h) are the SAME
-// target<->id mapping and the SAME queue submission handleServoPost() uses,
-// reused verbatim - the ADR 0036 Commit Step beside that handler.
+// servo.action.open/close/set-position/stop/nudge: target=<the running
+// board's label for an Output[|both]> - target=arm3 or target="ARM3" on the
+// Artoo PCB, target=gpio49 or target="GPIO 49" on the FireBeetle 2, case and
+// spaces set aside (include/board_outputs.h, ADR 0033 Amendment 2026-09-19) -
+// or an expander's Output by its address, target=pca:3 (#444).
+// set-position also carries position_us=<500..2500>. servoParseTarget() and
+// servoSubmitCommand() (include/api_servo.h) are the SAME word<->Output mapping
+// and the SAME queue submission handleServoPost() uses, reused verbatim - the
+// ADR 0036 Commit Step beside that handler.
+//
+// servo.action.nudge (#363, ADR 0050) carries a target and nothing else: the
+// registry's enum for it excludes "both", the same way set-position's does,
+// because a Find by Moving nudge is one output at a time by definition, and
+// no width, because ServoTask computes the bounded pair from the width on the
+// pin (include/servo_nudge.h) so that no source can ask for a big one.
 //
 // servo.action.stop (#221 remainder registry fix, docs/action-registry.yaml):
 // the row used to declare zero params even though the underlying /api/servo
@@ -42,13 +54,42 @@
 // consoleExecuteServoStop() below resolves it the same way. Two facts this
 // wiring does NOT change, because they are firmware behaviour on a path the
 // web UI shares (registry/coordinator decision, not this ticket's to make):
-// target=both only broadcasts to ARM1+ARM2, never AUX1..3 (ServoCommand::
-// armId's own field comment, include/robot_state.h; src/tasks/
-// servo_task.cpp:353,367,387); and "stop" does not hold position at all -
+// target=both only broadcasts to the first two Outputs, never the other
+// three (SERVO_OUTPUT_BOTH_ARMS, include/servo_output_address.h; ServoTask's
+// processCommand()); and "stop" does not hold position at all -
 // api_servo.cpp's parseAction() maps it to SERVO_CMD_POSITION at
 // SERVO_PULSE_NEUTRAL_US (there is no SERVO_CMD_STOP in the enum), so it
 // drives the servo to neutral like set-position with a fixed pulse width,
 // never a freeze-in-place.
+// An Output nothing drives since the droid started - a wired tick saved after
+// boot, one never ticked, or a wire carrying a light - is refused with the
+// reason rather than answered "queued": ServoTask drops the command without a
+// word, so a queued answer would be ok for nothing (#364). The sentence is the
+// one POST /api/servo refuses with (servoOutputUndriven(), include/
+// api_servo.h), carried as a field beside COMPONENT_DISABLED the way the sound
+// rows carry theirs (include/console_direct_action_sound.h), because the reason
+// token alone cannot say whether a restart or Wiring is what drives it. Called
+// last, just before the send, so a malformed line still gets its own answer.
+static bool consoleRefusedWhileUndriven(uint32_t requestId, const char* operationName,
+                                        ServoOutputAddress output,
+                                        const ConsoleRecordSink* sink) {
+    char undriven[96] = {};
+    if (!servoOutputUndriven(output, undriven, sizeof(undriven))) {
+        return false;
+    }
+    if (sink->onRecordBegin) {
+        sink->onRecordBegin(requestId, operationName);
+    }
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "detail", undriven);
+    }
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                          CONSOLE_REASON_COMPONENT_DISABLED);
+    }
+    return true;
+}
+
 static void consoleExecuteServoCommand(uint32_t requestId, const char* operationName,
                                        ServoCommandType type, const ConsoleArgs& args,
                                        ConsoleCommandSource source, const ConsoleRecordSink* sink) {
@@ -66,20 +107,25 @@ static void consoleExecuteServoCommand(uint32_t requestId, const char* operation
         return;
     }
 
-    // Schema already confirmed "target" is one of the catalog's own enum
-    // values; parseArmId() can only fail here on a disagreement between
-    // that enum and its own accepted set, which never occurs for the
-    // lowercase names the registry declares - defensive, the same
-    // "reparse after schema" precedent drive.action.move set (include/
-    // console_direct_action_drive.h).
-    int16_t armId = parseArmId(consoleArgsFind(args, "target"));
-    if (armId < 0) {
+    // Schema already confirmed "target" names one of the running board's
+    // Outputs, an expander's Output by its address (`pca:3`), or `both`
+    // (consoleParamValueNamesOutput(), include/console_args.h), through the
+    // same boardOutputForWord() and servoOutputParseExpanderAddress()
+    // servoParseTarget() reads; servoParseTarget() can only fail here on a
+    // disagreement between the two - defensive, the same "reparse after
+    // schema" precedent drive.action.move set
+    // (include/console_direct_action_drive.h).
+    ServoOutputAddress output = SERVO_OUTPUT_NONE;
+    if (!servoParseTarget(consoleArgsFind(args, "target"), &output)) {
         consoleEmitArgFailure(requestId, operationName, "target", CONSOLE_REASON_OUT_OF_RANGE, sink);
         return;
     }
 
-    uint16_t positionUs = 0;  // dead for OPEN/CLOSE (src/tasks/servo_task.cpp never reads it)
-    if (type == SERVO_CMD_POSITION) {
+    // Dead for OPEN/CLOSE/NUDGE/RELEASE, which src/tasks/servo_task.cpp never
+    // reads it for. POSITION and HOLD both carry a width and take the same
+    // check: a hold is a drive that keeps the pulse on afterwards.
+    uint16_t positionUs = 0;
+    if (type == SERVO_CMD_POSITION || type == SERVO_CMD_HOLD) {
         char* end = nullptr;
         long parsed = strtol(consoleArgsFind(args, "position_us"), &end, 10);
         if (*end != '\0' || parsed < SERVO_PULSE_MIN_US || parsed > SERVO_PULSE_MAX_US) {
@@ -90,8 +136,16 @@ static void consoleExecuteServoCommand(uint32_t requestId, const char* operation
         positionUs = (uint16_t)parsed;
     }
 
+    // A Find by Moving run's nudge or release on a free Output is not refused
+    // for being undriven: ServoTask takes that Output for the run (#411), the
+    // same exception POST /api/servo makes.
+    if (!servoCommandIsARunsOnAFreeOutput(output, type) &&
+        consoleRefusedWhileUndriven(requestId, operationName, output, sink)) {
+        return;
+    }
+
     ServoSubmitOutcome outcome =
-        servoSubmitCommand((uint8_t)armId, type, positionUs, consoleCommandSourceFor(source));
+        servoSubmitCommand(output, type, positionUs, consoleCommandSourceFor(source));
     if (!outcome.ok) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
@@ -123,7 +177,54 @@ static void consoleExecuteServoSetPosition(uint32_t requestId, const char* opera
     consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_POSITION, args, source, sink);
 }
 
-// servo.action.stop: target=<arm1|arm2|aux1|aux2|aux3|both> only - no
+static void consoleExecuteServoNudge(uint32_t requestId, const char* operationName,
+                                     const ConsoleArgs& args, ConsoleCommandSource source,
+                                     const ConsoleRecordSink* sink) {
+    consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_NUDGE, args, source, sink);
+}
+
+// servo.action.travel (#352, ADR 0063): a Part run through its recorded travel
+// and back, reached from the Console as well as from a body view's press. It
+// carries a target and nothing else, for the same two reasons a nudge does: the
+// registry's enum for it excludes "both", because a press is about one Part and
+// the broadcast would run two parts through their travel at once, and no width,
+// because ServoTask reads the two ends off the Output's own row
+// (include/servo_travel.h) so that no source can name a position for it.
+static void consoleExecuteServoTravel(uint32_t requestId, const char* operationName,
+                                      const ConsoleArgs& args, ConsoleCommandSource source,
+                                      const ConsoleRecordSink* sink) {
+    consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_TRAVEL, args, source, sink);
+}
+
+// servo.action.hold (#364, ADR 0064): the calibration dial's hold, reached from
+// the Console as well as from the dial. It carries a position_us like
+// set-position and goes through the same width check, because a hold IS a drive
+// -- what differs is that the pulse stays on afterwards. One output per hold,
+// so the registry's enum for it excludes "both" the way set-position's does.
+//
+// Holding from the Console is a real thing to want on a FireBeetle 2 with no
+// WiFi up, where the Console is the only surface there is; the two firmware
+// bounds apply identically, so a Console session that walks away leaves an
+// output held for at most ten minutes, and for about three seconds if it stops
+// sending.
+static void consoleExecuteServoHold(uint32_t requestId, const char* operationName,
+                                    const ConsoleArgs& args, ConsoleCommandSource source,
+                                    const ConsoleRecordSink* sink) {
+    consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_HOLD, args, source, sink);
+}
+
+// servo.action.release (#364, ADR 0043): pulses off. No width, because a
+// release commands no position at all, so it takes consoleExecuteServoCommand()'s
+// no-width path exactly as open, close and nudge do. "both" IS in this row's
+// enum, unlike hold's: letting go of two arms is the same act twice rather than
+// two outputs being moved together.
+static void consoleExecuteServoRelease(uint32_t requestId, const char* operationName,
+                                       const ConsoleArgs& args, ConsoleCommandSource source,
+                                       const ConsoleRecordSink* sink) {
+    consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_RELEASE, args, source, sink);
+}
+
+// servo.action.stop: target=<an Output's label|both> only - no
 // position_us (the registry declares none, unlike set-position), because the
 // pulse width is not an operator choice here, it is always
 // SERVO_PULSE_NEUTRAL_US (see this file's header comment for why). Shares
@@ -150,15 +251,19 @@ static void consoleExecuteServoStop(uint32_t requestId, const char* operationNam
     }
 
     // Same "reparse after schema" precedent consoleExecuteServoCommand()
-    // above documents: parseArmId() can only fail here on a disagreement
+    // above documents: servoParseTarget() can only fail here on a disagreement
     // between the catalog's own enum and its accepted set.
-    int16_t armId = parseArmId(consoleArgsFind(args, "target"));
-    if (armId < 0) {
+    ServoOutputAddress output = SERVO_OUTPUT_NONE;
+    if (!servoParseTarget(consoleArgsFind(args, "target"), &output)) {
         consoleEmitArgFailure(requestId, operationName, "target", CONSOLE_REASON_OUT_OF_RANGE, sink);
         return;
     }
 
-    ServoSubmitOutcome outcome = servoSubmitCommand((uint8_t)armId, SERVO_CMD_POSITION,
+    if (consoleRefusedWhileUndriven(requestId, operationName, output, sink)) {
+        return;
+    }
+
+    ServoSubmitOutcome outcome = servoSubmitCommand(output, SERVO_CMD_POSITION,
                                                      SERVO_PULSE_NEUTRAL_US,
                                                      consoleCommandSourceFor(source));
     if (!outcome.ok) {
@@ -174,11 +279,76 @@ static void consoleExecuteServoStop(uint32_t requestId, const char* operationNam
     }
 }
 
+// servo.action.centre-all (#318, #365): no arguments, matching
+// POST /api/servo/centre (handleServoCentrePost(), src/web/api_servo.cpp) - a
+// transient flag set unconditionally, the same shape dome.action.sequence-stop
+// uses. No arm, because the sweep covers every Servo Output and choosing them
+// is the Sequence Coordinator's; no estop or sleep gate, because the REST
+// source has none either and the Coordinator is the one place that judgement
+// lives (it refuses to start under a halt and says so).
+//
+// APPLIED rather than QUEUED: nothing entered a queue here. The flag is read on
+// the Coordinator's next tick, and what it queues after that is one servo
+// command per Output, no closer together than the Cadence Floor.
+static void consoleExecuteServoCentreAll(uint32_t requestId, const char* operationName,
+                                         const ConsoleArgs& args, ConsoleCommandSource source,
+                                         const ConsoleRecordSink* sink) {
+    if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
+        return;
+    }
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.bulkCentreRequest = consoleCommandSourceFor(source);
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    // The Outputs the sweep passes over because nothing drives them, named the
+    // way POST /api/servo/centre names them (servoCentreSkipped(), #364), as
+    // one comma-separated field. Twenty-four eight-character addresses fit.
+    struct SkippedList {
+        char names[256];
+        size_t used;
+    } skipped = {{}, 0};
+    servoCentreSkipped(
+        [](const char* name, void* ctx) {
+            SkippedList* list = static_cast<SkippedList*>(ctx);
+            const int wrote = snprintf(list->names + list->used, sizeof(list->names) - list->used,
+                                       "%s%s", list->used > 0 ? "," : "", name);
+            if (wrote > 0) {
+                const size_t room = sizeof(list->names) - list->used - 1;
+                list->used += (size_t)wrote < room ? (size_t)wrote : room;
+            }
+        },
+        &skipped);
+
+    // Nothing skipped keeps the one result record this row always answered;
+    // a field needs the begin/end pair around it (docs/console-protocol.md).
+    if (skipped.used == 0) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                                CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+    if (sink->onRecordBegin) {
+        sink->onRecordBegin(requestId, operationName);
+    }
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "skipped", skipped.names);
+    }
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED, CONSOLE_REASON_NONE);
+    }
+}
+
 static const ConsoleDirectActionExecutorEntry g_servoDirectActionExecutors[] = {
     {"servo.action.open", consoleExecuteServoOpen},
     {"servo.action.close", consoleExecuteServoClose},
     {"servo.action.set-position", consoleExecuteServoSetPosition},
     {"servo.action.stop", consoleExecuteServoStop},
+    {"servo.action.nudge", consoleExecuteServoNudge},
+    {"servo.action.travel", consoleExecuteServoTravel},
+    {"servo.action.hold", consoleExecuteServoHold},
+    {"servo.action.release", consoleExecuteServoRelease},
+    {"servo.action.centre-all", consoleExecuteServoCentreAll},
 };
 static const size_t kServoDirectActionExecutorCount =
     sizeof(g_servoDirectActionExecutors) / sizeof(g_servoDirectActionExecutors[0]);

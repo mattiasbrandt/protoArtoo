@@ -164,23 +164,22 @@ static void typeLine(const char* line) {
 void setUp() { resetCapture(); }
 void tearDown() {}
 
+// The number of catalog entries of one type, or all of them for NULL.
+static int catalogCountOfType(const char* type) {
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+    int matching = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (type == nullptr || strcmp(entries[i].type, type) == 0) matching++;
+    }
+    return matching;
+}
+
 // -----------------------------------------------------------------------------
 // The regression: "operations type=<t>" typed as one line, through the real
-// parser and the real reconstruction function, must actually filter.
-// Catalog totals (docs/action-registry.yaml, confirmed against
-// test_console_catalog.cpp's exact-194 count): action 120, config 36,
-// event 15, status 23. Config was 35 before #225 added
-// system.config.log-level, and 34 before #227 added wifi.config.settings.
-// Action was 128 and status 14 before #221's remainder reclassified
-// dome.api.get-sequence-last-run/-list-sequences/-list-builtin-sequences
-// from type: action to type: status (the only way to route them through
-// g_statusExecutors[], src/console/console_module.cpp); #224 moved
-// system.api.get-profiler across the same way, taking action from 125 to
-// 124 and status from 17 to 18; #221 moved sound.api.get-catalog/
-// -get-mood-map, system.api.get-identity/-get-validation and
-// rc.api.get-bindable-actions across for the same reason, taking action to
-// 119 and status to 23; #243 added system.action.reboot-wifi-module,
-// taking action to 120.
+// parser and the real reconstruction function, must actually filter. Each
+// listing is held to the catalog's own count of that type, so a registry row
+// added or retired moves both together and no total is pinned here by hand.
 // -----------------------------------------------------------------------------
 
 void test_operations_type_action_filters_through_the_real_adapter_path() {
@@ -189,8 +188,8 @@ void test_operations_type_action_filters_through_the_real_adapter_path() {
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(120, g_itemCount,
-        "operations type=action must list exactly the 120 action entries when "
+    TEST_ASSERT_EQUAL_INT_MESSAGE(catalogCountOfType(CONSOLE_CATALOG_TYPE_ACTION), g_itemCount,
+        "operations type=action must list exactly the catalog's action entries when "
         "typed as one line through the real embedded-cli parser and "
         "consoleBuildCommandLine() - not when the module is called directly "
         "with a hand-built \"operations type=action\" string");
@@ -202,7 +201,7 @@ void test_operations_type_event_filters_through_the_real_adapter_path() {
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT(15, g_itemCount);
+    TEST_ASSERT_EQUAL_INT(catalogCountOfType(CONSOLE_CATALOG_TYPE_EVENT), g_itemCount);
 }
 
 void test_operations_type_nonsense_is_invalid_through_the_real_adapter_path() {
@@ -227,7 +226,7 @@ void test_bare_operations_still_lists_everything_through_the_real_adapter_path()
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT(194, g_itemCount);
+    TEST_ASSERT_EQUAL_INT(catalogCountOfType(nullptr), g_itemCount);
 }
 
 // help <op> must still work through the same real path (the reconstruction

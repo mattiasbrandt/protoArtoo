@@ -7,11 +7,50 @@
 // =============================================================================
 
 (() => {
-  const REGEX_NAME = /^DM:[A-Z0-9_]{1,18}$/;
+  // How many characters a sequence's name holds after its DM:
+  // (PC_NAME_BODY_MAX, include/protocol_check.h). The one copy in the browser:
+  // both patterns below are built from it, and the editor reads it from here.
+  const NAME_CHARS_MAX = 18;
+  const NAME_PATTERN = `DM:[A-Z0-9_]{1,${NAME_CHARS_MAX}}`;
+  const REGEX_NAME = new RegExp(`^${NAME_PATTERN}$`);
   const SUPPRESS_MS_MIN = 1000;
   const SUPPRESS_MS_MAX = 120000;
   const TOGGLE_GROUPS = ["none", "pies", "low", "all"];
-  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "end"];
+  const STEP_TYPES = [
+    "audio", "dome", "loop", "random", "audioCat", "domeRotate", "domeBearing", "body", "gesture", "sequence",
+    "backgroundTrack", "backgroundTrackStop", "end",
+  ];
+  // A Background Track's loudest volume: the interface's 0-30
+  // (PC_BACKGROUND_TRACK_VOL_MAX, include/protocol_check.h).
+  const BACKGROUND_TRACK_VOL_MAX = 30;
+  // The one-letter '$' names that play a sound, a Named Track each
+  // (audioSlotForDollar(), src/tasks/audio_config_map.cpp).
+  const SOUND_LETTERS = "SFLcCWMBDH";
+  // A bearing step's target (domeBearingTargetValid(), include/dome_bearing_act.h):
+  // `front`, or a dome Part the catalog gives a bearing. A Part is named by its
+  // id, never by its bearing, so a step survives a corrected `bearing_deg`.
+  const DOME_BEARING_FRONT = "front";
+  const isDomeBearingPart = (part) =>
+    Boolean(part) && part.half === "dome" && typeof part.bearingDeg === "number" && Number.isFinite(part.bearingDeg);
+  // A Body Step's Move Shapes, and how long a body flutter may last
+  // (PC_BODY_FLUTTER_MS_MIN / _MAX, include/protocol_check.h).
+  const BODY_SHAPES = ["open", "close", "flutter"];
+  const BODY_FLUTTER_MS = Object.freeze([50, 60000]);
+  // A Gesture's times (PC_GESTURE_*, include/protocol_check.h), each as
+  // [least, most] in ms: the pace between Parts, a full throw, how often it
+  // repeats, and the longest it may go on repeating. Their one home in the
+  // browser: the Gesture vocabulary (data/seq_gesture.js) reads them from
+  // here, and so does every control that sets one.
+  const GESTURE_MS = Object.freeze({
+    STEP_MS: Object.freeze([50, 60000]),
+    SPEED_MS: Object.freeze([50, 5000]),
+    REPEAT_MS: Object.freeze([100, 60000]),
+    EXTENT_MS_MAX: 120000,
+  });
+  // How deep sequences nest: PC_NEST_DEPTH_MAX (include/protocol_check.h).
+  const NEST_DEPTH_MAX = 3;
+  // A sequence reference: a name, or a saved sequence's id (protocolCheckSeqRefValid()).
+  const SEQ_REF = new RegExp(`^(${NAME_PATTERN}|[0-9a-z]{1,16})$`);
   const AUDIO_CATEGORIES = [
     "alert",
     "chatty",
@@ -26,7 +65,103 @@
     "whistle",
   ];
   const RANDOM_SETS  = ["ring", "pie", "all", "hold"];
+
+  // A Sequence Tempo (ADR 0058). Bounds mirror include/seq_tempo.h, where each
+  // is derived: a beat lasts 100..60000 ms (the loop period bounds), so a tempo
+  // runs 1..600 BPM, and the longest sequence at the fastest tempo is 1200
+  // beats. The BPM is stored to one decimal and counted in tenths, so a beat
+  // resolves to the same whole millisecond here as on the droid.
+  const TEMPO_SOURCES = ["typed", "tapped", "analysed"];
+  const TEMPO_BPM_TENTHS_MIN = 10;
+  const TEMPO_BPM_TENTHS_MAX = 6000;
+  const TEMPO_BEAT_MAX = 1200;
+  const TEMPO_BAR_LEN_MAX = 16;
+  const TEMPO_PHASE_MAX_MS = 120000;
+  const TEMPO_DURATION_MAX_MS = 3600000;
+  const TEMPO_HASH = /^[0-9a-f]{1,64}$/;
+
+  const isWhole = (value) => Number.isInteger(value);
+
+  // Whether a '$' command plays a sound, as audioDollarNamesSound()
+  // (src/tasks/audio_config_map.cpp) judges it: $ and one to six letters or
+  // digits, which are a Named Track's letter, $8nn with nn not 00, or another
+  // number 1..65535. Form only: what a Named Track is set to is the droid's.
+  const namesSound = (cmd) => {
+    const said = /^\$([0-9A-Za-z]{1,6})$/.exec(cmd);
+    if (!said) return false;
+    const arg = said[1];
+    if (/^8[0-9]{2}$/.test(arg)) return arg !== "800";
+    if (/^[0-9]+$/.test(arg)) return Number(arg) >= 1 && Number(arg) <= 65535;
+    return arg.length === 1 && SOUND_LETTERS.includes(arg);
+  };
+
+  // A logic text as the bytes the droid decodes it to, or null where it
+  // refuses the encoding (percentDecode(), src/protocol_check.cpp): an escape
+  // is % and two hex digits whose letters are all capitals or all small - it
+  // has no reading for %aC - and stands for any byte but a carriage return;
+  // anything else is printable ASCII as typed, and never a colon.
+  const DT_ESCAPE = /^(?:[0-9A-F]{2}|[0-9a-f]{2})$/;
+  const decodeTextBytes = (encoded) => {
+    const bytes = [];
+    for (let i = 0; i < encoded.length; i++) {
+      const ch = encoded[i];
+      if (ch === "%") {
+        const hex = encoded.slice(i + 1, i + 3);
+        if (!DT_ESCAPE.test(hex) || parseInt(hex, 16) === 0x0d) return null;
+        bytes.push(parseInt(hex, 16));
+        i += 2;
+      } else if (ch === ":" || ch < " " || ch > "~") {
+        return null;
+      } else {
+        bytes.push(ch.charCodeAt(0));
+      }
+    }
+    return bytes;
+  };
+  const bpmTenths = (tempo) => Math.round(Number(tempo?.bpm) * 10);
+
+  // seqTempoSpanMs() / seqTempoBeatMs(): round(beats * 60000 / bpm), in the
+  // same integer steps the firmware takes.
+  const tempoSpanMs = (tempo, beats) => {
+    const tenths = bpmTenths(tempo);
+    if (!(tenths > 0)) return 0;
+    return Math.floor((2 * beats * 600000 + tenths) / (2 * tenths));
+  };
+  const tempoBeatMs = (tempo, beat) => (Number(tempo?.phase) || 0) + tempoSpanMs(tempo, beat);
+
+  // Whether a step's duration can be a span of beats: a turn that moves, and
+  // a body flutter (src/seq_json.cpp parseStepBeats()).
+  const spansBeats = (step) =>
+    Boolean(step) && ((step.type === "domeRotate" && Number(step.speedPct) !== 0)
+      || (step.type === "body" && step.shape === "flutter"));
+
+  // How many steps the loop at `at` takes as its body, in a list that may not
+  // have that many after it. validateStep() refuses a loop that reaches past
+  // the last step; this reading is for everything that walks a sequence
+  // whether it is valid or not, so it never reaches past the list itself.
+  const loopBodyCount = (steps, at) => Math.min(steps[at].body, steps.length - at - 1);
+
+  // The indices of steps inside a loop body: timed from the loop pass, so a
+  // beat there counts from nothing the grid knows.
+  const loopBodyIndices = (steps) => {
+    const body = new Set();
+    let j = 0;
+    while (j < steps.length) {
+      const s = steps[j];
+      if (s && s.type === "loop" && typeof s.body === "number" && s.body > 0) {
+        const count = loopBodyCount(steps, j);
+        for (let k = 1; k <= count; k++) body.add(j + k);
+        j += count + 1;
+      } else {
+        j++;
+      }
+    }
+    return body;
+  };
   const RANDOM_MODES = ["flutter", "open", "close"];
+  // The most characters a dome command holds: PC_CMD_MAX
+  // (include/protocol_check.h), the payload's 64 bytes less its NUL.
+  const CMD_CHARS_MAX = 63;
 
   // audioCat "fallback" is a NAMED SLOT (the clip played when the chosen category
   // has no available track), not a "$" sound. Values mirror the server slot table
@@ -46,94 +181,52 @@
     "P1", "P2", "P3", "P4", "P5", "P6",
   ]);
 
-  // Dome visual presets (DV:<NAME>) — logic/PSI/holo only, closed set owned by
-  // the dome. Mirrors the server whitelist in src/protocol_check.cpp.
-  const DV_PRESETS = new Set([
-    "ROCKMARCH", "VADER", "ALARM", "LEIA", "HEART", "CANTINA",
-    "SCREAM", "OVERLOAD", "HELLO", "RESET_VISUALS",
-  ]);
-
-  // Logic/PSI Mode (DL:) — structured control for dome logic/PSI animations.
-  // Grammar: DL:<target>:<mode>[:<color>[:<durationSec>]]
-  // Mirrors src/protocol_check.cpp validation.
-  const DL_TARGETS = new Set([
-    "FLD", "RLD", "LOGIC", "FPSI", "RPSI", "PSI", "ALL",
-  ]);
-  const DL_MODES = new Set([
-    "NORMAL", "ALARM", "FAILURE", "LEIA", "MARCH", "FLASHCOLOR",
-    "REDALERT", "RAINBOW", "LIGHTSOUT",
-  ]);
-  const DL_COLORS = new Set([
-    "DEFAULT", "RED", "BLUE", "GREEN", "WHITE", "YELLOW", "ORANGE", "PURPLE",
-  ]);
-
-  // Logic Text (DT:) — multi-line text display on FLD/RLD.
-  // Grammar: DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
-  // Text is percent-encoded; newline=%0A, %=%25, :=%3A; spaces literal.
-  // Encoded text <= 40 chars; decoded text <= 32 chars; max one newline.
-  const DT_TARGETS = new Set([
-    "FLD", "RLD", "LOGIC",
-  ]);
-  const DT_COLORS = new Set([
-    "DEFAULT", "RED", "BLUE", "GREEN", "WHITE", "YELLOW", "ORANGE", "PURPLE",
-  ]);
-
-  // Holo Effect (DH:) — holoprojector effects.
-  // Grammar: DH:<target>:<effect>[:<color>[:<durationOrCount>]]
-  const DH_TARGETS = new Set([
-    "F", "R", "T", "A",
-  ]);
-  const DH_EFFECTS = new Set([
-    "OFF", "ON", "RESET", "RANDOM", "WAG", "NOD", "PULSE", "RAINBOW",
-    "FLASH", "SHORTCIRCUIT", "SOLID",
-  ]);
-  const DH_COLORS = new Set([
-    "DEFAULT", "RED", "BLUE", "GREEN", "WHITE", "YELLOW", "ORANGE", "PURPLE", "RANDOM",
-  ]);
-  // Per-effect color + duration matrix — mirrors the AstroPixelsPlus dome
-  // (docs/dome-visual-authoring-contract.md, issue #11). The dome accepts the
-  // global color enum, then applies these effect-specific constraints; the body
-  // mirrors them so unsupported combos (e.g. DH:A:RAINBOW:RED) are rejected before
-  // send rather than relying on the dome to reject. colors = allowed color set for
-  // the effect; duration "none" = must be omitted or 0; "range" = 0..99 allowed
-  // (WAG/NOD count, FLASH seconds).
-  const DH_EFFECT_RULES = {
-    RESET:        { colors: new Set(["DEFAULT"]),                 duration: "none" },
-    OFF:          { colors: new Set(["DEFAULT"]),                 duration: "none" },
-    ON:           { colors: DH_COLORS,                            duration: "none" },
-    SOLID:        { colors: DH_COLORS,                            duration: "none" },
-    RANDOM:       { colors: new Set(["DEFAULT"]),                 duration: "none" },
-    WAG:          { colors: new Set(["DEFAULT"]),                 duration: "range" },
-    NOD:          { colors: new Set(["DEFAULT"]),                 duration: "range" },
-    PULSE:        { colors: new Set(["DEFAULT", "RANDOM"]),       duration: "none" },
-    RAINBOW:      { colors: new Set(["DEFAULT"]),                 duration: "none" },
-    FLASH:        { colors: new Set(["DEFAULT", "WHITE", "RED"]), duration: "range" },
-    SHORTCIRCUIT: { colors: new Set(["DEFAULT", "RANDOM"]),       duration: "none" },
-  };
-
-  // Classify a panel intent target into its group for :OF cleanup tracking.
-  function panelGroup(target) {
-    if (target === "00") return "all";
-    if (target === "14") return "pie_group";
-    if (target === "15") return "ring_group";
-    if (["01", "02", "03", "04", "07", "11", "13"].indexOf(target) !== -1) return "ring";
-    if (["P1", "P2", "P3", "P4", "P5", "P6"].indexOf(target) !== -1) return "pie";
-    return "unknown";
-  }
-
-  // Returns true if a :CL<closeTarget> satisfies the cleanup requirement for
-  // a :OF<flutterTarget> step with the given group classification.
-  function closeSatisfiesFlutter(flutterTarget, flutterGroup, closeTarget) {
-    if (closeTarget === "00") return true;               // all-close satisfies everything
-    if (closeTarget === flutterTarget) return true;      // exact same target
-    if (flutterGroup === "ring"       && closeTarget === "15") return true;
-    if (flutterGroup === "pie"        && closeTarget === "14") return true;
-    if (flutterGroup === "pie_group"  && closeTarget === "14") return true;
-    if (flutterGroup === "ring_group" && closeTarget === "15") return true;
-    return false;
-  }
+  // The dome's light vocabulary - visual presets (DV:), logic and PSI modes
+  // (DL:), logic text (DT:) and holo effects (DH:) - is data/dome_lights.js's,
+  // which loads before this file wherever this file does. The checks below
+  // ask it as sets; the tokens, their order (which the refusals list) and each
+  // holo effect's color and duration rule are its.
+  const DOME_LIGHTS = window.DomeLights;
+  const DV_PRESETS = new Set(DOME_LIGHTS.presets);
+  const DL_TARGETS = new Set(DOME_LIGHTS.targets);
+  const DL_MODES = new Set(DOME_LIGHTS.modes);
+  const DL_COLORS = new Set(DOME_LIGHTS.colors);
+  const DT_TARGETS = new Set(DOME_LIGHTS.textTargets);
+  const DT_COLORS = new Set(DOME_LIGHTS.textColors);
+  const DH_TARGETS = new Set(DOME_LIGHTS.holoTargets);
+  const DH_EFFECTS = new Set(DOME_LIGHTS.holoEffects);
+  const DH_COLORS = new Set(DOME_LIGHTS.holoColors);
+  const DH_EFFECT_RULES = Object.fromEntries(Object.entries(DOME_LIGHTS.holoRules).map(([effect, rule]) =>
+    [effect, { colors: new Set(rule.colors), duration: rule.duration }]));
 
   const SeqProtocolCheck = {
+    // The most steps a sequence may hold: PC_MAX_STEPS (include/protocol_check.h).
+    // The Rehearsal's size figure reads it from here rather than keep its own.
+    MAX_STEPS: 96,
+
+    // How many characters a sequence's name holds after its DM:.
+    NAME_CHARS_MAX,
+
+    // How many characters a dome command holds.
+    CMD_CHARS_MAX,
+
+    // How long a body flutter may last, in ms, as [least, most]: the bounds a
+    // control that sets one offers, read from here rather than kept again.
+    BODY_FLUTTER_MS,
+
+    // A Gesture's times, each as [least, most] in ms, and the longest extent.
+    GESTURE_MS,
+
+    // How many beats a span, or a Gesture's pace, repeat or extent, may be, as
+    // [least, most] (_validateBeats()): what a control that sets one offers.
+    SPAN_BEATS: Object.freeze([1, TEMPO_BEAT_MAX]),
+
+    // What a bearing step may turn to: DOME_BEARING_FRONT, or a catalog Part
+    // isDomeBearingPart() accepts. The editor's picker offers exactly these.
+    DOME_BEARING_FRONT,
+    isDomeBearingPart,
+
+
     /**
      * Validate sequence name format.
      * @param {string} name
@@ -145,7 +238,7 @@
         return {
           ok: false,
           error:
-            "The name must start with DM: then 1-18 capital letters, numbers, or underscores (for example, DM:ROCKMARCH)",
+            `The name must start with DM: then 1-${NAME_CHARS_MAX} capital letters, numbers, or underscores (for example, DM:ROCKMARCH)`,
         };
       }
       return { ok: true };
@@ -221,13 +314,146 @@
       switch (type) {
         case "audio":    return this._validateAudioStep(step);
         case "dome":     return this._validateDomeStep(step);
-        case "loop":     return this._validateLoopStep(step, allSteps);
+        case "loop":     return this._validateLoopStep(step, stepIndex, allSteps);
         case "random":   return this._validateRandomStep(step);
         case "audioCat": return this._validateAudioCatStep(step);
         case "domeRotate": return this._validateDomeRotateStep(step);
+        case "domeBearing": return this._validateDomeBearingStep(step);
+        case "body":     return this._validateBodyStep(step);
+        case "gesture":  return this._validateGestureStep(step);
+        case "backgroundTrack": return this._validateBackgroundTrackStep(step);
+        case "backgroundTrackStop": return { ok: true };
+        case "sequence":
+          return typeof step.ref === "string" && SEQ_REF.test(step.ref)
+            ? { ok: true }
+            : { ok: false, field: "ref", error: "Pick a sequence" };
         case "end":      return { ok: true };
         default:         return { ok: true };
       }
+    },
+
+    // A Body Step's form: the wire's rules (parseStep(), src/seq_json.cpp) and
+    // Protocol Check's (STEP_BODY in protocolCheckBranch(),
+    // src/protocol_check.cpp), which is the one place the firmware judges one.
+    // Form and only form (ADR 0044): whether an Output claims the Part is the
+    // Rehearsal's, and a Part nothing is wired to still saves.
+    //
+    // A key the wire reads as absent - missing, or null - is absent here. The
+    // catalog is checked where the page has loaded it, as the Gesture's is.
+    _validateBodyStep(step) {
+      const fail = (field, error) => ({ ok: false, field, error });
+      const said = (value) => value !== undefined && value !== null;
+      const catalog = window.DroidParts?.parts;
+      if (typeof step.part !== "string" || step.part === "") return fail("part", "Pick a part");
+      if (Array.isArray(catalog) && !catalog.some((part) => part.id === step.part)) {
+        return fail("part", "The part must be one from the parts list");
+      }
+      if (said(step.shape) && !BODY_SHAPES.includes(step.shape)) return fail("shape", "Pick open, close or flutter");
+      if (said(step.howFar) && !(isWhole(step.howFar) && step.howFar >= 1 && step.howFar <= 100)) {
+        return fail("howFar", "How far is 1 to 100 percent");
+      }
+      // An absent duration is stored as 0, and the firmware judges the 0: a
+      // flutter with none is refused, and any other shape may say 0.
+      const flutterMs = said(step.flutterMs) ? step.flutterMs : 0;
+      if (step.shape !== "flutter") {
+        return flutterMs === 0 ? { ok: true } : fail("flutterMs", "Only a flutter lasts a time");
+      }
+      const [least, most] = BODY_FLUTTER_MS;
+      if (!isWhole(flutterMs) || flutterMs < least || flutterMs > most) {
+        return fail("flutterMs", `A flutter lasts ${least} to ${most} ms`);
+      }
+      // Its length is all a flutter is checked for: it ends closed, so no
+      // later step has to close the Part (ADR 0049, amended 2026-10-02; #453).
+      return { ok: true };
+    },
+
+    // A Gesture's form (checkGesture(), src/protocol_check.cpp). Whether the
+    // dome can perform the pair is the Rehearsal's and never refuses a save.
+    _validateGestureStep(step) {
+      const G = window.SeqGesture;
+      const parts = window.DroidParts;
+      const fail = (field, error) => ({ ok: false, field, error });
+      const hasSet = typeof step.set === "string";
+      const hasParts = Array.isArray(step.parts);
+      if (hasSet === hasParts) return fail("set", "Pick a set of parts, or list them");
+      if (G && parts) {
+        if (hasSet && !G.setOf(step.set)) return fail("set", "Pick a set of parts from the list");
+        if (hasParts) {
+          if (step.parts.length === 0 || step.parts.some((id) => !G.partOf(id))) {
+            return fail("parts", "Every part must be one from the parts list");
+          }
+          if (new Set(step.parts).size !== step.parts.length) return fail("parts", "A part is listed twice");
+          if (step.parts.length > G.MEMBERS_MAX) return fail("parts", `A gesture moves at most ${G.MEMBERS_MAX} parts`);
+          if (new Set(step.parts.map((id) => G.partOf(id).half)).size > 1) {
+            return fail("parts", "The parts must all be on the dome, or all on the body");
+          }
+          if (step.parts.join(",").length > 63) return fail("parts", "Too many parts to list. Pick a set instead.");
+        }
+      }
+      // The Gesture's words are data/seq_gesture.js's, the mirror of
+      // include/sequence_gesture.h, read here at validation rather than at
+      // load: that file loads after this one (it reads GESTURE_MS from here),
+      // and every page that validates a sequence loads both (seq.html). A
+      // consumer without it gets what it gets for sets and parts above: the
+      // words unchecked, never a throw.
+      if (G) {
+        const known = (value, list) => value === undefined || list.includes(value);
+        const ids = (choices) => choices.map((choice) => choice.id);
+        if (!known(step.shape, G.SHAPES)) return fail("shape", "Pick open, close or flutter");
+        if (!known(step.spread, ids(G.SPREADS))) return fail("spread", "Pick how it travels");
+        if (!known(step.direction, ids(G.DIRECTIONS))) return fail("direction", "Pick a direction");
+        if (!known(step.start, ids(G.STARTS))) return fail("start", "Pick where it starts");
+        if (!known(step.easing, G.EASINGS)) return fail("easing", "Pick an easing");
+      }
+      const inRange = (value, lo, hi) => value === undefined || (isWhole(value) && value >= lo && value <= hi);
+      // A time the wire reads as absent - missing, null or 0 - is the
+      // Gesture's default and is held to no bound (parseGestureMs(),
+      // src/seq_json.cpp; checkGesture() bounds a time only when it is not 0).
+      // How far is not one of them: a stated 0 is refused there.
+      const timed = (value, lo, hi) => value === null || value === 0 || inRange(value, lo, hi);
+      if (!inRange(step.howFar, 1, 100)) return fail("howFar", "How far is 1 to 100 percent");
+      const { STEP_MS, SPEED_MS, REPEAT_MS, EXTENT_MS_MAX } = GESTURE_MS;
+      if (!timed(step.stepMs, ...STEP_MS)) return fail("stepMs", `The pace is ${STEP_MS[0]} to ${STEP_MS[1]} ms`);
+      if (!timed(step.speedMs, ...SPEED_MS)) return fail("speedMs", `A full throw takes ${SPEED_MS[0]} to ${SPEED_MS[1]} ms`);
+      if (!timed(step.repeatMs, ...REPEAT_MS)) return fail("repeatMs", `It repeats every ${REPEAT_MS[0]} to ${REPEAT_MS[1]} ms`);
+      if (!timed(step.extentMs, 0, EXTENT_MS_MAX)) return fail("extentMs", `It repeats for at most ${EXTENT_MS_MAX} ms`);
+      if (step.extentMs && !step.repeatMs) return fail("extentMs", "Set how often it repeats first");
+      // An absent duration is stored as 0, and the firmware judges the 0.
+      // Any other shape may say 0, as on a Body Step. A flutter is where the
+      // two part: a Body Step's flutter with no length is refused, and a
+      // Gesture's is accepted - only one that says a time is held to a
+      // flutter's bounds.
+      const flutterMs = step.flutterMs !== undefined && step.flutterMs !== null ? step.flutterMs : 0;
+      if (step.shape !== "flutter") {
+        if (flutterMs !== 0) return fail("flutterMs", "Only a flutter lasts a time");
+      } else if (flutterMs !== 0) {
+        const [least, most] = BODY_FLUTTER_MS;
+        if (!isWhole(flutterMs) || flutterMs < least || flutterMs > most) {
+          return fail("flutterMs", `A flutter lasts ${least} to ${most} ms`);
+        }
+      }
+      // A flutter owes no close after it: it ends closed, on the dome and on
+      // the body (ADR 0049, amended 2026-10-02; #453).
+      return { ok: true };
+    },
+
+    // A Background Track's start: the wire's rules (parseStepFields(),
+    // src/seq_json.cpp) and Protocol Check's (STEP_BACKGROUND_TRACK in
+    // protocolCheckBranch(), src/protocol_check.cpp). Form and only form
+    // (ADR 0054, ADR 0044): whether the fitted module can mix is the
+    // Rehearsal's, and a sequence with a Background Track saves either way.
+    _validateBackgroundTrackStep(step) {
+      const fail = (field, error) => ({ ok: false, field, error });
+      if (typeof step.cmd !== "string" || !namesSound(step.cmd)) {
+        return fail("cmd", "Pick a sound for the Background Track, like $W or $212");
+      }
+      if (!isWhole(step.vol) || step.vol < 0 || step.vol > BACKGROUND_TRACK_VOL_MAX) {
+        return fail("vol", `The Background Track's volume is 0 to ${BACKGROUND_TRACK_VOL_MAX}`);
+      }
+      if (step.boundAudio !== undefined && step.boundAudio !== null && typeof step.boundAudio !== "boolean") {
+        return fail("boundAudio", "Must be a boolean (true or false)");
+      }
+      return { ok: true };
     },
 
     _validateAudioStep(step) {
@@ -251,7 +477,26 @@
     _validateDomeStep(step) {
       const { cmd } = step;
       if (!cmd || typeof cmd !== "string") {
-        return { ok: false, field: "cmd", error: "Choose a dome action for this step" };
+        return { ok: false, field: "cmd", error: "Type a dome command" };
+      }
+      // Every dome command, whatever it starts with, is 1 to CMD_CHARS_MAX
+      // printable ASCII characters (charsetOk(), src/protocol_check.cpp, which
+      // classifyDome() asks before anything else).
+      if (cmd.length > CMD_CHARS_MAX) {
+        return { ok: false, field: "cmd", error: `A dome command holds at most ${CMD_CHARS_MAX} characters` };
+      }
+      if (/[^\x20-\x7E]/.test(cmd)) {
+        return { ok: false, field: "cmd", error: "A dome command takes plain letters, digits and symbols only" };
+      }
+      // How far is said on a panel open or close (include/sequence_dome_how_far.h).
+      if (step.howFar !== undefined) {
+        const panel = /^:(OP|CL)([0-9A-Z]{2})$/.exec(cmd);
+        if (!panel || !PANEL_INTENT_TARGETS.has(panel[2])) {
+          return { ok: false, field: "howFar", error: "Only a panel open or close says how far" };
+        }
+        if (!isWhole(step.howFar) || step.howFar < 1 || step.howFar > 100) {
+          return { ok: false, field: "howFar", error: "How far is 1 to 100 percent" };
+        }
       }
 
       // Explicit rejection with clear actionable message
@@ -320,9 +565,20 @@
         return { ok: true };
       }
 
-      // Non-panel dome effects (Advanced mode only)
-      if (cmd.startsWith("@")) return { ok: true };  // logic / PSI commands
-      if (cmd.startsWith("*")) return { ok: true };  // holo / HP commands
+      // @... is a holo (@HP...) or a digit and T, P or M (logic, PSI, text),
+      // whatever follows; the two resets, @0T1 and @0P1, are of that second
+      // form. Any other @ is refused ("unrecognised @ command",
+      // classifyDome(), src/protocol_check.cpp).
+      if (cmd.startsWith("@")) {
+        if (/^@(HP|[0-9][TPM])/.test(cmd)) return { ok: true };
+        return {
+          ok: false,
+          field: "cmd",
+          error: "That @ command isn't recognized. Use @HP for a holo, or a digit and T, P or M, like @0T6.",
+        };
+      }
+      // *... is a holo command, whatever follows.
+      if (cmd.startsWith("*")) return { ok: true };
 
       // :SE## — legacy Marcduino sequence trigger (Advanced only, not for panel control)
       if (cmd.startsWith(":SE")) {
@@ -345,7 +601,7 @@
       };
     },
 
-    _validateLoopStep(step, _allSteps) {
+    _validateLoopStep(step, stepIndex, allSteps) {
       const { body, periodMs, durationMs } = step;
 
       if (typeof body !== "number" || body < 1 || body > 96) {
@@ -353,6 +609,26 @@
           ok: false,
           field: "body",
           error: "A loop must repeat between 1 and 96 steps",
+        };
+      }
+
+      // The steps it repeats are the ones after it, and it may not reach past
+      // the last step of its branch ("loop body overruns the branch",
+      // protocolCheckBranch(), src/protocol_check.cpp).
+      if (stepIndex + body >= allSteps.length) {
+        return {
+          ok: false,
+          field: "body",
+          error: "A loop can't repeat more steps than come after it",
+        };
+      }
+
+      // No loop inside another's body ("nested loops are not allowed").
+      if (allSteps.slice(stepIndex + 1, stepIndex + 1 + body).some((inner) => inner && inner.type === "loop")) {
+        return {
+          ok: false,
+          field: "body",
+          error: "A loop can't repeat another loop",
         };
       }
 
@@ -364,19 +640,14 @@
         };
       }
 
-      if (typeof durationMs !== "number" || durationMs < 100 || durationMs > 120000) {
+      // 1..120000, and no rule ties it to the interval: the droid takes a loop
+      // that runs for less than one interval, which makes the one pass
+      // (protocolCheckBranch(), src/protocol_check.cpp).
+      if (typeof durationMs !== "number" || durationMs < 1 || durationMs > 120000) {
         return {
           ok: false,
           field: "durationMs",
-          error: "The loop must run for between 100 and 120000 milliseconds",
-        };
-      }
-
-      if (periodMs > durationMs) {
-        return {
-          ok: false,
-          field: "periodMs",
-          error: "The repeat interval can't be longer than the loop's total run time",
+          error: "The loop must run for between 1 and 120000 milliseconds",
         };
       }
 
@@ -461,6 +732,25 @@
       return { ok: true };
     },
 
+    // A bearing step's form (STEP_DOME_BEARING in protocolCheckBranch(),
+    // src/protocol_check.cpp): front, or a dome Part the catalog gives a
+    // bearing, refused like an unknown Body Step Part. Whether the dome is
+    // calibrated and where it points is known are asked when the step runs,
+    // and never refuse a save (ADR 0051). It says no time: how long the turn
+    // takes is the dome's at run, so it spans no beats.
+    //
+    // The catalog is checked where the page has loaded it, as a Body Step's is.
+    _validateDomeBearingStep(step) {
+      const fail = () => ({ ok: false, field: "target", error: "Pick front or a part on the dome" });
+      if (typeof step.target !== "string" || step.target === "") return fail();
+      if (step.target === DOME_BEARING_FRONT) return { ok: true };
+      const catalog = window.DroidParts?.parts;
+      if (Array.isArray(catalog) && !catalog.some((part) => part.id === step.target && isDomeBearingPart(part))) {
+        return fail();
+      }
+      return { ok: true };
+    },
+
     _validateDomeRotateStep(step) {
       const { speedPct, durationMs } = step;
 
@@ -529,15 +819,6 @@
       const color = parts[3] || "DEFAULT";
       const durationStr = parts[4];
 
-      // Validate command length (must be <= 63)
-      if (cmd.length > 63) {
-        return {
-          ok: false,
-          field: "cmd",
-          error: "Logic/PSI command is too long (must be 63 characters or less)",
-        };
-      }
-
       // Validate target
       if (!DL_TARGETS.has(target)) {
         return {
@@ -592,7 +873,7 @@
     _validateDTTextCommand(cmd) {
       // DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
       // Text is percent-encoded; newline=%0A, %=%25, :=%3A; spaces literal
-      // Encoded text <= 40 chars; decoded text <= 32 chars; max one newline
+      // Encoded text <= 40 chars; decoded text <= 32 bytes; max one newline
       const parts = cmd.split(":");
       if (parts.length < 5 || parts[0] !== "DT") {
         return {
@@ -606,16 +887,9 @@
       const color = parts[2];
       const durationStr = parts[3];
       const speedStr = parts[4];
+      // The text is everything after the fifth colon, so a colon typed into
+      // it raw shows up as a field too many.
       const encodedText = parts.slice(5).join(":");
-
-      // Validate command length (must be <= 63)
-      if (cmd.length > 63) {
-        return {
-          ok: false,
-          field: "cmd",
-          error: "Logic Text command is too long (must be 63 characters or less)",
-        };
-      }
 
       // Validate target
       if (!DT_TARGETS.has(target)) {
@@ -664,11 +938,28 @@
         };
       }
 
-      // Decode and validate the text
-      let decodedText = "";
-      try {
-        decodedText = decodeURIComponent(encodedText);
-      } catch (e) {
+      // What may stand in the text as typed (percentDecode(),
+      // src/protocol_check.cpp): printable ASCII, and never a colon, which
+      // would read as the next field. Anything else travels as an escape.
+      if (parts.length > 6) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Write a colon in the text as %3A",
+        };
+      }
+      if (/[^\x20-\x7E]/.test(encodedText)) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Text has a character that must be percent-encoded",
+        };
+      }
+
+      // Decoded as the droid decodes it, byte for byte: a %FF or a %09 is a
+      // byte like any other, and a carriage return is the one it refuses.
+      const decoded = decodeTextBytes(encodedText);
+      if (decoded === null) {
         return {
           ok: false,
           field: "cmd",
@@ -676,17 +967,18 @@
         };
       }
 
-      // Validate decoded text length (max 32 chars)
-      if (decodedText.length > 32) {
+      // The droid decodes into 32 bytes. A character outside ASCII travels as
+      // two to four escapes, so it counts for that many.
+      if (decoded.length > 32) {
         return {
           ok: false,
           field: "cmd",
-          error: "Text is too long when decoded (max 32 characters)",
+          error: "Text is too long (max 32 characters; an accented letter or a symbol counts for more than one)",
         };
       }
 
       // Reject empty text
-      if (decodedText.length === 0) {
+      if (decoded.length === 0) {
         return {
           ok: false,
           field: "cmd",
@@ -694,31 +986,8 @@
         };
       }
 
-      // Check for control characters (except newline)
-      for (let i = 0; i < decodedText.length; i++) {
-        const ch = decodedText.charCodeAt(i);
-        if (ch < 32 && ch !== 10) {
-          // < 32 is control char; 10 is newline (allowed)
-          return {
-            ok: false,
-            field: "cmd",
-            error: "Text contains invalid control characters",
-          };
-        }
-      }
-
-      // Check for carriage return (explicitly disallowed)
-      if (decodedText.includes("\r")) {
-        return {
-          ok: false,
-          field: "cmd",
-          error: "Text contains carriage return (CR); use only newlines",
-        };
-      }
-
       // Check for max one newline
-      const newlineCount = (decodedText.match(/\n/g) || []).length;
-      if (newlineCount > 1) {
+      if (decoded.filter((byte) => byte === 0x0a).length > 1) {
         return {
           ok: false,
           field: "cmd",
@@ -745,15 +1014,6 @@
       const effect = parts[2];
       const color = parts[3] || "DEFAULT";
       const durationOrCountStr = parts[4];
-
-      // Validate command length (must be <= 63)
-      if (cmd.length > 63) {
-        return {
-          ok: false,
-          field: "cmd",
-          error: "Holo Effect command is too long (must be 63 characters or less)",
-        };
-      }
 
       // Validate target
       if (!DH_TARGETS.has(target)) {
@@ -828,54 +1088,212 @@
       return { ok: true };
     },
 
-    // Check :OF cleanup within a single branch (flat list of steps).
-    // Every :OF<target> step must be followed by a matching :CL command in
-    // the same branch. See the panel intent contract in docs/adr/0008.
-    _checkBranchOfCleanup(steps) {
-      const pending = []; // { target, group }
-
-      for (const step of steps) {
-        if (step.type !== "dome" || !step.cmd) continue;
-        const cmd = step.cmd;
-
-        if (cmd.startsWith(":OF")) {
-          const target = cmd.slice(3);
-          if (PANEL_INTENT_TARGETS.has(target)) {
-            pending.push({ target, group: panelGroup(target) });
-          }
-        } else if (cmd.startsWith(":CL")) {
-          const closeTarget = cmd.slice(3);
-          for (let i = pending.length - 1; i >= 0; i--) {
-            const f = pending[i];
-            if (closeSatisfiesFlutter(f.target, f.group, closeTarget)) {
-              pending.splice(i, 1);
-            }
-          }
+    /**
+     * The tempo block's form (protocolCheckTempo(), src/protocol_check.cpp, and
+     * the wire rules in src/seq_json.cpp parseTempo()). A low confidence or a
+     * stale hash is the Rehearsal's, never this gate's.
+     * @param {object} tempo
+     * @returns {{ok: boolean, field?: string, error?: string}}
+     */
+    validateTempo(tempo) {
+      const fail = (field, error) => ({ ok: false, field: `tempo.${field}`, error });
+      if (!tempo || typeof tempo !== "object" || Array.isArray(tempo)) {
+        return { ok: false, field: "tempo", error: "The tempo is missing its details" };
+      }
+      const tenths = bpmTenths(tempo);
+      if (typeof tempo.bpm !== "number" || !(tenths >= TEMPO_BPM_TENTHS_MIN && tenths <= TEMPO_BPM_TENTHS_MAX)) {
+        return fail("bpm", "The tempo must be between 1 and 600 BPM");
+      }
+      const phase = tempo.phase ?? 0;
+      if (!isWhole(phase) || phase < 0 || phase > TEMPO_PHASE_MAX_MS) {
+        return fail("phase", "Beat 1 must sit within the first 120000 ms");
+      }
+      const barLen = tempo.barLen ?? 4;
+      if (!isWhole(barLen) || barLen < 1 || barLen > TEMPO_BAR_LEN_MAX) {
+        return fail("barLen", "A bar is 1 to 16 beats");
+      }
+      const barPhase = tempo.barPhase ?? 0;
+      if (!isWhole(barPhase) || barPhase < 0 || barPhase >= barLen) {
+        return fail("barPhase", "The downbeat must be a beat of the bar");
+      }
+      const duration = tempo.duration ?? 0;
+      if (!isWhole(duration) || duration < 0 || duration > TEMPO_DURATION_MAX_MS) {
+        return fail("duration", "The track length must be under an hour");
+      }
+      if (!TEMPO_SOURCES.includes(tempo.source)) {
+        return fail("source", "The tempo must say whether it was typed, tapped or analysed");
+      }
+      const confidence = Math.round(Number(tempo.confidence) * 1000);
+      if (typeof tempo.confidence !== "number" || !(confidence >= 0 && confidence <= 1000)) {
+        return fail("confidence", "The tempo's confidence must be between 0 and 1");
+      }
+      if (tempo.hash !== undefined) {
+        if (typeof tempo.hash !== "string" || !TEMPO_HASH.test(tempo.hash)) {
+          return fail("hash", "The track fingerprint is damaged");
+        }
+        if (tempo.source !== "analysed") {
+          return fail("hash", "Only an analyzed tempo carries a track fingerprint");
         }
       }
+      return { ok: true };
+    },
 
-      if (pending.length > 0) {
-        const targets = pending.map((f) => `:OF${f.target}`).join(", ");
-        return {
-          ok: false,
-          field: "steps",
-          error: `These panels are left fluttering and never closed: ${targets}. Add a Close action for each one later in the sequence.`,
-        };
+    /** The indices of steps inside a loop body, which are timed from a pass. */
+    loopBodySteps: loopBodyIndices,
+    /** Where beat `beat` falls, in ms, on this tempo (seqTempoBeatMs()). */
+    tempoBeatMs,
+    /** How long `beats` beats last, in ms, on this tempo (seqTempoSpanMs()). */
+    tempoSpanMs,
+    /** Whether a step's duration can be kept as a span of beats. */
+    spansBeats,
+
+    /**
+     * The sequence as the droid will run it: every step placed on a beat at
+     * the millisecond its beat resolves to, and every span in beats as the
+     * duration it resolves to (src/seq_json.cpp parseStepBeats()). A Gesture's
+     * pace, repeat and extent in beats resolve the same way; and on the run's
+     * reading (the default) a Gesture that states no pace takes one beat, and
+     * one that repeats with no extent runs to the end step or the track's end,
+     * whichever comes first (resolveGestureExtents()).
+     *
+     * `{ written: true }` resolves only what the builder wrote in beats and
+     * leaves every default unstated, which is what the editor keeps: a
+     * default written down would stop following the tempo.
+     *
+     * Returns a copy; the builder's own object, beats and all, is never
+     * rewritten. A sequence with no valid tempo comes back as it went in,
+     * apart from the run's defaults that need no tempo.
+     * @param {object} seq
+     * @param {{written?: boolean}} options
+     * @returns {object}
+     */
+    resolveBeats(seq, options = {}) {
+      if (!seq || !Array.isArray(seq.steps)) return seq;
+      const tempo = seq.tempo !== undefined && this.validateTempo(seq.tempo).ok ? seq.tempo : null;
+      const run = !options.written;
+      if (!tempo && !run) return seq;
+      const resolveBranch = (steps) => {
+        const out = steps.map((step) => {
+          if (!step || typeof step !== "object") return step;
+          const next = { ...step };
+          if (tempo) {
+            if (isWhole(step.beat)) next.t = tempoBeatMs(tempo, step.beat);
+            if (isWhole(step.spanBeats)) {
+              const ms = tempoSpanMs(tempo, step.spanBeats);
+              if (step.type === "domeRotate") next.durationMs = ms;
+              else if (step.type === "body" && step.shape === "flutter") next.flutterMs = ms;
+            }
+            if (step.type === "gesture") {
+              if (isWhole(step.stepBeats)) next.stepMs = tempoSpanMs(tempo, step.stepBeats);
+              if (isWhole(step.repeatBeats)) next.repeatMs = tempoSpanMs(tempo, step.repeatBeats);
+              if (isWhole(step.extentBeats)) next.extentMs = tempoSpanMs(tempo, step.extentBeats);
+              if (run && !next.stepMs) next.stepMs = tempoSpanMs(tempo, 1);
+            }
+          }
+          return next;
+        });
+        const end = out[out.length - 1];
+        if (run && end && end.type === "end") {
+          const endMs = Number(end.t) || 0;
+          out.forEach((step) => {
+            if (!step || step.type !== "gesture" || !(step.repeatMs > 0) || step.extentMs) return;
+            let extent = Math.max(0, endMs - (Number(step.t) || 0));
+            const track = Number(tempo?.duration) || 0;
+            if (track > step.t && track - step.t < extent) extent = track - step.t;
+            step.extentMs = extent;
+          });
+        }
+        return out;
+      };
+      const out = { ...seq, steps: resolveBranch(seq.steps) };
+      if (Array.isArray(seq.closeSteps)) out.closeSteps = resolveBranch(seq.closeSteps);
+      return out;
+    },
+
+    /**
+     * The beat rules on each step (src/seq_json.cpp parseStepBeats()): a beat
+     * or a span needs a tempo, a step in a loop body carries no beat, a beat
+     * is a whole 0..1200 and a span a whole 1..1200 on a step that has a
+     * duration to set. `label` is the branch's key, for the field a refusal
+     * names.
+     */
+    _validateBeats(steps, tempo, label = "steps") {
+      const inLoop = loopBodyIndices(steps);
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i] || {};
+        if (step.beat !== undefined) {
+          if (tempo === undefined) {
+            return { ok: false, field: `${label}[${i}].beat`, error: "Set a tempo before putting a step on a beat" };
+          }
+          if (inLoop.has(i)) {
+            return {
+              ok: false,
+              field: `${label}[${i}].beat`,
+              error: "A step inside a repeat is timed from the repeat. Put the repeat on the beat instead.",
+            };
+          }
+          if (!isWhole(step.beat) || step.beat < 0 || step.beat > TEMPO_BEAT_MAX) {
+            return { ok: false, field: `${label}[${i}].beat`, error: "Pick a beat on the grid" };
+          }
+        }
+        for (const key of ["stepBeats", "repeatBeats", "extentBeats"]) {
+          if (step[key] === undefined) continue;
+          if (step.type !== "gesture") {
+            return { ok: false, field: `${label}[${i}].${key}`, error: "Only a gesture keeps its pace in beats" };
+          }
+          if (tempo === undefined) {
+            return { ok: false, field: `${label}[${i}].${key}`, error: "Set a tempo before timing a gesture in beats" };
+          }
+          if (!isWhole(step[key]) || step[key] < 1 || step[key] > TEMPO_BEAT_MAX) {
+            return { ok: false, field: `${label}[${i}].${key}`, error: `A gesture's beats are 1 to ${TEMPO_BEAT_MAX}` };
+          }
+        }
+        if (step.spanBeats !== undefined) {
+          if (tempo === undefined) {
+            return { ok: false, field: `${label}[${i}].spanBeats`, error: "Set a tempo before timing a step in beats" };
+          }
+          if (!isWhole(step.spanBeats) || step.spanBeats < 1 || step.spanBeats > TEMPO_BEAT_MAX) {
+            return { ok: false, field: `${label}[${i}].spanBeats`, error: `A span is 1 to ${TEMPO_BEAT_MAX} beats` };
+          }
+          if (!spansBeats(step)) {
+            return { ok: false, field: `${label}[${i}].spanBeats`, error: "Only a dome turn or a flutter lasts a number of beats" };
+          }
+        }
       }
       return { ok: true };
     },
 
     /**
      * Validate entire sequence.
+     *
+     * `nest` is what a caller knows of the droid's other sequences: those
+     * this one names, for the rules the droid applies to them at save
+     * (_validateNesting()), and the Factory catalog, for the rule on a
+     * sequence saved under a Factory name - `nest.factory(name)` answers
+     * that Factory sequence's entry (at least its `toggleGroup`), or
+     * nothing where there is none or the catalog has not been read. Only
+     * the editor has it. Without it those rules are not applied, and the
+     * verdict is the one a sequence gets read by itself.
      * @param {object} seq
-     * @returns {{ok: boolean, field?: string, error?: string, warnings?: string[]}}
+     * @param {{self?: {id?: string, name?: string}, listed?: Function, phrase?: Function, factory?: Function}|null} nest
+     * @returns {{ok: boolean, field?: string, error?: string}}
      */
-    validateSequence(seq) {
+    validateSequence(seq, nest = null) {
       if (!seq || typeof seq !== "object") {
         return { ok: false, error: "This sequence is missing its details" };
       }
 
-      const { name, suppressMs, toggleGroup, steps } = seq;
+      // The tempo and the beats first, as the droid parses them: every rule
+      // below reads the steps at the milliseconds their beats resolve to.
+      if (seq.tempo !== undefined) {
+        const tempoVal = this.validateTempo(seq.tempo);
+        if (!tempoVal.ok) return tempoVal;
+      }
+      if (Array.isArray(seq.steps)) {
+        const written = this._validateWritten(seq.steps, seq.tempo, "steps");
+        if (!written.ok) return written;
+      }
+      const { name, suppressMs, toggleGroup, steps, closeSteps } = this.resolveBeats(seq);
 
       // Name
       const nameVal = this.validateName(name);
@@ -901,42 +1319,179 @@
         };
       }
 
+      // A sequence saved under a Factory name retrains that Factory sequence,
+      // and keeps its interrupt group: a Factory one in a group stays in that
+      // group, and one in none stays in none (protocolCheckMeta(),
+      // src/protocol_check.cpp). Applied where the caller knows the Factory
+      // catalog (`nest.factory`).
+      const factory = nest && typeof nest.factory === "function" ? nest.factory(name) : null;
+      if (factory) {
+        const kept = factory.toggleGroup || "none";
+        if (kept !== "none" && toggleGroup !== kept) {
+          return {
+            ok: false,
+            field: "toggleGroup",
+            error: `A retrained ${name} stays in its Factory interrupt group, ${kept[0].toUpperCase()}${kept.slice(1)}`,
+          };
+        }
+        if (kept === "none" && toggleGroup !== "none") {
+          return { ok: false, field: "toggleGroup", error: `${name} is a Factory sequence in no interrupt group, so a retrained one stays in none.` };
+        }
+      }
+
       // Steps array
       if (!Array.isArray(steps)) {
         return { ok: false, field: "steps", error: "This sequence has no steps" };
       }
       if (steps.length === 0) {
-        return { ok: false, error: "Add at least one step to the sequence" };
+        return { ok: false, field: "steps", error: "Add at least one step to the sequence" };
       }
-      if (steps.length > 96) {
-        return { ok: false, error: "A sequence can have at most 96 steps" };
+      const main = this._validateBranch(steps, "steps");
+      if (!main.ok) return main;
+
+      // The close half (protocolCheck(), src/protocol_check.cpp): a sequence
+      // in an interrupt group is a toggle, which runs its steps to open and
+      // its close half to close, so it needs one; any other must not carry
+      // one. An empty list is no close half, as the wire reads it
+      // (seqJsonParseVariant(), src/seq_json.cpp). It is a branch like the
+      // steps, timed on the same tempo and held to the same rules.
+      const isToggle = toggleGroup !== "none";
+      const hasClose = Array.isArray(closeSteps) && closeSteps.length > 0;
+      if (isToggle && !hasClose) {
+        return { ok: false, field: "closeSteps", error: "A sequence in an interrupt group needs a close half: the steps that close what it opened" };
+      }
+      if (!isToggle && hasClose) {
+        return { ok: false, field: "closeSteps", error: "Only a sequence in an interrupt group has a close half" };
+      }
+      if (hasClose) {
+        const written = this._validateWritten(seq.closeSteps, seq.tempo, "closeSteps");
+        if (!written.ok) return written;
+        const close = this._validateBranch(closeSteps, "closeSteps");
+        if (!close.ok) return close;
       }
 
-      // Must end with 'end' type
+      // The sequences each half names, the steps and then the close half, as
+      // the droid walks them at save.
+      if (!nest) return { ok: true };
+      const nested = this._validateNesting(steps, nest, "steps");
+      if (!nested.ok || !hasClose) return nested;
+      return this._validateNesting(closeSteps, nest, "closeSteps");
+    },
+
+    // What the wire's parser holds one branch to as it reads it
+    // (parseBranch(), src/seq_json.cpp): the beat rules, no sequence inside a
+    // loop, and Protocol Check's cap on sequences in one branch. `steps` is
+    // the branch as written, before its beats are resolved, and `label` its
+    // key: "steps" or "closeSteps".
+    _validateWritten(steps, tempo, label) {
+      const beatVal = this._validateBeats(steps, tempo, label);
+      if (!beatVal.ok) return beatVal;
+      // A sequence is spliced in where it sits, which a loop body cannot take.
+      const inLoop = loopBodyIndices(steps);
+      const looped = steps.findIndex((step, i) => step && step.type === "sequence" && inLoop.has(i));
+      if (looped >= 0) {
+        return { ok: false, field: `${label}[${looped}].type`, error: "A sequence cannot sit inside a repeat" };
+      }
+      if (steps.filter((step) => step && step.type === "sequence").length > 8) {
+        return { ok: false, field: label, error: "A sequence can hold at most 8 others" };
+      }
+      return { ok: true };
+    },
+
+    // A sequence holding sequences, by the rules the droid applies when it
+    // is saved (protocolCheckNesting(), src/protocol_check.cpp), in the
+    // droid's own words, as far as the caller's facts reach. The droid reads
+    // every phrase's file under its lock; a browser knows only what it has
+    // been told:
+    //   nest.self         the sequence being checked: its `id` and its `name`
+    //   nest.listed(ref)  the droid's list entry for a reference (at least
+    //                     its `toggleGroup`), false when no list has it, or
+    //                     null while the lists have not answered - and then
+    //                     there is no verdict on whether it is on the droid
+    //   nest.phrase(ref)  a phrase the caller has read, as {steps,
+    //                     toggleGroup}, or null for one it has not
+    //
+    // Refused, in the droid's order for each reference: one that names this
+    // sequence, or a phrase already on the path to it (a cycle); one not on
+    // this droid; a toggle sequence; and more steps than a sequence holds
+    // once every phrase is spliced in, each phrase step becoming its
+    // phrase's steps less their end.
+    //
+    // Two things the droid checks are out of reach here, and Save can still
+    // refuse them. A phrase the caller has not read adds nothing to the
+    // count and is not followed, so a cycle or an overflow that only shows
+    // through it is not seen. And "sequences nest at most 3 deep" is not
+    // refused: the walk stops at that depth, because a path that long is
+    // only known when every phrase on it has been read, which a caller that
+    // reads one level does not do.
+    //
+    // One branch is walked at a call, and the caller hands over each half in
+    // turn: the droid splices its phrases into both when it runs
+    // (seqStorePrepare(), src/seq_store.cpp), so a sequence in the close half
+    // faces the rules one in the steps does. `label` is the branch's key,
+    // "steps" or "closeSteps", which a refusal names in its field; the count
+    // of steps once spliced is the branch's own.
+    _validateNesting(steps, nest, label) {
+      const self = nest.self || {};
+      const same = (a, b) => typeof a === "string" && a !== "" && a === b;
+      const names = (list) => list.filter((step) => step && step.type === "sequence" && typeof step.ref === "string");
+      let total = steps.length;
+      const walk = (ref, path) => {
+        if (same(ref, self.id) || same(ref, self.name) || path.includes(ref)) return "a sequence cannot contain itself";
+        if (path.length >= NEST_DEPTH_MAX) return null;
+        const listed = typeof nest.listed === "function" ? nest.listed(ref) : null;
+        if (listed === false) return "not a sequence on this droid";
+        const inner = typeof nest.phrase === "function" ? nest.phrase(ref) : null;
+        const group = inner?.toggleGroup ?? (listed ? listed.toggleGroup : undefined);
+        if (group !== undefined && group !== "none") return "a toggle sequence cannot sit inside another";
+        if (!inner || !Array.isArray(inner.steps)) return null;
+        total = total - 1 + Math.max(0, inner.steps.length - 1);
+        if (total > this.MAX_STEPS) return `too many steps once inside (max ${this.MAX_STEPS})`;
+        for (const step of names(inner.steps)) {
+          const deeper = walk(step.ref, [...path, ref]);
+          if (deeper) return deeper;
+        }
+        return null;
+      };
+      for (let i = 0; i < steps.length; i += 1) {
+        const step = steps[i];
+        if (!step || step.type !== "sequence" || typeof step.ref !== "string") continue;
+        const error = walk(step.ref, []);
+        if (error) return { ok: false, field: `${label}[${i}].ref`, error };
+      }
+      return { ok: true };
+    },
+
+    // One branch at the milliseconds it runs at, by the rules the droid
+    // applies to the steps and to the close half alike
+    // (protocolCheckBranch(), src/protocol_check.cpp).
+    //
+    // Every refusal names its half: its field starts with `label`, the
+    // branch's key - `steps[3].cmd` for a step's own rule, the bare key for
+    // one about the branch as a whole - so a reader with two halves can say
+    // which one it is in without checking either again.
+    _validateBranch(steps, label) {
+      if (steps.length > this.MAX_STEPS) {
+        return { ok: false, field: label, error: `A sequence can have at most ${this.MAX_STEPS} steps` };
+      }
+
+      // One Sequence End, and it is the last step: the droid stops reading a
+      // branch there, so one anywhere else is refused before anything after
+      // it is looked at.
+      const early = steps.findIndex((step, i) => step && step.type === "end" && i !== steps.length - 1);
+      if (early >= 0) {
+        return { ok: false, field: `${label}[${early}].type`, error: "Sequence End must be the last step" };
+      }
       const lastStep = steps[steps.length - 1];
-      if (lastStep.type !== "end") {
-        return { ok: false, error: "The sequence must finish with a Sequence End step" };
+      if (!lastStep || lastStep.type !== "end") {
+        return { ok: false, field: label, error: "The sequence must finish with a Sequence End step" };
       }
 
       // Identify loop body step indices so we can skip outer non-decreasing time
       // check for them — body step times are relative to the loop iteration.
-      const bodyStepIndices = new Set();
-      {
-        let j = 0;
-        while (j < steps.length) {
-          const s = steps[j];
-          if (s.type === "loop" && typeof s.body === "number" && s.body > 0) {
-            const count = Math.min(s.body, steps.length - j - 1);
-            for (let k = 1; k <= count; k++) bodyStepIndices.add(j + k);
-            j += count + 1;
-          } else {
-            j++;
-          }
-        }
-      }
+      const bodyStepIndices = loopBodyIndices(steps);
 
       // Validate each step individually
-      const warnings = [];
       let lastOuterT = -1;
       for (let i = 0; i < steps.length; i++) {
         const isBody = bodyStepIndices.has(i);
@@ -946,15 +1501,20 @@
         if (!stepVal.ok) {
           return {
             ok: false,
-            field: stepVal.field || `steps[${i}]`,
+            field: stepVal.field ? `${label}[${i}].${stepVal.field}` : `${label}[${i}]`,
             error: stepVal.error,
           };
+        }
+        // A Marcduino sequence trigger is refused among the steps a loop
+        // repeats (":SE not allowed inside loops", protocolCheckBranch()).
+        if (isBody && steps[i].type === "dome" && String(steps[i].cmd || "").startsWith(":SE")) {
+          return { ok: false, field: `${label}[${i}].cmd`, error: "A Marcduino sequence (:SE) cannot sit inside a repeat" };
         }
         if (!isBody) {
           if (lastOuterT >= 0 && steps[i].t < lastOuterT) {
             return {
               ok: false,
-              field: `steps[${i}].t`,
+              field: `${label}[${i}].t`,
               error: `This step must happen at or after the previous step (${lastOuterT}ms)`,
             };
           }
@@ -962,29 +1522,10 @@
         }
       }
 
-      // :OF cleanup check — outer branch (all non-body steps)
-      const outerSteps = steps.filter((_, i) => !bodyStepIndices.has(i));
-      const outerCleanup = this._checkBranchOfCleanup(outerSteps);
-      if (!outerCleanup.ok) return outerCleanup;
-
-      // :OF cleanup check — each loop body independently
-      {
-        let j = 0;
-        while (j < steps.length) {
-          const s = steps[j];
-          if (s.type === "loop" && typeof s.body === "number" && s.body > 0) {
-            const count = Math.min(s.body, steps.length - j - 1);
-            const bodySteps = steps.slice(j + 1, j + 1 + count);
-            const bodyCleanup = this._checkBranchOfCleanup(bodySteps);
-            if (!bodyCleanup.ok) return bodyCleanup;
-            j += count + 1;
-          } else {
-            j++;
-          }
-        }
-      }
-
-      return { ok: true, warnings };
+      // A panel flutter (:OF) owes nothing after it: the dome ends a flutter
+      // closed, so there is no later close to look for (ADR 0008 and
+      // ADR 0049, both amended 2026-10-02; #453).
+      return { ok: true };
     },
 
     /**

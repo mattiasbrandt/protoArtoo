@@ -1,0 +1,489 @@
+"""What the parts catalog generator refuses, and what it promises (#356, #357).
+
+The generator is the only thing standing between a typo in docs/droid-parts.yaml
+and an entry nothing can resolve - a Part id firmware cannot store against an
+output, a control path the firmware does not drive, a Part Kind no surface
+knows, a light sitting on a panel that does not exist, a complement that quietly
+seeds an empty droid. Those refusals are asserted here against a scratch copy of
+the real catalog, one broken field at a time.
+
+The promises are asserted beside them. Two of them are what downstream work
+rests on: reordering rows in the catalog changes nothing in either output, and
+generating into a scratch tree produces exactly the bytes that are committed -
+which is what makes #358's byte-compare a check rather than a coin toss.
+
+Nothing here writes into the tree it is checking. A test that regenerates the
+committed artefact in place repairs the staleness it was meant to report and can
+never fail twice (tools/check-studio.js:24), so every run goes to a temporary
+directory and the committed files are only ever read.
+"""
+
+import contextlib
+import io
+import json
+import re
+import shutil
+import sys
+import tempfile
+import unittest
+import unittest.mock
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools"))
+
+import generate_droid_parts_catalog as gen  # noqa: E402
+
+
+class Scratch:
+    """A throwaway tree the generator can be aimed at.
+
+    Only the three inputs are copied; the outputs are written beside them.
+    """
+
+    def __init__(self, stack):
+        self.dir = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+        self.catalog = self.dir / "droid-parts.yaml"
+        self.control = self.dir / "droid_part_control.inc"
+        self.row = self.dir / "servo_output_row.h"
+        shutil.copy(gen.CATALOG_PATH, self.catalog)
+        shutil.copy(gen.CONTROL_MANIFEST_PATH, self.control)
+        shutil.copy(gen.SERVO_OUTPUT_ROW_PATH, self.row)
+        self.firmware = self.dir / "droid_parts.h"
+        self.browser = self.dir / "droid_parts.js"
+
+    def generate(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            gen.generate(
+                catalog_path=self.catalog,
+                firmware_path=self.firmware,
+                browser_path=self.browser,
+                control_path=self.control,
+                id_limit_path=self.row,
+            )
+        return (
+            self.firmware.read_text(encoding="utf-8"),
+            self.browser.read_text(encoding="utf-8"),
+        )
+
+    def edit(self, before, after):
+        """Break one thing in the scratch catalog, at a data line.
+
+        Several of these strings also appear in the file's header prose, so the
+        replacement is anchored on the leading newline and indentation of the
+        real row and asserted to have changed the file.
+        """
+        text = self.catalog.read_text(encoding="utf-8")
+        assert before in text, f"scratch catalog does not carry {before!r}"
+        edited = text.replace(before, after, 1)
+        assert edited != text, f"replacing {before!r} changed nothing"
+        self.catalog.write_text(edited, encoding="utf-8")
+
+
+def browser_payload(text):
+    """The data the browser would actually see, parsed out of the module."""
+    match = re.search(r"window\.DroidParts = (\{.*\});\n\}\)\(\);", text, re.S)
+    assert match, "browser module does not assign window.DroidParts"
+    return json.loads(match.group(1))
+
+
+class GeneratorRefusals(unittest.TestCase):
+    def setUp(self):
+        stack = contextlib.ExitStack()
+        self.addCleanup(stack.close)
+        self.scratch = Scratch(stack)
+
+    def assertRefused(self, fragment):
+        with self.assertRaises(gen.CatalogError) as caught:
+            self.scratch.generate()
+        joined = "\n".join(caught.exception.problems)
+        self.assertIn(fragment, joined)
+        return joined
+
+    def test_a_control_path_the_firmware_does_not_define(self):
+        """The firmware declares the control paths; the catalog cannot invent one."""
+        self.scratch.edit("position: front, control: body-ledc,",
+                          "position: front, control: i2c-expander,")
+        self.assertRefused("is not a path the firmware defines")
+
+    def test_an_escape_hatch_on_a_path_the_firmware_does_not_define(self):
+        """The hatch is minted by its own code path, and it is refused the same
+        way a part row is: the catalog cannot invent a control path anywhere."""
+        self.scratch.edit("\n  control: body-ledc", "\n  control: i2c-expander")
+        self.assertRefused("other_slots.control")
+
+    def test_an_id_too_long_for_the_part_field_on_an_output_row(self):
+        """An id no Output can store is an id no Output can ever claim."""
+        self.scratch.edit("id: utilUp,", "id: upperUtilityArmOne,")
+        self.assertRefused("a Servo Output row holds")
+
+    def test_an_id_that_is_not_an_identifier(self):
+        self.scratch.edit("id: doorFL,", "id: door-FL,")
+        self.assertRefused("is not an unquoted identifier")
+
+    def test_a_seed_list_naming_a_part_no_row_declares(self):
+        self.scratch.edit("seeds: [pie1,", "seeds: [pie0,")
+        self.assertRefused("seeds ids no part row declares")
+
+    def test_a_scalar_seeds_value_that_is_not_the_declared_unknown(self):
+        """`TBD` is the one permitted non-list; anything else is a typo."""
+        self.scratch.edit("\n          dome: TBD", "\n          dome: soon")
+        self.assertRefused("neither a list nor TBD")
+
+    def test_a_design_with_variants_and_no_default(self):
+        self.scratch.edit("\n    default_variant: complex", "")
+        self.assertRefused("declares variants but not which one a builder starts on")
+
+    def test_a_default_naming_a_variant_that_does_not_exist(self):
+        self.scratch.edit("\n    default_variant: complex", "\n    default_variant: deluxe")
+        self.assertRefused("is not one of")
+
+    def test_a_default_on_a_design_with_no_variants(self):
+        self.scratch.edit(
+            "  - id: own\n    card: own-build\n",
+            "  - id: own\n    card: own-build\n    default_variant: complex\n",
+        )
+        self.assertRefused("declares a default_variant but no variants")
+
+    def test_no_design_says_which_one_a_fresh_controller_starts_on(self):
+        """A fresh flash with no pre-selected design has no answer to record,
+        which is the blank droid map ADR 0047 refused."""
+        self.scratch.edit("\n    preselected: true", "")
+        self.assertRefused("exactly one design carries `preselected: true`")
+
+    def test_two_designs_both_claim_to_be_pre_selected(self):
+        self.scratch.edit(
+            "  - id: own\n    card: own-build\n",
+            "  - id: own\n    card: own-build\n    preselected: true\n",
+        )
+        self.assertRefused("exactly one design carries `preselected: true`")
+
+    def test_preselected_written_as_anything_but_true(self):
+        """`preselected: false` would read as a second answer to a question
+        that has exactly one, so a design that is not pre-selected omits it."""
+        self.scratch.edit("\n    preselected: true", "\n    preselected: false")
+        self.assertRefused("the only value it takes is true")
+
+    def test_a_design_pre_selected_onto_a_complement_nobody_has_read(self):
+        """Pre-selecting a variant whose seeds are TBD would bring a fresh
+        controller up claiming a design and fitting nothing."""
+        self.scratch.edit("default_variant: complex", "default_variant: basic")
+        self.assertRefused("cannot start on a complement nobody has read")
+
+    def test_a_part_seeded_into_the_wrong_half(self):
+        """A per-half complement is split by the section a part is declared in;
+        a dome part listed as body would be fitted to the wrong Design (#409)."""
+        self.scratch.edit(
+            "body: [doorFL, doorFR, doorRL, doorRR, dataport, smallDoor, chargebay]",
+            "body: [pie1, doorFR, doorRL, doorRR, dataport, smallDoor, chargebay]",
+        )
+        self.assertRefused("seeds parts that are not in the body half")
+
+    def test_a_legacy_spelling_that_is_also_a_live_variant(self):
+        """A stored answer must name one variant: a legacy id that is also a
+        live variant id would mean two things on the way in (#409)."""
+        self.scratch.edit("legacy_ids: [simple]", "legacy_ids: [complex]")
+        self.assertRefused("legacy_ids that are ambiguous")
+
+    def test_a_stand_in_dome_drawing_nobody_can_state(self):
+        """MK4.1 is drawn as MK4 Complex (#409); a stand-in naming a variant
+        the design does not publish would draw a dome no builder can state."""
+        self.scratch.edit(
+            "dome_drawn_as: {design: mk4, variant: complex}",
+            "dome_drawn_as: {design: mk4, variant: simple}",
+        )
+        self.assertRefused("is not one of mk4's variants")
+
+    def test_a_design_that_does_not_say_which_card_it_is(self):
+        """A surface guessing the kind from the id or the seeds is how `own`
+        and an unread complement end up drawn alike (ADR 0047)."""
+        self.scratch.edit("  - id: own\n    card: own-build\n", "  - id: own\n")
+        self.assertRefused("every design declares one of")
+
+    def test_a_roadmap_design_that_claims_a_complement(self):
+        """Nobody has read a roadmap design's parts, so a seed list on one is
+        a guess the generator refuses (#368)."""
+        self.scratch.edit("    seeds: TBD\n\n  - id: own", "    seeds: [doorFL]\n\n  - id: own")
+        self.assertRefused("a roadmap design's seeds are TBD")
+
+    def test_a_roadmap_design_pre_selected(self):
+        """A fresh controller records its pre-selected design, and the
+        controller refuses a roadmap design as an answer."""
+        self.scratch.edit("\n    preselected: true", "")
+        self.scratch.edit("    card: roadmap\n", "    card: roadmap\n    preselected: true\n")
+        self.assertRefused("a roadmap design cannot be a controller's answer")
+
+    def test_a_design_id_that_is_not_an_identifier(self):
+        """A design id is stored verbatim in device config and becomes a C
+        identifier fragment in the generated header."""
+        self.scratch.edit("  - id: mk4\n", "  - id: mk-4\n")
+        self.assertRefused("is not an unquoted identifier")
+
+    def test_a_misspelled_part_field(self):
+        """A key nobody reads generates an entry silently missing a field."""
+        self.scratch.edit("position: rear-right,  control: dome-link",
+                          "postion: rear-right,  control: dome-link")
+        self.assertRefused("unknown field(s)")
+
+    def test_an_escape_hatch_with_no_name(self):
+        self.scratch.edit("\n  label_prefix: Other part", "")
+        self.assertRefused("the slots have no name")
+
+    def test_every_problem_is_reported_in_one_pass(self):
+        """A broken catalog is fixed once, not one message per run."""
+        self.scratch.edit("id: doorFL,", "id: door-FL,")
+        self.scratch.edit("\n          dome: TBD", "\n          dome: soon")
+        problems = self.assertRefused("is not an unquoted identifier")
+        self.assertIn("neither a list nor TBD", problems)
+
+    def test_a_bad_catalog_writes_nothing(self):
+        """Refusal happens before any output is written (tools/build.js:31)."""
+        self.scratch.edit("\n          dome: TBD", "\n          dome: soon")
+        with self.assertRaises(gen.CatalogError):
+            self.scratch.generate()
+        self.assertFalse(self.scratch.firmware.exists())
+        self.assertFalse(self.scratch.browser.exists())
+
+    def test_the_vocabulary_does_not_depend_on_what_drives_a_part(self):
+        """A Part is identity, so `control:` cannot move an id in or out of the
+        generated table (#358). Handing the whole droid to the dome used to
+        empty that table; now it changes nothing but the digest."""
+        before, _ = self.scratch.generate()
+        text = self.scratch.catalog.read_text(encoding="utf-8")
+        self.scratch.catalog.write_text(
+            text.replace("control: body-ledc", "control: dome-link"), encoding="utf-8"
+        )
+        after, _ = self.scratch.generate()
+        self.assertIn("DROID_PART_COUNT = 67", after)
+        self.assertEqual(
+            [line for line in after.splitlines() if "Source digest" not in line],
+            [line for line in before.splitlines() if "Source digest" not in line],
+        )
+
+    def test_a_part_kind_the_catalog_does_not_declare(self):
+        """A misspelled Kind reads as "no Kind", and the part is treated as
+        something it is not - which is worse than a loud refusal."""
+        self.scratch.edit("kind: light, control: none, sits_on: panel5",
+                          "kind: glowy, control: none, sits_on: panel5")
+        self.assertRefused("is not a Part Kind this catalog declares")
+
+    def test_a_part_sitting_on_one_no_row_declares(self):
+        """A light whose panel does not exist is a light placed nowhere."""
+        self.scratch.edit("sits_on: panel5 }", "sits_on: panel99 }")
+        self.assertRefused("which no part row declares")
+
+    def test_a_part_sitting_on_one_that_sits_on_something_itself(self):
+        """One level only: a chain would resolve in whichever order this pass
+        happened to reach it."""
+        self.scratch.edit("sits_on: panel5 }", "sits_on: psiRear }")
+        self.assertRefused("a part sits on one that stands on its own")
+
+    def test_a_control_manifest_row_it_cannot_read(self):
+        """The firmware's own declaration is parsed, never guessed around."""
+        text = self.scratch.control.read_text(encoding="utf-8")
+        self.scratch.control.write_text(
+            text.replace('PA_PART_CONTROL(DROID_PART_CONTROL_NONE, "none")',
+                         'PA_PART_CONTROL(DROID_PART_CONTROL_NONE, none)'),
+            encoding="utf-8",
+        )
+        self.assertRefused("not a PA_PART_CONTROL row")
+
+
+class GeneratorPromises(unittest.TestCase):
+    def setUp(self):
+        stack = contextlib.ExitStack()
+        self.addCleanup(stack.close)
+        self.scratch = Scratch(stack)
+
+    def test_the_committed_outputs_are_what_the_generator_produces(self):
+        firmware, browser = self.scratch.generate()
+        self.assertEqual(firmware, gen.FIRMWARE_OUTPUT_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(browser, gen.BROWSER_OUTPUT_PATH.read_text(encoding="utf-8"))
+
+    def test_a_scratch_run_never_names_the_scratch_tree(self):
+        """Generated text says where a file belongs, not where it was written."""
+        firmware, browser = self.scratch.generate()
+        for text in (firmware, browser):
+            self.assertNotIn(str(self.scratch.dir), text)
+
+    def test_reordering_the_catalog_renumbers_nothing(self):
+        """Emission order is the generator's, so a saved sequence cannot move."""
+        before_firmware, before_browser = self.scratch.generate()
+        text = self.scratch.catalog.read_text(encoding="utf-8")
+        rows = [
+            line for line in text.splitlines(keepends=True)
+            if line.startswith("  - { id: door")
+        ]
+        self.assertEqual(len(rows), 4)
+        shuffled = text.replace("".join(rows), "".join(reversed(rows)))
+        self.assertNotEqual(shuffled, text)
+        self.scratch.catalog.write_text(shuffled, encoding="utf-8")
+
+        after_firmware, after_browser = self.scratch.generate()
+        # The digest is of the catalog bytes, which did change; everything the
+        # outputs say about parts did not.
+        self.assertEqual(
+            browser_payload(after_browser)["parts"],
+            browser_payload(before_browser)["parts"],
+        )
+        self.assertEqual(
+            [line for line in after_firmware.splitlines() if "Source digest" not in line],
+            [line for line in before_firmware.splitlines() if "Source digest" not in line],
+        )
+
+    def test_the_declared_unknown_never_reaches_the_browser_as_a_value(self):
+        _, browser = self.scratch.generate()
+        payload = browser_payload(browser)
+        self.assertNotIn("TBD", json.dumps(payload))
+        basic = payload["designs"][0]["variants"][0]
+        self.assertEqual(basic["id"], "basic")
+        # Per half (#409): the unknown dome half is null, never [], while the
+        # known body half is a list.
+        self.assertIsNone(basic["seeds"]["dome"], "an unknown complement must not be an empty one")
+        self.assertIsInstance(basic["seeds"]["body"], list)
+
+    def test_both_outputs_carry_the_stamp_and_their_provenance(self):
+        firmware, browser = self.scratch.generate()
+        for text in (firmware, browser):
+            self.assertIn("DO NOT EDIT MANUALLY", text)
+            self.assertIn("docs/droid-parts.yaml", text)
+            self.assertIn("tools/generate_droid_parts_catalog.py", text)
+            self.assertRegex(text, r"Source digest: sha256 [0-9a-f]{64}")
+
+    def test_the_firmware_output_carries_ids_and_no_operator_copy(self):
+        firmware, _ = self.scratch.generate()
+        table = firmware.split("DROID_PART_IDS[DROID_PART_COUNT] = {", 1)[1].split("};", 1)[0]
+        self.assertIn('"utilUp"', table)
+        for browser_only in ("Upper utility arm", "PP1", "rear-right", "Other part"):
+            self.assertNotIn(browser_only, table)
+
+    def test_a_light_stands_where_its_panel_stands(self):
+        """Geometry is declared once, on the panel, and taken from there.
+
+        The Rear PSI is at P8 because it IS what P8 carries, so its row
+        declares no bearing of its own - and the two can therefore never
+        disagree about where they both are. (The Magic Panel is the one light
+        that does declare a bearing: it is the middle third of the piece the
+        drawing gives P6, itself and P5, #445.)
+        """
+        rear_psi_row = next(
+            line for line in self.scratch.catalog.read_text(encoding="utf-8").splitlines()
+            if "id: psiRear," in line
+        )
+        self.assertNotIn(
+            "bearing_deg", rear_psi_row,
+            "the Rear PSI declares geometry of its own; this test covers the inherited case",
+        )
+        _, browser = self.scratch.generate()
+        parts = {part["id"]: part for part in browser_payload(browser)["parts"]}
+        # .get() rather than [], so a light that inherited nothing fails the
+        # comparison instead of raising past it.
+        self.assertEqual(parts["psiRear"].get("bearingDeg"), parts["panel8"]["bearingDeg"])
+        self.assertEqual(parts["psiRear"].get("position"), parts["panel8"]["position"])
+        self.assertEqual(parts["psiRear"]["sitsOn"], "panel8")
+
+    def test_a_light_is_named_in_both_outputs_and_kinded_in_only_one(self):
+        """A light is a Part exactly as a panel is, so firmware names it too
+        (#358). What stays browser-only is the Part Kind: firmware has no use
+        for one, and a flag declared where nothing consults it is the defect
+        that field exists to avoid."""
+        firmware, browser = self.scratch.generate()
+        lights = [
+            part for part in browser_payload(browser)["parts"]
+            if part.get("kind") == "light"
+        ]
+        self.assertEqual(
+            [part["id"] for part in lights],
+            ["logicFront", "logicRear", "magicPanel", "psiFront", "psiRear", "upperPanel",
+             "cbi", "dataPanel"],
+        )
+        for part in lights:
+            self.assertEqual(part["control"], "none")
+            self.assertIn(f'"{part["id"]}"', firmware)
+        self.assertNotIn("kind", firmware)
+
+    def test_every_part_says_which_half_of_the_droid_a_design_seeds_it_into(self):
+        """One seed list serves both halves, and which half a Part is in comes
+        from the section it is declared in - so the split is emitted rather
+        than restated by every surface that has to make it."""
+        _, browser = self.scratch.generate()
+        halves = {}
+        for part in browser_payload(browser)["parts"]:
+            halves.setdefault(part["section"], set()).add(part.get("half"))
+        self.assertEqual(halves["dome_pies"], {"dome"})
+        self.assertEqual(halves["dome_lights"], {"dome"})
+        self.assertEqual(halves["holoprojectors"], {"dome"})
+        self.assertEqual(halves["dome_fixtures"], {"dome"})
+        self.assertEqual(halves["body_doors"], {"body"})
+        self.assertEqual(halves["body_arms"], {"body"})
+        # The escape hatch belongs to no design, so it is in neither half -
+        # absent rather than a third word nothing seeds.
+        self.assertEqual(halves["other_slots"], {None})
+
+    def test_the_firmware_carries_the_vocabulary_and_one_complement(self):
+        """Firmware checks a stored Droid Build against the designs the catalog
+        declares, and carries exactly one complement: the one a fresh
+        controller comes up fitted with (ADR 0047, #343)."""
+        firmware, browser = self.scratch.generate()
+        payload = browser_payload(browser)
+        preselected = [d for d in payload["designs"] if d.get("preselected")]
+        self.assertEqual([d["id"] for d in preselected], ["mk4"])
+
+        self.assertIn('constexpr const char* DROID_BUILD_DEFAULT_DESIGN = "mk4";', firmware)
+        self.assertIn('constexpr const char* DROID_BUILD_DEFAULT_VARIANT = "complex";', firmware)
+        self.assertIn('{"mk4", DROID_DESIGN_VARIANTS_MK4, 2},', firmware)
+        self.assertIn('{"own", nullptr, 0},', firmware)
+
+        seeds = next(
+            v["seeds"] for v in preselected[0]["variants"] if v["id"] == "complex"
+        )
+        self.assertIn(
+            f"constexpr size_t DROID_BUILD_DEFAULT_FITTED_COUNT = {len(seeds)};", firmware
+        )
+        # The other complements stay in the browser module: a design CHANGE is
+        # seeded from there, and firmware is not a second copy of it.
+        self.assertNotIn('"blurb"', firmware)
+        self.assertNotIn("DROID_DESIGN_VARIANTS_OWN", firmware)
+
+    def test_a_roadmap_design_is_drawn_and_never_stored(self):
+        """The browser draws a roadmap card; the firmware's design table - the
+        one droidDesignChoiceIsKnown() reads on every write path - does not
+        carry it, which is what makes the controller refuse it (#368)."""
+        firmware, browser = self.scratch.generate()
+        roadmap = [d for d in browser_payload(browser)["designs"] if d["card"] == "roadmap"]
+        self.assertEqual([d["id"] for d in roadmap], ["mk3"])
+        self.assertIsNone(roadmap[0]["seeds"])
+        self.assertNotIn('"mk3"', firmware)
+        stored = len([d for d in browser_payload(browser)["designs"] if d["card"] != "roadmap"])
+        self.assertIn(f"constexpr size_t DROID_DESIGN_COUNT = {stored};", firmware)
+
+    def test_the_regeneration_note_names_both_outputs(self):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            with self.assertRaises(SystemExit):
+                gen.main(["--help"])
+        help_text = out.getvalue()
+        self.assertIn("include/droid_parts.h", help_text)
+        self.assertIn("data/droid_parts.js", help_text)
+
+    def test_a_refusal_exits_one_and_says_every_problem_on_stderr(self):
+        self.scratch.edit("\n          dome: TBD", "\n          dome: soon")
+        # Every path the entry point resolves is pointed at the scratch tree, so
+        # a run that unexpectedly succeeded still could not touch the repo.
+        with contextlib.ExitStack() as stack:
+            for attribute, value in (
+                ("CATALOG_PATH", self.scratch.catalog),
+                ("CONTROL_MANIFEST_PATH", self.scratch.control),
+                ("SERVO_OUTPUT_ROW_PATH", self.scratch.row),
+                ("FIRMWARE_OUTPUT_PATH", self.scratch.firmware),
+                ("BROWSER_OUTPUT_PATH", self.scratch.browser),
+            ):
+                stack.enter_context(unittest.mock.patch.object(gen, attribute, value))
+            err = stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+            code = gen.main([])
+        self.assertEqual(code, 1)
+        self.assertIn("neither a list nor TBD", err.getvalue())
+        self.assertFalse(self.scratch.firmware.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

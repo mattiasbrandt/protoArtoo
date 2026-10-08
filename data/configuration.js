@@ -1,0 +1,869 @@
+// =============================================================================
+// data/configuration.js
+//
+// Configuration: what this droid is made of (GLOSSARY.md "Configuration", #288).
+// The Droid Build, the Component Picker's families and the toggles behind
+// them, and the droid's name. The Outputs moved to Wiring and Servos
+// (data/parts_mapping.js, #369), and the LED strip to Lights
+// (data/lights.js, #410). Auto-saves on every change.
+//
+// Guided Setup takes this surface over while the droid is not set up, and its
+// questions are these same controls (data/setup.js, which this surface also
+// loads). Inspecting and repairing the controller is Maintenance's
+// (data/maintenance.js); the two used to be one page (#404).
+// =============================================================================
+
+// What a builder calls the board this image runs on. `identity.board` names the
+// firmware build and is not an operator-facing word, and the identity manifest
+// carries no name beside it, so this is where the two meet. File scope rather
+// than inside the module below, because guided Setup's board step reads it -
+// data/setup.js draws over this surface and loads after this file - and a
+// second copy is a second thing to keep in step (include/component_registry.inc
+// holds the product names; this is the shorter word the surfaces use).
+const BOARD_LABELS = {
+  artoo_esp32: "Artoo Controller",
+  firebeetle2: "FireBeetle 2",
+};
+
+
+(() => {
+  const TIMING = window.PAApplyTiming;
+
+  // The Component Toggles, each by the form name the droid saves it under and
+  // the id its row's controls carry in configuration.html. That is all this
+  // page knows about one: its label and when it takes effect are its entry's
+  // in the one words table (data/web_api.js), and the key GET reports it under
+  // is its form name without "enable" (enableDomeEsc -> components.domeEsc), the
+  // droid's own rule (addActiveFields(), src/web/api_config.cpp).
+  const TOGGLE_ROWS = {
+    enableDomeEsc: "dome-esc",
+    enableRcCh1: "rc-ch1",
+    enableRcCh2: "rc-ch2",
+    enableRcCh3: "rc-ch3",
+    enableRcCh4: "rc-ch4",
+    enableRcCh5: "rc-ch5",
+    enableRcCh6: "rc-ch6",
+    enableDrive: "drive",
+    enableAudio: "audio",
+    enableProtoR2link: "protor2link",
+  };
+  const componentKey = (form) => form.charAt(6).toLowerCase() + form.slice(7);
+
+  // Keyed by the component key, which is how the droid lists what it started
+  // with (activeToggles).
+  const featureToggles = Object.fromEntries(Object.entries(TOGGLE_ROWS).map(([form, rowId]) => [
+    componentKey(form),
+    {
+      form,
+      // The id the row's label and badge carry: `enable_dome_esc`.
+      rowKey: `enable_${rowId.replace(/-/g, "_")}`,
+      // Read when drawn: the words table is PAApi's, which a page can load
+      // before (data/web_api.js).
+      get name() {
+        return window.PAApi.labelOf(form);
+      },
+      input: document.getElementById(`enable-${rowId}`),
+      status: document.getElementById(`status-${rowId}`),
+      available: true,
+      state: "off",
+    },
+  ]));
+
+  // Every label on this surface a Setting has, from its entry.
+  const paintSettingLabels = () => {
+    document.querySelectorAll("[data-setting-label]").forEach((element) => {
+      element.textContent = window.PAApi.labelOf(element.dataset.settingLabel);
+    });
+  };
+
+  const featureFeedback = document.getElementById("feature-feedback");
+  const setupEnabledSummary = document.getElementById("setup-enabled-summary");
+  const identityNameInput = document.getElementById("droid-name-input");
+  const identityMdnsCheckbox = document.getElementById("mdns-use-name");
+  const identitySaveButton = document.getElementById("identity-save-button");
+  const identityFeedback = document.getElementById("identity-feedback");
+  const identityActions = document.getElementById("identity-actions");
+  const identityDiagnosis = document.getElementById("identity-diagnosis");
+  const mdnsApplyTiming = document.getElementById("mdns-apply-timing");
+  // protoR2link's settings on the Dome Controller host (#369): the dome's IP,
+  // a declared Setting, and the slip ring's fixed facts.
+  const linkSettings = document.getElementById("protor2link-settings");
+  const linkPeerIpInput = document.getElementById("protor2link-wifi-peer-ip");
+  const linkSlipRing = document.getElementById("protor2link-slip-ring");
+  const linkSlipRingFacts = document.getElementById("protor2link-slip-ring-facts");
+  const linkFeedback = document.getElementById("protor2link-feedback");
+
+  let saveInFlight = false;
+  let saveQueued = false;
+  let saveScheduled = false;
+  let featureEditGeneration = 0;
+  let rcChangeGeneration = 0;
+  let savedRcChangeGeneration = 0;
+  let rcRestartPending = false;
+  // What the droid is running: every Component Toggle and the receiver type,
+  // as the droid itself reports it started with them (activeToggles and
+  // rc.activeInputMode, src/web/api_config.cpp). Each is read once at start
+  // (ADR 0027), so a saved value that differs is a change still waiting for the
+  // droid, and one put back to it is not (#370). Never what this page happened
+  // to read first: a reload between a save and a restart would take the saved
+  // value for the running one and report nothing waiting (#371). The RC half
+  // is what "restart required" is computed from.
+  let bootActiveToggles = {};
+  let bootActiveRcMode = null;
+  let savedRcMode = null;
+  // The config the droid last answered with, which is what "saved" means below.
+  let lastSaved = null;
+  // The hostname choice the droid started with, and the one saved since.
+  let bootActiveMdnsUseName = null;
+  let savedMdnsUseName = null;
+  // Auto-save state
+  let saveTimeout = null;
+  // The toggles a change of which waits for a restart the builder makes: the
+  // RC channels, projected once at start into the settings the droid is driven
+  // on. Read off each toggle's timing, never listed.
+  const rcToggleKeys = () => new Set(Object.keys(featureToggles).filter(
+    (key) => window.PAApi.timingOf(featureToggles[key].form) === TIMING.RESTART_REQUIRED));
+
+  // A "no" that names the builder's next move takes them to it (#348): the
+  // route the Availability seam gives for this state, appended to the sentence
+  // as a link. A null route appends nothing - a settled no has none.
+  const appendRoute = (element, route) => {
+    if (!element || !route) return;
+    element.textContent = `${element.textContent} `;
+    const link = document.createElement("a");
+    link.className = "setup-link";
+    link.setAttribute("href", route.href);
+    link.textContent = `${route.label}.`;
+    element.appendChild(link);
+  };
+
+  const setFeedbackState = (element, message, variant = "") => {
+    if (!element) return;
+    element.textContent = message;
+    element.className = variant ? `feedback ${variant}` : "feedback";
+  };
+
+  const setFeatureFeedback = (message, variant = "") => {
+    setFeedbackState(featureFeedback, message, variant);
+  };
+
+  // What a builder calls the protocol the firmware names on a lane. A word
+  // this table does not know is shown as the firmware sent it.
+  const PROTOCOL_WORDS = { marcduino: "Marcduino" };
+
+  // The slip ring's facts, from the firmware's own answer for this board
+  // (board_lanes.protor2link, include/board_lane_wire.h) and never a copy
+  // here. A firmware that does not report the baud and protocol shows no
+  // row rather than half of one.
+  const paintSlipRing = (identity) => {
+    const lane = identity?.board_lanes?.protor2link;
+    const known = Boolean(lane) && [lane.uart, lane.tx, lane.rx, lane.baud].every(Number.isInteger)
+      && typeof lane.protocol === "string" && lane.protocol !== "";
+    if (linkSlipRing) linkSlipRing.hidden = !known;
+    if (!known || !linkSlipRingFacts) return;
+    const protocol = PROTOCOL_WORDS[lane.protocol] || lane.protocol;
+    linkSlipRingFacts.textContent =
+      `UART ${lane.uart} · TX ${lane.tx} · RX ${lane.rx} · ${lane.baud} baud · ${protocol}`;
+  };
+
+  // The link's settings are the Dome Controller's answer, so they show only
+  // while that answer is fitted and this image can offer it.
+  const paintLinkSettings = () => {
+    const toggle = featureToggles.protoR2link;
+    if (linkSettings) linkSettings.hidden = !(toggle?.input?.checked && toggle.available);
+  };
+
+  const normalizeIdentityInput = (value) => String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[^a-z0-9-]/g, "")
+    .slice(0, 32);
+
+  const setIdentityFeedback = (message, variant = "") => {
+    setFeedbackState(identityFeedback, message, variant);
+  };
+
+  // Diagnosis explains WHY identity failed and outlives the feedback line, which
+  // every identity action rewrites. Keep it on its own element: setIdentityFeedback
+  // assigns textContent, so a save or a reload of identity would erase it.
+  const setIdentityDiagnosis = (message) => {
+    if (identityDiagnosis) identityDiagnosis.textContent = message || "";
+  };
+
+  const renderIdentity = (identity) => {
+    if (identityNameInput) {
+      identityNameInput.value = normalizeIdentityInput(identity?.droidName || "protor2");
+    }
+    if (identityMdnsCheckbox) {
+      identityMdnsCheckbox.checked = Boolean(identity?.mdnsUseName);
+    }
+  };
+
+  // What the manifest means for each component row is data/feature_availability.js's
+  // to hear and publish; this surface only shows the name and says it arrived.
+  const receiveIdentity = (identity) => {
+    renderIdentity(identity);
+    paintSlipRing(identity);
+    noteMdnsUseName(identity);
+    setIdentityFeedback(`Identity loaded at ${new Date().toLocaleTimeString()}`, "success");
+  };
+
+  // The hostname is read once, when mDNS starts with the network.
+  const noteMdnsUseName = (identity) => {
+    if (typeof identity?.mdnsUseName !== "boolean") return;
+    if (bootActiveMdnsUseName === null) bootActiveMdnsUseName = identity.mdnsUseName;
+    savedMdnsUseName = identity.mdnsUseName;
+    paintRowTimings();
+  };
+
+  // Perform lazy diagnosis of identity failure after assets are ready.
+  // Fetches version info to determine why identity is invalid and displays
+  // appropriate diagnosis sentence. Never blocks bootstrap state transitions.
+  const performIdentityDiagnosis = async () => {
+    try {
+      // Fetch expected versions (built into this deployment)
+      let expectedFwVersion = "unknown";
+      if (window.PAApi) {
+        try {
+          const fwResult = await window.PAApi.get("/fw-version.json", { timeoutMs: 2500, cache: "no-store" });
+          if (fwResult.data?.firmwareVersion) {
+            expectedFwVersion = String(fwResult.data.firmwareVersion);
+          }
+        } catch (_error) {
+          // Continue with unknown if fetch fails
+        }
+      }
+
+      // The running version, from the Live Reading, waiting briefly for a
+      // frame that carries it when none has yet. Bounded, because this
+      // diagnosis must never hold anything up.
+      const firmwareIn = (reading) =>
+        reading.status?.firmwareVersion ? String(reading.status.firmwareVersion) : null;
+      let runningFwVersion = firmwareIn(window.PALiveReading.current());
+      if (runningFwVersion === null) {
+        runningFwVersion = await new Promise((resolve) => {
+          let unsubscribe = null;
+          const timer = setTimeout(() => {
+            unsubscribe();
+            resolve(null);
+          }, 3000);
+          unsubscribe = window.PALiveReading.subscribe((reading) => {
+            const version = firmwareIn(reading);
+            if (version === null || unsubscribe === null) return;
+            clearTimeout(timer);
+            unsubscribe();
+            resolve(version);
+          });
+        });
+      }
+
+      // Determine diagnosis based on version comparison
+      let diagMessage = "The Body Controller could not report which features are available.";
+      if (expectedFwVersion !== "unknown" && runningFwVersion !== null) {
+        if (expectedFwVersion !== runningFwVersion) {
+          diagMessage = "The firmware and filesystem do not match. Upload both from the same release.";
+        } else {
+          // Versions match but identity is invalid (invalid feature list)
+          diagMessage = "This firmware sent a feature list this page cannot read. Uploading the same release again will not fix it.";
+        }
+      }
+
+      setIdentityDiagnosis(diagMessage);
+    } catch (error) {
+      console.warn("[configuration] diagnosis failed:", error);
+      // Show the no-version-evidence sentence when diagnosis cannot fetch versions
+      setIdentityDiagnosis("The Body Controller could not report which features are available.");
+    }
+  };
+
+  window.addEventListener("pa:identity-available", (event) => {
+    receiveIdentity(event.detail);
+    // Clear the Retry button when identity loads successfully
+    if (identityActions) {
+      identityActions.innerHTML = "";
+    }
+    // Clear diagnosis when identity succeeds (it outlives failed state)
+    setIdentityDiagnosis("");
+  });
+
+  window.addEventListener("pa:identity-unavailable", (event) => {
+    const reason = event.detail?.reason || "no-response";
+    // Different message based on reason: transport failure promises reconnection;
+    // validation failure is terminal and Retry button says what to do
+    const message = reason === "incompatible"
+      ? "Could not load the Body Controller's identity."
+      : "Could not load the Body Controller's identity. Reconnecting…";
+    setIdentityFeedback(message, "error");
+    // Add persistent Retry button outside the live region
+    if (window.PABootstrap && identityActions && !identityActions.querySelector("button")) {
+      const retryButton = document.createElement("button");
+      retryButton.type = "button";
+      retryButton.className = "btn btn-sm accent icon-act";
+      retryButton.innerHTML = window.PAUi.actFace("refresh", "Retry now");
+      retryButton.addEventListener("click", () => {
+        window.PABootstrap.retryNow("shell-identity");
+        if (identityActions) identityActions.innerHTML = "";
+      });
+      identityActions.innerHTML = "";
+      identityActions.appendChild(retryButton);
+    }
+    // Lazy diagnosis: after assets load, fetch version info to provide specific feedback
+    if (reason === "incompatible") {
+      window.addEventListener("pa:assets-ready", () => {
+        performIdentityDiagnosis();
+      }, { once: true });
+    }
+  });
+
+  const saveIdentity = async () => {
+    if (!window.PAApi || !identityNameInput) return;
+    const droidName = normalizeIdentityInput(identityNameInput.value);
+    identityNameInput.value = droidName;
+    if (!droidName) {
+      setIdentityFeedback("Droid name is required.", "error");
+      return;
+    }
+
+    if (identitySaveButton) {
+      identitySaveButton.disabled = true;
+    }
+    setIdentityFeedback("Saving identity...");
+    try {
+      const body = new URLSearchParams();
+      body.set("droidName", droidName);
+      body.set("mdnsUseName", identityMdnsCheckbox?.checked ? "true" : "false");
+      const result = await window.PAApi.postForm("/api/identity", body, { timeoutMs: 5000 });
+      renderIdentity(result.data);
+      noteMdnsUseName(result.data);
+      window.dispatchEvent(new CustomEvent("pa:identity-updated", { detail: result.data }));
+      setIdentityFeedback(`Identity saved at ${new Date().toLocaleTimeString()}`, "success");
+    } catch (error) {
+      console.error("[configuration] saveIdentity failed:", error);
+      setIdentityFeedback(window.PAApi.messageFor(error), "error");
+    } finally {
+      if (identitySaveButton) {
+        identitySaveButton.disabled = false;
+      }
+    }
+  };
+
+  // The dome's IP is saved on its own, as the declared Setting it is: its
+  // words, its timing and its refusal all come from its entry (data/web_api.js),
+  // and a refused address stays in the box beside the reason. It does not ride
+  // the component save, so a bad address never holds back a toggle.
+  const saveLinkPeerIp = async () => {
+    if (!window.PAApi || !linkPeerIpInput) return;
+    const sent = { protoR2linkWifiPeerIp: linkPeerIpInput.value.trim() };
+    linkPeerIpInput.value = sent.protoR2linkWifiPeerIp;
+    setFeedbackState(linkFeedback, "Saving...");
+    try {
+      const result = await window.PAApi.postForm("/api/config", sent, { timeoutMs: 5000 });
+      const stored = result.data?.protoR2link?.wifiPeerIp;
+      if (typeof stored === "string") linkPeerIpInput.value = stored;
+      setFeedbackState(linkFeedback, TIMING.saved(window.PAApi.timingOf("protoR2linkWifiPeerIp"),
+        new Date().toLocaleTimeString()), "success");
+    } catch (error) {
+      console.error("[configuration] saveLinkPeerIp failed:", error);
+      setFeedbackState(linkFeedback, window.PAApi.messageFor(error, sent), "error");
+    }
+  };
+
+  // Whether a component change is still on its way to the controller: from the
+  // moment it is made, through the debounce, until the save that carries it has
+  // answered. Published because the Restart that would cut it off now lives on
+  // Maintenance, and a restart during a save loses the change without a word -
+  // Restart used to sit on this page with its button greyed out for exactly
+  // this window (#404). Maintenance asks at the press rather than being told,
+  // so it gets the right answer however the two surfaces were mounted.
+  let savePending = false;
+  window.PAConfigurationSave = { isPending: () => savePending };
+
+  // Fields a Component Picker pick carries beside the toggles - today the
+  // Sound Component Member. They ride the next save and are cleared once it has
+  // been sent, so a pick is never held back for a later one (#369).
+  let pendingPickParams = {};
+
+  // A save is said once, on the form's feedback line: "Saving..." from the
+  // change, through the debounce, until the answer replaces it.
+  const setSavePending = (pending) => {
+    savePending = pending;
+    if (pending) setFeatureFeedback("Saving...");
+  };
+
+  const featureRow = (toggle) =>
+    toggle.input?.closest(".component-row") || toggle.input?.closest(".toggle-switch");
+
+  // Give each component row one stable explanation node. The availability
+  // renderer calls this before updating its text and aria relationship.
+  const ensureFeatureReason = (toggle, row) => {
+    if (toggle.reason || !row) return toggle.reason;
+    const reason = document.createElement("div");
+    reason.id = `${toggle.input.id}-availability-reason`;
+    reason.className = "feature-availability-reason";
+    reason.hidden = true;
+    row.appendChild(reason);
+    toggle.input.setAttribute("aria-describedby", reason.id);
+    toggle.reason = reason;
+    return reason;
+  };
+
+  // Make every interactive control in a component row follow the resolved
+  // availability. The component renderer calls this after resolving a state.
+  const setRowControlsAvailable = (row, available, primaryInput) => {
+    if (!row) return;
+    row.querySelectorAll("button, select, input").forEach((control) => {
+      if (control === primaryInput || control.type !== "hidden") {
+        control.disabled = !available;
+        control.setAttribute("aria-disabled", available ? "false" : "true");
+      }
+    });
+  };
+
+  // Apply one resolved state to a component row, including its status copy,
+  // panel rail, reason, and all controls that must become inert together.
+  const updateToggleStatus = (key) => {
+    const toggle = featureToggles[key];
+    if (!toggle || !toggle.input || !toggle.status) return;
+    const row = featureRow(toggle);
+    const result = window.PAFeatureAvailability.resolve({
+      boardCapability: row?.dataset?.boardCapability || toggle.input.dataset.boardCapability || "",
+      buildFlag: row?.dataset?.buildFlag || toggle.input.dataset.buildFlag || "",
+      enabled: toggle.input.checked,
+    });
+
+    toggle.state = result.state;
+    // Derive available from phase and state: control is interactable when
+    // the manifest is ready and the feature is not gated
+    toggle.available = window.PAFeatureAvailability.isFeatureAvailable(result);
+    toggle.status.textContent = window.PAFeatureAvailability.labelFor(result.state);
+    toggle.status.className = `toggle-status feature-state feature-state-${result.state}`;
+    toggle.input.disabled = !toggle.available;
+    toggle.input.setAttribute("aria-disabled", toggle.available ? "false" : "true");
+
+    if (row) {
+      row.classList.add("feature-availability-row");
+      row.classList.remove(
+        "feature-state-on",
+        "feature-state-off",
+        "feature-state-not-in-this-build",
+        "feature-state-not-on-this-board",
+        "feature-state-checking",
+        "feature-state-identity-unavailable",
+      );
+      row.classList.add(`feature-state-${result.state}`);
+      // The family the state is painted in, which the state class cannot say
+      // for an identity that will never be read (data/feature_availability.js).
+      row.classList.remove(...window.PAFeatureAvailability.FAMILY_CLASSES);
+      const family = window.PAFeatureAvailability.familyClassFor(result.state);
+      if (family) row.classList.add(family);
+      row.dataset.featureState = result.state;
+      setRowControlsAvailable(row, toggle.available, toggle.input);
+      const reason = ensureFeatureReason(toggle, row);
+      if (reason) {
+        // The sentence, then the route to the next move where this state's
+        // family has one (data/feature_availability.js). Still hidden while the
+        // component is available: "off" is the one no whose control is on this
+        // very row, so its sentence would explain a tick box the builder is
+        // already looking at.
+        reason.textContent = window.PAFeatureAvailability.reasonFor(result.state, toggle.name);
+        appendRoute(reason, window.PAFeatureAvailability.routeFor(result.state));
+        reason.hidden = toggle.available;
+      }
+    }
+    if (key === "protoR2link") paintLinkSettings();
+  };
+
+  const updateAllToggleStatuses = () => {
+    Object.keys(featureToggles).forEach(updateToggleStatus);
+  };
+
+  // The section head's subtitle: how many of the components this image can
+  // offer are switched on. It is a count and takes no color - what a builder
+  // ticked is a chosen posture, and a green count would read as a verdict on
+  // their droid (GLOSSARY.md "Status Color").
+  const updateEnabledSummary = () => {
+    if (!setupEnabledSummary) return;
+    const toggles = Object.values(featureToggles).filter((toggle) => Boolean(toggle.input) && toggle.available);
+    const enabledCount = toggles.filter((toggle) => toggle.input.checked).length;
+    const total = toggles.length;
+    setupEnabledSummary.textContent = `${enabledCount} of ${total} switched on`;
+  };
+
+
+  const renderFeatures = (payload) => {
+    const components = payload?.components || {};
+
+    const isInitialLoad = lastSaved === null;
+    readBootActiveState(payload);
+    lastSaved = payload || null;
+    if (typeof payload?.rc?.inputMode === "string") savedRcMode = payload.rc.inputMode;
+    // The dome's IP as the droid holds it, unless the builder is typing one.
+    const peerIp = payload?.protoR2link?.wifiPeerIp;
+    if (linkPeerIpInput && typeof peerIp === "string" && document.activeElement !== linkPeerIpInput) {
+      linkPeerIpInput.value = peerIp;
+    }
+
+    Object.entries(featureToggles).forEach(([key, toggle]) => {
+      const enabled = components[key]?.enabled;
+      if (!toggle.input || enabled === undefined) return;
+      // Do not sync RC toggles after initial load — they are boot-staged and user edits
+      // are pending. Syncing them would overwrite pending changes and lose restart tracking.
+      if (!isInitialLoad && rcToggleKeys().has(key)) return;
+      toggle.input.checked = Boolean(enabled);
+      updateToggleStatus(key);
+    });
+    // A payload with no RC edit of this page's still on its way says, on its
+    // own, whether the droid owes a restart - which is what a page opened after
+    // the save, or reloaded, has to go on. An edit in flight leaves it to the
+    // save that carries the edit (saveFeatures below).
+    if (rcChangeGeneration === savedRcChangeGeneration) rcRestartPending = checkIfRcRestartNeeded();
+
+    // The Board Component Label beside each toggle: what the running board
+    // prints beside the header it is wired to (ADR 0065), served by the droid,
+    // shown next to the Setting's own label.
+    Object.entries(featureToggles).forEach(([key, toggle]) => {
+      const label = components[key]?.label;
+
+      // Update badge: show the label if it exists, hide if it doesn't
+      const badge = document.getElementById(`badge-${toggle.rowKey}`);
+      if (badge) {
+        badge.textContent = label || "";
+      }
+
+      // Update description label element: populate the <strong> tag with the label.
+      // If no label exists, remove the entire label-desc span so the description reads correctly.
+      const labelElem = document.getElementById(`label-${toggle.rowKey}`);
+      if (labelElem) {
+        if (label) {
+          labelElem.textContent = label;
+        } else {
+          // No label: remove the entire trailing sentence span
+          const labelDescSpan = document.getElementById(`label-desc-${toggle.rowKey}`);
+          if (labelDescSpan) {
+            // Use parentNode.removeChild for compatibility with test mocks
+            const note = labelDescSpan.parentNode;
+            if (note) {
+              note.removeChild(labelDescSpan);
+              // A note that said only where to wire it now says nothing, and
+              // an empty note is a bar with no words in it (#369).
+              if (!String(note.textContent || "").trim()) note.classList?.add("hidden");
+            }
+          }
+        }
+      }
+    });
+
+    updateEnabledSummary();
+    paintRowTimings();
+    notifyTimingChange();
+  };
+
+  // What the droid started with, from every payload it sends: it does not
+  // change until the droid restarts, and a restart is a new page. A firmware
+  // that predates the report sends neither field, and then nothing is read as
+  // waiting rather than guessed at.
+  const readBootActiveState = (config) => {
+    if (typeof config?.rc?.activeInputMode === "string") bootActiveRcMode = config.rc.activeInputMode;
+    if (Array.isArray(config?.activeToggles)) {
+      const on = new Set(config.activeToggles);
+      bootActiveToggles = {};
+      Object.keys(featureToggles).forEach((key) => {
+        bootActiveToggles[key] = on.has(key);
+      });
+    }
+  };
+
+  const checkIfRcRestartNeeded = () => {
+    // Check if UI values match boot-active truth.
+    // If the operator has changed an RC toggle away from boot-active, restart is needed.
+    // If they've reverted it back to boot-active, no restart is needed.
+    if (bootActiveRcMode && savedRcMode && savedRcMode !== bootActiveRcMode) return true;
+    for (const key of rcToggleKeys()) {
+      const toggle = featureToggles[key];
+      if (!toggle || !toggle.input) continue;
+      const currentValue = Boolean(toggle.input.checked);
+      const bootActiveValue = bootActiveToggles[key];
+      if (bootActiveValue !== undefined && currentValue !== bootActiveValue) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // A saved Component Toggle the droid has not started with yet.
+  const toggleWaiting = (key) => {
+    const booted = bootActiveToggles[key];
+    const saved = lastSaved?.components?.[key]?.enabled;
+    return booted !== undefined && saved !== undefined && Boolean(saved) !== booted;
+  };
+
+  // Which step hosts on this surface hold a saved change the droid has not
+  // caught up with, keyed as guided Setup keys its steps (data-setup-step).
+  // The sound module and the network are the firmware's own answer - it
+  // reports what it bound at start beside what is saved - and the rest compare
+  // against what this page first read.
+  const WAITING = {
+    wifi: () => Boolean(lastSaved?.wifi?.pendingApply),
+    drive: () => toggleWaiting("drive"),
+    domerot: () => toggleWaiting("domeEsc"),
+    domectl: () => toggleWaiting("protoR2link"),
+    sound: () => {
+      const audio = lastSaved?.components?.audio;
+      const memberWaiting = Boolean(audio?.member && audio?.activeMember && audio.member !== audio.activeMember);
+      return toggleWaiting("audio") || memberWaiting;
+    },
+    rc: () => rcRestartPending,
+    _servos: () => {
+      const servo = lastSaved?.components?.bodyServo;
+      return Boolean(servo?.member && servo?.activeMember && servo.member !== servo.activeMember);
+    },
+  };
+  const isPending = (stepKey) => Boolean(WAITING[stepKey]?.());
+
+  // The Settings each step host on this surface writes, so when its change
+  // takes effect is read off their entries (data/web_api.js) - the latest of
+  // them - and never typed here. The radio's step writes its receiver and its
+  // channel ticks beside the radio itself.
+  const STEP_SETTINGS = {
+    // The Droid Build is a Record: its fields' entries say when they bite.
+    build: ["domeDesign", "domeVariant", "bodyDesign", "bodyVariant", "fittedParts"],
+    drive: ["enableDrive"],
+    domerot: ["enableDomeEsc"],
+    domectl: ["enableProtoR2link"],
+    sound: ["enableAudio", "soundMember"],
+    _servos: ["bodyServoMember"],
+    get rc() {
+      return ["rcMember", "rcInputMode", ...[...rcToggleKeys()].map((key) => featureToggles[key].form)];
+    },
+  };
+  // When a step's change takes effect. The network is the one step whose
+  // answer is not a declared Setting: Device WiFi Settings are saved on WiFi
+  // through their own door and joined at the next start, as a Staged Network
+  // Switch (ADR 0015).
+  const stepTiming = (stepKey) => (stepKey === "wifi"
+    ? TIMING.AT_REBOOT
+    : TIMING.latest(...STEP_SETTINGS[stepKey].map(window.PAApi.timingOf)));
+
+  // The latest timing any waiting change on this page is held to: what the
+  // save line says, after a save that worked and after one that failed.
+  const waitingTiming = () => TIMING.latest(TIMING.IMMEDIATE,
+    ...Object.keys(WAITING).filter(isPending).map(stepTiming));
+
+  const timingListeners = new Set();
+  const notifyTimingChange = () => timingListeners.forEach((listener) => listener());
+
+  // The one row on this surface that is not a guided step: the hostname is
+  // read once when mDNS starts with the network (src/web/web_server.cpp),
+  // where the name beside it is read live. The identity is saved through its
+  // own door (POST /api/identity), not as a declared Setting, so its timing is
+  // stated here.
+  const paintRowTimings = () => {
+    TIMING.paint(mdnsApplyTiming, TIMING.AT_REBOOT, {
+      pending: bootActiveMdnsUseName !== null && savedMdnsUseName !== bootActiveMdnsUseName,
+    });
+  };
+
+  // `afterRefusal` is the read-back a refused save asks for: the feedback line
+  // is the form's one readout, so the refusal stays on it and a read that
+  // worked says nothing over it.
+  const loadFeatures = async ({ afterRefusal = false } = {}) => {
+    if (!window.PAApi) return;
+    paintSettingLabels();
+    if (!afterRefusal) setFeatureFeedback("Loading component settings...");
+    try {
+      const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
+      renderFeatures(result.data);
+      if (!afterRefusal) setFeatureFeedback(`Components loaded at ${new Date().toLocaleTimeString()}`, "success");
+      window.ComponentPicker?.adopt(result.data);
+      // The Droid Build rides on the same payload, so the step below draws the
+      // droid's own answer without asking the controller a second time.
+      window.DroidBuild?.adopt(result.data);
+    } catch (error) {
+      console.error("[configuration] loadFeatures failed:", error);
+      setFeatureFeedback(`Failed to load component settings: ${window.PAApi.messageFor(error)}`, "error");
+    }
+  };
+
+  // Auto-save function
+  const saveFeatures = async () => {
+    if (!window.PAApi) return;
+    if (saveInFlight) {
+      saveQueued = true;
+      return;
+    }
+
+    saveInFlight = true;
+    let carriedPick = false;
+    const requestEditGeneration = featureEditGeneration;
+    const requestRcChangeGeneration = rcChangeGeneration;
+    setFeatureFeedback("Saving...");
+    try {
+      const body = new URLSearchParams();
+      Object.values(featureToggles).forEach((toggle) => {
+        if (toggle.input && toggle.available) {
+          body.set(toggle.form, toggle.input.checked ? "true" : "false");
+        }
+      });
+      Object.entries(pendingPickParams).forEach(([field, value]) => body.set(field, value));
+      carriedPick = Object.keys(pendingPickParams).length > 0;
+      pendingPickParams = {};
+      const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
+      if (featureEditGeneration === requestEditGeneration) {
+        renderFeatures(result.data);
+        window.ComponentPicker?.adopt(result.data);
+      }
+      // Guard RC restart state: only update if this request's RC generation is newer than the last saved one
+      if (requestRcChangeGeneration > savedRcChangeGeneration) {
+        savedRcChangeGeneration = requestRcChangeGeneration;
+        // Check if UI values match boot-active: if so, restart is not needed
+        rcRestartPending = checkIfRcRestartNeeded();
+      }
+      // What the save says is what is still waiting on the droid after it:
+      // a change put back to what the droid started with waits on nothing.
+      const savedAt = new Date().toLocaleTimeString();
+      const timing = waitingTiming();
+      setFeatureFeedback(TIMING.saved(timing, savedAt), "success");
+      paintRowTimings();
+      notifyTimingChange();
+    } catch (error) {
+      console.error("[configuration] saveFeatures failed:", error);
+      // What an earlier save left waiting on the droid still waits after
+      // this one failed, and the line says so beside the error - read the way
+      // the saved line reads it, so a next start is not lost any more than a
+      // restart is.
+      setFeatureFeedback(TIMING.failed(window.PAApi.messageFor(error), waitingTiming()), "error");
+      // A refused pick is read back rather than left on screen: the cards
+      // then show what the droid holds, not the answer it did not take.
+      if (carriedPick) loadFeatures({ afterRefusal: true });
+    } finally {
+      saveInFlight = false;
+      if (saveQueued) {
+        saveQueued = false;
+        saveFeatures();
+        return;
+      }
+      if (!saveScheduled) {
+        setSavePending(false);
+      }
+    }
+  };
+
+  const debouncedSave = (...args) => {
+    setSavePending(true);
+    clearTimeout(saveTimeout);
+    saveScheduled = true;
+    saveTimeout = setTimeout(() => {
+      saveScheduled = false;
+      saveTimeout = null;
+      saveFeatures(...args);
+    }, 300);
+  };
+
+  // A Component Picker pick (data/component_picker.js). Picking is applying:
+  // the toggles behind the family are set - one for most families, every RC
+  // channel for the radio's Not fitted - and the save goes now, carrying any
+  // member field with it, through the same save every toggle on this page uses.
+  const applyComponentPick = ({ toggleIds = [], enabled = true, params = {} } = {}) => {
+    const keys = Object.keys(featureToggles).filter((name) => toggleIds.includes(featureToggles[name].input?.id));
+    keys.forEach((key) => {
+      featureToggles[key].input.checked = enabled;
+      updateToggleStatus(key);
+    });
+    if (keys.length > 0) updateEnabledSummary();
+    Object.assign(pendingPickParams, params);
+    featureEditGeneration += 1;
+    // The receiver type and the channel ticks are the restart-required RC
+    // answer; a pick that changes either is an RC change.
+    if (Object.hasOwn(params, "rcInputMode") || keys.some((key) => rcToggleKeys().has(key))) {
+      rcChangeGeneration += 1;
+    }
+    setSavePending(true);
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+    saveScheduled = false;
+    saveFeatures();
+  };
+  // isPending and onChange are guided Setup's (data/setup.js): it draws each
+  // step's timing line and asks here whether that step has a change waiting.
+  const onChange = (listener) => {
+    timingListeners.add(listener);
+    return () => timingListeners.delete(listener);
+  };
+  window.PAConfiguration = { applyComponentPick, isPending, onChange, stepTiming };
+
+  // Attach listeners to all toggles and selects
+  Object.keys(featureToggles).forEach((key) => {
+    const toggle = featureToggles[key];
+    if (toggle.input) {
+      toggle.input.addEventListener("change", () => {
+        updateToggleStatus(key);
+        if (!toggle.available) return;
+        featureEditGeneration += 1;
+        if (rcToggleKeys().has(key)) {
+          rcChangeGeneration += 1;
+        }
+        updateEnabledSummary();
+        debouncedSave();
+      });
+    }
+  });
+
+  if (identityNameInput) {
+    identityNameInput.addEventListener("input", () => {
+      const normalized = normalizeIdentityInput(identityNameInput.value);
+      if (identityNameInput.value !== normalized) {
+        identityNameInput.value = normalized;
+      }
+    });
+  }
+
+  if (identitySaveButton) {
+    identitySaveButton.addEventListener("click", saveIdentity);
+  }
+
+  // Saved when the builder leaves the box or presses Enter. The IP is the one
+  // text box in the component form, so Enter would otherwise submit the form
+  // and reload the page (implicit submission).
+  if (linkPeerIpInput) {
+    linkPeerIpInput.addEventListener("change", saveLinkPeerIp);
+    document.getElementById("feature-form")?.addEventListener("submit", (event) => event.preventDefault());
+  }
+
+
+  // The Droid Build step, drawn into its host on this surface; guided Setup
+  // shows that same host as a step of its run (data/setup.js).
+  window.DroidBuildPicker?.mount({
+    body: document.getElementById("droid-build-body"),
+    summary: document.getElementById("droid-build-summary"),
+    feedback: document.getElementById("droid-build-feedback"),
+  });
+  // The Component Picker, drawn into every component family's host on this
+  // surface; guided Setup shows those same hosts as its steps (data/setup.js).
+  window.ComponentPicker?.mount(document);
+  window.PAFeatureAvailability.subscribe(() => {
+    updateAllToggleStatuses();
+    updateEnabledSummary();
+  });
+  updateEnabledSummary();
+  renderIdentity({ droidName: "protor2", mdnsUseName: false });
+  setIdentityFeedback("Loading the Body Controller's identity…");
+  if (window.PAIdentity) receiveIdentity(window.PAIdentity);
+  loadFeatures();
+
+  // ---- What the droid is doing right now ----
+  //
+  // One thing on this surface reads the live status rather than the saved
+  // configuration: the sound module named beside Audio. The serial lanes and
+  // the memory readings that used to share this read are Maintenance's now
+  // (data/maintenance.js), and the LED strip's live color is Lights' (#410).
+  // It rides the Live Reading like every surface (data/live_reading.js).
+  const s2DriverLabel = document.getElementById("s2-driver-label");
+
+  const renderLiveStatus = (reading) => {
+    if (s2DriverLabel) {
+      s2DriverLabel.textContent = reading.status?.audio?.driver || "";
+    }
+  };
+
+  window.PALiveReading.subscribe(renderLiveStatus);
+})();

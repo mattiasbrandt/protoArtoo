@@ -31,6 +31,7 @@
 #include "../../../include/audio_dy_sv5w.h"
 #include "../../../include/audio_chirp.h"
 #include "../../../include/audio_mp3trigger.h"
+#include "../../../src/drivers/audio_soft_uart_rx.h"
 
 // =============================================================================
 // RecordingSerialIO
@@ -46,11 +47,15 @@ struct RecorderState {
     uint32_t delayTotalMs;
     int      delayCallCount;
     uint32_t fakeTimeMs;
+    uint32_t timeStepMs;
+    bool     holdRxUntilTx;
 
     void reset() {
         memset(txBuf, 0, sizeof(txBuf));
         txCount = rxCount = rxPos = delayCallCount = 0;
         delayTotalMs = fakeTimeMs = 0;
+        timeStepMs = 200;
+        holdRxUntilTx = false;
     }
 
     void injectRx(const uint8_t* data, int len) {
@@ -74,10 +79,13 @@ struct RecorderState {
 static RecorderState g_rec;
 
 static void     rec_writeByte(uint8_t b)  { if (g_rec.txCount < RecorderState::BUF) g_rec.txBuf[g_rec.txCount++] = b; }
-static int      rec_rxAvailable()         { return g_rec.rxCount - g_rec.rxPos; }
+static int      rec_rxAvailable()         {
+    if (g_rec.holdRxUntilTx && g_rec.txCount == 0) { return 0; }
+    return g_rec.rxCount - g_rec.rxPos;
+}
 static int      rec_rxRead()              { return (g_rec.rxPos < g_rec.rxCount) ? g_rec.rxBuf[g_rec.rxPos++] : -1; }
 static void     rec_delayMs(uint32_t ms)  { g_rec.delayTotalMs += ms; ++g_rec.delayCallCount; g_rec.fakeTimeMs += ms; }
-static uint32_t rec_millisNow()           { return (g_rec.fakeTimeMs += 200); }
+static uint32_t rec_millisNow()           { return (g_rec.fakeTimeMs += g_rec.timeStepMs); }
 
 static AudioSerialIO makeRecordingIO() {
     return AudioSerialIO{rec_writeByte, rec_rxAvailable, rec_rxRead, rec_delayMs, rec_millisNow};
@@ -294,7 +302,7 @@ void test_mp3trigger_stop_byte_sequence() {
     TEST_ASSERT_EQUAL_HEX8(0xFE, g_rec.txBuf[1]);
 }
 
-// setVolume(0) → ['v', 0xFF]  (vol=0 → nativeVol=(30-0)*255/30=255)
+// setVolume(0) → ['v', 0x40]  (vol=0 → nativeVol=(30-0)*64/30=64, vendor floor)
 void test_mp3trigger_set_volume_0_byte_sequence() {
     AudioDriverMp3Trigger drv;
     drv.setIO(makeRecordingIO());
@@ -303,10 +311,10 @@ void test_mp3trigger_set_volume_0_byte_sequence() {
 
     TEST_ASSERT_EQUAL_INT(2, g_rec.txCount);
     TEST_ASSERT_EQUAL_HEX8('v', g_rec.txBuf[0]);
-    TEST_ASSERT_EQUAL_HEX8(0xFF, g_rec.txBuf[1]);
+    TEST_ASSERT_EQUAL_HEX8(0x40, g_rec.txBuf[1]);
 }
 
-// setVolume(30) → ['v', 0x00]  (vol=30 → nativeVol=(30-30)*255/30=0 = maximum)
+// setVolume(30) → ['v', 0x00]  (vol=30 → nativeVol=(30-30)*64/30=0 = maximum)
 void test_mp3trigger_set_volume_max_byte_sequence() {
     AudioDriverMp3Trigger drv;
     drv.setIO(makeRecordingIO());
@@ -318,7 +326,7 @@ void test_mp3trigger_set_volume_max_byte_sequence() {
     TEST_ASSERT_EQUAL_HEX8(0x00, g_rec.txBuf[1]);
 }
 
-// setVolume(15) → ['v', 0x7F]  (vol=15 → nativeVol=(30-15)*255/30=127)
+// setVolume(15) → ['v', 0x20]  (vol=15 → nativeVol=(30-15)*64/30=32)
 void test_mp3trigger_set_volume_mid_byte_sequence() {
     AudioDriverMp3Trigger drv;
     drv.setIO(makeRecordingIO());
@@ -327,7 +335,7 @@ void test_mp3trigger_set_volume_mid_byte_sequence() {
 
     TEST_ASSERT_EQUAL_INT(2, g_rec.txCount);
     TEST_ASSERT_EQUAL_HEX8('v', g_rec.txBuf[0]);
-    TEST_ASSERT_EQUAL_HEX8(0x7F, g_rec.txBuf[1]);
+    TEST_ASSERT_EQUAL_HEX8(0x20, g_rec.txBuf[1]);
 }
 
 // begin() uses the injected IO: at minimum the S0 query ('S','0') must appear.
@@ -345,7 +353,7 @@ void test_mp3trigger_begin_uses_injected_io() {
 
 // Without S0 response begin() does NOT send the S1 query — linkOk gate.
 // TX order without link: ['S','0'] then ['v', nativeVol] only (no S1).
-// nativeVol for vol=10: (30-10)*255/30 = 170 = 0xAA.
+// nativeVol for vol=10: (30-10)*64/30 = 42 = 0x2A.
 void test_mp3trigger_begin_no_s1_without_link() {
     AudioDriverMp3Trigger drv;
     drv.setIO(makeRecordingIO());
@@ -358,7 +366,79 @@ void test_mp3trigger_begin_no_s1_without_link() {
     TEST_ASSERT_EQUAL_HEX8('S', g_rec.txBuf[0]);
     TEST_ASSERT_EQUAL_HEX8('0', g_rec.txBuf[1]);
     TEST_ASSERT_EQUAL_HEX8('v', g_rec.txBuf[2]);
-    TEST_ASSERT_EQUAL_HEX8(0xAA, g_rec.txBuf[3]);  // nativeVol = 170
+    TEST_ASSERT_EQUAL_HEX8(0x2A, g_rec.txBuf[3]);  // nativeVol = 42
+}
+
+// A finish byte between drain and reply must not fail the query (#396).
+// holdRxUntilTx: bytes appear only after S0 is written, so sendQuery's drain
+// does not eat them. Leading 'X' is skipped; the '=' version string still
+// counts as a live link.
+void test_mp3trigger_query_skips_leading_finish_byte() {
+    AudioDriverMp3Trigger drv;
+    drv.setIO(makeRecordingIO());
+    g_rec.holdRxUntilTx = true;
+    g_rec.timeStepMs = 1;  // 200 ms/call would expire before the line is read
+    g_rec.injectRxString("X=MP3 Trigger v2.50\n");
+
+    AudioModuleState ms{};
+    TEST_ASSERT_TRUE_MESSAGE(drv.queryModuleState(ms),
+                             "leading 'X' must not fail S0 parse");
+    TEST_ASSERT_TRUE(ms.linkOk);
+}
+
+void test_mp3trigger_play_sets_playing_until_finish_byte() {
+    AudioDriverMp3Trigger drv;
+    drv.setIO(makeRecordingIO());
+
+    AudioModuleState ms{};
+    drv.playTrack(5);
+    drv.getCachedState(ms);
+    TEST_ASSERT_EQUAL_UINT8(1, ms.playState);
+    TEST_ASSERT_EQUAL_UINT16(5, ms.currentTrack);
+
+    g_rec.injectRxString("X");
+    drv.serviceRx();
+    drv.getCachedState(ms);
+    TEST_ASSERT_EQUAL_UINT8(0, ms.playState);
+}
+
+void test_mp3trigger_stop_stays_playing_until_finish_byte() {
+    AudioDriverMp3Trigger drv;
+    drv.setIO(makeRecordingIO());
+
+    AudioModuleState ms{};
+    drv.playTrack(5);
+    drv.stop();
+    drv.getCachedState(ms);
+    TEST_ASSERT_EQUAL_UINT8(1, ms.playState);
+    TEST_ASSERT_EQUAL_UINT16(254, ms.currentTrack);
+
+    g_rec.injectRxString("X");
+    drv.serviceRx();
+    drv.getCachedState(ms);
+    TEST_ASSERT_EQUAL_UINT8(0, ms.playState);
+}
+
+void test_mp3trigger_missing_track_byte_clears_playing() {
+    AudioDriverMp3Trigger drv;
+    drv.setIO(makeRecordingIO());
+
+    AudioModuleState ms{};
+    drv.playTrack(99);
+    g_rec.injectRxString("E");
+    drv.serviceRx();
+    drv.getCachedState(ms);
+    TEST_ASSERT_EQUAL_UINT8(0, ms.playState);
+    TEST_ASSERT_EQUAL_UINT16(99, ms.missingTrack);
+}
+
+void test_soft_uart_rx_ring_holds_a_finish_byte() {
+    softUartRxBegin();
+    while (softUartRxAvailable() > 0) { (void)softUartRxRead(); }
+    softUartRxPush((uint8_t)'X');
+    TEST_ASSERT_EQUAL_INT(1, softUartRxAvailable());
+    TEST_ASSERT_EQUAL_INT('X', softUartRxRead());
+    TEST_ASSERT_EQUAL_INT(0, softUartRxAvailable());
 }
 
 // =============================================================================
@@ -515,6 +595,11 @@ int main(int argc, char** argv) {
     RUN_TEST(test_mp3trigger_set_volume_mid_byte_sequence);
     RUN_TEST(test_mp3trigger_begin_uses_injected_io);
     RUN_TEST(test_mp3trigger_begin_no_s1_without_link);
+    RUN_TEST(test_mp3trigger_query_skips_leading_finish_byte);
+    RUN_TEST(test_mp3trigger_play_sets_playing_until_finish_byte);
+    RUN_TEST(test_mp3trigger_stop_stays_playing_until_finish_byte);
+    RUN_TEST(test_mp3trigger_missing_track_byte_clears_playing);
+    RUN_TEST(test_soft_uart_rx_ring_holds_a_finish_byte);
 
     // CHIRP
     RUN_TEST(test_chirp_play_track_byte_sequence);

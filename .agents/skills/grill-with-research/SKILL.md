@@ -1,6 +1,6 @@
 ---
 name: grill-with-research
-description: protoArtoo's planning grill for a wayfinder decision ticket. Composes the maintained grilling and domain-modeling skills, and overrules them where this project's intent lives outside the code. Use for every wayfinder:grilling ticket, and for any design decision about something not built yet.
+description: protoR2's planning grill for a wayfinder decision ticket. Composes the maintained grilling and domain-modeling skills, and overrules them where this project's intent lives outside the code. Use for every wayfinder:grilling ticket, and for any design decision about something not built yet.
 ---
 
 # Grill with research
@@ -8,13 +8,13 @@ description: protoArtoo's planning grill for a wayfinder decision ticket. Compos
 Call the Skill tool twice, for "grilling" and "domain-modeling".
 
 Everything below **overrules** those two wherever they conflict. They are
-general-purpose. This is protoArtoo, where the thing being planned usually does
+general-purpose. This is protoR2, where the thing being planned usually does
 not exist yet.
 
 ## The code prices a decision. It never bounds one.
 
 Read the implementation to learn what a choice costs, what it breaks, and where
-it would land. Never read it to decide what protoArtoo *should* do.
+it would land. Never read it to decide what protoR2 *should* do.
 
 "It does not work that way today" is a price tag, never an argument. A question
 about what the product should do is not a question of fact, and no amount of
@@ -27,14 +27,14 @@ present.
 ## Read the research before the code
 
 `tasks/research-r2d2-*` is the operator's own curated statement of what
-protoArtoo should become: dated operator decisions, a source-verified findings
+protoR2 should become: dated operator decisions, a source-verified findings
 pass, a ranked tier list, and 23 reference screenshots. Several load-bearing
 ideas exist **only** in the screenshots.
 
 Read it in full before you open a source file - not the sections that look
 relevant to the module you were about to touch.
 
-### Order of authority - what protoArtoo *should* become
+### Order of authority - what protoR2 *should* become
 
 1. A dated operator decision: an issue comment, an ADR, `AGENTS.md`.
 2. `tasks/research-r2d2-*`, the design source.
@@ -42,7 +42,7 @@ relevant to the module you were about to touch.
    already taken; they do not fence off decisions not yet taken.
 4. The implementation.
 
-**Reverse the order for what protoArtoo does today**: the code wins, and the
+**Reverse the order for what protoR2 does today**: the code wins, and the
 research is a snapshot of somebody else's project taken in August 2026.
 
 Where the research and a later operator decision disagree, the operator decision
@@ -55,7 +55,7 @@ work they have since asked for.
 number, a wire format, or a field name in shipped code. That rule does not reach
 proposals.
 
-In a planning ticket, naming a component, a term, or a capability protoArtoo does
+In a planning ticket, naming a component, a term, or a capability protoR2 does
 not have yet **is the deliverable**. Mark it as a proposal. Never mark it
 `UNKNOWN`, and never suppress it because you could not cite a file for it.
 
@@ -107,8 +107,8 @@ block. This overrides the `grilling` skill's whole-frontier round behaviour.
 Recompute the frontier after each answer; the next question is whatever that
 answer just unblocked.
 
-Finding **facts** is your job, never the operator's: dispatch a subagent rather
-than asking for something you could look up. The **decisions** are theirs.
+Finding **facts** is your job, never the operator's: look it up rather than
+ask - yourself, or a subagent when it is a wide sweep. The **decisions** are theirs.
 
 ### Keep the question short - the reasoning goes above it
 

@@ -1,4 +1,4 @@
-# AI Coding Agent Guidelines - protoArtoo (Claude Adapter)
+# AI Coding Agent Guidelines - protoR2 (Claude Adapter)
 
 This is a thin adapter. Canonical cross-agent rules live in [AGENTS.md](../AGENTS.md).
 If any rule conflicts, follow [AGENTS.md](../AGENTS.md) unless the user explicitly overrides.
@@ -14,9 +14,9 @@ If any rule conflicts, follow [AGENTS.md](../AGENTS.md) unless the user explicit
 1. [AGENTS.md](../AGENTS.md) (authoritative policy) — including "Planning Mode"
    for any decision about something not built yet
 2. `tasks/research-r2d2-*` (local, untracked) — the operator's design source for
-   what protoArtoo should become. Read it **before** the code when planning; it
-   outranks the code for what protoArtoo should do, and the code outranks it for
-   what protoArtoo does today
+   what protoR2 should become. Read it **before** the code when planning; it
+   outranks the code for what protoR2 should do, and the code outranks it for
+   what protoR2 does today
 3. [docs/goal.md](../docs/goal.md) and [docs/status.md](../docs/status.md) (public planning baseline)
 4. [tasks/rc_diagnostics_contract.md](../tasks/rc_diagnostics_contract.md) when working RC diagnostics/mapping
 5. [include/config.h](../include/config.h) and [docs/pin_map.md](../docs/pin_map.md) for hardware truth
@@ -101,16 +101,16 @@ Mandatory test-effort policy in this mode:
 - Ask concise multi-choice clarification questions only when ambiguity materially affects safety, correctness, architecture, or acceptance criteria.
 - For minor details, state assumptions and proceed.
 - Use non-blocking progress updates instead of repeated planning chatter.
-- **Use the tool's structured ask mechanism** (`ask_followup_question` or equivalent MCP
-  tool) for any question with discrete options — never emit lettered/numbered plain-text
-  option lists ("A:", "B:", "1.", "2.") that require the user to type a reply manually.
+- **Use the tool's structured ask mechanism** (`AskUserQuestion`) for any question
+  with discrete options — never emit lettered/numbered plain-text option lists
+  ("A:", "B:", "1.", "2.") that require the user to type a reply manually.
   Structured questions render as native UI pickers; plain-text lists break the interaction.
 
 ### Subagent Delegation Mode
 
-- Default to planner-orchestrator behavior for non-trivial tasks:
-	- main model performs deep analysis and creates a detailed TODO packet,
-	- subagents execute scoped tasks from that packet.
+- Delegation follows AGENTS.md "Subagent Orchestration Policy": delegate
+  independent, sizeable tracks; do small reads, edits and your own verification in
+  the main loop.
 - Do not fall back to main-model solo execution after subagent timeout/cancel/usage-cap unless the user explicitly requests solo execution.
 - On interruption, checkpoint completed results and continue with a new delegated wave.
 
@@ -131,16 +131,24 @@ none.
 
 ### Hardware and Tooling Reminders
 
+The shell is zsh. Quote a glob (`--include='*.cpp'`). An unquoted `$var` does not word-split. `=word` is equals-expansion (`echo '======'`). `git rev-parse --short` takes one revision.
+
 - **Run device and build work in a Herdr pane, not headless** — the mechanics for
   AGENTS.md "Flashing and Monitoring", which carries the rule and the *why*. You are
-  inside Herdr when `HERDR_ENV=1`; `$HERDR_PANE_ID` is your own pane. Split a sibling
-  with `herdr pane split --current --direction right --cwd "$PWD" --no-focus` (down
-  from a tall pane), read the new id from `.result.pane.pane_id`, then
-  `herdr pane run <id> "<cmd> 2>&1 | tee /tmp/<name>.log; echo DONE_<NAME>"`.
-  Two things measured 2026-09-06: `herdr pane read` can return nothing while a command
-  is demonstrably running, so **always `tee` and parse the log** — the pane is for the
-  operator to watch, the log is what you verify against; and append a sentinel and poll
-  the log for it rather than guessing when a long build finished. Close panes you
+  inside Herdr when `HERDR_ENV=1`; `$HERDR_PANE_ID` is your own pane. One call does
+  the whole sequence: `python3 tools/pane_run.py /tmp/<name>.log [--grep <re>] -- <cmd>`
+  splits a sibling pane, runs `<cmd>` there under `tools/gate_in_pane.sh`, waits for
+  `GATE_EXIT=`, prints the log's tail, closes the pane it made and exits with the
+  command's status. An upload goes in a file (the upload guard matches its text in a
+  Bash command): `--script /tmp/<name>.sh`. By hand, the steps it replaces are
+  `herdr pane split --current --direction right --cwd "$PWD" --no-focus` (id at
+  `.result.pane.pane_id`), then `herdr pane run <id> "tools/gate_in_pane.sh /tmp/<name>.log -- <cmd>"`.
+  The log's last line is `GATE_EXIT=<n>`, the command's own status, and the script
+  restores `data/fw-version.json` and `data/fs-version.json`. A pipe through `tee`
+  records tee's status instead. Two things measured 2026-09-06: `herdr pane read` can return nothing while a command
+  is demonstrably running, so **parse the log** — the pane is for the
+  operator to watch, the log is what you verify against; and poll the log for
+  `GATE_EXIT=` rather than guessing when a long build finished. Close panes you
   created; never close one you did not, another session may be in a neighbouring
   workspace. Where Herdr is unavailable, say so before starting a device session.
 
@@ -149,6 +157,12 @@ none.
   (`make console`), and a scripted mode that drives either Console Adapter and replays the
   `tools/bench_rows/` sheets (`make bench-rows`). Use it instead of ad-hoc pyserial snippets;
   the reference is [docs/console-client.md](../docs/console-client.md).
+- A bench session's automated half is one command, `make bench-auto BENCH_ROWS=<sheet>
+  HTTP_BASE=http://<droid> IMAGE=artoo|shipping` ([tools/bench_auto.py](../tools/bench_auto.py)):
+  the sheet's agent-runnable rows, the console sweep and every Playwright script, with a memory
+  log per step. Never poll `/api/status` in a `curl` loop to watch memory. A socket per poll adds
+  the churn it is measuring ([docs/troubleshooting.md](../docs/troubleshooting.md), "Watching
+  memory through a test run").
 - After editing action registry metadata, RC action tokens, `ACTION_REGISTRY[]`, or the RC page fallback list, run `make check-action-drift`. The checker reports mismatches only; it does not generate or rewrite files.
 - A question about what a staged web directory would cost is `tools/fs_price.py` (`--order` is required). `make check-build-budgets` is still the number that can fail a build. Do not write a private LittleFS imager. The rule is AGENTS.md "The filesystem image is measured by the coordinator".
 - Do not guess GPIO values. If a pin is unresolved, keep it as `TBD` and surface the blocker.

@@ -8,10 +8,15 @@
 
 #include "protocol_check.h"
 
+#include <stdlib.h>
 #include <string.h>
 
+#include "audio_config_map.h"        // audioDollarNamesSound() - a Background Track's target
 #include "audio_playback_policy.h"   // AUDIO_CATEGORY_COUNT, AUDIO_SLOT_COUNT
+#include "dome_bearing_act.h"        // domeBearingTargetValid() - a bearing step's target
+#include "droid_parts.h"             // droidPartIdIsKnown()  --  the Part vocabulary
 #include "sequence_dispatcher.h"     // sequenceCatalogFind()
+#include "sequence_gesture.h"        // the Gesture vocabulary and its stored layout
 
 // Result constructors (pcOk/pcFail/pcFailAt) are shared inlines in the header.
 
@@ -139,18 +144,9 @@ static bool charsetOk(const char* s) {
     return true;
 }
 
-enum PanelTargetGroup : uint8_t {
-    PANEL_TARGET_NONE = 0,
-    PANEL_TARGET_RING,
-    PANEL_TARGET_PIE,
-    PANEL_TARGET_ALL,
-};
-
 struct PanelIntent {
     bool valid;
-    char action;  // O=open, C=close, F=flutter
-    PanelTargetGroup group;
-    char target[3];
+    char action;  // P=open, L=close, F=flutter: the command's third character
 };
 
 static bool isAllowedRingTarget(const char* t) {
@@ -165,7 +161,7 @@ static bool isAllowedPieTarget(const char* t) {
 }
 
 static PanelIntent parsePanelIntent(const char* cmd) {
-    PanelIntent pi = { false, 0, PANEL_TARGET_NONE, "" };
+    PanelIntent pi = { false, 0 };
     if (cmd == nullptr || cmd[0] != ':' ||
         (strncmp(cmd + 1, "OP", 2) != 0 &&
          strncmp(cmd + 1, "CL", 2) != 0 &&
@@ -179,46 +175,10 @@ static PanelIntent parsePanelIntent(const char* cmd) {
     if (len != 2) {
         return pi;
     }
-    strncpy(pi.target, t, sizeof(pi.target) - 1);
-    pi.target[sizeof(pi.target) - 1] = '\0';
-
-    if (strcmp(t, "00") == 0) {
-        pi.group = PANEL_TARGET_ALL;
-        pi.valid = true;
-    } else if (strcmp(t, "14") == 0) {
-        pi.group = PANEL_TARGET_PIE;
-        pi.valid = true;
-    } else if (strcmp(t, "15") == 0) {
-        pi.group = PANEL_TARGET_RING;
-        pi.valid = true;
-    } else if (isAllowedRingTarget(t)) {
-        pi.group = PANEL_TARGET_RING;
-        pi.valid = true;
-    } else if (isAllowedPieTarget(t)) {
-        pi.group = PANEL_TARGET_PIE;
-        pi.valid = true;
-    }
+    // The three group targets (all, pies, ring), or one panel of either kind.
+    pi.valid = strcmp(t, "00") == 0 || strcmp(t, "14") == 0 || strcmp(t, "15") == 0 ||
+               isAllowedRingTarget(t) || isAllowedPieTarget(t);
     return pi;
-}
-
-static bool panelCloseCleansFlutter(const PanelIntent& flutter,
-                                    const PanelIntent& close) {
-    if (!flutter.valid || !close.valid || close.action != 'L') {
-        return false;
-    }
-    if (strcmp(close.target, "00") == 0) {
-        return true;
-    }
-    if (strcmp(flutter.target, close.target) == 0) {
-        return true;
-    }
-    if (flutter.group == PANEL_TARGET_PIE && strcmp(close.target, "14") == 0) {
-        return true;
-    }
-    if (flutter.group == PANEL_TARGET_RING && strcmp(close.target, "15") == 0) {
-        return true;
-    }
-    return false;
 }
 
 // -----------------------------------------------------------------------------
@@ -301,7 +261,8 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
 
     // DL:<target>:<mode>[:<color>[:<durationSec>]]  --  Logic/PSI Mode (issue #11).
     // Structured control for dome logic/PSI animations. Mirrors client validation
-    // in data/seq_protocol_check.js exactly. Grammar enforces uppercase tokens,
+    // in data/seq_protocol_check.js exactly, whose token lists are
+    // data/dome_lights.js's. Grammar enforces uppercase tokens,
     // full-string match, known enums, and command length <= 63.
     if (strncmp(cmd, "DL:", 3) == 0) {
         static const char* const kDlTargets[] = {
@@ -401,7 +362,7 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
     // Multi-line text display on FLD/RLD. Text is percent-encoded; only valid escapes
     // are %0A (newline), %25 (%), %3A (:). Encoded text <= 40 chars; decoded <= 32;
     // max one newline; reject if final command length > 63. Mirrors client validation
-    // in data/seq_protocol_check.js exactly.
+    // in data/seq_protocol_check.js exactly (token lists: data/dome_lights.js).
     if (strncmp(cmd, "DT:", 3) == 0) {
         static const char* const kDtTargets[] = {
             "FLD", "RLD", "LOGIC",
@@ -796,6 +757,275 @@ ProtocolCheckResult protocolCheckMeta(const char* name, uint32_t suppressMs,
 }
 
 // -----------------------------------------------------------------------------
+// A sequence inside a sequence (ADR 0046)
+// -----------------------------------------------------------------------------
+bool protocolCheckSeqIdValid(const char* id) {
+    if (id == nullptr) return false;
+    const size_t len = strnlen(id, PC_SEQ_ID_MAX + 1);
+    if (len == 0 || len > PC_SEQ_ID_MAX) return false;
+    for (size_t k = 0; k < len; ++k) {
+        if (!(isDigit(id[k]) || (id[k] >= 'a' && id[k] <= 'z'))) return false;
+    }
+    return true;
+}
+
+bool protocolCheckSeqRefValid(const char* ref) {
+    return nameValid(ref) || protocolCheckSeqIdValid(ref);
+}
+
+bool protocolCheckSeqNameValid(const char* name) { return nameValid(name); }
+
+// The walk: a depth-first path of at most PC_NEST_DEPTH_MAX phrases below the
+// sequence being saved. Each level holds the reference it was entered by, what
+// the store said about that phrase, and which of the phrase's own references
+// is next. On the heap: three levels are ~650 B, which no measured stack is
+// asked to carry.
+namespace {
+struct NestLevel {
+    char        via[PC_SEQ_REF_MAX + 1];
+    SeqNestInfo info;
+    uint8_t     next;
+};
+struct NestWalk {
+    NestLevel level[PC_NEST_DEPTH_MAX];
+};
+}  // namespace
+
+static bool nestSame(const char* a, const char* b) {
+    return a != nullptr && b != nullptr && a[0] != '\0' && strcmp(a, b) == 0;
+}
+
+static bool nestNamesAny(const SeqStep* steps, uint8_t count) {
+    for (uint8_t i = 0; steps != nullptr && i < count; ++i) {
+        if (steps[i].type == STEP_SEQUENCE) return true;
+    }
+    return false;
+}
+
+// One branch, walked. `label` is the branch's key ("steps" or "closeSteps"),
+// which a refusal names in its field. The count of steps once every phrase is
+// spliced in is the branch's own: a run splices each branch by itself, and
+// each holds PC_MAX_STEPS (seqStorePrepare(), src/seq_store.cpp).
+static ProtocolCheckResult nestWalkBranch(const char* label, const SeqStep* steps, uint8_t count,
+                                          NestWalk* walk, const char* selfId, const char* selfName,
+                                          SeqNestLookup lookup, void* ctx) {
+    ProtocolCheckResult result = pcOk();
+    // Steps the run holds once every phrase is spliced in: each phrase step
+    // becomes its phrase's steps less their end.
+    uint32_t total = count;
+    for (uint8_t i = 0; i < count && result.ok; ++i) {
+        if (steps[i].type != STEP_SEQUENCE) continue;
+        uint8_t depth = 0;  // levels on the path
+        const char* ref = steps[i].payload;
+        while (result.ok) {
+            if (ref != nullptr) {
+                // A reference back to the sequence being saved, or to a phrase
+                // already on this path, is a cycle.
+                bool cycle = nestSame(ref, selfId) || nestSame(ref, selfName);
+                for (uint8_t d = 0; d < depth && !cycle; ++d) cycle = nestSame(ref, walk->level[d].via);
+                if (cycle) {
+                    result = pcFailAt(label, i, "ref", "a sequence cannot contain itself");
+                    break;
+                }
+                if (depth >= PC_NEST_DEPTH_MAX) {
+                    result = pcFailAt(label, i, "ref", "sequences nest at most 3 deep");
+                    break;
+                }
+                NestLevel& lv = walk->level[depth];
+                memset(&lv, 0, sizeof(lv));
+                strncpy(lv.via, ref, sizeof(lv.via) - 1);
+                lookup(ref, &lv.info, ctx);
+                if (!lv.info.found) {
+                    result = pcFailAt(label, i, "ref", "not a sequence on this droid");
+                    break;
+                }
+                if (lv.info.toggle) {
+                    result = pcFailAt(label, i, "ref", "a toggle sequence cannot sit inside another");
+                    break;
+                }
+                total = total - 1u + (lv.info.stepCount > 0 ? lv.info.stepCount - 1u : 0u);
+                if (total > PC_MAX_STEPS) {
+                    result = pcFailAt(label, i, "ref", "too many steps once inside (max 96)");
+                    break;
+                }
+                ++depth;
+            }
+            // Into the deepest level's next reference, or back up a level.
+            if (depth == 0) break;
+            NestLevel& cur = walk->level[depth - 1];
+            if (cur.next < cur.info.refCount) {
+                ref = cur.info.refs[cur.next++];
+            } else {
+                --depth;
+                ref = nullptr;
+            }
+        }
+    }
+    return result;
+}
+
+// Both branches are walked, the steps and then the close half: a run splices
+// its phrases into both (seqStorePrepare(), src/seq_store.cpp), so a sequence
+// step in the close half faces exactly the rules one in the steps does.
+ProtocolCheckResult protocolCheckNesting(const SeqDraft& draft, const char* selfId,
+                                         const char* selfName, SeqNestLookup lookup, void* ctx) {
+    if (draft.steps == nullptr || lookup == nullptr) return pcOk();
+    if (!nestNamesAny(draft.steps, draft.stepCount) &&
+        !nestNamesAny(draft.closeSteps, draft.closeStepCount)) {
+        return pcOk();
+    }
+
+    NestWalk* walk = (NestWalk*)malloc(sizeof(NestWalk));
+    if (walk == nullptr) return pcFail("steps", "out of memory checking sequences inside");
+
+    ProtocolCheckResult result =
+        nestWalkBranch("steps", draft.steps, draft.stepCount, walk, selfId, selfName, lookup, ctx);
+    if (result.ok && draft.closeSteps != nullptr) {
+        result = nestWalkBranch("closeSteps", draft.closeSteps, draft.closeStepCount, walk,
+                                selfId, selfName, lookup, ctx);
+    }
+    free(walk);
+    return result;
+}
+
+// -----------------------------------------------------------------------------
+// Tempo (ADR 0058)
+// -----------------------------------------------------------------------------
+
+// seq_tempo.h is pure and restates these by value; this is where the two are
+// held together, so moving a loop or suppress bound without the tempo bounds
+// that were derived from it is a build failure rather than a silent drift.
+static_assert(SEQ_TEMPO_BPM_TENTHS_MIN == 600000u / PC_LOOP_PERIOD_MAX,
+              "the slowest tempo is one beat per the longest loop period");
+static_assert(SEQ_TEMPO_BPM_TENTHS_MAX == 600000u / PC_LOOP_PERIOD_MIN,
+              "the fastest tempo is one beat per the shortest loop period");
+static_assert(SEQ_TEMPO_BEAT_MAX == PC_SUPPRESS_MAX_MS / PC_LOOP_PERIOD_MIN,
+              "the last beat is the longest sequence at the fastest tempo");
+static_assert(SEQ_TEMPO_PHASE_MAX_MS == PC_SUPPRESS_MAX_MS,
+              "beat 0 can sit no later than the longest sequence runs");
+
+ProtocolCheckResult protocolCheckTempo(const SeqTempo& tempo) {
+    if (tempo.bpmTenths < SEQ_TEMPO_BPM_TENTHS_MIN || tempo.bpmTenths > SEQ_TEMPO_BPM_TENTHS_MAX) {
+        return pcFail("tempo.bpm", "bpm must be 1..600");
+    }
+    if (tempo.phaseMs > SEQ_TEMPO_PHASE_MAX_MS) {
+        return pcFail("tempo.phase", "phase must be 0..120000 ms");
+    }
+    if (tempo.barLen < 1 || tempo.barLen > SEQ_TEMPO_BAR_LEN_MAX) {
+        return pcFail("tempo.barLen", "barLen must be 1..16 beats");
+    }
+    // The downbeat is a beat of the bar it starts, so it is one of barLen.
+    if (tempo.barPhase >= tempo.barLen) {
+        return pcFail("tempo.barPhase", "barPhase must be a beat of the bar");
+    }
+    if (tempo.durationMs > SEQ_TEMPO_DURATION_MAX_MS) {
+        return pcFail("tempo.duration", "duration must be 0..3600000 ms");
+    }
+    if (tempo.source >= SEQ_TEMPO_SOURCE_COUNT) {
+        return pcFail("tempo.source", "source must be typed, tapped or analysed");
+    }
+    if (tempo.confidencePermille > SEQ_TEMPO_CONFIDENCE_MAX) {
+        return pcFail("tempo.confidence", "confidence must be 0..1");
+    }
+    // Only the analysed route measured a file, so only it can pair the grid to
+    // one; a tapped or typed tempo is unanchored by design (ADR 0058).
+    if (tempo.hasHash && tempo.source != SEQ_TEMPO_ANALYSED) {
+        return pcFail("tempo.hash", "only an analyzed tempo carries a hash");
+    }
+    return pcOk();
+}
+
+// -----------------------------------------------------------------------------
+// Gesture grammar (ADR 0046) -- form only
+//
+// Known words, known Parts on one half, and numbers inside their bounds. A
+// flutter owes no close after it: it ends closed, on the dome and on the body
+// (ADR 0049, amended 2026-10-02; #453). Whether the connected dome has a command
+// for the (shape, spread) pair, whether a Part is wired, and whether the pace
+// keeps up with the Cadence Floor are the Rehearsal's and never refuse a save
+// (ADR 0044) -- a pair the dome cannot perform SAVES.
+// -----------------------------------------------------------------------------
+// What checkGesture() found wrong: the field and the reason, or no field.
+struct GestureFault {
+    const char* field;
+    const char* message;
+};
+
+// Kept out of line, and it NAMES a fault rather than formatting one: the
+// Sequence Coordinator's measured chain (ADR 0040) already runs through
+// protocolCheckBranch() into the formatter pcFailAt() calls, and a check that
+// formatted its own error would put its frame under that formatter too. So
+// the caller formats, from the same frame it always has.
+static __attribute__((noinline)) GestureFault checkGesture(const SeqStep& s) {
+    const SeqStepParams& p = s.params;
+    if (droidPartSetFind(s.payload) == nullptr) {
+        // An explicit list: every entry a known Part, none twice, all on one
+        // half, and no more than a Gesture can hold.
+        uint8_t n = 0;
+        bool known = true;
+        bool twice = false;
+        bool mixed = false;
+        int8_t half = -1;
+        // Catalog indices fit a byte (DROID_PART_COUNT is well under 256), and
+        // this frame sits on the Sequence Coordinator's measured chain (ADR 0040).
+        // Zeroed although only seen[0..n) is ever read: cppcheck cannot follow
+        // the writes through the lambda and reports a HIGH uninitvar, which
+        // fails CI's static analysis (#473). The array is the same size.
+        uint8_t seen[SEQ_GESTURE_MEMBERS_MAX] = {};
+        seqGestureEachListed(s.payload, [&](const char* id) {
+            const size_t idx = droidPartIndexOf(id);
+            if (idx >= DROID_PART_COUNT) {
+                known = false;
+                return;
+            }
+            for (uint8_t k = 0; k < n && k < SEQ_GESTURE_MEMBERS_MAX; ++k) {
+                if (seen[k] == idx) twice = true;
+            }
+            const int8_t h = DROID_PART_ON_DOME[idx] ? 1 : 0;
+            if (half >= 0 && h != half) mixed = true;
+            half = h;
+            if (n < SEQ_GESTURE_MEMBERS_MAX) seen[n] = (uint8_t)idx;
+            ++n;
+        });
+        if (n == 0 || !known) {
+            return {"set", "not a set or a Part in the catalog"};
+        }
+        if (n > SEQ_GESTURE_MEMBERS_MAX) return {"parts", "too many parts (max 24)"};
+        if (twice) return {"parts", "a part is listed twice"};
+        if (mixed) return {"parts", "parts must all be on the dome or all on the body"};
+    }
+    if (p.shape >= BODY_SHAPE_COUNT) return {"shape", "shape must be open, close or flutter"};
+    if (seqGestureSpread(p) >= GESTURE_SPREAD_COUNT) return {"spread", "unknown spread"};
+    if (seqGestureDirection(p) >= GESTURE_DIR_COUNT) return {"direction", "unknown direction"};
+    if (seqGestureStart(p) >= GESTURE_START_COUNT) return {"start", "unknown start"};
+    if (seqGestureEasing(p) >= GESTURE_EASING_COUNT) return {"easing", "unknown easing"};
+    if (p.howFar > SEQ_BODY_HOWFAR_MAX) return {"howFar", "howFar must be 1..100"};
+    if (p.moveMs != 0 && (p.moveMs < PC_GESTURE_STEP_MS_MIN || p.moveMs > PC_GESTURE_STEP_MS_MAX)) {
+        return {"stepMs", "pace out of range (50..60000)"};
+    }
+    const uint16_t speed = seqGestureSpeedMs(p);
+    if (speed != 0 && (speed < PC_GESTURE_SPEED_MS_MIN || speed > PC_GESTURE_SPEED_MS_MAX)) {
+        return {"speedMs", "speed out of range (50..5000)"};
+    }
+    const uint16_t repeat = seqGestureRepeatMs(p);
+    const uint32_t extent = seqGestureExtentMs(p);
+    if (repeat != 0 && (repeat < PC_GESTURE_REPEAT_MS_MIN || repeat > PC_GESTURE_REPEAT_MS_MAX)) {
+        return {"repeatMs", "repeat out of range (100..60000)"};
+    }
+    if (extent > PC_GESTURE_EXTENT_MS_MAX) return {"extentMs", "extent out of range (0..120000)"};
+    if (extent != 0 && repeat == 0) return {"extentMs", "an extent needs a repeat"};
+
+    if (p.shape == BODY_SHAPE_FLUTTER) {
+        if (p.flutterMs != 0 && (p.flutterMs < PC_BODY_FLUTTER_MS_MIN || p.flutterMs > PC_BODY_FLUTTER_MS_MAX)) {
+            return {"flutterMs", "flutter duration out of range (50..60000)"};
+        }
+    } else if (p.flutterMs != 0) {
+        return {"flutterMs", "only a flutter carries a duration"};
+    }
+    return {nullptr, nullptr};
+}
+
+// -----------------------------------------------------------------------------
 // Branch validation + effect-class stamping
 // -----------------------------------------------------------------------------
 ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
@@ -845,8 +1075,6 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
 
     // Per-step validation + effect-class stamping + monotonic t (top level only).
     uint32_t prevT = 0;
-    PanelIntent pendingFlutter[PC_MAX_STEPS];
-    uint8_t pendingFlutterCount = 0;
     for (uint8_t i = 0; i < count; ++i) {
         SeqStep& s = steps[i];
 
@@ -862,26 +1090,20 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 uint8_t fx = FX_NONE;
                 ProtocolCheckResult r = classifyDome(label, i, s.payload, fx);
                 if (!r.ok) return r;
+                // How far is said on an open or a close of panels, the Panel
+                // Intent it travels with (include/sequence_dome_how_far.h).
+                if (s.params.howFar != SEQ_BODY_HOWFAR_UNSET) {
+                    const PanelIntent moved = parsePanelIntent(s.payload);
+                    if (!moved.valid || moved.action == 'F' || s.params.howFar > SEQ_BODY_HOWFAR_MAX) {
+                        return pcFailAt(label, i, "howFar", "only a panel open or close says how far");
+                    }
+                }
                 if (strncmp(s.payload, ":SE", 3) == 0 && inBody[i]) {
                     return pcFailAt(label, i, "cmd", ":SE not allowed inside loops");
                 }
-                const PanelIntent panel = parsePanelIntent(s.payload);
-                if (panel.valid) {
-                    if (panel.action == 'F') {
-                        if (pendingFlutterCount >= PC_MAX_STEPS) {
-                            return pcFailAt(label, i, "cmd", "too many panel flutter steps");
-                        }
-                        pendingFlutter[pendingFlutterCount++] = panel;
-                    } else if (panel.action == 'L') {
-                        uint8_t write = 0;
-                        for (uint8_t p = 0; p < pendingFlutterCount; ++p) {
-                            if (!panelCloseCleansFlutter(pendingFlutter[p], panel)) {
-                                pendingFlutter[write++] = pendingFlutter[p];
-                            }
-                        }
-                        pendingFlutterCount = write;
-                    }
-                }
+                // A panel flutter (:OF) owes nothing after it: the dome ends a
+                // flutter closed, so there is no later close to look for
+                // (ADR 0008 and ADR 0049, both amended 2026-10-02; #453).
                 s.effectClass = fx;
                 break;
             }
@@ -894,6 +1116,28 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 s.effectClass = s.params.audioBounded ? FX_AUDIO_BOUNDED : FX_AUDIO;
                 break;
             }
+            case STEP_BACKGROUND_TRACK: {
+                // Form, and only form (ADR 0054, ADR 0044): the sound is a '$'
+                // an audio step could carry and one that plays something, and
+                // the volume is in range. Whether the fitted module can mix is
+                // the Rehearsal's and the run's to say, never a refused save.
+                ProtocolCheckResult r = classifyAudio(label, i, s.payload);
+                if (!r.ok) return r;
+                if (!audioDollarNamesSound(s.payload)) {
+                    return pcFailAt(label, i, "cmd", "background track names no sound");
+                }
+                if (s.params.backgroundTrackVol > PC_BACKGROUND_TRACK_VOL_MAX) {
+                    return pcFailAt(label, i, "vol", "vol must be 0..30");
+                }
+                // Bounded Audio (ADR 0010 decision 4), defaulting to bounded
+                // like STEP_AUDIO: seqJsonParse() filled audioBounded.
+                s.effectClass = s.params.audioBounded ? FX_BACKGROUND_TRACK_BOUNDED
+                                                      : FX_BACKGROUND_TRACK;
+                break;
+            }
+            case STEP_BACKGROUND_TRACK_STOP:
+                s.effectClass = FX_NONE;
+                break;
             case STEP_AUDIO_CATEGORY: {
                 if (s.params.audioCategory >= AUDIO_CATEGORY_COUNT) {
                     return pcFailAt(label, i, "category", "unknown audio category");
@@ -943,6 +1187,90 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 s.effectClass = FX_NONE;
                 break;
             }
+            case STEP_DOME_BEARING: {
+                // Form, and only form: front, or a dome Part the catalog gives a
+                // bearing, refused at the door like an unknown Body Step id.
+                // Whether the dome is calibrated and its bearing believed is
+                // asked when the step runs, and an unknown one then is a report,
+                // never a refused save (ADR 0051): the bearing a step is saved
+                // under says nothing about the one it will run under.
+                if (!domeBearingTargetValid(s.payload)) {
+                    return pcFailAt(label, i, "target",
+                                  "not front or a dome Part with a bearing");
+                }
+                s.effectClass = FX_NONE;
+                break;
+            }
+            case STEP_BODY: {
+                // Form, and only form (ADR 0044). Whether an Output claims this
+                // Part, whether the target is reachable and whether the move
+                // completes in time are the Rehearsal's questions and never
+                // block a save -- a Part nothing drives yet is the normal state
+                // of a build in progress, and authoring for an arm that is not
+                // wired is deliberate (#301).
+                if (!droidPartIdIsKnown(s.payload)) {
+                    return pcFailAt(label, i, "part",
+                                  "not a Part in the Droid Parts Catalog");
+                }
+                const SeqStepParams& p = s.params;
+                if (p.shape >= BODY_SHAPE_COUNT) {
+                    return pcFailAt(label, i, "shape",
+                                  "shape must be open, close or flutter");
+                }
+                if (p.howFar > SEQ_BODY_HOWFAR_MAX) {
+                    return pcFailAt(label, i, "howFar", "howFar must be 1..100");
+                }
+                if (p.shape == BODY_SHAPE_FLUTTER) {
+                    if (p.flutterMs < PC_BODY_FLUTTER_MS_MIN ||
+                        p.flutterMs > PC_BODY_FLUTTER_MS_MAX) {
+                        return pcFailAt(label, i, "flutterMs",
+                                      "flutter duration out of range (50..60000)");
+                    }
+                    // Its length is all a flutter is checked for. It ends
+                    // CLOSED, the Sequence Coordinator sees to that, so no
+                    // later step has to close the Part -- the same as the
+                    // dome flutter above, because one word means one thing
+                    // across the droid (ADR 0049, amended 2026-10-02; #453).
+                } else if (p.flutterMs != 0) {
+                    return pcFailAt(label, i, "flutterMs",
+                                  "only a flutter carries a duration");
+                }
+                // FX_NONE is the decision (ADR 0049): the engine undoes nothing a
+                // body step did, so there is no persistent state for terminal
+                // cleanup to reset. A Part an OPEN left open stays open, and
+                // saying so is a Rehearsal Note rather than anything this gate
+                // acts on.
+                s.effectClass = FX_NONE;
+                break;
+            }
+            case STEP_GESTURE: {
+                const GestureFault fault = checkGesture(s);
+                if (fault.field != nullptr) return pcFailAt(label, i, fault.field, fault.message);
+                // A dome Gesture moves dome panels, so terminal cleanup owes the
+                // ring the same staggered close any panel step earns; a body
+                // Gesture is FX_NONE for the reason a Body Step is (ADR 0049).
+                s.effectClass = seqGestureIsDome(s.payload) ? FX_PANEL : FX_NONE;
+                break;
+            }
+            case STEP_SEQUENCE: {
+                // Form: a well-formed reference, and not too many in a branch.
+                // Whether it exists, is not a toggle, closes no cycle and fits
+                // is protocolCheckNesting()'s, which needs the store. FX_NONE:
+                // the spliced steps carry their own classes, and terminal
+                // cleanup unions them with the parent's (ADR 0046).
+                if (!protocolCheckSeqRefValid(s.payload)) {
+                    return pcFailAt(label, i, "ref", "not a sequence name or id");
+                }
+                uint8_t refs = 0;
+                for (uint8_t j = 0; j <= i; ++j) {
+                    if (steps[j].type == STEP_SEQUENCE) ++refs;
+                }
+                if (refs > PC_NEST_REFS_MAX) {
+                    return pcFailAt(label, i, "ref", "at most 8 sequences in one");
+                }
+                s.effectClass = FX_NONE;
+                break;
+            }
             case STEP_LOOP:
                 s.effectClass = FX_NONE;  // body steps carry their own classes
                 break;
@@ -952,9 +1280,6 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
             default:
                 return pcFailAt(label, i, "type", "unknown step type");
         }
-    }
-    if (pendingFlutterCount > 0) {
-        return pcFail(label, ":OF requires a later matching :CL in the same branch");
     }
     return pcOk();
 }

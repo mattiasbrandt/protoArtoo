@@ -10,9 +10,12 @@
 // - All cfg_* NVS keys are defined and owned by this module.
 // - Schema versioning: Version 0 (legacy) -> 1 (current). Bump on rename/removal/type change.
 // - configLoad/configSave are caller-opened (Preferences lifecycle managed by caller).
+//   The saves a Commit Step makes are not: configPersist(), saveConfigToNvs() and
+//   configPersistSystem() open the namespace themselves and write in the store's
+//   one order (#424).
 // - configSave() performs no mutex lock and no robotState reads; callers capture snapshot.
-// - configValidate() handles scalar fields only (int/float/bool/enum). Complex structs
-//   (RcBindingConfig, RcTriggerBinding) are validated in the API layer.
+// - What a Setting accepts, its NVS key and its default are its declaration's
+//   (include/config_settings.h), not this module's.
 // =============================================================================
 #pragma once
 
@@ -20,161 +23,24 @@
 
 #include "config.h"
 #include "robot_state.h"
+#include "servo_output_row.h"  // ServoOutputRepairReport, for the load below
 
 // NVS schema version
 // 0 (legacy) -> 1: key renames. 1 -> 2: log_level renumbered for the WARN tier
 // (old 2=Info/3=Debug become 3/4; see configLoad()).
 // 2 -> 3: component toggle identity rename (en_s1->en_drive, en_dome->en_dome_esc,
 // en_s3->en_r2link, en_s2->en_audio, rcp_snd->rcp_aud, rcs_snd->rcs_aud, rc_sound->rc_aud)
+//
+// Deliberately NOT bumped for #345, which removed the five fixed servo key
+// sets. This number gates a migration that runs at load, and the removal needs
+// none: the row form has been stored beside the old keys since #338, the row
+// loader adopts a key set on a row nothing has written, and a stored row always
+// wins -- so the crossing is idempotent and marker-free in both directions. A
+// bump would buy nothing and cost something real: `stored > CURRENT` is the
+// reset-to-defaults branch, so an image from before this slice would wipe a
+// controller that had already been stamped by one after it.
 constexpr uint8_t CONFIG_SCHEMA_VERSION = 3;
 constexpr char CONFIG_SCHEMA_VERSION_KEY[] = "schema_ver";
-
-// Validation result
-enum class ConfigValidationResult : uint8_t {
-    OK = 0,
-    OUT_OF_RANGE = 1,
-    INVALID_VALUE = 2,
-};
-
-// ConfigKey enum  --  enumerates all scalar cfg_* fields for validation and lookup
-enum class ConfigKey : uint8_t {
-    // Speed control
-    SPEED_LIMIT_MAX = 0,
-    SPEED_PRESET_SLOW = 1,
-    SPEED_PRESET_NORMAL = 2,
-    SPEED_PRESET_TURBO = 3,
-    SPEED_PRESET_ACTIVE = 4,
-
-    // Timeouts
-    SBUS_TIMEOUT_MS = 5,
-    WEB_DRIVE_TIMEOUT_MS = 6,
-
-    // Audio
-    AUDIO_VOLUME = 7,
-    LOG_LEVEL = 8,
-    SND_SCREAM = 9,
-    SND_FAINT = 10,
-    SND_LEIA = 11,
-    SND_CANTINA_S = 12,
-    SND_SW_THEME = 13,
-    SND_IMP_MARCH = 14,
-    SND_CANTINA_L = 15,
-    SND_STARTUP = 16,
-    SND_DOODOO = 17,
-    SND_FAILURE = 18,
-    SND_DISCO = 19,
-    SND_MAHNA = 20,
-    SND_INLOVE = 21,
-    SND_MACHO = 22,
-    SND_GANGNAM = 23,
-    SND_UPTOWN = 24,
-    SND_CELEBR = 25,
-    SND_STAYIN = 26,
-    SND_HARLEM = 27,
-    SND_PBJTIME = 28,
-    SND_SYS_BOOT = 29,
-    SND_SYS_MODE_N = 30,
-    SND_SYS_MODE_S = 31,
-    SND_SYS_MODE_T = 32,
-    SND_SYS_DRV_ON = 33,
-    SND_SYS_DOME_ON = 34,
-    SND_RAND_MIN = 35,
-    SND_RAND_MAX = 36,
-    SND_INT_QUIET = 37,
-    SND_INT_MID = 38,
-    SND_INT_FULL = 39,
-    SND_INT_AWAKE = 40,
-    SND_MOODCAT_QUIET = 41,
-    SND_MOODCAT_MID = 42,
-    SND_MOODCAT_FULL = 43,
-    SND_MOODCAT_AWAKEPLUS = 44,
-    SND_CAT_GEN_LO = 45,
-    SND_CAT_GEN_HI = 46,
-    SND_CAT_CHAT_LO = 47,
-    SND_CAT_CHAT_HI = 48,
-    SND_CAT_HAP_LO = 49,
-    SND_CAT_HAP_HI = 50,
-    SND_CAT_PROC_LO = 51,
-    SND_CAT_PROC_HI = 52,
-    SND_CAT_SAD_LO = 53,
-    SND_CAT_SAD_HI = 54,
-    SND_CAT_SENT_LO = 55,
-    SND_CAT_SENT_HI = 56,
-    SND_CAT_HUM_LO = 57,
-    SND_CAT_HUM_HI = 58,
-    SND_CAT_SCRM_LO = 59,
-    SND_CAT_SCRM_HI = 60,
-    SND_CAT_OOH_LO = 61,
-    SND_CAT_OOH_HI = 62,
-    SND_CAT_ALRM_LO = 63,
-    SND_CAT_ALRM_HI = 64,
-    SND_CAT_SNARKY_LO = 65,
-    SND_CAT_SNARKY_HI = 66,
-    SND_CAT_WHIS_LO = 67,
-    SND_CAT_WHIS_HI = 68,
-
-    // Servo calibration
-    ARM1_OPEN_US = 69,
-    ARM1_CLOSE_US = 70,
-    ARM2_OPEN_US = 71,
-    ARM2_CLOSE_US = 72,
-    ARM1_TYPE = 73,
-    ARM2_TYPE = 74,
-    AUX1_OPEN_US = 75,
-    AUX1_CLOSE_US = 76,
-    AUX2_OPEN_US = 77,
-    AUX2_CLOSE_US = 78,
-    AUX3_OPEN_US = 79,
-    AUX3_CLOSE_US = 80,
-    AUX1_TYPE = 81,
-    AUX2_TYPE = 82,
-    AUX3_TYPE = 83,
-
-    // Dome
-    DOME_MIN_SPEED = 84,
-    DOME_MAX_SPEED = 85,
-    DOME_NEUTRAL_US = 86,
-    DOME_MIN_PULSE_US = 87,
-    DOME_MAX_PULSE_US = 88,
-    DOME_SPEED_LIMIT_PCT = 89,
-    DOME_RND_ENABLE = 90,
-    DOME_RND_SPEED_PCT = 91,
-    DOME_RND_PAUSE_MIN = 92,
-    DOME_RND_PAUSE_MAX = 93,
-    DOME_RND_MOVE_MS = 94,
-    DOME_WIFI_PEER_IP = 95,
-
-    // Sequence timing
-    SEQ_OPEN_MS = 96,
-    SEQ_CLOSE_MS = 97,
-
-    // AUX LED
-    AUX_LED_PIN = 98,
-    AUX_LED_COUNT = 99,
-
-    // Feature toggles
-    ENABLE_ARM1 = 100,
-    ENABLE_ARM2 = 101,
-    ENABLE_AUX1 = 102,
-    ENABLE_AUX2 = 103,
-    ENABLE_AUX3 = 104,
-    ENABLE_DOME = 105,
-    ENABLE_RC_CH1 = 106,
-    ENABLE_RC_CH2 = 107,
-    ENABLE_RC_CH3 = 108,
-    ENABLE_RC_CH4 = 109,
-    ENABLE_RC_CH5 = 110,
-    ENABLE_RC_CH6 = 111,
-    SINGLE_SBUS_USE_CH2 = 112,
-    ENABLE_S1_HOVERBOARD = 113,
-    ENABLE_S2_SOUND = 114,
-    ENABLE_S3_DOME_CTRL = 115,
-    STATIONARY = 116,
-    RC_INPUT_MODE = 117,
-
-    // Total count for array bounds
-    _COUNT = 118,
-};
 
 struct DriveConfig {
     int16_t speedLimitMax;
@@ -256,27 +122,15 @@ struct AudioConfig {
     uint16_t snd_cat_whis_hi;
 };
 
-struct ServoConfig {
-    uint16_t arm1_open_us;
-    uint16_t arm1_close_us;
-    uint16_t arm2_open_us;
-    uint16_t arm2_close_us;
-    ServoComponentType arm1_type;
-    ServoComponentType arm2_type;
-    uint16_t aux1_open_us;
-    uint16_t aux1_close_us;
-    uint16_t aux2_open_us;
-    uint16_t aux2_close_us;
-    uint16_t aux3_open_us;
-    uint16_t aux3_close_us;
-    ServoComponentType aux1_type;
-    ServoComponentType aux2_type;
-    ServoComponentType aux3_type;
-    uint16_t seq_open_ms;
-    uint16_t seq_close_ms;
-    uint8_t aux_led_pin;
-    uint8_t aux_led_count;
-};
+// ServoConfig is gone (#413). It ended as two fields - which single Output
+// carried the LED strip, and how many LEDs were on it - and both were a second
+// store of something an addressed Servo Output row already answers: a wire
+// carries a Light Type when its `component` names one, and the LEDs on it are
+// that row's `led_count` (ADR 0067). One droid, one strip was the limit that
+// model imposed, and there is now no servo-adjacent setting that is not
+// per-output, so there is no struct left to hold one. The endpoints and
+// component types left earlier (#345, ADR 0041) and the sequence dwell after
+// them (#354, #362).
 
 // -----------------------------------------------------------------------------
 // Device WiFi Settings (ADR 0015  --  runtime WiFi provisioning)
@@ -341,7 +195,20 @@ struct DomeConfig {
     uint8_t dome_rnd_pause_max;
     uint16_t dome_rnd_move_ms;
     char dome_wifi_peer_ip[16];
+    // The Dome Bearing's calibration (include/dome_bearing.h, #445): how long
+    // one full turn takes, the share of the ESC's full pulse range it was timed
+    // at, and which way a positive command turns the dome from above. Each is
+    // 0 until the builder records it, and the bearing cannot be believed until
+    // all three are.
+    uint16_t dome_full_turn_ms;
+    uint8_t dome_full_turn_pct;
+    uint8_t dome_positive_turn;  // DomeTurnDirection
 };
+
+// A sequence name, "DM:" and at most 18 characters (PC_NAME_BODY_MAX,
+// include/protocol_check.h, which src/config_settings.cpp holds this to), and
+// its terminator.
+static constexpr size_t STAND_DOWN_SEQUENCE_SIZE = 3 + 18 + 1;
 
 struct SystemConfig {
     char droid_name[DROID_NAME_MAX_LEN + 1];
@@ -365,6 +232,45 @@ struct SystemConfig {
     bool enable_protor2link;
     bool stationary;
     RcInputMode rc_input_mode;
+    // Which sound module is fitted: a Component Registry part `value`, resolved
+    // through componentResolveMember() rather than trusted, so a controller
+    // carried to an image that no longer carries that module falls back to one
+    // it can drive instead of going silent. Staged at reboot like a Component
+    // Toggle; include/component_registry.h holds the contract.
+    uint8_t sound_member;
+    // Which radio the droid is driven with: a Component Registry part `value`
+    // in the Radio Controller family. Nothing on the controller branches on it
+    // - the receiver is read according to rc_input_mode - so it is the
+    // builder's statement of their product, kept on the droid so every browser
+    // shows the same one.
+    uint8_t rc_member;
+    // Which body servo controller drives the body's Servo Outputs beside the
+    // board's own (#444): a Component Registry part `value` in the Body servo
+    // controller family, resolved through componentResolveMember() like
+    // sound_member. Choosing the PCA9685 adds its sixteen Outputs and the
+    // board's GPIO Outputs keep working (operator, 2026-09-30; the ADR 0042
+    // note). Read once at start (ADR 0027).
+    uint8_t body_servo_member;
+    // The PCA9685's I2C address, one board's (include/pca9685.h): 0x40 unless
+    // its address jumpers are bridged. Never one of 0x70-0x73: every PCA9685
+    // on the bus answers 0x70 (LED All Call), and the sub-addresses 0x71-0x73
+    // are kept clear by decision - configApply() refuses them, and so does
+    // pca9685Begin(). Read once at start.
+    uint8_t pca_address;
+    // The Cadence Floor (GLOSSARY.md): the least time, in ms, the Sequence
+    // Coordinator leaves between two body Outputs it starts itself. Its
+    // default is the dome's measured figure, standing in for the body's, which
+    // nobody has measured; include/sequence_bulk_centre.h says so at length.
+    // Read from the cache each time something is paced, so a saved value is
+    // the pace from the next move on.
+    uint16_t cadence_floor_ms;
+    // The Stand Down Sequence (GLOSSARY.md, #330, #451): the one Sequence the
+    // builder nominates as putting the droid back the way it stands, as its
+    // name ("DM:RESET"). Empty is never chosen, and the Stand Down then runs
+    // DM:RESET (data/app.js). Nothing on the controller runs it: the page's
+    // Stand Down does, so a stored name whose Sequence was deleted since stays
+    // stored and the page says so, rather than being refused or emptied.
+    char stand_down_sequence[STAND_DOWN_SEQUENCE_SIZE];
     RcBindingConfig rc_pwm_drive_speed;
     RcBindingConfig rc_pwm_drive_steer;
     RcBindingConfig rc_pwm_dome_speed;
@@ -415,23 +321,52 @@ inline size_t rcTriggerSlotsCopy(const SystemConfig& sys, RcTriggerBinding* out,
 struct ConfigSnapshot {
     DriveConfig drive;
     AudioConfig audio;
-    ServoConfig servo;
     DomeConfig dome;
     SystemConfig system;
     WifiConfig wifi;
 };
 
-// 944 bytes, measured - and pinned here because two comments elsewhere had
+// 916 bytes, measured - and pinned here because two comments elsewhere had
 // drifted from it and one of them was load-bearing. Every by-value crossing of
-// this struct contributes a 944-byte stack frame: three nested frames on the
+// this struct contributes a 916-byte stack frame: three nested frames on the
 // serial config-write path each carried one, which is how the Console task's
 // chain grew past its stack and panicked both boards (#226). The serializer
 // called it 744 B and ConfigCommitOutcome called itself small.
+//
+// It was 944 B until #345 took the five fixed servo field sets out of
+// ServoConfig - ten endpoints and five component types, 28 B with the padding
+// they carried - and 916 B until #362 took out the sequence dwell, two uint16_t
+// fields. A shrink needs no re-measurement to be safe, because every chain this
+// struct is on gets shorter; the number is still updated here so the next
+// reader is not told a frame is bigger than it is.
+//
+// #369 grew it to 916 B: SystemConfig.rc_member, the Radio Controller's
+// Component Member. One byte, but SystemConfig had no hole left for it (it is
+// 2-byte aligned and ends flush), so the struct grows by two and
+// ConfigSnapshot, 4-byte aligned, by four. The Console chain was re-walked
+// with tools/check_task_stack_chains.py against the linked image before this
+// number moved.
 //
 // The same number on both chip targets and on the host compiler: every member
 // is an integral, float, enum or char array type, so this struct's alignment
 // is 4 everywhere. A member needing 8-byte alignment would change that, and
 // this assertion is where it would say so.
+//
+// #413 deleted ServoConfig - the last two bytes of servo config that were not
+// an Output's own - and the number did NOT move: measured at 916 B before and
+// after, because those two bytes sat in padding the members either side of
+// them already carried. A deletion is not automatically a shrink, and the
+// figure here is the compiler's rather than the arithmetic's.
+//
+// #453 added SystemConfig.cadence_floor_ms, the Cadence Floor, and the number
+// did NOT move either: two bytes, in the padding after rc_member. Still 916 B.
+//
+// #444 grew it to 920 B: SystemConfig.body_servo_member took the one byte of
+// padding left after rc_member, and pca_address, the PCA9685's I2C address,
+// had no hole to go in - so SystemConfig grew by two (it is 2-byte aligned) and
+// ConfigSnapshot, 4-byte aligned, by four. Measured off a host build of this
+// header, and the Console task's chain re-walked with
+// tools/check_task_stack_chains.py on both chips before this number moved.
 //
 // A field addition that moves the number is a decision, not an accident: it
 // changes what every seam that crosses this struct costs, so re-measure the
@@ -440,6 +375,18 @@ struct ConfigSnapshot {
 // tools/task_stack_recipes.json, and tools/check_task_stack_chains.py re-walks
 // it against a linked image, so the re-measure is a re-run rather than a
 // procedure to follow by hand.
+//
+// #445 grew it to 924 B, on top of #444: the Dome Bearing's calibration,
+// DomeConfig's full-turn time, the speed it was timed at and which way positive
+// turns. Four bytes, and DomeConfig had three spare, so it grew 40 -> 44 B.
+// Measured off a host build of this header after the merge, and every chain
+// re-walked on both chips before this number moved.
+//
+// #451 grew it to 944 B: SystemConfig.stand_down_sequence, the Stand Down
+// Sequence's name, 22 bytes - two of them in padding SystemConfig already
+// carried, so the struct grew by 20. Measured off a host build of this header,
+// and every chain re-walked with tools/check_task_stack_chains.py on both chips
+// before this number moved.
 static_assert(sizeof(ConfigSnapshot) == 944,
               "ConfigSnapshot changed size - re-derive the Console task stack from a fresh "
               "chain measurement before moving this number");
@@ -454,31 +401,85 @@ static_assert(sizeof(ConfigSnapshot) == 944,
 // Returns false + logs warning on schema mismatch; true on success.
 bool configLoad(Preferences& prefs, ConfigSnapshot* out);
 
-void configLoadDrive(Preferences& prefs, DriveConfig* out);
-void configLoadAudio(Preferences& prefs, AudioConfig* out);
-void configLoadServo(Preferences& prefs, ServoConfig* out);
-void configLoadDome(Preferences& prefs, DomeConfig* out);
-void configLoadSystem(Preferences& prefs, SystemConfig* out);
-void configLoadWifi(Preferences& prefs, WifiConfig* out);
-
 // configSave: Persist full ConfigSnapshot to NVS.
 // Caller opens Preferences with begin() before calling.
-// Holds no mutex and performs no robotState reads/writes.
+// Holds no mutex and performs no robotState reads/writes. After boot it runs
+// inside a Write Window, as every configSave*() writer and
+// configUpdateAudioMoodMasks() do: each checks that its caller holds the config
+// write lock, and logs when it does not (include/config_write_window_check.h).
 // Returns false if any write fails; true on success.
 void configSnapshotDefaults(ConfigSnapshot* snap);
 bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot);
 
+// configLoadServoOutputs / configSaveServoOutputs: the addressed Servo Output
+// rows (ADR 0041). They sit outside ConfigSnapshot and outside configLoad /
+// configSave, on their own NVS keys -- see include/config_serializer.h for why
+// the table is not a snapshot field.
+//
+// Caller opens Preferences with begin() before calling, exactly as for the
+// snapshot pair above. configLoadServoOutputs fills the live table read by
+// configCacheReadServoOutput(); *report says what a damaged stored row cost.
+void configLoadServoOutputs(Preferences& prefs, ServoOutputRepairReport* report);
+bool configSaveServoOutputs(Preferences& prefs);
+
+// configLoadRecords: every Record (include/config_records.h) off its own NVS
+// keys, straight into its live copy, on the boot path. Outside ConfigSnapshot
+// for the same reason the rows above are. Caller opens Preferences with
+// begin() before calling. Logs a warning for each Record a stored value this
+// image cannot name cost, rather than letting it change silently.
+void configLoadRecords(Preferences& prefs);
+
 bool configSaveDrive(Preferences& prefs, const DriveConfig& config);
 bool configSaveAudio(Preferences& prefs, const AudioConfig& config);
-bool configSaveServo(Preferences& prefs, const ServoConfig& config);
 bool configSaveDome(Preferences& prefs, const DomeConfig& config);
 bool configSaveSystem(Preferences& prefs, const SystemConfig& config);
 bool configSaveWifi(Preferences& prefs, const WifiConfig& config);
 
-// configValidate: Validate a scalar field value before writing.
-// Covers int, float, bool, and enum fields only.
-// Complex struct fields (RcBindingConfig, RcTriggerBinding) are validated in API layer.
-// Returns ConfigValidationResult enum.
-ConfigValidationResult configValidate(ConfigKey key, int32_t value);
-ConfigValidationResult configValidateFloat(ConfigKey key, float value);
-ConfigValidationResult configValidateBool(ConfigKey key, bool value);
+// -----------------------------------------------------------------------------
+// Store-opened saves (#424)
+//
+// Every full save and every system-only save goes through one of these three.
+// (Device WiFi Settings and the audio saves keep their own namespace opens, so
+// this module never learns the CHIRP binding keys.) Each opens the config
+// namespace itself, writes in the order below, closes it, and answers saved or
+// not; a namespace that will not open is a save that did not happen. What a
+// caller decides is WHAT changed - which records its request said something
+// about (ADR 0011, 2026-08-27 amendment) - never the order they land in or
+// which handle they land through.
+//
+// The order is rows first, and the fixed field sets only once the rows are
+// down. While both forms are stored, the fixed sets are the copy of what is
+// being replaced, and a failed save has to stop the replace: a row write that
+// fails leaves both stores holding the same older value, which is
+// recoverable, where the other order would leave the rows stale and winning
+// over a field set that already carried the new number (#286, ADR 0041).
+// Nothing after a failed write is attempted.
+//
+// Like the caller-opened writers above, each runs inside a Write Window; the
+// writers they call check the lock is held.
+// -----------------------------------------------------------------------------
+
+// The Records a full save writes after the Configuration only when the
+// request said something about them. Absence is an answer for each - no
+// Fitted Parts record tells the next boot nobody has answered yet, and no
+// visited record tells it guided Setup was never drawn - so a save that was
+// about the log level must not write one.
+struct ConfigSaveExtras {
+    // Bit i: save ConfigRecordId i from its live copy
+    // (configRecordsStated(), include/config_records.h).
+    uint32_t records = 0;
+};
+
+// The Servo Output rows and `snapshot`, in that order, then the Records named.
+// The rows and the Records are written from their live copies; `snapshot` is
+// expected to be the cache as it stands too, which is what every caller passes.
+bool configPersist(const ConfigSnapshot& snapshot, const ConfigSaveExtras& extras);
+
+// configPersist() of the config cache as it stands, and no extras: the save a
+// runtime change to one field makes (a mode, a speed preset, the volume).
+bool saveConfigToNvs();
+
+// The system field set alone, for a change that touches nothing else (the RC
+// Map, the droid's identity). The rows are not rewritten, so there is no order
+// to keep.
+bool configPersistSystem(const SystemConfig& system);

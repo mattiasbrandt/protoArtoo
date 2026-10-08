@@ -109,7 +109,10 @@ void operator delete[](void* p, size_t) noexcept { free(p); }
 // reboot answers a single result record (an action) - one sink covers every
 // case docs/console-protocol.md s.3.1 defines.
 // -----------------------------------------------------------------------------
-static const int MAX_FIELDS = 16;
+// Room for every field a record here carries: system.status.health has 17
+// since #467 (ffb7ab40), and a capture that dropped what did not fit read the
+// last of them, resetReason, as never sent.
+static const int MAX_FIELDS = 32;
 static char g_names[MAX_FIELDS][64];
 static char g_values[MAX_FIELDS][64];
 static int g_fieldCount = 0;
@@ -122,7 +125,7 @@ static ConsoleReason g_reason;
 
 static void capBegin(uint32_t, const char*) { g_beginCalled = true; }
 static void capField(uint32_t, const char* name, const char* value) {
-    if (g_fieldCount >= MAX_FIELDS) return;
+    if (g_fieldCount >= MAX_FIELDS) TEST_FAIL_MESSAGE("a record carried more fields than the capture holds");
     snprintf(g_names[g_fieldCount], sizeof(g_names[0]), "%s", name);
     snprintf(g_values[g_fieldCount], sizeof(g_values[0]), "%s", value);
     g_fieldCount++;

@@ -9,7 +9,10 @@
 //   and the optional bank/page/clear_binding params through a
 //   ConfigParamSource, validates the category key pair and range, and
 //   mutates `working` in place (mirrors ADR 0011 apply-core house style).
-//   Byte-identical error messages to the legacy handler.
+//   Each bound is checked by its own audio Setting (include/config_settings.h)
+//   and a refusal of one names it by its key (`snd_cat_gen_lo`), with its
+//   reason and accepts; the pair rule (0/0, or both set with lo <= hi) spans
+//   the two and is a conflict named on the low key.
 //
 // `catalogSupported` is a live input the shell must snapshot before
 // calling (audioCatalogSupported() queries the live AudioDriver - an
@@ -32,6 +35,7 @@
 
 #include <stdint.h>
 
+#include "api_apply_refusal.h"
 #include "api_param_source.h"
 #include "config_cache.h"
 
@@ -39,6 +43,7 @@ struct AudioCategoryRangeApplyError {
     bool hasError = false;
     bool notFound = false;  // true -> shell responds 404 instead of 400
     char message[128] = {0};
+    ApplyRefusal refusal;  // what `message` says, as data (include/api_apply_refusal.h)
 };
 
 struct AudioCategoryRangeApplyResult {

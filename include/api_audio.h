@@ -49,7 +49,7 @@ const char* audioDeviceLabel(uint8_t device);
 
 // GET /api/audio's fields, verbatim (formatAudioStatusJson's JSON keys are
 // driver/capabilities/link_ok/active/play_state/device/total_tracks/
-// current_track/rx_status/rx_detail; driverName/capabilities/rx_status/
+// current_track/missing_track/rx_status/rx_detail; driverName/capabilities/rx_status/
 // rx_detail are derived from this snapshot's fields via audioGetDriverName(),
 // audioGetCapabilities(), audioRxStatusToken()/audioRxStatusDetail(), all
 // already shared between handleAudioGet() and the Console executor).
@@ -60,6 +60,7 @@ struct AudioStatusSnapshot {
     uint8_t device;
     uint16_t totalTracks;
     uint16_t currentTrack;
+    uint16_t missingTrack;
     AudioRxStatus rxStatus;
 };
 
@@ -70,11 +71,35 @@ struct AudioStatusSnapshot {
 // thread-safe: yes (owns its own short critical section)
 void captureAudioStatusSnapshot(AudioStatusSnapshot* out);
 
+// The capacity GET /api/audio's body needs in the worst case, so the answer is
+// never a truncated document sent with HTTP 200 (#397 work item 8).
+//
+// Derivation: the template's 158 fixed bytes plus the longest value every field
+// can carry today -- the output field answering "off" (15, #370), the full
+// product name "CHIRP Audio Trigger" (19), capabilities 255 (3), "false" twice
+// (10), "unknown" play state (7), "unknown" device (8), three 65535 counters
+// (15), and the longest RX pair, the "no_response" token (11) and its detail
+// "Sound module did not respond on RX" (34). That is 279 bytes plus the
+// terminator, measured by test_worst_case_every_field_still_fits, against the
+// 256-byte buffer this endpoint used to carry: the blocked-RX answer for a
+// CHIRP lost its closing brace at 257 bytes and, once the Driver row carried
+// the full product name, was cut inside the detail string at 271. Its detail
+// was then "Status unavailable: DomeLink is using UART" (41), the longest
+// pair; it is the table's "Held by protoR2link" (19) since #422.
+//
+// 320 still leaves headroom above that figure after the output field took 15
+// of it, and formatAudioStatusJson() reports what it actually needed, so an
+// overrun is caught by its caller instead of being sent.
+static constexpr size_t AUDIO_STATUS_JSON_BUF_SIZE = 320;
+
 // Format JSON response for audio status endpoint.
 // Pure function - no globals, no Arduino, no FreeRTOS.
 // params: buf          - output buffer (must not be null)
-//         bufSize      - size of buf in bytes (256 bytes sufficient with RX diagnostics)
-//         driverName   - driver name string e.g. "DY-SV5W" (must not be null)
+//         bufSize      - size of buf in bytes (AUDIO_STATUS_JSON_BUF_SIZE always fits)
+//         driverName   - driver name string e.g. "DY-SV5W" (must not be null); with
+//                        sound off, the picked member's product name
+//                        (audioSoundStatusIdentity(), include/audio_sound_member.h)
+//         outputOn     - audio output is on this boot; false answers "output":"off"
 //         capabilities - AudioDriver::AUDIO_CAP_* bitmask; controls which fields are meaningful
 //         linkOk       - true if module responded to at least one UART query
 //         active       - true if firmware sent a play command recently (audioActive)
@@ -82,20 +107,28 @@ void captureAudioStatusSnapshot(AudioStatusSnapshot* out);
 //         device       - 0=USB 1=SD/TF 2=FLASH 0xFF=none/unknown
 //         totalTracks  - total tracks reported by module (0 if unknown)
 //         currentTrack - currently selected track (0 if unknown)
+//         missingTrack - last track the module said was not on the card (0 if none)
 //         rxStatus     - compact RX diagnostic string (must not be null)
 //         rxDetail     - operator-readable RX diagnostic (must not be null)
+// returns: snprintf semantics -- the length the complete JSON needs, excluding
+//          the terminator. A value >= bufSize means buf holds a TRUNCATED and
+//          therefore invalid document, and the caller must not send it; the
+//          returned length is what the buffer should have been. Returning the
+//          requirement rather than a bare bool is what lets a test state the
+//          capacity this response needs instead of restating the template.
 // thread-safe: yes (pure function, no globals)
-void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
-                           uint8_t capabilities, bool linkOk, bool active,
-                           uint8_t playState, uint8_t device, uint16_t totalTracks,
-                           uint16_t currentTrack, const char* rxStatus,
-                           const char* rxDetail);
+int formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName, bool outputOn,
+                          uint8_t capabilities, bool linkOk, bool active,
+                          uint8_t playState, uint8_t device, uint16_t totalTracks,
+                          uint16_t currentTrack, uint16_t missingTrack,
+                          const char* rxStatus, const char* rxDetail);
 
 // Commit Steps (ADR 0036 criterion 1): the handler-owned post-apply side
 // effects for each of the three audio write Apply Cores, extracted so a
 // non-REST caller (the Controller Console) reaches the identical
 // NVS-persist/rollback/log/queue-refresh sequence rather than a second copy.
-// Both callers exist now: the REST handlers below, and the Console - its
+// They run inside the Write Windows declared below, which both adapters call:
+// the REST handlers, and the Console - its
 // sound.action.set-mood-map / set-category-range executors
 // (include/console_direct_action_sound.h) and its sound.config.* rows
 // (src/console/console_module.cpp), which reach these through the same
@@ -131,6 +164,38 @@ struct AudioSetVolumeCommitOutcome {
     bool saved = false;
 };
 AudioSetVolumeCommitOutcome audioSetVolumeCommitApplied(uint8_t level, CommandSource source);
+
+// Write Windows (ADR 0011, amended 2026-09-24; GLOSSARY.md "Write Window") for
+// the four audio config writes: each takes the config write lock, runs its
+// Commit Step - after reading the cache into the caller's `*working` and
+// running the Apply Core, for the two that write a snapshot back - and
+// releases. The REST handlers and the Console call these and hold no lock of
+// their own. Each Commit Step writes the config cache, NVS or both, and a
+// write that interleaves with another config write loses one of the two.
+//
+// All four: false -> busy; nothing was read or written and every out-parameter
+// is untouched. True -> the window ran.
+
+// `*result` holds audioTracksApply()'s answer; `*commit` the Commit Step's
+// outcome when that answer carries no error.
+bool audioTracksWriteWindow(const ConfigParamSource& params, bool catalogSupported,
+                            ConfigSnapshot* working, AudioTracksApplyResult* result,
+                            AudioTracksCommitOutcome* commit);
+
+// As audioTracksWriteWindow(), for audioCategoryRangeApply().
+bool audioCategoryRangeWriteWindow(const ConfigParamSource& params, bool catalogSupported,
+                                   ConfigSnapshot* working, AudioCategoryRangeApplyResult* result,
+                                   AudioCategoryRangeCommitOutcome* commit);
+
+// `result` must already hold audioMoodMapApply()'s error-free answer: that
+// core reads no config, so it runs before the window and a refused request
+// answers without waiting for the lock.
+bool audioMoodMapWriteWindow(const AudioMoodMapApplyResult& result,
+                             AudioMoodMapCommitOutcome* commit);
+
+// `level` already validated (0-30) by the caller.
+bool audioSetVolumeWriteWindow(uint8_t level, CommandSource source,
+                               AudioSetVolumeCommitOutcome* commit);
 
 void handleAudioGet(WebRequest& req);
 void handleAudioPost(WebRequest& req);

@@ -81,7 +81,7 @@ static void test_inference_stamps_effect_classes() {
     TEST_ASSERT_EQUAL_UINT8(FX_PANEL, gNod[3].effectClass);
 }
 
-static void test_panel_intent_whitelist_and_of_cleanup() {
+static void test_panel_intent_whitelist_and_a_flutter_owes_no_close() {
     static SeqStep ok[] = {
         SEQ_DOME(0, FX_NONE, ":OFP1"),
         SEQ_DOME(100, FX_NONE, ":CL14"),
@@ -98,13 +98,14 @@ static void test_panel_intent_whitelist_and_of_cleanup() {
     TEST_ASSERT_FALSE(r.ok);
     TEST_ASSERT_EQUAL_STRING("steps[0].cmd", r.field);
 
-    static SeqStep missingCleanup[] = {
+    // A flutter ends closed on the dome, so nothing has to close it afterwards
+    // (ADR 0008 and ADR 0049, amended 2026-10-02).
+    static SeqStep flutterAlone[] = {
         SEQ_DOME(0, FX_NONE, ":OF01"),
         SEQ_TERM(100),
     };
-    r = protocolCheckBranch("steps", missingCleanup, 2);
-    TEST_ASSERT_FALSE(r.ok);
-    TEST_ASSERT_EQUAL_STRING("steps", r.field);
+    r = protocolCheckBranch("steps", flutterAlone, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
 }
 
 static void test_op_without_close_accepts() {
@@ -601,6 +602,136 @@ static void test_retrain_factory_toggle_same_group_accepts() {
 }
 
 // -----------------------------------------------------------------------------
+// Body Steps  --  form only (ADR 0044, ADR 0049)
+// -----------------------------------------------------------------------------
+
+static void test_body_step_valid_open_accepts() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorFL", BODY_SHAPE_OPEN, 60, 0),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8(FX_NONE, s[0].effectClass);
+}
+
+// A Part no Output claims SAVES: it is a known Part, and an unwired Part is the
+// normal state of a build in progress (#301). The report is at run.
+static void test_body_step_unassigned_part_still_saves() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "gripClaw", BODY_SHAPE_OPEN, 0, 0),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+}
+
+static void test_body_step_unknown_part_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "armOfTheFuture", BODY_SHAPE_OPEN, 0, 0),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].part", r.field);
+}
+
+static void test_body_step_empty_part_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "", BODY_SHAPE_OPEN, 0, 0),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].part", r.field);
+}
+
+static void test_body_step_unknown_shape_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorFL", 7, 0, 0),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].shape", r.field);
+}
+
+static void test_body_step_how_far_above_range_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorFL", BODY_SHAPE_OPEN, 101, 0),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].howFar", r.field);
+}
+
+// Below the floor is FORM-legal and gets floored at read time; refusing it would
+// be a judgement about what the author meant.
+static void test_body_step_how_far_below_floor_accepts() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorFL", BODY_SHAPE_OPEN, 1, 0),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8(SEQ_BODY_HOWFAR_FLOOR, seqBodyHowFar(s[0].params));
+}
+
+static void test_body_step_flutter_with_close_accepts() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorRR", BODY_SHAPE_FLUTTER, 80, 1200),
+        SEQ_BODY(1200, "doorRR", BODY_SHAPE_CLOSE, 0, 0),
+        SEQ_TERM(1500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 3);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+}
+
+// A flutter ends closed, so it owes no later close of its Part (ADR 0049,
+// amended 2026-10-02): alone in its branch, it saves.
+static void test_body_step_flutter_without_close_accepts() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorRR", BODY_SHAPE_FLUTTER, 80, 1200),
+        SEQ_TERM(1500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+}
+
+static void test_body_step_flutter_duration_below_min_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorRR", BODY_SHAPE_FLUTTER, 80, PC_BODY_FLUTTER_MS_MIN - 1),
+        SEQ_BODY(1200, "doorRR", BODY_SHAPE_CLOSE, 0, 0),
+        SEQ_TERM(1500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 3);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].flutterMs", r.field);
+}
+
+static void test_body_step_flutter_duration_above_max_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorRR", BODY_SHAPE_FLUTTER, 80, PC_BODY_FLUTTER_MS_MAX + 1),
+        SEQ_BODY(1200, "doorRR", BODY_SHAPE_CLOSE, 0, 0),
+        SEQ_TERM(1500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 3);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].flutterMs", r.field);
+}
+
+static void test_body_step_duration_on_open_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorFL", BODY_SHAPE_OPEN, 0, 900),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].flutterMs", r.field);
+}
+
+// -----------------------------------------------------------------------------
 // Toggle group helper
 // -----------------------------------------------------------------------------
 
@@ -616,7 +747,7 @@ int main(int /*argc*/, char** /*argv*/) {
 
     RUN_TEST(test_valid_flat_draft_accepts);
     RUN_TEST(test_inference_stamps_effect_classes);
-    RUN_TEST(test_panel_intent_whitelist_and_of_cleanup);
+    RUN_TEST(test_panel_intent_whitelist_and_a_flutter_owes_no_close);
     RUN_TEST(test_op_without_close_accepts);
     RUN_TEST(test_dm_step_rejected);
     RUN_TEST(test_sm_rejected_as_diagnostic_only);
@@ -667,6 +798,19 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_retrain_factory_nontoggle_with_none_accepts);
     RUN_TEST(test_retrain_factory_toggle_wrong_group_rejected);
     RUN_TEST(test_retrain_factory_toggle_same_group_accepts);
+
+    RUN_TEST(test_body_step_valid_open_accepts);
+    RUN_TEST(test_body_step_unassigned_part_still_saves);
+    RUN_TEST(test_body_step_unknown_part_rejected);
+    RUN_TEST(test_body_step_empty_part_rejected);
+    RUN_TEST(test_body_step_unknown_shape_rejected);
+    RUN_TEST(test_body_step_how_far_above_range_rejected);
+    RUN_TEST(test_body_step_how_far_below_floor_accepts);
+    RUN_TEST(test_body_step_flutter_with_close_accepts);
+    RUN_TEST(test_body_step_flutter_without_close_accepts);
+    RUN_TEST(test_body_step_flutter_duration_below_min_rejected);
+    RUN_TEST(test_body_step_flutter_duration_above_max_rejected);
+    RUN_TEST(test_body_step_duration_on_open_rejected);
 
     RUN_TEST(test_toggle_group_valid_helper);
 

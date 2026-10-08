@@ -223,18 +223,34 @@ void test_track_stop_preserves_random_mode_and_bumps_cadence() {
     TEST_ASSERT_EQUAL_UINT32(2000, s.lastPlayMs);
 }
 
-void test_quiet_stop_disables_random_mode() {
+// --- command: $8nn, ShadowMD's bank form (#449) -----------------------------------
+
+// $803 is bank 8, sound 3, and plays only where the fitted module reported a
+// bank 8; anywhere else it is refused. It never plays raw track 803, the wrong
+// file ShadowMD's template used to reach.
+void test_dollar_bank_form_plays_only_where_the_module_has_the_bank() {
     AudioStepState s = initializedState();
-    s.randomMode = true;
     AudioNamedTracks named{};
-    AudioStepCommandInputs in = commandInputs(nullptr, &named, nullptr, 2000, false);
+    AudioPlaybackConfig cfg = playbackConfig();
+    AudioStepCommandInputs in = commandInputs(&cfg, &named, nullptr, 5000, false);
 
     AudioCommand cmd{};
-    cmd.type = AUDIO_CMD_STOP;
+    cmd.type = AUDIO_CMD_DOLLAR;
+    strcpy(cmd.dollar, "$803");
+
     AudioStepCommandActions a = audioStepCommand(s, in, cmd);
+    TEST_ASSERT_EQUAL(AUDIO_STEP_IGNORE_BANK_NOT_FITTED, a.ignored);
+    TEST_ASSERT_FALSE(a.hasIntent);
+
+    in.catalogCapable = true;
+    in.dollarBankPage = 'B';  // the module reported a bank 8, on page B
+    a = audioStepCommand(s, in, cmd);
+    TEST_ASSERT_EQUAL(AUDIO_STEP_IGNORE_NONE, a.ignored);
     TEST_ASSERT_TRUE(a.hasIntent);
-    TEST_ASSERT_EQUAL(AUDIO_PLAYBACK_INTENT_STOP, a.intent.kind);
-    TEST_ASSERT_FALSE(s.randomMode);
+    TEST_ASSERT_EQUAL(AUDIO_PLAYBACK_INTENT_PLAY_BANKED, a.intent.kind);
+    TEST_ASSERT_EQUAL_UINT8(8, a.intent.bank);
+    TEST_ASSERT_EQUAL_UINT16(3, a.intent.index);
+    TEST_ASSERT_EQUAL('B', a.intent.page);
 }
 
 // --- command: catalog gating ------------------------------------------------------
@@ -380,8 +396,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_direct_track_resolves_and_bumps_cadence);
     RUN_TEST(test_dollar_volume_up_clamps_at_max);
     RUN_TEST(test_dollar_volume_down_clamps_at_min);
+    RUN_TEST(test_dollar_bank_form_plays_only_where_the_module_has_the_bank);
     RUN_TEST(test_track_stop_preserves_random_mode_and_bumps_cadence);
-    RUN_TEST(test_quiet_stop_disables_random_mode);
     RUN_TEST(test_catalog_commands_gated_on_capability);
     RUN_TEST(test_random_tick_gated_on_mode_and_sleep);
     RUN_TEST(test_random_tick_does_not_replay_before_interval);

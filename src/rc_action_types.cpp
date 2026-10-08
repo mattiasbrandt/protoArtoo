@@ -5,6 +5,8 @@
 // Moved from inline in rc_action_types.h for reduced header complexity.
 // =============================================================================
 #include "rc_action_types.h"
+
+#include "droid_parts.h"  // droidPartIdIsKnown() - a puppet string's Part
 #include <cstdlib>
 #include <string.h>
 #include <ctype.h>
@@ -41,6 +43,10 @@ const char* robotActionIdToString(RobotActionId target) {
             return "sound_rand_chatty";
         case SOUND_ACTION_RANDOM_HAPPY:
             return "sound_rand_happy";
+        case SOUND_ACTION_NEXT:
+            return "sound_next";
+        case SOUND_ACTION_PREVIOUS:
+            return "sound_previous";
         case SOUND_ACTION_RANDOM_PROCESSING:
             return "sound_rand_processing";
         case SOUND_ACTION_RANDOM_SAD:
@@ -89,6 +95,8 @@ const char* robotActionIdToString(RobotActionId target) {
             return "droid_seq_wiggle";
         case DRIVE_ACTION_SPEED_PRESET_CYCLE:
             return "speed_preset_cycle";
+        case SERVO_ACTION_PUPPET_PART:
+            return "puppet_part";
         case ROBOT_ACTION_NONE:
         default:
             return "none";
@@ -159,6 +167,14 @@ bool parseRobotActionId(const char* raw, RobotActionId* out) {
     }
     if (strcmp(raw, "sound_rand_happy") == 0) {
         *out = SOUND_ACTION_RANDOM_HAPPY;
+        return true;
+    }
+    if (strcmp(raw, "sound_next") == 0) {
+        *out = SOUND_ACTION_NEXT;
+        return true;
+    }
+    if (strcmp(raw, "sound_previous") == 0) {
+        *out = SOUND_ACTION_PREVIOUS;
         return true;
     }
     if (strcmp(raw, "sound_rand_processing") == 0) {
@@ -257,6 +273,10 @@ bool parseRobotActionId(const char* raw, RobotActionId* out) {
         *out = DRIVE_ACTION_SPEED_PRESET_CYCLE;
         return true;
     }
+    if (strcmp(raw, "puppet_part") == 0) {
+        *out = SERVO_ACTION_PUPPET_PART;
+        return true;
+    }
     return false;
 }
 
@@ -291,7 +311,9 @@ int robotActionIdToDroidSeqId(RobotActionId target) {
 }
 
 // Validate that an action target is usable in Tier 2 bindings.
-// Tier 2 bindings support button/switch actions; analog actions are backbone-only.
+// Tier 2 bindings support button/switch actions, and the one analog action that
+// is not a backbone axis: a puppet string, stored in a trigger slot (#442). The
+// three backbone axes are backbone-only.
 bool robotActionValidForTier2(RobotActionId target) {
     return target == ROBOT_ACTION_NONE || target == SYSTEM_ACTION_OP_MODE ||
            target == SERVO_ACTION_ARM1_TOGGLE || target == SERVO_ACTION_ARM2_TOGGLE ||
@@ -311,7 +333,8 @@ bool robotActionValidForTier2(RobotActionId target) {
            target == DROID_SEQ_FAINT || target == DROID_SEQ_CANTINA ||
            target == DROID_SEQ_LEIA || target == DROID_SEQ_DISCO ||
            target == DROID_SEQ_SCREAMS || target == DROID_SEQ_WIGGLE ||
-           target == DRIVE_ACTION_SPEED_PRESET_CYCLE;
+           target == DRIVE_ACTION_SPEED_PRESET_CYCLE || target == SERVO_ACTION_PUPPET_PART ||
+           target == SOUND_ACTION_NEXT || target == SOUND_ACTION_PREVIOUS;
 }
 
 // Validate Marcduino sequence payload for body sequences (SE30-SE36).
@@ -329,22 +352,6 @@ bool rcPayloadValidForBodySequence(const char* payload) {
     }
     int seqNum = (payload[0] - '0') * 10 + (payload[1] - '0');
     return seqNum >= 30 && seqNum <= 36;
-}
-
-// Validate Marcduino sequence payload for dome sequences (SE10-SE16).
-bool rcPayloadValidForDomeSequence(const char* payload) {
-    if (payload == nullptr || payload[0] == '\0') {
-        return false;
-    }
-    size_t len = strlen(payload);
-    if (len != 2) {
-        return false;
-    }
-    if (!isdigit((unsigned char)payload[0]) || !isdigit((unsigned char)payload[1])) {
-        return false;
-    }
-    int seqNum = (payload[0] - '0') * 10 + (payload[1] - '0');
-    return seqNum >= 10 && seqNum <= 16;
 }
 
 // Classify actions that work as button/toggle triggers.
@@ -366,7 +373,8 @@ bool robotActionIsButton(RobotActionId target) {
            target == DROID_SEQ_FAINT || target == DROID_SEQ_CANTINA ||
            target == DROID_SEQ_LEIA || target == DROID_SEQ_DISCO ||
            target == DROID_SEQ_SCREAMS || target == DROID_SEQ_WIGGLE ||
-           target == DRIVE_ACTION_SPEED_PRESET_CYCLE;
+           target == DRIVE_ACTION_SPEED_PRESET_CYCLE || target == SOUND_ACTION_NEXT ||
+           target == SOUND_ACTION_PREVIOUS;
 }
 
 // One-shot actions fire once per button click on latched channels.
@@ -387,7 +395,67 @@ bool robotActionIsOneShotButton(RobotActionId target) {
            target == DROID_SEQ_FAINT || target == DROID_SEQ_CANTINA ||
            target == DROID_SEQ_LEIA || target == DROID_SEQ_DISCO ||
            target == DROID_SEQ_SCREAMS || target == DROID_SEQ_WIGGLE ||
-           target == DRIVE_ACTION_SPEED_PRESET_CYCLE;
+           target == DRIVE_ACTION_SPEED_PRESET_CYCLE || target == SOUND_ACTION_NEXT ||
+           target == SOUND_ACTION_PREVIOUS;
+}
+
+uint16_t rcReactionThresholdMax(RcBindingSource source) {
+    switch (source) {
+        case RC_BINDING_DROID_SPEED:
+        case RC_BINDING_DROID_HARD_STOP:
+            return 1000;
+        case RC_BINDING_DROID_REST:
+            return 600;  // a minute
+        case RC_BINDING_DROID_WHEEL_SPEED:
+            return 1000;
+        case RC_BINDING_DROID_WHEEL_AMPS:
+            return 5000;  // 50 A
+        default:
+            return 0;
+    }
+}
+
+uint16_t rcReactionThresholdDefault(RcBindingSource source) {
+    switch (source) {
+        case RC_BINDING_DROID_SPEED:
+            return 300;  // about a third of full output
+        case RC_BINDING_DROID_HARD_STOP:
+            return 400;  // dropped to zero from at least this much
+        case RC_BINDING_DROID_REST:
+            return 20;   // two seconds at rest
+        case RC_BINDING_DROID_WHEEL_SPEED:
+            return 30;   // RPM: a wheel turning, not a wheel twitching
+        case RC_BINDING_DROID_WHEEL_AMPS:
+            return 300;  // 3 A
+        default:
+            return 0;
+    }
+}
+
+// A droid condition has no stick, so it can never be a puppet string: the
+// analog test refuses one, beside the three a Reaction may not do.
+bool robotActionValidForReaction(RobotActionId target) {
+    return target != ROBOT_ACTION_NONE && robotActionValidForTier2(target) &&
+           !robotActionIsAnalog(target) && target != SYSTEM_ACTION_ESTOP &&
+           target != SYSTEM_ACTION_OP_MODE && target != DRIVE_ACTION_SPEED_PRESET_CYCLE;
+}
+
+// A Reaction's own legality: its fields mean something else than a radio
+// trigger's (include/rc_action_types.h), so they are checked as what they are.
+static bool rcReactionBindingIsValid(const RcTriggerBinding& binding) {
+    if (!robotActionValidForReaction(binding.target)) {
+        return false;
+    }
+    const uint16_t thresholdMax = rcReactionThresholdMax(binding.source);
+    const uint16_t threshold = rcReactionThreshold(binding);
+    if (thresholdMax == 0 ? threshold != 0 : (threshold < 1 || threshold > thresholdMax)) {
+        return false;
+    }
+    if (rcReactionQuietS(binding) < RC_REACTION_QUIET_MIN_S ||
+        rcReactionQuietS(binding) > RC_REACTION_QUIET_MAX_S) {
+        return false;
+    }
+    return binding.center == 0 && binding.deadband == 0 && !binding.reverse;
 }
 
 // Validate a complete RcTriggerBinding for consistency and legality.
@@ -398,8 +466,17 @@ bool rcTriggerBindingIsValid(const RcTriggerBinding& binding) {
     if (binding.source == RC_BINDING_NONE) {
         return binding.target == ROBOT_ACTION_NONE;
     }
-    // Tier 2 bindings cannot use analog action targets (those are backbone-only)
+    if (rcBindingSourceIsDroidCondition(binding.source)) {
+        return rcReactionBindingIsValid(binding);
+    }
+    // Tier 2 bindings cannot use the backbone axes (those are backbone-only)
     if (!robotActionValidForTier2(binding.target)) {
+        return false;
+    }
+    // A puppet string names its Part by catalog id, never an Output Address
+    // (ADR 0061), so a stored string always names a Part this build resolves.
+    if (binding.target == SERVO_ACTION_PUPPET_PART &&
+        !droidPartIdIsKnown(binding.marcduinoPayload)) {
         return false;
     }
     if (!(binding.min < binding.center && binding.center < binding.max)) {

@@ -1,16 +1,27 @@
 name: Release
 
-# Purely additive to verification.yml — triggers only on a vX.Y.Z tag push,
-# never on branch push/PR, so the existing PR/merge gate is unaffected.
+# Every `uses:` is pinned to a full commit SHA with its `# vX.Y.Z`, and a new
+# action lands pinned the same way (#473). Dependabot's grouped weekly
+# updates move the pins.
+
+# Purely additive to verification.yml — publishes only on a vX.Y.Z tag push,
+# never on a branch push or PR, so the existing PR/merge gate is unaffected.
+#
+# A manual dispatch is the dry run (#473): it builds and stages both boards'
+# assets exactly as a full-tier tag would and keeps them as a run artifact
+# for 7 days. It never publishes; publishing stays tag-only.
 on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
 
-# One run per tag; never cancel a release mid-publish — a killed publish job
-# could leave a half-uploaded release behind.
+# One run per tag (or dispatched ref); never cancel a release mid-publish — a
+# killed publish job could leave a half-uploaded release behind. The event is
+# in the group so a dry run dispatched on a tag ref never queues behind, or
+# replaces the pending run of, that tag's real release.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -21,147 +32,187 @@ jobs:
   #
   #   patch — release notes generated from the commit subjects in the range,
   #           and the source tag. No firmware images: a fix should reach people
-  #           quickly, and rebuilding four environments for a one-line change
+  #           quickly, and rebuilding every board's image for a one-line change
   #           should not gate that.
-  #   full  — the curated CHANGELOG.md section as notes, plus all eight
-  #           firmware and filesystem images and SHA256SUMS.txt, as v1.2.0 did.
+  #   full  — the curated CHANGELOG.md section as notes, plus per board the
+  #           update pair (firmware and filesystem images), the blank-board
+  #           parts and their manifest, and SHA256SUMS.txt over all of them.
   #
   # Decided by semver alone: a patch release is the only kind whose Z is
   # non-zero, so vX.Y.Z with Z > 0 is a patch and Z == 0 is a minor or major.
-  # No history lookup, and no table to keep in step with anything.
+  # No history lookup, and no table to keep in step with anything. A dry run
+  # has no tag and is full by definition: it exists to build the images.
   classify:
     name: classify the tag
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       tier: ${{ steps.tier.outputs.tier }}
     steps:
       - name: ⬇️ Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: 🐍 Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.x'
 
       - name: 🎚️ Decide the tier
         id: tier
         env:
+          EVENT: ${{ github.event_name }}
           TAG: ${{ github.ref_name }}
-        run: python3 tools/release_plan.py tier "$TAG" --github-output
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "tier=full" >> "$GITHUB_OUTPUT"
+            echo "Dry run of $TAG: full tier, built and staged, never published."
+            exit 0
+          fi
+          python3 tools/release_plan.py tier "$TAG" --github-output
 
   build:
     name: build (${{ matrix.env }})
     needs: classify
-    # A patch release ships no images, so the four builds are skipped outright
+    # A patch release ships no images, so the board builds are skipped outright
     # rather than run and thrown away.
     if: needs.classify.outputs.tier == 'full'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-26.04
+    # Verification's board jobs, whose work this now is: firmware, buildfs,
+    # budgets and envelope, plus the packaging's metadata dump.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        # Flashable, user-relevant envs only: one artoo-esp32 image per sound
-        # backend, and the FireBeetle 2 image (its default DY-SV5W backend).
-        # Adding a future backend or board is one entry here — do not
+        # Flashable, user-relevant envs only: one image per board. Every image
+        # carries every supported sound driver and the builder picks the
+        # fitted module on Configuration, so there is no per-sound-module
+        # image. Adding a future board is one entry here — do not
         # hand-roll more jobs. Excluded on purpose: artoo_esp32_prod
-        # (self-build-only), *_check (compile-only), *_profiler* (dev
-        # tooling), *_bench (not the firmware), *_ota
+        # (self-build-only), *_profiler* (dev tooling), *_closeconn (a
+        # retained comparison arm), *_bench (not the firmware), *_ota
         # (identical firmware.bin to its non-OTA counterpart, just a
         # different upload_protocol).
         #
         # Each chip target has its own PlatformIO core dir, as in the
-        # Makefile and verification.yml: the classic ESP32 toolchain lives in
-        # ~/.platformio, the ESP32-P4 one (a different pioarduino platform
-        # version) in ~/.platformio-p4. `pool` names the cache, `core_dir`
-        # the directory under $HOME.
+        # Makefile and verification.yml: `pool` picks it in the shared setup
+        # (classic ~/.platformio, p4 ~/.platformio-p4, a different pioarduino
+        # platform version), and `cache` names Verification's board job whose
+        # cache entry this build restores.
         include:
-          - env: artoo_esp32_chirp
+          - env: artoo_esp32
             pool: classic
-            core_dir: .platformio
-          - env: artoo_esp32_mp3trigger
-            pool: classic
-            core_dir: .platformio
-          - env: artoo_esp32_dysv5w
-            pool: classic
-            core_dir: .platformio
+            cache: artoo
           - env: firebeetle2
             pool: p4
-            core_dir: .platformio-p4
+            cache: firebeetle2
     steps:
       # Default depth-1 checkout is enough for the version stamp: on a tag
       # push the tag ref itself is fetched, so git describe resolves it at
       # distance 0 (verified by replicating the checkout fetch locally).
       - name: ⬇️ Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v7
+      # Python, PlatformIO 6.1.19, the Python tools, Node with esbuild on
+      # PATH, zopfli, the cache and, for the P4, the penv pin: the same setup
+      # Verification builds on (#473). `cache` matches Verification's board
+      # job, so a tag build restores the cache that job saved.
+      - name: 🧰 Set up the build
+        uses: ./.github/actions/setup
         with:
-          python-version: '3.x'
-          cache: pip
-          cache-dependency-path: tools/requirements.txt
-
-      - name: 📦 Install PlatformIO and Python tools
-        # Pinned to the core the tree is verified with. An unpinned install
-        # picked up PlatformIO 6.2.0 on 2026-09-06, whose tool-scons 4.11
-        # fails every env at the link step with "No module named
-        # 'SCons.Tool.FortranCommon'"; 6.1.19 with tool-scons 4.8 links all
-        # of them. Bump deliberately, with a green run, not by drift.
-        run: pip install platformio==6.1.19 && pip install -r tools/requirements.txt
-
-      - name: 💾 Cache PlatformIO packages and toolchains
-        uses: actions/cache@v6
-        with:
-          # Cache the whole core-dir tree for this chip target. The key
-          # matches verification.yml's, so a tag build restores the cache
-          # the PR gate already filled instead of re-downloading and
-          # re-unpacking the ESP-IDF toolchain.
-          path: ~/${{ matrix.core_dir }}
-          key: ${{ runner.os }}-pio-${{ matrix.pool }}-${{ hashFiles('platformio.ini') }}
-          restore-keys: ${{ runner.os }}-pio-${{ matrix.pool }}-
+          pool: ${{ matrix.pool }}
+          cache-name: ${{ matrix.cache }}
 
       # No secrets.h is provisioned here on purpose: release binaries must be
       # built without one so the Developer WiFi Shortcut (ADR 0015) stays
       # unavailable and a fresh controller boots into WiFi Provisioning.
       # Even the placeholder secrets.h.example defines the shortcut macros.
-      - name: 🏗️ Build firmware
-        run: |
-          export PLATFORMIO_CORE_DIR="$HOME/${{ matrix.core_dir }}"
-          mkdir -p "$PLATFORMIO_CORE_DIR"
-          pio run -e ${{ matrix.env }}
 
-      - name: 🗂️ Build filesystem image
-        run: |
-          export PLATFORMIO_CORE_DIR="$HOME/${{ matrix.core_dir }}"
-          pio run -e ${{ matrix.env }} -t buildfs
+      # The budget script builds the firmware and the filesystem image and
+      # holds both to the budgets and framework envelope Verification checks
+      # (#473), so a published image passed the same checks. Each pio run's
+      # whole output is kept under build-logs/.
+      - name: 🏗️ Build and check budgets
+        id: build-budgets
+        env:
+          ENV_NAME: ${{ matrix.env }}
+        run: python3 tools/check_build_budgets.py --env "$ENV_NAME" --summary build-budgets.md
 
+      - name: 📊 Budget summary
+        if: ${{ !cancelled() }}
+        env:
+          ENV_NAME: ${{ matrix.env }}
+        run: |
+          [ -f build-budgets.md ] || exit 0
+          { echo "### Budgets: $ENV_NAME"; echo; cat build-budgets.md; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: ⬆️ Upload build logs
+        if: ${{ !cancelled() && steps.build-budgets.outcome == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: build-logs-${{ matrix.env }}-${{ github.run_id }}
+          path: build-logs/
+          retention-days: 7
+
+      # The update pair, the blank-board parts and <env>-manifest.json, every
+      # offset read from this build (tools/package_release.py). It fails on a
+      # missing part rather than staging a set a blank board cannot boot.
       - name: 📦 Stage release artifacts
-        run: |
-          mkdir -p release-artifacts
-          cp .pio/build/${{ matrix.env }}/firmware.bin \
-             release-artifacts/${{ matrix.env }}-firmware.bin
-          cp .pio/build/${{ matrix.env }}/littlefs.bin \
-             release-artifacts/${{ matrix.env }}-filesystem.bin
+        env:
+          ENV_NAME: ${{ matrix.env }}
+          TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+        run: python3 tools/package_release.py --env "$ENV_NAME" --out release-artifacts --tag "$TAG"
 
       - name: ⬆️ Upload build artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: release-artifacts-${{ matrix.env }}
           path: release-artifacts/
           retention-days: 1
 
+  # Every board's assets in one place with SHA256SUMS.txt over them: the
+  # exact set a full-tier tag publishes. A dry run stops here, with the set
+  # kept as a run artifact for 7 days (diagnostic retention, #473).
+  stage:
+    name: stage the release assets
+    needs: build
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - name: ⬇️ Download all build artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: release-artifacts-*
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: 🔏 Generate SHA256 checksums
+        run: |
+          cd release-artifacts
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: ⬆️ Upload the release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: release-assets
+          path: release-artifacts/
+          retention-days: ${{ github.event_name == 'push' && 1 || 7 }}
+
   publish:
     name: publish release
-    needs: [classify, build]
-    # `build` is skipped for a patch tag, and a skipped dependency skips its
+    needs: [classify, stage]
+    # A tag only: a dispatch is the dry run and never publishes. `build` and
+    # `stage` are skipped for a patch tag, and a skipped dependency skips its
     # dependants by default — so publish states the condition itself: run when
-    # the tier is known and the builds either passed or were never needed.
+    # the tier is known and either it is a patch (no assets) or the assets
+    # were staged. A full tier whose build failed skips `stage` too, which is
+    # why the condition names the tier rather than accepting any skip.
     if: >-
       always() &&
+      github.event_name == 'push' &&
       needs.classify.result == 'success' &&
-      (needs.build.result == 'success' || needs.build.result == 'skipped')
-    runs-on: ubuntu-latest
+      (needs.classify.outputs.tier == 'patch' || needs.stage.result == 'success')
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: write
@@ -169,31 +220,23 @@ jobs:
       TIER: ${{ needs.classify.outputs.tier }}
     steps:
       - name: ⬇️ Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           # Generated patch notes are read from the commit range since the
           # previous release tag, which a shallow clone does not have.
           fetch-depth: 0
 
       - name: 🐍 Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.x'
 
-      - name: ⬇️ Download all build artifacts
+      - name: ⬇️ Download the staged release assets
         if: needs.classify.outputs.tier == 'full'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
-          pattern: release-artifacts-*
+          name: release-assets
           path: release-artifacts
-          merge-multiple: true
-
-      - name: 🔏 Generate SHA256 checksums
-        if: needs.classify.outputs.tier == 'full'
-        run: |
-          cd release-artifacts
-          sha256sum -- * > SHA256SUMS.txt
-          cat SHA256SUMS.txt
 
       - name: 📝 Extract CHANGELOG section for this tag
         # Minor and major only. A missing section fails the release rather than
@@ -227,7 +270,14 @@ jobs:
           # Draft-first so watchers never see a release before all assets are
           # attached. A hyphenated semver tag (e.g. v1.0.0-rc.1) is marked
           # prerelease so it can never become the repo's "latest" release.
-          args=(--title "$TAG" --notes-file release-notes.md --verify-tag --draft)
+          # A feature release may name itself: a `<!-- release-name: ... -->`
+          # line in its CHANGELOG section (hidden when the notes render) makes
+          # the title "v1.4.0 – <name>". Without one, and on every patch, the
+          # title is the bare tag.
+          name=$(sed -n 's/^<!-- release-name: \(.*[^ ]\) *-->$/\1/p' release-notes.md | head -n 1)
+          title="$TAG"
+          [ -z "$name" ] || title="$TAG – $name"
+          args=(--title "$title" --notes-file release-notes.md --verify-tag --draft)
           case "$TAG" in
             *-*) args+=(--prerelease) ;;
           esac

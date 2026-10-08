@@ -47,6 +47,8 @@ size_t getLogBufferCount();
 bool copyLogLineAt(size_t idx, char* out, size_t outSize);
 bool webLittleFsMounted();
 bool webOtaActive();
+// Arms an operator-requested restart, delayMs from now. SafetyMonitor carries
+// it out (src/tasks/safety.cpp). Operator-initiated callers only (ADR 0032).
 void requestSystemRestart(uint32_t delayMs);
 void webServerInit();
 // Returns true when at least one client is connected to the SSE event stream.

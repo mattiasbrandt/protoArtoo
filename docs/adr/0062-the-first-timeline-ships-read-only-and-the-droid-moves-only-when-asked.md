@@ -12,7 +12,9 @@ answered.
 **The slice it proposed already exists as a prototype.** ADR 0057 resolved #289
 against a built artifact rather than an argument, and that artifact —
 `prototypes/289-sequence-timeline/cantina-timeline.html` on
-`epic/operator-experience` (`51bca564`) — is a read-only timeline of real
+`epic/operator-experience` (`51bca564`; the directory left the tree for the
+gitignored `tasks/prototypes/` on 2026-09-18, so read it with
+`git show 51bca564:prototypes/289-sequence-timeline/cantina-timeline.html`) — is a read-only timeline of real
 `DM:CANTINA` data with a scrubbable playhead, a dome SVG posing at it, a beat
 grid, grouped lanes with an `N of M` count, two lane filters, and an
 authored-versus-expanded toggle. The research's whole justification for a
@@ -121,11 +123,11 @@ to a channel yet: Panel 7, Panel 9"*).
 - **The droid moving only during playback.** Rejected: close enough to what
   **Test on Droid** already does that it wins little.
 - **Amber on every part nothing drives, wherever drawn.** The plainest reading of
-  **Status Colour**. Rejected on the 24-of-42 arithmetic above.
+  **Status Color**. Rejected on the 24-of-42 arithmetic above.
 - **No amber anywhere on the surface**, as the prototype has it (*"neither
   appears on a block or a lane"*). Rejected: it also drops the one signal that
   says this routine will not fully perform. The note above the routine carries
-  it instead, which is what **Status Colour**'s *"a Part **in a sequence** that
+  it instead, which is what **Status Color**'s *"a Part **in a sequence** that
   no Output claims"* already scopes.
 
 ## Consequences

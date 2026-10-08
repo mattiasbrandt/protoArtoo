@@ -10,11 +10,14 @@
 
 #include "api_status.h"
 
+#include "api_json_response.h"  // webSendJsonError
+#include "board_outputs.h"  // boardComponentLabel, runningBoardName
 #include "config.h"
 #include "dome_task.h"
 #include "log_buffer.h"
 #include "logging.h"
 #include "web_request.h"
+#include "web_request_scratch.h"
 #include "web_server.h"
 
 // The gather step for each of these three lives in captureWifiStatusSnapshot/
@@ -29,10 +32,19 @@ static void buildWifiJson(char* buffer, size_t bufferSize) {
                    snap.staIp, snap.staSsid, snap.wifiRssi, snap.networkRecovery);
 }
 
+// What this board prints beside a connector, or "" where it declares none -
+// never another board's legend (ADR 0033, #348).
+static const char* printedLabel(const char* component) {
+    const char* label = boardComponentLabel(runningBoardName(), component);
+    return label != nullptr ? label : "";
+}
+
 static void buildSerialJson(char* buffer, size_t bufferSize) {
     DomeSerialLinkSnapshot snap = {};
     captureDomeSerialLinkSnapshot(&snap);
-    formatSerialJson(buffer, bufferSize, snap.active, snap.heartbeatRx, snap.heartbeatTx);
+    formatSerialJson(buffer, bufferSize, printedLabel("enable_drive"), printedLabel("enable_audio"),
+                     printedLabel("enable_protor2link"), snap.active, snap.heartbeatRx,
+                     snap.heartbeatTx);
 }
 
 static void buildHealthJson(char* buffer, size_t bufferSize) {
@@ -41,7 +53,8 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
     formatHealthJson(buffer, bufferSize, snap.estop, snap.sbusSignalLost, snap.sbusHwFailsafe,
                      snap.webControlEnabled, snap.wifiConnected, snap.wifiClientConnected,
                      snap.littleFsReady, snap.heapFree, snap.heapMin, snap.heapLargestBlock,
-                     snap.wifiRssi, snap.uptimeMs, snap.resetReason);
+                     snap.heapLargest8bit, snap.allocBlocks, snap.httpSocketsOpen,
+                     snap.sseClients, snap.wifiRssi, snap.uptimeMs, snap.resetReason);
 }
 
 // GET /api/wifi - active connection diagnostics, read by the WiFi page
@@ -58,13 +71,18 @@ void handleWifiGet(WebRequest& req) {
 }
 
 void handleStatusGet(WebRequest& req) {
-    // Static, not stack: 3 KB on an 8 KB server task left too little headroom
-    // for the snprintf float-formatting frames plus nested interrupt frames
-    // under network load (stack-watchpoint panic proven by coredump). Both
-    // backends dispatch handlers from a single task, so one shared buffer is
-    // race-free -- same pattern as api_logs.cpp.
-    static char body[3072];
-    if (!buildStatusJson(body, sizeof(body))) {
+    // In the web request scratch, not on the stack: 3 KB on an 8 KB server
+    // task left too little headroom for the snprintf float-formatting frames
+    // plus nested interrupt frames under network load (stack-watchpoint panic
+    // proven by coredump). Not a static of its own either: the scratch is the
+    // one store every handler's request-scoped buffer shares (#428).
+    WebRequestScratch<WebScratchText<STATUS_JSON_BUFFER_BYTES>> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
+    }
+    char* body = scratch->text;
+    if (!buildStatusJson(body, sizeof(scratch->text))) {
         PA_LOG_WARN("StatusAPI", "status payload overflowed; returning fallback payload");
     }
     req.send(200, "application/json", body);
@@ -82,13 +100,18 @@ void handleSerialGet(WebRequest& req) {
 
 // GET /api/health - the small telemetry payload the shell polls, and (#225)
 // the survival set the Console's system.status.health answers below the HTTP
-// admission floor. Most fields are a bool or a fixed-width number, but
-// resetReason (#225) is a variable-length string - resetReasonName()'s
-// longest literal is "DEEPSLEEP" (9 chars) - so this is no longer the fixed
-// upper bound the prior comment claimed. Worst case (every numeric field
-// maxed, "DEEPSLEEP") is 303 bytes; 384 keeps headroom above that.
+// admission floor. HEALTH_JSON_BUFFER_BYTES (include/api_status.h) carries
+// the worst-case sizing. The body lives in the web request scratch, not on
+// the server task's stack: at 512 bytes it outgrew the 384-byte frame it had,
+// and the scratch is the one store a handler's request-scoped buffer shares
+// (#428), as handleStatusGet() above does.
 void handleHealthGet(WebRequest& req) {
-    char body[384];
-    buildHealthJson(body, sizeof(body));
+    WebRequestScratch<WebScratchText<HEALTH_JSON_BUFFER_BYTES>> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
+    }
+    char* body = scratch->text;
+    buildHealthJson(body, sizeof(scratch->text));
     req.send(200, "application/json", body);
 }

@@ -8,12 +8,21 @@
 #include "config_cache.h"
 
 #include "audio_dollar_parser.h"
+#include "board_output_enabled.h"  // boardOutputIsWired(), boardOutputTickFollowsParts() - the wired ticks
 #include "config.h"
 #include "config_serializer.h"
+#include "config_settings.h"  // every Setting's default
 #include "config_nvsio.h"
+#include "config_records.h"  // every Record's load and save
+#include "config_write_window_check.h"  // every config writer below checks it runs in a Write Window
+#include "drive_speed_preset.h"  // speedPresetValueForId() - configCacheSelectSpeedPreset()
 #include "console_config_fields.h"  // kComponentToggleFields[] - Active Component Toggle snapshot
 #include "logging.h"
+#include "output_wire.h"  // outputWireReleaseAfterMs() - the release a light never has
+#include "rc_action_dispatcher.h"  // RcAudioCategorySnapshot - configCacheReadRcActionContext()
 #include "rc_mapping.h"
+#include "sequence_bulk_centre.h"  // sequenceCadenceFloorInUse() - configCacheCadenceFloorMs()
+#include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
 
 #include <cstring>
 
@@ -23,83 +32,6 @@
 #endif
 
 namespace {
-
-struct AudioTrackKeyMapEntry {
-    const char* key;
-    uint16_t AudioConfig::*field;
-};
-
-constexpr AudioTrackKeyMapEntry AUDIO_TRACK_KEYS[] = {
-    {"scream", &AudioConfig::snd_scream},
-    {"faint", &AudioConfig::snd_faint},
-    {"leia", &AudioConfig::snd_leia},
-    {"cantina_s", &AudioConfig::snd_cantina_s},
-    {"sw_theme", &AudioConfig::snd_sw_theme},
-    {"imp_march", &AudioConfig::snd_imp_march},
-    {"cantina_l", &AudioConfig::snd_cantina_l},
-    {"startup", &AudioConfig::snd_startup},
-    {"doodoo", &AudioConfig::snd_doodoo},
-    {"failure", &AudioConfig::snd_failure},
-    {"disco", &AudioConfig::snd_disco},
-    {"mahna", &AudioConfig::snd_mahna},
-    {"inlove", &AudioConfig::snd_inlove},
-    {"macho", &AudioConfig::snd_macho},
-    {"gangnam", &AudioConfig::snd_gangnam},
-    {"uptown", &AudioConfig::snd_uptown},
-    {"celebr", &AudioConfig::snd_celebr},
-    {"stayin", &AudioConfig::snd_stayin},
-    {"harlem", &AudioConfig::snd_harlem},
-    {"pbjtime", &AudioConfig::snd_pbjtime},
-    {"sys_boot", &AudioConfig::snd_sys_boot},
-    {"sys_mode_n", &AudioConfig::snd_sys_mode_n},
-    {"sys_mode_s", &AudioConfig::snd_sys_mode_s},
-    {"sys_mode_t", &AudioConfig::snd_sys_mode_t},
-    {"sys_drv_on", &AudioConfig::snd_sys_drv_on},
-    {"sys_dome_on", &AudioConfig::snd_sys_dome_on},
-    {"sys_net_down", &AudioConfig::snd_sys_net_down},
-    {"rand_min", &AudioConfig::snd_rand_min},
-    {"rand_max", &AudioConfig::snd_rand_max},
-    {"snd_int_quiet", &AudioConfig::snd_int_quiet},
-    {"snd_int_mid", &AudioConfig::snd_int_mid},
-    {"snd_int_full", &AudioConfig::snd_int_full},
-    {"snd_int_awake", &AudioConfig::snd_int_awake},
-    {"snd_cat_gen_lo", &AudioConfig::snd_cat_gen_lo},
-    {"snd_cat_gen_hi", &AudioConfig::snd_cat_gen_hi},
-    {"snd_cat_chat_lo", &AudioConfig::snd_cat_chat_lo},
-    {"snd_cat_chat_hi", &AudioConfig::snd_cat_chat_hi},
-    {"snd_cat_hap_lo", &AudioConfig::snd_cat_hap_lo},
-    {"snd_cat_hap_hi", &AudioConfig::snd_cat_hap_hi},
-    {"snd_cat_proc_lo", &AudioConfig::snd_cat_proc_lo},
-    {"snd_cat_proc_hi", &AudioConfig::snd_cat_proc_hi},
-    {"snd_cat_sad_lo", &AudioConfig::snd_cat_sad_lo},
-    {"snd_cat_sad_hi", &AudioConfig::snd_cat_sad_hi},
-    {"snd_cat_sent_lo", &AudioConfig::snd_cat_sent_lo},
-    {"snd_cat_sent_hi", &AudioConfig::snd_cat_sent_hi},
-    {"snd_cat_hum_lo", &AudioConfig::snd_cat_hum_lo},
-    {"snd_cat_hum_hi", &AudioConfig::snd_cat_hum_hi},
-    {"snd_cat_scrm_lo", &AudioConfig::snd_cat_scrm_lo},
-    {"snd_cat_scrm_hi", &AudioConfig::snd_cat_scrm_hi},
-    {"snd_cat_ooh_lo", &AudioConfig::snd_cat_ooh_lo},
-    {"snd_cat_ooh_hi", &AudioConfig::snd_cat_ooh_hi},
-    {"snd_cat_alrm_lo", &AudioConfig::snd_cat_alrm_lo},
-    {"snd_cat_alrm_hi", &AudioConfig::snd_cat_alrm_hi},
-    {"snd_cat_snrk_lo", &AudioConfig::snd_cat_snarky_lo},
-    {"snd_cat_snrk_hi", &AudioConfig::snd_cat_snarky_hi},
-    {"snd_cat_whis_lo", &AudioConfig::snd_cat_whis_lo},
-    {"snd_cat_whis_hi", &AudioConfig::snd_cat_whis_hi},
-};
-
-const AudioTrackKeyMapEntry* audioTrackKeyEntry(const char* key) {
-    if (key == nullptr) {
-        return nullptr;
-    }
-    for (size_t i = 0; i < sizeof(AUDIO_TRACK_KEYS) / sizeof(AUDIO_TRACK_KEYS[0]); ++i) {
-        if (strcmp(AUDIO_TRACK_KEYS[i].key, key) == 0) {
-            return &AUDIO_TRACK_KEYS[i];
-        }
-    }
-    return nullptr;
-}
 
 // Schema 2 -> 3 migration: component toggle identity rename (ADR 0033)
 // Migrates old NVS keys to new keys, then deletes the old keys.
@@ -150,110 +82,22 @@ void migrateSchema2To3(Preferences& prefs) {
 
 }  // namespace
 
-// Helper: Populate ConfigSnapshot with defaults
+// Helper: Populate ConfigSnapshot with defaults. Every Setting's default is its
+// declaration's (include/config_settings.h); what is set by hand here is the
+// rest of the Configuration - the sound bindings, the RC Map, Device WiFi
+// Settings, the droid's identity.
 void configSnapshotDefaults(ConfigSnapshot* snap) {
+    configSettingsDefaults(snap);
     snprintf(snap->system.droid_name, sizeof(snap->system.droid_name), "%s", DROID_NAME_DEFAULT);
     snap->system.mdns_use_name = false;
-    snap->drive.speedLimitMax = SPEED_LIMIT_MAX;
-    snap->drive.speedPresetSlow = SPEED_PRESET_SLOW;
-    snap->drive.speedPresetNormal = SPEED_PRESET_NORMAL;
-    snap->drive.speedPresetTurbo = SPEED_PRESET_TURBO;
     snap->drive.speedPresetActive = SpeedPresetId::Normal;
-    snap->drive.sbusTimeoutMs = SBUS_TIMEOUT_MS;
-    snap->drive.webDriveTimeoutMs = WEB_DRIVE_TIMEOUT_MS;
-    snap->audio.audioVolume = 20;
-    snap->system.logLevel = PA_LOG_LEVEL;
-    snap->audio.snd_scream = AUDIO_TRACK_SCREAM;
-    snap->audio.snd_faint = AUDIO_TRACK_FAINT;
-    snap->audio.snd_leia = AUDIO_TRACK_LEIA;
-    snap->audio.snd_cantina_s = AUDIO_TRACK_CANTINA_S;
-    snap->audio.snd_sw_theme = AUDIO_TRACK_SW_THEME;
-    snap->audio.snd_imp_march = AUDIO_TRACK_IMP_MARCH;
-    snap->audio.snd_cantina_l = AUDIO_TRACK_CANTINA_L;
-    snap->audio.snd_startup = AUDIO_TRACK_STARTUP;
-    snap->audio.snd_doodoo = 0;
-    snap->audio.snd_failure = 0;
-    snap->audio.snd_disco = 0;
-    snap->audio.snd_happy = AUDIO_TRACK_HAPPY;
-    snap->audio.snd_mahna = 0;
-    snap->audio.snd_inlove = 0;
-    snap->audio.snd_macho = 0;
-    snap->audio.snd_gangnam = 0;
-    snap->audio.snd_uptown = 0;
-    snap->audio.snd_celebr = 0;
-    snap->audio.snd_stayin = 0;
-    snap->audio.snd_harlem = 0;
-    snap->audio.snd_pbjtime = 0;
-    snap->audio.snd_sys_boot = 0;
-    snap->audio.snd_sys_mode_n = 0;
-    snap->audio.snd_sys_mode_s = 0;
-    snap->audio.snd_sys_mode_t = 0;
-    snap->audio.snd_sys_drv_on = 0;
-    snap->audio.snd_sys_dome_on = 0;
-    snap->audio.snd_sys_net_down = 0;
-    snap->audio.snd_rand_min = AUDIO_RAND_TRACK_MIN;
-    snap->audio.snd_rand_max = AUDIO_RAND_TRACK_MAX;
-    snap->audio.snd_int_quiet = AUDIO_RAND_INT_QUIET;
-    snap->audio.snd_int_mid = AUDIO_RAND_INT_MID;
-    snap->audio.snd_int_full = AUDIO_RAND_INT_FULL;
-    snap->audio.snd_int_awake = AUDIO_RAND_INT_AWAKE;
-    snap->audio.snd_moodcat_quiet = 0x0048;
-    snap->audio.snd_moodcat_mid = 0x004F;
-    snap->audio.snd_moodcat_full = 0x090F;
-    snap->audio.snd_moodcat_awakeplus = 0x0F8F;
-    snap->audio.snd_cat_gen_lo = 0;
-    snap->audio.snd_cat_gen_hi = 0;
-    snap->audio.snd_cat_chat_lo = 0;
-    snap->audio.snd_cat_chat_hi = 0;
-    snap->audio.snd_cat_hap_lo = 0;
-    snap->audio.snd_cat_hap_hi = 0;
-    snap->audio.snd_cat_proc_lo = 0;
-    snap->audio.snd_cat_proc_hi = 0;
-    snap->audio.snd_cat_sad_lo = 0;
-    snap->audio.snd_cat_sad_hi = 0;
-    snap->audio.snd_cat_sent_lo = 0;
-    snap->audio.snd_cat_sent_hi = 0;
-    snap->audio.snd_cat_hum_lo = 0;
-    snap->audio.snd_cat_hum_hi = 0;
-    snap->audio.snd_cat_scrm_lo = 0;
-    snap->audio.snd_cat_scrm_hi = 0;
-    snap->audio.snd_cat_ooh_lo = 0;
-    snap->audio.snd_cat_ooh_hi = 0;
-    snap->audio.snd_cat_alrm_lo = 0;
-    snap->audio.snd_cat_alrm_hi = 0;
-    snap->audio.snd_cat_snarky_lo = 0;
-    snap->audio.snd_cat_snarky_hi = 0;
-    snap->audio.snd_cat_whis_lo = 0;
-    snap->audio.snd_cat_whis_hi = 0;
 
-    snap->servo.arm1_open_us = 2000;
-    snap->servo.arm1_close_us = 1000;
-    snap->servo.arm2_open_us = 2000;
-    snap->servo.arm2_close_us = 1000;
-    snap->servo.arm1_type = SERVO_COMP_MG996R;
-    snap->servo.arm2_type = SERVO_COMP_MG996R;
-    snap->servo.aux1_open_us = 2000;
-    snap->servo.aux1_close_us = 1000;
-    snap->servo.aux2_open_us = 2000;
-    snap->servo.aux2_close_us = 1000;
-    snap->servo.aux3_open_us = 2000;
-    snap->servo.aux3_close_us = 1000;
-    snap->servo.aux1_type = SERVO_COMP_NONE;
-    snap->servo.aux2_type = SERVO_COMP_NONE;
-    snap->servo.aux3_type = SERVO_COMP_NONE;
+    // No servo endpoints or component types here: a defaulted Servo Output row
+    // carries both, and servoOutputTableDefaults() is where they are stated
+    // (#345, ADR 0041).
 
     snap->dome.dome_min_speed = 0.0f;
     snap->dome.dome_max_speed = 1.0f;
-    snap->dome.dome_neutral_us = 1500;
-    snap->dome.dome_min_pulse_us = 1000;
-    snap->dome.dome_max_pulse_us = 2000;
-    snap->dome.dome_speed_limit_pct = 100;
-    snap->dome.dome_rnd_enable = false;
-    snap->dome.dome_rnd_speed_pct = 30;
-    snap->dome.dome_rnd_pause_min = 6;
-    snap->dome.dome_rnd_pause_max = 12;
-    snap->dome.dome_rnd_move_ms = 2500;
-    snap->dome.dome_wifi_peer_ip[0] = '\0';
 
     // Device WiFi Settings default to an Unprovisioned Controller (ADR 0015):
     // no saved posture yet, AP identity pre-filled with the documented,
@@ -265,30 +109,6 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snprintf(snap->wifi.ap_ssid, sizeof(snap->wifi.ap_ssid), "%s", WIFI_AP_SSID);
     snprintf(snap->wifi.ap_password, sizeof(snap->wifi.ap_password), "%s", WIFI_DEFAULT_AP_PASSWORD);
 
-    snap->servo.seq_open_ms = 1000;
-    snap->servo.seq_close_ms = 1000;
-
-    snap->servo.aux_led_pin = AUX_LED_PIN_DISABLED;
-    snap->servo.aux_led_count = AUX_LED_COUNT_DEFAULT;
-
-    snap->system.enable_arm1 = false;
-    snap->system.enable_arm2 = false;
-    snap->system.enable_aux1 = false;
-    snap->system.enable_aux2 = false;
-    snap->system.enable_aux3 = false;
-    snap->system.enable_dome_esc = false;
-    snap->system.enable_rc_ch1 = false;
-    snap->system.enable_rc_ch2 = false;
-    snap->system.enable_rc_ch3 = false;
-    snap->system.enable_rc_ch4 = false;
-    snap->system.enable_rc_ch5 = false;
-    snap->system.enable_rc_ch6 = false;
-    snap->system.single_sbus_use_ch2 = false;
-    snap->system.enable_drive = false;
-    snap->system.enable_audio = false;
-    snap->system.enable_protor2link = false;
-    snap->system.stationary = false;
-    snap->system.rc_input_mode = RC_INPUT_DUAL_SBUS;
 
     snap->system.rc_pwm_drive_speed = defaultPwmBinding(1);
     snap->system.rc_pwm_drive_steer = defaultPwmBinding(2);
@@ -354,7 +174,28 @@ bool activeAudioEnabled = false;
 // Packed bitmask, 2 B: bit i is kComponentToggleFields[i]'s value as booted.
 // See include/config_cache.h and include/console_config_fields.h.
 uint16_t activeComponentToggleMask = 0;
+// The Sound Component Member as booted. 0 is no row's `value`, so "setup() has
+// not run yet" is distinguishable from any real member.
+uint8_t activeSoundMember = 0;
+// The body servo controller as booted (#444), on the same terms.
+uint8_t activeBodyServoMember = 0;
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
+
+// The addressed Servo Output rows, live (ADR 0041).
+//
+// Zero-initialised like configCache above, and filled by configLoadServoOutputs()
+// from main's boot path before any task starts -- the same boot-order contract
+// configCacheReplace() already relies on. A reader that runs before that sees a
+// count of zero, which is the truthful answer at that point rather than a
+// guessed row.
+static ServoOutputTable servoOutputCache = {};
+
+// Which of `main`'s servo pairs the band narrowed on the way onto a row, and
+// what they were (#417, ServoLegacyNarrowing). Filled beside the rows by
+// configLoadServoOutputs(); a set's bit is cleared by the first edit that
+// reaches its row, and configSaveServoOutputs() keeps the keys of every set
+// whose bit is still set. Guarded by configCacheMux like the rows.
+static ServoLegacyNarrowing servoLegacyNarrowingCache = {};
 
 void configCacheRead(ConfigSnapshot* out) {
     if (out == nullptr) {
@@ -382,23 +223,404 @@ bool configCacheDomeEnabled() {
     return enabled;
 }
 
-void configCacheReadServo(ServoConfig* out) {
-    if (out == nullptr) {
-        return;
-    }
+uint8_t configCacheServoOutputCount() {
+    uint8_t count;
     taskENTER_CRITICAL(&configCacheMux);
-    *out = configCache.servo;
+    count = servoOutputCache.count;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return count;
+}
+
+// One row at a time, deliberately: the whole table is far larger than anything
+// this cache hands out by value, and a task that wants one output should not
+// pay for twenty-four.
+bool configCacheReadServoOutput(uint8_t index, ServoOutputRow* out) {
+    if (out == nullptr || index >= SERVO_OUTPUT_ROW_MAX) {
+        return false;
+    }
+    bool live;
+    taskENTER_CRITICAL(&configCacheMux);
+    live = index < servoOutputCache.count;
+    if (live) {
+        *out = servoOutputCache.rows[index];
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return live;
+}
+
+// The runtime write onto a row's endpoints and component (ADR 0041). A Part's
+// place on the rows is moved by configCacheMoveServoOutputPart() below.
+//
+// The Apply Core that validates a builder's numbers is pure -- it cannot reach
+// this table (ADR 0011) -- so it records what the request asked for as a list
+// of addressed edits and the Commit Step hands them here. Without this a
+// builder would calibrate an arm, get the old value back on the next read, and
+// watch the droid drive to it.
+//
+// Only from the Commit Step. Nothing on the boot path may call it:
+// configLoadServoOutputs() has already read the stored rows there, and pushing
+// an edit over the top would undo exactly that.
+//
+// An edit naming an Output Address no live row has is a no-op rather than a
+// repair, which is what an expander's unfitted channel should be: nothing to
+// change, and nothing to report.
+//
+// Returns what the component band moved, in the same report the loader fills,
+// so a value changing under a builder is said in one voice wherever it happens.
+ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* edits,
+                                                         size_t count) {
+    configWriteWindowExpectHeld("configCacheApplyServoOutputEdits");
+    ServoOutputRepairReport report = {};
+    if (edits == nullptr) {
+        return report;
+    }
+    // The whole pass is inside one critical section: it is bounded by the edit
+    // count, does no allocation and no I/O, and a half-applied table is a table
+    // a reader could catch mid-edit.
+    taskENTER_CRITICAL(&configCacheMux);
+    // A Part a stated list names comes off the row it is on now first, so no
+    // reader - and no edit below - ever sees it on two Outputs (ADR 0050).
+    (void)servoOutputTableReleaseStatedParts(&servoOutputCache, edits, count);
+    for (size_t i = 0; i < count; ++i) {
+        const uint8_t index =
+            servoOutputTableFindByAddress(servoOutputCache, edits[i].driver, edits[i].channel);
+        if (index >= SERVO_OUTPUT_ROW_MAX) {
+            continue;
+        }
+        const uint16_t repaired = servoOutputApplyEdit(&servoOutputCache.rows[index], edits[i]);
+        // A save of this Output, which is what ends a narrowing: the builder
+        // has now said what they want here, so `main`'s pair is no longer the
+        // only record of their numbers and the next save may remove it.
+        if (edits[i].driver == SERVO_DRIVER_LEDC) {
+            const size_t set = servoLegacyFieldSetForChannel(edits[i].channel);
+            if (set < SERVO_LEGACY_FIELD_SET_COUNT) {
+                servoLegacyNarrowingCache.sets &= (uint8_t)~(1u << set);
+            }
+        }
+        if (repaired == 0) {
+            continue;
+        }
+        if ((repaired & SERVO_FIELD_OPEN) != 0) {
+            report.openMovedRows |= (uint32_t)1u << index;
+        }
+        if ((repaired & SERVO_FIELD_CLOSE) != 0) {
+            report.closeMovedRows |= (uint32_t)1u << index;
+        }
+        if ((repaired & SERVO_FIELD_CENTRE) != 0 && edits[i].kind == SERVO_EDIT_TYPED) {
+            report.centreMovedRows |= (uint32_t)1u << index;
+        }
+        if (report.rowsRepaired == 0) {
+            report.firstRow = index;
+            report.firstRowMask = repaired;
+        }
+        report.rowsRepaired++;
+        for (uint8_t bit = 0; bit < SERVO_OUTPUT_FIELD_COUNT; ++bit) {
+            if ((repaired & (uint16_t)(1u << bit)) != 0) {
+                report.fieldsRepaired++;
+            }
+        }
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return report;
+}
+
+bool configCacheReadServoOutputNarrowedFrom(ServoOutputDriver driver, uint8_t channel,
+                                            uint16_t* openUs, uint16_t* closeUs) {
+    if (openUs == nullptr || closeUs == nullptr || driver != SERVO_DRIVER_LEDC) {
+        return false;
+    }
+    const size_t set = servoLegacyFieldSetForChannel(channel);
+    if (set >= SERVO_LEGACY_FIELD_SET_COUNT) {
+        return false;
+    }
+    bool narrowed;
+    taskENTER_CRITICAL(&configCacheMux);
+    narrowed = (servoLegacyNarrowingCache.sets & (1u << set)) != 0;
+    if (narrowed) {
+        *openUs = servoLegacyNarrowingCache.openUs[set];
+        *closeUs = servoLegacyNarrowingCache.closeUs[set];
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return narrowed;
+}
+
+// The runtime write onto a Part's place (ADR 0050, #347).
+//
+// One critical section for the whole move: taking the Part off one row and
+// putting it on another are two list writes, and a reader that ran between them
+// would see a Part no Output drives -- which the sequence engine answers as
+// part-not-assigned, on a Part that was wired the whole time. Bounded by the
+// table size and the slot count, with no allocation and no I/O, the same
+// argument configCacheApplyServoOutputEdits() makes for its own pass.
+ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& move) {
+    configWriteWindowExpectHeld("configCacheMoveServoOutputPart");
+    taskENTER_CRITICAL(&configCacheMux);
+    const ServoPartMoveOutcome outcome = servoOutputTableMovePart(&servoOutputCache, move);
+    taskEXIT_CRITICAL(&configCacheMux);
+    return outcome;
+}
+
+void configCacheTicksFollowParts(SystemConfig* system) {
+    for (const BoardOutput& output : BOARD_OUTPUTS) {
+        boardOutputTickFollowsParts(
+            system, &output, configCacheServoOutputPartCountAt(SERVO_DRIVER_LEDC, output.channel));
+    }
+}
+
+uint8_t configCacheAddServoOutputRows(ServoOutputDriver driver, uint8_t channelCount,
+                                      uint8_t* missing) {
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t added =
+        servoOutputTableAddDriverRows(&servoOutputCache, driver, channelCount, missing);
+    taskEXIT_CRITICAL(&configCacheMux);
+    return added;
+}
+
+uint8_t configCacheServoOutputPartCountAt(ServoOutputDriver driver, uint8_t channel) {
+    uint8_t count = 0;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    if (index < SERVO_OUTPUT_ROW_MAX) {
+        count = servoOutputPartCount(servoOutputCache.rows[index]);
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return count;
+}
+
+// -----------------------------------------------------------------------------
+// The three questions the servo drive path asks of a row  --  answered as
+// values, never as a row.
+//
+// All live here rather than as one find-me-the-row accessor because their
+// caller is ServoTask, whose worst-case static chain is a measured constant
+// (SERVO_TASK_MEASURED_CHAIN_BYTES, include/config.h) that ADR 0040's checker
+// re-derives from the linked image on every slice. A ServoOutputRow is 72 B on
+// both chips (it holds nothing wider than a uint16_t, so it is 2-byte aligned
+// on the classic ESP32 and the P4 alike), so handing one out puts 72 B on a
+// Core 1 real-time frame to answer a question whose answer is two numbers or
+// one. A caller that only wants an endpoint pair should not pay for a Part
+// list, a Motion Profile and a boot behaviour it will not read.
+//
+// None of them copies a row inside this file either: the clamp takes its row by
+// reference and the pair and the Motion Profile are read field by field, all
+// straight out of the live table under the lock.
+// -----------------------------------------------------------------------------
+
+// The pulse width this output will actually be driven to, bounded by what the
+// component fitted to it takes (ADR 0041). *component comes back so a caller
+// that wants to say what moved the number can name the part without holding the
+// row it came from.
+//
+// With no live row addressed there, the request is returned unchanged and
+// *component is SERVO_COMP_NONE: an output the table does not describe has no
+// band to be held to, and clamping it into the cautious one would be inventing
+// a component nobody fitted. The two cases stay apart at the caller because a
+// returned value equal to the request is, by construction, nothing to report.
+uint16_t configCacheClampServoOutputPulse(ServoOutputDriver driver, uint8_t channel,
+                                          uint16_t requestedUs, ServoComponentType* component) {
+    uint16_t clamped = requestedUs;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    if (index < SERVO_OUTPUT_ROW_MAX) {
+        clamped = servoOutputClampPulse(servoOutputCache.rows[index], requestedUs);
+        if (component != nullptr) {
+            *component = servoOutputCache.rows[index].component;
+        }
+    } else if (component != nullptr) {
+        *component = SERVO_COMP_NONE;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return clamped;
+}
+
+// The Endpoint Pair of the output addressed there, directional: `open` is
+// whichever number the builder recorded as open, larger or smaller than close.
+// False when no live row is addressed there, and the out-params are untouched
+// so a caller's own fallback stands.
+bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t channel,
+                                         uint16_t* openUs, uint16_t* closeUs) {
+    if (openUs == nullptr || closeUs == nullptr) {
+        return false;
+    }
+    bool found;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    found = index < SERVO_OUTPUT_ROW_MAX;
+    if (found) {
+        *openUs = servoOutputCache.rows[index].open_us;
+        *closeUs = servoOutputCache.rows[index].close_us;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return found;
+}
+
+// The Output that drives a Part and its Endpoint Pair, for a puppet string
+// (#442). The rows are walked in place under the lock, so the caller's frame
+// carries four values rather than a row; a Part is driven by at most one Output
+// (servoOutputTableEnforcePartOwnership()), so the first row that claims it is
+// the only one. False, with the out-params untouched, when none does.
+bool configCacheReadPartOutputEnds(const char* part, ServoOutputAddress* output,
+                                   uint16_t* openUs, uint16_t* closeUs) {
+    if (part == nullptr || output == nullptr || openUs == nullptr || closeUs == nullptr) {
+        return false;
+    }
+    bool found = false;
+    taskENTER_CRITICAL(&configCacheMux);
+    for (uint8_t i = 0; i < servoOutputCache.count && i < SERVO_OUTPUT_ROW_MAX; ++i) {
+        const ServoOutputRow& row = servoOutputCache.rows[i];
+        if (servoOutputDrivesPart(row, part)) {
+            *output = {row.driver, row.channel};
+            *openUs = row.open_us;
+            *closeUs = row.close_us;
+            found = true;
+            break;
+        }
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return found;
+}
+
+// The centre recorded for the Output addressed there: where a Find by Moving
+// run puts a free Output before it nudges it (#411). One number, for the same
+// reason as the pair above. False, with *centreUs untouched, when no live row
+// is addressed there.
+bool configCacheReadServoOutputCentre(ServoOutputDriver driver, uint8_t channel,
+                                      uint16_t* centreUs) {
+    if (centreUs == nullptr) {
+        return false;
+    }
+    bool found;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    found = index < SERVO_OUTPUT_ROW_MAX;
+    if (found) {
+        *centreUs = servoOutputCache.rows[index].centre_us;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return found;
+}
+
+// The Motion Profile a move is planned from, read straight out of the live
+// table under the lock like the pair above, by reference rather than as a row
+// copy. servoMotionProfileOf() orders the ends through servoOutputLowUs() /
+// servoOutputHighUs() and takes the ease through servoOutputEffectiveEasing(),
+// so ServoTask neither sorts a directional pair nor sees an overshoot on an
+// Output nobody has measured.
+bool configCacheReadServoOutputMotionProfile(ServoOutputDriver driver, uint8_t channel,
+                                             ServoMotionProfile* profile) {
+    if (profile == nullptr) {
+        return false;
+    }
+    bool found;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    found = index < SERVO_OUTPUT_ROW_MAX;
+    if (found) {
+        *profile = servoMotionProfileOf(servoOutputCache.rows[index]);
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return found;
+}
+
+ServoComponentType configCacheReadServoOutputComponent(ServoOutputDriver driver, uint8_t channel) {
+    ServoComponentType component = SERVO_COMP_NONE;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    if (index < SERVO_OUTPUT_ROW_MAX) {
+        component = servoOutputCache.rows[index].component;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return component;
+}
+
+uint16_t configCacheReadServoOutputReleaseMs(ServoOutputDriver driver, uint8_t channel) {
+    uint16_t releaseMs = SERVO_RELEASE_MS_NEVER;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    if (index < SERVO_OUTPUT_ROW_MAX) {
+        releaseMs = outputWireReleaseAfterMs(servoOutputCache.rows[index]);
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return releaseMs;
+}
+
+uint8_t configCacheReadServoOutputLedCount(ServoOutputDriver driver, uint8_t channel) {
+    uint8_t ledCount = SERVO_LIGHT_LEDS_DEFAULT;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    if (index < SERVO_OUTPUT_ROW_MAX) {
+        ledCount = servoOutputCache.rows[index].led_count;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return ledCount;
+}
+
+bool configCacheOutputIsWired(size_t boardOutputIndex) {
+    bool wired;
+    taskENTER_CRITICAL(&configCacheMux);
+    wired = boardOutputIsWired(configCache.system, boardOutputIndex);
+    taskEXIT_CRITICAL(&configCacheMux);
+    return wired;
+}
+
+void configCacheReadRcActionContext(RcAudioCategorySnapshot* categories,
+                                    SpeedPresetId* speedPresetActive) {
+    taskENTER_CRITICAL(&configCacheMux);
+    if (categories != nullptr) {
+        const AudioConfig& audio = configCache.audio;
+        categories->gen_lo = audio.snd_cat_gen_lo;
+        categories->gen_hi = audio.snd_cat_gen_hi;
+        categories->chat_lo = audio.snd_cat_chat_lo;
+        categories->chat_hi = audio.snd_cat_chat_hi;
+        categories->hap_lo = audio.snd_cat_hap_lo;
+        categories->hap_hi = audio.snd_cat_hap_hi;
+        categories->proc_lo = audio.snd_cat_proc_lo;
+        categories->proc_hi = audio.snd_cat_proc_hi;
+        categories->sad_lo = audio.snd_cat_sad_lo;
+        categories->sad_hi = audio.snd_cat_sad_hi;
+        categories->sent_lo = audio.snd_cat_sent_lo;
+        categories->sent_hi = audio.snd_cat_sent_hi;
+        categories->hum_lo = audio.snd_cat_hum_lo;
+        categories->hum_hi = audio.snd_cat_hum_hi;
+        categories->scrm_lo = audio.snd_cat_scrm_lo;
+        categories->scrm_hi = audio.snd_cat_scrm_hi;
+        categories->ooh_lo = audio.snd_cat_ooh_lo;
+        categories->ooh_hi = audio.snd_cat_ooh_hi;
+        categories->alrm_lo = audio.snd_cat_alrm_lo;
+        categories->alrm_hi = audio.snd_cat_alrm_hi;
+        categories->snarky_lo = audio.snd_cat_snarky_lo;
+        categories->snarky_hi = audio.snd_cat_snarky_hi;
+        categories->whis_lo = audio.snd_cat_whis_lo;
+        categories->whis_hi = audio.snd_cat_whis_hi;
+    }
+    if (speedPresetActive != nullptr) {
+        *speedPresetActive = configCache.drive.speedPresetActive;
+    }
     taskEXIT_CRITICAL(&configCacheMux);
 }
 
-bool configCacheServoAnyEnabled() {
-    bool result;
+size_t configCacheReadRcTriggerSlots(RcTriggerBinding* out, size_t cap) {
+    if (out == nullptr) {
+        return 0;
+    }
     taskENTER_CRITICAL(&configCacheMux);
-    result = configCache.system.enable_arm1 || configCache.system.enable_arm2 ||
-             configCache.system.enable_aux1 || configCache.system.enable_aux2 ||
-             configCache.system.enable_aux3;
+    const size_t count = rcTriggerSlotsCopy(configCache.system, out, cap);
     taskEXIT_CRITICAL(&configCacheMux);
-    return result;
+    return count;
+}
+
+uint32_t configCacheSbusTimeoutMs() {
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint32_t timeoutMs = configCache.drive.sbusTimeoutMs;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return timeoutMs;
+}
+
+uint32_t configCacheCadenceFloorMs() {
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint32_t storedMs = configCache.system.cadence_floor_ms;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return sequenceCadenceFloorInUse(storedMs);
 }
 
 void configCacheReadWifi(WifiConfig* out) {
@@ -511,21 +733,125 @@ bool configCacheReadActiveComponentToggle(size_t bitIndex) {
     return result;
 }
 
+// See declaration comment in config_cache.h.
+void configCacheSetActiveSoundMember(uint8_t memberValue) {
+    taskENTER_CRITICAL(&configCacheMux);
+    activeSoundMember = memberValue;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// See declaration comment in config_cache.h.
+uint8_t configCacheReadActiveSoundMember() {
+    uint8_t result;
+    taskENTER_CRITICAL(&configCacheMux);
+    result = activeSoundMember;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return result;
+}
+
+// See declaration comment in config_cache.h.
+uint8_t configCacheReadSoundMember() {
+    uint8_t result;
+    taskENTER_CRITICAL(&configCacheMux);
+    result = configCache.system.sound_member;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return result;
+}
+
+// See declaration comment in config_cache.h.
+void configCacheSetActiveBodyServoMember(uint8_t memberValue) {
+    taskENTER_CRITICAL(&configCacheMux);
+    activeBodyServoMember = memberValue;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// See declaration comment in config_cache.h.
+uint8_t configCacheReadActiveBodyServoMember() {
+    uint8_t result;
+    taskENTER_CRITICAL(&configCacheMux);
+    result = activeBodyServoMember;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return result;
+}
+
+// See declaration comment in config_cache.h.
+uint8_t configCacheReadRcMember() {
+    uint8_t result;
+    taskENTER_CRITICAL(&configCacheMux);
+    result = configCache.system.rc_member;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return result;
+}
+
 // Live log level, published on every cache apply. Read lock-free by the log
 // macros: a single aligned byte is atomic on this core, and the log path runs
 // on Core 1 real-time loops where a critical section per suppressed log call
 // is not acceptable.
 static volatile uint8_t s_liveLogLevel = 0;
 
-void configCacheApply(const ConfigSnapshot& snap) {
-    taskENTER_CRITICAL(&configCacheMux);
-    configCache = snap;
-    taskEXIT_CRITICAL(&configCacheMux);
-    s_liveLogLevel = snap.system.logLevel;
-
+static void markRcConfigDirty() {
     taskENTER_CRITICAL(&robotStateMux);
     robotState.rcConfigDirty = true;
     taskEXIT_CRITICAL(&robotStateMux);
+}
+
+// See declaration comment in config_cache.h.
+void configCacheApply(const ConfigSnapshot& snap) {
+    configCacheApplyKeepingLive(snap, false, false);
+}
+
+// See declaration comment in config_cache.h.
+void configCacheReplace(const ConfigSnapshot& snap) {
+    configCacheApplyKeepingLive(snap, true, true);
+}
+
+// See declaration comment in config_cache.h.
+void configCacheApplyKeepingLive(const ConfigSnapshot& snap, bool speedLimitStated,
+                                 bool stationaryStated) {
+    configWriteWindowExpectHeld("configCacheApplyKeepingLive");
+    taskENTER_CRITICAL(&configCacheMux);
+    const int16_t liveLimit = configCache.drive.speedLimitMax;
+    const SpeedPresetId livePreset = configCache.drive.speedPresetActive;
+    const bool liveStationary = configCache.system.stationary;
+    configCache = snap;
+    if (!speedLimitStated) {
+        configCache.drive.speedLimitMax = liveLimit;
+        configCache.drive.speedPresetActive = livePreset;
+    }
+    if (!stationaryStated) {
+        configCache.system.stationary = liveStationary;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    s_liveLogLevel = snap.system.logLevel;
+
+    markRcConfigDirty();
+}
+
+// See declaration comment in config_cache.h. The three preset values are
+// held to the drive cap here as well as on load and at the config door: this
+// is the value DriveTask is about to drive at, and the clamp costs nothing.
+int16_t configCacheSelectSpeedPreset(SpeedPresetId preset) {
+    taskENTER_CRITICAL(&configCacheMux);
+    DriveConfig& drive = configCache.drive;
+    const int16_t limit = speedPresetValueForId(
+        preset, constrain(drive.speedPresetSlow, (int16_t)0, (int16_t)SPEED_LIMIT_MAX),
+        constrain(drive.speedPresetNormal, (int16_t)0, (int16_t)SPEED_LIMIT_MAX),
+        constrain(drive.speedPresetTurbo, (int16_t)0, (int16_t)SPEED_LIMIT_MAX));
+    drive.speedLimitMax = limit;
+    drive.speedPresetActive = preset;
+    taskEXIT_CRITICAL(&configCacheMux);
+
+    markRcConfigDirty();
+    return limit;
+}
+
+void configCacheSetSpeedLimit(int16_t speedLimitMax, SpeedPresetId preset) {
+    taskENTER_CRITICAL(&configCacheMux);
+    configCache.drive.speedLimitMax = speedLimitMax;
+    configCache.drive.speedPresetActive = preset;
+    taskEXIT_CRITICAL(&configCacheMux);
+
+    markRcConfigDirty();
 }
 
 // See declaration comment in config_cache.h. Deliberately NOT a call to
@@ -604,27 +930,26 @@ void configCacheResolvedMdnsHostname(char* out, size_t outSize) {
     configResolvedMdnsHostname(snap.system, out, outSize);
 }
 
+// A track, an interval or a category bound, by the key POST /api/audio/tracks
+// takes it under: the tracks door's own audio Settings (include/config_settings.h),
+// never the volume or a mood mask.
 bool configAudioGetTrackByKey(const AudioConfig& config, const char* key, uint16_t* out) {
-    if (out == nullptr) {
+    const ConfigSetting* setting = audioSettingByName(key, SettingDoor::AudioTracks);
+    if (setting == nullptr || out == nullptr) {
         return false;
     }
-    const AudioTrackKeyMapEntry* entry = audioTrackKeyEntry(key);
-    if (entry == nullptr) {
-        return false;
-    }
-    *out = config.*(entry->field);
+    uint16_t value = 0;
+    memcpy(&value, reinterpret_cast<const uint8_t*>(&config) + setting->offset, sizeof(value));
+    *out = value;
     return true;
 }
 
 bool configAudioSetTrackByKey(AudioConfig* config, const char* key, uint16_t value) {
-    if (config == nullptr) {
+    const ConfigSetting* setting = audioSettingByName(key, SettingDoor::AudioTracks);
+    if (setting == nullptr || config == nullptr) {
         return false;
     }
-    const AudioTrackKeyMapEntry* entry = audioTrackKeyEntry(key);
-    if (entry == nullptr) {
-        return false;
-    }
-    config->*(entry->field) = value;
+    memcpy(reinterpret_cast<uint8_t*>(config) + setting->offset, &value, sizeof(value));
     return true;
 }
 
@@ -660,12 +985,18 @@ const char* configAudioCategoryCompanionKey(const char* key) {
 
 bool configUpdateAudioMoodMasks(Preferences& prefs, uint16_t quiet, uint16_t mid, uint16_t full,
                                 uint16_t awakeplus) {
-    if (configValidate(ConfigKey::SND_MOODCAT_QUIET, quiet) != ConfigValidationResult::OK ||
-        configValidate(ConfigKey::SND_MOODCAT_MID, mid) != ConfigValidationResult::OK ||
-        configValidate(ConfigKey::SND_MOODCAT_FULL, full) != ConfigValidationResult::OK ||
-        configValidate(ConfigKey::SND_MOODCAT_AWAKEPLUS, awakeplus) !=
-            ConfigValidationResult::OK) {
-        return false;
+    configWriteWindowExpectHeld("configUpdateAudioMoodMasks");
+    // Each mask held to its own Setting's check (include/config_settings.h),
+    // the one POST /api/audio/mood-map and the Console apply before here.
+    const struct {
+        const char* name;
+        uint16_t value;
+    } masks[] = {{"quiet", quiet}, {"mid", mid}, {"full", full}, {"awakeplus", awakeplus}};
+    for (const auto& mask : masks) {
+        const ConfigSetting* setting = audioSettingByName(mask.name, SettingDoor::AudioMoodMap);
+        if (setting == nullptr || mask.value < setting->lo || mask.value > setting->hi) {
+            return false;
+        }
     }
 
     ConfigSnapshot snap = {};
@@ -717,6 +1048,15 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
     // Now that migrations are done, deserialize from the migrated NVS
     PrefsReader migratedReader(prefs);
     bool ok = configDeserialize(migratedReader, out);
+    // Said out loud, like a repaired servo row: the dome's pulse set the builder
+    // saved is not the one it will run, and the next save makes that permanent.
+    if (configDomePulsesStoredOutOfOrder(migratedReader)) {
+        PA_LOG_WARN("config",
+                    "stored dome ESC pulses out of order (need min <= neutral <= max); "
+                    "using %u/%u/%u us",
+                    (unsigned)out->dome.dome_min_pulse_us, (unsigned)out->dome.dome_neutral_us,
+                    (unsigned)out->dome.dome_max_pulse_us);
+    }
 
     // Apply in-place schema 1->2 migration if needed
     if (stored < 2) {
@@ -737,73 +1077,198 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
 }
 
 
-void configLoadDrive(Preferences& prefs, DriveConfig* out) {
-    if (out == nullptr) return;
+void configLoadServoOutputs(Preferences& prefs, ServoOutputRepairReport* report) {
     PrefsReader reader(prefs);
-    configDeserializeDrive(reader, out);
+    // Deserialised straight into the live table rather than through a caller's
+    // local. ServoOutputTable is the largest thing this schema stores and
+    // loadConfigToState() runs on loopTask, whose stack is sized against a
+    // measured worst-case chain (include/config.h, #250) -- so the table never
+    // becomes a stack frame. Safe because this runs once, from setup(), before
+    // any task that reads the table exists.
+    configDeserializeServoOutputs(reader, &servoOutputCache, report, &servoLegacyNarrowingCache);
 }
 
-void configLoadAudio(Preferences& prefs, AudioConfig* out) {
-    if (out == nullptr) return;
+void configLoadRecords(Preferences& prefs) {
     PrefsReader reader(prefs);
-    configDeserializeAudio(reader, out);
+    for (size_t i = 0; i < CONFIG_RECORD_COUNT; ++i) {
+        // A repair note is one log line; each Record's fits well inside it.
+        char repaired[112] = {};
+        if (configRecordLoad((ConfigRecordId)i, reader, repaired, sizeof(repaired))) {
+            PA_LOG_WARN("config", "%s", repaired);
+        }
+    }
 }
 
-void configLoadServo(Preferences& prefs, ServoConfig* out) {
-    if (out == nullptr) return;
-    PrefsReader reader(prefs);
-    configDeserializeServo(reader, out);
+// Remove each key that is there. False when a removal that was asked for did
+// not happen - Preferences::remove() reports nvs_erase_key()'s answer - so the
+// caller can say the save failed rather than claim keys gone that are not.
+static bool removeKeys(Preferences& prefs, const char* const* keys, size_t count) {
+    bool ok = true;
+    for (size_t k = 0; k < count; ++k) {
+        if (prefs.isKey(keys[k]) && !prefs.remove(keys[k])) {
+            ok = false;
+        }
+    }
+    return ok;
 }
 
-void configLoadDome(Preferences& prefs, DomeConfig* out) {
-    if (out == nullptr) return;
-    PrefsReader reader(prefs);
-    configDeserializeDome(reader, out);
+bool configSaveServoOutputs(Preferences& prefs) {
+    configWriteWindowExpectHeld("configSaveServoOutputs");
+    PrefsWriter writer(prefs);
+    const uint8_t count = configCacheServoOutputCount();
+    bool ok = configSerializeServoOutputCount(count, writer);
+    for (uint8_t i = 0; i < count; ++i) {
+        // A row at a time under the cache lock: no whole-table copy on this
+        // caller's stack, and no critical section held across an NVS write.
+        ServoOutputRow row = {};
+        if (!configCacheReadServoOutput(i, &row)) {
+            continue;
+        }
+        ok = configSerializeServoOutputRow(i, row, writer) && ok;
+    }
+
+    // The contract half of #345: once the rows are safely down, the five fixed
+    // key sets they replaced stop existing in NVS as well as in the schema.
+    //
+    // Both guards are load-bearing, because this is the one irreversible step
+    // in the whole migration. `ok` says every row write landed, so a failed
+    // save leaves the old keys exactly where they were and the next attempt can
+    // still cross the bridge -- and that sentence is only true because
+    // PrefsWriter::writeStr() reports a putString() that returned 0 for a
+    // non-empty value as a failure (src/config_nvsio.cpp, #375). It used to
+    // return true unconditionally, and this removal ran on top of a row that
+    // had never reached flash. `count` says the live table has rows at all: a
+    // save that ran before configLoadServoOutputs() would be writing an empty
+    // table over a builder's calibration, and removing the keys on top of that
+    // is how the calibration would be lost rather than merely unloaded.
+    //
+    // A set the band narrowed on the way in is kept, whatever else this save
+    // did, until the builder saves that Output (#417): its keys are the only
+    // record left of the numbers `main` drove to, and GET /api/servo/outputs
+    // reads them back from findLegacyNarrowing() on every boot until then.
+    //
+    // A removal that fails is a failed save. The keys it left are still read
+    // on the next boot, and a caller told "saved" would have no reason to try
+    // again.
+    if (ok && count > 0) {
+        uint8_t keep;
+        taskENTER_CRITICAL(&configCacheMux);
+        keep = servoLegacyNarrowingCache.sets;
+        taskEXIT_CRITICAL(&configCacheMux);
+        for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
+            if ((keep & (1u << i)) != 0) {
+                continue;
+            }
+            const ServoLegacyFieldSet& set = SERVO_LEGACY_FIELD_SETS[i];
+            const char* const keys[] = {set.nvsOpenKey, set.nvsCloseKey, set.nvsTypeKey};
+            ok = removeKeys(prefs, keys, sizeof(keys) / sizeof(keys[0])) && ok;
+        }
+    }
+    return ok;
 }
 
-void configLoadSystem(Preferences& prefs, SystemConfig* out) {
-    if (out == nullptr) return;
-    PrefsReader reader(prefs);
-    configDeserializeSystem(reader, out);
+// The sequence dwell ServoConfig no longer carries (#362). Its only reader was
+// the body routine state machine #354 deleted, so nothing on this controller
+// will ever read these again, and a key nobody reads is an NVS entry spent on
+// nothing. Removed after a save that landed, on the reasoning #345 used for the
+// fixed servo key sets: the removal needs no schema bump because it has nothing
+// to migrate, and it is idempotent - a controller that never had the keys, or
+// has already lost them, finds nothing to remove.
+static bool removeRetiredServoKeys(Preferences& prefs) {
+    static const char* const kRetired[] = {"seq_op", "seq_cl"};
+    return removeKeys(prefs, kRetired, sizeof(kRetired) / sizeof(kRetired[0]));
 }
 
-void configLoadWifi(Preferences& prefs, WifiConfig* out) {
-    if (out == nullptr) return;
-    PrefsReader reader(prefs);
-    configDeserializeWifi(reader, out);
+// The one lit wire and its LED count (#413). adoptRetiredAuxLedKeys() has read
+// them onto the row they named, and a key nobody reads is an NVS entry spent on
+// nothing; removing them is also what stops that adoption running again.
+//
+// Here, after the snapshot, and not beside the fixed servo sets in
+// configSaveServoOutputs(): the adoption has two halves, and the second - the
+// wired tick the loader sets on the lit Output, since `main` drove its strip
+// from these keys alone (#417) - lives in SystemConfig, which this save is the
+// one to write. Removed before it landed, a save that failed on the snapshot
+// would leave a Light Type on the row and no tick anywhere, and the strip dark.
+// Every caller runs this only after configSaveServoOutputs() succeeded, so the
+// row half is down too.
+static bool removeRetiredLightKeys(Preferences& prefs) {
+    static const char* const kRetired[] = {NVS_KEY_RETIRED_AUX_LED_PIN,
+                                           NVS_KEY_RETIRED_AUX_LED_COUNT};
+    return removeKeys(prefs, kRetired, sizeof(kRetired) / sizeof(kRetired[0]));
 }
 
 bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot) {
+    configWriteWindowExpectHeld("configSave");
     PrefsWriter writer(prefs);
-    return configSerialize(snapshot, writer);
+    bool ok = configSerialize(snapshot, writer);
+    if (ok) {
+        ok = removeRetiredServoKeys(prefs);
+        ok = removeRetiredLightKeys(prefs) && ok;
+    }
+    return ok;
+}
+
+bool configPersist(const ConfigSnapshot& snapshot, const ConfigSaveExtras& extras) {
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, false)) {
+        PA_LOG_WARN("config", "config not saved: namespace did not open");
+        return false;
+    }
+    // The order, and why it is this one: include/config_store.h, "Store-opened
+    // saves". Each step runs only when every step before it landed.
+    bool ok = configSaveServoOutputs(prefs);
+    ok = ok && configSave(prefs, snapshot);
+    if (ok && extras.records != 0) {
+        PrefsWriter writer(prefs);
+        ok = configRecordsSave(extras.records, writer);
+    }
+    prefs.end();
+    return ok;
+}
+
+bool saveConfigToNvs() {
+    ConfigSnapshot snap;
+    configCacheRead(&snap);
+    return configPersist(snap, ConfigSaveExtras{});
+}
+
+bool configPersistSystem(const SystemConfig& system) {
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, false)) {
+        PA_LOG_WARN("config", "system config not saved: namespace did not open");
+        return false;
+    }
+    const bool ok = configSaveSystem(prefs, system);
+    prefs.end();
+    return ok;
 }
 
 bool configSaveDrive(Preferences& prefs, const DriveConfig& config) {
+    configWriteWindowExpectHeld("configSaveDrive");
     PrefsWriter writer(prefs);
     return configSerializeDrive(config, writer);
 }
 
 bool configSaveAudio(Preferences& prefs, const AudioConfig& config) {
+    configWriteWindowExpectHeld("configSaveAudio");
     PrefsWriter writer(prefs);
     return configSerializeAudio(config, writer);
 }
 
-bool configSaveServo(Preferences& prefs, const ServoConfig& config) {
-    PrefsWriter writer(prefs);
-    return configSerializeServo(config, writer);
-}
-
 bool configSaveDome(Preferences& prefs, const DomeConfig& config) {
+    configWriteWindowExpectHeld("configSaveDome");
     PrefsWriter writer(prefs);
     return configSerializeDome(config, writer);
 }
 
 bool configSaveWifi(Preferences& prefs, const WifiConfig& config) {
+    configWriteWindowExpectHeld("configSaveWifi");
     PrefsWriter writer(prefs);
     return configSerializeWifi(config, writer);
 }
 
 bool configSaveSystem(Preferences& prefs, const SystemConfig& config) {
+    configWriteWindowExpectHeld("configSaveSystem");
     PrefsWriter writer(prefs);
     bool ok = configSerializeSystem(config, writer);
 
@@ -815,228 +1280,4 @@ bool configSaveSystem(Preferences& prefs, const SystemConfig& config) {
     }
 
     return ok;
-}
-
-ConfigValidationResult configValidate(ConfigKey key, int32_t value) {
-    switch (key) {
-        // Speed
-        case ConfigKey::SPEED_LIMIT_MAX:
-            return (value >= 0 && value <= SPEED_LIMIT_MAX) ? ConfigValidationResult::OK
-                                                             : ConfigValidationResult::OUT_OF_RANGE;
-        case ConfigKey::SPEED_PRESET_SLOW:
-        case ConfigKey::SPEED_PRESET_NORMAL:
-        case ConfigKey::SPEED_PRESET_TURBO:
-            return (value >= 0 && value <= SPEED_LIMIT_MAX) ? ConfigValidationResult::OK
-                                                             : ConfigValidationResult::OUT_OF_RANGE;
-        case ConfigKey::SPEED_PRESET_ACTIVE:
-            return (value >= 0 && value <= 2) ? ConfigValidationResult::OK : ConfigValidationResult::INVALID_VALUE;
-
-        // Timeouts
-        case ConfigKey::SBUS_TIMEOUT_MS:
-            return (value >= 50 && value <= 5000) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-        case ConfigKey::WEB_DRIVE_TIMEOUT_MS:
-            return (value >= 100 && value <= 5000) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // Audio
-        case ConfigKey::AUDIO_VOLUME:
-            return (value >= 0 && value <= 30) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-        case ConfigKey::LOG_LEVEL:
-            return (value >= 1 && value <= 3) ? ConfigValidationResult::OK : ConfigValidationResult::INVALID_VALUE;
-
-        // Audio tracks (uint16, 0..65535  --  accept all)
-        case ConfigKey::SND_SCREAM:
-        case ConfigKey::SND_FAINT:
-        case ConfigKey::SND_LEIA:
-        case ConfigKey::SND_CANTINA_S:
-        case ConfigKey::SND_SW_THEME:
-        case ConfigKey::SND_IMP_MARCH:
-        case ConfigKey::SND_CANTINA_L:
-        case ConfigKey::SND_STARTUP:
-        case ConfigKey::SND_DOODOO:
-        case ConfigKey::SND_FAILURE:
-        case ConfigKey::SND_DISCO:
-        case ConfigKey::SND_MAHNA:
-        case ConfigKey::SND_INLOVE:
-        case ConfigKey::SND_MACHO:
-        case ConfigKey::SND_GANGNAM:
-        case ConfigKey::SND_UPTOWN:
-        case ConfigKey::SND_CELEBR:
-        case ConfigKey::SND_STAYIN:
-        case ConfigKey::SND_HARLEM:
-        case ConfigKey::SND_PBJTIME:
-        case ConfigKey::SND_SYS_BOOT:
-        case ConfigKey::SND_SYS_MODE_N:
-        case ConfigKey::SND_SYS_MODE_S:
-        case ConfigKey::SND_SYS_MODE_T:
-        case ConfigKey::SND_SYS_DRV_ON:
-        case ConfigKey::SND_SYS_DOME_ON:
-        case ConfigKey::SND_RAND_MIN:
-        case ConfigKey::SND_RAND_MAX:
-        case ConfigKey::SND_INT_QUIET:
-        case ConfigKey::SND_INT_MID:
-        case ConfigKey::SND_INT_FULL:
-        case ConfigKey::SND_INT_AWAKE:
-            return (value >= 0 && value <= 0xFFFF) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // Mood categories (12-bit masks)
-        case ConfigKey::SND_MOODCAT_QUIET:
-        case ConfigKey::SND_MOODCAT_MID:
-        case ConfigKey::SND_MOODCAT_FULL:
-        case ConfigKey::SND_MOODCAT_AWAKEPLUS:
-            return (value >= 0 && value <= 0x0FFF) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // Sound category ranges (lo/hi)
-        case ConfigKey::SND_CAT_GEN_LO:
-        case ConfigKey::SND_CAT_GEN_HI:
-        case ConfigKey::SND_CAT_CHAT_LO:
-        case ConfigKey::SND_CAT_CHAT_HI:
-        case ConfigKey::SND_CAT_HAP_LO:
-        case ConfigKey::SND_CAT_HAP_HI:
-        case ConfigKey::SND_CAT_PROC_LO:
-        case ConfigKey::SND_CAT_PROC_HI:
-        case ConfigKey::SND_CAT_SAD_LO:
-        case ConfigKey::SND_CAT_SAD_HI:
-        case ConfigKey::SND_CAT_SENT_LO:
-        case ConfigKey::SND_CAT_SENT_HI:
-        case ConfigKey::SND_CAT_HUM_LO:
-        case ConfigKey::SND_CAT_HUM_HI:
-        case ConfigKey::SND_CAT_SCRM_LO:
-        case ConfigKey::SND_CAT_SCRM_HI:
-        case ConfigKey::SND_CAT_OOH_LO:
-        case ConfigKey::SND_CAT_OOH_HI:
-        case ConfigKey::SND_CAT_ALRM_LO:
-        case ConfigKey::SND_CAT_ALRM_HI:
-        case ConfigKey::SND_CAT_SNARKY_LO:
-        case ConfigKey::SND_CAT_SNARKY_HI:
-        case ConfigKey::SND_CAT_WHIS_LO:
-        case ConfigKey::SND_CAT_WHIS_HI:
-            return (value >= 0 && value <= 0xFFFF) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // Servo pulse widths
-        case ConfigKey::ARM1_OPEN_US:
-        case ConfigKey::ARM1_CLOSE_US:
-        case ConfigKey::ARM2_OPEN_US:
-        case ConfigKey::ARM2_CLOSE_US:
-        case ConfigKey::AUX1_OPEN_US:
-        case ConfigKey::AUX1_CLOSE_US:
-        case ConfigKey::AUX2_OPEN_US:
-        case ConfigKey::AUX2_CLOSE_US:
-        case ConfigKey::AUX3_OPEN_US:
-        case ConfigKey::AUX3_CLOSE_US:
-            return (value >= 500 && value <= 2500) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // Servo types (0..3)
-        case ConfigKey::ARM1_TYPE:
-        case ConfigKey::ARM2_TYPE:
-        case ConfigKey::AUX1_TYPE:
-        case ConfigKey::AUX2_TYPE:
-        case ConfigKey::AUX3_TYPE:
-            return (value >= 0 && value <= SERVO_COMP_RGB) ? ConfigValidationResult::OK
-                                                            : ConfigValidationResult::INVALID_VALUE;
-
-        // Dome ESC pulse widths
-        case ConfigKey::DOME_NEUTRAL_US:
-        case ConfigKey::DOME_MIN_PULSE_US:
-        case ConfigKey::DOME_MAX_PULSE_US:
-            return (value >= 1000 && value <= 2000) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        case ConfigKey::DOME_SPEED_LIMIT_PCT:
-            return (value >= 0 && value <= 100) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        case ConfigKey::DOME_RND_SPEED_PCT:
-            return (value >= 0 && value <= 100) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        case ConfigKey::DOME_RND_PAUSE_MIN:
-        case ConfigKey::DOME_RND_PAUSE_MAX:
-            return (value >= 0 && value <= 255) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        case ConfigKey::DOME_RND_MOVE_MS:
-            return (value >= 100 && value <= 10000) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // Sequence timing
-        case ConfigKey::SEQ_OPEN_MS:
-        case ConfigKey::SEQ_CLOSE_MS:
-            return (value >= 100 && value <= 5000) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // AUX LED
-        case ConfigKey::AUX_LED_PIN:
-            return (value >= 0 && value <= AUX_LED_PIN_MAX) ? ConfigValidationResult::OK
-                                                             : ConfigValidationResult::INVALID_VALUE;
-        case ConfigKey::AUX_LED_COUNT:
-            return (value >= AUX_LED_COUNT_DEFAULT && value <= AUX_LED_COUNT_MAX) ? ConfigValidationResult::OK
-                                                                                     : ConfigValidationResult::OUT_OF_RANGE;
-
-        // RC Input Mode
-        case ConfigKey::RC_INPUT_MODE:
-            return (value >= 0 && value <= RC_INPUT_DUAL_SBUS) ? ConfigValidationResult::OK
-                                                                : ConfigValidationResult::INVALID_VALUE;
-
-        // Booleans are handled separately in configValidateBool
-        case ConfigKey::ENABLE_ARM1:
-        case ConfigKey::ENABLE_ARM2:
-        case ConfigKey::ENABLE_AUX1:
-        case ConfigKey::ENABLE_AUX2:
-        case ConfigKey::ENABLE_AUX3:
-        case ConfigKey::ENABLE_DOME:
-        case ConfigKey::ENABLE_RC_CH1:
-        case ConfigKey::ENABLE_RC_CH2:
-        case ConfigKey::ENABLE_RC_CH3:
-        case ConfigKey::ENABLE_RC_CH4:
-        case ConfigKey::ENABLE_RC_CH5:
-        case ConfigKey::ENABLE_RC_CH6:
-        case ConfigKey::SINGLE_SBUS_USE_CH2:
-        case ConfigKey::ENABLE_S1_HOVERBOARD:
-        case ConfigKey::ENABLE_S2_SOUND:
-        case ConfigKey::ENABLE_S3_DOME_CTRL:
-        case ConfigKey::STATIONARY:
-        case ConfigKey::DOME_RND_ENABLE:
-            return (value == 0 || value == 1) ? ConfigValidationResult::OK : ConfigValidationResult::INVALID_VALUE;
-
-        // Float fields handled separately
-        case ConfigKey::DOME_MIN_SPEED:
-        case ConfigKey::DOME_MAX_SPEED:
-        case ConfigKey::DOME_WIFI_PEER_IP:
-            return ConfigValidationResult::INVALID_VALUE;
-
-        default:
-            return ConfigValidationResult::INVALID_VALUE;
-    }
-}
-
-ConfigValidationResult configValidateFloat(ConfigKey key, float value) {
-    switch (key) {
-        case ConfigKey::DOME_MIN_SPEED:
-            return (value >= 0.0f && value <= 1.0f) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-        case ConfigKey::DOME_MAX_SPEED:
-            return (value >= 0.0f && value <= 1.0f) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-        default:
-            return ConfigValidationResult::INVALID_VALUE;
-    }
-}
-
-ConfigValidationResult configValidateBool(ConfigKey key, bool value) {
-    (void)value;  // All booleans are valid (true or false)
-    switch (key) {
-        case ConfigKey::ENABLE_ARM1:
-        case ConfigKey::ENABLE_ARM2:
-        case ConfigKey::ENABLE_AUX1:
-        case ConfigKey::ENABLE_AUX2:
-        case ConfigKey::ENABLE_AUX3:
-        case ConfigKey::ENABLE_DOME:
-        case ConfigKey::ENABLE_RC_CH1:
-        case ConfigKey::ENABLE_RC_CH2:
-        case ConfigKey::ENABLE_RC_CH3:
-        case ConfigKey::ENABLE_RC_CH4:
-        case ConfigKey::ENABLE_RC_CH5:
-        case ConfigKey::ENABLE_RC_CH6:
-        case ConfigKey::SINGLE_SBUS_USE_CH2:
-        case ConfigKey::ENABLE_S1_HOVERBOARD:
-        case ConfigKey::ENABLE_S2_SOUND:
-        case ConfigKey::ENABLE_S3_DOME_CTRL:
-        case ConfigKey::STATIONARY:
-        case ConfigKey::DOME_RND_ENABLE:
-            return ConfigValidationResult::OK;
-        default:
-            return ConfigValidationResult::INVALID_VALUE;
-    }
 }

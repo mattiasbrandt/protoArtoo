@@ -1,94 +1,129 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/seq_protocol_check.js,/dome_command_map.js,/dome_panel_model.js,/dome_layout.js,/dome_layout_render.js,/seq.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/overlay.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/dome_bearing.js,/dome_lights.js,/seq_protocol_check.js,/seq_tempo.js,/seq_gesture.js,/servo_motion.js,/seq_rehearsal.js,/droid_parts.js,/droid_part_kind.js,/outputs.js,/droid_build.js,/dome_command_map.js,/dome_panel_model.js,/dome_layout.js,/body_art.js,/body_view.js,/parts_mapping.js,/droid_picture.js,/seq_timeline.js,/seq.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Sequences — protoArtoo</title>
+    <title>Sequences - protoR2</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
-    <!-- PA:INCLUDE _recovery_kernel.html -->
+    <!-- Thin delegate. This file is the one copy of this surface's markup and
+         the Operator Shell fetches it; fetching never runs scripts, so this
+         line is inert for the shell. A browser that lands here directly -- a
+         bookmark, an old link, a support conversation -- is handed to the shell
+         at this surface's route instead, so the address keeps opening what it
+         names (ADR 0048). -->
+    <script>window.PAShellDelegate = true; location.replace("/#seq");</script>
   </head>
   <body data-page="seq">
-    <div id="shell-top"></div>
 
-    <!-- Main Learned Sequences Card -->
+    <!-- The title is the name in the nav (ADR 0066). Restoring a backup is the one act that belongs beside the title rather than
+         beside a row: it puts a sequence on the droid that is not on the list
+         yet, so there is no row for it to sit next to. -->
+    <div id="seq-title" class="title">
+      <div>
+        <h1>Sequences</h1>
+      </div>
+      <div class="acts">
+        <button id="seq-btn-import" class="btn icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Restore backup</span></button>
+      </div>
+    </div>
+
+    <!-- The list, its own view: every sequence on the droid in one table, the
+         builder's own first. It gives way to the workspace while a sequence
+         is open (data/seq.js renderListView()). -->
     <div id="seq-main-card" class="card">
-      <div class="seq-card-header-row">
-        <h3>🎬 Learned Sequences</h3>
-        <div class="seq-card-actions-top">
-          <button id="seq-btn-import" class="btn btn-sm" title="Restore a sequence you previously exported">Restore Backup</button>
-        </div>
-      </div>
+      <div class="sect"><h2>On this droid</h2><span class="sub waiting" id="seq-count-display" role="status" aria-live="polite"></span></div>
 
-      <!-- Empty state (shown initially) -->
-      <div id="seq-empty-state" class="seq-empty-state">
-        <div class="seq-empty-icon">✓</div>
-        <h4>No learned sequences yet</h4>
-        <p>Tune a Factory sequence below, or restore a sequence you previously exported.</p>
+      <!-- Empty state: what is empty, why, and the act that ends it. -->
+      <div id="seq-empty-state" class="seq-empty-state hidden">
+        <h4>Nothing learned yet</h4>
+        <p>Tune a factory sequence below to make it yours, or restore one you exported earlier.</p>
         <div class="seq-entry-points">
-          <button class="btn" id="seq-empty-import">Restore Backup</button>
+          <button class="btn btn-sm icon-act" id="seq-empty-import" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Restore backup</span></button>
         </div>
       </div>
 
-      <!-- Populated state: Capacity indicator + list (hidden initially) -->
+      <!-- Populated state: the list (hidden until there is something on it) -->
       <div id="seq-populated-state" class="hidden">
-        <div class="seq-capacity-row">
-          <span id="seq-capacity-display">0 / 16 sequences</span>
-        </div>
-
-        <div id="seq-cards-container" class="seq-cards-list">
-          <!-- seq-card elements inserted here -->
+        <span id="seq-filter" class="seg seg-sm seq-filter" role="group" aria-label="Which sequences are listed">
+          <button type="button" data-value="all" aria-pressed="true">All</button>
+          <button type="button" data-value="yours" aria-pressed="false">Yours</button>
+          <button type="button" data-value="factory" aria-pressed="false">Factory</button>
+        </span>
+        <div id="seq-cards-container">
+          <!-- the table of sequences, written by data/seq.js -->
         </div>
       </div>
     </div>
 
-    <!-- Import Modal (hidden initially) -->
-    <div id="seq-modal-import" class="seq-modal hidden" role="dialog" aria-modal="true" aria-labelledby="seq-modal-import-title">
+    <!-- Restore dialog: a question for a title, verbs on the buttons -->
+    <div id="seq-modal-import" class="seq-modal hidden" role="dialog" aria-labelledby="seq-modal-import-title">
       <div class="seq-modal-overlay"></div>
       <div class="seq-modal-content">
         <div class="seq-modal-header">
-          <h4 id="seq-modal-import-title">Restore Backup</h4>
-          <button id="seq-modal-import-close" class="btn-close" aria-label="Close">✕</button>
+          <h4 id="seq-modal-import-title">Restore a sequence you exported?</h4>
         </div>
         <div class="seq-modal-body">
-          <p>Restore a sequence you previously exported. Choose its JSON file:</p>
+          <p class="prose">Choose the JSON file you exported, or paste it straight in. Nothing reaches the droid until you save it.</p>
           <div class="seq-import-file-picker">
-            <input id="seq-import-file-input" type="file" accept=".json" aria-label="Choose JSON file">
-            <label for="seq-import-file-input" class="btn btn-sm">📂 Choose File...</label>
+            <button id="seq-import-file-trigger" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Choose file</span></button>
+            <input id="seq-import-file-input" type="file" accept=".json" hidden aria-label="Choose JSON file">
           </div>
-          <p class="seq-import-divider">OR paste JSON directly:</p>
+          <p class="seq-import-divider">or paste the JSON here:</p>
           <textarea
             id="seq-import-textarea"
             class="seq-import-textarea"
             placeholder="Paste JSON here..."
             aria-label="Paste JSON directly"
           ></textarea>
-          <div id="seq-import-feedback" class="feedback hidden"></div>
+          <div id="seq-import-feedback" class="feedback hidden" role="status" aria-live="polite"></div>
         </div>
         <div class="seq-modal-footer">
-          <button id="seq-modal-import-cancel" class="btn btn-secondary">Cancel</button>
-          <button id="seq-modal-import-confirm" class="btn" disabled>Restore & Edit</button>
+          <button id="seq-modal-import-cancel" class="btn btn-sm icon-act act-keeps-words" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-close"/></svg><span class="act-label">Keep what I have</span></button>
+          <button id="seq-modal-import-confirm" class="btn btn-sm accent icon-act act-keeps-words" type="button" disabled><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Restore and edit</span></button>
         </div>
       </div>
     </div>
 
-    <!-- Editor View (hidden initially) -->
+    <!-- The workspace (written by seq.js when a sequence is opened to edit):
+         a strip, the stage with the timeline and the droid, and the drawer -->
     <div id="seq-editor-view" class="hidden">
       <!-- Editor content loaded here by seq.js -->
     </div>
 
-    <!-- Modals for editor (Memory Wipe, etc.) loaded by seq.js -->
-    <div id="seq-modal-memory-wipe" class="seq-modal hidden" role="dialog" aria-modal="true" aria-labelledby="seq-modal-wipe-title">
+    <!-- A Factory sequence's stage, read-only (written by seq.js; the timeline
+         in it by data/seq_timeline.js) -->
+    <div id="seq-timeline-view" class="hidden"></div>
+
+    <!-- Discard dialog: asked before an unsaved edit is dropped, by whichever
+         way the builder is leaving it (data/seq.js leaveSession()) -->
+    <div id="seq-modal-discard" class="seq-modal hidden" role="dialog" aria-labelledby="seq-modal-discard-title">
       <div class="seq-modal-overlay"></div>
       <div class="seq-modal-content">
         <div class="seq-modal-header">
-          <h4 id="seq-modal-wipe-title">Confirm Memory Wipe</h4>
+          <h4 id="seq-modal-discard-title">Discard your unsaved edits?</h4>
         </div>
         <div class="seq-modal-body">
-          <p id="seq-wipe-seq-name"></p>
-          <div class="seq-wipe-warning">
-            <p><strong>This will permanently delete</strong> the sequence from the droid and cannot be undone.</p>
-            <p>If this sequence matches a factory sequence name, deleting it will restore the factory programming. Otherwise, any RC trigger bindings pointing to this name will become inert.</p>
+          <p class="prose" id="seq-discard-what"></p>
+        </div>
+        <div class="seq-modal-footer">
+          <button id="seq-modal-discard-keep" class="btn btn-sm icon-act act-keeps-words" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-close"/></svg><span class="act-label">Keep editing</span></button>
+          <button id="seq-modal-discard-confirm" class="btn btn-sm danger icon-act act-keeps-words" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-restore"/></svg><span class="act-label">Discard edits</span></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Memory wipe dialog: the title is the question, the buttons are verbs -->
+    <div id="seq-modal-memory-wipe" class="seq-modal hidden" role="dialog" aria-labelledby="seq-modal-wipe-title">
+      <div class="seq-modal-overlay"></div>
+      <div class="seq-modal-content">
+        <div class="seq-modal-header">
+          <h4 id="seq-modal-wipe-title">Wipe this sequence off the droid?</h4>
+        </div>
+        <div class="seq-modal-body">
+          <p class="prose" id="seq-wipe-seq-name"></p>
+          <div id="seq-wipe-warning" class="seq-wipe-warning">
+            <p class="prose"><b>Deletes the sequence from the droid, for good.</b> A factory sequence of the same name comes back; otherwise its RC triggers go dead.</p>
             <p class="seq-wipe-confirm-prompt">Type the sequence name to confirm:</p>
             <input
               id="seq-wipe-confirm-input"
@@ -99,15 +134,14 @@
             >
           </div>
           <div id="seq-wipe-dangling-info" class="seq-wipe-dangling-info hidden"></div>
+          <div id="seq-wipe-feedback" class="feedback hidden" role="status" aria-live="polite"></div>
         </div>
         <div class="seq-modal-footer">
-          <button id="seq-modal-wipe-cancel" class="btn btn-secondary">Cancel</button>
-          <button id="seq-modal-wipe-confirm" class="btn btn-danger" disabled>Confirm Deletion</button>
+          <button id="seq-modal-wipe-cancel" class="btn btn-sm icon-act act-keeps-words" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-close"/></svg><span class="act-label">Keep it</span></button>
+          <button id="seq-modal-wipe-confirm" class="btn btn-sm danger icon-act act-keeps-words" type="button" disabled><svg class="i" aria-hidden="true" focusable="false"><use href="#i-delete-outline"/></svg><span class="act-label">Wipe it</span></button>
         </div>
       </div>
     </div>
-
-    <div id="shell-status"></div>
 
     <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
          fetches /page_bootstrap.js itself, with retry, and hands it the script

@@ -10,7 +10,11 @@
 #include "api_helpers.h"
 #include "audio_dollar_parser.h"
 #include "config.h"
+#include "config_settings.h"  // every Setting's NVS key, its check and its default
+#include "dome_math.h"  // domePulsesInOrder()
 #include "rc_mapping.h"
+#include "board_outputs.h"            // which Output a retired aux_led_pin slot named
+#include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
 
 #include <cstring>
 
@@ -30,195 +34,228 @@ uint32_t floatToBits(float value) {
     return result;
 }
 
+// Addressed Servo Output row keys. "so_cnt" holds the row count; each row gets
+// "soNN", two digits so an NVS dump reads in row order and four characters
+// clear of the 15-character Preferences key ceiling.
+constexpr char SERVO_OUTPUT_COUNT_KEY[] = "so_cnt";
+
+void servoOutputRowKey(uint8_t index, char* buf, size_t bufSize) {
+    snprintf(buf, bufSize, "so%02u", (unsigned)index);
+}
+
+// -----------------------------------------------------------------------------
+// adoptLegacyFixedServoKeys()
+// A builder's calibration, read once off the keys the five fixed field sets
+// left behind (#286, #345, ADR 0041).
+//
+// The fields are gone; the stored keys are not, on any controller that has not
+// saved a row yet, and dropping a builder's calibration on the floor is the one
+// thing #286 refuses. So this reads them and nothing writes them. Which Output
+// Address each set was about is include/servo_legacy_field_sets.h's to say --
+// the names carry it in their spelling and nowhere else.
+//
+// The row's own values are the read fallback, deliberately. A key that is not
+// there leaves the row exactly as it stood, so a fresh controller adopts
+// nothing and reports nothing, without that resting on two default tables
+// happening to agree.
+//
+// Returns the repair mask (0 when no set is addressed to this row, which is
+// what an expander's row gets -- untouched, and reported as nothing).
+// -----------------------------------------------------------------------------
+uint16_t adoptLegacyFixedServoKeys(const ConfigReader& r, ServoOutputRow* row) {
+    if (row == nullptr || row->driver != SERVO_DRIVER_LEDC) {
+        return 0;
+    }
+    for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
+        const ServoLegacyFieldSet& set = SERVO_LEGACY_FIELD_SETS[i];
+        if (row->channel != set.channel) {
+            continue;
+        }
+        const uint16_t openUs = r.readU16(set.nvsOpenKey, row->open_us);
+        const uint16_t closeUs = r.readU16(set.nvsCloseKey, row->close_us);
+        const ServoComponentType component =
+            (ServoComponentType)r.readU8(set.nvsTypeKey, (uint8_t)row->component);
+        return servoOutputAdoptFixedPair(row, openUs, closeUs, component);
+    }
+    return 0;
+}
+
+// -----------------------------------------------------------------------------
+// adoptRetiredAuxLedKeys()
+// The one lit wire a controller stored before #413, read onto the row it was
+// always about.
+//
+// Before ADR 0067 a droid had exactly one body light: `aux_led_pin` named which
+// of the light-capable Outputs carried it -- 1, 2 or 3, counting those Outputs
+// in include/board_outputs.h's own order -- and `aux_led_count` said how many
+// LEDs were on it. Both are now the row's: a wire carries a Light Type when its
+// `component` names one, and its LEDs are that row's `led_count`.
+//
+// ONLY ONTO A ROW WITH NO ANSWER OF ITS OWN. `unanswered` has bit i set for a
+// row whose record is absent or is a shape stored before #413, without the LED
+// count; neither can hold a Light Type answer, so the keys are the only answer
+// there is. A record with the LED count was written by this firmware and already
+// carries whatever the builder set -- an LED count, or a servo put back on
+// the wire -- and the keys can still be in NVS beside it: they are removed
+// only by a save that landed whole, so one failed row write keeps them. Adopting
+// over that record would undo the builder's answer on every boot until a good
+// save made the undo permanent, and a servo put back would be dead, since LEDC
+// stays off a pin whose row names a Light Type (#417). A gate on "no record"
+// alone would be too narrow the other way: epic-lineage controllers stored
+// thirteen-field rows beside `aux_led_pin` before #413, and would lose the
+// strip.
+//
+// The routed wire wins over the stored type, which is the rule the browser used
+// to apply on the way in (data/output_settings.js before #413): a controller
+// that was really lighting that wire had a light on it whatever its type field
+// said, and reading it as a servo would put a PWM signal on a strip.
+//
+// Returns the row index it adopted onto, or SERVO_OUTPUT_ROW_MAX for a
+// controller with nothing to adopt. *litOutput is the Output's index in
+// BOARD_OUTPUTS, set only on an adoption.
+// -----------------------------------------------------------------------------
+uint8_t adoptRetiredAuxLedKeys(const ConfigReader& r, ServoOutputTable* table,
+                               uint32_t unanswered, uint8_t* litOutput) {
+    if (table == nullptr || litOutput == nullptr) {
+        return SERVO_OUTPUT_ROW_MAX;
+    }
+    const uint8_t slot = r.readU8(NVS_KEY_RETIRED_AUX_LED_PIN, 0);
+    if (slot == 0) {
+        return SERVO_OUTPUT_ROW_MAX;  // disabled, or a key that is not there
+    }
+
+    uint8_t seen = 0;
+    size_t lit = BOARD_OUTPUT_COUNT;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (!BOARD_OUTPUTS[i].lightCapable) {
+            continue;
+        }
+        if (++seen == slot) {
+            lit = i;
+            break;
+        }
+    }
+    if (lit >= BOARD_OUTPUT_COUNT) {
+        return SERVO_OUTPUT_ROW_MAX;  // a slot number this board never had
+    }
+
+    const uint8_t index =
+        servoOutputTableFindByAddress(*table, SERVO_DRIVER_LEDC, BOARD_OUTPUTS[lit].channel);
+    if (index >= SERVO_OUTPUT_ROW_MAX || (unanswered & ((uint32_t)1u << index)) == 0) {
+        return SERVO_OUTPUT_ROW_MAX;
+    }
+
+    ServoOutputRow* row = &table->rows[index];
+    row->component = SERVO_COMP_RGB;
+    row->led_count = r.readU8(NVS_KEY_RETIRED_AUX_LED_COUNT, SERVO_LIGHT_LEDS_DEFAULT);
+    *litOutput = (uint8_t)lit;
+    return index;
+}
+
+// -----------------------------------------------------------------------------
+// findLegacyNarrowing()
+// Which rows still stand exactly where the band put `main`'s pair, and what
+// that pair was (#417, include/servo_legacy_field_sets.h ServoLegacyNarrowing).
+//
+// One rule answers both boots that matter. On the first, the row was just
+// adopted from the keys. On a later one the row is stored, because a save
+// wrote it, but the keys were kept for it -- configSaveServoOutputs() keeps a
+// narrowed set's keys until the builder saves that Output. Either way the
+// question is the same: adopting the keys onto this row again changes nothing
+// on it, and the band moved an end on the way. A row the builder has since
+// saved differently fails the first half; keys the band did not move fail the
+// second, and are removed by the next save like any other.
+//
+// Both keys must be there. `main` wrote the pair together and clamped each to
+// 500..2500, so 0 reads as absent rather than as a width. And a row carrying a
+// Light Type is skipped: a light is driven by no pulse width, so there is no
+// number of the builder's on it to lose. That is the wire `main` lit, whose
+// set can hold anything - `main` stored a type of `rgb` there, which takes the
+// same band as a servo.
+// -----------------------------------------------------------------------------
+void findLegacyNarrowing(const ConfigReader& r, const ServoOutputTable& table,
+                         ServoLegacyNarrowing* out) {
+    *out = {};
+    for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
+        const ServoLegacyFieldSet& set = SERVO_LEGACY_FIELD_SETS[i];
+        const uint16_t openUs = r.readU16(set.nvsOpenKey, 0);
+        const uint16_t closeUs = r.readU16(set.nvsCloseKey, 0);
+        if (openUs == 0 || closeUs == 0) {
+            continue;
+        }
+        const uint8_t index = servoOutputTableFindByAddress(table, SERVO_DRIVER_LEDC, set.channel);
+        if (index >= SERVO_OUTPUT_ROW_MAX) {
+            continue;
+        }
+        const ServoOutputRow& row = table.rows[index];
+        if (row.component == SERVO_COMP_RGB) {
+            continue;
+        }
+        ServoOutputRow again = row;
+        const uint16_t moved = adoptLegacyFixedServoKeys(r, &again);
+        const bool bandMovedAnEnd = (moved & (SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE)) != 0;
+        const bool stillTheAdoption = again.open_us == row.open_us &&
+                                      again.close_us == row.close_us &&
+                                      again.component == row.component;
+        if (bandMovedAnEnd && stillTheAdoption) {
+            out->sets |= (uint8_t)(1u << i);
+            out->openUs[i] = openUs;
+            out->closeUs[i] = closeUs;
+        }
+    }
+}
+
 // Forward declarations of deserialize/serialize helpers
 void deserializeDrive(const ConfigReader& r, DriveConfig* out, const DriveConfig& def);
 void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig& def);
-void deserializeServo(const ConfigReader& r, ServoConfig* out, const ServoConfig& def);
 void deserializeDome(const ConfigReader& r, DomeConfig* out, const DomeConfig& def);
 void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemConfig& def);
 void deserializeWifi(const ConfigReader& r, WifiConfig* out, const WifiConfig& def);
 
 void deserializeDrive(const ConfigReader& r, DriveConfig* out, const DriveConfig& def) {
     *out = def;
-    out->speedLimitMax     = r.readI16("spd_max",   def.speedLimitMax);
-    out->speedPresetSlow   = r.readI16("spd_pre_s", def.speedPresetSlow);
-    out->speedPresetNormal = r.readI16("spd_pre_n", def.speedPresetNormal);
-    out->speedPresetTurbo  = r.readI16("spd_pre_t", def.speedPresetTurbo);
+    // Every Setting read under its key and held to what its door takes - the
+    // speeds to the project's absolute drive cap (SPEED_LIMIT_MAX), which no
+    // drive backend can raise, and the timeouts to their windows - so a corrupt
+    // NVS value never reaches DriveTask.
+    configSettingsRead(SettingSection::Drive, r, out);
+    // Which preset is active is derived from the speed limit, not a Setting.
     out->speedPresetActive =
         normalizeSpeedPresetId(r.readU8("spd_pre_a", (uint8_t)def.speedPresetActive));
-    out->sbusTimeoutMs     = r.readU32("sbus_tmo", def.sbusTimeoutMs);
-    out->webDriveTimeoutMs = r.readU32("web_tmo",  def.webDriveTimeoutMs);
-
-    // Clamp to physical hoverboard limit (SPEED_LIMIT_MAX = 600) and valid timeout windows;
-    // guards against corrupt NVS values reaching DriveTask
-    out->speedLimitMax     = constrain(out->speedLimitMax,     (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
-    out->speedPresetSlow   = constrain(out->speedPresetSlow,   (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
-    out->speedPresetNormal = constrain(out->speedPresetNormal, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
-    out->speedPresetTurbo  = constrain(out->speedPresetTurbo,  (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
-    out->sbusTimeoutMs     = constrain(out->sbusTimeoutMs,     (uint32_t)50,  (uint32_t)5000);
-    out->webDriveTimeoutMs = constrain(out->webDriveTimeoutMs, (uint32_t)100, (uint32_t)5000);
 }
 
 void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig& def) {
     *out = def;
-    out->audioVolume = r.readU8("aud_vol", def.audioVolume);
-    out->snd_scream = r.readU16("snd_scream", def.snd_scream);
-    out->snd_faint = r.readU16("snd_faint", def.snd_faint);
-    out->snd_leia = r.readU16("snd_leia", def.snd_leia);
-    out->snd_cantina_s = r.readU16("snd_cantina_s", def.snd_cantina_s);
-    out->snd_sw_theme = r.readU16("snd_sw", def.snd_sw_theme);
-    out->snd_imp_march = r.readU16("snd_march", def.snd_imp_march);
-    out->snd_cantina_l = r.readU16("snd_cantina_l", def.snd_cantina_l);
-    out->snd_startup = r.readU16("snd_startup", def.snd_startup);
-    out->snd_doodoo = r.readU16("snd_doodoo", def.snd_doodoo);
-    out->snd_failure = r.readU16("snd_failure", def.snd_failure);
-    out->snd_disco = r.readU16("snd_disco", def.snd_disco);
-    out->snd_happy = r.readU16("snd_happy", def.snd_happy);
-    out->snd_mahna = r.readU16("snd_mahna", def.snd_mahna);
-    out->snd_inlove = r.readU16("snd_inlove", def.snd_inlove);
-    out->snd_macho = r.readU16("snd_macho", def.snd_macho);
-    out->snd_gangnam = r.readU16("snd_gangnam", def.snd_gangnam);
-    out->snd_uptown = r.readU16("snd_uptown", def.snd_uptown);
-    out->snd_celebr = r.readU16("snd_celebr", def.snd_celebr);
-    out->snd_stayin = r.readU16("snd_stayin", def.snd_stayin);
-    out->snd_harlem = r.readU16("snd_harlem", def.snd_harlem);
-    out->snd_pbjtime = r.readU16("snd_pbjtime", def.snd_pbjtime);
-    out->snd_sys_boot = r.readU16("snd_sys_boot", def.snd_sys_boot);
-    out->snd_sys_mode_n = r.readU16("snd_sys_mode_n", def.snd_sys_mode_n);
-    out->snd_sys_mode_s = r.readU16("snd_sys_mode_s", def.snd_sys_mode_s);
-    out->snd_sys_mode_t = r.readU16("snd_sys_mode_t", def.snd_sys_mode_t);
-    out->snd_sys_drv_on = r.readU16("snd_sys_drv_on", def.snd_sys_drv_on);
-    out->snd_sys_dome_on = r.readU16("snd_sys_dome_on", def.snd_sys_dome_on);
-    // "snd_sys_netdown" (no underscore before "down"): 15 chars, the ESP-IDF
-    // Preferences key length ceiling (#189).
-    out->snd_sys_net_down = r.readU16("snd_sys_netdown", def.snd_sys_net_down);
-    out->snd_rand_min = r.readU16("snd_rand_min", def.snd_rand_min);
-    out->snd_rand_max = r.readU16("snd_rand_max", def.snd_rand_max);
-    out->snd_int_quiet = r.readU16("snd_int_quiet", def.snd_int_quiet);
-    out->snd_int_mid = r.readU16("snd_int_mid", def.snd_int_mid);
-    out->snd_int_full = r.readU16("snd_int_full", def.snd_int_full);
-    out->snd_int_awake = r.readU16("snd_int_awake", def.snd_int_awake);
-    // Upper nibble carries category flags (stripped on write); mask defensively on read too
-    out->snd_moodcat_quiet     = r.readU16("snd_moodcat_q", def.snd_moodcat_quiet)     & 0x0FFF;
-    out->snd_moodcat_mid       = r.readU16("snd_moodcat_m", def.snd_moodcat_mid)       & 0x0FFF;
-    out->snd_moodcat_full      = r.readU16("snd_moodcat_f", def.snd_moodcat_full)      & 0x0FFF;
-    out->snd_moodcat_awakeplus = r.readU16("snd_moodcat_a", def.snd_moodcat_awakeplus) & 0x0FFF;
-    out->snd_cat_gen_lo = r.readU16("snd_cat_gen_lo", def.snd_cat_gen_lo);
-    out->snd_cat_gen_hi = r.readU16("snd_cat_gen_hi", def.snd_cat_gen_hi);
-    out->snd_cat_chat_lo = r.readU16("snd_cat_chat_lo", def.snd_cat_chat_lo);
-    out->snd_cat_chat_hi = r.readU16("snd_cat_chat_hi", def.snd_cat_chat_hi);
-    out->snd_cat_hap_lo = r.readU16("snd_cat_hap_lo", def.snd_cat_hap_lo);
-    out->snd_cat_hap_hi = r.readU16("snd_cat_hap_hi", def.snd_cat_hap_hi);
-    out->snd_cat_proc_lo = r.readU16("snd_cat_proc_lo", def.snd_cat_proc_lo);
-    out->snd_cat_proc_hi = r.readU16("snd_cat_proc_hi", def.snd_cat_proc_hi);
-    out->snd_cat_sad_lo = r.readU16("snd_cat_sad_lo", def.snd_cat_sad_lo);
-    out->snd_cat_sad_hi = r.readU16("snd_cat_sad_hi", def.snd_cat_sad_hi);
-    out->snd_cat_sent_lo = r.readU16("snd_cat_sent_lo", def.snd_cat_sent_lo);
-    out->snd_cat_sent_hi = r.readU16("snd_cat_sent_hi", def.snd_cat_sent_hi);
-    out->snd_cat_hum_lo = r.readU16("snd_cat_hum_lo", def.snd_cat_hum_lo);
-    out->snd_cat_hum_hi = r.readU16("snd_cat_hum_hi", def.snd_cat_hum_hi);
-    out->snd_cat_scrm_lo = r.readU16("snd_cat_scrm_lo", def.snd_cat_scrm_lo);
-    out->snd_cat_scrm_hi = r.readU16("snd_cat_scrm_hi", def.snd_cat_scrm_hi);
-    out->snd_cat_ooh_lo = r.readU16("snd_cat_ooh_lo", def.snd_cat_ooh_lo);
-    out->snd_cat_ooh_hi = r.readU16("snd_cat_ooh_hi", def.snd_cat_ooh_hi);
-    out->snd_cat_alrm_lo = r.readU16("snd_cat_alrm_lo", def.snd_cat_alrm_lo);
-    out->snd_cat_alrm_hi = r.readU16("snd_cat_alrm_hi", def.snd_cat_alrm_hi);
-    out->snd_cat_snarky_lo = r.readU16("snd_cat_snrk_lo", def.snd_cat_snarky_lo);
-    out->snd_cat_snarky_hi = r.readU16("snd_cat_snrk_hi", def.snd_cat_snarky_hi);
-    out->snd_cat_whis_lo = r.readU16("snd_cat_whis_lo", def.snd_cat_whis_lo);
-    out->snd_cat_whis_hi = r.readU16("snd_cat_whis_hi", def.snd_cat_whis_hi);
-
-    out->audioVolume = constrain(out->audioVolume, (uint8_t)0, (uint8_t)30);  // DFPlayer Mini range
-}
-
-void deserializeServo(const ConfigReader& r, ServoConfig* out, const ServoConfig& def) {
-    *out = def;
-    out->arm1_open_us = r.readU16("arm1_op", def.arm1_open_us);
-    out->arm1_close_us = r.readU16("arm1_cl", def.arm1_close_us);
-    out->arm2_open_us = r.readU16("arm2_op", def.arm2_open_us);
-    out->arm2_close_us = r.readU16("arm2_cl", def.arm2_close_us);
-    out->arm1_type = (ServoComponentType)r.readU8("arm1_type", (uint8_t)def.arm1_type);
-    out->arm2_type = (ServoComponentType)r.readU8("arm2_type", (uint8_t)def.arm2_type);
-    out->aux1_open_us = r.readU16("aux1_op", def.aux1_open_us);
-    out->aux1_close_us = r.readU16("aux1_cl", def.aux1_close_us);
-    out->aux2_open_us = r.readU16("aux2_op", def.aux2_open_us);
-    out->aux2_close_us = r.readU16("aux2_cl", def.aux2_close_us);
-    out->aux3_open_us = r.readU16("aux3_op", def.aux3_open_us);
-    out->aux3_close_us = r.readU16("aux3_cl", def.aux3_close_us);
-    out->aux1_type = (ServoComponentType)r.readU8("aux1_type", (uint8_t)def.aux1_type);
-    out->aux2_type = (ServoComponentType)r.readU8("aux2_type", (uint8_t)def.aux2_type);
-    out->aux3_type = (ServoComponentType)r.readU8("aux3_type", (uint8_t)def.aux3_type);
-    out->seq_open_ms = r.readU16("seq_op", def.seq_open_ms);
-    out->seq_close_ms = r.readU16("seq_cl", def.seq_close_ms);
-    out->aux_led_pin = r.readU8(NVS_KEY_AUX_LED_PIN, def.aux_led_pin);
-    out->aux_led_count = r.readU8(NVS_KEY_AUX_LED_COUNT, def.aux_led_count);
-
-    out->arm1_open_us = constrain(out->arm1_open_us, (uint16_t)500, (uint16_t)2500);
-    out->arm1_close_us = constrain(out->arm1_close_us, (uint16_t)500, (uint16_t)2500);
-    out->arm2_open_us = constrain(out->arm2_open_us, (uint16_t)500, (uint16_t)2500);
-    out->arm2_close_us = constrain(out->arm2_close_us, (uint16_t)500, (uint16_t)2500);
-    out->aux1_open_us = constrain(out->aux1_open_us, (uint16_t)500, (uint16_t)2500);
-    out->aux1_close_us = constrain(out->aux1_close_us, (uint16_t)500, (uint16_t)2500);
-    out->aux2_open_us = constrain(out->aux2_open_us, (uint16_t)500, (uint16_t)2500);
-    out->aux2_close_us = constrain(out->aux2_close_us, (uint16_t)500, (uint16_t)2500);
-    out->aux3_open_us = constrain(out->aux3_open_us, (uint16_t)500, (uint16_t)2500);
-    out->aux3_close_us = constrain(out->aux3_close_us, (uint16_t)500, (uint16_t)2500);
-
-    if (out->arm1_type > SERVO_COMP_RGB)
-        out->arm1_type = SERVO_COMP_MG996R;
-    if (out->arm2_type > SERVO_COMP_RGB)
-        out->arm2_type = SERVO_COMP_MG996R;
-    if (out->aux1_type > SERVO_COMP_RGB)
-        out->aux1_type = SERVO_COMP_NONE;
-    if (out->aux2_type > SERVO_COMP_RGB)
-        out->aux2_type = SERVO_COMP_NONE;
-    if (out->aux3_type > SERVO_COMP_RGB)
-        out->aux3_type = SERVO_COMP_NONE;
-
-    if (out->seq_open_ms < 100)
-        out->seq_open_ms = 100;
-    if (out->seq_open_ms > 5000)
-        out->seq_open_ms = 5000;
-    if (out->seq_close_ms < 100)
-        out->seq_close_ms = 100;
-    if (out->seq_close_ms > 5000)
-        out->seq_close_ms = 5000;
-
-    if (!auxLedPinSettingValid(out->aux_led_pin)) {
-        out->aux_led_pin = AUX_LED_PIN_DISABLED;
-    }
-    out->aux_led_count = constrain(out->aux_led_count, AUX_LED_COUNT_DEFAULT, AUX_LED_COUNT_MAX);
+    // Every audio Setting under its key. The volume is held to the DFPlayer
+    // Mini's 0..30 and a mood mask to its twelve bits (its upper nibble once
+    // carried category flags); a track, an interval and a category bound are
+    // read as stored, since a track can hold a CHIRP catalog index past 999
+    // (repairOnLoad, include/config_settings.h).
+    configSettingsRead(SettingSection::Audio, r, out);
 }
 
 void deserializeDome(const ConfigReader& r, DomeConfig* out, const DomeConfig& def) {
     *out = def;
     out->dome_min_speed = floatFromBits(r.readU32("dome_min", floatToBits(def.dome_min_speed)));
     out->dome_max_speed = floatFromBits(r.readU32("dome_max", floatToBits(def.dome_max_speed)));
-    out->dome_neutral_us = r.readU16("dome_neu", def.dome_neutral_us);
-    out->dome_min_pulse_us = r.readU16("dome_minp", def.dome_min_pulse_us);
-    out->dome_max_pulse_us = r.readU16("dome_maxp", def.dome_max_pulse_us);
-    out->dome_speed_limit_pct = r.readU8("dome_pct", def.dome_speed_limit_pct);
-    out->dome_rnd_enable = r.readBool("dome_rnd_en", def.dome_rnd_enable);
-    out->dome_rnd_speed_pct = r.readU8("dome_rnd_spd", def.dome_rnd_speed_pct);
-    out->dome_rnd_pause_min = r.readU8("dome_rnd_pmin", def.dome_rnd_pause_min);
-    out->dome_rnd_pause_max = r.readU8("dome_rnd_pmax", def.dome_rnd_pause_max);
-    out->dome_rnd_move_ms = r.readU16("dome_rnd_ms", def.dome_rnd_move_ms);
-
-    // Reject overlong IP strings before copying into fixed-size buffer
-    String domeWifiPeerIp = r.readStr("dome_wip", "");
-    if (domeWifiPeerIp.length() >= sizeof(out->dome_wifi_peer_ip)) {
-        domeWifiPeerIp = String("");
+    // Every Setting, each held to what its door takes: the three ESC pulse
+    // widths to 1000..2000 on their own, the order between them below.
+    configSettingsRead(SettingSection::Dome, r, out);
+    // A set stored out of order - before the config door refused one (#417) -
+    // cannot put a stop on the ESC, so all three take the defaults rather than
+    // one being picked to move: which of them is wrong is not something the
+    // stored numbers can say. configLoad() warns (configDomePulsesStoredOutOfOrder()).
+    if (!domePulsesInOrder(out->dome_min_pulse_us, out->dome_neutral_us,
+                           out->dome_max_pulse_us)) {
+        out->dome_neutral_us = def.dome_neutral_us;
+        out->dome_min_pulse_us = def.dome_min_pulse_us;
+        out->dome_max_pulse_us = def.dome_max_pulse_us;
     }
-    snprintf(out->dome_wifi_peer_ip, sizeof(out->dome_wifi_peer_ip), "%s", domeWifiPeerIp.c_str());
 
     if (out->dome_min_speed < 0.0f)
         out->dome_min_speed = 0.0f;
     if (out->dome_max_speed > 1.0f)
         out->dome_max_speed = 1.0f;
-    out->dome_neutral_us = constrain(out->dome_neutral_us, (uint16_t)1000, (uint16_t)2000);
-    out->dome_min_pulse_us = constrain(out->dome_min_pulse_us, (uint16_t)1000, (uint16_t)2000);
-    out->dome_max_pulse_us = constrain(out->dome_max_pulse_us, (uint16_t)1000, (uint16_t)2000);
-    out->dome_speed_limit_pct = constrain(out->dome_speed_limit_pct, (uint8_t)0, (uint8_t)100);
 }
 
 // Parse a stored RC analog binding. Starts from def so fields absent from the encoded
@@ -261,25 +298,13 @@ void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemCon
     }
 
     out->mdns_use_name        = r.readBool("mdns_use_name",  def.mdns_use_name);
-    out->logLevel             = r.readU8  ("log_level",       def.logLevel);
-    out->enable_arm1          = r.readBool("en_arm1",         def.enable_arm1);
-    out->enable_arm2          = r.readBool("en_arm2",         def.enable_arm2);
-    out->enable_aux1          = r.readBool("en_aux1",         def.enable_aux1);
-    out->enable_aux2          = r.readBool("en_aux2",         def.enable_aux2);
-    out->enable_aux3          = r.readBool("en_aux3",         def.enable_aux3);
-    out->enable_dome_esc      = r.readBool("en_dome_esc",     def.enable_dome_esc);
-    out->enable_rc_ch1        = r.readBool("en_rc_ch1",       def.enable_rc_ch1);
-    out->enable_rc_ch2        = r.readBool("en_rc_ch2",       def.enable_rc_ch2);
-    out->enable_rc_ch3        = r.readBool("en_rc_ch3",       def.enable_rc_ch3);
-    out->enable_rc_ch4        = r.readBool("en_rc_ch4",       def.enable_rc_ch4);
-    out->enable_rc_ch5        = r.readBool("en_rc_ch5",       def.enable_rc_ch5);
-    out->enable_rc_ch6        = r.readBool("en_rc_ch6",       def.enable_rc_ch6);
-    out->single_sbus_use_ch2  = r.readBool("sbus_recv_ch2",   def.single_sbus_use_ch2);
-    out->enable_drive         = r.readBool("en_drive",        def.enable_drive);
-    out->enable_audio         = r.readBool("en_audio",        def.enable_audio);
-    out->enable_protor2link   = r.readBool("en_r2link",       def.enable_protor2link);
-    out->stationary           = r.readBool("op_mode",          def.stationary);
-    out->rc_input_mode        = (RcInputMode)r.readU8("rc_mode", (uint8_t)def.rc_input_mode);
+    // Every Setting under its key, held to what its door takes. The Component
+    // Members are read as stored: whether this image can still drive the stored
+    // product is componentResolveMember()'s question, not the serializer's, so
+    // a member cut from one image and restored in the next survives the round
+    // trip. An RC receiver mode this image has no word for reads as the
+    // default.
+    configSettingsRead(SettingSection::System, r, out);
 
     out->rc_pwm_drive_speed  = loadRcBinding(r, "rcp_drv", def.rc_pwm_drive_speed);
     out->rc_pwm_drive_steer  = loadRcBinding(r, "rcp_str", def.rc_pwm_drive_steer);
@@ -305,10 +330,6 @@ void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemCon
     out->rc_free1  = loadRcTrigger(r, "rc_free1", def.rc_free1);
     out->rc_free2  = loadRcTrigger(r, "rc_free2", def.rc_free2);
     out->rc_free3  = loadRcTrigger(r, "rc_free3", def.rc_free3);
-
-    if (out->rc_input_mode > RC_INPUT_DUAL_SBUS) {
-        out->rc_input_mode = RC_INPUT_DUAL_SBUS;
-    }
 }
 
 void deserializeWifi(const ConfigReader& r, WifiConfig* out, const WifiConfig& def) {
@@ -348,9 +369,10 @@ void deserializeWifi(const ConfigReader& r, WifiConfig* out, const WifiConfig& d
 }  // namespace
 
 // =============================================================================
-// Shared defaults  --  ConfigSnapshot is 944 bytes (static_assert in
-// config_store.h), too large for the 6144-byte loop task stack. Static BSS
-// allocation; populated once on first use.
+// Shared defaults  --  ConfigSnapshot is nearly 1 KB (its size is the
+// static_assert in config_store.h), more than a stack local should cost the loopTask that runs
+// setup(), whose stack is sized against a measured chain (platformio.ini).
+// Static BSS allocation; populated once on first use.
 // =============================================================================
 
 static ConfigSnapshot s_defaults;
@@ -375,7 +397,6 @@ bool configDeserialize(const ConfigReader& reader, ConfigSnapshot* out) {
     const ConfigSnapshot& defaults = getDefaults();
     deserializeDrive(reader, &out->drive, defaults.drive);
     deserializeAudio(reader, &out->audio, defaults.audio);
-    deserializeServo(reader, &out->servo, defaults.servo);
     deserializeDome(reader, &out->dome, defaults.dome);
     deserializeSystem(reader, &out->system, defaults.system);
     deserializeWifi(reader, &out->wifi, defaults.wifi);
@@ -386,7 +407,6 @@ bool configSerialize(const ConfigSnapshot& snap, ConfigWriter& writer) {
     bool ok = true;
     ok = configSerializeDrive(snap.drive, writer) && ok;
     ok = configSerializeAudio(snap.audio, writer) && ok;
-    ok = configSerializeServo(snap.servo, writer) && ok;
     ok = configSerializeDome(snap.dome, writer) && ok;
     ok = configSerializeSystem(snap.system, writer) && ok;
     ok = configSerializeWifi(snap.wifi, writer) && ok;
@@ -395,132 +415,20 @@ bool configSerialize(const ConfigSnapshot& snap, ConfigWriter& writer) {
 }
 
 bool configSerializeDrive(const DriveConfig& cfg, ConfigWriter& w) {
-    bool ok = true;
-    ok = w.writeI16("spd_max", cfg.speedLimitMax) && ok;
-    ok = w.writeI16("spd_pre_s", cfg.speedPresetSlow) && ok;
-    ok = w.writeI16("spd_pre_n", cfg.speedPresetNormal) && ok;
-    ok = w.writeI16("spd_pre_t", cfg.speedPresetTurbo) && ok;
+    bool ok = configSettingsWrite(SettingSection::Drive, &cfg, w);
     ok = w.writeU8("spd_pre_a", (uint8_t)cfg.speedPresetActive) && ok;
-    ok = w.writeU32("sbus_tmo", cfg.sbusTimeoutMs) && ok;
-    ok = w.writeU32("web_tmo", cfg.webDriveTimeoutMs) && ok;
     return ok;
 }
 
 bool configSerializeAudio(const AudioConfig& cfg, ConfigWriter& w) {
-    bool ok = true;
-    ok = w.writeU8("aud_vol", cfg.audioVolume) && ok;
-    ok = w.writeU16("snd_scream", cfg.snd_scream) && ok;
-    ok = w.writeU16("snd_faint", cfg.snd_faint) && ok;
-    ok = w.writeU16("snd_leia", cfg.snd_leia) && ok;
-    ok = w.writeU16("snd_cantina_s", cfg.snd_cantina_s) && ok;
-    ok = w.writeU16("snd_sw", cfg.snd_sw_theme) && ok;
-    ok = w.writeU16("snd_march", cfg.snd_imp_march) && ok;
-    ok = w.writeU16("snd_cantina_l", cfg.snd_cantina_l) && ok;
-    ok = w.writeU16("snd_startup", cfg.snd_startup) && ok;
-    ok = w.writeU16("snd_doodoo", cfg.snd_doodoo) && ok;
-    ok = w.writeU16("snd_failure", cfg.snd_failure) && ok;
-    ok = w.writeU16("snd_disco", cfg.snd_disco) && ok;
-    ok = w.writeU16("snd_mahna", cfg.snd_mahna) && ok;
-    ok = w.writeU16("snd_inlove", cfg.snd_inlove) && ok;
-    ok = w.writeU16("snd_macho", cfg.snd_macho) && ok;
-    ok = w.writeU16("snd_gangnam", cfg.snd_gangnam) && ok;
-    ok = w.writeU16("snd_uptown", cfg.snd_uptown) && ok;
-    ok = w.writeU16("snd_celebr", cfg.snd_celebr) && ok;
-    ok = w.writeU16("snd_stayin", cfg.snd_stayin) && ok;
-    ok = w.writeU16("snd_harlem", cfg.snd_harlem) && ok;
-    ok = w.writeU16("snd_pbjtime", cfg.snd_pbjtime) && ok;
-    ok = w.writeU16("snd_sys_boot", cfg.snd_sys_boot) && ok;
-    ok = w.writeU16("snd_sys_mode_n", cfg.snd_sys_mode_n) && ok;
-    ok = w.writeU16("snd_sys_mode_s", cfg.snd_sys_mode_s) && ok;
-    ok = w.writeU16("snd_sys_mode_t", cfg.snd_sys_mode_t) && ok;
-    ok = w.writeU16("snd_sys_drv_on", cfg.snd_sys_drv_on) && ok;
-    ok = w.writeU16("snd_sys_dome_on", cfg.snd_sys_dome_on) && ok;
-    ok = w.writeU16("snd_sys_netdown", cfg.snd_sys_net_down) && ok;
-    ok = w.writeU16("snd_rand_min", cfg.snd_rand_min) && ok;
-    ok = w.writeU16("snd_rand_max", cfg.snd_rand_max) && ok;
-    ok = w.writeU16("snd_int_quiet", cfg.snd_int_quiet) && ok;
-    ok = w.writeU16("snd_int_mid", cfg.snd_int_mid) && ok;
-    ok = w.writeU16("snd_int_full", cfg.snd_int_full) && ok;
-    ok = w.writeU16("snd_int_awake", cfg.snd_int_awake) && ok;
-    ok = w.writeU16("snd_moodcat_q", cfg.snd_moodcat_quiet & 0x0FFF) && ok;
-    ok = w.writeU16("snd_moodcat_m", cfg.snd_moodcat_mid & 0x0FFF) && ok;
-    ok = w.writeU16("snd_moodcat_f", cfg.snd_moodcat_full & 0x0FFF) && ok;
-    ok = w.writeU16("snd_moodcat_a", cfg.snd_moodcat_awakeplus & 0x0FFF) && ok;
-    ok = w.writeU16("snd_cat_gen_lo", cfg.snd_cat_gen_lo) && ok;
-    ok = w.writeU16("snd_cat_gen_hi", cfg.snd_cat_gen_hi) && ok;
-    ok = w.writeU16("snd_cat_chat_lo", cfg.snd_cat_chat_lo) && ok;
-    ok = w.writeU16("snd_cat_chat_hi", cfg.snd_cat_chat_hi) && ok;
-    ok = w.writeU16("snd_cat_hap_lo", cfg.snd_cat_hap_lo) && ok;
-    ok = w.writeU16("snd_cat_hap_hi", cfg.snd_cat_hap_hi) && ok;
-    ok = w.writeU16("snd_cat_proc_lo", cfg.snd_cat_proc_lo) && ok;
-    ok = w.writeU16("snd_cat_proc_hi", cfg.snd_cat_proc_hi) && ok;
-    ok = w.writeU16("snd_cat_sad_lo", cfg.snd_cat_sad_lo) && ok;
-    ok = w.writeU16("snd_cat_sad_hi", cfg.snd_cat_sad_hi) && ok;
-    ok = w.writeU16("snd_cat_sent_lo", cfg.snd_cat_sent_lo) && ok;
-    ok = w.writeU16("snd_cat_sent_hi", cfg.snd_cat_sent_hi) && ok;
-    ok = w.writeU16("snd_cat_hum_lo", cfg.snd_cat_hum_lo) && ok;
-    ok = w.writeU16("snd_cat_hum_hi", cfg.snd_cat_hum_hi) && ok;
-    ok = w.writeU16("snd_cat_scrm_lo", cfg.snd_cat_scrm_lo) && ok;
-    ok = w.writeU16("snd_cat_scrm_hi", cfg.snd_cat_scrm_hi) && ok;
-    ok = w.writeU16("snd_cat_ooh_lo", cfg.snd_cat_ooh_lo) && ok;
-    ok = w.writeU16("snd_cat_ooh_hi", cfg.snd_cat_ooh_hi) && ok;
-    ok = w.writeU16("snd_cat_alrm_lo", cfg.snd_cat_alrm_lo) && ok;
-    ok = w.writeU16("snd_cat_alrm_hi", cfg.snd_cat_alrm_hi) && ok;
-    ok = w.writeU16("snd_cat_snrk_lo", cfg.snd_cat_snarky_lo) && ok;
-    ok = w.writeU16("snd_cat_snrk_hi", cfg.snd_cat_snarky_hi) && ok;
-    ok = w.writeU16("snd_cat_whis_lo", cfg.snd_cat_whis_lo) && ok;
-    ok = w.writeU16("snd_cat_whis_hi", cfg.snd_cat_whis_hi) && ok;
-    return ok;
-}
-
-bool configSerializeServo(const ServoConfig& cfg, ConfigWriter& w) {
-    bool ok = true;
-    ok = w.writeU16("arm1_op", cfg.arm1_open_us) && ok;
-    ok = w.writeU16("arm1_cl", cfg.arm1_close_us) && ok;
-    ok = w.writeU16("arm2_op", cfg.arm2_open_us) && ok;
-    ok = w.writeU16("arm2_cl", cfg.arm2_close_us) && ok;
-    ok = w.writeU8("arm1_type", (uint8_t)cfg.arm1_type) && ok;
-    ok = w.writeU8("arm2_type", (uint8_t)cfg.arm2_type) && ok;
-    ok = w.writeU16("aux1_op", cfg.aux1_open_us) && ok;
-    ok = w.writeU16("aux1_cl", cfg.aux1_close_us) && ok;
-    ok = w.writeU16("aux2_op", cfg.aux2_open_us) && ok;
-    ok = w.writeU16("aux2_cl", cfg.aux2_close_us) && ok;
-    ok = w.writeU16("aux3_op", cfg.aux3_open_us) && ok;
-    ok = w.writeU16("aux3_cl", cfg.aux3_close_us) && ok;
-    ok = w.writeU8("aux1_type", (uint8_t)cfg.aux1_type) && ok;
-    ok = w.writeU8("aux2_type", (uint8_t)cfg.aux2_type) && ok;
-    ok = w.writeU8("aux3_type", (uint8_t)cfg.aux3_type) && ok;
-    ok = w.writeU16("seq_op", cfg.seq_open_ms) && ok;
-    ok = w.writeU16("seq_cl", cfg.seq_close_ms) && ok;
-    ok = w.writeU8(NVS_KEY_AUX_LED_PIN, cfg.aux_led_pin) && ok;
-    ok = w.writeU8(NVS_KEY_AUX_LED_COUNT, cfg.aux_led_count) && ok;
-    return ok;
+    return configSettingsWrite(SettingSection::Audio, &cfg, w);
 }
 
 bool configSerializeDome(const DomeConfig& cfg, ConfigWriter& w) {
     bool ok = true;
     ok = w.writeU32("dome_min", floatToBits(cfg.dome_min_speed)) && ok;
     ok = w.writeU32("dome_max", floatToBits(cfg.dome_max_speed)) && ok;
-    ok = w.writeU16("dome_neu", cfg.dome_neutral_us) && ok;
-    ok = w.writeU16("dome_minp", cfg.dome_min_pulse_us) && ok;
-    ok = w.writeU16("dome_maxp", cfg.dome_max_pulse_us) && ok;
-    ok = w.writeU8("dome_pct", cfg.dome_speed_limit_pct) && ok;
-    ok = w.writeBool("dome_rnd_en", cfg.dome_rnd_enable) && ok;
-    ok = w.writeU8("dome_rnd_spd", cfg.dome_rnd_speed_pct) && ok;
-    ok = w.writeU8("dome_rnd_pmin", cfg.dome_rnd_pause_min) && ok;
-    ok = w.writeU8("dome_rnd_pmax", cfg.dome_rnd_pause_max) && ok;
-    ok = w.writeU16("dome_rnd_ms", cfg.dome_rnd_move_ms) && ok;
-    // Written unconditionally, empty included. An empty peer IP is the "not configured"
-    // state, and it must overwrite whatever an earlier save stored: NVS keeps every key a
-    // save does not touch, so skipping the key here would leave the old address to come
-    // back on the next cold boot. Writing "" is a real store, not a no-op:
-    // Preferences::putString only short-circuits on a null pointer, then calls
-    // nvs_set_str (arduino-esp32 3.3.7, libraries/Preferences/src/Preferences.cpp:264-279),
-    // which stores strlen(value) + 1 bytes -- one byte for "" (ESP-IDF 5.5,
-    // components/nvs_flash/src/nvs_handle_simple.cpp:31-37). PrefsWriter::writeStr already
-    // treats putString's 0 return for an empty string as success, and the WiFi serializer
-    // relies on the same path for an empty STA SSID.
-    ok = w.writeStr("dome_wip", cfg.dome_wifi_peer_ip) && ok;
+    ok = configSettingsWrite(SettingSection::Dome, &cfg, w) && ok;
     return ok;
 }
 
@@ -528,25 +436,7 @@ bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w) {
     bool ok = true;
     ok = w.writeStr("droid_name", cfg.droid_name) && ok;
     ok = w.writeBool("mdns_use_name", cfg.mdns_use_name) && ok;
-    ok = w.writeU8("log_level", cfg.logLevel) && ok;
-    ok = w.writeBool("en_arm1", cfg.enable_arm1) && ok;
-    ok = w.writeBool("en_arm2", cfg.enable_arm2) && ok;
-    ok = w.writeBool("en_aux1", cfg.enable_aux1) && ok;
-    ok = w.writeBool("en_aux2", cfg.enable_aux2) && ok;
-    ok = w.writeBool("en_aux3", cfg.enable_aux3) && ok;
-    ok = w.writeBool("en_dome_esc", cfg.enable_dome_esc) && ok;
-    ok = w.writeBool("en_rc_ch1", cfg.enable_rc_ch1) && ok;
-    ok = w.writeBool("en_rc_ch2", cfg.enable_rc_ch2) && ok;
-    ok = w.writeBool("en_rc_ch3", cfg.enable_rc_ch3) && ok;
-    ok = w.writeBool("en_rc_ch4", cfg.enable_rc_ch4) && ok;
-    ok = w.writeBool("en_rc_ch5", cfg.enable_rc_ch5) && ok;
-    ok = w.writeBool("en_rc_ch6", cfg.enable_rc_ch6) && ok;
-    ok = w.writeBool("sbus_recv_ch2", cfg.single_sbus_use_ch2) && ok;
-    ok = w.writeBool("en_drive", cfg.enable_drive) && ok;
-    ok = w.writeBool("en_audio", cfg.enable_audio) && ok;
-    ok = w.writeBool("en_r2link", cfg.enable_protor2link) && ok;
-    ok = w.writeBool("op_mode", cfg.stationary) && ok;
-    ok = w.writeU8("rc_mode", (uint8_t)cfg.rc_input_mode) && ok;
+    ok = configSettingsWrite(SettingSection::System, &cfg, w) && ok;
 
     // RC bindings  --  format and write as strings
     char encoded[48] = {};
@@ -649,12 +539,15 @@ void configDeserializeAudio(const ConfigReader& r, AudioConfig* out) {
     deserializeAudio(r, out, getDefaults().audio);
 }
 
-void configDeserializeServo(const ConfigReader& r, ServoConfig* out) {
-    deserializeServo(r, out, getDefaults().servo);
-}
-
 void configDeserializeDome(const ConfigReader& r, DomeConfig* out) {
     deserializeDome(r, out, getDefaults().dome);
+}
+
+bool configDomePulsesStoredOutOfOrder(const ConfigReader& r) {
+    DomeConfig stored = getDefaults().dome;
+    configSettingsRead(SettingSection::Dome, r, &stored);
+    return !domePulsesInOrder(stored.dome_min_pulse_us, stored.dome_neutral_us,
+                              stored.dome_max_pulse_us);
 }
 
 void configDeserializeSystem(const ConfigReader& r, SystemConfig* out) {
@@ -663,4 +556,134 @@ void configDeserializeSystem(const ConfigReader& r, SystemConfig* out) {
 
 void configDeserializeWifi(const ConfigReader& r, WifiConfig* out) {
     deserializeWifi(r, out, getDefaults().wifi);
+}
+
+// =============================================================================
+// Addressed Servo Output rows  --  see include/config_serializer.h
+// =============================================================================
+
+bool configSerializeServoOutputCount(uint8_t count, ConfigWriter& w) {
+    return w.writeU8(SERVO_OUTPUT_COUNT_KEY, count);
+}
+
+bool configSerializeServoOutputRow(uint8_t index, const ServoOutputRow& row, ConfigWriter& w) {
+    if (index >= SERVO_OUTPUT_ROW_MAX) {
+        return false;
+    }
+    char key[8] = {};
+    servoOutputRowKey(index, key, sizeof(key));
+    char encoded[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+    if (!servoOutputRowFormat(encoded, sizeof(encoded), row)) {
+        return false;
+    }
+    return w.writeStr(key, encoded);
+}
+
+void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
+                                   ServoOutputRepairReport* report,
+                                   ServoLegacyNarrowing* narrowing) {
+    if (out == nullptr) {
+        return;
+    }
+    servoOutputTableDefaults(out);
+
+    ServoOutputRepairReport local = {};
+
+    const uint8_t storedCount = r.readU8(SERVO_OUTPUT_COUNT_KEY, out->count);
+    if (storedCount > SERVO_OUTPUT_ROW_MAX) {
+        local.countRepaired = true;  // keep the default count rather than the stored one
+    } else {
+        out->count = storedCount;
+    }
+
+    // Per-row masks are collected first because one rule cannot be decided a row
+    // at a time: "a Part is driven by at most one Output" is a fact about the
+    // whole table, so it runs once every row has been read.
+    uint16_t rowMask[SERVO_OUTPUT_ROW_MAX] = {};
+    // Rows no record answers for the Light Type: absent, or stored before #413.
+    // See adoptRetiredAuxLedKeys().
+    uint32_t unanswered = 0;
+
+    // The bridge, crossed on first read (#286): a controller upgrading from
+    // before ADR 0041 has five fixed key sets in NVS and no row records at all,
+    // so a row nothing has written adopts whatever the set addressed to its
+    // channel still holds. A stored row wins over it, because once a row exists
+    // the row IS the output -- which is also what makes this idempotent and
+    // marker-free: the bridge stops mattering for a row the moment that row is
+    // saved, and configSaveServoOutputs() then removes the keys.
+    //
+    // Read through the same ConfigReader as everything else, so what crosses is
+    // what is actually stored rather than what some caller happens to hold.
+    for (uint8_t i = 0; i < out->count; ++i) {
+        char key[8] = {};
+        servoOutputRowKey(i, key, sizeof(key));
+        const String stored = r.readStr(key, "");
+        const ServoOutputRow fallback = out->rows[i];
+        ServoOutputRow parsed = fallback;
+        // An absent record is a device that has never written this row, not a
+        // damaged one, so what it gets is the old form rather than a complaint.
+        // A repair is still counted: the only thing an adoption can report is a
+        // pulse width the component band had to move, and a builder's own number
+        // changing under them is exactly what this project says out loud.
+        uint16_t absent = 0;
+        if (stored.length() == 0) {
+            rowMask[i] = adoptLegacyFixedServoKeys(r, &parsed);
+            unanswered |= (uint32_t)1u << i;
+        } else {
+            rowMask[i] = servoOutputRowParse(stored.c_str(), fallback, &parsed, &absent);
+            // Asked of the LED count by name rather than "any older shape": a
+            // record stored after #413 carries the Light Type's answer however
+            // many fields are appended after it.
+            if ((absent & SERVO_FIELD_LED_COUNT) != 0) {
+                unanswered |= (uint32_t)1u << i;
+            }
+        }
+        out->rows[i] = parsed;
+    }
+
+    // The one lit wire a pre-#413 controller stored, onto the row it named. It
+    // runs after the rows are read so it lands on the row as stored, and its
+    // repair is reported like any other: normalising it can move a pulse width
+    // into the band SERVO_COMP_RGB takes.
+    uint8_t litOutput = 0;
+    const uint8_t adopted = adoptRetiredAuxLedKeys(r, out, unanswered, &litOutput);
+    if (adopted < SERVO_OUTPUT_ROW_MAX) {
+        const ServoOutputRow before = out->rows[adopted];
+        rowMask[adopted] |= servoOutputRowNormalise(&out->rows[adopted], before);
+        local.litAdopted = true;
+        local.litOutput = litOutput;
+    }
+
+    // After the light adoption, so the wire `main` lit is already a light and
+    // findLegacyNarrowing() passes over it.
+    if (narrowing != nullptr) {
+        findLegacyNarrowing(r, *out, narrowing);
+    }
+
+    const uint32_t contested = servoOutputTableEnforcePartOwnership(out);
+    for (uint8_t i = 0; i < out->count; ++i) {
+        if ((contested & ((uint32_t)1u << i)) != 0) {
+            rowMask[i] |= SERVO_FIELD_PARTS;
+        }
+    }
+
+    for (uint8_t i = 0; i < out->count; ++i) {
+        if (rowMask[i] == 0) {
+            continue;
+        }
+        if (local.rowsRepaired == 0) {
+            local.firstRow = i;
+            local.firstRowMask = rowMask[i];
+        }
+        local.rowsRepaired++;
+        for (uint8_t bit = 0; bit < SERVO_OUTPUT_FIELD_COUNT; ++bit) {
+            if ((rowMask[i] & (uint16_t)(1u << bit)) != 0) {
+                local.fieldsRepaired++;
+            }
+        }
+    }
+
+    if (report != nullptr) {
+        *report = local;
+    }
 }

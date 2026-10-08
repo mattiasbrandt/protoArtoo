@@ -15,31 +15,46 @@
 
 #include <cstring>
 
+#include "board_outputs.h"
 #include "api_aux_led.h"
 #include "api_dome.h"
 #include "api_drive.h"
 #include "api_estop.h"
 #include "api_servo.h"
+#include <Preferences.h>  // the NVS double: per namespace, as the store's own save sees it
+
 #include "config_cache.h"
+#include "config_nvsio.h"  // PrefsWriter - seeding a table
+#include "config_store.h"  // configLoadServoOutputs(), to seed a fresh Output table
 #include "dome_link.h"
 #include "dome_link_transport.h"
 #include "drive_arbiter.h"
+#include "drive_arbiter_test_hooks.h"  // driveArbiterReset()
 #include "failsafe_gate.h"
+#include "failsafe_gate_test_hooks.h"  // failsafeActiveReason()
+#include "audio_test_hooks.h"      // the sound module's catalog banks (#449)
+#include "audio_catalog_gate.h"     // the catalog reader gate a refresh closes
+#include "commanded_modes_test_hooks.h"  // g_test_commanded_stationary and the rest of the Commanded Mode stubs
+#include "log_buffer_test_hooks.h"  // the log sink ring, to count the router's warnings
+#include "marcduino_router.h"      // kMarcduinoRouteLogIntervalMs
+#include "marcduino_test_hooks.h"  // the dome link and body handler seams (#449)
 #include "robot_state.h"
+#include "servo_output_row.h"
+#include "servo_task_test_hooks.h"  // ServoTask's boot snapshot, which the native build stubs
 #include "web_admission.h"
 #include "web_request_test_backend.h"
 #include "web_server_test_hooks.h"  // g_test_restart_requests - #225 moved this one
                                      // raw declaration into a shared header, now that
                                      // test_console_module.cpp needs it too
                                      // (include/web_server_test_hooks.h's own comment)
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
+#include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
+#include "../../../test/stubs/config/servo_output_table_writer.h"  // a table seeded with Parts and a light
 
-// Recorded side effects from src/native_test_stubs.cpp.
-extern bool g_test_commanded_stationary;
-extern bool g_test_commanded_web_control;
-extern unsigned g_test_web_control_calls;
-extern unsigned g_test_status_broadcast_count;
+// Recorded side effects from src/native_test_stubs.cpp. The Commanded Mode
+// ones (stationary, web control, mood, the status broadcast count) come from
+// commanded_modes_test_hooks.h above.
 extern unsigned g_test_marcduino_calls;
-extern unsigned g_test_applied_mood;
 extern bool g_test_speed_preset_persist_ok;
 extern bool g_test_aux_led_queue_ok;
 extern DomeLayoutCacheStatus g_test_dome_layout_status;
@@ -70,14 +85,78 @@ void setDriveConfig(int16_t speedLimitMax) {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.drive.speedLimitMax = speedLimitMax;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
 }
 
 void setDomeEnabled(bool enabled) {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.system.enable_dome_esc = enabled;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
+}
+
+// Unity has no enum-class comparison, and a bare 0/1/2 in a failure line says
+// nothing. Compare the underlying values behind one name instead.
+void assertManualCommand(ManualCommandResult expected, ManualCommandResult actual) {
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)expected, (uint8_t)actual);
+}
+
+// The dome peer IP is the first string the config save writes
+// (configSerializeDome(), src/config_serializer.cpp) and the only one this
+// group has a reason to set, so it is what the scheduled NVS failure below is
+// aimed at.
+void setDomeWifiPeer(const char* ip) {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    strncpy(snap.dome.dome_wifi_peer_ip, ip, sizeof(snap.dome.dome_wifi_peer_ip) - 1);
+    snap.dome.dome_wifi_peer_ip[sizeof(snap.dome.dome_wifi_peer_ip) - 1] = '\0';
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
+}
+
+// The next config save does not reach flash (#376).
+//
+// One scheduled failure, aimed at the first string write the save performs,
+// and a deliberately NON-EMPTY value: PrefsWriter::writeStr() reports an empty
+// write that failed as success on purpose (src/config_nvsio.cpp), so an empty
+// peer IP would consume the scheduled failure and still answer true.
+const char* const kUnstorablePeerIp = "10.0.0.7";
+
+void failTheNextConfigSave() {
+    setDomeWifiPeer(kUnstorablePeerIp);
+    Preferences nvs;
+    nvs.begin(NVS_NAMESPACE, false);
+    nvs.failNextStringWrites(1);
+    nvs.end();
+}
+
+// What the config namespace holds for a key, or "" when nothing ever wrote it.
+// The map is the double's own and outlives the handle, so the returned pointer
+// stays valid.
+const char* storedValue(const char* key) {
+    Preferences nvs;
+    nvs.begin(NVS_NAMESPACE, true);
+    const auto& data = nvs.getData();
+    const auto it = data.find(key);
+    const char* value = it == data.end() ? "" : it->second.c_str();
+    nvs.end();
+    return value;
+}
+
+// The scheduled failure landed on the write it was aimed at. Without this an
+// earlier string write consuming it would leave the save succeeding, and a
+// test expecting the failure answer would go green for the wrong reason.
+void assertTheFailedWriteIsTheAimedOne() {
+    TEST_ASSERT_TRUE_MESSAGE(strcmp(storedValue("dome_wip"), kUnstorablePeerIp) != 0,
+                             "the dome peer IP the failed save carried must not be in NVS");
 }
 
 }  // namespace
@@ -98,17 +177,29 @@ void setUp() {
     g_test_commanded_web_control = false;
     g_test_web_control_calls = 0;
     g_test_status_broadcast_count = 0;
-    g_test_marcduino_calls = 0;
+    marcduinoTestHooksReset();  // zeroes g_test_marcduino_calls with the rest
     g_test_applied_mood = 0;
     g_test_restart_requests = 0;
     g_test_speed_preset_persist_ok = true;
     g_test_aux_led_queue_ok = true;
+    g_test_servo_wired_at_start_mask = 0xFF;
+    g_test_servo_driven_mask = 0xFF;
+    g_test_servo_run_held_mask = 0;
     g_test_dome_layout_status = {};
     g_test_dome_layout_payload = "";
     g_test_dome_layout_refresh_requests = 0;
+    // Empty storage for every test: what one test's save wrote, or a failure
+    // it scheduled and never consumed, would otherwise be there in the next.
+    Preferences::eraseFlash();
+    // Armed after this setUp()'s own seeding: from here every config write
+    // must run inside a Write Window, as it must on the droid after boot (#418).
+    configWriteWindowArm(true);
 }
 
 void tearDown() {
+    const uint32_t misses = configWriteWindowMisses();
+    configWriteWindowArm(false);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, misses, "a config write ran outside its Write Window");
 }
 
 // -----------------------------------------------------------------------------
@@ -186,9 +277,8 @@ void test_manual_command_clear_estop_clears_and_broadcasts() {
     TEST_ASSERT_TRUE(estopIsLatched());
     g_test_status_broadcast_count = 0;
 
-    bool success = executeManualCommand("clear_estop");
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("clear_estop"));
 
-    TEST_ASSERT_TRUE(success);
     TEST_ASSERT_FALSE(failsafeIsActive());
     TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
 }
@@ -229,9 +319,8 @@ void test_manual_command_clear_estop_is_case_insensitive() {
     handleEstopPost(latchReq);
     TEST_ASSERT_TRUE(estopIsLatched());
 
-    bool success = executeManualCommand("CLeAr_EsToP");
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("CLeAr_EsToP"));
 
-    TEST_ASSERT_TRUE(success);
     TEST_ASSERT_FALSE(failsafeIsActive());
 }
 
@@ -242,18 +331,19 @@ void test_only_explicit_clear_estop_can_clear_the_latch() {
     TEST_ASSERT_TRUE(estopIsLatched());
 
     // Verify that other commands do not clear the latch
-    bool disableResult = executeManualCommand("disable_web_control");
-    TEST_ASSERT_TRUE(disableResult);
+    assertManualCommand(ManualCommandResult::Applied,
+                        executeManualCommand("disable_web_control"));
     TEST_ASSERT_TRUE(estopIsLatched());
 
-    // Mode commands should not clear it either
-    bool stationaryResult = executeManualCommand("#st");
-    TEST_ASSERT_TRUE(stationaryResult);
+    // Mode commands should not clear it either -- and since #379 they are
+    // refused outright rather than discarded by the Marcduino parser, which
+    // is a second way of not clearing the latch, not a first way of clearing
+    // it.
+    assertManualCommand(ManualCommandResult::ShadowedModeKeyword, executeManualCommand("#st"));
     TEST_ASSERT_TRUE(estopIsLatched());
 
     // Only explicit clear_estop clears it
-    bool clearResult = executeManualCommand("clear_estop");
-    TEST_ASSERT_TRUE(clearResult);
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("clear_estop"));
     TEST_ASSERT_FALSE(failsafeIsActive());
 }
 
@@ -411,6 +501,46 @@ void test_mode_post_rejects_an_unknown_mode() {
     TEST_ASSERT_EQUAL_UINT(0, g_test_status_broadcast_count);
 }
 
+// A mode change is REPORTED when the save did not reach flash, never reverted
+// -- see saveCommandedMode() (src/web/api_drive.cpp) for why this endpoint
+// answers differently from POST /api/drive/speed-preset below.
+void test_mode_post_reports_a_stationary_save_that_did_not_reach_flash() {
+    failTheNextConfigSave();
+    const WebRequestTestParam params[] = {{"mode", "stationary"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 1;
+    WebRequest req(&backend);
+
+    handleModePost(req);
+
+    TEST_ASSERT_EQUAL_INT(500, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "NVS save failed"));
+    assertTheFailedWriteIsTheAimedOne();
+    // Reported, not reverted: the droid is in the mode that was asked for and
+    // the status broadcast says so. Only the store is missing.
+    TEST_ASSERT_TRUE(g_test_commanded_stationary);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
+void test_mode_post_reports_a_driving_save_that_did_not_reach_flash() {
+    g_test_commanded_stationary = true;
+    failTheNextConfigSave();
+    const WebRequestTestParam params[] = {{"mode", "driving"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 1;
+    WebRequest req(&backend);
+
+    handleModePost(req);
+
+    TEST_ASSERT_EQUAL_INT(500, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "NVS save failed"));
+    assertTheFailedWriteIsTheAimedOne();
+    TEST_ASSERT_FALSE(g_test_commanded_stationary);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
 void test_speed_preset_reports_the_applied_cap() {
     const WebRequestTestParam params[] = {{"preset", "TURBO"}};
     WebRequestTestBackend backend;
@@ -462,43 +592,335 @@ void test_web_control_disable_submits_a_zero_frame() {
     TEST_ASSERT_EQUAL_INT16(0, resolvedDriveOutput().speed);
 }
 
+void test_radio_drives_after_browser_control_is_disabled() {
+    // #394: disabling browser control submits a WEB_API (0,0) frame, which
+    // ages out like any browser command. A newer radio command must end the
+    // web drive timeout, or the radio goes dead half a second after the
+    // browser is switched off.
+    robotState.webControlEnabled = true;
+
+    const WebRequestTestParam driveParams[] = {{"speed", "150"}, {"steer", "0"}};
+    WebRequestTestBackend driveBackend;
+    driveBackend.params = driveParams;
+    driveBackend.paramCount = 2;
+    WebRequest driveReq(&driveBackend);
+    handleDrivePost(driveReq);
+
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleWebControlDisablePost(req);
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    // The shipped timeout, not resolvedDriveOutput()'s 60 s window: this test
+    // is about what happens once the browser's command has aged out.
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    DriveArbiterConfig cfg = {};
+    cfg.speedLimitMax = snap.drive.speedLimitMax;
+    cfg.webDriveTimeoutMs = 500;
+    cfg.rcDriveTimeoutMs = 5000;
+
+    g_test_millis += 600;
+    driveArbiterSubmit(DriveSource::RC, 120, 0, millis());
+
+    DriveOutput out = driveArbiterResolve(cfg, millis());
+    TEST_ASSERT_FALSE(out.webTimedOut);
+    TEST_ASSERT_FALSE(out.failsafeActive);
+    TEST_ASSERT_EQUAL_INT((int)DriveSource::RC, (int)out.activeSource);
+    TEST_ASSERT_EQUAL_INT16(120, out.speed);
+}
+
 // -----------------------------------------------------------------------------
 // Manual command routing (shared with POST /api/manual-command)
 // -----------------------------------------------------------------------------
 
 void test_manual_command_keywords_are_case_insensitive() {
-    TEST_ASSERT_TRUE(executeManualCommand("EnAbLe_Web_Control"));
+    assertManualCommand(ManualCommandResult::Applied,
+                        executeManualCommand("EnAbLe_Web_Control"));
     TEST_ASSERT_TRUE(g_test_commanded_web_control);
 }
 
 void test_manual_command_rejects_an_unknown_keyword() {
-    TEST_ASSERT_FALSE(executeManualCommand("engage_hyperdrive"));
+    assertManualCommand(ManualCommandResult::Unsupported,
+                        executeManualCommand("engage_hyperdrive"));
     TEST_ASSERT_EQUAL_UINT(0, g_test_web_control_calls);
 }
 
 void test_manual_command_rejects_an_empty_command() {
-    TEST_ASSERT_FALSE(executeManualCommand(""));
+    assertManualCommand(ManualCommandResult::Unsupported, executeManualCommand(""));
 }
 
 void test_manual_command_routes_marcduino_by_prefix_without_case_folding() {
-    TEST_ASSERT_TRUE(executeManualCommand("#SM"));
+    // A real uppercase body command, rather than the "#SM" this test carried
+    // before #379: that spelling is now refused ahead of the routing as a
+    // shadowed mode keyword (the test below pins it), so it can no longer
+    // stand for an ordinary '#' line.
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("#APSL"));
     TEST_ASSERT_EQUAL_UINT(1, g_test_marcduino_calls);
     // A Marcduino line is handed over verbatim -- lowercasing it here is what
     // the keyword path does, and doing it to these would change the command.
     TEST_ASSERT_EQUAL_UINT(0, g_test_web_control_calls);
 }
 
+// The other two saveConfigToNvs() call sites #376 names -- MC_STATIONARY_MODE
+// and MC_DRIVING_MODE -- cannot be reached, and this is where that is written
+// down. The ':'/'#' Marcduino branch claims every '#' line before the keyword
+// resolver runs, so "#st" would land in parseMarcduinoCommand()'s '#' case,
+// match nothing there, and be logged as an unhandled body command: nothing
+// commands a mode, nothing saves, and until #379 the route answered
+// {"ok":true} to an operator whose droid did not move.
+//
+// #379 kept the shadowing and refused the two lines in front of it, so this
+// pin now carries both halves: the keywords still never reach their branches,
+// and the answer no longer claims they did.
+//
+// Pinned because the fix makes those two branches LOOK live: they consume the
+// save result exactly like POST /api/mode does. Only this test says they are
+// never asked to.
+void test_manual_command_hash_mode_keywords_are_shadowed_by_marcduino_routing() {
+    g_test_commanded_stationary = false;
+    // Rigged to fail, to show the path does not save at all rather than saving
+    // successfully: the scheduled failure is still unspent afterwards.
+    failTheNextConfigSave();
+
+    assertManualCommand(ManualCommandResult::ShadowedModeKeyword, executeManualCommand("#st"));
+
+    // Refused ahead of the Marcduino routing, so the line ran as nothing at
+    // all: no mode was commanded...
+    TEST_ASSERT_FALSE(g_test_commanded_stationary);
+    // ...and it was not handed to the body parser either, which is what used
+    // to swallow it and answer success.
+    TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
+
+    // Both keywords, in either case: resolveManualCommand() runs on a
+    // lowercased copy, so "#ST" would have resolved to MC_STATIONARY_MODE
+    // exactly as "#st" does, and a refusal that missed the uppercase spelling
+    // would answer ok to the same non-event.
+    assertManualCommand(ManualCommandResult::ShadowedModeKeyword, executeManualCommand("#ST"));
+    assertManualCommand(ManualCommandResult::ShadowedModeKeyword, executeManualCommand("#sm"));
+    assertManualCommand(ManualCommandResult::ShadowedModeKeyword, executeManualCommand("#SM"));
+    TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
+
+    // And no save was attempted: the failure this test scheduled is still
+    // waiting, and the next save -- POST /api/mode's -- is the one that spends
+    // it.
+    const WebRequestTestParam params[] = {{"mode", "stationary"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 1;
+    WebRequest req(&backend);
+    handleModePost(req);
+    TEST_ASSERT_EQUAL_INT(500, backend.sentCode);
+    assertTheFailedWriteIsTheAimedOne();
+}
+
 void test_manual_command_intercepts_mood_commands() {
-    TEST_ASSERT_TRUE(executeManualCommand(":SE11"));
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand(":SE11"));
     TEST_ASSERT_NOT_EQUAL(0, g_test_applied_mood);
     // Intercepted before the Marcduino router, which would discard it.
     TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
 }
 
+// -----------------------------------------------------------------------------
+// Command Ownership (ADR 0055, #449): the body answers the lines naming things
+// it models and forwards the rest. Before it, every ':' and '#' line reached
+// the body parser and was answered success whether anything happened or not.
+// -----------------------------------------------------------------------------
+
+// The 23 commands the dome fork implements and the body used to swallow: each
+// is handed to the dome verbatim, and the body is never given it.
+void test_manual_command_forwards_lines_the_body_does_not_own_verbatim() {
+    const char* const kSwallowedBefore[] = {
+        ":SE00", ":SE12", ":SE50", ":SE51", ":SE52", ":SE53", ":SE54", ":SE55",
+        ":SE56", ":SE57", ":SE58", ":OP06", ":OP07", ":OP08", ":OP09", ":OP10",
+        ":OP11", ":OP12", ":CL06", ":CL07", ":CL08", ":CL09", ":CL10",
+    };
+    for (const char* line : kSwallowedBefore) {
+        marcduinoTestHooksReset();
+        assertManualCommand(ManualCommandResult::Forwarded, executeManualCommand(line));
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(line, g_test_dome_last_tx, line);
+        TEST_ASSERT_EQUAL_UINT_MESSAGE(0, g_test_marcduino_calls, line);
+    }
+
+    // A '#' line the body does not act on goes the same way; the three it
+    // does act on stay (test_manual_command_routes_marcduino_by_prefix...).
+    marcduinoTestHooksReset();
+    assertManualCommand(ManualCommandResult::Forwarded, executeManualCommand("#MD01"));
+    TEST_ASSERT_EQUAL_STRING("#MD01", g_test_dome_last_tx);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
+}
+
+// :OF is recognised: a number the body maps as it maps :OP/:CL is the body's,
+// every other number is the dome's.
+void test_manual_command_flutter_is_the_body_s_on_its_outputs_and_the_dome_s_otherwise() {
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand(":OF01"));
+    TEST_ASSERT_EQUAL_STRING(":OF01", g_test_marcduino_last_line);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_dome_tx_calls);
+
+    marcduinoTestHooksReset();
+    assertManualCommand(ManualCommandResult::Forwarded, executeManualCommand(":OF14"));
+    TEST_ASSERT_EQUAL_STRING(":OF14", g_test_dome_last_tx);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
+}
+
+// A full-droid sequence typed as text runs its body half AND reaches the dome,
+// as the RC droid_seq_* tokens always have; :SE16 included (operator decision).
+void test_manual_command_full_droid_sequence_runs_body_half_and_forwards() {
+    const char* const kFullDroid[] = {":SE01", ":SE05", ":SE09", ":SE15", ":SE16"};
+    for (const char* line : kFullDroid) {
+        marcduinoTestHooksReset();
+        assertManualCommand(ManualCommandResult::Forwarded, executeManualCommand(line));
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(line, g_test_marcduino_last_line, line);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(line, g_test_dome_last_tx, line);
+    }
+}
+
+// A line the body owns and refuses is not forwarded - :OP01 is dome panel 1 to
+// the fork, so forwarding a refused body arm would move something else - and
+// it is not answered success.
+void test_manual_command_owned_line_the_body_refuses_is_neither_forwarded_nor_ok() {
+    g_test_marcduino_body_outcome = MarcduinoBodyOutcome::BlockedByEstop;
+    assertManualCommand(ManualCommandResult::BlockedByEstop, executeManualCommand(":OP01"));
+    TEST_ASSERT_EQUAL_UINT(0, g_test_dome_tx_calls);
+
+    // Nothing drives ARM1 this boot: refused before the body is handed it,
+    // because ServoTask would drop it without a word (#364).
+    marcduinoTestHooksReset();
+    g_test_servo_driven_mask = 0xFE;
+    assertManualCommand(ManualCommandResult::OutputUndriven, executeManualCommand(":CL01"));
+    TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_dome_tx_calls);
+}
+
+// A forward that could not be queued is not success - on the routed ':' path
+// and on the raw families that were always forwarded (ADR 0045).
+void test_manual_command_forward_that_was_not_queued_is_not_ok() {
+    g_test_dome_connected = false;
+    assertManualCommand(ManualCommandResult::DomeLinkDown, executeManualCommand(":SE52"));
+    assertManualCommand(ManualCommandResult::DomeLinkDown, executeManualCommand("*ST00"));
+    TEST_ASSERT_EQUAL_UINT(0, g_test_dome_tx_calls);
+
+    marcduinoTestHooksReset();
+    g_test_dome_tx_ok = false;
+    assertManualCommand(ManualCommandResult::DomeQueueFull, executeManualCommand(":OP07"));
+    assertManualCommand(ManualCommandResult::DomeQueueFull, executeManualCommand("@0T1"));
+
+    marcduinoTestHooksReset();
+    assertManualCommand(ManualCommandResult::Forwarded, executeManualCommand("@0T1"));
+    TEST_ASSERT_EQUAL_STRING("@0T1", g_test_dome_last_tx);
+}
+
+// $803 is ShadowMD's bank 8, sound 3. With no bank 8 on the fitted module it is
+// refused with that reason rather than queued to play raw track 803.
+void test_manual_command_bank_form_is_refused_where_the_module_has_no_bank() {
+    g_test_audio_dollar_calls = 0;
+    g_test_audio_capabilities = AudioDriver::AUDIO_CAP_CATALOG;
+    g_test_audio_catalog_bank_count = 0;
+    assertManualCommand(ManualCommandResult::BankNotFitted, executeManualCommand("$803"));
+    TEST_ASSERT_EQUAL_UINT(0, g_test_audio_dollar_calls);
+
+    g_test_audio_catalog_banks[0] = AudioCatalogBank{};
+    g_test_audio_catalog_banks[0].bank = 8;
+    g_test_audio_catalog_bank_count = 1;
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("$803"));
+    TEST_ASSERT_EQUAL_UINT(1, g_test_audio_dollar_calls);
+
+    g_test_audio_capabilities = 0;
+    g_test_audio_catalog_bank_count = 0;
+}
+
+// A Marcduino line longer than the dome TX buffer holds is refused before any
+// of it runs. domeQueueTx() would have queued it cut short and answered true,
+// so the route said "forwarded" for a line the dome never got (#449).
+void test_manual_command_line_longer_than_the_dome_buffer_is_refused_not_cut() {
+    char longLine[DOME_TX_LINE_MAX + 2] = {};
+    memset(longLine, '0', sizeof(longLine) - 1);
+    memcpy(longLine, ":SE52", 5);
+    assertManualCommand(ManualCommandResult::LineTooLong, executeManualCommand(longLine));
+    longLine[0] = '*';
+    assertManualCommand(ManualCommandResult::LineTooLong, executeManualCommand(longLine));
+    TEST_ASSERT_EQUAL_UINT(0, g_test_dome_tx_calls);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
+
+    // The longest line the buffer carries whole still goes.
+    longLine[DOME_TX_LINE_MAX] = '\0';
+    longLine[0] = ':';
+    assertManualCommand(ManualCommandResult::Forwarded, executeManualCommand(longLine));
+    TEST_ASSERT_EQUAL_STRING(longLine, g_test_dome_last_tx);
+}
+
+// A panel number made of anything but digits moves nothing. atoi() read
+// ":OPxx" as panel 0, the ARM1+ARM2 broadcast, and opened both arms (#449).
+void test_manual_command_panel_number_that_is_not_digits_moves_nothing() {
+    const char* const kMalformed[] = {":OPxx", ":CLxx", ":OFxx", ":OP1x", ":MV01", ":MV01ab"};
+    for (const char* line : kMalformed) {
+        marcduinoTestHooksReset();
+        assertManualCommand(ManualCommandResult::Unsupported, executeManualCommand(line));
+        TEST_ASSERT_EQUAL_UINT_MESSAGE(0, g_test_marcduino_calls, line);
+        TEST_ASSERT_EQUAL_UINT_MESSAGE(0, g_test_dome_tx_calls, line);
+    }
+}
+
+// $800 is the bank form naming sound 00, which no bank has: refused, never
+// accepted as a line that then plays nothing (#449).
+void test_manual_command_bank_form_sound_zero_is_refused() {
+    g_test_audio_dollar_calls = 0;
+    g_test_audio_capabilities = AudioDriver::AUDIO_CAP_CATALOG;
+    g_test_audio_catalog_banks[0] = AudioCatalogBank{};
+    g_test_audio_catalog_banks[0].bank = 8;
+    g_test_audio_catalog_bank_count = 1;
+    assertManualCommand(ManualCommandResult::BankSoundMissing, executeManualCommand("$800"));
+    TEST_ASSERT_EQUAL_UINT(0, g_test_audio_dollar_calls);
+    g_test_audio_capabilities = 0;
+    g_test_audio_catalog_bank_count = 0;
+}
+
+// The bank table is read as a catalog reader. While a refresh holds the gate
+// the answer is "busy", never a read of storage being replaced (#449).
+void test_manual_command_bank_check_waits_for_a_catalog_refresh() {
+    g_test_audio_dollar_calls = 0;
+    g_test_audio_capabilities = AudioDriver::AUDIO_CAP_CATALOG;
+    g_test_audio_catalog_banks[0] = AudioCatalogBank{};
+    g_test_audio_catalog_banks[0].bank = 8;
+    g_test_audio_catalog_bank_count = 1;
+    audioCatalogGateClose();
+    const ManualCommandResult whileRefreshing = executeManualCommand("$803");
+    audioCatalogGateOpen();
+    assertManualCommand(ManualCommandResult::SoundCatalogBusy, whileRefreshing);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_audio_dollar_calls);
+    TEST_ASSERT_EQUAL_UINT8(0, audioCatalogReadersInside());
+
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("$803"));
+    TEST_ASSERT_EQUAL_UINT8(0, audioCatalogReadersInside());
+    g_test_audio_capabilities = 0;
+    g_test_audio_catalog_bank_count = 0;
+}
+
+// A refusal repeated faster than the interval writes one warning, not one per
+// press: the RC path reaches the same logger from RCInputTask (#449).
+void test_manual_command_repeated_refusal_logs_once_per_interval() {
+    g_test_millis += kMarcduinoRouteLogIntervalMs + 1;  // past any earlier test's line
+    g_test_dome_connected = false;
+    // totalWritten, not count: the ring is shared by the whole suite and may
+    // already be full, and a full ring's count does not move.
+    const uint32_t before = g_test_log_sink_buffer.totalWritten;
+    executeManualCommand(":SE52");
+    const uint32_t afterFirst = g_test_log_sink_buffer.totalWritten;
+    executeManualCommand(":SE52");
+    executeManualCommand(":SE53");
+    TEST_ASSERT_EQUAL_UINT32(before + 1, afterFirst);
+    TEST_ASSERT_EQUAL_UINT32(afterFirst, g_test_log_sink_buffer.totalWritten);
+
+    g_test_millis += kMarcduinoRouteLogIntervalMs;
+    executeManualCommand(":SE52");
+    TEST_ASSERT_EQUAL_UINT32(afterFirst + 1, g_test_log_sink_buffer.totalWritten);
+}
+
 void test_manual_command_longer_than_any_keyword_is_unknown_not_truncated() {
     // "estop" plus padding: a keyword buffer that truncated instead of
     // rejecting would latch the estop on a command nobody sent.
-    TEST_ASSERT_FALSE(executeManualCommand("estop_but_very_much_longer_than_the_buffer"));
+    assertManualCommand(ManualCommandResult::Unsupported,
+                        executeManualCommand("estop_but_very_much_longer_than_the_buffer"));
     TEST_ASSERT_FALSE(failsafeIsActive());
 }
 
@@ -627,7 +1049,7 @@ void test_dome_layout_streams_the_cache_with_its_age_header() {
 // -----------------------------------------------------------------------------
 
 void test_servo_accepts_a_named_arm_action() {
-    const WebRequestTestParam params[] = {{"arm", "arm1"}, {"action", "open"}};
+    const WebRequestTestParam params[] = {{"arm", "ARM1"}, {"action", "open"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 2;
@@ -640,8 +1062,9 @@ void test_servo_accepts_a_named_arm_action() {
 }
 
 void test_servo_accepts_the_broadcast_arm() {
-    // 255 is a real armId (robot_state.h) and this endpoint's own error message
-    // offers "both" -- an int8_t return truncated it to the invalid sentinel.
+    // "both" is a real target (SERVO_OUTPUT_BOTH_ARMS) and this endpoint's own
+    // error message offers it -- an int8_t return once truncated it to the
+    // invalid sentinel.
     const WebRequestTestParam params[] = {{"arm", "both"}, {"action", "close"}};
     WebRequestTestBackend backend;
     backend.params = params;
@@ -653,8 +1076,12 @@ void test_servo_accepts_the_broadcast_arm() {
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
 }
 
-void test_servo_rejects_an_unknown_arm() {
-    const WebRequestTestParam params[] = {{"arm", "arm9"}, {"action", "open"}};
+// The word is the running board's label for the Output (ADR 0033 Amendment
+// 2026-09-19). This image is built for the Artoo PCB, which prints ARM1..ARM5,
+// so protoR2's old word for its third Output is not an alias of anything:
+// it is refused, and the refusal names the words this board does take.
+void test_servo_refuses_a_word_the_board_does_not_print() {
+    const WebRequestTestParam params[] = {{"arm", "aux1"}, {"action", "open"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 2;
@@ -663,12 +1090,50 @@ void test_servo_rejects_an_unknown_arm() {
     handleServoPost(req);
 
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
-    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "Invalid arm"));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody,
+                                "No output called aux1 on this board. Use ARM1, ARM2, ARM3, ARM4, "
+                                "ARM5, or both"));
+}
+
+// The board's word is matched without regard to case or spaces, and names the
+// Output by its address (#444) - the board's third Output is LEDC channel 3,
+// LEDC_CH_AUX1, whatever the board calls it, and the dome ESC's channel 2
+// between them is never one. A label with a space is sent as the board prints
+// it.
+static void assertTargetIs(const char* word, ServoOutputAddress want) {
+    ServoOutputAddress got = SERVO_OUTPUT_NONE;
+    TEST_ASSERT_TRUE_MESSAGE(servoParseTarget(word, &got), word);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(want.driver, got.driver, word);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(want.channel, got.channel, word);
+}
+
+void test_servo_takes_the_board_label_in_any_case_and_spacing() {
+    assertTargetIs("ARM1", {SERVO_DRIVER_LEDC, LEDC_CH_ARM1});
+    assertTargetIs("ARM3", {SERVO_DRIVER_LEDC, LEDC_CH_AUX1});
+    assertTargetIs("arm3", {SERVO_DRIVER_LEDC, LEDC_CH_AUX1});
+    assertTargetIs("Arm 3", {SERVO_DRIVER_LEDC, LEDC_CH_AUX1});
+    assertTargetIs("ARM5", {SERVO_DRIVER_LEDC, LEDC_CH_AUX3});
+    assertTargetIs("both", SERVO_OUTPUT_BOTH_ARMS);
+    ServoOutputAddress untouched = SERVO_OUTPUT_NONE;
+    TEST_ASSERT_FALSE(servoParseTarget("aux1", &untouched));
+    TEST_ASSERT_FALSE(servoParseTarget("aux3", &untouched));
+    TEST_ASSERT_FALSE(servoParseTarget("", &untouched));
+    TEST_ASSERT_TRUE(untouched == SERVO_OUTPUT_NONE);
+
+    const WebRequestTestParam params[] = {{"arm", "arm 4"}, {"action", "open"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
 }
 
 void test_servo_rejects_an_out_of_range_position() {
     const WebRequestTestParam params[] = {
-        {"arm", "arm1"}, {"action", "position"}, {"positionUs", "4000"}};
+        {"arm", "ARM1"}, {"action", "position"}, {"positionUs", "4000"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 3;
@@ -678,10 +1143,15 @@ void test_servo_rejects_an_out_of_range_position() {
 
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "positionUs must be between"));
+    // The range as data beside the sentence: the page words the refusal from
+    // these and keeps no copy of the range (ADR 0068, amended 2026-09-26).
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"field\":\"positionUs\""));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"reason\":\"out-of-range\""));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"accepts\":\"500..2500\""));
 }
 
 void test_servo_position_without_a_value_is_rejected() {
-    const WebRequestTestParam params[] = {{"arm", "arm1"}, {"action", "position"}};
+    const WebRequestTestParam params[] = {{"arm", "ARM1"}, {"action", "position"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 2;
@@ -693,13 +1163,448 @@ void test_servo_position_without_a_value_is_rejected() {
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "Missing positionUs parameter"));
 }
 
+// Find by Moving (#363): a nudge names an arm and nothing else. No width is
+// taken from the request, so none is required, and none can make it big.
+void test_servo_nudge_takes_an_arm_and_no_width() {
+    const WebRequestTestParam params[] = {{"arm", "ARM3"}, {"action", "nudge"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
+}
+
+// One output per nudge, so a builder can say which one moved: the `both`
+// broadcast is refused at the door with a reason, not swallowed in a log.
+void test_servo_nudge_refuses_the_broadcast_arm() {
+    const WebRequestTestParam params[] = {{"arm", "both"}, {"action", "nudge"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "A nudge moves one output. Use ARM1, ARM2, ARM3, ARM4, ARM5"));
+}
+
+// A body view's press (#352, ADR 0063): a travel names an arm and nothing else.
+// The two ends come off the Output's own row, so no width is taken from the
+// request and none can be smuggled in to make the move something other than the
+// travel the builder recorded.
+void test_servo_travel_takes_an_arm_and_no_width() {
+    const WebRequestTestParam params[] = {{"arm", "ARM3"}, {"action", "travel"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
+}
+
+// A press on a body view is about ONE Part, so the `both` broadcast is
+// refused at the door with a reason naming the action - running two parts
+// through their travel on one press is the thing this refusal prevents.
+void test_servo_travel_refuses_the_broadcast_arm() {
+    const WebRequestTestParam params[] = {{"arm", "both"}, {"action", "travel"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "A travel moves one output"));
+}
+
+// The refusal an unknown action gets names travel among the actions there are,
+// so a caller that mistyped it is told what this endpoint actually takes.
+void test_servo_unknown_action_names_travel() {
+    const WebRequestTestParam params[] = {{"arm", "ARM3"}, {"action", "sweep"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "travel"));
+}
+
+// The calibration dial's hold (#364, ADR 0064): a width, like a position, and
+// the hold is what differs. The page sends one of these a second while the dial
+// is open, which is what keeps the short expiry from firing.
+void test_servo_hold_takes_an_arm_and_a_width() {
+    const WebRequestTestParam params[] = {
+        {"arm", "ARM3"}, {"action", "hold"}, {"positionUs", "1750"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 3;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
+}
+
+// A hold with no width is not a hold: there is nowhere to hold the Output.
+void test_servo_hold_without_a_width_is_rejected() {
+    const WebRequestTestParam params[] = {{"arm", "ARM3"}, {"action", "hold"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "Missing positionUs parameter for hold"));
+}
+
+// An Output wired after boot has nothing behind it until the droid restarts
+// (#364, reopened from the #355 bench): ServoTask read the wired ticks at
+// start, and drops every command for an Output it did not start with. So the
+// route refuses rather than answering ok for a move nothing makes, and says
+// what would make it: a restart where the saved tick would drive it, Wiring
+// where it is not ticked at all. `both` is refused for its undriven half.
+void test_servo_refuses_an_output_nothing_drives_since_boot() {
+    // ARM2 ticked in the saved config, but not in the snapshot ServoTask took.
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.system.enable_arm1 = true;
+    snap.system.enable_arm2 = true;
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
+    g_test_servo_driven_mask = (uint8_t)~(1u << 1);
+
+    const auto post = [](const char* arm, const char* action, WebRequestTestBackend& backend) {
+        const WebRequestTestParam params[] = {{"arm", arm}, {"action", action}, {"positionUs", "1500"}};
+        backend.params = params;
+        backend.paramCount = 3;
+        WebRequest req(&backend);
+        handleServoPost(req);
+    };
+
+    WebRequestTestBackend hold;
+    post("ARM2", "hold", hold);
+    TEST_ASSERT_EQUAL_INT(409, hold.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(hold.sentBody, "Restart the droid to use ARM2."));
+
+    // Pulses off too: it answers for an Output as much as a move does.
+    WebRequestTestBackend release;
+    post("ARM2", "release", release);
+    TEST_ASSERT_EQUAL_INT(409, release.sentCode);
+
+    WebRequestTestBackend both;
+    post("both", "open", both);
+    TEST_ASSERT_EQUAL_INT(409, both.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(both.sentBody, "ARM2"));
+
+    // The Output the droid did start with is untouched by its neighbour.
+    WebRequestTestBackend driven;
+    post("ARM1", "hold", driven);
+    TEST_ASSERT_EQUAL_INT(200, driven.sentCode);
+
+    // Not ticked at all: a restart alone would not drive it.
+    snap.system.enable_arm2 = false;
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
+    WebRequestTestBackend unwired;
+    post("ARM2", "hold", unwired);
+    TEST_ASSERT_EQUAL_INT(409, unwired.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(unwired.sentBody, "ARM2 has no Part on it. Put one on it on Wiring."));
+}
+
+// A Find by Moving run drives a FREE Output for its length (#411): the route
+// lets a nudge and a release through for one - ServoTask takes it for the run -
+// and nothing else. A light's wire and an Output a Part is on are never free,
+// and neither is an Output ServoTask drives already. Letting a run's command
+// through writes nothing: the wired ticks still follow the Parts.
+void test_servo_lets_a_run_nudge_a_free_output_and_nothing_else() {
+    {
+        const ConfigWriteWindowForTest window;
+        ServoOutputTable table = {};
+        servoOutputTableDefaults(&table);
+        TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[3], "doorFL"));  // ARM4: a Part's Output
+        table.rows[4].component = SERVO_COMP_RGB;                         // ARM5: a light's wire
+        Preferences prefs;
+        prefs.begin("proto", false);
+        prefs.clear();
+        PrefsWriter writer(prefs);
+        TEST_ASSERT_TRUE(writeServoOutputTableForTest(table, writer));
+        ServoOutputRepairReport report = {};
+        configLoadServoOutputs(prefs, &report);
+        prefs.end();
+    }
+    // ServoTask started driving ARM1 and ARM2 only: ARM3..ARM5 are not driven,
+    // and ARM4's tick followed its Part since, so it waits for a restart.
+    g_test_servo_driven_mask = 0x03;
+    g_test_servo_wired_at_start_mask = 0x03;
+    ConfigSnapshot before = {};
+    configCacheRead(&before);
+
+    const auto post = [](const char* arm, const char* action, WebRequestTestBackend& backend) {
+        const WebRequestTestParam params[] = {{"arm", arm}, {"action", action}, {"positionUs", "1500"}};
+        backend.params = params;
+        backend.paramCount = 3;
+        WebRequest req(&backend);
+        handleServoPost(req);
+    };
+
+    WebRequestTestBackend nudge;
+    post("ARM3", "nudge", nudge);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, nudge.sentCode, "a free Output takes a run's nudge");
+    // Stop wins over a queued nudge (#411 slice 4): ServoTask has not taken
+    // ARM3 yet - no run holds it - and the release is still let through, so it
+    // lands on the queue behind the nudge and lets go of what the nudge takes.
+    WebRequestTestBackend beforeTake;
+    post("ARM3", "release", beforeTake);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, beforeTake.sentCode, "a release sent before the take still stops it");
+    g_test_servo_run_held_mask = 1u << 2;
+    WebRequestTestBackend release;
+    post("ARM3", "release", release);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, release.sentCode, "the run's release on the Output it holds");
+    g_test_servo_run_held_mask = 0;
+    WebRequestTestBackend hold;
+    post("ARM3", "hold", hold);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(409, hold.sentCode, "a run nudges; it does not hold or drive");
+
+    WebRequestTestBackend parted;
+    post("ARM4", "nudge", parted);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(409, parted.sentCode, "an Output a Part is on moves through its Part");
+    WebRequestTestBackend partedRelease;
+    post("ARM4", "release", partedRelease);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(409, partedRelease.sentCode, "no run holds or may take a Part's Output");
+    WebRequestTestBackend lit;
+    post("ARM5", "nudge", lit);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(409, lit.sentCode, "a light's wire is never a servo's");
+    TEST_ASSERT_NOT_NULL(strstr(lit.sentBody, "ARM5 carries a light"));
+
+    ConfigSnapshot after = {};
+    configCacheRead(&after);
+    TEST_ASSERT_EQUAL_MEMORY_MESSAGE(&before.system, &after.system, sizeof(before.system),
+                                     "a run writes no tick and no Setting");
+}
+
+// A dial stands on one row, so the `both` broadcast is refused the same way
+// a nudge's is - and the refusal names the action the caller asked for.
+void test_servo_hold_refuses_the_broadcast_arm() {
+    const WebRequestTestParam params[] = {
+        {"arm", "both"}, {"action", "hold"}, {"positionUs", "1500"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 3;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "A hold moves one output"));
+}
+
+// A hold outside what a servo takes is refused at the door, exactly as a
+// position is: the component band then bounds it again on the way to the pin.
+void test_servo_hold_out_of_range_is_rejected() {
+    const WebRequestTestParam params[] = {
+        {"arm", "ARM1"}, {"action", "hold"}, {"positionUs", "2600"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 3;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "positionUs must be between"));
+}
+
+// The dial's keepalive says it is a refresh (#417), and ServoTask drops one
+// that finds no hold standing. A spelling the door does not know is refused,
+// never read as a press: a press is the one form that takes an Output back.
+void test_servo_hold_refresh_takes_only_the_one_spelling() {
+    const WebRequestTestParam good[] = {
+        {"arm", "ARM3"}, {"action", "hold"}, {"positionUs", "1750"}, {"refresh", "1"}};
+    WebRequestTestBackend accepted;
+    accepted.params = good;
+    accepted.paramCount = 4;
+    WebRequest acceptedReq(&accepted);
+    handleServoPost(acceptedReq);
+    TEST_ASSERT_EQUAL_INT(200, accepted.sentCode);
+
+    const WebRequestTestParam bad[] = {
+        {"arm", "ARM3"}, {"action", "hold"}, {"positionUs", "1750"}, {"refresh", "true"}};
+    WebRequestTestBackend refused;
+    refused.params = bad;
+    refused.paramCount = 4;
+    WebRequest refusedReq(&refused);
+    handleServoPost(refusedReq);
+    TEST_ASSERT_EQUAL_INT(400, refused.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(refused.sentBody, "refresh=1 is for a hold only"));
+
+    const WebRequestTestParam notHold[] = {
+        {"arm", "ARM3"}, {"action", "position"}, {"positionUs", "1750"}, {"refresh", "1"}};
+    WebRequestTestBackend misplaced;
+    misplaced.params = notHold;
+    misplaced.paramCount = 4;
+    WebRequest misplacedReq(&misplaced);
+    handleServoPost(misplacedReq);
+    TEST_ASSERT_EQUAL_INT(400, misplaced.sentCode);
+}
+
+// Pulses off (#364, ADR 0043): no width travels with it, because a release
+// commands no position at all - the Output goes limp where it is.
+void test_servo_release_takes_an_arm_and_no_width() {
+    const WebRequestTestParam params[] = {{"arm", "ARM5"}, {"action", "release"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
+}
+
+// Unlike a hold, a release takes the broadcast: letting go of both arms at once
+// is the same act twice, not two outputs moving together.
+void test_servo_release_accepts_the_broadcast_arm() {
+    const WebRequestTestParam params[] = {{"arm", "both"}, {"action", "release"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+}
+
+// The refusal lists what this route actually accepts, so a caller that spelled
+// one wrong is told the set rather than left guessing.
+void test_an_unknown_servo_action_names_every_action_there_is() {
+    const WebRequestTestParam params[] = {{"arm", "ARM1"}, {"action", "letgo"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "hold"));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "release"));
+}
+
+// POST /api/servo/centre carries no body and queues no servo command: it signals
+// the Sequence Coordinator, which owns the expansion and its pace (#318, #365).
+// What the handler must do is set the flag with the source that asked, so the
+// sweep's log line names the surface the press came from.
+void test_back_to_centre_signals_the_coordinator() {
+    robotState.bulkCentreRequest = SRC_NONE;
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleServoCentrePost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"skipped\":[]}", backend.sentBody);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SRC_WEB_API, (uint8_t)robotState.bulkCentreRequest);
+}
+
+// An Output nothing drives since the droid started is passed over by the sweep
+// rather than spending a slot on a move ServoTask would drop (#364), and the
+// answer names it - the caller hears it here or nowhere.
+void test_back_to_centre_names_an_output_nothing_drives() {
+    {
+        // A fresh table: every board Output has a row with travel.
+        const ConfigWriteWindowForTest window;
+        Preferences prefs;
+        prefs.begin("proto", false);
+        prefs.clear();
+        ServoOutputRepairReport report = {};
+        configLoadServoOutputs(prefs, &report);
+        prefs.end();
+    }
+    g_test_servo_driven_mask = (uint8_t)~(1u << 2);  // ARM3, ticked after the droid started
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleServoCentrePost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"skipped\":[\"ARM3\"]}", backend.sentBody);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SRC_WEB_API, (uint8_t)robotState.bulkCentreRequest);
+}
+
+// No arm, no action, no width. A request that carries any of them is not
+// refused and not read: the operator's press is the whole of what this route
+// takes, and there is nothing about the sweep for a caller to decide.
+void test_back_to_centre_takes_no_parameters() {
+    robotState.bulkCentreRequest = SRC_NONE;
+    const WebRequestTestParam params[] = {{"arm", "arm1"}, {"action", "open"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoCentrePost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SRC_WEB_API, (uint8_t)robotState.bulkCentreRequest);
+}
+
 // -----------------------------------------------------------------------------
-// AUX LED
+// The lit wires
 // -----------------------------------------------------------------------------
 
+// Light every wire that can carry one, so the routes have something to command,
+// and clear the rest. robotState.auxLed is keyed by BOARD_OUTPUTS index, which
+// is the same index the routes resolve an Output Address to.
+static void lightEveryCapableWire() {
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        robotState.auxLed[i] = {};
+        robotState.auxLed[i].lit = BOARD_OUTPUTS[i].lightCapable;
+        robotState.auxLed[i].available = BOARD_OUTPUTS[i].lightCapable;
+    }
+}
+
+// The Output Address of the Nth light-capable Output, as GET /api/servo/outputs
+// spells it, which is what a surface sends back as `output`.
+static void litWireAddress(size_t which, char* buf, size_t bufSize, size_t* outIndex) {
+    size_t seen = 0;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (!BOARD_OUTPUTS[i].lightCapable) {
+            continue;
+        }
+        if (seen++ != which) {
+            continue;
+        }
+        TEST_ASSERT_TRUE(servoOutputFormatAddress(buf, bufSize, SERVO_DRIVER_LEDC,
+                                                  BOARD_OUTPUTS[i].channel));
+        *outIndex = i;
+        return;
+    }
+    TEST_FAIL_MESSAGE("this board has no such light-capable Output");
+}
+
 void test_aux_led_color_accepts_form_fields() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 4;
+    lightEveryCapableWire();
     const WebRequestTestParam params[] = {{"r", "10"}, {"g", "20"}, {"b", "30"}};
     WebRequestTestBackend backend;
     backend.params = params;
@@ -714,8 +1619,7 @@ void test_aux_led_color_accepts_form_fields() {
 }
 
 void test_aux_led_color_accepts_a_json_body() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 4;
+    lightEveryCapableWire();
     WebRequestTestBackend backend;
     backend.body = "{\"r\":1,\"g\":2,\"b\":3}";
     WebRequest req(&backend);
@@ -724,6 +1628,75 @@ void test_aux_led_color_accepts_a_json_body() {
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"g\":2"));
+}
+
+// THE INVARIANT #413 EXISTS FOR: a droid may have several lit wires, each with
+// its own settings, so a command naming one must not reach the others. The
+// route that carried a single strip had no way to be wrong about this; this one
+// does, and one resolution slip turns a builder's per-Part control into a
+// broadcast they cannot see is happening.
+void test_a_color_sent_to_one_wire_reaches_only_that_wire() {
+    lightEveryCapableWire();
+    char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+    size_t commanded = 0;
+    litWireAddress(0, address, sizeof(address), &commanded);
+
+    const WebRequestTestParam params[] = {
+        {"r", "10"}, {"g", "20"}, {"b", "30"}, {"output", address}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 4;
+    WebRequest req(&backend);
+
+    handleAuxLedColorPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_UINT8(10, robotState.auxLed[commanded].r);
+    TEST_ASSERT_EQUAL_UINT8(30, robotState.auxLed[commanded].b);
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (i == commanded) {
+            continue;
+        }
+        TEST_ASSERT_EQUAL_UINT8(0, robotState.auxLed[i].r);
+        TEST_ASSERT_EQUAL_UINT8(0, robotState.auxLed[i].b);
+    }
+}
+
+// And the other half: no `output` still means every lit wire, which is what an
+// RC trigger and a sequence step have always meant by this route.
+void test_a_color_with_no_output_reaches_every_lit_wire() {
+    lightEveryCapableWire();
+    const WebRequestTestParam params[] = {{"r", "7"}, {"g", "0"}, {"b", "0"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 3;
+    WebRequest req(&backend);
+
+    handleAuxLedColorPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        TEST_ASSERT_EQUAL_UINT8(BOARD_OUTPUTS[i].lightCapable ? 7 : 0, robotState.auxLed[i].r);
+    }
+}
+
+// An address this droid does not have is a refusal, not a silent broadcast: a
+// surface sending an address it did not read must not command the whole droid.
+void test_an_unknown_output_is_refused_rather_than_broadcast() {
+    lightEveryCapableWire();
+    const WebRequestTestParam params[] = {
+        {"r", "9"}, {"g", "0"}, {"b", "0"}, {"output", "ledc:250"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 4;
+    WebRequest req(&backend);
+
+    handleAuxLedColorPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        TEST_ASSERT_EQUAL_UINT8(0, robotState.auxLed[i].r);
+    }
 }
 
 void test_aux_led_color_rejects_an_out_of_range_channel() {
@@ -740,8 +1713,7 @@ void test_aux_led_color_rejects_an_out_of_range_channel() {
 }
 
 void test_aux_led_effect_reports_the_new_effect() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 4;
+    lightEveryCapableWire();
     const WebRequestTestParam params[] = {{"effect", "pulse"}};
     WebRequestTestBackend backend;
     backend.params = params;
@@ -769,7 +1741,9 @@ void test_aux_led_effect_rejects_an_unknown_effect() {
 
 void test_aux_led_reports_an_unavailable_strip_distinctly() {
     g_test_aux_led_queue_ok = false;
-    robotState.auxLed.available = false;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        robotState.auxLed[i] = {};
+    }
     const WebRequestTestParam params[] = {{"effect", "solid"}};
     WebRequestTestBackend backend;
     backend.params = params;
@@ -779,7 +1753,7 @@ void test_aux_led_reports_an_unavailable_strip_distinctly() {
     handleAuxLedEffectPost(req);
 
     TEST_ASSERT_EQUAL_INT(503, backend.sentCode);
-    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "aux LED unavailable"));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "no light on that wire"));
 }
 
 int main(int, char**) {
@@ -804,15 +1778,30 @@ int main(int, char**) {
     RUN_TEST(test_drive_is_allowed_while_sbus_lost_but_web_control_enabled);
     RUN_TEST(test_mode_post_sets_stationary_and_broadcasts);
     RUN_TEST(test_mode_post_rejects_an_unknown_mode);
+    RUN_TEST(test_mode_post_reports_a_stationary_save_that_did_not_reach_flash);
+    RUN_TEST(test_mode_post_reports_a_driving_save_that_did_not_reach_flash);
     RUN_TEST(test_speed_preset_reports_the_applied_cap);
     RUN_TEST(test_speed_preset_reports_a_failed_persist);
     RUN_TEST(test_web_control_disable_submits_a_zero_frame);
+    RUN_TEST(test_radio_drives_after_browser_control_is_disabled);
 
     RUN_TEST(test_manual_command_keywords_are_case_insensitive);
     RUN_TEST(test_manual_command_rejects_an_unknown_keyword);
     RUN_TEST(test_manual_command_rejects_an_empty_command);
     RUN_TEST(test_manual_command_routes_marcduino_by_prefix_without_case_folding);
+    RUN_TEST(test_manual_command_hash_mode_keywords_are_shadowed_by_marcduino_routing);
     RUN_TEST(test_manual_command_intercepts_mood_commands);
+    RUN_TEST(test_manual_command_forwards_lines_the_body_does_not_own_verbatim);
+    RUN_TEST(test_manual_command_flutter_is_the_body_s_on_its_outputs_and_the_dome_s_otherwise);
+    RUN_TEST(test_manual_command_full_droid_sequence_runs_body_half_and_forwards);
+    RUN_TEST(test_manual_command_owned_line_the_body_refuses_is_neither_forwarded_nor_ok);
+    RUN_TEST(test_manual_command_forward_that_was_not_queued_is_not_ok);
+    RUN_TEST(test_manual_command_bank_form_is_refused_where_the_module_has_no_bank);
+    RUN_TEST(test_manual_command_line_longer_than_the_dome_buffer_is_refused_not_cut);
+    RUN_TEST(test_manual_command_panel_number_that_is_not_digits_moves_nothing);
+    RUN_TEST(test_manual_command_bank_form_sound_zero_is_refused);
+    RUN_TEST(test_manual_command_bank_check_waits_for_a_catalog_refresh);
+    RUN_TEST(test_manual_command_repeated_refusal_logs_once_per_interval);
     RUN_TEST(test_manual_command_longer_than_any_keyword_is_unknown_not_truncated);
 
     RUN_TEST(test_dome_speed_rejects_out_of_range);
@@ -826,12 +1815,34 @@ int main(int, char**) {
 
     RUN_TEST(test_servo_accepts_a_named_arm_action);
     RUN_TEST(test_servo_accepts_the_broadcast_arm);
-    RUN_TEST(test_servo_rejects_an_unknown_arm);
+    RUN_TEST(test_servo_refuses_a_word_the_board_does_not_print);
+    RUN_TEST(test_servo_takes_the_board_label_in_any_case_and_spacing);
     RUN_TEST(test_servo_rejects_an_out_of_range_position);
     RUN_TEST(test_servo_position_without_a_value_is_rejected);
+    RUN_TEST(test_servo_nudge_takes_an_arm_and_no_width);
+    RUN_TEST(test_servo_nudge_refuses_the_broadcast_arm);
+    RUN_TEST(test_servo_travel_takes_an_arm_and_no_width);
+    RUN_TEST(test_servo_travel_refuses_the_broadcast_arm);
+    RUN_TEST(test_servo_unknown_action_names_travel);
+    RUN_TEST(test_servo_hold_takes_an_arm_and_a_width);
+    RUN_TEST(test_servo_hold_without_a_width_is_rejected);
+    RUN_TEST(test_servo_hold_refuses_the_broadcast_arm);
+    RUN_TEST(test_servo_refuses_an_output_nothing_drives_since_boot);
+    RUN_TEST(test_servo_lets_a_run_nudge_a_free_output_and_nothing_else);
+    RUN_TEST(test_servo_hold_out_of_range_is_rejected);
+    RUN_TEST(test_servo_hold_refresh_takes_only_the_one_spelling);
+    RUN_TEST(test_servo_release_takes_an_arm_and_no_width);
+    RUN_TEST(test_servo_release_accepts_the_broadcast_arm);
+    RUN_TEST(test_an_unknown_servo_action_names_every_action_there_is);
+    RUN_TEST(test_back_to_centre_signals_the_coordinator);
+    RUN_TEST(test_back_to_centre_takes_no_parameters);
+    RUN_TEST(test_back_to_centre_names_an_output_nothing_drives);
 
     RUN_TEST(test_aux_led_color_accepts_form_fields);
     RUN_TEST(test_aux_led_color_accepts_a_json_body);
+    RUN_TEST(test_a_color_sent_to_one_wire_reaches_only_that_wire);
+    RUN_TEST(test_a_color_with_no_output_reaches_every_lit_wire);
+    RUN_TEST(test_an_unknown_output_is_refused_rather_than_broadcast);
     RUN_TEST(test_aux_led_color_rejects_an_out_of_range_channel);
     RUN_TEST(test_aux_led_effect_reports_the_new_effect);
     RUN_TEST(test_aux_led_effect_rejects_an_unknown_effect);

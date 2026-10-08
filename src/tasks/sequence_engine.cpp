@@ -10,9 +10,12 @@
 // =============================================================================
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "sequence_dome_how_far.h"
 #include "sequence_engine.h"
+#include "sequence_gesture.h"
 
 static const char* const kRingTargets[] = { "01", "02", "03", "04", "07", "11", "13" };
 static const char* const kPieTargets[]  = { "P1", "P2", "P3", "P4", "P5", "P6" };
@@ -38,6 +41,17 @@ static void setPayload(SeqAction& a, const char* payload) {
     }
 }
 
+// A terminal action the queue had no room for. Never silent: the dispatcher
+// takes the record and logs it (seqEngineTakeFinalDrops()).
+static void noteFinalDropped(SeqEngineState& st, SeqActionKind kind) {
+    if (st.finalDropped == 0) {
+        st.finalDroppedKind = kind;
+    }
+    if (st.finalDropped < 0xFF) {
+        st.finalDropped++;
+    }
+}
+
 // dueRel is the fire offset (ms) relative to finishStartMs. Instant resets pass
 // 0; staggered individual ring closes pass increasing offsets so only one ring
 // servo actuates at a time (group closes brown out the dome  --  see addRingClose).
@@ -45,6 +59,7 @@ static void addFinal(SeqEngineState& st, SeqActionKind kind, const char* payload
                      uint16_t dueRel = 0) {
     const uint8_t cap = (uint8_t)(sizeof(st.finalQ) / sizeof(st.finalQ[0]));
     if (st.finalCount >= cap) {
+        noteFinalDropped(st, kind);
         return;
     }
     const uint8_t idx = st.finalCount++;
@@ -54,6 +69,10 @@ static void addFinal(SeqEngineState& st, SeqActionKind kind, const char* payload
     a.audioFallbackSlot = 0;
     a.domeSpeedPct = 0;
     a.domeDurationMs = 0;
+    a.bodyShape = 0;
+    a.bodyHowFar = 0;
+    a.bodyFlutterMs = 0;
+    a.gesture = nullptr;
     setPayload(a, payload);
     st.finalDueRel[idx] = dueRel;
 }
@@ -61,6 +80,7 @@ static void addFinal(SeqEngineState& st, SeqActionKind kind, const char* payload
 static void addFinalDomeRotateStop(SeqEngineState& st) {
     const uint8_t cap = (uint8_t)(sizeof(st.finalQ) / sizeof(st.finalQ[0]));
     if (st.finalCount >= cap) {
+        noteFinalDropped(st, SEQ_ACT_DOME_ROTATE);
         return;
     }
     const uint8_t idx = st.finalCount++;
@@ -70,6 +90,10 @@ static void addFinalDomeRotateStop(SeqEngineState& st) {
     a.audioFallbackSlot = 0;
     a.domeSpeedPct = 0;
     a.domeDurationMs = 0;
+    a.bodyShape = 0;
+    a.bodyHowFar = 0;
+    a.bodyFlutterMs = 0;
+    a.gesture = nullptr;
     a.payload[0] = '\0';
     st.finalDueRel[idx] = 0;
 }
@@ -120,8 +144,10 @@ static void setAllRingOpen(SeqEngineState& st, bool open) {
 }
 
 // Update the per-run net-open RING mask from a dispatched dome command. Only
-// :OP/:CL change logical open state; :OF leaves it uncertain (no mark  --  the
-// authored branch must clean up its own flutters). Pie targets (14 group, P*
+// :OP/:CL change logical open state. :OF changes nothing here: the dome ends a
+// flutter closed (ADR 0049, amended 2026-10-02), and a panel an earlier :OP
+// marked open stays marked, so terminal cleanup still closes it -- a close too
+// many is harmless, a close missed is not. Pie targets (14 group, P*
 // individual) do not affect the ring mask.
 static void recordRingOpenState(SeqEngineState& st, const char* cmd) {
     if (cmd == nullptr || cmd[0] != ':') {
@@ -129,6 +155,7 @@ static void recordRingOpenState(SeqEngineState& st, const char* cmd) {
     }
     bool open;
     if (cmd[1] == 'O' && cmd[2] == 'P')      open = true;   // :OP  --  open
+    else if (cmd[1] == 'M' && cmd[2] == 'V') open = true;   // :MV  --  part open: still owes a close
     else if (cmd[1] == 'C' && cmd[2] == 'L') open = false;  // :CL  --  close
     else return;                                            // :OF / non-panel  --  no change
     const char* t = cmd + 3;
@@ -141,6 +168,29 @@ static void recordRingOpenState(SeqEngineState& st, const char* cmd) {
     if (bit < 0) return;
     if (open) st.ringOpenMask |= (uint16_t)(1u << bit);
     else      st.ringOpenMask  = (uint16_t)(st.ringOpenMask & ~(1u << bit));
+}
+
+// A dome Gesture that leaves its ring panels OPEN marks them open, so terminal
+// cleanup closes them one at a time exactly as it does a ring panel opened by
+// :OPnn. Only (open, together) leaves a panel open: every other `$` command
+// the dome performs ends its panels closed (include/sequence_gesture.h), and a
+// Gesture the dome has no command for moves nothing. A body Gesture records
+// nothing, for the reason a Body Step does not (ADR 0049).
+static void recordGestureRingOpen(SeqEngineState& st, const SeqStep& step) {
+    if (!seqGestureIsDome(step.payload) ||
+        seqBodyShape(step.params) != BODY_SHAPE_OPEN ||
+        seqGestureSpread(step.params) != GESTURE_SPREAD_TOGETHER) {
+        return;
+    }
+    uint8_t members[SEQ_GESTURE_MEMBERS_MAX];
+    const uint8_t n = seqGestureMembers(step, members, SEQ_GESTURE_MEMBERS_MAX);
+    for (uint8_t i = 0; i < n; ++i) {
+        const char* id = droidPartIdAt(members[i]);
+        // Ring panels are "panel<N>" in the catalog and <N> on the wire.
+        if (strncmp(id, "panel", 5) != 0 || seqGestureDomeBit(members[i]) < 0) continue;
+        const int bit = ringPanelBit(atoi(id + 5));
+        if (bit >= 0) st.ringOpenMask |= (uint16_t)(1u << bit);
+    }
 }
 
 // Body-authoritative latch update: an explicit group/all close on the wire means
@@ -199,6 +249,14 @@ bool seqEngineRingCloseCmd(uint8_t i, char* buf, uint8_t bufLen) {
     return true;
 }
 
+uint8_t seqEnginePanelTargetCount(void) {
+    return (uint8_t)(sizeof(kAllTargets) / sizeof(kAllTargets[0]));
+}
+
+const char* seqEnginePanelTarget(uint8_t i) {
+    return (i < seqEnginePanelTargetCount()) ? kAllTargets[i] : nullptr;
+}
+
 int seqEngineRingPanelNumber(uint8_t i) {
     if (i >= kRingPanelCount) {
         return -1;
@@ -243,9 +301,9 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
         addFinal(st, SEQ_ACT_DOME_CMD, "DV:RESET_VISUALS");
     }
     if (st.activeFx & FX_DOME_SEQUENCE) {
-        addFinal(st, SEQ_ACT_DOME_CMD, "@0T1");
-        addFinal(st, SEQ_ACT_DOME_CMD, "@0P1");
-        addFinal(st, SEQ_ACT_DOME_CMD, "*ST00");
+        for (const char* reset : SEQ_DOME_VISUAL_RESETS) {
+            addFinal(st, SEQ_ACT_DOME_CMD, reset);
+        }
         // A :SE## dome-native sequence manages its own panels; ring cleanup
         // closes only the ring panels the body itself left open (none for a pure
         // :SE## step). Never a group close.
@@ -260,6 +318,19 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
     // track) stops on BOTH normal and abnormal termination  --  it is a hard cut, not a
     // fade; sequences wanting a musical ending author the bound earlier in the timeline
     // (see DM:ROCKMARCH's pre-TERM close pass).
+    // A Background Track by the vocals' rule below, with its own stop: a Track
+    // Stop leaves it playing (ADR 0054). Bounded, the default, stops on every
+    // end; boundAudio:false plays on past a normal end; an abnormal end, estop
+    // included, always stops it. After a stop step it is sent again, which
+    // costs nothing: with no Background Track held the driver sends nothing.
+    //
+    // BEFORE the Track Stop, on purpose: a Track Stop that arrives with a
+    // Background Track still held leaves the droid's sound reported as playing
+    // (audio_playback_policy.cpp), so the vocals' stop must find it gone.
+    if (((st.activeFx & FX_BACKGROUND_TRACK) && abnormal) ||
+        (st.activeFx & FX_BACKGROUND_TRACK_BOUNDED)) {
+        addFinal(st, SEQ_ACT_BACKGROUND_TRACK_STOP, nullptr);
+    }
     if (((st.activeFx & FX_AUDIO) && abnormal) || (st.activeFx & FX_AUDIO_BOUNDED)) {
         addFinal(st, SEQ_ACT_AUDIO_STOP, nullptr);
     }
@@ -356,6 +427,15 @@ static const char* targetName(uint8_t target) {
     return "00";
 }
 
+// The absolute ms this run's end step falls at, or 0 when its branch has none.
+// What a step hands on when the Coordinator performs it on its own cursor, past
+// the step that fired it: a Gesture and a flutter both stop there.
+static uint32_t runEndAtMs(const SeqEngineState& st) {
+    return (st.stepCount > 0 && st.steps[st.stepCount - 1].type == STEP_END)
+               ? st.startMs + st.steps[st.stepCount - 1].tMs
+               : 0;
+}
+
 // Resolve the step under the cursor into a pending action with an absolute
 // fire time. Returns false for step types that emit nothing (skipped).
 static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) {
@@ -365,13 +445,22 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
     a.audioFallbackSlot = 0;
     a.domeSpeedPct = 0;
     a.domeDurationMs = 0;
+    a.bodyShape = 0;
+    a.bodyHowFar = 0;
+    a.bodyFlutterMs = 0;
+    a.gesture = nullptr;
     a.payload[0] = '\0';
     uint32_t jitter = 0;
 
     switch (step.type) {
         case STEP_DOME_CMD:
             a.kind = SEQ_ACT_DOME_CMD;
-            setPayload(a, step.payload);
+            // A panel open or close that says how far goes out as the fork's
+            // `:MV` line, which the dome resolves against that panel's own
+            // throw; everything else goes as written.
+            if (!seqDomeHowFarCommand(step.payload, step.params.howFar, a.payload, sizeof(a.payload))) {
+                setPayload(a, step.payload);
+            }
             break;
         case STEP_AUDIO:
             a.kind = SEQ_ACT_AUDIO_DOLLAR;
@@ -387,9 +476,61 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             a.domeSpeedPct = step.params.speedPct;
             a.domeDurationMs = step.params.durationMs;
             break;
+        case STEP_DOME_BEARING:
+            // The target travels as written. Its bearing, the dome's belief and
+            // the calibration are all the Coordinator's to read at dispatch.
+            a.kind = SEQ_ACT_DOME_BEARING;
+            setPayload(a, step.payload);
+            break;
         case STEP_AUDIO_STOP:
             a.kind = SEQ_ACT_AUDIO_STOP;
             break;
+        case STEP_BACKGROUND_TRACK:
+            a.kind = SEQ_ACT_BACKGROUND_TRACK_START;
+            setPayload(a, step.payload);
+            a.audioCategory = step.params.backgroundTrackVol;
+            break;
+        case STEP_BACKGROUND_TRACK_STOP:
+            a.kind = SEQ_ACT_BACKGROUND_TRACK_STOP;
+            break;
+        case STEP_BODY:
+            // The Part travels as the payload, by its catalog id, because a
+            // sequence names the Part and never the Output Address (ADR 0041):
+            // the id is what survives a re-address, and the wiring question is
+            // asked of the Servo Output table at dispatch. The shape and how-far
+            // go out already resolved, so the engine is where both defaults are
+            // spent and no consumer re-decides them.
+            a.kind = SEQ_ACT_BODY_MOVE;
+            setPayload(a, step.payload);
+            a.bodyShape = (uint8_t)seqBodyShape(step.params);
+            a.bodyHowFar = seqBodyHowFar(step.params);
+            a.bodyFlutterMs = step.params.flutterMs;
+            // A flutter is performed on the Coordinator's cursor and must be
+            // closed again before this run's end step, where it is cut and
+            // nothing is commanded: so it is told where the run ends, as a
+            // Gesture is (#453).
+            if (a.bodyShape == (uint8_t)BODY_SHAPE_FLUTTER) {
+                a.domeDurationMs = runEndAtMs(st);
+            }
+            break;
+        case STEP_GESTURE:
+            // Handed on whole. The payload rides along so a log line and the
+            // run evidence can name the set without reaching into the step.
+            // So does where this run ends: a Gesture repeats on the
+            // Coordinator's cursor, not this one, and must not start a pass
+            // after the run that fired it has reached its end step -- an
+            // explicit extent, or a phrase's own extent spliced in from a
+            // shorter sequence, could otherwise carry it past the parent's
+            // end and past terminal cleanup.
+            a.kind = SEQ_ACT_GESTURE;
+            a.gesture = &step;
+            a.domeDurationMs = runEndAtMs(st);
+            setPayload(a, step.payload);
+            break;
+        case STEP_SEQUENCE:
+            // Never spliced in: its sequence is gone. It fires nothing, and the
+            // store reported it when the run was loaded (seqStorePrepare()).
+            return false;
         case STEP_RANDOM: {
             const uint8_t target = pickTarget(st, step, rnd);
             const char* prefix = ":OF";
@@ -427,8 +568,14 @@ bool seqEngineActive(const SeqEngineState& st) {
     return st.entry != nullptr;
 }
 
-const char* seqEngineName(const SeqEngineState& st) {
-    return st.entry != nullptr ? st.entry->name : nullptr;
+bool seqEngineTakeFinalDrops(SeqEngineState& st, uint8_t* count, SeqActionKind* firstKind) {
+    if (st.finalDropped == 0) {
+        return false;
+    }
+    if (count != nullptr) *count = st.finalDropped;
+    if (firstKind != nullptr) *firstKind = st.finalDroppedKind;
+    st.finalDropped = 0;
+    return true;
 }
 
 void seqEngineClearLatches(SeqEngineState& st) {
@@ -632,10 +779,26 @@ void seqEngineCommit(SeqEngineState& st) {
         if (strncmp(st.pending.payload, "DV:", 3) == 0) {
             st.dvPresetActive = true;
         }
-    } else if (st.pending.kind == SEQ_ACT_DOME_ROTATE &&
-               st.pending.domeSpeedPct != 0) {
+    } else if (st.pending.kind == SEQ_ACT_GESTURE && st.pending.gesture != nullptr) {
+        recordGestureRingOpen(st, *st.pending.gesture);
+    } else if ((st.pending.kind == SEQ_ACT_DOME_ROTATE && st.pending.domeSpeedPct != 0) ||
+               st.pending.kind == SEQ_ACT_DOME_BEARING) {
+        // Set whether or not the step turned the dome: an inert one only
+        // reported. The run's end then sends its neutral either way, so a turn
+        // still running at the end step is cut there - and if the step was
+        // inert and a stick is turning the dome, that stop lands on the stick's
+        // turn too, as it does after a timed turn. docs/sequence-authoring.md
+        // tells an author to leave room for the turn before the end.
         st.domeRotateActive = true;
     }
+    // SEQ_ACT_BODY_MOVE records nothing here, and that absence is the decision
+    // (ADR 0049): the engine undoes nothing a body step did. A Part left open
+    // when the sequence ends stays open -- the Output's own release schedule
+    // un-holds it, the body knows arrival exactly, and the close is a step the
+    // author writes, exactly as they already must for a pie panel. So there is
+    // no body counterpart to domeRotateActive above and no terminal action to
+    // queue: "this routine leaves the dataport open" is a Rehearsal Note,
+    // because the sequence performed exactly as written.
 
     st.pendingComputed = false;
     st.cursor++;

@@ -19,12 +19,23 @@
 //
 // The critical section blocks Core 0 only (AudioTask runs on Core 0). Core 1
 // real-time tasks (DriveTask, SBUSInputTask, DomeLinkTask) are unaffected.
-// Duration: ~1.04 ms per byte, ~5 ms per 4-byte audio command. Audio commands
-// are infrequent (at most a few per second), so this is safe for the application.
 //
-// s_softUartMux is defined as a file-scope static here. Since PA_AUDIO_DRIVER
-// selects exactly one backend at compile time, this header is included by at most
-// one translation unit, so the static definition is never duplicated.
+// The hold is per BYTE, not per command: ~1.04 ms at 9600 8N1 (10 bit times of
+// 104 us), taken and released around each one. What varies is how many bytes a
+// command is, and the three sound modules sharing this TX are nothing alike --
+// an MP3 Trigger track is 't' plus one byte (2 bytes, ~2.1 ms of wire time), a
+// DY-SV5W frame is 4 to 6 bytes with its checksum (~4.2 to ~6.2 ms), and a
+// CHIRP command is ASCII and as long as its arguments: "PLAY:12,2,C\n" is 12
+// bytes, ~12.5 ms. Those are nominal wire times for a whole command, never the
+// length of any single hold. Audio commands are infrequent (at most a few per
+// second), so this is safe for the application.
+//
+// s_softUartMux is one object across the whole image (a C++17 inline variable).
+// It used to be a file-scope static, justified by "PA_AUDIO_DRIVER selects
+// exactly one backend, so only one translation unit includes this" -- which was
+// never true (every env compiles all of src/, so all three driver TUs already
+// had a copy) and is plainly wrong now that the image carries every sound module
+// and picks one at runtime. One mux is what the name always implied.
 // =============================================================================
 #pragma once
 
@@ -38,8 +49,8 @@
 static constexpr uint32_t SOFT_UART_BIT_US = 104;
 
 // portMUX for Core 0 critical section around each byte transmission.
-// One instance per driver TU (safe  --  at most one driver compiled at a time).
-static portMUX_TYPE s_softUartMux = portMUX_INITIALIZER_UNLOCKED;
+// inline, so every driver translation unit shares the one object.
+inline portMUX_TYPE s_softUartMux = portMUX_INITIALIZER_UNLOCKED;
 
 // -----------------------------------------------------------------------------
 // softUartTxBegin()

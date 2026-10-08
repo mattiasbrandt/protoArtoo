@@ -1,5 +1,9 @@
 # Worker slice gate
 
+**Suites paused through 2026-10-31 (#464).** The native, web, and mutation stages of `tools/slice_verify.py` skip themselves and print `SKIP (suites paused until 2026-11-01, #464)`. That row is not a pass of the suite. A missing suite run is not a reject. The build, the diff checks, and the tooling self-tests still run. CI on a pull request into `main` still runs the native and web suites. Do not add tests or mutation patches during the pause. The date lives in `tools/suite_pause.py` and the skip ends on 2026-11-01 with no further edit. `PROTOR2_SUITES=1` runs the stages.
+
+**The gate in a pane.** A pipe through `tee` records tee's status. Run it as `python3 tools/pane_run.py /tmp/gate-<s>.log --cwd <worktree> -- python3 tools/slice_verify.py --base <ref> --json /tmp/slice-<s>.json`: one call splits a pane, runs the gate there under `tools/gate_in_pane.sh`, waits, prints the tail and closes its own pane. One log per slice, never a shared `/tmp/gate.log`: `pane_run.py` locks the log and refuses a log that another run is writing. The log's last line is `GATE_EXIT=<n>`, the command's own exit code. Outside Herdr, run `tools/gate_in_pane.sh /tmp/gate-<s>.log -- <the same command>` directly. `--json` writes a boolean `ok` (true when the gate has no failures). After the command, the script restores `data/fw-version.json` and `data/fs-version.json`, which a firmware build rewrites and which are never committed.
+
 `tools/slice_verify.py` is the mechanical PASS/FAIL floor for a branch against a
 base ref. `python3 tools/slice_verify.py --help` is the flag reference; this file
 is the contract: what the block must contain, who may waive what, and what
@@ -10,8 +14,9 @@ counts as evidence.
 (the path the brief names; plus any `--fenced` pathspecs
 and the `--mutations` patches the coordinator's brief specifies) and paste its
 full block verbatim into the issue status comment — including the opening
-provenance lines (blob hashes of both verifier scripts, HEAD sha, DIRTY
-marker, merge-base, diff size, toolchain). The coordinator does not re-run the
+provenance lines (blob hashes of the three verifier scripts - `gate`,
+`mut`, `trace` - HEAD sha, DIRTY marker, merge-base, diff size, web-only,
+toolchain). The coordinator does not re-run the
 gate behind every slice. Per slice it checks the block's **provenance against
 the branch** - HEAD sha against the tip, **the block's merge-base against the
 base's current tip** (`git rev-parse <base>`, never `git merge-base <base>
@@ -26,8 +31,8 @@ no waiver ACK it did not grant - which takes seconds and catches a block that
 is not of this branch. So a worker commits before the gate run and not after
 it, and leaves the tree clean but for the two version stamps. The gate itself
 is run **once per wave, on the merged tree**, with the union of the wave's
-fences: that run is the anti-fabrication net, and it has to happen anyway because line numbers and stragglers move on
-merge. Divergence at either point marks the slice unverified, and a failed
+fences: that run is the anti-fabrication net, and it has to happen anyway
+because line numbers and stragglers move on merge. Divergence at either point marks the slice unverified, and a failed
 provenance check is the trigger to re-run the full gate on that one slice. The
 merge-base check is the exception that is judged rather than failed: when the
 base moved under a slice, the coordinator intersects what landed with what the
@@ -38,14 +43,15 @@ and re-gates.
 **Why it changed (2026-09-17).** Across epic #175 the coordinator re-ran the
 full gate behind **18** accepted slices and found **0** divergences, while each
 re-run cost a second copy of the most expensive thing in the repo - the
-mutation stage alone runs the whole web suite once per patch, 28 times on a
-slice like #346 - serialised behind a machine-wide build lock. Every rejection
+mutation stage alone ran the whole web suite once per patch (until #405), 28
+times on a slice like #346 - serialised behind a machine-wide build lock. Every rejection
 that epic produced came from reading the production diff, which is step 0 of
 the critic protocol and costs nothing. The duplicate was buying a check that
 the merged-tree run already performs. The gate runs the native suite, the web
 suite (`make test-web` semantics: process exit code and `# cancelled` decide,
 never the TAP `# fail` line), the mutation stage, the firmware build, drift
-and diff checks, and fails on deleted test files or a shrinking test total. A
+and diff checks, and fails on deleted test files or a shrinking test total
+unless the run carries `--expect-test-shrink`. A
 flat test total over production changes also fails: `data/` changes must grow
 the web suite and `src/`/`include/` changes the native suite. A diff touching
 web production JS must carry mutation patches via `--mutations` (files or a
@@ -54,14 +60,83 @@ requires every patch KILLED and every changed JS file hit by at least one
 patch, and folds the verdict into the block — a passing block implies killed
 mutations. Its diff checks compare merge-base..HEAD, so commit before running
 it; build-stamped working-tree changes to `data/*version.json` are ignored by
-design. Editing `tools/slice_verify.py` or `tools/mutation_verify.py` inside
-a slice fails the gate; `--expect-gate-edit` is for coordinator-sanctioned
+design. **One kill per changed `data/*.js` file is the evidence** - the patch
+that breaks the invariant the slice's test was written for. A directory of
+patches per ticket, one per acceptance checkbox, is not asked for and is not
+better evidence (`test/test_web/README.md`, #406). Editing
+`tools/slice_verify.py`, `tools/mutation_verify.py` or
+`tools/web_load_trace.cjs` inside a slice fails the gate; `--expect-gate-edit` is for coordinator-sanctioned
 gate work only. The waiver flags — `--expect-gate-edit`,
-`--expect-no-new-tests`, `--expect-no-mutations` — are granted by the
-coordinator in the brief, never self-granted by a worker, and every ACK is
-visible in the block. Pricing a staged directory without `buildfs` is
-`tools/fs_price.py` (`--order` is required, #462). It is not a second gate;
-`make check-build-budgets` is still the number that can fail a build.
+`--expect-no-new-tests`, `--expect-no-mutations`, `--expect-test-shrink`,
+`--expect-heap-growth <bytes>` — are granted by the coordinator in the brief,
+never self-granted by a worker, and every ACK is visible in the block. `--expect-test-shrink` (#406) passes a
+shrinking native or web total and deleted test files; the ACK lines carry how
+many tests went and the path of every deleted file, so the coordinator reads
+the deletion list in the block against the list it granted. It is for thinning
+ticket receipts out of a suite, never for making room for a failing test.
+
+**The boot heap figure (#468).** The `build budget` row prints `Boot heap N (+G
+vs B)` beside flash and RAM: static `.data` + `.bss` plus the stack and TCB of
+every task each boot creates - the `tools/task_stack_recipes.json` arms whose
+`created` is `always`, TCB size from that file's metadata. The row fails when
+the figure is more than `boot_heap_threshold_bytes` (512 B) past
+`boot_heap_baseline_bytes` in `tools/build_budgets.json`, unless the run carries
+`--expect-heap-growth <bytes>` naming at least the growth; the ACK prints both
+numbers. A coordinator grants it for a spend the ticket decided; the baseline
+itself moves only by an operator-approved edit. It exists because a slice that
+took internal heap passed every gate and was found on hardware at the end of an
+epic (~21 KB on artoo, #467): 13 KB of it static, the rest a task stack created
+at every boot, which no static-RAM figure can see. **It is not runtime heap.**
+WiFi and lwIP buffers, the HTTP server and its sockets, conditionally created
+tasks (an RC input, the dome, audio, the aux LEDs, the PCA9685 sender, the OTA
+task), request bodies and every transient allocation are outside it, and so is
+the allocator's per-block overhead; `make bench-auto`'s memory log stays the
+runtime truth. `make check-build-budgets` checks the same figure for every env,
+the ESP32-P4 included, with no ACK.
+
+**The mutation stage (#405).** `tools/mutation_verify.py` owns its node
+processes: one `node --test` per test file, concurrency 1, 60 s each. Per patch
+it runs the **likely-set** - the test files the load map says open a patched
+`data/*.js` file - **shortest-first** by each file's cached wall time, and
+**stops at the first clean assertion kill**. The load map is traced from the
+gate's own HEAD web run by `tools/web_load_trace.cjs` (a `node --require`
+preload), and cached in `/tmp/protor2-web-load-map.json` keyed by the
+`data/` and `test/test_web/` tree ids and the Node version; standalone runs
+share it and rebuild it once when it is stale. Every unknown widens to the
+whole suite, never narrows. `SURVIVED` now means *no test that loads this file
+killed it*, and a patch one file kills by assertion while another hangs is
+`KILLED` (`test/test_web/README.md` states the rule). The mutation table is
+printed in the block on PASS as well as FAIL, with a `ran` column - files run
+/ likely-set size, e.g. `3/21`. `ran` depends on cached durations and can
+differ between two runs of one patch; the verdict cannot. `--whole-suite` on
+`mutation_verify.py` restores the one-invocation run for debugging and corpus
+replay; the gate never passes it.
+
+**Web-only diffs.** When every path in merge-base..HEAD matches
+`^data/[^/]+\.(js|css|html)$`, `^test/test_web/` or `^docs/`, the block says
+`web-only yes`, and the native tests, build budget and task stack chains rows
+print `SKIP (web-only diff)`. `pio run -e artoo_esp32` stays: it is also the
+staging check, because `tools/gzip_fsdata.py` runs on every `pio run`, runs
+every `data/` JS and CSS file through esbuild and resolves the HTML includes -
+the only syntax check `data/` files no web test opens ever get. It is not
+`-t buildfs`: in a fresh worktree that target half-runs the framework rebuild
+and leaves the machine-wide artoo framework pool pristine behind a stamp that
+claims otherwise (measured on #405, 2026-09-18). Pricing a staged directory
+without `buildfs` is `tools/fs_price.py` (`--order` is required, #462). It is
+not a second gate; `make check-build-budgets` is still the number that can
+fail a build. Anything else in the diff -
+`data/console_help.txt` (a native test reads it), `data/asset-sets/`, `src/`,
+`tools/`, `platformio.ini` - is not web-only and runs every row. It is derived
+from the diff; there is no flag.
+
+**Locks.** The pio phases hold `/tmp/protor2-pio.lock`. The web suite and the
+mutation stage hold `/tmp/protor2-webtest.lock` - a different lock, never
+held together with the pio lock and never nested in it - so two gates' web
+stages run one after the other without queueing anyone's build. Base-suite
+totals are cached machine-wide in `/tmp/protor2-slice-verify-cache.json`,
+keyed by base sha, the three verifier hashes and the Node version, and a killed
+gate removes the `/tmp/slice-verify-base-*` worktree it made. Per-stage wall
+times go to stderr and `--json`, never to the block.
 
 **Evidence rules:** pasted evidence must carry process exit codes, never a
 hand-summarised pass/fail line. A test that fails only by hanging or timing out

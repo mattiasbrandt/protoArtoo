@@ -1,48 +1,47 @@
 // =============================================================================
 // data/sound.js
 //
-// Sound page controller — named sound commands, volume, direct play,
+// Sound page controller — Named Track commands, volume, direct play,
 // random range configuration. All audio commands go through /api/audio.
 // Named track assignments are loaded from and saved to /api/audio/tracks.
 // =============================================================================
 (() => {
   const TRACK_MAX = 999;
-  const RX_STATUS_BLOCKED_BY_DOME = "blocked_by_dome_uart";
+  // A named sound that is a track Setting is named by its entry in the one
+  // words table (data/web_api.js), which holds its label; what track numbers it
+  // takes is the droid's to say, on the refusal of a save. The three that are
+  // commands rather than Settings carry their own words.
+  const labelOf = (key) => window.PAApi.labelOf(key);
+  const named = (key, cmd, playMode) => ({ label: labelOf(key), cmd, key, editable: true, playMode });
   const NAMED_SOUNDS = [
-    { label: "Scream", cmd: "$S", key: "scream", editable: true },
-    { label: "Short Circuit", cmd: "$F", key: "faint", editable: true },
-    { label: "Doo-doo", cmd: null, key: "doodoo", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Failure", cmd: null, key: "failure", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Leia Message", cmd: "$L", key: "leia", editable: true },
-    { label: "Short Cantina", cmd: "$c", key: "cantina_s", editable: true },
-    { label: "Star Wars Theme", cmd: "$W", key: "sw_theme", editable: true },
-    { label: "Disco", cmd: null, key: "disco", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Mahna Mahna", cmd: null, key: "mahna", editable: true, playMode: "track", trackMin: 0 },
-    { label: "In Love", cmd: null, key: "inlove", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Macho Man", cmd: null, key: "macho", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Gangnam Style", cmd: null, key: "gangnam", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Uptown Funk", cmd: null, key: "uptown", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Celebration", cmd: null, key: "celebr", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Stayin' Alive", cmd: null, key: "stayin", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Harlem Shake", cmd: null, key: "harlem", editable: true, playMode: "track", trackMin: 0 },
-    { label: "PBJ Time", cmd: null, key: "pbjtime", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Imperial March", cmd: "$M", key: "imp_march", editable: true },
-    { label: "Long Cantina", cmd: "$C", key: "cantina_l", editable: true },
-    { label: "Boot Sound ($B)", cmd: "$B", key: "startup", editable: true },
+    named("scream", "$S"),
+    named("faint", "$F"),
+    named("doodoo", null, "track"),
+    named("failure", null, "track"),
+    named("leia", "$L"),
+    named("cantina_s", "$c"),
+    named("sw_theme", "$W"),
+    named("disco", null, "track"),
+    named("mahna", null, "track"),
+    named("inlove", null, "track"),
+    named("macho", null, "track"),
+    named("gangnam", null, "track"),
+    named("uptown", null, "track"),
+    named("celebr", null, "track"),
+    named("stayin", null, "track"),
+    named("harlem", null, "track"),
+    named("pbjtime", null, "track"),
+    named("imp_march", "$M"),
+    named("cantina_l", "$C"),
+    named("startup", "$B"),
+    named("happy", "$H"),
     { label: "Random On", cmd: "$R", key: null, editable: false },
     { label: "Random Off", cmd: "$O", key: null, editable: false },
     { label: "Stop / Chatter Off", cmd: "$s", key: null, editable: false },
   ];
 
-  const SYSTEM_SOUNDS = [
-    { label: "Boot Complete (auto)", key: "sys_boot" },
-    { label: "Mode → Normal", key: "sys_mode_n" },
-    { label: "Mode → Slow", key: "sys_mode_s" },
-    { label: "Mode → Turbo", key: "sys_mode_t" },
-    { label: "Drives engaged", key: "sys_drv_on" },
-    { label: "Dome enabled", key: "sys_dome_on" },
-    { label: "Network Link Lost (auto)", key: "sys_net_down" },
-  ];
+  const SYSTEM_SOUNDS = ["sys_boot", "sys_mode_n", "sys_mode_s", "sys_mode_t", "sys_drv_on", "sys_dome_on",
+    "sys_net_down"].map((key) => ({ label: labelOf(key), key }));
 
   const NAMED_SLOT_TARGETS = NAMED_SOUNDS
     .filter((sound) => sound.editable && Boolean(sound.key))
@@ -58,24 +57,21 @@
     ...NAMED_SLOT_TARGETS.map((target) => ({ key: target.key, label: `Named · ${target.label}` })),
     ...SYSTEM_SLOT_TARGETS.map((target) => ({ key: target.key, label: `System · ${target.label}` })),
   ];
+  // A category's two bounds share its label, read off the first bound's entry.
+  const category = (loKey, hiKey, extra = {}) => ({ label: labelOf(loKey), loKey, hiKey, ...extra });
   const CATEGORY_SOUNDS = [
-    {
-      label: "General",
-      loKey: "snd_cat_gen_lo",
-      hiKey: "snd_cat_gen_hi",
-      hint: "Bank 1 (1A_general) uses tracks 1-24.",
-    },
-    { label: "Chatty", loKey: "snd_cat_chat_lo", hiKey: "snd_cat_chat_hi" },
-    { label: "Happy", loKey: "snd_cat_hap_lo", hiKey: "snd_cat_hap_hi" },
-    { label: "Processing", loKey: "snd_cat_proc_lo", hiKey: "snd_cat_proc_hi" },
-    { label: "Sad", loKey: "snd_cat_sad_lo", hiKey: "snd_cat_sad_hi" },
-    { label: "Sentimental", loKey: "snd_cat_sent_lo", hiKey: "snd_cat_sent_hi" },
-    { label: "Humming", loKey: "snd_cat_hum_lo", hiKey: "snd_cat_hum_hi" },
-    { label: "Scream", loKey: "snd_cat_scrm_lo", hiKey: "snd_cat_scrm_hi" },
-    { label: "Surprised", loKey: "snd_cat_ooh_lo", hiKey: "snd_cat_ooh_hi" },
-    { label: "Alert", loKey: "snd_cat_alrm_lo", hiKey: "snd_cat_alrm_hi" },
-    { label: "Snarky", loKey: "snd_cat_snrk_lo", hiKey: "snd_cat_snrk_hi" },
-    { label: "Whistle", loKey: "snd_cat_whis_lo", hiKey: "snd_cat_whis_hi" },
+    category("snd_cat_gen_lo", "snd_cat_gen_hi", { hint: "Bank 1 (1A_general) uses tracks 1-24." }),
+    category("snd_cat_chat_lo", "snd_cat_chat_hi"),
+    category("snd_cat_hap_lo", "snd_cat_hap_hi"),
+    category("snd_cat_proc_lo", "snd_cat_proc_hi"),
+    category("snd_cat_sad_lo", "snd_cat_sad_hi"),
+    category("snd_cat_sent_lo", "snd_cat_sent_hi"),
+    category("snd_cat_hum_lo", "snd_cat_hum_hi"),
+    category("snd_cat_scrm_lo", "snd_cat_scrm_hi"),
+    category("snd_cat_ooh_lo", "snd_cat_ooh_hi"),
+    category("snd_cat_alrm_lo", "snd_cat_alrm_hi"),
+    category("snd_cat_snrk_lo", "snd_cat_snrk_hi"),
+    category("snd_cat_whis_lo", "snd_cat_whis_hi"),
   ];
   const SLOT_TARGET_PREFIX = "slot:";
   const CATEGORY_TARGET_PREFIX = "category:";
@@ -116,12 +112,7 @@
     snd_cat_snrk_lo: ["snarky", "pfft", "razzberry"],
     snd_cat_whis_lo: ["whistle"],
   };
-  const MOOD_MAP_MOODS = [
-    { key: "quiet", label: "Quiet 🤐" },
-    { key: "mid", label: "Mid-Awake" },
-    { key: "full", label: "Full-Awake" },
-    { key: "awakeplus", label: "Awake+" },
-  ];
+  const MOOD_MAP_MOODS = ["quiet", "mid", "full", "awakeplus"].map((key) => ({ key, label: labelOf(key) }));
   const MOOD_MAP_DEFAULTS = {
     quiet: 0x0048,
     mid: 0x004F,
@@ -131,13 +122,21 @@
 
   const CMD_MARKER = "—";
 
-  // AudioDriver capability bits — must match audio_driver.h AUDIO_CAP_* constants
+  // AudioDriver capability bits — must match audio_driver.h AUDIO_CAP_* constants.
+  // Every bit here is consulted below: a capability the firmware declares and
+  // nothing reads is worse than no capability, because the page then reports a
+  // field the fitted module cannot actually answer.
   const AUDIO_CAP_STATUS_QUERY = 0x01;
   const AUDIO_CAP_DEVICE_TYPE = 0x02;
+  const AUDIO_CAP_TRACK_COUNT = 0x04;
   const AUDIO_CAP_CURRENT_TRACK = 0x08;
   const AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
 
   const AUDIO_CAP_CATALOG = 0x20;
+  // The module plays a Background Track under its vocals (ADR 0054). Read for
+  // the module card's Background Track reading; a Sequence that asks for one on
+  // a module without it is the Rehearsal's warning, not this page's.
+  const AUDIO_CAP_MIXES = 0x40;
   const tbody = document.getElementById("named-sound-rows");
   const systemTbody = document.getElementById("system-sound-rows");
   const categoryTbody = document.getElementById("category-sound-rows");
@@ -145,7 +144,67 @@
   const moodMapFb = document.getElementById("mood-map-feedback");
   const moodMapSaveBtn = document.getElementById("btn-mood-map-save");
   const soundStateBadge = document.getElementById("sound-state-badge");
+
+  // The sound link is the health-signal model's word and light, the same ones
+  // the Status Plate, the Dashboard and Maintenance show (data/health_signals.js,
+  // #422). This page reads no rx_status of its own: it hands the model the
+  // module block, from the status frame or from GET /api/audio, and paints
+  // the answer. The light becomes the badge's data-state.
+  const SOUND_LINK_BADGE_STATES = { ok: "ok", fail: "error", off: "disabled" };
+  const readSoundLink = (audio) =>
+    window.PAHealthSignals.readSoundLink({ audio }, { unknown: window.PALiveReading.UNKNOWN });
+  const paintSoundLink = (el, link) => {
+    if (!el) return;
+    el.textContent = link.word;
+    el.dataset.state = SOUND_LINK_BADGE_STATES[link.state] || "disabled";
+  };
+  // Whether the Playback badge is showing the link's word rather than a play
+  // state, so a link that comes back asks the module for its play state again.
+  let badgeShowsLink = false;
   const soundDisabledCard = document.getElementById("sound-disabled-card");
+  const mp3WireNote = document.getElementById("mp3-wire-note");
+  const mp3MissingTrack = document.getElementById("mp3-missing-track");
+  const mp3RangeWarning = document.getElementById("mp3-range-warning");
+  // The MP3 Trigger's Component Registry display name, which is what its
+  // driver reports as `driver` (include/audio_mp3trigger.h).
+  const MP3_DRIVER_NAME = "MP3 Trigger";
+  const MP3_WIRE_NOTE =
+    "Power this board from the 3.3 V jumper: 5 V can kill the Body Controller's receive pin. It answers only with MP3TRIGR.INI on the card, holding #BAUD 9600.";
+  const MP3_RANGE_WARNING =
+    "This module stops at 255. 254 is Stop's silent file and 255 is the boot clip — they will not play as random chatter.";
+  // The module checksums its own file names, so it notices a sound being added,
+  // removed or renamed -- which is what shifts the numbers a saved assignment
+  // points at. What it cannot notice is a file moved between pages under the
+  // same name, so the check not having run is worth saying separately rather
+  // than being folded into silence.
+  const SOUND_LIST_CHANGED_WARNING =
+    "The sound list has changed since these assignments were saved. Check the assigned sounds before using them.";
+  const SOUND_LIST_UNCHECKED_NOTE =
+    "The sound list could not be checked against these assignments.";
+  const CATALOG_STALE_NOTE = "This listing is from an earlier refresh.";
+  const CATALOG_NOT_LOADED_LINE = "Not read yet. Refresh the catalog.";
+  const CATALOG_PARTIAL_SUGGESTION_NOTE =
+    "Suggestions need the whole listing, and part of it is missing. Refresh the catalog first.";
+  // A full walk is 300 sounds and can wait 450 ms on each one, so a refresh
+  // running for minutes is ordinary. The page keeps waiting while the
+  // controller says the same refresh is still going, and stops here rather than
+  // waiting forever on a controller that has stopped moving.
+  const CATALOG_REFRESH_MAX_POLLS = 300;
+  const CATALOG_REFRESH_OUTCOMES = {
+    completed: { ok: true, text: "Catalog refreshed" },
+    blocked: {
+      ok: false,
+      text: "Catalog refresh did not run — the module's link was busy. Try again in a moment.",
+    },
+    failed: {
+      ok: false,
+      text: "Catalog refresh failed — the module did not answer.",
+    },
+    interrupted: {
+      ok: false,
+      text: "Catalog refresh stopped early. Refresh again when the droid is idle.",
+    },
+  };
   const globalFb = document.getElementById("global-feedback");
   const volSlider = document.getElementById("vol-slider");
   const volDisplay = document.getElementById("vol-display");
@@ -167,12 +226,11 @@
   const feedbackTimers = new WeakMap();
   const MSG = {
     categoryRangeInvalid: "Use 0/0 or 1–999 with Min ≤ Max",
-    valuesMustBe1To999: "Values must be 1–999",
     minMustBeLeMax: "Min must be ≤ Max",
+    nothingToPlay: "Nothing to play: no track is set",
     saveFailed: "Save failed",
     saved: "Saved",
     unsaved: "Unsaved",
-    trackRange: (min, max) => `${min}–${max}`,
     trackRangeZeroToMax: `0–${TRACK_MAX}`,
   };
 
@@ -180,6 +238,7 @@
   const categoryDirtyTrackers = new Map();
   const systemDirtyTrackers = new Map();
 
+  let lastDriverIsMp3 = false;
   let soundHardwareEnabled = true;
   let moodMapApiAvailable = true;
   let moodMapLoaded = false;
@@ -191,18 +250,24 @@
   const modPlayState = document.getElementById("mod-play-state");
   const modTotalTracks = document.getElementById("mod-total-tracks");
   const modCurrentTrack = document.getElementById("mod-current-track");
+  const modBackgroundTrack = document.getElementById("mod-background-track");
   const modDeviceRow = document.getElementById("mod-device-row");
   const modCurrentTrackRow = document.getElementById("mod-current-track-row");
+  const modTotalTracksRow = document.getElementById("mod-total-tracks-row");
   const modStatusTable = document.getElementById("mod-status-table");
   const modPollSection = document.getElementById("mod-poll-section");
   const modQueryNote = document.getElementById("mod-query-note");
-  const modNoQueryNotice = document.getElementById("mod-no-query-notice");
   const btnPoll = document.getElementById("btn-poll-status");
   const modStatusFb = document.getElementById("mod-status-feedback");
   const trackNumberNote = document.getElementById("track-number-note");
   const chirpCatalogCard = document.getElementById("chirp-catalog-card");
+  const catalogSub = document.getElementById("catalog-sub");
+  const catalogRepointBar = document.getElementById("catalog-repoint");
+  const catalogRepointText = document.getElementById("catalog-repoint-text");
   const catalogRows = document.getElementById("catalog-rows");
   const catalogStatus = document.getElementById("catalog-status");
+  const catalogLimits = document.getElementById("catalog-limits");
+  const soundListChangedWarning = document.getElementById("sound-list-changed-warning");
   const catalogFeedback = document.getElementById("catalog-feedback");
   const catalogFilterInput = document.getElementById("catalog-filter");
   const catalogBankTabs = document.getElementById("catalog-bank-tabs");
@@ -218,17 +283,43 @@
   const catalogSelectAll = document.getElementById("catalog-select-all");
   const catalogSelectCol = document.getElementById("catalog-col-select");
   let lastCapabilities = null; // null = not yet received
-  let moduleStatusRefreshTimer = null;
+  // The fitted module's registry name, as GET /api/audio reports it: what the
+  // catalog card names when the module cannot list its contents.
+  let lastDriverName = "";
   let catalogSupported = false;
+  // Whether the module has said yet whether it can list its contents.
+  let catalogCapabilityKnown = false;
   let catalogReady = false;
   let catalogBanks = [];
   let catalogEntries = [];
-  let catalogBankFilter = 0;
+  // Which bank tab is selected, as "<bank>:<page>" -- empty means All banks. A
+  // bank number alone is not an address: 2A and 2B are different pages of bank
+  // 2 with different sounds in them, and filtering on the number showed both
+  // under either tab.
+  let catalogBankFilter = "";
+  // What the controller said the last discovery could not see, and whether the
+  // listing on screen came from the refresh the operator last asked for.
+  let catalogManifestIncomplete = false;
+  let catalogMissingNames = 0;
+  let catalogEntryCapReached = false;
+  let catalogStale = false;
+  // The refresh the controller is reporting on. Queue acceptance and refresh
+  // completion are different events, so the page watches its own request
+  // number rather than reading "some catalog is ready" as "mine finished".
+  let catalogRefreshStatus = { request: 0, active: 0, settled: 0, state: "none" };
+  let soundListChanged = false;
+  let soundListChecked = false;
   let catalogFetchPromise = null;
   let catalogRefreshInFlight = false;
   let catalogAutoLoadAttempted = false;
   let catalogBulkMode = false;
   let chirpBindings = {};
+  // The Named Track the builder is re-pointing from its row, whose key every
+  // catalog row's target then starts on; null when none is.
+  let catalogRepointKey = null;
+  // The bank tab that was showing before a re-point chose its own, which
+  // Cancel puts back.
+  let catalogRepointPriorFilter = "";
   let chirpCategoryBindings = {};
   const catalogSelectedKeys = new Set();
   let catalogCategoryRanges = [];
@@ -239,9 +330,13 @@
     element.classList.toggle("hidden", !visible);
   };
 
+  // The two workspaces are two answers to one question, so they are one
+  // segmented control and the chosen one takes .seg's own lit face. It used to
+  // take .btn.accent, which is the anatomy's PRIMARY ACT - the one filled
+  // control on a surface - and this page had two of them.
   const setModeButtonState = (button, active) => {
     if (!button) return;
-    button.classList.toggle("accent", active);
+    button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
   };
 
@@ -255,9 +350,8 @@
     setModeButtonState(soundModeCompactBtn, normalizedMode === SOUND_VIEW_MODE_COMPACT);
 
     if (soundModeFeedback) {
-      soundModeFeedback.textContent = normalizedMode === SOUND_VIEW_MODE_COMPACT
-        ? "Compact mode active. Advanced tuning cards are hidden."
-        : "";
+      // The lit Compact button says which workspace this is; nothing to add.
+      soundModeFeedback.textContent = "";
     }
 
     if (!persist) return;
@@ -280,60 +374,127 @@
     return SOUND_VIEW_MODE_ADVANCED;
   };
 
-  const resetModuleStatusAutoRefresh = (caps) => {
-    if (moduleStatusRefreshTimer !== null) {
-      window.clearInterval(moduleStatusRefreshTimer);
-      moduleStatusRefreshTimer = null;
-    }
+  // Owned by this surface: the shell stops it when the operator leaves Sound and
+  // starts it again on the way back (ADR 0048, #360). Created here rather than
+  // inside the reset below, because the surface a poll belongs to is decided
+  // when it is made.
+  //
+  // The cadence is the module's to grant and the return-to-tab read is not:
+  // this page has always re-read the module's state on coming back to the tab
+  // whatever the backend can do, while only a backend that is safe to query
+  // while playing gets asked every two seconds. skipWhen is what keeps those
+  // two apart in one poll -- it gates the cadence tick and not the refresh.
+  //
+  // updateModuleStatus() rethrows after writing "Fetch error" onto the module
+  // line, and that rejection is left to PASurface.poll(): it reports the
+  // failure and leaves Sound showing what it last read. Catching it here would
+  // say the screen is current when the module never answered (#360).
+  //
+  // Called through an arrow, not handed over by name: this poll is created
+  // above the const that defines updateModuleStatus, so naming it here reads
+  // it before it exists.
+  let moduleStatusCadenceWanted = false;
+  const moduleStatusPoll = window.PASurface.poll(
+    () => updateModuleStatus(),
+    { cadenceMs: 2000, skipWhen: () => !moduleStatusCadenceWanted, refreshOnReturn: true }
+  );
+  moduleStatusPoll.start();
 
-    if ((caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0) {
-      moduleStatusRefreshTimer = window.setInterval(() => {
-        if (document.visibilityState === "hidden") return;
-        updateModuleStatus().catch(() => {});
-      }, 2000);
+  const resetModuleStatusAutoRefresh = (caps) => {
+    moduleStatusCadenceWanted = (caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0;
+  };
+
+  const mp3RangeNeedsWarning = (lo, hi) => {
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return false;
+    if (lo === 0 && hi === 0) return false;
+    return lo > 255 || hi > 255 || (hi >= 254 && lo >= 1);
+  };
+
+  const refreshMp3RangeWarning = (isMp3) => {
+    if (!mp3RangeWarning) return;
+    if (!isMp3) {
+      mp3RangeWarning.textContent = "";
+      setElementVisible(mp3RangeWarning, false);
+      return;
     }
+    let warn = false;
+    CATEGORY_SOUNDS.forEach((category) => {
+      const minInput = document.getElementById(`cat-min-${category.loKey}`);
+      const maxInput = document.getElementById(`cat-max-${category.hiKey}`);
+      const lo = Number.parseInt(minInput?.value, 10);
+      const hi = Number.parseInt(maxInput?.value, 10);
+      if (mp3RangeNeedsWarning(lo, hi)) warn = true;
+    });
+    mp3RangeWarning.textContent = warn ? MP3_RANGE_WARNING : "";
+    setElementVisible(mp3RangeWarning, warn);
   };
 
   const applyCapabilityUI = (caps) => {
     const supportsStatusQuery = (caps & AUDIO_CAP_STATUS_QUERY) !== 0;
     const supportsDeviceType = (caps & AUDIO_CAP_DEVICE_TYPE) !== 0;
+    const supportsTrackCount = (caps & AUDIO_CAP_TRACK_COUNT) !== 0;
     const supportsCurrentTrack = (caps & AUDIO_CAP_CURRENT_TRACK) !== 0;
     const supportsSafePlayingQuery = (caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0;
     const supportsCatalog = (caps & AUDIO_CAP_CATALOG) !== 0;
+    const supportsMixes = (caps & AUDIO_CAP_MIXES) !== 0;
     const showManualPoll = supportsStatusQuery && !supportsSafePlayingQuery;
 
+    if (modBackgroundTrack) {
+      modBackgroundTrack.textContent = supportsMixes ? "Plays under vocals" : "Not on this module";
+    }
+
+    // The card keeps its shape on every module; only what is in it changes.
+    // Its controls and rows are redrawn when the answer changes, not on every
+    // poll, so a target picked in a row survives the two-second status read.
+    const catalogAnswerChanged = !catalogCapabilityKnown || catalogSupported !== supportsCatalog;
+    catalogCapabilityKnown = true;
     catalogSupported = supportsCatalog;
-    setElementVisible(chirpCatalogCard, supportsCatalog);
+    setElementVisible(catalogSub, supportsCatalog);
     if (!supportsCatalog) {
       catalogReady = false;
       catalogBanks = [];
       catalogEntries = [];
-      catalogBankFilter = 0;
+      catalogBankFilter = "";
+      catalogManifestIncomplete = false;
+      catalogMissingNames = 0;
+      catalogEntryCapReached = false;
+      catalogStale = false;
+      soundListChanged = false;
+      soundListChecked = false;
       catalogAutoLoadAttempted = false;
       catalogBulkMode = false;
       catalogSelectedKeys.clear();
       chirpCategoryBindings = {};
       catalogSuggestedCategoryMappings = [];
-      if (catalogRows) catalogRows.innerHTML = "";
-      if (catalogBankTabs) catalogBankTabs.innerHTML = "";
+      // No wipe of the rows or the tabs here: this runs on every status read,
+      // and the table is redrawn only when the answer changes, so a wipe took
+      // the "cannot list" line away on the second read. The render functions
+      // clear before they draw.
       if (catalogBulkTarget) catalogBulkTarget.value = "";
-      if (catalogStatus) catalogStatus.textContent = "Catalog unavailable for this backend.";
+      endNamedTrackRepoint();
+      if (catalogStatus) {
+        delete catalogStatus.dataset.baseText;
+        catalogStatus.textContent = "";
+      }
+      renderCatalogLimits();
     } else if (!catalogReady && catalogEntries.length === 0 && !catalogAutoLoadAttempted) {
       catalogAutoLoadAttempted = true;
-      if (catalogStatus && !catalogStatus.textContent) {
-        catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
-      }
       loadCatalog().catch(() => {});
     }
-    syncCatalogBulkUi();
+    if (catalogAnswerChanged) {
+      setCatalogActionLock(catalogRefreshInFlight);
+    } else {
+      syncCatalogBulkUi();
+    }
     applyChirpBindingBadges();
+    renderSoundListWarning();
 
     setElementVisible(modDeviceRow, supportsStatusQuery && supportsDeviceType);
+    setElementVisible(modTotalTracksRow, supportsStatusQuery && supportsTrackCount);
     setElementVisible(modCurrentTrackRow, supportsStatusQuery && supportsCurrentTrack);
     setElementVisible(modPollSection, showManualPoll);
     setElementVisible(btnPoll, showManualPoll);
     setElementVisible(modStatusTable, supportsStatusQuery);
-    if (modNoQueryNotice) setElementVisible(modNoQueryNotice, !supportsStatusQuery);
 
     if (!modQueryNote) return;
     if (!supportsStatusQuery) {
@@ -344,7 +505,7 @@
       modQueryNote.textContent = "";
       return;
     }
-    modQueryNote.textContent = "Status is cached from boot. Use Poll to refresh — only poll when not playing.";
+    modQueryNote.textContent = "Read at boot. Poll to refresh, but not while a track plays.";
   };
 
   const updateModuleStatus = async ({ handle = null } = {}) => {
@@ -354,6 +515,7 @@
       const result = await api.get("/api/audio");
       const d = result.data;
 
+      lastDriverName = typeof d.driver === "string" ? d.driver : "";
       if (d.capabilities !== undefined && d.capabilities !== null) {
         const caps = Number(d.capabilities) & 0xFF;
         const capabilitiesChanged = lastCapabilities !== caps;
@@ -363,39 +525,47 @@
       }
 
       if (modDriver) modDriver.textContent = d.driver ?? "—";
-      if (modLink) {
-        const ok = Boolean(d.link_ok);
-        modLink.textContent = ok ? "OK" : "No response";
-        modLink.dataset.state = ok ? "ok" : "error";
-      }
+      const link = readSoundLink(d);
+      paintSoundLink(modLink, link);
       if (modDevice) modDevice.textContent = d.device ?? "—";
       if (modPlayState) modPlayState.textContent = d.play_state ?? "—";
       if (modTotalTracks) modTotalTracks.textContent = d.total_tracks ?? "—";
       if (modCurrentTrack) modCurrentTrack.textContent = d.current_track ?? "—";
 
-      // Update the badge with the real module-reported play state.
-      // Only override when the module is actually responding; if link_ok is
-      // false the user needs to see "No module response", not a stale "Idle".
+      const isMp3 = d.driver === MP3_DRIVER_NAME;
+      lastDriverIsMp3 = isMp3;
+      if (mp3WireNote) {
+        mp3WireNote.textContent = isMp3 ? MP3_WIRE_NOTE : "";
+        setElementVisible(mp3WireNote, isMp3);
+      }
+      const missing = Number(d.missing_track);
+      if (mp3MissingTrack) {
+        if (isMp3 && Number.isFinite(missing) && missing > 0) {
+          mp3MissingTrack.textContent =
+            `Track ${missing} is not on the card — that is the clip, not the wiring.`;
+          setElementVisible(mp3MissingTrack, true);
+        } else {
+          mp3MissingTrack.textContent = "";
+          setElementVisible(mp3MissingTrack, false);
+        }
+      }
+      refreshMp3RangeWarning(isMp3);
+
+      // The badge carries the module's play state while the link is up, and
+      // the link's own word while it is not: a stale "Idle" beside a module
+      // that did not answer would say it is fine.
       if (soundStateBadge && soundHardwareEnabled) {
-        const linkOk = Boolean(d.link_ok);
-        if (d.rx_status === RX_STATUS_BLOCKED_BY_DOME) {
-          soundStateBadge.textContent = "Status unavailable: protoR2link is using UART";
-          soundStateBadge.dataset.state = "idle";
-          if (modLink) {
-            modLink.textContent = "protoR2link using UART";
-            modLink.dataset.state = "warn";
-          }
-        } else if (!linkOk) {
-          soundStateBadge.textContent = "No module response";
-          soundStateBadge.dataset.state = "error";
+        badgeShowsLink = link.state !== "ok";
+        if (badgeShowsLink) {
+          paintSoundLink(soundStateBadge, link);
         } else if (d.play_state === "playing") {
-          soundStateBadge.textContent = "🔊 Playing";
+          soundStateBadge.textContent = "Playing";
           soundStateBadge.dataset.state = "playing";
         } else if (d.play_state === "paused") {
-          soundStateBadge.textContent = "⏸ Paused";
+          soundStateBadge.textContent = "Paused";
           soundStateBadge.dataset.state = "idle";
         } else {
-          soundStateBadge.textContent = "✅ Idle";
+          soundStateBadge.textContent = "Idle";
           soundStateBadge.dataset.state = "idle";
         }
       }
@@ -408,6 +578,8 @@
     }
   };
 
+  // ok is true (success), false (error), or null for a plain line that is
+  // neither: an instruction rather than an outcome.
   const showFeedback = (el, msg, ok, timeoutMs = 2500) => {
     if (!el) return;
     const priorTimer = feedbackTimers.get(el);
@@ -419,7 +591,7 @@
       el.dataset.baseClass = el.className || "feedback";
     }
     el.textContent = msg;
-    el.className = `${el.dataset.baseClass} ${ok ? "success" : "error"}`;
+    el.className = ok === null ? el.dataset.baseClass : `${el.dataset.baseClass} ${ok ? "success" : "error"}`;
     if (timeoutMs <= 0) {
       return;
     }
@@ -430,6 +602,8 @@
     }, timeoutMs);
     feedbackTimers.set(el, timer);
   };
+
+  const countOf = (count, one, many) => `${count} ${count === 1 ? one : many}`;
 
   const getApiErrorMessage = (error) => window.PAApi?.messageFor(error) || String(error);
 
@@ -486,11 +660,17 @@
   };
 
   const setSoundHardwareEnabled = (enabled) => {
+    const changed = soundHardwareEnabled !== enabled;
     soundHardwareEnabled = enabled;
     soundDisabledCard?.classList.toggle("hidden", enabled);
 
+    // The catalog card is left out: its controls also wait on the module being
+    // able to list and on a refresh in flight, and its own sync below says so.
+    // Enabling them here on every status frame woke Refresh on a module that
+    // cannot list, and every row in the middle of a refresh.
+    const cardControls = ".card:not(#sound-disabled-card):not(#chirp-catalog-card)";
     const controls = document.querySelectorAll(
-      '.card:not(#sound-disabled-card) button, .card:not(#sound-disabled-card) input, .card:not(#sound-disabled-card) select, .card:not(#sound-disabled-card) textarea'
+      ["button", "input", "select", "textarea"].map((tag) => `${cardControls} ${tag}`).join(", ")
     );
     controls.forEach((control) => {
       if (SOUND_UI_ALWAYS_ENABLED_IDS.has(control.id)) return;
@@ -503,13 +683,28 @@
       refreshCategoryTestButtons();
     }
     syncMoodMapControlState();
-    syncCatalogBulkUi();
+    syncCatalogControls();
+    if (changed) {
+      renderCatalogBankTabs();
+      renderCatalogRows();
+    } else {
+      syncCatalogBulkUi();
+    }
   };
+
+  // What a sound control says when Sound is switched off. Eight controls said
+  // eight versions of this before #348, every one of them naming an S2 header
+  // - the Artoo PCB's silkscreen, which is not a thing every board has. The
+  // words match the Availability seam's own "off" reason and its route
+  // (data/feature_availability.js); they are stated here rather than read from
+  // it because this surface does not otherwise load that file, and a script
+  // fetch for one sentence costs the page more than it is worth.
+  const SOUND_OFF_LINE = "Sound is switched off. Switch it on in Configuration.";
 
   const postAudio = async (params, feedbackEl, label = 'Sound command') => {
     if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
-      showFeedback(feedbackEl || globalFb, "Sound controls unavailable: enable S2 — Audio in Setup.", false);
+      showFeedback(feedbackEl || globalFb, SOUND_OFF_LINE, false);
       return false;
     }
     try {
@@ -526,7 +721,7 @@
   const postTrack = async (key, track, feedbackEl, binding = null) => {
     if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
-      showFeedback(feedbackEl || globalFb, "Track updates unavailable: enable S2 — Audio in Setup.", false);
+      showFeedback(feedbackEl || globalFb, SOUND_OFF_LINE, false);
       return false;
     }
     try {
@@ -559,7 +754,7 @@
     if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
       if (!quiet) {
-        showFeedback(feedbackEl || globalFb, "Category updates unavailable: enable S2 — Audio in Setup.", false);
+        showFeedback(feedbackEl || globalFb, SOUND_OFF_LINE, false);
       }
       return false;
     }
@@ -588,7 +783,7 @@
   const postPlayBanked = async (bank, page, index, feedbackEl, label = "Catalog") => {
     if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
-      showFeedback(feedbackEl || globalFb, "Playback unavailable: enable S2 — Audio in Setup.", false);
+      showFeedback(feedbackEl || globalFb, SOUND_OFF_LINE, false);
       return false;
     }
     try {
@@ -615,7 +810,10 @@
     if (!Number.isFinite(bank) || !Number.isFinite(index) || bank < 1 || index < 1 || page.length !== 1) {
       return null;
     }
-    return { bank, page, index };
+    // Whether the card still holds the file this was bound to: same, changed,
+    // or unchecked when there was nothing to compare (docs/api.md).
+    const file = String(raw.file ?? "unchecked");
+    return { bank, page, index, file };
   };
 
   const formatBindingLabel = (binding) => `CHIRP B${binding.bank}${binding.page} #${binding.index}`;
@@ -634,14 +832,55 @@
       const badge = document.getElementById(`chirp-binding-${key}`);
       if (!badge) return;
       const binding = getSlotBinding(key);
-      if (!catalogSupported || !binding) {
-        badge.textContent = "";
-        badge.classList.add("hidden");
-        return;
-      }
-      badge.textContent = formatBindingLabel(binding);
-      badge.classList.remove("hidden");
+      const shown = catalogSupported && binding !== null;
+      badge.textContent = shown ? formatBindingLabel(binding) : "";
+      badge.classList.toggle("hidden", !shown);
+      // A file changed under the address is the builder's to resolve (ADR
+      // 0054): the row says so and offers both answers. Same and unchecked
+      // say nothing more than the badge does.
+      setElementVisible(document.getElementById(`chirp-file-${key}`), shown && binding.file === "changed");
     });
+  };
+
+  // Keep: bind the same address again, which records the file the card holds
+  // there now. Re-point is the catalog's own map flow, opened on this track.
+  const keepNamedTrackFile = async (key, feedbackEl) => {
+    const binding = getSlotBinding(key);
+    if (!binding) return;
+    const ok = await postTrack(key, binding.index, feedbackEl, binding);
+    if (ok) await loadTracks();
+  };
+
+  const startNamedTrackRepoint = (key, label, feedbackEl) => {
+    if (!catalogReady) {
+      showFeedback(feedbackEl, "Refresh the catalog first.", false);
+      return;
+    }
+    const binding = getSlotBinding(key);
+    if (!catalogRepointKey) catalogRepointPriorFilter = catalogBankFilter;
+    catalogRepointKey = key;
+    const pageKey = binding ? catalogBankPageKey(binding.bank, binding.page) : "";
+    catalogBankFilter = catalogBanks.some((bankRow) =>
+      catalogBankPageKey(bankRow?.bank, bankRow?.page) === pageKey) ? pageKey : "";
+    // A typed filter could hide every row of that bank under the instruction.
+    if (catalogFilterInput) catalogFilterInput.value = "";
+    if (catalogRepointText) catalogRepointText.textContent = `Pick the sound for ${label}, then Map.`;
+    setElementVisible(catalogRepointBar, true);
+    renderCatalogBankTabs();
+    renderCatalogRows();
+    chirpCatalogCard?.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+
+  // Ends a re-point: by Cancel, which puts back the bank tab it changed, or by
+  // the track being resolved, which leaves the builder where they are.
+  const endNamedTrackRepoint = ({ restoreFilter = false } = {}) => {
+    if (!catalogRepointKey) return;
+    catalogRepointKey = null;
+    if (restoreFilter) catalogBankFilter = catalogRepointPriorFilter;
+    catalogRepointPriorFilter = "";
+    setElementVisible(catalogRepointBar, false);
+    renderCatalogBankTabs();
+    renderCatalogRows();
   };
 
   const catalogEntryKey = (entry) => {
@@ -723,7 +962,9 @@
         return false;
       }
       const key = target.slice(SLOT_TARGET_PREFIX.length);
-      return postTrack(key, index, feedbackEl || catalogFeedback, { bank, page });
+      const ok = await postTrack(key, index, feedbackEl || catalogFeedback, { bank, page });
+      if (ok && key === catalogRepointKey) endNamedTrackRepoint();
+      return ok;
     }
 
     if (target.startsWith(CATEGORY_TARGET_PREFIX)) {
@@ -941,17 +1182,13 @@
         .map((entry) => Number.parseInt(String(entry?.index ?? "0"), 10))
         .filter((index) => Number.isFinite(index) && index >= 1 && index <= TRACK_MAX);
 
-      let lo = 0;
-      let hi = 0;
-      if (indexes.length > 0) {
-        lo = Math.min(...indexes);
-        hi = Math.max(...indexes);
-      } else {
-        const count = Number.parseInt(String(bankRow?.count ?? "0"), 10);
-        if (!Number.isFinite(count) || count < 1) return;
-        lo = 1;
-        hi = Math.min(count, TRACK_MAX);
-      }
+      // Only what was actually listed. The old fallback built 1..count out of
+      // the bank's declared size when no entry had been listed for it, which is
+      // a range over sounds nobody has seen -- exactly the omitted entries a
+      // suggestion must not claim.
+      if (indexes.length === 0) return;
+      const lo = Math.min(...indexes);
+      const hi = Math.max(...indexes);
       if (lo < 1 || hi < lo) return;
 
       suggestions.push({
@@ -970,15 +1207,70 @@
     return suggestions;
   };
 
+  // Missing banks and a listing cut off at the entry limit both leave sounds
+  // out of the catalog with no row to say so. A suggested category range spans
+  // lo..hi, so a range built over a listing with holes in it silently claims
+  // sounds nobody listed.
+  const catalogListingIsPartial = () => catalogManifestIncomplete || catalogEntryCapReached;
+
+  // What the operator is NOT seeing. Every one of these used to live only in a
+  // controller log line, which meant a catalog that was usable and a catalog
+  // that was whole looked exactly the same on screen.
+  const renderCatalogLimits = () => {
+    if (!catalogLimits) return;
+    const sentences = [];
+    if (catalogSupported && catalogReady) {
+      if (catalogManifestIncomplete) {
+        sentences.push("Some banks did not arrive from the module, so this is not the whole card.");
+      }
+      if (catalogMissingNames === 1) {
+        sentences.push("One sound came back without a name and is listed by its index.");
+      } else if (catalogMissingNames > 1) {
+        sentences.push(`${catalogMissingNames} sounds came back without a name and are listed by their index.`);
+      }
+      if (catalogEntryCapReached) {
+        sentences.push("The listing stopped at the Body Controller's entry limit, so the end of the card is missing.");
+      }
+    }
+    if (catalogStale) {
+      sentences.push(CATALOG_STALE_NOTE);
+    }
+    catalogLimits.textContent = sentences.join(" ");
+    setElementVisible(catalogLimits, sentences.length > 0);
+  };
+
+  const hasSavedChirpBindings = () =>
+    Object.keys(chirpBindings || {}).length > 0 ||
+    Object.keys(chirpCategoryBindings || {}).length > 0;
+
+  // Shown beside the assignments themselves, because that is what a changed
+  // sound list invalidates. Saving stays available throughout: the builder is
+  // the one who decides what the new numbers should point at.
+  const renderSoundListWarning = () => {
+    if (!soundListChangedWarning) return;
+    const sentences = [];
+    if (catalogSupported && hasSavedChirpBindings()) {
+      if (soundListChanged) {
+        sentences.push(SOUND_LIST_CHANGED_WARNING);
+      }
+      if (!soundListChecked) {
+        sentences.push(SOUND_LIST_UNCHECKED_NOTE);
+      }
+    }
+    soundListChangedWarning.textContent = sentences.join(" ");
+    setElementVisible(soundListChangedWarning, sentences.length > 0);
+  };
+
   const syncCatalogSuggestionUi = () => {
     catalogSuggestedCategoryMappings = buildSuggestedCategoryMappings();
     const suggestionCount = catalogSuggestedCategoryMappings.length;
 
     if (catalogSuggestBtn) {
-      catalogSuggestBtn.textContent = suggestionCount > 0
-        ? `🧭 Apply suggestions (${suggestionCount})`
-        : "🧭 Apply suggestions";
-      const enabled = catalogSupported && catalogReady && soundHardwareEnabled && !catalogRefreshInFlight && suggestionCount > 0;
+      window.PAUi.setAct(catalogSuggestBtn, suggestionCount > 0
+        ? `Apply suggestions (${suggestionCount})`
+        : "Apply suggestions");
+      const enabled = catalogSupported && catalogReady && soundHardwareEnabled &&
+        !catalogRefreshInFlight && suggestionCount > 0 && !catalogListingIsPartial();
       catalogSuggestBtn.disabled = !enabled;
       catalogSuggestBtn.setAttribute("aria-disabled", enabled ? "false" : "true");
     }
@@ -986,7 +1278,8 @@
     if (catalogStatus && catalogReady && !catalogRefreshInFlight) {
       const baseText = catalogStatus.dataset.baseText || catalogStatus.textContent || "";
       if (suggestionCount > 0) {
-        catalogStatus.textContent = `${baseText} ${suggestionCount} suggestion(s) ready.`.trim();
+        catalogStatus.textContent =
+          `${baseText} ${countOf(suggestionCount, "suggestion", "suggestions")} ready.`.trim();
       } else {
         catalogStatus.textContent = baseText;
       }
@@ -1000,6 +1293,10 @@
     }
     if (catalogRefreshInFlight) {
       showFeedback(catalogFeedback, "Wait for catalog refresh to finish.", false);
+      return false;
+    }
+    if (catalogListingIsPartial()) {
+      showFeedback(catalogFeedback, CATALOG_PARTIAL_SUGGESTION_NOTE, false);
       return false;
     }
 
@@ -1047,7 +1344,7 @@
     setElementVisible(catalogSelectCol, bulkVisible);
 
     if (catalogBulkToggleBtn) {
-      catalogBulkToggleBtn.textContent = bulkVisible ? "✕ Done" : "☑ Bulk";
+      catalogBulkToggleBtn.textContent = bulkVisible ? "Done" : "Bulk";
       catalogBulkToggleBtn.setAttribute("aria-pressed", bulkVisible ? "true" : "false");
       catalogBulkToggleBtn.disabled = !catalogSupported || catalogRefreshInFlight || !soundHardwareEnabled;
       catalogBulkToggleBtn.setAttribute("aria-disabled", catalogBulkToggleBtn.disabled ? "true" : "false");
@@ -1105,17 +1402,24 @@
     syncCatalogBulkUi();
   };
 
-  const setCatalogActionLock = (locked) => {
-    const refreshRunning = Boolean(locked);
+  // Refresh and the filter: usable only with a catalog to read, Sound on, and
+  // no refresh already walking the card.
+  const syncCatalogControls = () => {
+    const usable = catalogSupported && soundHardwareEnabled && !catalogRefreshInFlight;
     if (catalogRefreshBtn) {
-      catalogRefreshBtn.disabled = refreshRunning || !soundHardwareEnabled || !catalogSupported;
-      catalogRefreshBtn.setAttribute("aria-disabled", catalogRefreshBtn.disabled ? "true" : "false");
+      catalogRefreshBtn.disabled = !usable;
+      catalogRefreshBtn.setAttribute("aria-disabled", usable ? "false" : "true");
     }
     if (catalogFilterInput) {
-      catalogFilterInput.disabled = refreshRunning || !catalogSupported || !soundHardwareEnabled;
+      catalogFilterInput.disabled = !usable;
     }
+  };
+
+  const setCatalogActionLock = (locked) => {
+    const refreshRunning = Boolean(locked);
+    syncCatalogControls();
     if (catalogStatus && refreshRunning) {
-      catalogStatus.textContent = "Refreshing catalog... this can take around 1 minute for 100+ entries.";
+      catalogStatus.textContent = "Refreshing. A full card takes about a minute.";
     }
     renderCatalogBankTabs();
     renderCatalogRows();
@@ -1127,7 +1431,17 @@
     select.className = "sound-track-input-md catalog-map-select";
     select.setAttribute("aria-label", "Select mapping target");
     populateCatalogTargetSelect(select, "Choose target…");
+    if (catalogRepointKey) select.value = `${SLOT_TARGET_PREFIX}${catalogRepointKey}`;
     return select;
+  };
+
+  // A tab's identity is the bank AND the page it names. The label always said
+  // both -- B2A and B2B -- while the filter kept only the number, so clicking
+  // B2B listed every bank 2 entry, page A included.
+  const catalogBankPageKey = (bank, page) => {
+    const bankNumber = Number.parseInt(String(bank ?? "0"), 10);
+    const pageLetter = String(page ?? "A").trim().toUpperCase() || "A";
+    return `${Number.isFinite(bankNumber) ? bankNumber : 0}:${pageLetter}`;
   };
 
   const renderCatalogBankTabs = () => {
@@ -1135,23 +1449,24 @@
     catalogBankTabs.innerHTML = "";
     if (!catalogSupported) return;
 
-    const tabs = [{ bank: 0, label: "All banks" }, ...catalogBanks.map((bank) => ({
-      bank: Number(bank.bank) || 0,
-      label: `B${bank.bank}${bank.page || "A"}`
+    const tabs = [{ key: "", label: "All banks" }, ...catalogBanks.map((bank) => ({
+      key: catalogBankPageKey(bank?.bank, bank?.page),
+      label: `B${Number.parseInt(String(bank?.bank ?? "0"), 10) || 0}${String(bank?.page ?? "A").trim().toUpperCase() || "A"}`
     }))];
 
     tabs.forEach((tab) => {
+      const selected = catalogBankFilter === tab.key;
       const button = document.createElement("button");
-      button.className = `btn sound-btn-compact catalog-bank-tab${catalogBankFilter === tab.bank ? " accent" : ""}`;
+      button.className = `part-pill${selected ? " active" : ""}`;
       button.type = "button";
       button.textContent = tab.label;
       button.setAttribute("role", "tab");
-      button.setAttribute("aria-selected", catalogBankFilter === tab.bank ? "true" : "false");
+      button.setAttribute("aria-selected", selected ? "true" : "false");
       button.disabled = catalogRefreshInFlight || !soundHardwareEnabled;
       button.setAttribute("aria-disabled", button.disabled ? "true" : "false");
       button.addEventListener("click", () => {
         if (catalogRefreshInFlight || !soundHardwareEnabled) return;
-        catalogBankFilter = tab.bank;
+        catalogBankFilter = tab.key;
         renderCatalogBankTabs();
         renderCatalogRows();
       });
@@ -1159,10 +1474,14 @@
     });
   };
 
+  // Selection and the bulk actions both run off this list, so filtering here is
+  // what keeps a bulk map from reaching a row the operator cannot see.
   const getVisibleCatalogEntries = () => {
     const query = catalogFilterInput?.value?.trim().toLowerCase() ?? "";
     return catalogEntries.filter((entry) => {
-      if (catalogBankFilter !== 0 && Number(entry.bank) !== catalogBankFilter) return false;
+      if (catalogBankFilter && catalogBankPageKey(entry?.bank, entry?.page) !== catalogBankFilter) {
+        return false;
+      }
       if (!query) return true;
       const haystack = `${entry.name ?? ""} ${entry.bank ?? ""}${entry.page ?? ""} ${entry.index ?? ""}`.toLowerCase();
       return haystack.includes(query);
@@ -1173,36 +1492,39 @@
     if (!catalogRows) return;
     catalogRows.innerHTML = "";
 
-    const columnCount = catalogBulkMode ? 6 : 5;
-    if (!catalogSupported) {
+    // The table's one line when it has no rows to show: why it has none.
+    const showCatalogLine = (text) => {
+      const tr = document.createElement("tr");
+      tr.className = "sound-row-divider";
+      const td = document.createElement("td");
+      td.colSpan = catalogBulkMode ? 6 : 5;
+      td.className = "desc";
+      td.textContent = text;
+      tr.appendChild(td);
+      catalogRows.appendChild(tr);
       syncCatalogBulkUi([]);
+    };
+
+    if (!catalogCapabilityKnown) {
+      showCatalogLine("Waiting for the module.");
+      return;
+    }
+
+    if (!catalogSupported) {
+      showCatalogLine(lastDriverName
+        ? `The ${lastDriverName} cannot list its contents.`
+        : "This module cannot list its contents.");
       return;
     }
 
     if (!catalogReady) {
-      const tr = document.createElement("tr");
-      tr.className = "sound-row-divider";
-      const td = document.createElement("td");
-      td.colSpan = columnCount;
-      td.className = "desc";
-      td.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
-      tr.appendChild(td);
-      catalogRows.appendChild(tr);
-      syncCatalogBulkUi([]);
+      showCatalogLine(CATALOG_NOT_LOADED_LINE);
       return;
     }
 
     const visibleEntries = getVisibleCatalogEntries();
     if (!visibleEntries.length) {
-      const tr = document.createElement("tr");
-      tr.className = "sound-row-divider";
-      const td = document.createElement("td");
-      td.colSpan = columnCount;
-      td.className = "desc";
-      td.textContent = "No catalog entries match the current filter.";
-      tr.appendChild(td);
-      catalogRows.appendChild(tr);
-      syncCatalogBulkUi([]);
+      showCatalogLine("No sound matches the filter.");
       return;
     }
 
@@ -1260,9 +1582,8 @@
       actionRow.className = "sound-action-row";
 
       const mapButton = createActionButton({
-        label: "💾 Map",
-        title: "Save mapping to selected target",
-        ariaLabel: `Map ${entry.name || entry.index} to selected target`,
+        label: "Map",
+        icon: "link-variant",
         className: "btn sound-btn-compact",
         onClick: async () => {
           if (catalogRefreshInFlight) return;
@@ -1275,8 +1596,7 @@
 
       const clearButton = createActionButton({
         label: "Clear",
-        title: "Clear all mappings shown on this sound",
-        ariaLabel: `Clear mapped targets for ${entry.name || entry.index}`,
+        icon: "link-variant-off",
         className: "btn sound-btn-compact",
         onClick: async () => {
           if (catalogRefreshInFlight) return;
@@ -1288,9 +1608,8 @@
       clearButton.setAttribute("aria-disabled", clearButton.disabled ? "true" : "false");
 
       const playButton = createActionButton({
-        label: "▶ Play",
-        title: "Play this catalog entry",
-        ariaLabel: `Play catalog entry ${entry.name || entry.index}`,
+        label: "Play",
+        icon: "play",
         className: "btn sound-btn-play",
         onClick: () => {
           if (catalogRefreshInFlight) return;
@@ -1332,24 +1651,66 @@
           result = await window.PAApi.get("/api/audio/catalog", { timeoutMs: window.PageBootstrap.CATALOG_DEADLINE_MS });
         }
         const data = result.data || {};
+
+        // The refresh ledger and the saved-bindings check are answered whether
+        // or not the controller could let this read at the catalog itself, so
+        // they are taken from every reply.
+        const refresh = (data && typeof data.refresh === "object" && data.refresh) || {};
+        catalogRefreshStatus = {
+          request: Number.parseInt(String(refresh.request ?? "0"), 10) || 0,
+          active: Number.parseInt(String(refresh.active ?? "0"), 10) || 0,
+          settled: Number.parseInt(String(refresh.settled ?? "0"), 10) || 0,
+          state: String(refresh.state ?? "none"),
+        };
+        const bindings = (data && typeof data.bindings === "object" && data.bindings) || {};
+        soundListChanged = Boolean(bindings.sound_list_changed);
+        soundListChecked = Boolean(bindings.sound_list_checked);
+        renderSoundListWarning();
+
+        // A read the controller refused because a refresh holds the catalog has
+        // learned nothing about the catalog. Overwriting the rows on this
+        // answer would blank a listing that is still perfectly good, so what is
+        // on screen stays exactly as it is (the same rule the shell applies to
+        // a poll that did not come back).
+        if (data.busy) {
+          return catalogReady;
+        }
+
         catalogReady = Boolean(data.ready);
         catalogBanks = Array.isArray(data.banks) ? data.banks : [];
         catalogEntries = Array.isArray(data.entries) ? data.entries : [];
+        const limits = (data && typeof data.limits === "object" && data.limits) || {};
+        catalogManifestIncomplete = Boolean(limits.manifest_incomplete);
+        catalogMissingNames = Number.parseInt(String(limits.missing_names ?? "0"), 10) || 0;
+        catalogEntryCapReached = Boolean(limits.entry_cap_reached);
         const validKeys = new Set(catalogEntries.map((entry) => catalogEntryKey(entry)));
         [...catalogSelectedKeys].forEach((key) => {
           if (!validKeys.has(key)) {
             catalogSelectedKeys.delete(key);
           }
         });
+        // A bank tab whose page is no longer in the listing would filter every
+        // row away with no way back except All banks.
+        if (catalogBankFilter &&
+            !catalogBanks.some((bankRow) =>
+              catalogBankPageKey(bankRow?.bank, bankRow?.page) === catalogBankFilter)) {
+          catalogBankFilter = "";
+        }
 
         if (catalogStatus) {
           if (!catalogReady) {
-            catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
+            delete catalogStatus.dataset.baseText;
+            catalogStatus.textContent = "";
           } else {
             const bank1PageCount = catalogBanks.filter((bankRow) =>
               Number.parseInt(String(bankRow?.bank ?? "0"), 10) === 1
             ).length;
-            let statusText = `${catalogEntries.length} entries across ${catalogBanks.length} bank(s).`;
+            // A bank's pages are rows of their own here (B2A, B2B); the count
+            // is of banks.
+            const bankCount = new Set(catalogBanks.map((bankRow) =>
+              Number.parseInt(String(bankRow?.bank ?? "0"), 10))).size;
+            let statusText = `${countOf(catalogEntries.length, "sound", "sounds")} in ` +
+              `${countOf(bankCount, "bank", "banks")}.`;
             if (bank1PageCount === 1) {
               statusText += " CHIRP reports one active Bank 1 page per refresh.";
             }
@@ -1358,6 +1719,7 @@
           }
         }
 
+        renderCatalogLimits();
         renderCatalogBankTabs();
         renderCatalogRows();
         return catalogReady;
@@ -1374,6 +1736,24 @@
     })();
     return catalogFetchPromise;
   };
+  // The controller answers which request settled and how. An outcome that is
+  // not "completed" may still leave the earlier listing on screen -- it is
+  // often the only one there is -- but it is labelled as the earlier one rather
+  // than reported as this refresh succeeding.
+  const reportRefreshOutcome = (state) => {
+    const outcome = CATALOG_REFRESH_OUTCOMES[state];
+    if (!outcome) {
+      showFeedback(catalogFeedback, `Catalog refresh ended: ${state}`, false);
+      catalogStale = catalogReady;
+      renderCatalogLimits();
+      return false;
+    }
+    catalogStale = !outcome.ok && catalogReady;
+    renderCatalogLimits();
+    showFeedback(catalogFeedback, outcome.text, outcome.ok);
+    return outcome.ok;
+  };
+
   const refreshCatalog = async () => {
     if (!window.PAApi || !catalogSupported) return false;
     if (catalogRefreshInFlight) {
@@ -1383,7 +1763,7 @@
 
     catalogRefreshInFlight = true;
     setCatalogActionLock(true);
-    showFeedback(catalogFeedback, "Catalog refresh queued. This can take around 1 minute for large banks.", true, 0);
+    showFeedback(catalogFeedback, "Refresh queued.", null, 0);
 
     try {
       const result = await window.PAApi.postForm("/api/audio/catalog/refresh", {}, { timeoutMs: 3000 });
@@ -1391,17 +1771,39 @@
         showFeedback(catalogFeedback, result.data?.error || "Refresh enqueue failed", false);
         return false;
       }
-
-      for (let attempt = 0; attempt < 30; attempt += 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 1000));
-        const ready = await loadCatalog();
-        if (ready) {
-          showFeedback(catalogFeedback, "Catalog refreshed", true);
-          return true;
-        }
+      // Accepting the command onto the queue is all this answer reports. Which
+      // request it accepted is what makes the difference between watching this
+      // refresh and reading an older catalog that happens to still be ready.
+      const requestId = Number.parseInt(String(result.data.request ?? "0"), 10);
+      if (!Number.isFinite(requestId) || requestId < 1) {
+        showFeedback(catalogFeedback, "The Body Controller did not say which refresh it accepted.", false);
+        return false;
       }
 
-      showFeedback(catalogFeedback, "Catalog refresh still running. Try again in a moment.", false);
+      for (let attempt = 0; attempt < CATALOG_REFRESH_MAX_POLLS; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        await loadCatalog();
+        if (catalogRefreshStatus.settled >= requestId) {
+          return reportRefreshOutcome(catalogRefreshStatus.state);
+        }
+        if (catalogRefreshStatus.request > requestId) {
+          showFeedback(catalogFeedback,
+                       "Another catalog refresh was started, so this one is no longer the current request.",
+                       false);
+          return false;
+        }
+        // Still queued or still running. The polling window ending is not the
+        // operation ending: unlocking here would let a second refresh be
+        // enqueued on top of the one still walking the card.
+      }
+
+      showFeedback(
+        catalogFeedback,
+        catalogRefreshStatus.active === requestId
+          ? "Catalog refresh is still running. Open Sound again in a moment."
+          : "Catalog refresh has not started yet. Open Sound again in a moment.",
+        false
+      );
       return false;
     } catch (error) {
       showFeedback(catalogFeedback, `Catalog refresh failed: ${getApiErrorMessage(error)}`, false);
@@ -1410,9 +1812,13 @@
       catalogRefreshInFlight = false;
       setCatalogActionLock(false);
       if (!catalogReady && catalogStatus) {
-        catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
+        delete catalogStatus.dataset.baseText;
+        catalogStatus.textContent = "";
       }
-      renderCatalogRows();
+      // Whether each Named Track's file changed is worked out against the
+      // catalog as it stands when the tracks are read, so a walk that may have
+      // found a different card is followed by a fresh read of them.
+      await loadTracks();
     }
   };
 
@@ -1485,12 +1891,13 @@
     return { tdActions, actionsWrap };
   };
 
-  const createActionButton = ({ label, title, ariaLabel, className, onClick }) => {
+  // A row's act (#460): its icon alone, its words the accessible name and the
+  // shared tooltip's text (data/shell.js "The act").
+  const createActionButton = ({ label, icon, className, onClick }) => {
     const button = document.createElement("button");
-    button.className = className;
-    button.textContent = label;
-    button.title = title;
-    button.setAttribute("aria-label", ariaLabel);
+    button.type = "button";
+    button.className = `${className} icon-act`;
+    button.innerHTML = window.PAUi.actFace(icon, label);
     button.addEventListener("click", onClick);
     return button;
   };
@@ -1536,11 +1943,12 @@
     return { markSaved, update };
   };
 
-  const createNumberInput = ({ id, min, max, className, ariaLabel, datasetKey = null, placeholder = null, value = null }) => {
+  // A Setting's input carries no range of its own: the droid holds it, and a
+  // value it will not take comes back as a refusal messageFor() words (ADR
+  // 0068, amended 2026-09-26).
+  const createNumberInput = ({ id, className, ariaLabel, datasetKey = null, placeholder = null, value = null }) => {
     const input = document.createElement("input");
     input.type = "number";
-    input.min = String(min);
-    input.max = String(max);
     input.className = className;
     if (id) input.id = id;
     if (datasetKey) input.dataset.key = datasetKey;
@@ -1548,6 +1956,43 @@
     if (value !== null) input.value = String(value);
     input.setAttribute("aria-label", ariaLabel);
     return input;
+  };
+
+  // A bound track's cell: its number, the address it is bound to on the card,
+  // and - when the file there changed - the two answers. Shared by the Named
+  // Track and system sound rows, which bind the same way.
+  const buildTrackCell = (tdTrack, input, key, label, feedbackEl) => {
+    const cell = document.createElement("div");
+    cell.className = "sound-track-cell";
+    cell.appendChild(input);
+
+    const bindingBadge = document.createElement("span");
+    bindingBadge.id = `chirp-binding-${key}`;
+    bindingBadge.className = "chirp-binding-badge hidden";
+    cell.appendChild(bindingBadge);
+
+    const fileChanged = document.createElement("div");
+    fileChanged.id = `chirp-file-${key}`;
+    fileChanged.className = "chirp-file-changed hidden";
+    const chip = document.createElement("span");
+    chip.className = "chirp-file-chip";
+    chip.textContent = "File changed";
+    const keepButton = document.createElement("button");
+    keepButton.type = "button";
+    keepButton.className = "btn btn-sm btn-quiet";
+    keepButton.textContent = "Keep";
+    keepButton.setAttribute("aria-label", `Keep the new file for ${label}`);
+    keepButton.addEventListener("click", () => keepNamedTrackFile(key, feedbackEl));
+    const repointButton = document.createElement("button");
+    repointButton.type = "button";
+    repointButton.className = "btn btn-sm btn-quiet";
+    repointButton.textContent = "Re-point";
+    repointButton.setAttribute("aria-label", `Pick another sound for ${label}`);
+    repointButton.addEventListener("click", () => startNamedTrackRepoint(key, label, feedbackEl));
+    fileChanged.append(chip, keepButton, repointButton);
+    cell.appendChild(fileChanged);
+
+    tdTrack.appendChild(cell);
   };
 
   const buildNamedSoundRows = () => {
@@ -1582,38 +2027,24 @@
       let dirtyTracker = null;
 
       if (sound.editable && sound.key) {
-        const minTrack = sound.trackMin ?? 1;
         rowInput = createNumberInput({
           id: `track-input-${sound.key}`,
-          min: minTrack,
-          max: TRACK_MAX,
           className: "sound-track-input-sm",
           ariaLabel: `${sound.label} track number`,
           datasetKey: sound.key,
         });
-        tdTrack.appendChild(rowInput);
-        const bindingBadge = document.createElement("span");
-        bindingBadge.id = `chirp-binding-${sound.key}`;
-        bindingBadge.className = "chirp-binding-badge hidden";
-        tdTrack.appendChild(bindingBadge);
-
         rowFeedback = createInlineFeedback();
+        buildTrackCell(tdTrack, rowInput, sound.key, sound.label, rowFeedback);
         dirtyMarker = createDirtyMarker();
         dirtyTracker = createRowDirtyTracker({ row: tr, inputs: [rowInput], marker: dirtyMarker });
         namedDirtyTrackers.set(sound.key, dirtyTracker);
 
         const saveButton = createActionButton({
-          label: "💾 Save",
-          title: "Save track number",
-          ariaLabel: `Save ${sound.label} track number`,
+          label: "Save",
+          icon: "content-save-outline",
           className: "btn sound-btn-compact",
           onClick: async () => {
-            const value = Number.parseInt(rowInput.value, 10);
-            if (Number.isNaN(value) || value < minTrack || value > TRACK_MAX) {
-              showFeedback(rowFeedback, MSG.trackRange(minTrack, TRACK_MAX), false);
-              return;
-            }
-            const ok = await postTrack(sound.key, value, rowFeedback);
+            const ok = await postTrack(sound.key, rowInput.value.trim(), rowFeedback);
             if (ok) dirtyTracker?.markSaved();
           },
         });
@@ -1623,21 +2054,24 @@
       }
 
       const playButton = createActionButton({
-        label: "▶ Play",
-        title: sound.playMode === "track"
-          ? `Play configured track for ${sound.label}`
-          : `Play ${sound.cmd}`,
-        ariaLabel: `Play ${sound.label}`,
+        label: "Play",
+        icon: "play",
         className: "btn sound-btn-play",
         onClick: () => {
           if (sound.editable && sound.key) {
-            const minTrack = sound.trackMin ?? 1;
+            // 0 is "no sound for this". Which sounds may be 0 is the droid's to
+            // say when the track is saved, but Play is an act the page carries
+            // out itself: no request reaches the droid for a 0, so the page
+            // answers the press, required track or optional.
             const value = Number.parseInt(rowInput?.value, 10);
-            if (Number.isNaN(value) || value < minTrack || value > TRACK_MAX) {
-              showFeedback(rowFeedback || globalFb, MSG.trackRange(minTrack, TRACK_MAX), false);
+            if (Number.isNaN(value) || value < 0 || value > TRACK_MAX) {
+              showFeedback(rowFeedback || globalFb, MSG.trackRangeZeroToMax, false);
               return;
             }
-            if (value === 0) return;
+            if (value === 0) {
+              showFeedback(rowFeedback || globalFb, MSG.nothingToPlay, false);
+              return;
+            }
 
             const binding = getSlotBinding(sound.key);
             if (catalogSupported && binding) {
@@ -1695,8 +2129,6 @@
       const tdMin = document.createElement("td");
       const minInput = createNumberInput({
         id: `cat-min-${category.loKey}`,
-        min: 0,
-        max: TRACK_MAX,
         value: 0,
         className: "sound-track-input-sm",
         ariaLabel: `${category.label} minimum track`,
@@ -1706,8 +2138,6 @@
       const tdMax = document.createElement("td");
       const maxInput = createNumberInput({
         id: `cat-max-${category.hiKey}`,
-        min: 0,
-        max: TRACK_MAX,
         value: 0,
         className: "sound-track-input-sm",
         ariaLabel: `${category.label} maximum track`,
@@ -1721,22 +2151,16 @@
       categoryDirtyTrackers.set(category.loKey, dirtyTracker);
 
       const saveButton = createActionButton({
-        label: "💾 Save",
-        title: "Save category range",
-        ariaLabel: `Save ${category.label} range`,
+        label: "Save",
+        icon: "content-save-outline",
         className: "btn sound-btn-compact",
         onClick: async () => {
-          const minVal = Number.parseInt(minInput.value, 10);
-          const maxVal = Number.parseInt(maxInput.value, 10);
-          if (!isCategoryRangeValid(minVal, maxVal)) {
-            showFeedback(rowFeedback, MSG.categoryRangeInvalid, false);
-            return;
-          }
+          // As typed: the droid judges each bound and the pair.
           const ok = await postCategoryRange(
             category.loKey,
             category.hiKey,
-            minVal,
-            maxVal,
+            minInput.value.trim(),
+            maxInput.value.trim(),
             rowFeedback
           );
           if (ok) dirtyTracker.markSaved();
@@ -1744,9 +2168,8 @@
       });
 
       const playButton = createActionButton({
-        label: "▶ Play",
-        title: `Play random ${category.label} track`,
-        ariaLabel: `Play ${category.label}`,
+        label: "Play",
+        icon: "play",
         className: "btn sound-btn-play",
         onClick: () => {
           const minVal = Number.parseInt(minInput.value, 10);
@@ -1836,45 +2259,31 @@
       const tdTrack = document.createElement("td");
       const input = createNumberInput({
         id: `sys-track-input-${sound.key}`,
-        min: 0,
-        max: TRACK_MAX,
         className: "sound-track-input-sm",
         ariaLabel: `${sound.label} track number`,
         datasetKey: sound.key,
         placeholder: "(silent / not set)",
       });
-      tdTrack.appendChild(input);
-      const bindingBadge = document.createElement("span");
-      bindingBadge.id = `chirp-binding-${sound.key}`;
-      bindingBadge.className = "chirp-binding-badge hidden";
-      tdTrack.appendChild(bindingBadge);
-
       const { tdActions, actionsWrap } = createActionCell();
       const rowFeedback = createInlineFeedback();
+      buildTrackCell(tdTrack, input, sound.key, sound.label, rowFeedback);
       const dirtyMarker = createDirtyMarker();
       const dirtyTracker = createRowDirtyTracker({ row: tr, inputs: [input], marker: dirtyMarker });
       systemDirtyTrackers.set(sound.key, dirtyTracker);
 
       const saveButton = createActionButton({
-        label: "💾 Save",
-        title: "Save track number",
-        ariaLabel: `Save ${sound.label} track number`,
+        label: "Save",
+        icon: "content-save-outline",
         className: "btn sound-btn-compact",
         onClick: async () => {
-          const value = Number.parseInt(input.value, 10);
-          if (Number.isNaN(value) || value < 0 || value > TRACK_MAX) {
-            showFeedback(rowFeedback, MSG.trackRangeZeroToMax, false);
-            return;
-          }
-          const ok = await postTrack(sound.key, value, rowFeedback);
+          const ok = await postTrack(sound.key, input.value.trim(), rowFeedback);
           if (ok) dirtyTracker.markSaved();
         },
       });
 
       const playButton = createActionButton({
-        label: "▶ Play",
-        title: `Play configured track for ${sound.label}`,
-        ariaLabel: `Play ${sound.label}`,
+        label: "Play",
+        icon: "play",
         className: "btn sound-btn-play",
         onClick: () => {
           const value = Number.parseInt(input.value, 10);
@@ -1882,7 +2291,10 @@
             showFeedback(rowFeedback, MSG.trackRangeZeroToMax, false);
             return;
           }
-          if (value === 0) return;
+          if (value === 0) {
+            showFeedback(rowFeedback, MSG.nothingToPlay, false);
+            return;
+          }
           playMappedSlot(sound.key, value, rowFeedback || globalFb, sound.label);
         },
       });
@@ -1910,6 +2322,12 @@
       chirpCategoryBindings = (data && typeof data.chirp_category_bindings === "object" && data.chirp_category_bindings)
         ? data.chirp_category_bindings
         : {};
+      // A re-point ends when its track no longer says its file changed, however
+      // that came about: Keep, a Map from any row, a restore. Left standing, the
+      // preset target would bind the next Map pressed to the wrong track.
+      if (catalogRepointKey && getSlotBinding(catalogRepointKey)?.file !== "changed") {
+        endNamedTrackRepoint();
+      }
       NAMED_SOUNDS.forEach((sound) => {
         if (!sound.editable || !sound.key) return;
         const input = document.getElementById(`track-input-${sound.key}`);
@@ -1946,6 +2364,7 @@
           catalogCategoryRanges.push({ label: category.label, loKey: category.loKey, lo: minVal, hi: maxVal });
         }
       });
+      refreshMp3RangeWarning(lastDriverIsMp3);
 
       const randMin = document.getElementById("rand-min");
       const randMax = document.getElementById("rand-max");
@@ -1966,6 +2385,9 @@
         syncVolumeLabel();
       }
       applyChirpBindingBadges();
+      // Whether there are saved assignments at all decides whether a warning
+      // about them has anything to warn about.
+      renderSoundListWarning();
       renderCatalogRows();
     } catch (_error) {
       // No dedicated feedback surface for initial track hydration.
@@ -2008,42 +2430,33 @@
     return moodMapLoaded;
   };
 
-  const renderStatus = (data) => {
+  const renderReading = (reading) => {
+    const data = reading.status;
+    // Nothing is known about the module until the droid has sent a frame, so
+    // nothing is drawn from one: the badge keeps what the page last showed.
+    if (data === null) return;
     const s2Enabled = Boolean(data.audio);
     setSoundHardwareEnabled(s2Enabled);
     if (!soundStateBadge) return;
-    if (!s2Enabled) {
-      soundStateBadge.textContent = "Disabled";
-      soundStateBadge.dataset.state = "disabled";
-      return;
+    const link = readSoundLink(data.audio);
+    if (link.state !== "ok") {
+      paintSoundLink(modLink, link);
+      paintSoundLink(soundStateBadge, link);
+      badgeShowsLink = true;
+    } else if (badgeShowsLink) {
+      // The link is back: ask the module what it is doing rather than keep
+      // the word it had while it could not be asked.
+      badgeShowsLink = false;
+      updateModuleStatus().catch(() => {});
     }
-    if (data.audio && typeof data.audio.link_ok === "boolean") {
-      if (data.audio.rx_status === RX_STATUS_BLOCKED_BY_DOME) {
-        if (modLink) { modLink.textContent = "protoR2link using UART"; modLink.dataset.state = "warn"; }
-        soundStateBadge.textContent = "Status unavailable: protoR2link is using UART";
-        soundStateBadge.dataset.state = "idle";
-      } else if (!data.audio.link_ok) {
-        if (modLink) { modLink.textContent = "No response"; modLink.dataset.state = "error"; }
-        soundStateBadge.textContent = "No module response";
-        soundStateBadge.dataset.state = "error";
-      } else if (soundStateBadge.dataset.state === "error") {
-        updateModuleStatus().catch(() => {});
-      }
-    }
-  };
-
-  const refreshStatusOnce = async () => {
-    if (!window.PAApi) return;
-    const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
-    renderStatus(result.data);
   };
 
   buildNamedSoundRows();
   buildCategorySoundRows();
   buildMoodMapRows();
   buildSystemSoundRows();
-  if (catalogStatus) catalogStatus.textContent = "Catalog unavailable for this backend.";
   populateCatalogTargetSelect(catalogBulkTarget, "Map checked to target…");
+  syncCatalogControls();
   renderCatalogBankTabs();
   renderCatalogRows();
   syncCatalogBulkUi([]);
@@ -2053,35 +2466,10 @@
   loadMoodMap();
   syncVolumeLabel();
 
-  if (window.PAStatusStream?.isSupported()) {
-    window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") renderStatus(payload);
-    });
-
-    if (!window.PAStatusStream.getLastStatus()) {
-      refreshStatusOnce().catch(() => {
-        // Retry via next SSE event.
-      });
-    }
-  } else {
-    const refreshFromFallback = () => {
-      refreshStatusOnce().catch(() => {
-        // Retry next cycle.
-      });
-    };
-
-    refreshFromFallback();
-    window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      refreshFromFallback();
-    }, 2000);
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "hidden") {
-        refreshFromFallback();
-      }
-    });
-  }
+  // Whether a module is fitted, and whether it answers, ride the Live Reading,
+  // which owns the stream or the one fallback poll for the whole shell
+  // (data/live_reading.js). The module's own poll above is not a status read.
+  window.PALiveReading.subscribe(renderReading);
 
   namedSoundFilterInput?.addEventListener("input", () => {
     applyNamedSoundFilter();
@@ -2089,6 +2477,10 @@
 
   catalogFilterInput?.addEventListener("input", () => {
     renderCatalogRows();
+  });
+
+  document.getElementById("btn-catalog-repoint-cancel")?.addEventListener("click", () => {
+    endNamedTrackRepoint({ restoreFilter: true });
   });
 
   catalogRefreshBtn?.addEventListener("click", async () => {
@@ -2168,7 +2560,7 @@
   document.getElementById("btn-direct-play")?.addEventListener("click", () => {
     const value = Number.parseInt(document.getElementById("direct-track")?.value, 10);
     if (!soundHardwareEnabled) {
-      showFeedback(directFb, "Direct play unavailable: enable S2 — Audio in Setup.", false);
+      showFeedback(directFb, SOUND_OFF_LINE, false);
       return;
     }
     if (!value || value < 1 || value > 65535) {
@@ -2182,15 +2574,13 @@
   document.getElementById("btn-rand-save")?.addEventListener("click", async () => {
     const minVal = Number.parseInt(document.getElementById("rand-min")?.value, 10);
     if (!soundHardwareEnabled) {
-      showFeedback(randFb, "Random range unavailable: enable S2 — Audio in Setup.", false);
+      showFeedback(randFb, SOUND_OFF_LINE, false);
       return;
     }
     const maxVal = Number.parseInt(document.getElementById("rand-max")?.value, 10);
 
-    if (!minVal || minVal < 1 || minVal > TRACK_MAX || !maxVal || maxVal < 1 || maxVal > TRACK_MAX) {
-      showFeedback(randFb, MSG.valuesMustBe1To999, false);
-      return;
-    }
+    // The range of each is the droid's to hold; the order between the two is a
+    // rule the droid does not keep, so the page still says it.
     if (minVal > maxVal) {
       showFeedback(randFb, MSG.minMustBeLeMax, false);
       return;
@@ -2199,8 +2589,8 @@
     if (!window.PAApi) return;
     try {
       const [r1, r2] = await Promise.all([
-        window.PAApi.postForm("/api/audio/tracks", { key: "rand_min", track: minVal }, { timeoutMs: 3000 }),
-        window.PAApi.postForm("/api/audio/tracks", { key: "rand_max", track: maxVal }, { timeoutMs: 3000 }),
+        window.PAApi.postForm("/api/audio/tracks", { key: "rand_min", track: document.getElementById("rand-min")?.value ?? "" }, { timeoutMs: 3000 }),
+        window.PAApi.postForm("/api/audio/tracks", { key: "rand_max", track: document.getElementById("rand-max")?.value ?? "" }, { timeoutMs: 3000 }),
       ]);
       const ok = Boolean(r1.data?.ok && r2.data?.ok);
       showFeedback(randFb, ok ? "Range saved" : MSG.saveFailed, ok);
@@ -2219,23 +2609,14 @@
 
   document.getElementById("btn-int-save")?.addEventListener("click", async () => {
     if (!soundHardwareEnabled) {
-      showFeedback(intFb, "Interval updates unavailable: enable S2 — Audio in Setup.", false);
+      showFeedback(intFb, SOUND_OFF_LINE, false);
       return;
     }
-    for (const field of INT_FIELDS) {
-      const value = Number.parseInt(document.getElementById(field.id)?.value, 10);
-      if (Number.isNaN(value) || value < 0 || value > 3600) {
-        showFeedback(intFb, `${field.key}: must be 0–3600`, false);
-        return;
-      }
-    }
-
     if (!window.PAApi) return;
     try {
-      const results = await Promise.all(INT_FIELDS.map((field) => {
-        const value = Number.parseInt(document.getElementById(field.id)?.value, 10);
-        return window.PAApi.postForm("/api/audio/tracks", { key: field.key, track: value }, { timeoutMs: 3000 });
-      }));
+      const results = await Promise.all(INT_FIELDS.map((field) =>
+        window.PAApi.postForm("/api/audio/tracks",
+          { key: field.key, track: document.getElementById(field.id)?.value ?? "" }, { timeoutMs: 3000 })));
       const ok = results.every((entry) => entry.data?.ok);
       showFeedback(intFb, ok ? "Intervals saved" : MSG.saveFailed, ok);
     } catch (error) {
@@ -2245,7 +2626,7 @@
 
   moodMapSaveBtn?.addEventListener("click", async () => {
     if (!soundHardwareEnabled) {
-      setMoodMapStatus("Mood mapping unavailable: enable S2 — Audio in Setup.", false);
+      setMoodMapStatus(SOUND_OFF_LINE, false);
       return;
     }
     if (!moodMapApiAvailable) {
@@ -2314,11 +2695,11 @@
       return;
     }
     window.PABootstrap.setResourceLabels?.({
-      "/web_api.js": "controller connection",
+      "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
+      "/live_reading.js": "live updates",
       "/shell.js": "page layout",
       "/sound.js": "audio control",
-      "/footer.js": "page footer",
     });
     SECTIONS.forEach(([name, load, label, opts]) =>
       window.PABootstrap.registerSection(name, load, { label, ...opts })
@@ -2327,19 +2708,13 @@
 
   startPageLoad();
 
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "hidden") {
-      updateModuleStatus().catch(() => {});
-    }
-  });
-
   // Poll button — sends a POST /api/audio/query which runs queryModuleState()
   // in AudioTask, then re-fetches /api/audio after 1.5 s to show the result.
   // For manual-poll backends, only poll while not playing to avoid UART disruption.
   if (btnPoll) {
     btnPoll.addEventListener("click", async () => {
       btnPoll.disabled = true;
-      btnPoll.textContent = "Polling…";
+      window.PAUi.setAct(btnPoll, "Polling…");
       try {
         await window.PAApi.postForm("/api/audio/query", {});
         window.setTimeout(() => {
@@ -2352,12 +2727,12 @@
             })
             .finally(() => {
               btnPoll.disabled = false;
-              btnPoll.textContent = "Poll status";
+              window.PAUi.setAct(btnPoll, "Poll status");
             });
         }, 1600);
       } catch (err) {
         btnPoll.disabled = false;
-        btnPoll.textContent = "Poll status";
+        window.PAUi.setAct(btnPoll, "Poll status");
         showFeedback(modStatusFb, `Poll failed: ${window.PAApi.messageFor(err)}`, false);
       }
     });

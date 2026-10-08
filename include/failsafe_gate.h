@@ -17,6 +17,11 @@
 //   - Only failsafeClearEstop() can clear ESTOP (explicit-intent path).
 //   - failsafeTrigger() updates robotState mirror fields for status reporting.
 //   - recordFailsafeTriggerLocked() is called internally for diagnostics.
+//   - Every EDGE of the mask asks the event stream to publish, so a layer that
+//     latches with no web request behind it still reaches the browser. Rising
+//     and falling both; a re-trigger of a held layer does not (#346). The ask
+//     posts a flag and does no work inline, which is what keeps it callable
+//     from the real-time path - see the header of src/failsafe_gate.cpp.
 // =============================================================================
 #pragma once
 
@@ -52,10 +57,6 @@ void failsafeClear(FailsafeLayer layer);
 
 // Check if any failsafe layer is active.
 bool failsafeIsActive();
-
-// Return the highest-priority active failsafe layer (lowest enum index).
-// Returns SBUS_HW as default if none active (caller should check failsafeIsActive first).
-FailsafeLayer failsafeActiveReason();
 
 // Explicit ESTOP clear: only this function can clear the ESTOP layer.
 // Called from api_estop.cpp when operator requests estop/clear.

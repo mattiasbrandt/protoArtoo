@@ -16,5 +16,18 @@
 // =============================================================================
 #pragma once
 
+#include <stdint.h>
+
+#include "board_outputs.h"  // BOARD_OUTPUT_COUNT
+#include "robot_state.h"    // ServoComponentType
+
 // auxLedQueueSetColor()/auxLedQueueSetEffect() share this one refusal toggle.
 extern bool g_test_aux_led_queue_ok;
+
+// auxLedWireAtStart() (#364): what each wire carried when the droid started.
+// While g_test_aux_led_at_start_set is false the stub answers false, as the
+// real one does before auxLedTaskInit(); a suite that sets it answers from the
+// two arrays, one entry per BOARD_OUTPUTS index.
+extern bool g_test_aux_led_at_start_set;
+extern ServoComponentType g_test_aux_led_component_at_start[BOARD_OUTPUT_COUNT];
+extern uint8_t g_test_aux_led_count_at_start[BOARD_OUTPUT_COUNT];

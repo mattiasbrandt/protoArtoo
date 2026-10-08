@@ -24,6 +24,17 @@ enum SequenceDispatchTarget : uint8_t {
     SEQ_DISPATCH_AUDIO_DOLLAR,     // audioQueueDollar(payload, SRC_SEQ)
     SEQ_DISPATCH_AUDIO_CATEGORY,   // audioQueuePlayCategory(...)
     SEQ_DISPATCH_AUDIO_STOP,       // audioQueueTrackStop(SRC_SEQ)
+    SEQ_DISPATCH_BODY_MOVE,        // resolve the Part against the Servo Output
+                                   // rows, then servoCmdQueue
+    SEQ_DISPATCH_DOME_BEARING,     // domeBearingStepPlan(), then a DOME_CMD_TURN_TO
+                                   // on domeCmdQueue or a report (#445)
+    SEQ_DISPATCH_GESTURE,          // hand to the Coordinator's Gesture run, which
+                                   // copies the step and expands it on its own
+                                   // cursor (include/sequence_gesture.h)
+    SEQ_DISPATCH_BACKGROUND_TRACK_START, // audioQueueBackgroundTrackStart(payload,
+                                   // volume), and the run's report where the
+                                   // fitted module cannot mix (ADR 0054)
+    SEQ_DISPATCH_BACKGROUND_TRACK_STOP,  // audioQueueBackgroundTrackStop()
     SEQ_DISPATCH_NONE,             // Silent success (unknown action)
 };
 
@@ -45,6 +56,12 @@ struct SequenceDispatcherStepActions {
 
     // For all text-payload targets (DOME_CMD, AUDIO_DOLLAR)
     // The adapter will use act.payload directly
+    //
+    // SEQ_DISPATCH_BODY_MOVE carries no fields either, and for a reason worth
+    // stating: which Output drives the Part is the builder's own droid's answer,
+    // held in the live Servo Output table, and this core is pure. The adapter
+    // walks the rows and hands the one it found to sequenceBodyStepPlan()
+    // (include/sequence_body_step.h), which owns that decision.
 };
 
 // Sequence Dispatcher Step Core: pure decision logic.
@@ -59,15 +76,23 @@ SequenceDispatcherStepActions sequenceDispatcherStep(const SeqAction& act,
 
 // Idle gating: compute the wait timeout for the task's blocking queue receive.
 //
-// When a sequence is active or a staged ring-close is pending, the task must
-// run at 10 ms cadence to feed step-driven choreography and ring-close drain.
-// When idle, the task blocks on the request queue and only wakes for TWDT
-// reset (3 s timeout) and to poll estop/dome-connect edges.
+// When a sequence is active, a staged ring-close is pending, or a bulk centre
+// is sweeping, the task must run at 10 ms cadence to feed step-driven
+// choreography, the ring-close drain and the Cadence Floor. When idle, the task
+// blocks on the request queue and only wakes for TWDT reset (3 s timeout) and
+// to poll estop/dome-connect edges.
 //
 // Args:
 //   engineActive: true if a sequence is currently running.
 //   resyncClosePending: true if a staged ring-close is waiting in resyncCloseIdx.
+//   bulkCentreActive: true while a bulk centre sweep has rows left (#365), or
+//     a pose press still has commands to send (#440): both are paced by the
+//     Cadence Floor on this task's tick. The
+//     idle 250 ms would round the Cadence Floor up to the next wake, so the
+//     spacing between two Outputs would be whatever the tick allowed rather
+//     than the number the Floor names.
 //
-// Returns: wait_ms for xQueueReceive timeout (10 ms if either condition is
+// Returns: wait_ms for xQueueReceive timeout (10 ms if any condition is
 // true, 250 ms otherwise).
-uint32_t sequence_dispatcher_wait_ms(bool engineActive, bool resyncClosePending);
+uint32_t sequence_dispatcher_wait_ms(bool engineActive, bool resyncClosePending,
+                                     bool bulkCentreActive);

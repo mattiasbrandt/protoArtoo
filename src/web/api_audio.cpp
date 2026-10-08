@@ -24,19 +24,19 @@
 // POST /api/audio params:
 //   action=play   &track=N      - play track N (1-based)
 //   action=stop                 - stop playback
-//   action=volume &level=N      - set absolute volume (0-30)
+//   action=volume &level=N      - set the volume Setting
 //   action=dollar &cmd=$R       - raw $ command (any from the $ command set)
 //
 // POST /api/audio/tracks params:
-//   key=<name>   &track=N       - set named/category/system track (1-999, or 0-999 where allowed)
-//   key=rand_min &track=N       - set random pool minimum
-//   key=rand_max &track=N       - set random pool maximum
+//   key=<name>   &track=N       - set one audio Setting on the tracks door: a
+//                                 sound action's or system track, the random
+//                                 range (rand_min, rand_max), a random-chatter
+//                                 interval (snd_int_*) or a category bound
+//                                 (snd_cat_*_lo/_hi), optionally as a CHIRP
+//                                 catalog binding (bank, page)
 //
-// Valid key names: scream faint leia cantina_s sw_theme imp_march cantina_l
-//                  startup doodoo failure disco mahna inlove macho gangnam
-//                  uptown celebr stayin harlem pbjtime
-//                  sys_boot sys_mode_n sys_mode_s sys_mode_t sys_drv_on sys_dome_on sys_net_down
-//                  snd_cat_*_lo snd_cat_*_hi, rand_min rand_max
+// Which keys exist and what each takes is their declaration's
+// (src/config_settings.cpp, kAudioSettings), never restated here.
 // =============================================================================
 
 #include "api_audio.h"
@@ -49,20 +49,26 @@
 
 #include "api_audio_category_range_apply.h"
 #include "api_audio_mood_map_apply.h"
+#include "config_settings.h"  // the volume Setting's check
 #include "api_audio_tracks_apply.h"
 #include "api_helpers.h"
 #include "api_json_response.h"
+#include "audio_catalog_gate.h"
+#include "audio_named_track_file.h"
+#include "audio_sound_member.h"
 #include "audio_task.h"
 #include "chirp_binding_keys.h"
 #include "config.h"
 #include "config_store.h"
 #include "config_cache.h"
+#include "config_write_lock.h"  // the four audio Write Windows live here
 #include "logging.h"
 #include "mood.h"
 #include "mood_sound_mapping.h"
 #include "robot_state.h"
 #include "web_json_slice_writer.h"
 #include "web_param_source.h"
+#include "web_request_scratch.h"
 #include "web_server.h"
 
 static const char* TAG = "WebServer";
@@ -83,6 +89,18 @@ bool isSleepModeActive() {
 
 bool audioCatalogSupported() {
     return (audioGetCapabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
+}
+
+// With audio output off at boot nothing drains the audio queue, so a play or
+// sound command is refused with the reason rather than answered "ok" onto a
+// queue nobody reads (#370, include/audio_sound_member.h). Checked last, just
+// before the enqueue, so a malformed request still gets its own 400.
+bool refusedWhileSoundOff(WebRequest& req) {
+    if (audioSoundOn()) {
+        return false;
+    }
+    webSendJsonError(req, 409, AUDIO_SOUND_OFF_REASON);
+    return true;
 }
 
 uint32_t packChirpBinding(uint16_t index, uint8_t bank, char page) {
@@ -108,6 +126,60 @@ bool unpackChirpBinding(uint32_t packed, uint8_t* bankOut, char* pageOut, uint16
     *pageOut = page;
     *indexOut = index;
     return true;
+}
+
+// The builder just saved an assignment against the card as it reads today, so
+// today's sound list becomes the baseline the change warning is measured from,
+// and whatever the warning was about is now the state they chose.
+//
+// Nothing observed means nothing to baseline: the previous baseline and any
+// warning already up both stand, because a manifest that could not be read is
+// not evidence that the card is unchanged (#397 D4). Returns false in that
+// case and on a failed write; neither fails the save, which is the builder's
+// assignment and landed either way.
+bool saveSoundListBaseline(Preferences& prefs) {
+    AudioCatalogObservation observation{};
+    audioCatalogObservationRead(&observation);
+    if (!observation.identity.observed) {
+        return false;
+    }
+    if (prefs.putUInt(CHIRP_SOUND_LIST_CHECKSUM_KEY, observation.identity.checksum) == 0) {
+        return false;
+    }
+    audioBindingWarningClear();
+    return true;
+}
+
+// Record which file a Named Track was just bound to (include/audio_named_track_file.h):
+// the card's name for its new address, as the catalog lists it now. This is
+// both of the builder's answers to a changed file - binding the same address
+// again keeps it, binding another re-points it - and an ordinary bind.
+//
+// With no name to read (no catalog since boot - the catalog is only read when
+// asked for, so after a reboot that is the usual state - a refresh holding the
+// gate, or the card naming the sound only by index), the record is removed,
+// same address or not, and the binding reads unchecked. Keeping the old record
+// would let a pending "file changed" outlive the builder's answer, a restore
+// included. An unbound key keeps no record either. False on a refused NVS
+// write: the binding itself is saved either way.
+bool recordNamedTrackFile(Preferences& prefs, const char* fileKey, uint32_t packed) {
+    uint8_t bank = 0;
+    char page = 'A';
+    uint16_t index = 0;
+    uint32_t file = AUDIO_NAMED_TRACK_FILE_UNRECORDED;
+    const bool bound = unpackChirpBinding(packed, &bank, &page, &index);
+    if (bound && audioCatalogReaderAcquire()) {
+        if (audioIsCatalogReady()) {
+            uint16_t count = 0;
+            const AudioCatalogEntry* entries = audioGetCatalogEntries(&count);
+            file = audioCatalogFingerprintAt(entries, count, bank, page, index);
+        }
+        audioCatalogReaderRelease();
+    }
+    if (file != AUDIO_NAMED_TRACK_FILE_UNRECORDED) {
+        return prefs.putUInt(fileKey, file) > 0;
+    }
+    return !prefs.isKey(fileKey) || prefs.remove(fileKey);
 }
 
 uint32_t packChirpCategoryBinding(uint8_t bank, char page) {
@@ -146,11 +218,13 @@ bool parseChirpPage(const char* raw, char* pageOut) {
 }
 
 // Answer an apply core's rejection in the shape every write path in this file
-// shares: 400, or 404 when the core reports an unknown key. The three cores
-// carry their own error structs rather than a shared one, so the two fields
-// that matter are passed rather than the struct.
-void sendApplyError(WebRequest& req, const char* message, bool notFound) {
-    webSendJsonError(req, notFound ? 404 : 400, message);
+// shares: 400, or 404 when the core reports the fitted module has no catalog
+// to bind into. The three cores carry their own error structs, so the fields
+// that matter are passed rather than the struct; the refusal's field, reason
+// and accepts ride beside the sentence (webSendApplyRefusal()).
+void sendApplyError(WebRequest& req, const char* message, const ApplyRefusal& refusal,
+                    bool notFound) {
+    webSendApplyRefusal(req, notFound ? 404 : 400, message, refusal);
 }
 
 // -----------------------------------------------------------------------------
@@ -166,6 +240,13 @@ AudioConfig s_tracksAudio = {};
 bool s_tracksIncludeBindings = false;
 uint32_t s_tracksBindings[kChirpBindingCount] = {};
 uint32_t s_tracksCategoryBindings[kChirpCategoryBindingCount] = {};
+// Each binding's file against the card as the catalog lists it now
+// (include/audio_named_track_file.h), one bit per CHIRP_BINDING_KEYS row:
+// checked = the comparison could be made, changed = it found another file.
+// Two words rather than a byte per row, for the BSS note above.
+static_assert(kChirpBindingCount <= 32, "one bit per CHIRP binding");
+uint32_t s_tracksFileChecked = 0;
+uint32_t s_tracksFileChanged = 0;
 
 struct AudioTrackField {
     const char* name;
@@ -176,8 +257,8 @@ size_t fillTracksResponse(uint8_t* out, size_t capacity, size_t offset) {
     JsonSliceWriter writer(out, capacity, offset);
     const AudioConfig& a = s_tracksAudio;
 
-    // Field order and spelling are the payload contract data/sound.js and
-    // data/setup.js read. Note snd_cat_snrk_* : the wire name is the short form
+    // Field order and spelling are the payload contract data/sound.js reads and
+    // Backup and Restore (data/maintenance.js) carries. Note snd_cat_snrk_* : the wire name is the short form
     // even though the config member is snd_cat_snarky_*.
     const AudioTrackField fields[] = {
         {"scream", a.snd_scream},
@@ -188,6 +269,7 @@ size_t fillTracksResponse(uint8_t* out, size_t capacity, size_t offset) {
         {"imp_march", a.snd_imp_march},
         {"cantina_l", a.snd_cantina_l},
         {"startup", a.snd_startup},
+        {"happy", a.snd_happy},
         {"doodoo", a.snd_doodoo},
         {"failure", a.snd_failure},
         {"disco", a.snd_disco},
@@ -271,6 +353,13 @@ size_t fillTracksResponse(uint8_t* out, size_t capacity, size_t offset) {
             writer.append(page);
             writer.append("\",\"index\":");
             writer.appendUint(index);
+            const uint32_t bit = 1u << i;
+            const AudioNamedTrackFile file =
+                (s_tracksFileChecked & bit) == 0   ? AudioNamedTrackFile::Unchecked
+                : (s_tracksFileChanged & bit) != 0 ? AudioNamedTrackFile::Changed
+                                                   : AudioNamedTrackFile::Same;
+            writer.append(",\"file\":");
+            writer.appendJsonString(audioNamedTrackFileToken(file));
             writer.append('}');
         }
 
@@ -303,23 +392,82 @@ size_t fillTracksResponse(uint8_t* out, size_t capacity, size_t offset) {
 // -----------------------------------------------------------------------------
 // GET /api/audio/catalog producer state.
 //
-// The bank/entry arrays are borrowed from the driver's cache, exactly as the
-// async handler borrowed them: a refresh that lands mid-send would swap the
-// backing allocation underneath. That exposure predates this port and is not
-// widened by it - audio_chirp.cpp marks the cache empty before reallocating.
+// The bank/entry arrays are borrowed from the driver's cache and re-walked once
+// per HTTP chunk while the body goes out, so their lifetime has to outlast the
+// send. It is the catalog gate that makes that true (include/audio_catalog_gate.h):
+// the handler holds a reader lease across sendChunked(), and a refresh cannot
+// replace the allocation while one is out. The lease is a counter taken and
+// released under a short critical section of its own -- no lock is held while
+// the body is on the wire.
 // -----------------------------------------------------------------------------
 uint8_t s_catalogBankFilter = 0;
 bool s_catalogReady = false;
+bool s_catalogBusy = false;
 const AudioCatalogBank* s_catalogBanks = nullptr;
 uint8_t s_catalogBankCount = 0;
 const AudioCatalogEntry* s_catalogEntries = nullptr;
 uint16_t s_catalogEntryCount = 0;
+AudioCatalogObservation s_catalogObservation{};
+AudioCatalogRefreshLedger s_catalogLedger{};
+AudioBindingWarning s_catalogBindingWarning{};
+
+const char* catalogRefreshStateToken(AudioCatalogRefreshState state) {
+    switch (state) {
+        case AudioCatalogRefreshState::Queued:      return "queued";
+        case AudioCatalogRefreshState::Running:     return "running";
+        case AudioCatalogRefreshState::Completed:   return "completed";
+        case AudioCatalogRefreshState::Blocked:     return "blocked";
+        case AudioCatalogRefreshState::Failed:      return "failed";
+        case AudioCatalogRefreshState::Interrupted: return "interrupted";
+        case AudioCatalogRefreshState::None:
+        default:                                    return "none";
+    }
+}
 
 size_t fillCatalogResponse(uint8_t* out, size_t capacity, size_t offset) {
     JsonSliceWriter writer(out, capacity, offset);
 
     writer.append("{\"ready\":");
     writer.append(s_catalogReady ? "true" : "false");
+
+    // Busy is not "no catalog": a reader refused while a refresh holds the gate
+    // has learned nothing about the catalog, and a page that overwrote its rows
+    // on this answer would blank a listing that is still perfectly good.
+    writer.append(",\"busy\":");
+    writer.append(s_catalogBusy ? "true" : "false");
+
+    // What the last discovery could not see. A ready catalog is usable; these
+    // say whether it is also whole.
+    const AudioCatalogCompleteness& limits = s_catalogObservation.completeness;
+    const bool complete = s_catalogReady && limits.manifestComplete &&
+                          limits.missingNameCount == 0 && !limits.entryCapReached;
+    writer.append(",\"complete\":");
+    writer.append(complete ? "true" : "false");
+    writer.append(",\"limits\":{\"manifest_incomplete\":");
+    writer.append(limits.manifestComplete ? "false" : "true");
+    writer.append(",\"missing_names\":");
+    writer.appendUint(limits.missingNameCount);
+    writer.append(",\"entry_cap_reached\":");
+    writer.append(limits.entryCapReached ? "true" : "false");
+    writer.append('}');
+
+    // Which refresh the caller is watching, and how it ended. Queue acceptance
+    // and refresh completion are different events (#397 work item 10).
+    writer.append(",\"refresh\":{\"request\":");
+    writer.appendUint(s_catalogLedger.requestId);
+    writer.append(",\"active\":");
+    writer.appendUint(s_catalogLedger.activeId);
+    writer.append(",\"settled\":");
+    writer.appendUint(s_catalogLedger.settledId);
+    writer.append(",\"state\":");
+    writer.appendJsonString(catalogRefreshStateToken(s_catalogLedger.settledState));
+    writer.append('}');
+
+    writer.append(",\"bindings\":{\"sound_list_changed\":");
+    writer.append(s_catalogBindingWarning.soundListChanged ? "true" : "false");
+    writer.append(",\"sound_list_checked\":");
+    writer.append(s_catalogBindingWarning.soundListChecked ? "true" : "false");
+    writer.append('}');
 
     writer.append(",\"banks\":[");
     if (s_catalogReady && s_catalogBanks != nullptr) {
@@ -417,15 +565,25 @@ AudioMoodMapCommitOutcome audioMoodMapCommitApplied(const AudioMoodMapApplyResul
 void handleAudioMoodMapPost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
-    static AudioMoodMapApplyResult result;
+    // In the web request scratch rather than a static of its own (#428).
+    WebRequestScratch<AudioMoodMapApplyResult> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
+    }
+    AudioMoodMapApplyResult& result = *scratch;
     audioMoodMapApply(params, &result);
     if (result.error.hasError) {
         // This core has no not-found case: an unknown field is a bad request.
-        sendApplyError(req, result.error.message, false);
+        sendApplyError(req, result.error.message, result.error.refusal, false);
         return;
     }
 
-    AudioMoodMapCommitOutcome commit = audioMoodMapCommitApplied(result);
+    AudioMoodMapCommitOutcome commit;
+    if (!audioMoodMapWriteWindow(result, &commit)) {
+        webSendJsonError(req, 503, "config write busy");
+        return;
+    }
     if (!commit.ok) {
         webSendJsonError(req, 500, "NVS write failed");
         return;
@@ -448,7 +606,26 @@ void handleAudioTracksGet(WebRequest& req) {
     s_tracksIncludeBindings = audioCatalogSupported();
     memset(s_tracksBindings, 0, sizeof(s_tracksBindings));
     memset(s_tracksCategoryBindings, 0, sizeof(s_tracksCategoryBindings));
+    s_tracksFileChecked = 0;
+    s_tracksFileChanged = 0;
     if (s_tracksIncludeBindings) {
+        // Each binding's file is compared against the catalog as it stands, so
+        // the answer follows the last refresh with nothing held between
+        // requests. A refresh holding the gate, or no catalog read since boot,
+        // leaves every binding unchecked: not having looked is not having found
+        // the file unchanged.
+        const bool leased = audioCatalogReaderAcquire();
+        uint16_t entryCount = 0;
+        const AudioCatalogEntry* entries = nullptr;
+        bool catalogWhole = false;
+        if (leased && audioIsCatalogReady()) {
+            entries = audioGetCatalogEntries(&entryCount);
+            AudioCatalogObservation observation{};
+            audioCatalogObservationRead(&observation);
+            catalogWhole = observation.completeness.manifestComplete &&
+                           !observation.completeness.entryCapReached;
+        }
+
         Preferences prefs;
         // Read every packed word up front. The producer runs once per chunk, so
         // reading NVS from inside it would re-open and re-scan the namespace for
@@ -458,12 +635,31 @@ void handleAudioTracksGet(WebRequest& req) {
         if (prefs.begin(NVS_NAMESPACE, true)) {
             for (size_t i = 0; i < kChirpBindingCount; ++i) {
                 s_tracksBindings[i] = prefs.getUInt(CHIRP_BINDING_KEYS[i].nvsKey, 0);
+                uint8_t bank = 0;
+                char page = 'A';
+                uint16_t index = 0;
+                if (entries == nullptr ||
+                    !unpackChirpBinding(s_tracksBindings[i], &bank, &page, &index)) {
+                    continue;
+                }
+                const AudioNamedTrackFile file = audioNamedTrackFileCompare(
+                    prefs.getUInt(CHIRP_BINDING_KEYS[i].fileKey, AUDIO_NAMED_TRACK_FILE_UNRECORDED),
+                    entries, entryCount, catalogWhole, bank, page, index);
+                if (file != AudioNamedTrackFile::Unchecked) {
+                    s_tracksFileChecked |= 1u << i;
+                }
+                if (file == AudioNamedTrackFile::Changed) {
+                    s_tracksFileChanged |= 1u << i;
+                }
             }
             for (size_t i = 0; i < kChirpCategoryBindingCount; ++i) {
                 s_tracksCategoryBindings[i] =
                     prefs.getUInt(CHIRP_CATEGORY_BINDING_KEYS[i].nvsKey, 0);
             }
             prefs.end();
+        }
+        if (leased) {
+            audioCatalogReaderRelease();
         }
     }
 
@@ -505,6 +701,16 @@ AudioTracksCommitOutcome audioTracksCommitApplied(ConfigSnapshot* snap,
         if (wroteTrack && chirpBindingKey != nullptr) {
             uint32_t chirpPacked = useBanked ? packChirpBinding(t, bank, page) : 0;
             wroteChirp = prefs.putUInt(chirpBindingKey, chirpPacked) > 0;
+            const ChirpBindingKeyMapEntry* binding = chirpBindingEntry(key);
+            if (wroteChirp && binding != nullptr &&
+                !recordNamedTrackFile(prefs, binding->fileKey, chirpPacked)) {
+                PA_LOG_WARN(TAG, "[AUDIO] %s: which file it was bound to not saved (NVS refused)",
+                            key);
+            }
+            if (wroteChirp && !saveSoundListBaseline(prefs)) {
+                PA_LOG_DEBUG(TAG,
+                             "[AUDIO] sound-list baseline not saved (nothing observed, or NVS refused)");
+            }
         }
 
         if (wroteTrack && !wroteChirp) {
@@ -550,17 +756,24 @@ AudioTracksCommitOutcome audioTracksCommitApplied(ConfigSnapshot* snap,
 void handleAudioTracksPost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
-    ConfigSnapshot snap;
-    configCacheRead(&snap);
-
-    static AudioTracksApplyResult result;
-    audioTracksApply(params, audioCatalogSupported(), &snap, &result);
-    if (result.error.hasError) {
-        sendApplyError(req, result.error.message, result.error.notFound);
+    // In the web request scratch rather than a static of its own (#428).
+    WebRequestScratch<AudioTracksApplyResult> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
         return;
     }
-
-    AudioTracksCommitOutcome commit = audioTracksCommitApplied(&snap, result);
+    AudioTracksApplyResult& result = *scratch;
+    ConfigSnapshot snap;
+    AudioTracksCommitOutcome commit;
+    if (!audioTracksWriteWindow(params, audioCatalogSupported(), &snap, &result, &commit)) {
+        webSendJsonError(req, 503, "config write busy");
+        return;
+    }
+    if (result.error.hasError) {
+        sendApplyError(req, result.error.message, result.error.refusal,
+                       result.error.notFound);
+        return;
+    }
     if (!commit.ok) {
         webSendJsonError(req, 500, "NVS write failed");
         return;
@@ -599,6 +812,11 @@ AudioCategoryRangeCommitOutcome audioCategoryRangeCommitApplied(
             wroteBinding = prefs.putUInt(categoryNvsKey, packedBinding) > 0;
         } else if (wroteConfig && clearBinding) {
             wroteBinding = prefs.putUInt(categoryNvsKey, 0) > 0;
+        }
+        if (wroteConfig && wroteBinding && (hasBankedParams || clearBinding) &&
+            !saveSoundListBaseline(prefs)) {
+            PA_LOG_DEBUG(TAG,
+                         "[AUDIO] sound-list baseline not saved (nothing observed, or NVS refused)");
         }
         if (wroteConfig && !wroteBinding) {
             // CHIRP write failed: restore robotState and re-save old config.
@@ -658,17 +876,24 @@ AudioCategoryRangeCommitOutcome audioCategoryRangeCommitApplied(
 void handleAudioCategoryRangePost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
-    ConfigSnapshot snap;
-    configCacheRead(&snap);
-
-    static AudioCategoryRangeApplyResult result;
-    audioCategoryRangeApply(params, audioCatalogSupported(), &snap, &result);
-    if (result.error.hasError) {
-        sendApplyError(req, result.error.message, result.error.notFound);
+    // In the web request scratch rather than a static of its own (#428).
+    WebRequestScratch<AudioCategoryRangeApplyResult> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
         return;
     }
-
-    AudioCategoryRangeCommitOutcome commit = audioCategoryRangeCommitApplied(&snap, result);
+    AudioCategoryRangeApplyResult& result = *scratch;
+    ConfigSnapshot snap;
+    AudioCategoryRangeCommitOutcome commit;
+    if (!audioCategoryRangeWriteWindow(params, audioCatalogSupported(), &snap, &result, &commit)) {
+        webSendJsonError(req, 503, "config write busy");
+        return;
+    }
+    if (result.error.hasError) {
+        sendApplyError(req, result.error.message, result.error.refusal,
+                       result.error.notFound);
+        return;
+    }
     if (!commit.ok) {
         webSendJsonError(req, 500, "NVS write failed");
         return;
@@ -732,6 +957,58 @@ AudioSetVolumeCommitOutcome audioSetVolumeCommitApplied(uint8_t level, CommandSo
     return outcome;
 }
 
+// The four audio Write Windows. See include/api_audio.h for the contract.
+
+bool audioTracksWriteWindow(const ConfigParamSource& params, bool catalogSupported,
+                            ConfigSnapshot* working, AudioTracksApplyResult* result,
+                            AudioTracksCommitOutcome* commit) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return false;
+    }
+    configCacheRead(working);
+    audioTracksApply(params, catalogSupported, working, result);
+    if (!result->error.hasError) {
+        *commit = audioTracksCommitApplied(working, *result);
+    }
+    return true;
+}
+
+bool audioCategoryRangeWriteWindow(const ConfigParamSource& params, bool catalogSupported,
+                                   ConfigSnapshot* working, AudioCategoryRangeApplyResult* result,
+                                   AudioCategoryRangeCommitOutcome* commit) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return false;
+    }
+    configCacheRead(working);
+    audioCategoryRangeApply(params, catalogSupported, working, result);
+    if (!result->error.hasError) {
+        *commit = audioCategoryRangeCommitApplied(working, *result);
+    }
+    return true;
+}
+
+bool audioMoodMapWriteWindow(const AudioMoodMapApplyResult& result,
+                             AudioMoodMapCommitOutcome* commit) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return false;
+    }
+    *commit = audioMoodMapCommitApplied(result);
+    return true;
+}
+
+bool audioSetVolumeWriteWindow(uint8_t level, CommandSource source,
+                               AudioSetVolumeCommitOutcome* commit) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return false;
+    }
+    *commit = audioSetVolumeCommitApplied(level, source);
+    return true;
+}
+
 // -----------------------------------------------------------------------------
 // CHIRP catalog
 // -----------------------------------------------------------------------------
@@ -740,6 +1017,9 @@ AudioSetVolumeCommitOutcome audioSetVolumeCommitApplied(uint8_t level, CommandSo
 // RobotState. The result is available via GET /api/audio after ~1.5 s
 // (3 x 300 ms query timeout + queue latency).
 void handleAudioQueryPost(WebRequest& req) {
+    if (refusedWhileSoundOff(req)) {
+        return;
+    }
     if (!audioQueueQueryStatus(SRC_WEB_API)) {
         webSendJsonError(req, 503, "audio command queue full");
         return;
@@ -767,32 +1047,74 @@ void handleAudioCatalogGet(WebRequest& req) {
     }
 
     s_catalogBankFilter = bankFilter;
-    s_catalogReady = audioIsCatalogReady();
     s_catalogBankCount = 0;
     s_catalogEntryCount = 0;
-    s_catalogBanks = audioGetCatalogBanks(&s_catalogBankCount);
-    s_catalogEntries = audioGetCatalogEntries(&s_catalogEntryCount);
+    s_catalogBanks = nullptr;
+    s_catalogEntries = nullptr;
+    s_catalogReady = false;
 
-    if (!req.sendChunked("application/json", fillCatalogResponse)) {
+    // The refresh ledger and the last observation are the gate's own state, not
+    // the driver's storage, so they are readable whether or not this reader
+    // gets in -- which is what lets a refused read still say "still running"
+    // instead of looking like a catalog that vanished.
+    audioCatalogObservationRead(&s_catalogObservation);
+    audioCatalogRefreshLedgerRead(&s_catalogLedger);
+    audioBindingWarningRead(&s_catalogBindingWarning);
+
+    // Everything below borrows the driver's arrays and is walked once per chunk
+    // as the body goes out, so the lease has to span the whole send.
+    const bool leased = audioCatalogReaderAcquire();
+    s_catalogBusy = !leased;
+    if (leased) {
+        s_catalogReady = audioIsCatalogReady();
+        s_catalogBanks = audioGetCatalogBanks(&s_catalogBankCount);
+        s_catalogEntries = audioGetCatalogEntries(&s_catalogEntryCount);
+    }
+
+    const bool sent = req.sendChunked("application/json", fillCatalogResponse);
+    if (leased) {
+        audioCatalogReaderRelease();
+    }
+    if (!sent) {
         webSendJsonError(req, 500, "response stream alloc failed");
         return;
     }
-    PA_LOG_DEBUG(TAG, "[AUDIO] GET /api/audio/catalog ready=%s entries=%u bank=%u",
-                 s_catalogReady ? "true" : "false", (unsigned)s_catalogEntryCount,
-                 (unsigned)bankFilter);
+    PA_LOG_DEBUG(TAG, "[AUDIO] GET /api/audio/catalog ready=%s busy=%s entries=%u bank=%u",
+                 s_catalogReady ? "true" : "false", s_catalogBusy ? "true" : "false",
+                 (unsigned)s_catalogEntryCount, (unsigned)bankFilter);
 }
 
+// Accepting a refresh onto the audio command queue is not the same event as
+// that refresh finishing, and this answer says only the first. The request
+// number it returns is what GET /api/audio/catalog's "refresh" block is
+// reporting on, so a caller can tell ITS refresh completing from an older
+// catalog that merely happens to still be ready (#397 work item 10).
 void handleAudioCatalogRefreshPost(WebRequest& req) {
     if (!audioCatalogSupported()) {
         webSendJsonError(req, 404, "catalog unsupported by active backend");
         return;
     }
+    if (refusedWhileSoundOff(req)) {
+        return;
+    }
+    const uint32_t requestId = audioCatalogRefreshRequested();
     if (!audioQueueRefreshCatalog(SRC_WEB_API)) {
+        // Nothing will ever run this one, so settle it here rather than leaving
+        // a caller polling for a completion that cannot arrive.
+        audioCatalogRefreshSettled(requestId, AudioCatalogRefreshState::Blocked);
         webSendJsonError(req, 503, "audio command queue full");
         return;
     }
-    PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/catalog/refresh queued");
-    req.send(200, "application/json", "{\"ok\":true}");
+    char body[48];
+    const int needed = snprintf(body, sizeof(body), "{\"ok\":true,\"request\":%lu}",
+                                (unsigned long)requestId);
+    if (needed < 0 || (size_t)needed >= sizeof(body)) {
+        webSendJsonError(req, 500, "catalog refresh response overflow");
+        return;
+    }
+    PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/catalog/refresh queued request=%lu",
+                (unsigned long)requestId);
+    req.send(200, "application/json", body);
 }
 
 // Play a CHIRP entry by bank/page/index for quick validation from Sound UI.
@@ -835,6 +1157,9 @@ void handleAudioPlayBankedPost(WebRequest& req) {
         return;
     }
 
+    if (refusedWhileSoundOff(req)) {
+        return;
+    }
     if (!audioQueuePlayTrackBanked((uint16_t)indexValue, (uint8_t)bankValue, page, SRC_WEB_API)) {
         webSendJsonError(req, 503, "audio command queue full");
         return;
@@ -858,11 +1183,25 @@ void handleAudioGet(WebRequest& req) {
     AudioStatusSnapshot snap = {};
     captureAudioStatusSnapshot(&snap);
 
-    uint8_t caps = audioGetCapabilities();
-    char body[256];
-    formatAudioStatusJson(body, sizeof(body), audioGetDriverName(), caps, snap.linkOk, snap.active,
-                          snap.playState, snap.device, snap.totalTracks, snap.currentTrack,
-                          audioRxStatusToken(snap.rxStatus), audioRxStatusDetail(snap.rxStatus));
+    // With sound off this names the module the builder picked, never the
+    // driver bound at boot (#370).
+    const SoundStatusIdentity sound = audioSoundStatusIdentity();
+    char body[AUDIO_STATUS_JSON_BUF_SIZE];
+    const int needed = formatAudioStatusJson(
+        body, sizeof(body), sound.driver, sound.on, sound.capabilities, snap.linkOk, snap.active,
+        snap.playState,
+        snap.device, snap.totalTracks, snap.currentTrack, snap.missingTrack,
+        audioRxStatusToken(snap.rxStatus), audioRxStatusDetail(snap.rxStatus));
+    // A truncated document is not an answer. The buffer above is sized for the
+    // longest response every field can produce today, so this is the guard for
+    // a field that grows later rather than an expected path: say so instead of
+    // sending JSON that stops mid-string under HTTP 200.
+    if (needed < 0 || (size_t)needed >= sizeof(body)) {
+        PA_LOG_WARN(TAG, "[AUDIO] GET /api/audio needs %d bytes, buffer is %u",
+                    needed, (unsigned)sizeof(body));
+        webSendJsonError(req, 500, "audio status response overflow");
+        return;
+    }
     req.send(200, "application/json", body);
 }
 
@@ -881,6 +1220,7 @@ void captureAudioStatusSnapshot(AudioStatusSnapshot* out) {
     out->device = robotState.audio_module_device;
     out->totalTracks = robotState.audio_module_total_tracks;
     out->currentTrack = robotState.audio_module_current_track;
+    out->missingTrack = robotState.audio_module_missing_track;
     out->active = robotState.audioActive;
     out->rxStatus = robotState.audio_module_rx_status;
     taskEXIT_CRITICAL(&robotStateMux);
@@ -911,6 +1251,9 @@ void handleAudioPost(WebRequest& req) {
             webSendJsonError(req, 400, "track must be 1-65535");
             return;
         }
+        if (refusedWhileSoundOff(req)) {
+            return;
+        }
         if (!audioQueuePlayTrack((uint16_t)track, SRC_WEB_API)) {
             webSendJsonError(req, 503, "audio command queue full");
             return;
@@ -922,6 +1265,9 @@ void handleAudioPost(WebRequest& req) {
 
     // ---- stop ----
     if (strcmp(action, "stop") == 0) {
+        if (refusedWhileSoundOff(req)) {
+            return;
+        }
         if (!audioQueueTrackStop(SRC_WEB_API)) {
             webSendJsonError(req, 503, "audio command queue full");
             return;
@@ -935,19 +1281,35 @@ void handleAudioPost(WebRequest& req) {
     if (strcmp(action, "volume") == 0) {
         char levelRaw[16] = {};
         if (!req.param("level", levelRaw, sizeof(levelRaw))) {
-            webSendJsonError(req, 400, "volume requires level parameter");
+            ApplyRefusal refusal;
+            applyRefusalSet(&refusal, ApplyRefusalReason::MissingArgument, "volume");
+            webSendApplyRefusal(req, 400, "volume requires level parameter", refusal);
             return;
         }
-        uint32_t level = 0;
-        if (!parseUint32Value(levelRaw, &level) || level > 30) {
-            webSendJsonError(req, 400, "level must be 0-30");
+        // The volume Setting's own check (include/config_settings.h), refused
+        // with its field, reason and range so the Sound page can word it.
+        const ConfigSetting* volume = audioSettingByName("volume", SettingDoor::AudioVolume);
+        int32_t level = 0;
+        ApplyRefusal refusal;
+        char sentence[CONFIG_SETTING_SENTENCE_MAX] = {};
+        if (volume == nullptr ||
+            !configSettingCheck(*volume, levelRaw, "volume", &level, &refusal, sentence,
+                                sizeof(sentence))) {
+            webSendApplyRefusal(req, 400, sentence, refusal);
             return;
         }
 
         // Commit Step (ADR 0036 criterion 1, include/api_audio.h): the same
         // apply-then-persist sequence the Console's sound.action.set-volume
         // executor now shares.
-        AudioSetVolumeCommitOutcome commit = audioSetVolumeCommitApplied((uint8_t)level, SRC_WEB_API);
+        if (refusedWhileSoundOff(req)) {
+            return;
+        }
+        AudioSetVolumeCommitOutcome commit;
+        if (!audioSetVolumeWriteWindow((uint8_t)level, SRC_WEB_API, &commit)) {
+            webSendJsonError(req, 503, "config write busy");
+            return;
+        }
         if (!commit.queued) {
             webSendJsonError(req, 503, "audio command queue full");
             return;
@@ -977,6 +1339,9 @@ void handleAudioPost(WebRequest& req) {
         // Limit cmd length to what audioCmdQueue dollar field can hold
         if (strlen(cmd) > 9) {
             webSendJsonError(req, 400, "cmd too long (max 9 chars)");
+            return;
+        }
+        if (refusedWhileSoundOff(req)) {
             return;
         }
         if (!audioQueueDollar(cmd, SRC_WEB_API)) {

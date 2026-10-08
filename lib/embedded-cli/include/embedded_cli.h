@@ -255,6 +255,178 @@ struct EmbeddedCliConfig {
     bool enableAutoComplete;
 };
 
+/*
+ * [PATCH: Compile-time required size] The layout embeddedCliNew() carves out of
+ * cliBuffer, moved here from embedded_cli.c so that a caller can size a static
+ * buffer at compile time with EMBEDDED_CLI_REQUIRED_SIZE() below instead of
+ * finding out at run time that it is too small. The library's own code is
+ * unchanged; only where these definitions live is.
+ */
+typedef struct EmbeddedCliImpl EmbeddedCliImpl;
+typedef struct FifoBuf FifoBuf;
+typedef struct CliHistory CliHistory;
+
+struct FifoBuf {
+    char *buf;
+    /**
+     * Position of first element in buffer. From this position elements are taken
+     */
+    uint16_t front;
+    /**
+     * Position after last element. At this position new elements are inserted
+     */
+    uint16_t back;
+    /**
+     * Size of buffer
+     */
+    uint16_t size;
+};
+
+struct CliHistory {
+    /**
+     * Items in buffer are separated by null-chars
+     */
+    char *buf;
+
+    /**
+     * Total size of buffer
+     */
+    uint16_t bufferSize;
+
+    /**
+     * Index of currently selected element. This allows to navigate history
+     * After command is sent, current element is reset to 0 (no element)
+     */
+    uint16_t current;
+
+    /**
+     * Number of items in buffer
+     * Items are counted from top to bottom (and are 1 based).
+     * So the most recent item is 1 and the oldest is itemCount.
+     */
+    uint16_t itemsCount;
+};
+
+struct EmbeddedCliImpl {
+    /**
+     * Invitation string. Is printed at the beginning of each line with user
+     * input
+     */
+    const char *invitation;
+
+    CliHistory history;
+
+    /**
+     * Buffer for storing received chars.
+     * Chars are stored in FIFO mode.
+     */
+    FifoBuf rxBuffer;
+
+    /**
+     * Buffer for current command
+     */
+    char *cmdBuffer;
+
+    /**
+     * Size of current command
+     */
+    uint16_t cmdSize;
+
+    /**
+     * Total size of command buffer
+     */
+    uint16_t cmdMaxSize;
+
+    CliCommandBinding *bindings;
+
+    /**
+     * Flags for each binding. Sizes are the same as for bindings array
+     */
+    uint8_t *bindingsFlags;
+
+    uint16_t bindingsCount;
+
+    uint16_t maxBindingsCount;
+
+    /**
+     * Total length of input line. This doesn't include invitation but
+     * includes current command and its live autocompletion
+     */
+    uint16_t inputLineLength;
+
+    /**
+     * Stores last character that was processed.
+     */
+    char lastChar;
+
+    /**
+     * Flags are defined as CLI_FLAG_*
+     */
+    uint8_t flags;
+
+    /**
+     * Cursor position for current command from right to left
+     * 0 = end of command
+     */
+    uint16_t cursorPos;
+
+    /**
+     * [PATCH: Single-write redraw] Capture target for embeddedCliPrintToBuffer.
+     * While non-NULL, every character this library would hand to
+     * cli->writeChar is appended here instead (writeCharOut below), so a
+     * caller can render a whole redraw and hand it to its transport in ONE
+     * write. NULL - the state outside that one call - restores the upstream
+     * behavior exactly: straight through to cli->writeChar, character by
+     * character.
+     */
+    char *outBuffer;
+
+    /**
+     * Capacity of outBuffer. Meaningful only while outBuffer is non-NULL.
+     */
+    size_t outCapacity;
+
+    /**
+     * Bytes appended to outBuffer so far.
+     */
+    size_t outLength;
+
+    /**
+     * Set when a character did not fit outBuffer. The partial content is then
+     * never handed back: a half-rendered redraw on the wire is worse than no
+     * redraw at all, so embeddedCliPrintToBuffer reports the whole render as
+     * not fitting and the caller falls back to whatever it can send whole.
+     */
+    bool outOverflow;
+};
+
+/*
+ * [PATCH: Compile-time required size] Commands the cli adds itself (upstream:
+ * one, the internal help). Zero here: see "Project-help ownership".
+ */
+#define EMBEDDED_CLI_INTERNAL_BINDING_COUNT 0
+
+/*
+ * [PATCH: Compile-time required size] What embeddedCliRequiredSize() returns
+ * for a configuration with these four sizes, as a constant expression, so a
+ * static buffer can be declared exactly that large:
+ *
+ *     static CLI_UINT buf[BYTES_TO_CLI_UINTS(EMBEDDED_CLI_REQUIRED_SIZE(64, 64, 128, 8))];
+ *
+ * embeddedCliRequiredSize() is defined as this macro, so the two cannot drift.
+ */
+#define EMBEDDED_CLI_REQUIRED_SIZE(rxBufferSize, cmdBufferSize, historyBufferSize,            \
+                                   maxBindingCount)                                           \
+    (CLI_UINT_SIZE *                                                                          \
+     (BYTES_TO_CLI_UINTS(sizeof(EmbeddedCli)) + BYTES_TO_CLI_UINTS(sizeof(EmbeddedCliImpl)) + \
+      BYTES_TO_CLI_UINTS((rxBufferSize) * sizeof(char)) +                                     \
+      BYTES_TO_CLI_UINTS((cmdBufferSize) * sizeof(char)) +                                    \
+      BYTES_TO_CLI_UINTS((historyBufferSize) * sizeof(char)) +                                \
+      BYTES_TO_CLI_UINTS(((maxBindingCount) + EMBEDDED_CLI_INTERNAL_BINDING_COUNT) *          \
+                         sizeof(CliCommandBinding)) +                                         \
+      BYTES_TO_CLI_UINTS(((maxBindingCount) + EMBEDDED_CLI_INTERNAL_BINDING_COUNT) *          \
+                         sizeof(uint8_t))))
+
 /**
  * Returns pointer to default configuration for cli creation. It is safe to
  * modify it and then send to embeddedCliNew().

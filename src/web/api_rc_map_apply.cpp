@@ -9,41 +9,17 @@
 #include <ArduinoJson.h>
 #include <string.h>
 
+#include "droid_parts.h"      // droidPartIdIsKnown() - a puppet string's Part
+#include "rc_puppet.h"        // rcPuppetChannelCanMove()
 #include "seq_store_index.h"  // Learned Sequence names accepted for RC binding
 
 namespace {
 
+// A map entry's source: any source the stored form knows
+// (parseRcBindingSource(), include/rc_binding_types.h) except "none", which is
+// an empty slot and never an entry.
 bool rcMapSourceFromString(const char* raw, RcBindingSource* out) {
-    if (raw == nullptr || out == nullptr) {
-        return false;
-    }
-    if (strcmp(raw, "pwm") == 0) {
-        *out = RC_BINDING_PWM;
-        return true;
-    }
-    if (strcmp(raw, "sbus1") == 0) {
-        *out = RC_BINDING_SBUS1;
-        return true;
-    }
-    if (strcmp(raw, "sbus2") == 0) {
-        *out = RC_BINDING_SBUS2;
-        return true;
-    }
-    return false;
-}
-
-const char* rcMapSourceToString(RcBindingSource source) {
-    switch (source) {
-        case RC_BINDING_PWM:
-            return "pwm";
-        case RC_BINDING_SBUS1:
-            return "sbus1";
-        case RC_BINDING_SBUS2:
-            return "sbus2";
-        case RC_BINDING_NONE:
-        default:
-            return "none";
-    }
+    return parseRcBindingSource(raw, out) && *out != RC_BINDING_NONE;
 }
 
 const char* const kDomeSeqPayloads[] = {
@@ -72,7 +48,7 @@ void setError(RcMapApplyResult* result, const char* message, const RcMapEntry* e
     if (entry != nullptr) {
         result->errorEntry.present = true;
         snprintf(result->errorEntry.source, sizeof(result->errorEntry.source), "%s",
-                 rcMapSourceToString(entry->source));
+                 rcBindingSourceToString(entry->source));
         result->errorEntry.channel = entry->channel;
         snprintf(result->errorEntry.action, sizeof(result->errorEntry.action), "%s",
                  robotActionIdToString(entry->action));
@@ -127,6 +103,8 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
         const char* payloadRaw = item["payload"] | "";
 
         RcMapEntry entry = {};
+        entry.threshold = kRcMapEntryKeep;
+        entry.quietS = kRcMapEntryKeep;
         if (!rcMapSourceFromString(sourceRaw, &entry.source)) {
             setError(result, "invalid source", nullptr);
             return;
@@ -146,6 +124,40 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
         }
         snprintf(entry.payload, sizeof(entry.payload), "%s", payloadRaw);
 
+        // A Reaction (#450). What it may do is refused here by name, so the
+        // builder is told which rule it broke; rcTriggerBindingIsValid() holds
+        // the same rules for the stored form.
+        if (rcBindingSourceIsDroidCondition(entry.source)) {
+            if (robotActionIsAnalog(entry.action)) {
+                setError(result, "a droid condition cannot drive an axis", &entry);
+                return;
+            }
+            if (!robotActionValidForReaction(entry.action)) {
+                setError(result, "action not allowed on a droid condition", &entry);
+                return;
+            }
+            JsonVariantConst thresholdVar = item["threshold"];
+            if (!thresholdVar.isNull()) {
+                const uint16_t thresholdMax = rcReactionThresholdMax(entry.source);
+                const uint32_t threshold = thresholdVar | 0xFFFFFFFFu;
+                if (thresholdMax == 0 ? threshold != 0
+                                      : (threshold < 1 || threshold > thresholdMax)) {
+                    setError(result, "threshold out of range", &entry);
+                    return;
+                }
+                entry.threshold = (uint16_t)threshold;
+            }
+            JsonVariantConst quietVar = item["quietS"];
+            if (!quietVar.isNull()) {
+                const uint32_t quietS = quietVar | 0xFFFFFFFFu;
+                if (quietS < RC_REACTION_QUIET_MIN_S || quietS > RC_REACTION_QUIET_MAX_S) {
+                    setError(result, "quiet period out of range", &entry);
+                    return;
+                }
+                entry.quietS = (uint16_t)quietS;
+            }
+        }
+
         if (entry.action == DOME_ACTION_SEQ && !isValidDomeSeqPayload(entry.payload)) {
             setError(result, "invalid dome sequence payload (expected DM:NAME)", &entry);
             return;
@@ -155,6 +167,28 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
             return;
         }
 
+        // A puppet string names a Part by catalog id (#442, ADR 0061). One
+        // Part has one string: two sticks on one Part would fight over it.
+        if (entry.action == SERVO_ACTION_PUPPET_PART) {
+            if (!droidPartIdIsKnown(entry.payload)) {
+                setError(result, "a puppet string needs a Part", &entry);
+                return;
+            }
+            if (!rcPuppetChannelCanMove(entry.source, entry.channel)) {
+                setError(result, "a puppet string needs an SBUS stick channel (CH1-CH16)", &entry);
+                return;
+            }
+            for (size_t i = 0; i < count; ++i) {
+                if (entries[i].action == SERVO_ACTION_PUPPET_PART &&
+                    strcmp(entries[i].payload, entry.payload) == 0) {
+                    setError(result, "conflict: a Part on two puppet strings", &entry);
+                    return;
+                }
+            }
+        }
+
+        // One control, one job: a channel is a drive axis, a cue or a puppet
+        // string, never two of them (#442).
         for (size_t i = 0; i < count; ++i) {
             if (entries[i].source == entry.source && entries[i].channel == entry.channel) {
                 setError(result, "conflict: source+channel mapped more than once", &entry);

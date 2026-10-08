@@ -5,7 +5,7 @@ habit, so the two ways it can fail silently are worth pinning: joining the
 queue behind a lock it already holds (the nested-flock deadlock, which hangs
 forever and has no error to read), and suppressing the lock when it should
 have taken it (two builds, one plausible wrong answer). Every test drives the
-real script against a lock file in a temp dir — never /tmp/protoartoo-pio.lock,
+real script against a lock file in a temp dir — never /tmp/protor2-pio.lock,
 which other agents are building under right now.
 """
 
@@ -31,14 +31,14 @@ def child_env(lock: Path, **overrides: str) -> dict[str, str]:
     """A clean environment for a child: nothing the ambient session set.
 
     The gate itself may be run inside the escape hatch, and inheriting
-    PROTOARTOO_PIO_LOCK_HELD would quietly turn these tests into no-ops.
+    PROTOR2_PIO_LOCK_HELD would quietly turn these tests into no-ops.
     PLATFORMIO_CORE_DIR points at the lock's own temp dir, which has no penv,
     so the penv check passes vacuously instead of reading this machine's.
     """
     env = {
         key: value
         for key, value in os.environ.items()
-        if not key.startswith(("PROTOARTOO_PIO_LOCK", "PROTOARTOO_LOCK_OWNER"))
+        if not key.startswith(("PROTOR2_PIO_LOCK", "PROTOR2_LOCK_OWNER"))
     }
     env[pio_lock.LOCK_PATH_ENV] = str(lock)
     env["PLATFORMIO_CORE_DIR"] = str(lock.parent)
@@ -61,7 +61,7 @@ def fake_penv(core: Path, version: str, scons: str) -> None:
 
 class LockPathHelpers(unittest.TestCase):
     def test_target_comes_from_the_pio_environment_flag(self):
-        self.assertEqual(pio_lock.build_target(["pio", "run", "-e", "protoArtoo"]), "protoArtoo")
+        self.assertEqual(pio_lock.build_target(["pio", "run", "-e", "protoR2"]), "protoR2")
         self.assertEqual(pio_lock.build_target(["pio", "test", "--environment=native"]), "native")
 
     def test_target_without_an_env_flag_is_not_invented(self):
@@ -94,11 +94,11 @@ class BuildLockBehavior(unittest.TestCase):
         )
 
     def test_plain_run_takes_the_lock_and_records_the_holder(self):
-        proc = self.run_locked(["true", "-e", "protoArtoo"])
+        proc = self.run_locked(["true", "-e", "protoR2"])
         self.assertEqual(proc.returncode, 0, proc.stderr)
         record = self.lock.read_text()
-        self.assertIn("target: protoArtoo", record)
-        self.assertIn("command: true -e protoArtoo", record)
+        self.assertIn("target: protoR2", record)
+        self.assertIn("command: true -e protoR2", record)
         self.assertRegex(record, r"pid: \d+")
         self.assertRegex(record, r"worktree: /\S")
         self.assertRegex(record, r"branch: \S")
@@ -108,9 +108,9 @@ class BuildLockBehavior(unittest.TestCase):
         # the useful part - it is what tells the next agent which target last
         # touched the shared framework pools - so release must not clear it.
         with mock.patch.dict(os.environ, child_env(self.lock), clear=True):
-            with pio_lock.build_lock(["pio", "run", "-e", "protoArtoo"]):
-                self.assertIn("target: protoArtoo", self.lock.read_text())
-        self.assertIn("target: protoArtoo", self.lock.read_text())
+            with pio_lock.build_lock(["pio", "run", "-e", "protoR2"]):
+                self.assertIn("target: protoR2", self.lock.read_text())
+        self.assertIn("target: protoR2", self.lock.read_text())
 
     @unittest.skipUnless(HAS_FLOCK, "flock(1) required to build the nested case")
     def test_nesting_under_an_outer_flock_fails_loudly_instead_of_hanging(self):
@@ -122,7 +122,7 @@ class BuildLockBehavior(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=30,
-            env=child_env(self.lock, PROTOARTOO_PIO_LOCK_WAIT="600"),
+            env=child_env(self.lock, PROTOR2_PIO_LOCK_WAIT="600"),
         )
         self.assertEqual(proc.returncode, pio_lock.EXIT_NESTED, proc.stderr)
         self.assertIn("refusing to nest", proc.stderr)
@@ -135,7 +135,7 @@ class BuildLockBehavior(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=30,
-            env=child_env(self.lock, PROTOARTOO_PIO_LOCK_HELD="1"),
+            env=child_env(self.lock, PROTOR2_PIO_LOCK_HELD="1"),
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         # Suppressed, but still the holder as far as the next agent is
@@ -146,13 +146,13 @@ class BuildLockBehavior(unittest.TestCase):
         holder = subprocess.Popen(
             [sys.executable, PIO_LOCK, sys.executable, "-c", "import time; time.sleep(3)"],
             stderr=subprocess.DEVNULL,
-            env=child_env(self.lock, PROTOARTOO_LOCK_OWNER="the other worker"),
+            env=child_env(self.lock, PROTOR2_LOCK_OWNER="the other worker"),
         )
         self.addCleanup(holder.wait)
         self.addCleanup(holder.terminate)
         self.wait_for_record()
         proc = self.run_locked(
-            ["true"], env=child_env(self.lock, PROTOARTOO_PIO_LOCK_WAIT="1")
+            ["true"], env=child_env(self.lock, PROTOR2_PIO_LOCK_WAIT="1")
         )
         self.assertEqual(proc.returncode, pio_lock.EXIT_TIMEOUT, proc.stderr)
         self.assertIn("gave up waiting", proc.stderr)
@@ -201,7 +201,8 @@ class PenvPreflight(unittest.TestCase):
         proc = self.run_locked()
         self.assertEqual(proc.returncode, pio_lock.EXIT_PENV, proc.stderr)
         self.assertIn("holds PlatformIO Core 6.2.0", proc.stderr)
-        self.assertIn(f"{self.tmp}/penv/bin/python -m pip install platformio==6.1.19", proc.stderr)
+        self.assertIn(f"{self.tmp}/penv/bin/uv pip install --python {self.tmp}/penv/bin/python "
+                      "--reinstall-package pioarduino pioarduino==6.1.19", proc.stderr)
         # Refused before the lock: the next agent's record is not ours.
         self.assertFalse(self.lock.exists() and self.lock.read_text().strip())
 

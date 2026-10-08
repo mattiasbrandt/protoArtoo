@@ -27,7 +27,9 @@
 #include "protocol_check.h"
 #include "seq_store_index.h"
 #include "seq_store_util.h"  // SEQ_FILE_MAX_BYTES
+#include "robot_state.h"
 #include "sequence_dispatcher.h"
+#include "sequence_pose.h"
 #include "web_request_test_backend.h"
 
 // Recorded side effects from src/native_test_stubs.cpp.
@@ -219,6 +221,105 @@ void test_test_rejects_a_malformed_json_body() {
 }
 
 // -----------------------------------------------------------------------------
+// POST /api/seq/pose -- the pose press (#440)
+// -----------------------------------------------------------------------------
+
+namespace {
+void setHalts(bool estop, bool sleep) {
+    robotState.estop = estop;
+    robotState.sleepMode = sleep;
+    robotState.poseRequest = SRC_NONE;
+}
+}  // namespace
+
+void test_pose_accepts_a_factory_sequence_and_an_instant() {
+    setHalts(false, false);
+    WebRequestTestBackend b = postBackend("{\"name\":\"DM:ROCKMARCH\",\"t\":2500}");
+    WebRequest req(&b);
+    handleSeqPosePost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, b.sentCode);
+    // The press hands the Coordinator a name and an instant, and nothing else.
+    TEST_ASSERT_EQUAL_INT(SRC_WEB_API, robotState.poseRequest);
+    TEST_ASSERT_EQUAL_UINT32(2500, robotState.poseRequestAtMs);
+    TEST_ASSERT_EQUAL_STRING("DM:ROCKMARCH", robotState.poseRequestName);
+}
+
+// Refused under either halt, and the answer carries the one rule's own words
+// so the surface can say why.
+void test_pose_is_refused_under_the_estop_and_in_sleep_mode_and_says_why() {
+    setHalts(true, false);
+    WebRequestTestBackend estop = postBackend("{\"name\":\"DM:ROCKMARCH\",\"t\":0}");
+    WebRequest estopReq(&estop);
+    handleSeqPosePost(estopReq);
+    TEST_ASSERT_EQUAL_INT(409, estop.sentCode);
+    TEST_ASSERT_TRUE(bodyContains(estop, sequencePoseRefusal(true, false)));
+    TEST_ASSERT_EQUAL_INT(SRC_NONE, robotState.poseRequest);  // nothing handed over
+
+    setHalts(false, true);
+    WebRequestTestBackend asleep = postBackend("{\"name\":\"DM:ROCKMARCH\",\"t\":0}");
+    WebRequest asleepReq(&asleep);
+    handleSeqPosePost(asleepReq);
+    TEST_ASSERT_EQUAL_INT(409, asleep.sentCode);
+    TEST_ASSERT_TRUE(bodyContains(asleep, sequencePoseRefusal(false, true)));
+    TEST_ASSERT_EQUAL_INT(SRC_NONE, robotState.poseRequest);
+    setHalts(false, false);
+}
+
+// Only a body-owned sequence has steps to take a pose from, and an instant is
+// whole milliseconds from the start: a negative one is refused, not wrapped.
+void test_pose_refuses_a_name_the_dome_runs_and_a_negative_instant() {
+    setHalts(false, false);
+    WebRequestTestBackend unknown = postBackend("{\"name\":\"DM:NOTHING\",\"t\":0}");
+    WebRequest unknownReq(&unknown);
+    handleSeqPosePost(unknownReq);
+    TEST_ASSERT_EQUAL_INT(404, unknown.sentCode);
+    TEST_ASSERT_EQUAL_INT(SRC_NONE, robotState.poseRequest);
+
+    WebRequestTestBackend negative = postBackend("{\"name\":\"DM:ROCKMARCH\",\"t\":-1}");
+    WebRequest negativeReq(&negative);
+    handleSeqPosePost(negativeReq);
+    TEST_ASSERT_EQUAL_INT(400, negative.sentCode);
+}
+
+namespace {
+void pressPose() {
+    WebRequestTestBackend b = postBackend("{\"name\":\"DM:ROCKMARCH\",\"t\":2500}");
+    WebRequest req(&b);
+    handleSeqPosePost(req);
+    TEST_ASSERT_EQUAL_INT(200, b.sentCode);
+}
+}  // namespace
+
+// The later word wins, whatever the Coordinator's tick: a run or a Stop asked
+// for after a pose press cancels the pose it has not yet taken, so the older
+// pose can never start after them. A pose pressed after a run is the later
+// word and stays.
+void test_a_run_or_a_stop_after_a_pose_press_cancels_the_pending_pose() {
+    setHalts(false, false);
+    robotState.seqStopRequested = false;
+
+    pressPose();
+    const WebRequestTestParam run[] = {{"name", "DM:ROCKMARCH"}};
+    WebRequestTestBackend runB = paramBackend(run, 1);
+    WebRequest runReq(&runB);
+    handleSeqTestPost(runReq);
+    TEST_ASSERT_EQUAL_INT(200, runB.sentCode);
+    TEST_ASSERT_EQUAL_INT(SRC_NONE, robotState.poseRequest);
+
+    pressPose();  // after the run: the later word
+    TEST_ASSERT_EQUAL_INT(SRC_WEB_API, robotState.poseRequest);
+
+    WebRequestTestBackend stopB;
+    WebRequest stopReq(&stopB);
+    handleSeqStopPost(stopReq);
+    TEST_ASSERT_EQUAL_INT(200, stopB.sentCode);
+    TEST_ASSERT_TRUE(robotState.seqStopRequested);
+    TEST_ASSERT_EQUAL_INT(SRC_NONE, robotState.poseRequest);
+    robotState.seqStopRequested = false;
+}
+
+// -----------------------------------------------------------------------------
 // GET /api/seq -- chunked read out of the store
 // -----------------------------------------------------------------------------
 
@@ -306,6 +407,73 @@ void test_delete_reports_a_store_failure_as_500() {
 }
 
 // -----------------------------------------------------------------------------
+// A droid over its cap (ADR 0065, amended 2026-09-25)
+// -----------------------------------------------------------------------------
+
+// A firmware-only update can boot an artoo-esp32 holding more Learned
+// Sequences than its cap of five. The native env builds that board. Everything
+// it holds must still index, list, load and play; only a new name is refused,
+// and overwriting one it holds still saves. seqStoreSave() itself needs real
+// LittleFS, so the refusal is asserted through the call it makes --
+// seqStoreCapacityCheck(isNew, seqStoreIndexCount(), ...), src/seq_store.cpp --
+// fed from the live index this test seeded.
+void test_an_over_cap_droid_keeps_everything_and_refuses_only_a_new_save() {
+    static const char* const kHeld[] = {
+        "DM:ONE", "DM:TWO", "DM:THREE", "DM:FOUR", "DM:FIVE", "DM:SIX", "DM:SEVEN",
+    };
+    const uint8_t held = (uint8_t)(sizeof(kHeld) / sizeof(kHeld[0]));
+    TEST_ASSERT_TRUE_MESSAGE(held > SEQ_STORE_CAP, "the premise: more than the cap");
+
+    // Boot: the scan indexes every file it finds, past the cap.
+    for (uint8_t i = 0; i < held; ++i) {
+        SeqIndexEntry e = {};
+        std::snprintf(e.name, sizeof(e.name), "%s", kHeld[i]);
+        std::snprintf(e.file, sizeof(e.file), "seq%u.json", (unsigned)i);
+        e.valid = true;
+        TEST_ASSERT_TRUE_MESSAGE(seqStoreIndexAdd(e), kHeld[i]);
+    }
+    TEST_ASSERT_EQUAL_UINT8(held, seqStoreIndexCount());
+
+    // List: every one is a row.
+    WebRequestTestBackend list;
+    WebRequest listReq(&list);
+    handleSeqListGet(listReq);
+    TEST_ASSERT_EQUAL_INT(200, list.sentCode);
+    for (uint8_t i = 0; i < held; ++i) {
+        char quoted[32];
+        std::snprintf(quoted, sizeof(quoted), "\"%s\"", kHeld[i]);
+        TEST_ASSERT_TRUE_MESSAGE(bodyContains(list, quoted), kHeld[i]);
+    }
+
+    g_test_seq_file_body = "{\"v\":1}";
+    for (uint8_t i = 0; i < held; ++i) {
+        // Load (the editor and Export read it back): streamed, not refused.
+        const WebRequestTestParam params[] = {{"name", kHeld[i]}};
+        WebRequestTestBackend get = paramBackend(params, 1);
+        WebRequest getReq(&get);
+        handleSeqGet(getReq);
+        TEST_ASSERT_TRUE_MESSAGE(get.sentChunked, kHeld[i]);
+
+        // Play: routed as a Learned Sequence, and the test route accepts it.
+        TEST_ASSERT_EQUAL_MESSAGE(SEQ_RUNTIME, sequenceLookup(kHeld[i]).kind, kHeld[i]);
+        WebRequestTestBackend play = paramBackend(params, 1);
+        WebRequest playReq(&play);
+        handleSeqTestPost(playReq);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(200, play.sentCode, kHeld[i]);
+    }
+
+    // Save: a new name is refused while over the cap; an existing one saves.
+    const char* newName = "DM:EIGHT";
+    ProtocolCheckResult fresh = seqStoreCapacityCheck(
+        seqStoreIndexFind(newName) == nullptr, seqStoreIndexCount(), 2000, 200 * 1024);
+    TEST_ASSERT_FALSE(fresh.ok);
+    TEST_ASSERT_EQUAL_STRING("name", fresh.field);
+    ProtocolCheckResult overwrite = seqStoreCapacityCheck(
+        seqStoreIndexFind(kHeld[6]) == nullptr, seqStoreIndexCount(), 2000, 200 * 1024);
+    TEST_ASSERT_TRUE(overwrite.ok);
+}
+
+// -----------------------------------------------------------------------------
 // Read-only listings and the idempotent stop
 // -----------------------------------------------------------------------------
 
@@ -339,6 +507,13 @@ void test_builtins_lists_the_factory_catalog_without_steps() {
     // The list form is metadata only; step data is what made this payload
     // large enough to exhaust fragmented heap mid-send.
     TEST_ASSERT_FALSE(bodyContains(b, "\"steps\""));
+    // Every entry fits under the ceiling: the seven body routines (#354) took
+    // the listing past the 4 KB it used to share with the Learned list, and the
+    // route answered 500 with the whole catalog missing.
+    for (uint8_t i = 0; i < sequenceCatalogCount(); ++i) {
+        TEST_ASSERT_TRUE_MESSAGE(bodyContains(b, sequenceCatalogAt(i)->name),
+                                 sequenceCatalogAt(i)->name);
+    }
 }
 
 void test_builtins_of_an_unknown_name_is_404() {
@@ -385,6 +560,10 @@ int main(int, char**) {
     RUN_TEST(test_test_trims_whitespace_around_the_name);
     RUN_TEST(test_test_rejects_a_name_without_the_dm_prefix);
     RUN_TEST(test_test_rejects_a_malformed_json_body);
+    RUN_TEST(test_pose_accepts_a_factory_sequence_and_an_instant);
+    RUN_TEST(test_pose_is_refused_under_the_estop_and_in_sleep_mode_and_says_why);
+    RUN_TEST(test_pose_refuses_a_name_the_dome_runs_and_a_negative_instant);
+    RUN_TEST(test_a_run_or_a_stop_after_a_pose_press_cancels_the_pending_pose);
 
     RUN_TEST(test_get_streams_the_stored_file);
     RUN_TEST(test_get_streams_a_file_larger_than_one_chunk);
@@ -394,6 +573,8 @@ int main(int, char**) {
     RUN_TEST(test_delete_removes_an_indexed_sequence);
     RUN_TEST(test_delete_of_an_unknown_name_is_404);
     RUN_TEST(test_delete_reports_a_store_failure_as_500);
+
+    RUN_TEST(test_an_over_cap_droid_keeps_everything_and_refuses_only_a_new_save);
 
     RUN_TEST(test_list_serializes_the_index);
     RUN_TEST(test_list_of_an_empty_store_is_an_empty_array);

@@ -1,518 +1,263 @@
-# protoArtoo
-
-<p align="center">
-  <img src="data/r2d2body.svg" alt="protoArtoo logo" width="96" height="96">
-</p>
-
-**Open-source ESP32 body controller firmware for hoverboard-driven MK4 astromech droids.**
-
-> An open-source firmware alternative for the [Artoo Controller PCB](https://artoo.uk).
-> Written from scratch with full transparency and community extensibility in mind —
-> leveraging the same excellent hardware with openly auditable code.
-
----
-
-## What this is
-
-The Artoo Controller is an ESP32-based body controller for R2-D2 style
-astromech droids.
-
-protoArtoo is that alternative firmware. It is written from scratch, properly documented,
-tested, and designed to be understood and extended by the wider droid-building community.
-
-### What it controls
-
-- **Drive** — hoverboard motors via custom hoverboard firmware and serial UART communication
-- **RC input** — three selectable modes: Standard PWM (6-channel), Single SBUS, or Dual SBUS
-- **Audio** — pluggable backend: DY-SV5W (confirmed on hardware), CHIRP Audio Trigger, or
-  SparkFun MP3 Trigger; abstract `AudioDriver` interface for future modules
-- **Moods** — 15 presets coordinating body sounds and dome lighting; per-mood random chatter rate
-- **Servo arms** — 2× MG996R utility arm servos via LEDC PWM
-- **AUX outputs** — 3× configurable outputs (AUX1-3 on ARM3/ARM4/ARM5): MG996R, MG90S, RGB LED, or disabled
-- **Dome motor** — ESC signal via LEDC PWM (tested: ISDT ESC70)
-- **Dome link** — bidirectional Marcduino serial to AstroPixelsPlus over slip ring
-
-### What makes it different from a classic MarcDuino build
-
-| | Classic MarcDuino | protoArtoo |
-|---|---|---|
-| Body controller | ATmega328P | ESP32 (240 MHz, WiFi) |
-| Dome controller | ATmega328P | AstroPixelsPlus ESP32 |
-| Body→dome serial | TX only (one direction) | **Full-duplex bidirectional** |
-| Sound location | Dome | **Body** — sole audio source |
-| Drive | Sabertooth / JAW motors | Hoverboard (custom firmware) |
-| RC input | PS2 via SHADOW Android app | RC receivers (PWM/SBUS) + any web browser |
-| Typing a command | No command surface | **Console in the dashboard and over a cable** — same words either way |
-| Board count | 2–3 MarcDuino PCBs | 2 ESP32 boards only |
-| Firmware | Open source (ATmega328P) | **Open source (ESP32)** |
-
-See [`docs/topology.md`](./docs/topology.md) for the full architectural comparison.
-For project terms and abbreviations, see [`docs/terminology.md`](./docs/terminology.md).
-
----
-
-## Core Hardware
-
-**Required — one controller board:**
-- **Artoo Controller PCB v1.1** — body controller ([artoo.uk](https://artoo.uk)).
-  This is the board to build a droid on today, and the one this project develops
-  against day to day.
-  Requires the **dual-header ESP32 D1 Mini clone** (`wemos_d1_mini32`) — the elongated
-  ~68 mm board with dual-row headers (~40 pins). This is a Chinese third-party clone,
-  not an official Wemos/LOLIN board. No other ESP32 board fits the PCB socket.
-- **DFRobot FireBeetle 2 ESP32-P4** (DFR1172) with the DFR1237 IO shield — a second
-  supported controller board, for developers. The full feature set builds for it and
-  is confirmed on the board over USB, and each release ships an image for it. It is
-  not yet a recommendation to buy: read
-  [the spec sheet's "Before you buy one"](./docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md#before-you-buy-one)
-  first.
-
-**Required:**
-- **Hoverboard** with custom firmware — drive motors via UART serial
-  Compatible: [EFeru FOC](https://github.com/EFeru/hoverboard-firmware-hack-FOC) (STM32) or [RoboDurden Gen2.x](https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32) (GD32)
-
-**Tested / Supported:**
-- **RC receivers:** Dual SBUS, Single SBUS, or 6-channel PWM (tested: HOTRC 650)
-- **Audio:** DY-SV5W (confirmed on hardware), CHIRP Audio Trigger, SparkFun MP3 Trigger
-- **Servos:** MG996R/MG90S utility arms + 3× configurable AUX outputs
-- **Dome motor:** Standard 50 Hz RC ESC (tested: ISDT ESC70)
-- **Dome controller:** [AstroPixelsPlus fork](https://github.com/mattiasbrandt/AstroPixelsPlus) with bidirectional body link
-
-GPIO assignments and wiring details: [`docs/pin_map.md`](./docs/pin_map.md)
-
----
-
-## Repository structure
-
-```
-protoArtoo/
-├── platformio.ini             # Build configuration and environment definitions
-├── CHANGELOG.md               # All releases, conventional commits format
-├── CONTRIBUTING.md            # Commit format, branch strategy, PR checklist
-├── include/
-│   ├── config.h               # GPIO pin assignments — source of truth
-│   ├── robot_state.h          # RobotState struct, queues, mutexes
-│   ├── audio_driver.h         # AudioDriver abstract interface
-│   └── ...                    # Task interfaces, helpers, API snapshots
-├── src/
-│   ├── main.cpp
-│   ├── tasks/                 # FreeRTOS tasks (Core 0: WiFi/web; Core 1: RT control)
-│   │   ├── audio_task.cpp     # Sole writer to audio serial GPIO
-│   │   ├── dome_link.cpp      # Bidirectional Marcduino serial link
-│   │   ├── mood.cpp           # Mood preset dual-path dispatch
-│   │   └── ...
-│   ├── drivers/               # Hardware abstractions (audio backends, SBUS, Marcduino)
-│   └── web/                   # REST API route handlers
-├── data/                      # LittleFS web UI assets (HTML/JS/CSS)
-│   ├── sound.html / sound.js  # Audio controls, module status, track configuration
-│   ├── shell.js               # Shared page chrome (nav, topbar)
-│   ├── web_api.js             # Shared fetch helpers and error policy
-│   └── ...
-├── test/
-│   ├── test_native/           # Pure-logic tests — run on dev machine, no hardware
-│   ├── test_embedded/         # On-device tests — requires flashed ESP32
-│   ├── test_web/              # Node.js tests for web UI JavaScript
-│   ├── test_rc_learn/         # RC calibration fixture (HTML, not a pio suite)
-│   └── stubs/                 # Native-build stubs for ESP32 platform functions
-├── tools/
-│   ├── configure.py           # First-time setup wizard (writes user.mk)
-│   ├── deploy.py              # Interactive build & deploy wizard (bare make)
-│   ├── console_client.py      # Console Client: capture, interactive, scripted (default attach never touches DTR/RTS)
-│   └── ...                    # check_deps.py, extract_version.py, requirements.txt
-└── docs/
-    ├── pin_map.md             # GPIO assignments and UART ownership
-    ├── api.md                 # REST API reference
-    ├── console.md             # Controller Console: typing commands to the droid
-    ├── sound_playback.md      # Audio backend details and SD card layout
-    ├── wifi-provisioning.md   # Runtime WiFi setup, mode switching, recovery (ADR 0015)
-    ├── terminology.md         # Project glossary
-    └── topology.md            # Classic MarcDuino vs protoArtoo architecture
-```
-
----
-
-## Build prerequisites
-
-- [VS Code](https://code.visualstudio.com/) + [PlatformIO extension](https://platformio.org/install/ide?install=vscode)
-- Python 3.8+
-- `clang-format` (for code style enforcement — see `.clang-format`)
-
-Open the repo in VS Code and accept the recommended extensions when prompted
-(see `.vscode/extensions.json`).
-
----
-
-## Building and flashing
-
-**Already running protoArtoo?** You don't need any of this to update: download
-the firmware and filesystem images for your board and audio module from the
-[latest release](https://github.com/mattiasbrandt/protoArtoo/releases/latest)
-and upload both from the controller's **Firmware** page. Building from source
-is only needed for the very first USB flash of a blank board, or for
-development.
-
-```bash
-git clone https://github.com/mattiasbrandt/protoArtoo.git
-cd protoArtoo
-
-# First-time only: configure audio module, OTA IP, and USB port (writes user.mk)
-make setup
-
-# First-time only: WiFi credentials (writes src/secrets.h, gitignored)
-make setup-wifi
-
-# Interactive build & deploy wizard — picks action, runs tests, flashes
-make
-```
-
-`make setup` asks which audio backend you have, your OTA IP, and USB port, then writes
-`user.mk`. All power-user shortcuts read from that file. All PlatformIO output streams
-live; errors are highlighted if something goes wrong.
-
-**Host firewall:** every OTA target pins the device's connect-back to host
-port `OTA_HOST_PORT` (default `32320`, overridable in `user.mk`). If your
-build machine has a default-deny inbound firewall, allow that port from your
-robot's LAN or `make ota` fails with `[ERROR]: No response from device` —
-see [`docs/troubleshooting.md`](./docs/troubleshooting.md#ota-fails-with-error-no-response-from-device-host-firewall)
-for the rule and why it's needed.
-
-`make setup-wifi` is a **developer convenience only** (writes `src/secrets.h`,
-gitignored) — it lets a self-built firmware image skip straight to a known
-WiFi posture during local development. It is never required for a downloaded
-release binary: those boot into runtime WiFi Provisioning instead. See
-[`docs/wifi-provisioning.md`](./docs/wifi-provisioning.md) for the operator
-setup flow (first boot, choosing a WiFi mode, and recovery).
-
-**Power-user shortcuts** (skip the wizard):
-
-```bash
-make build            # Compile only (no flash)
-make ota              # Run tests + OTA flash — default audio module and IP
-make ota-chirp        # Run tests + OTA flash — CHIRP module
-make ota-mp3trigger   # Run tests + OTA flash — MP3 Trigger module
-make flash            # Run tests + USB flash
-make uploadfs         # Upload web UI only (OTA; P4 envs go over USB) — no test gate
-make test             # Run native unit tests
-make check            # Static analysis (cppcheck)
-make monitor          # Serial monitor (no reset on connect)
-make help             # List all named targets
-```
-
-**Building for the FireBeetle 2:** the same targets take `BUILD_ENV=firebeetle2`
-(`make build BUILD_ENV=firebeetle2`, `make flash BUILD_ENV=firebeetle2 UPLOAD_PORT=/dev/ttyACM0`),
-and `make` selects the ESP32-P4 toolchain for it. Its release images are
-`firebeetle2-firmware.bin` and `firebeetle2-filesystem.bin`, built for the DY-SV5W
-audio module. Wiring and both boards' pin maps are in
-[`docs/pin_map.md`](./docs/pin_map.md); the chip revision, allocation tables and
-known issues are in the
-[spec sheet](./docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md).
-
-
----
-
-## Running tests
-
-```bash
-# Fast — logic tests on dev machine, no hardware required
-pio test -e native
-
-# On-device — requires flashed ESP32
-pio test -e artoo_esp32
-
-# Static analysis
-pio check
-```
-
----
-
-## Companion project
-
-The companion dome firmware is **[mattiasbrandt/AstroPixelsPlus](https://github.com/mattiasbrandt/AstroPixelsPlus)** — a fork of [reeltwo/AstroPixelsPlus](https://github.com/reeltwo/AstroPixelsPlus) extended with the **protoR2link** body-dome transport protocol.
-
-Key changes from upstream:
-- Sound disabled (`PREFERENCE_MARCSOUND = kNone`) — audio handled entirely by protoArtoo body
-- Full-duplex **protoR2link** serial transport over slip ring (body ↔ dome, `#PAHB`/`#APHB` heartbeat at 1 Hz)
-- Dome can trigger body sounds and arm commands via `sendBodyCommand()` — coordinated cross-controller sequences
-- 4-state body link status badge in settings UI (Connected / Lost / Not seen / Disabled)
-- WiFi/UDP fallback transport when slip-ring serial is unavailable
-
----
-
-## Architecture overview
-
-```
-RC Transmitter ──SBUS──→  [protoArtoo — Artoo Controller PCB]  ←──WiFi──  Browser
-                                 │                    │
-                            UART1 (115200)        UART2 (9600)
-                                 │                    │ bidirectional
-                                 ↓                 serial link
-                          Hoverboard              [protoR2link — dome]
-                                                   • NeoPixel dome lights
-                                                   • Panel servos
-                                                   • Holoprojectors
-                                                   • Logic displays
-                                 ↓
-                          soft-UART (9600)
-                          Audio module
-                          (body = sole audio source)
-```
-
-All Marcduino-compatible commands flow over the bidirectional serial link.
-The dome has no local sound module. The body is the sole audio authority.
-
----
-
-## Key Features
-
-**Audio System**
-- Three supported audio modules: DY-SV5W (confirmed on hardware), CHIRP Audio Trigger,
-  and SparkFun MP3 Trigger — swap between them with a reflash, no rewiring
-- Audio commands from any source — RC transmitter, web browser, or dome controller —
-  are handled together without conflicts
-- Named sound cues (scream, Leia, Cantina, Star Wars, Imperial March, and more) with
-  track numbers configurable from the web UI
-- Random ambient chatter with per-mood rate (Quiet: off, Mid-Awake: 30 s,
-  Full-Awake: 20 s, Awake+: 10 s); all four intervals adjustable from the web UI
-
-**Sound Page**
-- Sound page with volume slider, named sound buttons, direct track play, random chatter
-  settings, mood sound intervals, and a live Audio Module status card showing connection
-  state, device type, play state, and track count from the module itself
-
-**Moods and Sequences**
-- 15 mood and sequence presets selectable from the dashboard or RC transmitter
-- Mood selection plays audio on the body and forwards the matching dome lighting sequence
-  when the dome link is active
-- Last active mood restored on reboot
-
-**Bidirectional Dome Link**
-- Two-way serial over the slip ring (body ↔ dome, not just body → dome)
-- Keepalive heartbeat at 1 Hz; connection state (Connected / Lost / Not seen) shown on the dashboard
-- Dome can trigger body sounds and arm sequences — fully coordinated cross-controller choreography
-
-**Dome Rotation**
-- RC joystick control of dome motor speed and direction
-- Live speed slider on the Dome page for direct manual control from any browser
-- Speed limit cap configurable as a percentage — dial in how fast the dome is allowed to spin
-- Random idle rotation: dome turns autonomously when no RC or web command is active;
-  enable/disable and speed both adjustable from the Dome page
-- ESC calibration values (neutral, min, max pulse) saved per-build — no recalibration needed after reflash
-- Dome stops automatically on estop or sleep; resumes when cleared
-
-**Three RC Input Modes**
-- Switchable from the web UI without reflashing:
-  - Standard PWM (6-channel)
-  - Single SBUS
-  - Dual SBUS
-- In Single SBUS mode, active receiver switchable from the RC page without losing existing channel mappings
-- Full channel remapping and calibration from the web UI; all settings saved across reboots
-
-**Operator Web Interface**
-- Desktop-first and tablet-second browser workflow — no app required
-- Home dashboard with drive mode, mood selector, and live status
-- Sound page, RC diagnostics, servo control, dome control, setup, and firmware update pages
-- Real-time page updates — reconnects automatically when switching back to the tab
-- Runtime log level selector (Errors / Warnings / Info / Debug) on Setup page — no reflash required
-
-**Controller Console**
-- Type a command to the droid from the dashboard's Live Logs panel or over a serial
-  cable, and it does the same thing either way — the command is the action's own name
-  and its values, `drive.action.move speed=200 steer=0`, so what you read in the action
-  list is what you type
-- A typed command goes through the same safety layers a tapped button does: an estop or
-  a stationary lock refuses it exactly the same way, and the answer names which one
-  stopped it
-- Answers come back one field per line, each with a number on it, so you can still tell
-  which reply belongs to which command while log lines scroll past — and every command
-  ends in a plain word for what happened: `queued`, `applied`, `blocked`, `unavailable`,
-  `invalid`
-- Arrow keys, history and Tab completion work as they do in a terminal; Tab finishes
-  command names *and* their setting names, built from the droid's own list of what it
-  can do, so a command the firmware does not have can never appear
-- **It keeps answering when the web stops.** Drive the controller short of memory and the
-  pages go quiet; ask for the droid's health over the cable and it still comes back in
-  full — which is when you most need it
-- A console tool for your computer (`tools/console_client.py`, or `make console`) captures
-  a boot log, types at the droid, or replays a written sheet of commands and keeps the
-  transcript
-
-**Safety-First Architecture**
-- Five independent failsafe layers from hardware through application
-- Latching emergency stop — never auto-resets; must be cleared manually from the web UI
-- Failsafe response time is measurable and logged
-
-**Hardware Flexibility**
-- Audio module is swappable — changing modules requires only a reflash, no hardware rewiring
-- AUX outputs configurable per-channel: servo (MG996R or MG90S), RGB LED strip, or disabled
-- Runtime WiFi provisioning: a newly flashed controller hosts its own setup
-  network at first boot, then the operator picks WiFi Client Mode or
-  Standalone AP Mode from the browser — no source edits or build-time
-  credentials required. See [`docs/wifi-provisioning.md`](./docs/wifi-provisioning.md)
-
-**Modern Development Practices**
-- Hundreds of native unit tests covering audio parsers, RC input, SBUS, failsafe logic,
-  API responses, and more
-- PlatformIO build system with static analysis
-- Real-time control runs on a dedicated CPU core, isolated from network and web traffic
-- Designed for community readability and extension — not a black box
-
----
+# protoR2
+
+**Open-source ESP32 body-controller firmware for R2D2 (astromech) droids: build
+sequences on a timeline, wire and set up your droid from the browser, and drive
+it by RC or web. Pluggable drive, sound, radio, dome and servo hardware.**
+
+protoR2 runs on the Body Controller in your droid's body: the board that
+owns the Foot Drive, the body servos and lights, the sound module, Dome
+Rotation and the link to the Dome Controller. You set it up, wire it and run
+it from any web browser, with no app and no rebuild. Every source line is open.
+
+[Get started](#get-started) | [Showcase](#showcase) | [Features](#features) | [What it supports](#what-it-supports) | [Safety](#safety)
+
+## Showcase
+
+<img src="docs/images/readme/dashboard.webp" alt="Dashboard. The body and the dome, then the page scrolling down." width="720">
+
+<a id="readme-configuration"></a>
+<details>
+<summary>Configuration</summary>
+<img src="docs/images/readme/configuration.png" alt="Configuration. The board, then the dome and body you built." width="1440">
+<img src="docs/images/readme/configuration.webp" alt="Configuration scrolling from the board down through the build." width="720">
+</details>
+
+<a id="readme-wiring"></a>
+<details>
+<summary>Wiring</summary>
+<img src="docs/images/readme/wiring.png" alt="Wiring. The wires on this FireBeetle 2, and the part on each one." width="1440">
+<img src="docs/images/readme/wiring.webp" alt="Wiring scrolling through the wires and the parts on each output." width="720">
+</details>
+
+<a id="readme-parts"></a>
+<details>
+<summary>Parts</summary>
+<img src="docs/images/readme/parts.png" alt="Parts. Where each part sits, and which output it is on." width="1440">
+<img src="docs/images/readme/parts.webp" alt="Parts scrolling through where each part sits." width="720">
+</details>
+
+<a id="readme-lights"></a>
+<details>
+<summary>Lights</summary>
+<img src="docs/images/readme/lights.png" alt="Lights. The charge bay light on the body." width="1440">
+<img src="docs/images/readme/lights.webp" alt="Lights scrolling past the charge bay light." width="720">
+</details>
+
+<a id="readme-servos"></a>
+<details>
+<summary>Servos</summary>
+<img src="docs/images/readme/servos.png" alt="Servos. The body panels, and the pulse each output is told." width="1440">
+<img src="docs/images/readme/servos.webp" alt="Servos scrolling past the body panel outputs." width="720">
+</details>
+
+<a id="readme-foot-drive"></a>
+<details>
+<summary>Foot Drive</summary>
+<img src="docs/images/readme/foot-drive.png" alt="Foot Drive. The pad, the speed presets, and the limits." width="1440">
+<img src="docs/images/readme/foot-drive.webp" alt="Foot Drive scrolling from the pad into the speed limits." width="720">
+</details>
+
+<a id="readme-dome"></a>
+<details>
+<summary>Dome</summary>
+<img src="docs/images/readme/dome.png" alt="Dome. Rotation, and the motor settings." width="1440">
+<img src="docs/images/readme/dome.webp" alt="Dome scrolling through rotation and the motor settings." width="720">
+</details>
+
+<a id="readme-sound"></a>
+<details>
+<summary>Sound</summary>
+<img src="docs/images/readme/sound.png" alt="Sound. The named tracks, then the catalog." width="1440">
+<img src="docs/images/readme/sound.webp" alt="Sound scrolling from the named tracks into the catalog." width="720">
+</details>
+
+<a id="readme-sequences"></a>
+<details>
+<summary>Sequences</summary>
+<img src="docs/images/readme/sequences.png" alt="Sequences. Nothing learned on this droid yet." width="1440">
+<img src="docs/images/readme/sequences.webp" alt="Sequences. The page scrolls a short way. Nothing is learned yet." width="720">
+</details>
+
+## Features
+
+### Set up and wire your droid
+
+- **A guided Setup.** A freshly flashed droid walks you through what it is made
+  of, one question at a time, and ends with a summary of where it stands.
+- **Say which droid you built.** Pick your Dome Design and Body Design, each at
+  its variant, and the parts it carries are fitted for you.
+- **Wiring, one table.** Every part, the output it is on, the serial links, the
+  Dome ESC and the radio, named by what your board prints. Print it as a
+  wiring sheet with a box to tick for each wire.
+- **Find by Moving.** Not sure which output a part is on? The droid twitches
+  each free output in turn; press That one when your part moves.
+- **Calibrate by eye.** Drive a servo with a dial, then press Set MIN, Set
+  CENTER or Set MAX. Set its speed, its ease and what it does at power-up.
+- **Backup and restore**, Sequences included.
+
+### Build Sequences on a timeline
+
+- **Drag and drop.** Body parts, dome panels, lights, sounds and Dome Rotation
+  each land on a lane of their own. Every edit is one Undo.
+- **Gestures.** One move across many parts, like a wave round the ring, written
+  once and paced by the droid.
+- **A Sequence Tempo.** Type the BPM or tap it, then put steps on the beat.
+- **Sequences inside Sequences**, linked, so improving one improves them all.
+- **The Rehearsal** reads what you wrote when you save it and says what will
+  not happen as you meant it. It never stops a save.
+  [Authoring sequences](docs/sequence-authoring.md)
+
+### Control it from a browser or RC
+
+- **The Dashboard** draws your droid's body and dome. Click a door to open it,
+  press a chip to run a show, pin the ones you use.
+- **RC Radio or none.** PWM and SBUS receivers, with every channel
+  mapped and calibrated in the browser. No radio fitted? Drive from the web.
+- **Moods** set how alive the droid is when nobody touches it: Quiet,
+  Mid-Awake, Full-Awake and Awake+.
+- **Marcduino commands you already know**, including your ShadowMD and
+  Padawan360 bindings. [Command reference](docs/commands.md)
+
+### Dome and lights
+
+- **Dome Rotation** by RC or a slider, with a speed cap and random idle turns.
+  Time one turn and the droid tracks where it believes the dome points.
+- **Lights, on one page.** Logic displays, PSIs and Magic Panel in the dome,
+  and an LED strip on as many body wires as your board has.
+- **Two-way protoR2link** to the Dome Controller, so the dome can fire body
+  sounds and moves too. [Dome companion](#dome-companion)
+
+### Sound
+
+- **Pick your sound module on Configuration.** One firmware carries every
+  Supported module; the choice takes effect at the next start.
+- **Named Tracks**, random chatter that follows the Mood, and ShadowMD's
+  bank-and-sound numbering. [Sound reference](docs/sound_playback.md)
+
+### Controller Console
+
+- **Type to the droid** from the Dashboard or over a USB cable: the same
+  commands, the same answers, the same safety rules.
+- **It keeps answering when the web stops**, which is when you need it most.
+  [Console guide](docs/console.md)
+
+### Updates
+
+- **One firmware and one filesystem image per board** on every release.
+  Upload both from the Firmware page; your settings and calibration stay.
+
+## What it supports
+
+The products in each family are peers: fit the one you own. Tested means it has
+run on a real droid.
+
+| Family | Product | Supported | Tested | Roadmap |
+|---|---|:---:|:---:|:---:|
+| <img src="docs/images/families/body-controller.svg" width="20" height="20" alt=""> **Body Controller** | [Artoo PCB](https://www.artoo.uk/) | ✓ | ✓ |  |
+|  | FireBeetle 2 (ESP32-P4) | ✓ |  |  |
+| <img src="docs/images/families/radio-controller.svg" width="20" height="20" alt=""> **Radio Controller** | HotRC DS-650 | ✓ | ✓ |  |
+|  | RC Radio | ✓ |  |  |
+|  | RC Receiver - PWM | ✓ |  |  |
+|  | RC Receiver - SBUS | ✓ |  |  |
+|  | RC Receiver - ELRS |  |  | ✓ |
+|  | Xbox Controller |  |  | ✓ |
+| <img src="docs/images/families/body-servo-controller.svg" width="20" height="20" alt=""> **Body servo controller** | Body controller board GPIO | ✓ | ✓ |  |
+|  | PCA9685 | ✓ |  |  |
+|  | Pololu Maestro |  |  | ✓ |
+| <img src="docs/images/families/dome-rotation.svg" width="20" height="20" alt=""> **Dome Rotation** | ISDT ESC70 (RC ESC) | ✓ | ✓ |  |
+|  | SyRen 10 |  |  | ✓ |
+| <img src="docs/images/families/dome-controller.svg" width="20" height="20" alt=""> **Dome Controller** | AstroPixels Plus | ✓ | ✓ |  |
+|  | Teeces |  |  | ✓ |
+| <img src="docs/images/families/foot-drive.svg" width="20" height="20" alt=""> **Foot Drive** | Hoverboard, hacked firmware | ✓ |  |  |
+|  | Sabertooth 2x25 |  |  | ✓ |
+|  | Flipsky Mini V6 VESC |  |  | ✓ |
+| <img src="docs/images/families/sound.svg" width="20" height="20" alt=""> **Sound** | DY-SV5W | ✓ | ✓ |  |
+|  | MP3 Trigger | ✓ |  |  |
+|  | CHIRP Audio Trigger | ✓ | ✓ |  |
+|  | DFPlayer Mini |  |  | ✓ |
+
+[Full support detail](docs/goal.md#target-hardware-profile)
+
+The Artoo PCB carries a generic ESP32 clone. The FireBeetle 2 builds the full
+feature set and ships with every release, but read
+[the spec sheet's "Before you buy one"](./docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md#before-you-buy-one)
+first. Pins and wiring for both boards: [pin map](docs/pin_map.md).
+
+## Get started
+
+- **[Update from a release](docs/getting-started.md#update-a-running-droid-from-a-release)**:
+  download two images, upload them from the Firmware page.
+- **[First flash of a blank board](docs/getting-started.md#first-flash-of-a-blank-board)**
+  and **[building from source](docs/getting-started.md#build-from-source)**.
+- **[Join the droid to your WiFi](docs/wifi-provisioning.md)** from a browser, no
+  credentials in the build.
+- **[Project status](docs/status.md)** and the [changelog](CHANGELOG.md).
+
+## Dome companion
+
+The dome runs **[mattiasbrandt/AstroPixelsPlus](https://github.com/mattiasbrandt/AstroPixelsPlus)**,
+a fork of [reeltwo/AstroPixelsPlus](https://github.com/reeltwo/AstroPixelsPlus)
+that speaks **protoR2link**: a two-way link to the body over the slip ring,
+with a heartbeat each way and WiFi as the fallback. The body is the droid's
+only sound source, and the dome can ask it for sounds and moves, so one
+Sequence coordinates both halves. How it compares to a classic MarcDuino build:
+[topology](docs/topology.md).
 
 ## Safety
 
-This firmware controls a 20 kg wheeled robot. The failsafe system has five
-independent layers:
+- **The emergency stop latches.** It never clears itself; you release it from
+  the red STOP on every screen. Estop and sleep take the pulse off every servo.
+- **Five independent failsafe layers.** Any one of them holds the droid out
+  of drive until it clears. [How they work](docs/failsafe.md)
+- **Real-time control runs on its own CPU core**, apart from WiFi and the web
+  pages, and no network fault reaches the drive path.
 
-1. **RC receiver hardware failsafe** — receiver firmware, ~100 ms
-2. **RC software watchdog** — 200 ms timeout in RC input task (all modes: PWM, SBUS)
-3. **Web API drive timeout** — 500 ms; client must re-send to keep driving
-4. **ESP32 Task Watchdog Timer** — 3 s reset; post-reset boot sets estop=true
-5. **Hoverboard own UART timeout** — ~500 ms, independent of ESP32
+## Contributing and licence
 
-`estop` requires explicit `POST /api/estop/clear` to clear. It does not auto-clear.
+Ideas and bug reports are welcome, and read honestly. Commit format, branches
+and the pull request checklist: [CONTRIBUTING.md](CONTRIBUTING.md).
 
----
-
-## Versioning
-
-protoArtoo uses [Semantic Versioning 2.0.0](https://semver.org/) and
-[Conventional Commits](https://www.conventionalcommits.org/).
-
-- `feat:` → MINOR version bump
-- `fix:` → PATCH version bump
-- `feat!:` / `BREAKING CHANGE:` footer → MAJOR version bump
-
-See [CHANGELOG.md](./CHANGELOG.md) for all releases.
-
----
-
-## Contributing
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for commit format, branch strategy,
-and pull request checklist.
-
-Key rules:
-- All commits follow [Conventional Commits](https://www.conventionalcommits.org/) format
-- `pio test -e native` must pass before any upload or merge
-- All code passes `pio check` before commit
-- No WiFi credentials, no TBD GPIO guesses, no code that does not compile
-
-Feature requests and improvement ideas are welcome. We cannot guarantee anything,
-but we will review them honestly.
-
----
-
-## Licence
-
-MIT — see [LICENSE](./LICENSE) for the full text and for what it does and does
-not cover: the licence applies to this repository's own firmware, web UI, docs
-and tooling. Third-party libraries keep their own licences, the Artoo
-Controller PCB remains [Steve's](https://www.artoo.uk/) hardware design, and
-the MK4 droid itself remains [MrBaddeley's](https://www.patreon.com/mrbaddeley)
-paid design — no print files or geometry live in this repository.
+MIT, see [LICENSE](LICENSE) for what it covers: this repository's firmware, web
+pages, docs and tooling. Third-party libraries keep their own licences, the
+Artoo Controller PCB is [Steve's](https://www.artoo.uk/) hardware design, and
+the MK4 droid is [MrBaddeley's](https://www.patreon.com/mrbaddeley) paid design;
+no print files live here.
 
 Star Wars, R2-D2 and related names and marks belong to Lucasfilm Ltd. This is
 a non-commercial fan project with no affiliation with, connection to, or
 endorsement from Lucasfilm or The Walt Disney Company.
 
----
-
 ## Acknowledgements
 
-### Hardware — Artoo Controller PCB
+- **[Steve](https://www.artoo.uk/)** designed the Artoo Controller PCB, which
+  let this project start on firmware rather than hardware.
+- **[Mike Eddington](https://github.com/mikeeddington-lgtm)** wrote
+  [r2d2-astromech-simulator](https://github.com/mikeeddington-lgtm/r2d2-astromech-simulator),
+  the most carefully made operator interface in the droid-builder space. We
+  adapted its ideas: capturing a servo end where the servo already is;
+  checking a sequence when it is committed and never refusing the save; a
+  timeline of authored moves; picking a part on a drawing of the droid;
+  saying on the surface what it cannot show; explanation as a required field;
+  one Escape per layer, questions answered in two verbs, quiet receipts. His
+  is a simulator; protoR2 configures and moves a real droid.
+- **[Mr Baddeley](https://www.patreon.com/c/mrbaddeley)** created the
+  3D-printable MK4 astromech, and his
+  [Facebook community](https://www.facebook.com/groups/MrBaddeley/) is where
+  builders meet.
+- **[Printed Droid](https://www.printed-droid.com/)**'s
+  [R2-D2 terminology](https://www.printed-droid.com/kb/r2-d2-terminology) is
+  how protoR2 names dome parts and takes their panel bearings; their
+  drawing is their own work and is not reproduced here.
+- **[astromech.net](https://astromech.net/)** and the MarcDuino and SHADOW
+  communities. This firmware is meant as a contribution back.
+- **Firmware and libraries:** hoverboard firmware by
+  [EFeru](https://github.com/EFeru/hoverboard-firmware-hack-FOC) and
+  [RoboDurden](https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32),
+  dome firmware by [reeltwo](https://github.com/reeltwo/AstroPixelsPlus),
+  [PsychicHttp](https://github.com/hoeken/PsychicHttp) and
+  [ArduinoJson](https://github.com/bblanchon/ArduinoJson).
+- **Product photographs** stay with their owners; provenance per image is in
+  [product image provenance](docs/product-image-provenance.md).
 
-**[Steve](https://www.artoo.uk/)** designed the Artoo Controller PCB that protoArtoo
-runs on. The board provides a practical, purpose-built platform for MK4 astromech
-droid body electronics: an ESP32 module with dedicated headers for RC receivers,
-servo outputs, audio module, dome serial, and hoverboard UART — all in a compact
-form factor. This ready-made hardware foundation made it possible to focus on
-firmware development rather than board design. Steve's work on the hardware side
-deserves full credit and recognition.
-
-If you are building a droid and considering the Artoo Controller PCB:
-👉 **[artoo.uk](https://www.artoo.uk/)**
-
----
-
-### Design and prior art — r2d2-astromech-simulator
-
-**[Mike Eddington](https://github.com/mikeeddington-lgtm)** wrote
-[r2d2-astromech-simulator](https://github.com/mikeeddington-lgtm/r2d2-astromech-simulator),
-a browser-based astromech simulator and servo-sequence authoring tool, and the most
-carefully made operator interface in the droid-builder space. protoArtoo's own operator
-experience is better for having studied it.
-
-Ideas and interaction patterns we adapted:
-
-- capturing a servo endpoint where the servo already is, instead of typing a number
-- validating a sequence when it is committed, and never refusing to save it
-- a timeline of authored moves rather than a table of compiled frames
-- picking a part on a drawing of the droid instead of from a long list
-- saying on the surface itself what it cannot show — an incomplete map and a misleading one are different things
-- explanation written as a required field on the thing it describes, not left to review
-
-His is a *simulator* for planning a droid; protoArtoo configures and drives a real one.
-Much of it is therefore deliberately not copied, and the differences taught us as much as
-the similarities.
-
----
-
-### Firmware
-
-**Hoverboard Firmware**
-
-| Project | MCU | Description |
-|---------|-----|-------------|
-| [EFeru/hoverboard-firmware-hack-FOC](https://github.com/EFeru/hoverboard-firmware-hack-FOC) | STM32 | Original open-source hoverboard firmware with FOC (Field Oriented Control). Introduced the 8-byte UART protocol used by protoArtoo. |
-| [RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32](https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32) | GD32F130 | Port for newer Gen2.x hoverboard mainboards. Compatible protocol. |
-
-**Dome Controller**
-
-| Project | Description |
-|---------|-------------|
-| [reeltwo/AstroPixelsPlus](https://github.com/reeltwo/AstroPixelsPlus) | Base dome controller firmware. Uses Reeltwo library for Marcduino command handling. |
-| [mattiasbrandt/AstroPixelsPlus](https://github.com/mattiasbrandt/AstroPixelsPlus) | Fork with bidirectional body link support (heartbeat protocol, body command dispatch). |
-
-### Libraries
-
-**External Dependencies (via PlatformIO)**
-
-| Library | Version | Purpose |
-|---------|---------|---------|
-| [PsychicHttp](https://github.com/hoeken/PsychicHttp) | 3.1.2 | HTTP/SSE server for web UI and REST API, over ESP-IDF's `esp_http_server` |
-| [ArduinoJson](https://github.com/bblanchon/ArduinoJson) | 7.4.3 | JSON serialization/deserialization for all API payloads |
-
-**ESP32 Arduino Core (Built-in)**
-
-| Component | Purpose |
-|-----------|---------|
-| `Preferences` | NVS (Non-Volatile Storage) for configuration persistence |
-| `LittleFS` | Flash filesystem for web UI assets |
-| `WiFi` | WiFi support — joins your network or hosts the droid's own hotspot, chosen at runtime from the WiFi page ([`docs/wifi-provisioning.md`](./docs/wifi-provisioning.md)) |
-| `LEDC` | PWM generation for servos and ESC |
-| `FreeRTOS` | Task scheduling with core isolation (Core 0: network/web, Core 1: real-time control) |
-
----
-
-### Community
-
-**[Mr Baddeley](https://www.patreon.com/c/mrbaddeley)** — Creator of the
-3D-printable MK4 astromech droid design. His print files, assembly guides, and
-ongoing refinement work have made R2-D2 replica building accessible to thousands
-of makers worldwide. The [Mr Baddeley Facebook Community](https://www.facebook.com/groups/MrBaddeley/)
-is the primary hub for builders sharing progress, troubleshooting, and celebrating
-their droids.
-
-**[Printed Droid](https://www.printed-droid.com/)** — Their
-[R2-D2 terminology reference](https://www.printed-droid.com/kb/r2-d2-terminology)
-is the community's shared vocabulary for dome parts: PP1..PP6 pie panels, P1..P14
-lower dome panels, HPn-1/HPn-2 holoprojector axes. protoArtoo speaks that dialect
-throughout, because it is what builders already type and expect, and
-`docs/droid-parts.yaml` takes its panel bearings from their published drawing
-convention. Those bearings are facts about the droid; their drawing is their own
-work and is not reproduced here.
-
-**[astromech.net](https://astromech.net/)** — The broader astromech building
-community. The collective open knowledge around MarcDuino, SHADOW, panel wiring,
-dome mechanics, and electronics is what makes personal droid builds possible.
-This firmware is intended as a contribution back to that community.
+*protoR2 was called protoArtoo and began as open firmware for the Artoo
+Controller PCB. Today that board is one Body Controller in the table above.*

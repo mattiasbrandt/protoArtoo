@@ -14,6 +14,7 @@
 #include <unity.h>
 
 #include "audio_playback_policy.h"
+#include "droid_parts.h"  // droidPartIdIsKnown() - a routine names Parts the catalog has
 #include "sequence_dispatcher.h"
 #include "sequence_engine.h"
 
@@ -94,18 +95,16 @@ void test_engine_idle_after_init() {
     SeqEngineState st;
     seqEngineInit(st);
     TEST_ASSERT_FALSE(seqEngineActive(st));
-    TEST_ASSERT_NULL(seqEngineName(st));
 
     SeqAction act;
     TEST_ASSERT_FALSE(seqEnginePeek(st, 0, stubRand, act));
 }
 
-void test_engine_active_and_named_after_start() {
+void test_engine_active_after_start() {
     SeqEngineState st;
     seqEngineInit(st);
     seqEngineStart(st, &kFlatEntry, 1000);
     TEST_ASSERT_TRUE(seqEngineActive(st));
-    TEST_ASSERT_EQUAL_STRING("TEST:FLAT", seqEngineName(st));
 }
 
 // -----------------------------------------------------------------------------
@@ -533,8 +532,11 @@ void test_real_reset_entry_clears_latches_and_resets() {
     // no action, so it is absent from the log but still clears the latches.
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(11, drainAt(st, 5000, log, sizeof(log)));
+    // The sound ends with a Track Stop, never `$s`, which would also turn idle
+    // chatter off until reboot (ADR 0010, #354).
     TEST_ASSERT_EQUAL_STRING(
-        "$s|:CL01|:CL02|:CL03|:CL04|:CL07|:CL11|:CL13|*ST00|@0T1|@0P1", log);
+        "<stop>|:CL01|:CL02|:CL03|:CL04|:CL07|:CL11|:CL13|*ST00|@0T1|@0P1", log);
+    TEST_ASSERT_NULL(strstr(log, "$s"));
 
     // Safety invariant: no group close and no pie command anywhere in the stream.
     TEST_ASSERT_NULL(strstr(log, ":CL00"));
@@ -546,6 +548,27 @@ void test_real_reset_entry_clears_latches_and_resets() {
     // Latches cleared by the explicit step, and a clean terminal (no group close).
     TEST_ASSERT_FALSE(st.latches.piesOpen);
     TEST_ASSERT_FALSE(st.latches.ringOpen);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
+// DM:HELLO opens P1 once. It used to send five identical :OP01 160 ms apart,
+// which the dome performs as one open, so the routine claimed a wave it never
+// made (#287, #354).
+void test_real_hello_entry_opens_p1_once() {
+    const SequenceEntry* e = sequenceCatalogFind("DM:HELLO");
+    TEST_ASSERT_NOT_NULL(e);
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, e, 0);
+
+    char log[256] = "";
+    drainAt(st, 5000, log, sizeof(log));
+
+    const char* first = strstr(log, ":OP01");
+    TEST_ASSERT_NOT_NULL(first);
+    TEST_ASSERT_NULL(strstr(first + 1, ":OP01"));
+    TEST_ASSERT_NOT_NULL(strstr(first, ":CL01"));
     TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
@@ -568,6 +591,173 @@ static const SequenceEntry kLoopEntry = {
     (uint8_t)(sizeof(kLoopSteps) / sizeof(kLoopSteps[0])),
     2000, TOGGLE_NONE, nullptr, 0, nullptr,
 };
+
+// =============================================================================
+// Body Steps (ADR 0049)
+// =============================================================================
+
+void test_body_step_emits_part_shape_and_how_far() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(400, "doorFL", BODY_SHAPE_OPEN, 60, 0),
+        SEQ_TERM(1000),
+    };
+    static const SequenceEntry entry = {
+        "TEST:BODY", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        3000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 1000);
+
+    SeqAction act = {};
+    TEST_ASSERT_FALSE(seqEnginePeek(st, 1399, stubRand, act));
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 1400, stubRand, act));
+    TEST_ASSERT_EQUAL_INT(SEQ_ACT_BODY_MOVE, (int)act.kind);
+    TEST_ASSERT_EQUAL_STRING("doorFL", act.payload);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_OPEN, act.bodyShape);
+    TEST_ASSERT_EQUAL_UINT8(60, act.bodyHowFar);
+    TEST_ASSERT_EQUAL_UINT16(0, act.bodyFlutterMs);
+}
+
+// A step that says nothing about its shape or how far it goes is an open over
+// the whole throw, and the engine spends both defaults so no consumer re-decides
+// them.
+void test_body_step_defaults_resolve_to_open_over_the_whole_throw() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(0, "dataport", 0, SEQ_BODY_HOWFAR_UNSET, 0),
+        SEQ_TERM(1000),
+    };
+    static const SequenceEntry entry = {
+        "TEST:BODY_DEF", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        3000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 0);
+
+    SeqAction act = {};
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 0, stubRand, act));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_OPEN, act.bodyShape);
+    TEST_ASSERT_EQUAL_UINT8(SEQ_BODY_HOWFAR_DEFAULT, act.bodyHowFar);
+}
+
+// A Factory-authored body step carries no effect class, and that is the decision
+// rather than an omission (ADR 0049): the engine undoes nothing a body step did,
+// so there is nothing for activeFx to carry into terminal cleanup.
+void test_body_step_carries_no_effect_class() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(0, "doorFL", BODY_SHAPE_OPEN, 100, 0),
+        SEQ_TERM(500),
+    };
+    TEST_ASSERT_EQUAL_UINT8(FX_NONE, steps[0].effectClass);
+}
+
+// The accessor is total: a stored shape this build does not model resolves to
+// the default rather than reaching the drive path as a number nobody meant.
+void test_body_step_unmodelled_shape_resolves_to_the_default() {
+    SeqStepParams p = {};
+    p.shape = (uint8_t)BODY_SHAPE_COUNT;  // one past the vocabulary
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SEQ_BODY_SHAPE_DEFAULT, (uint8_t)seqBodyShape(p));
+    p.shape = 200;
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SEQ_BODY_SHAPE_DEFAULT, (uint8_t)seqBodyShape(p));
+    // And the default is open: a step that says nothing about its shape opens.
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_OPEN, (uint8_t)SEQ_BODY_SHAPE_DEFAULT);
+}
+
+// The floor is what stops a how-far meaning "does not move"; it floors rather
+// than refusing, because refusing would be a judgement about intent.
+void test_body_step_how_far_is_floored_not_refused() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(0, "utilUp", BODY_SHAPE_CLOSE, 1, 0),
+        SEQ_TERM(1000),
+    };
+    static const SequenceEntry entry = {
+        "TEST:BODY_FLOOR", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        3000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 0);
+
+    SeqAction act = {};
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 0, stubRand, act));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_CLOSE, act.bodyShape);
+    TEST_ASSERT_EQUAL_UINT8(SEQ_BODY_HOWFAR_FLOOR, act.bodyHowFar);
+}
+
+void test_body_step_flutter_carries_its_duration() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(0, "doorRR", BODY_SHAPE_FLUTTER, 80, 1200),
+        SEQ_BODY(1200, "doorRR", BODY_SHAPE_CLOSE, 0, 0),
+        SEQ_TERM(2000),
+    };
+    static const SequenceEntry entry = {
+        "TEST:BODY_FLUT", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        3000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 0);
+
+    SeqAction act = {};
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 0, stubRand, act));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_FLUTTER, act.bodyShape);
+    TEST_ASSERT_EQUAL_UINT16(1200, act.bodyFlutterMs);
+}
+
+// The engine undoes nothing a body step did (ADR 0049): a Part left open stays
+// open, so normal termination schedules no release and the run goes idle with
+// nothing drained.
+void test_body_step_schedules_no_release_on_normal_termination() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(0, "doorFL", BODY_SHAPE_OPEN, 0, 0),
+        SEQ_TERM(500),
+    };
+    static const SequenceEntry entry = {
+        "TEST:BODY_TERM", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        3000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 0);
+
+    char log[128] = "";
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 0, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("doorFL", log);
+
+    // Terminal transition: nothing at all is queued for the open door.
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(0, drainAt(st, 500, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("", log);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
+// Same on an abort: estop aborts the sequence and releases every Output
+// (ADR 0043), so the engine has nothing of its own to undo here either.
+void test_body_step_abort_emits_no_cleanup() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(0, "gripArm", BODY_SHAPE_OPEN, 100, 0),
+        SEQ_TERM(5000),
+    };
+    static const SequenceEntry entry = {
+        "TEST:BODY_ABORT", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        6000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 0);
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 0, nullptr, 0));
+
+    seqEngineAbort(st);
+    TEST_ASSERT_EQUAL_INT(0, drainAt(st, 100, nullptr, 0));
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
 
 void test_loop_iterations_fire_at_period_offsets() {
     SeqEngineState st;
@@ -788,6 +978,124 @@ void test_real_toggle_entries_are_catalog_with_branches() {
         TEST_ASSERT_NOT_NULL_MESSAGE(e->closeSteps, names[i]);
         TEST_ASSERT_GREATER_THAN_MESSAGE(0, e->closeStepCount, names[i]);
     }
+}
+
+// No two dome commands in a branch leave at the same instant. DM:LOW sent three
+// :OP at t=4400 and DM:OPENALL seven at t=900 -- the same-timestamp burst that
+// overflowed the dome's eight-entry command queue on 2026-06-18 (#287, #354).
+static void assertNoSharedDomeTimestamp(const SeqStep* steps, uint8_t count,
+                                        const char* name) {
+    for (uint8_t i = 0; i < count; ++i) {
+        if (steps[i].type != STEP_DOME_CMD) continue;
+        for (uint8_t j = (uint8_t)(i + 1); j < count; ++j) {
+            if (steps[j].type != STEP_DOME_CMD) continue;
+            TEST_ASSERT_NOT_EQUAL_MESSAGE(steps[i].tMs, steps[j].tMs, name);
+        }
+    }
+}
+
+void test_real_low_and_openall_send_no_same_timestamp_burst() {
+    static const char* const names[] = { "DM:LOW", "DM:OPENALL" };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+        const SequenceEntry* e = sequenceCatalogFind(names[i]);
+        TEST_ASSERT_NOT_NULL_MESSAGE(e, names[i]);
+        assertNoSharedDomeTimestamp(e->steps, e->stepCount, names[i]);
+        assertNoSharedDomeTimestamp(e->closeSteps, e->closeStepCount, names[i]);
+    }
+}
+
+// :SE30..:SE36 are Factory Sequences built from Body Steps (ADR 0049, #354).
+// Every one used to run the same open-wait-close state machine in ServoTask;
+// the seven names are the specification, so each must be a routine of its own.
+void test_body_routines_are_factory_sequences_of_body_steps() {
+    for (int id = 30; id <= 36; ++id) {
+        const char* name = sequenceBodyRoutineName(id);
+        TEST_ASSERT_NOT_NULL(name);
+        const SequenceEntry* e = sequenceCatalogFind(name);
+        TEST_ASSERT_NOT_NULL_MESSAGE(e, name);
+        TEST_ASSERT_EQUAL_MESSAGE(TOGGLE_NONE, e->toggleGroup, name);
+        TEST_ASSERT_NOT_NULL_MESSAGE(e->purpose, name);
+
+        uint8_t bodySteps = 0;
+        for (uint8_t i = 0; i < e->stepCount; ++i) {
+            const SeqStep& s = e->steps[i];
+            if (s.type == STEP_END) {
+                TEST_ASSERT_EQUAL_UINT8_MESSAGE(e->stepCount - 1, i, name);
+                continue;
+            }
+            // Nothing but Body Steps: no dome command, no sound, no :SE forward.
+            TEST_ASSERT_EQUAL_MESSAGE(STEP_BODY, s.type, name);
+            TEST_ASSERT_TRUE_MESSAGE(droidPartIdIsKnown(s.payload), s.payload);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(FX_NONE, s.effectClass, name);
+            ++bodySteps;
+        }
+        TEST_ASSERT_GREATER_THAN_MESSAGE(0, bodySteps, name);
+    }
+    TEST_ASSERT_NULL(sequenceBodyRoutineName(29));
+    TEST_ASSERT_NULL(sequenceBodyRoutineName(37));
+}
+
+// The engine undoes nothing a body step did (ADR 0049), so a routine that means
+// to put the droid back has to write the closes itself. Every Part one of the
+// seven moves ends closed, as it does in the routines they were taken from.
+void test_body_routines_leave_every_part_they_move_closed() {
+    for (int id = 30; id <= 36; ++id) {
+        const SequenceEntry* e = sequenceCatalogFind(sequenceBodyRoutineName(id));
+        TEST_ASSERT_NOT_NULL(e);
+        for (uint8_t i = 0; i < e->stepCount; ++i) {
+            if (e->steps[i].type != STEP_BODY) continue;
+            uint8_t last = i;
+            for (uint8_t j = (uint8_t)(i + 1); j < e->stepCount; ++j) {
+                if (e->steps[j].type == STEP_BODY &&
+                    strcmp(e->steps[j].payload, e->steps[i].payload) == 0) {
+                    last = j;
+                }
+            }
+            TEST_ASSERT_EQUAL_MESSAGE(BODY_SHAPE_CLOSE, seqBodyShape(e->steps[last].params),
+                                      e->steps[i].payload);
+        }
+    }
+}
+
+// No two of the seven are the same routine under different numbers.
+void test_no_two_body_routines_are_the_same_routine() {
+    for (int a = 30; a <= 36; ++a) {
+        const SequenceEntry* ea = sequenceCatalogFind(sequenceBodyRoutineName(a));
+        for (int b = a + 1; b <= 36; ++b) {
+            const SequenceEntry* eb = sequenceCatalogFind(sequenceBodyRoutineName(b));
+            bool same = ea->stepCount == eb->stepCount;
+            for (uint8_t i = 0; same && i < ea->stepCount; ++i) {
+                same = ea->steps[i].tMs == eb->steps[i].tMs &&
+                       ea->steps[i].type == eb->steps[i].type &&
+                       strcmp(ea->steps[i].payload, eb->steps[i].payload) == 0 &&
+                       ea->steps[i].params.shape == eb->steps[i].params.shape;
+            }
+            TEST_ASSERT_FALSE_MESSAGE(same, ea->name);
+        }
+    }
+}
+
+// :SE32 runs through the engine as Body Step moves, in order, and ends: the
+// doors spring open, wiggle, and shut with the last close.
+void test_body_routine_wiggle_close_runs_as_body_moves() {
+    const SequenceEntry* e = sequenceCatalogFind(sequenceBodyRoutineName(32));
+    TEST_ASSERT_NOT_NULL(e);
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, e, 0);
+
+    SeqAction act;
+    uint8_t moves = 0;
+    uint8_t lastShape = 0xFF;
+    while (seqEnginePeek(st, 60000, stubRand, act)) {
+        TEST_ASSERT_EQUAL(SEQ_ACT_BODY_MOVE, act.kind);
+        lastShape = act.bodyShape;
+        ++moves;
+        seqEngineCommit(st);
+    }
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)(e->stepCount - 1), moves);
+    TEST_ASSERT_EQUAL_UINT8(BODY_SHAPE_CLOSE, lastShape);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
 // -----------------------------------------------------------------------------
@@ -1091,7 +1399,7 @@ int main(int /*argc*/, char** /*argv*/) {
     UNITY_BEGIN();
 
     RUN_TEST(test_engine_idle_after_init);
-    RUN_TEST(test_engine_active_and_named_after_start);
+    RUN_TEST(test_engine_active_after_start);
 
     RUN_TEST(test_flat_steps_fire_in_order_at_their_times);
     RUN_TEST(test_late_tick_catches_up_all_overdue_steps);
@@ -1118,6 +1426,15 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_terminal_cleanup_after_dome_rotate_emits_neutral_rotation_stop);
     RUN_TEST(test_zero_speed_dome_rotate_does_not_emit_cleanup_stop);
     RUN_TEST(test_real_reset_entry_clears_latches_and_resets);
+
+    RUN_TEST(test_body_step_emits_part_shape_and_how_far);
+    RUN_TEST(test_body_step_defaults_resolve_to_open_over_the_whole_throw);
+    RUN_TEST(test_body_step_carries_no_effect_class);
+    RUN_TEST(test_body_step_unmodelled_shape_resolves_to_the_default);
+    RUN_TEST(test_body_step_how_far_is_floored_not_refused);
+    RUN_TEST(test_body_step_flutter_carries_its_duration);
+    RUN_TEST(test_body_step_schedules_no_release_on_normal_termination);
+    RUN_TEST(test_body_step_abort_emits_no_cleanup);
 
     RUN_TEST(test_loop_iterations_fire_at_period_offsets);
     RUN_TEST(test_loop_late_tick_catches_up_all_iterations);
@@ -1146,6 +1463,12 @@ int main(int /*argc*/, char** /*argv*/) {
 
     RUN_TEST(test_cl00_step_clears_latches);
     RUN_TEST(test_clear_latches_helper);
+    RUN_TEST(test_real_hello_entry_opens_p1_once);
+    RUN_TEST(test_real_low_and_openall_send_no_same_timestamp_burst);
+    RUN_TEST(test_body_routines_are_factory_sequences_of_body_steps);
+    RUN_TEST(test_body_routines_leave_every_part_they_move_closed);
+    RUN_TEST(test_no_two_body_routines_are_the_same_routine);
+    RUN_TEST(test_body_routine_wiggle_close_runs_as_body_moves);
 
     return UNITY_END();
 }

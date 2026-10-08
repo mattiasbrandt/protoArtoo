@@ -29,10 +29,27 @@ const servedPages = fs
 
 const read = (name) => fs.readFileSync(path.join(dataDir, name), "utf8");
 
+// Every asset set a build can name (ADR 0065). Each build serves the same pages
+// with its own set's partials inlined, so a page is checked once per set.
+const assetSetsDir = path.join(dataDir, "asset-sets");
+const assetSets = fs
+  .readdirSync(assetSetsDir, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .sort();
+
+// Resolve a partial exactly as tools/gzip_fsdata.py does: the build's asset set
+// first, then the common data root. null when neither holds it, which the build
+// refuses.
+const resolveInclude = (set, target) =>
+  [path.join(assetSetsDir, set, target), path.join(dataDir, target)].find((candidate) =>
+    fs.existsSync(candidate),
+  ) || null;
+
 // Expand exactly as tools/gzip_fsdata.py does at build time: single pass, no
 // recursion. What the controller serves is this, not the page source.
-const expand = (html) =>
-  html.replace(INCLUDE_RE, (_match, target) => read(target));
+const expand = (html, set) =>
+  html.replace(INCLUDE_RE, (_match, target) => fs.readFileSync(resolveInclude(set, target), "utf8"));
 
 // A comment that closes early leaves its tail rendering as visible body text
 // and its surplus "-->" as literal content. Scanning for a close delimiter
@@ -51,18 +68,34 @@ const orphanCommentClose = (html) => {
 
 test("every served page exists to be checked", () => {
   assert.ok(servedPages.length > 0, "no served pages found in data/");
+  assert.ok(assetSets.length > 0, "no asset sets found in data/asset-sets/");
 });
 
+// A shell delegate (ADR 0048) never runs its own <head>: the Operator Shell
+// fetches it and imports only its <body>, and a direct visit is replaced by the
+// shell before anything else loads. The kernel therefore lives only in the
+// document the browser renders, and a delegate carrying one is imaged waste.
+const SHELL_DELEGATE_MARKER = "window.PAShellDelegate = true";
+
 for (const name of servedPages) {
-  test(`${name} inlines the Page Recovery View kernel`, () => {
+  test(`${name} carries the Page Recovery View kernel only if it is rendered`, () => {
     const html = read(name);
     const includes = [...html.matchAll(INCLUDE_RE)].map((match) => match[1]);
-    assert.ok(
-      includes.includes(RECOVERY_KERNEL),
-      `${name} must carry <!-- PA:INCLUDE ${RECOVERY_KERNEL} --> in its <head>`,
-    );
+    if (html.includes(SHELL_DELEGATE_MARKER)) {
+      assert.ok(
+        !includes.includes(RECOVERY_KERNEL),
+        `${name} is a shell delegate and must not inline ${RECOVERY_KERNEL}: its <head> never runs`,
+      );
+    } else {
+      assert.ok(
+        includes.includes(RECOVERY_KERNEL),
+        `${name} must carry <!-- PA:INCLUDE ${RECOVERY_KERNEL} --> in its <head>`,
+      );
+    }
     for (const target of includes) {
-      assert.ok(fs.existsSync(path.join(dataDir, target)), `${name} includes missing ${target}`);
+      for (const set of assetSets) {
+        assert.ok(resolveInclude(set, target), `${name} includes ${target}, which the ${set} set's build cannot find`);
+      }
     }
   });
 
@@ -80,6 +113,15 @@ for (const name of servedPages) {
     const openingTag = html.match(/<html\b[^>]*>/)?.[0] || "";
     const declared = openingTag.match(/data-scripts="([^"]*)"/)?.[1] || "";
     const sources = declared.split(",").map((source) => source.trim()).filter(Boolean);
+    // A forwarder is the old address of a renamed surface (data/setup.html,
+    // #404): a delegate with an empty body, which the shell never fetches
+    // because no surface names it. It has nothing to mount, so it must declare
+    // nothing to run - a chain there would be a promise nothing keeps.
+    const body = html.match(/<body\b[^>]*>([\s\S]*)<\/body>/)?.[1] ?? null;
+    if (html.includes(SHELL_DELEGATE_MARKER) && body !== null && body.trim() === "") {
+      assert.deepEqual(sources, [], `${name} is a forwarder and must declare no script chain`);
+      return;
+    }
     assert.ok(sources.length > 0, `${name} must declare data-scripts on <html>`);
     for (const source of sources) {
       assert.ok(fs.existsSync(path.join(dataDir, source.slice(1))), `${name}: ${source}`);
@@ -93,8 +135,10 @@ for (const name of servedPages) {
     assert.match(read(name), /<link\s+rel="stylesheet"\s+href="\/style\.css">/, name);
   });
 
-  test(`${name} serves no orphaned comment text`, () => {
-    const at = orphanCommentClose(expand(read(name)));
-    assert.equal(at, -1, `${name}: comment close at byte ${at} is outside any comment`);
-  });
+  for (const set of assetSets) {
+    test(`${name} serves no orphaned comment text in the ${set} set's build`, () => {
+      const at = orphanCommentClose(expand(read(name), set));
+      assert.equal(at, -1, `${name} (${set}): comment close at byte ${at} is outside any comment`);
+    });
+  }
 }

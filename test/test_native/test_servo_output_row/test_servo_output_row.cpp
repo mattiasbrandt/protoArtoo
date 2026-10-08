@@ -1,0 +1,1290 @@
+// =============================================================================
+// test/test_native/test_servo_output_row/test_servo_output_row.cpp
+//
+// The Servo Output row model (ADR 0041, ADR 0052) and its storage door.
+//
+// What these cover is the behaviour the row exists for: reverse is the pair
+// rather than a flag, the component type governs the clamp, overshoot switches
+// itself off on an unmeasured output, a capture never ticks the boot flag, a
+// damaged record loses only the field nobody can read, and every field comes
+// back off the wire the way it went on.
+// =============================================================================
+#include <cstdio>
+#include <cstring>
+#include <string>
+
+#include <unity.h>
+
+#include "config_serializer.h"
+#include "servo_output_row.h"
+
+#include "../../../test/stubs/config/map_config_io.h"
+#include "../../../test/stubs/config/servo_output_table_writer.h"
+
+void setUp() {}
+void tearDown() {}
+
+namespace {
+
+ServoOutputRow mg996rRow() {
+    ServoOutputRow row = {};
+    servoOutputRowDefaults(&row, SERVO_DRIVER_LEDC, LEDC_CH_ARM1, SERVO_COMP_MG996R);
+    return row;
+}
+
+}  // namespace
+
+// --- defaults ----------------------------------------------------------------
+
+void test_defaults_never_hand_out_a_zero_travel_time() {
+    const ServoOutputRow row = mg996rRow();
+    // Zero is the dangerous value for a travel time, not the neutral one: an
+    // instant move on a panel is a slam.
+    TEST_ASSERT_TRUE(row.throw_ms > 0);
+    TEST_ASSERT_TRUE(row.accel_ms > 0);
+    TEST_ASSERT_EQUAL_UINT16(SERVO_THROW_MS_DEFAULT, row.throw_ms);
+    TEST_ASSERT_EQUAL_UINT16(SERVO_ACCEL_MS_DEFAULT, row.accel_ms);
+}
+
+void test_defaults_are_limp_and_unmeasured() {
+    const ServoOutputRow row = mg996rRow();
+    TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_LIMP, row.boot);
+    TEST_ASSERT_FALSE(row.calibrated);
+    TEST_ASSERT_EQUAL_UINT8(0, servoOutputPartCount(row));
+    TEST_ASSERT_EQUAL_UINT16(SERVO_RELEASE_MS_NEVER, row.release_ms);
+}
+
+void test_default_table_matches_the_five_fixed_outputs() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+
+    TEST_ASSERT_EQUAL_UINT8(5, table.count);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM1, table.rows[0].channel);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX3, table.rows[4].channel);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG996R, table.rows[0].component);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_NONE, table.rows[2].component);
+
+    // The five fixed field sets default to open 2000 / close 1000 on every
+    // output; the rows agree with them by construction while both exist.
+    for (uint8_t i = 0; i < table.count; ++i) {
+        TEST_ASSERT_EQUAL_UINT16(2000, table.rows[i].open_us);
+        TEST_ASSERT_EQUAL_UINT16(1500, table.rows[i].centre_us);
+        TEST_ASSERT_EQUAL_UINT16(1000, table.rows[i].close_us);
+    }
+}
+
+// Every row past the five this controller ships with. artoo-esp32 holds no
+// such row while LEDC is its only driver (SERVO_OUTPUT_ROW_MAX, #428), so on
+// that chip - which is the one the native suite builds - there is nothing past
+// the count to check; a chip that holds an expander's rows checks each.
+void test_rows_past_the_count_are_still_safe() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_DEFAULT_COUNT, table.count);
+    for (uint8_t i = SERVO_OUTPUT_ROW_DEFAULT_COUNT; i < SERVO_OUTPUT_ROW_MAX; ++i) {
+        const ServoOutputRow& spare = table.rows[i];
+        TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_CHANNEL_UNSET, spare.channel);
+        TEST_ASSERT_FALSE(servoOutputChannelIsValid(spare.driver, spare.channel));
+        TEST_ASSERT_TRUE(spare.throw_ms > 0);
+        TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_LIMP, spare.boot);
+    }
+}
+
+// --- reverse is the pair, never a flag ---------------------------------------
+
+void test_reverse_is_read_off_the_pair() {
+    ServoOutputRow row = mg996rRow();
+    row.open_us = 1900;
+    row.close_us = 1100;
+    TEST_ASSERT_EQUAL_UINT16(1100, servoOutputLowUs(row));
+    TEST_ASSERT_EQUAL_UINT16(1900, servoOutputHighUs(row));
+
+    // A reversed linkage is a swap of the pair and nothing else changes.
+    const uint16_t open = row.open_us;
+    row.open_us = row.close_us;
+    row.close_us = open;
+    TEST_ASSERT_EQUAL_UINT16(1100, servoOutputLowUs(row));
+    TEST_ASSERT_EQUAL_UINT16(1900, servoOutputHighUs(row));
+}
+
+// --- the component type governs the clamp ------------------------------------
+
+void test_mg996r_row_cannot_reach_500us() {
+    ServoOutputRow row = mg996rRow();
+    TEST_ASSERT_EQUAL_UINT16(1000, servoOutputClampPulse(row, 500));
+    TEST_ASSERT_EQUAL_UINT16(2000, servoOutputClampPulse(row, 2500));
+    TEST_ASSERT_EQUAL_UINT16(1234, servoOutputClampPulse(row, 1234));
+}
+
+void test_mg90s_row_takes_the_full_band() {
+    ServoOutputRow row = {};
+    servoOutputRowDefaults(&row, SERVO_DRIVER_LEDC, LEDC_CH_AUX1, SERVO_COMP_MG90S);
+    TEST_ASSERT_EQUAL_UINT16(500, servoOutputClampPulse(row, 500));
+    TEST_ASSERT_EQUAL_UINT16(2500, servoOutputClampPulse(row, 2500));
+    TEST_ASSERT_EQUAL_UINT16(500, row.close_us);
+    TEST_ASSERT_EQUAL_UINT16(2500, row.open_us);
+}
+
+void test_an_unstated_component_gets_the_cautious_band() {
+    ServoOutputRow row = {};
+    servoOutputRowDefaults(&row, SERVO_DRIVER_LEDC, LEDC_CH_AUX2, SERVO_COMP_NONE);
+    TEST_ASSERT_EQUAL_UINT16(1000, servoOutputClampPulse(row, 500));
+}
+
+void test_the_stored_door_clamps_to_the_band_too() {
+    ServoOutputRow row = mg996rRow();
+    ServoOutputRow edited = row;
+    edited.open_us = 2500;  // a stored number an MG996R will not take
+    const uint16_t repaired = servoOutputRowNormalise(&edited, row);
+
+    TEST_ASSERT_EQUAL_UINT16(2000, edited.open_us);
+    TEST_ASSERT_TRUE((repaired & SERVO_FIELD_OPEN) != 0);
+}
+
+// --- overshoot degrades until somebody has measured the output ---------------
+
+void test_overshoot_degrades_while_uncalibrated() {
+    ServoOutputRow row = mg996rRow();
+    row.easing = SERVO_EASE_OVERSHOOT;
+    row.calibrated = false;
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_NONE, servoOutputEffectiveEasing(row));
+
+    // The stored value survives the degrade, so it comes back the moment the
+    // ends exist.
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_OVERSHOOT, row.easing);
+
+    row.calibrated = true;
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_OVERSHOOT, servoOutputEffectiveEasing(row));
+}
+
+void test_soft_easing_is_not_gated_on_calibration() {
+    ServoOutputRow row = mg996rRow();
+    row.easing = SERVO_EASE_SOFT;
+    row.calibrated = false;
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_SOFT, servoOutputEffectiveEasing(row));
+}
+
+// --- capture records an end, and only an end ---------------------------------
+
+void test_capture_marks_calibrated_and_never_ticks_boot() {
+    ServoOutputRow row = mg996rRow();
+    row.boot = SERVO_BOOT_LIMP;
+
+    servoOutputCapture(&row, SERVO_END_OPEN, 1850);
+
+    TEST_ASSERT_EQUAL_UINT16(1850, row.open_us);
+    TEST_ASSERT_TRUE(row.calibrated);
+    // Finding an endpoint must never be the act that makes a panel move at
+    // power-up.
+    TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_LIMP, row.boot);
+}
+
+void test_capture_is_clamped_by_the_component_type() {
+    ServoOutputRow row = mg996rRow();
+    servoOutputCapture(&row, SERVO_END_CLOSE, 500);
+    TEST_ASSERT_EQUAL_UINT16(1000, row.close_us);
+}
+
+// A capture that leaves the centre where it belongs says nothing happened to
+// it. The default row is open 2000 / centre 1500 / close 1000, so a close
+// captured at 1400 still spans the centre.
+void test_a_capture_that_keeps_the_centre_inside_the_travel_drags_nothing() {
+    ServoOutputRow row = mg996rRow();
+    TEST_ASSERT_EQUAL_UINT16(0, servoOutputCapture(&row, SERVO_END_CLOSE, 1400));
+    TEST_ASSERT_EQUAL_UINT16(1500, row.centre_us);
+    TEST_ASSERT_EQUAL_UINT16(1400, row.close_us);
+}
+
+// The case the reference project's pwCentreFollow exists for: the builder
+// captures an end that swallows the centre. Refusing would refuse the first
+// number of an ordinary calibration, so the centre follows and the capture
+// reports where it went.
+void test_a_captured_end_that_swallows_the_centre_drags_it_in_and_says_so() {
+    ServoOutputRow row = mg996rRow();
+    // Close captured ABOVE the centre: the travel is now 1600..2000.
+    TEST_ASSERT_EQUAL_UINT16(1600, servoOutputCapture(&row, SERVO_END_CLOSE, 1600));
+    TEST_ASSERT_EQUAL_UINT16(1600, row.centre_us);
+    TEST_ASSERT_EQUAL_UINT16(1600, row.close_us);
+    TEST_ASSERT_EQUAL_UINT16(2000, row.open_us);
+    TEST_ASSERT_TRUE(row.calibrated);
+
+    // And the other way: an open captured below the centre drags it down.
+    ServoOutputRow other = mg996rRow();
+    TEST_ASSERT_EQUAL_UINT16(1200, servoOutputCapture(&other, SERVO_END_OPEN, 1200));
+    TEST_ASSERT_EQUAL_UINT16(1200, other.centre_us);
+}
+
+// A reversed linkage is open < close and there is no invert flag, so the drag
+// has to read which end is which from the pair rather than from the names.
+void test_the_drag_follows_a_reversed_pair_the_same_way_round() {
+    ServoOutputRow row = mg996rRow();
+    row.open_us = 1100;   // reversed: open is the lower number
+    row.close_us = 1900;
+    row.centre_us = 1500;
+
+    // Capturing close at 1300 leaves travel 1100..1300, which the centre is
+    // above.
+    TEST_ASSERT_EQUAL_UINT16(1300, servoOutputCapture(&row, SERVO_END_CLOSE, 1300));
+    TEST_ASSERT_EQUAL_UINT16(1300, row.centre_us);
+}
+
+// Capturing the centre is the builder placing that number deliberately. Moving
+// it out from under them would undo the act they just performed.
+void test_capturing_the_centre_never_drags_anything() {
+    ServoOutputRow row = mg996rRow();
+    row.open_us = 2000;
+    row.close_us = 1800;
+    TEST_ASSERT_EQUAL_UINT16(0, servoOutputCapture(&row, SERVO_END_CENTRE, 1850));
+    TEST_ASSERT_EQUAL_UINT16(1850, row.centre_us);
+    TEST_ASSERT_TRUE(row.calibrated);
+}
+
+// The capture reaches a row through the same addressed edit door a typed value
+// does, and what differs is what it means: the row becomes measured, and a
+// dragged centre is reported by the repair mask the other door already uses.
+void test_a_capture_through_the_edit_door_measures_the_row_and_reports_the_drag() {
+    ServoOutputRow row = mg996rRow();
+    ServoOutputEdit capture = {};
+    capture.driver = row.driver;
+    capture.channel = row.channel;
+    capture.fields = SERVO_FIELD_CLOSE;
+    capture.close_us = 1600;
+    capture.kind = SERVO_EDIT_CAPTURE;
+
+    const uint16_t repaired = servoOutputApplyEdit(&row, capture);
+
+    TEST_ASSERT_EQUAL_UINT16(1600, row.close_us);
+    TEST_ASSERT_EQUAL_UINT16(1600, row.centre_us);
+    TEST_ASSERT_TRUE(row.calibrated);
+    TEST_ASSERT_TRUE((repaired & SERVO_FIELD_CENTRE) != 0);
+    // The boot behaviour is untouched: calibrating must never be the act that
+    // makes a panel move at power-up.
+    TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_LIMP, row.boot);
+}
+
+// Reverse swaps the two ends and claims nothing else. It is not a capture: a
+// builder saying which way the linkage runs has not measured anything.
+void test_reverse_swaps_the_pair_and_measures_nothing() {
+    ServoOutputRow row = mg996rRow();
+    row.open_us = 1900;
+    row.close_us = 1100;
+    row.centre_us = 1500;
+
+    ServoOutputEdit reverse = {};
+    reverse.driver = row.driver;
+    reverse.channel = row.channel;
+    reverse.kind = SERVO_EDIT_REVERSE;
+    servoOutputApplyEdit(&row, reverse);
+
+    TEST_ASSERT_EQUAL_UINT16(1100, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1900, row.close_us);
+    // The travel between the ends is the same span, so the centre does not move.
+    TEST_ASSERT_EQUAL_UINT16(1500, row.centre_us);
+    TEST_ASSERT_FALSE(row.calibrated);
+
+    // Unticking it is a real undo with no bookkeeping: reverse again and the
+    // pair is exactly what it was, because the state IS the pair.
+    servoOutputApplyEdit(&row, reverse);
+    TEST_ASSERT_EQUAL_UINT16(1900, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1100, row.close_us);
+}
+
+// A reverse never carries a width, so it cannot put one on the row even when a
+// caller fills the fields it does not read.
+void test_reverse_ignores_any_width_that_rides_with_it() {
+    ServoOutputRow row = mg996rRow();
+    ServoOutputEdit reverse = {};
+    reverse.driver = row.driver;
+    reverse.channel = row.channel;
+    reverse.kind = SERVO_EDIT_REVERSE;
+    reverse.fields = (uint16_t)(SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE);
+    reverse.open_us = 1234;
+    reverse.close_us = 1777;
+    servoOutputApplyEdit(&row, reverse);
+
+    TEST_ASSERT_EQUAL_UINT16(1000, row.open_us);   // the defaults, swapped
+    TEST_ASSERT_EQUAL_UINT16(2000, row.close_us);
+}
+
+// The same door, not a capture: two typed numbers record widths and claim
+// nothing about anybody having measured them.
+void test_a_typed_edit_through_the_same_door_is_not_a_capture() {
+    ServoOutputRow row = mg996rRow();
+    ServoOutputEdit typed = {};
+    typed.driver = row.driver;
+    typed.channel = row.channel;
+    typed.fields = (uint16_t)(SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE);
+    typed.open_us = 1900;
+    typed.close_us = 1100;
+
+    servoOutputApplyEdit(&row, typed);
+
+    TEST_ASSERT_EQUAL_UINT16(1900, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1100, row.close_us);
+    TEST_ASSERT_FALSE(row.calibrated);
+}
+
+// --- one validator at every door ---------------------------------------------
+
+void test_an_unreadable_record_takes_the_safe_defaults_and_reports() {
+    const ServoOutputRow defaults = mg996rRow();
+    ServoOutputRow parsed = {};
+    const uint16_t repaired = servoOutputRowParse("not a record at all", defaults, &parsed);
+
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)((1u << SERVO_OUTPUT_FIELD_COUNT) - 1u), repaired);
+    TEST_ASSERT_EQUAL_UINT16(defaults.open_us, parsed.open_us);
+    TEST_ASSERT_EQUAL_UINT16(defaults.throw_ms, parsed.throw_ms);
+    TEST_ASSERT_FALSE(parsed.calibrated);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_LIMP, parsed.boot);
+    TEST_ASSERT_EQUAL_UINT8(0, servoOutputPartCount(parsed));
+}
+
+void test_one_bad_field_does_not_cost_the_row_its_calibration() {
+    const ServoOutputRow defaults = mg996rRow();
+    // Everything readable except the ease word.
+    const char* record = "ledc:0:utilUp,utilLo:1900:1500:1100:750:200:0:bouncy:home-hold:mg996r:1";
+    ServoOutputRow parsed = {};
+    const uint16_t repaired = servoOutputRowParse(record, defaults, &parsed);
+
+    TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_EASING, repaired);
+    TEST_ASSERT_EQUAL_UINT8(2, servoOutputPartCount(parsed));
+    TEST_ASSERT_EQUAL_STRING("utilUp", servoOutputPartAt(parsed, 0));
+    TEST_ASSERT_EQUAL_STRING("utilLo", servoOutputPartAt(parsed, 1));
+    TEST_ASSERT_EQUAL_UINT16(1900, parsed.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1100, parsed.close_us);
+    TEST_ASSERT_EQUAL_UINT16(750, parsed.throw_ms);
+    TEST_ASSERT_TRUE(parsed.calibrated);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_HOME_HOLD, parsed.boot);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_NONE, parsed.easing);
+}
+
+void test_an_empty_field_is_not_zero() {
+    const ServoOutputRow defaults = mg996rRow();
+    // An empty travel time is not zero, and " 750" is not 750: either would
+    // switch off the comparisons every clamp downstream is made of.
+    const char* record = "ledc:0:utilUp:1900:1500:1100::200:0:none:limp:mg996r:1";
+    ServoOutputRow parsed = {};
+    const uint16_t repaired = servoOutputRowParse(record, defaults, &parsed);
+
+    TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_THROW_MS, repaired);
+    TEST_ASSERT_EQUAL_UINT16(defaults.throw_ms, parsed.throw_ms);
+    TEST_ASSERT_TRUE(parsed.throw_ms > 0);
+}
+
+void test_a_partial_edit_keeps_what_it_could_not_read() {
+    ServoOutputRow stored = mg996rRow();
+    stored.open_us = 1850;
+    stored.throw_ms = 640;
+    stored.calibrated = true;
+
+    // One edit applied over what is already there: a good field lands, a bad
+    // one keeps the number the builder calibrated.
+    ServoOutputRow edited = stored;
+    edited.open_us = 1700;
+    edited.throw_ms = 0;
+    const uint16_t repaired = servoOutputRowNormalise(&edited, stored);
+
+    TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_THROW_MS, repaired);
+    TEST_ASSERT_EQUAL_UINT16(1700, edited.open_us);
+    TEST_ASSERT_EQUAL_UINT16(640, edited.throw_ms);
+    TEST_ASSERT_TRUE(edited.calibrated);
+}
+
+// --- an Output may drive several Parts, a Part only one Output ---------------
+
+void test_a_row_carries_up_to_four_parts_and_refuses_a_fifth() {
+    ServoOutputRow row = mg996rRow();
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "utilUp"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "utilLo"));
+
+    // A Part the row already drives is not a second slot: the same wire. Asked
+    // here, with two slots still free, so it is the duplicate that refuses and
+    // not the cap.
+    TEST_ASSERT_FALSE(servoOutputAddPart(&row, "utilUp"));
+    TEST_ASSERT_EQUAL_UINT8(2, servoOutputPartCount(row));
+
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "other1"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "other2"));
+    TEST_ASSERT_EQUAL_UINT8(4, servoOutputPartCount(row));
+
+    TEST_ASSERT_FALSE(servoOutputAddPart(&row, "other3"));
+    TEST_ASSERT_EQUAL_UINT8(4, servoOutputPartCount(row));
+
+    TEST_ASSERT_TRUE(servoOutputDrivesPart(row, "other2"));
+    TEST_ASSERT_FALSE(servoOutputDrivesPart(row, "other3"));
+}
+
+void test_an_empty_part_list_stays_legal() {
+    const ServoOutputRow defaults = mg996rRow();
+    ServoOutputRow row = mg996rRow();
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "utilUp"));
+    servoOutputClearParts(&row);
+
+    char record[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+    TEST_ASSERT_TRUE(servoOutputRowFormat(record, sizeof(record), row));
+
+    ServoOutputRow parsed = {};
+    const uint16_t repaired = servoOutputRowParse(record, defaults, &parsed);
+    TEST_ASSERT_EQUAL_UINT16(0, repaired);
+    TEST_ASSERT_EQUAL_UINT8(0, servoOutputPartCount(parsed));
+}
+
+void test_a_ganged_pair_survives_the_wire() {
+    const ServoOutputRow defaults = mg996rRow();
+    ServoOutputRow row = mg996rRow();
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "utilUp"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "utilLo"));
+
+    char record[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+    TEST_ASSERT_TRUE(servoOutputRowFormat(record, sizeof(record), row));
+
+    ServoOutputRow parsed = {};
+    const uint16_t repaired = servoOutputRowParse(record, defaults, &parsed);
+    TEST_ASSERT_EQUAL_UINT16(0, repaired);
+    TEST_ASSERT_EQUAL_UINT8(2, servoOutputPartCount(parsed));
+    TEST_ASSERT_EQUAL_STRING("utilUp", servoOutputPartAt(parsed, 0));
+    TEST_ASSERT_EQUAL_STRING("utilLo", servoOutputPartAt(parsed, 1));
+}
+
+void test_one_unreadable_part_costs_only_its_own_slot() {
+    const ServoOutputRow defaults = mg996rRow();
+    // The middle id carries a character no catalog id can, and the list names
+    // one Part twice.
+    const char* record =
+        "ledc:0:utilUp,door FR,other1,utilUp:1900:1500:1100:750:200:0:none:limp:mg996r:1";
+    ServoOutputRow parsed = {};
+    const uint16_t repaired = servoOutputRowParse(record, defaults, &parsed);
+
+    TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_PARTS, repaired);
+    TEST_ASSERT_EQUAL_UINT8(2, servoOutputPartCount(parsed));
+    TEST_ASSERT_EQUAL_STRING("utilUp", servoOutputPartAt(parsed, 0));
+    TEST_ASSERT_EQUAL_STRING("other1", servoOutputPartAt(parsed, 1));
+    // The rest of the row never paid for it.
+    TEST_ASSERT_EQUAL_UINT16(1900, parsed.open_us);
+    TEST_ASSERT_TRUE(parsed.calibrated);
+}
+
+void test_a_part_no_build_models_is_refused_rather_than_stored() {
+    ServoOutputRow row = mg996rRow();
+    // "domeEye" is a well-formed id that no catalog row declares, so this build
+    // compiles no Part vocabulary entry for it. An id nothing models is
+    // reported here, not accepted and answered later as unwired hardware.
+    //
+    // Deliberately NOT a real catalog id: since #358 every Part the catalog
+    // declares is in the vocabulary whatever drives it, so a breadpan door is
+    // exactly the wrong example - it is a Part this build models and no Output
+    // claims, which is a different answer (part-not-assigned) and one the row
+    // must store rather than refuse.
+    TEST_ASSERT_FALSE(droidPartIdIsKnown("domeEye"));
+    TEST_ASSERT_FALSE(servoOutputAddPart(&row, "domeEye"));
+    TEST_ASSERT_EQUAL_UINT8(0, servoOutputPartCount(row));
+
+    // Shape alone was never the question: this one is a perfectly formed
+    // identifier and still not a Part.
+    TEST_ASSERT_FALSE(servoOutputPartIdIsValid("banana"));
+    TEST_ASSERT_TRUE(servoOutputPartIdIsValid("utilUp"));
+    // No Part assigned stays legal, and stays the empty answer.
+    TEST_ASSERT_TRUE(servoOutputPartIdIsValid(""));
+}
+
+void test_a_stored_part_outside_the_vocabulary_drops_and_is_reported() {
+    const ServoOutputRow defaults = mg996rRow();
+    // A row saved against a build whose catalog named a part, read back by one
+    // whose catalog does not - a step that outlived its catalog. The slot goes
+    // and says so; the twelve fields beside it are untouched.
+    const char* record =
+        "ledc:0:utilUp,domeEye:1900:1500:1100:750:200:0:none:limp:mg996r:1";
+    ServoOutputRow parsed = {};
+    const uint16_t repaired = servoOutputRowParse(record, defaults, &parsed);
+
+    TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_PARTS, repaired);
+    TEST_ASSERT_EQUAL_UINT8(1, servoOutputPartCount(parsed));
+    TEST_ASSERT_EQUAL_STRING("utilUp", servoOutputPartAt(parsed, 0));
+    TEST_ASSERT_EQUAL_UINT16(1900, parsed.open_us);
+    TEST_ASSERT_EQUAL_UINT16(750, parsed.throw_ms);
+    TEST_ASSERT_TRUE(parsed.calibrated);
+}
+
+void test_a_part_two_rows_claim_stays_with_the_first() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+    TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[1], "utilUp"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[3], "utilUp"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[3], "utilLo"));
+
+    const uint32_t affected = servoOutputTableEnforcePartOwnership(&table);
+
+    // Which Output drives this Part has exactly one answer, and it does not
+    // depend on which row firmware scans first.
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)1u << 3, affected);
+    TEST_ASSERT_TRUE(servoOutputDrivesPart(table.rows[1], "utilUp"));
+    TEST_ASSERT_FALSE(servoOutputDrivesPart(table.rows[3], "utilUp"));
+    // The later row keeps the Part nobody contested, and keeps it in slot 0.
+    TEST_ASSERT_EQUAL_UINT8(1, servoOutputPartCount(table.rows[3]));
+    TEST_ASSERT_EQUAL_STRING("utilLo", servoOutputPartAt(table.rows[3], 0));
+}
+
+void test_a_contested_part_is_reported_by_the_loader() {
+    MapWriter writer;
+    ServoOutputTable saved = {};
+    servoOutputTableDefaults(&saved);
+    TEST_ASSERT_TRUE(servoOutputAddPart(&saved.rows[0], "utilUp"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&saved.rows[2], "utilUp"));
+    TEST_ASSERT_TRUE(writeServoOutputTableForTest(saved, writer));
+
+    MapReader reader;
+    for (const auto& pair : writer.data()) {
+        reader.set(pair.first.c_str(), pair.second);
+    }
+
+    ServoOutputTable loaded = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &loaded, &report);
+
+    TEST_ASSERT_EQUAL_UINT8(1, report.rowsRepaired);
+    TEST_ASSERT_EQUAL_UINT8(2, report.firstRow);
+    TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_PARTS, report.firstRowMask);
+    TEST_ASSERT_TRUE(servoOutputDrivesPart(loaded.rows[0], "utilUp"));
+    TEST_ASSERT_FALSE(servoOutputDrivesPart(loaded.rows[2], "utilUp"));
+
+    char note[64] = {};
+    servoOutputRepairNote(report.firstRowMask, true, note, sizeof(note));
+    TEST_ASSERT_EQUAL_STRING("parts took the safe default", note);
+}
+
+void test_the_receipt_names_the_field_and_the_door() {
+    char note[64] = {};
+    servoOutputRepairNote(SERVO_FIELD_OPEN | SERVO_FIELD_EASING, true, note, sizeof(note));
+    TEST_ASSERT_EQUAL_STRING("openUs, ease took the safe default", note);
+
+    servoOutputRepairNote(SERVO_FIELD_THROW_MS, false, note, sizeof(note));
+    TEST_ASSERT_EQUAL_STRING("throwMs kept what was there", note);
+}
+
+void test_an_unaddressable_channel_is_repaired() {
+    const ServoOutputRow defaults = mg996rRow();
+    // LEDC channel 2 is the dome ESC, not a servo output.
+    char record[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+    ServoOutputRow row = mg996rRow();
+    row.channel = LEDC_CH_DOME;
+    TEST_ASSERT_TRUE(servoOutputRowFormat(record, sizeof(record), row));
+
+    ServoOutputRow parsed = {};
+    const uint16_t repaired = servoOutputRowParse(record, defaults, &parsed);
+    TEST_ASSERT_TRUE((repaired & SERVO_FIELD_CHANNEL) != 0);
+    TEST_ASSERT_EQUAL_UINT8(defaults.channel, parsed.channel);
+}
+
+// --- every field survives the wire -------------------------------------------
+
+void test_every_field_round_trips_through_storage() {
+    ServoOutputTable saved = {};
+    servoOutputTableDefaults(&saved);
+
+    ServoOutputRow& row = saved.rows[1];
+    row.driver = SERVO_DRIVER_LEDC;
+    row.channel = LEDC_CH_AUX2;
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "other4"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "other3"));
+    row.component = SERVO_COMP_MG90S;  // set before the endpoints it bounds
+    row.open_us = 700;                 // reversed pair, and outside the MG996R band
+    row.centre_us = 1500;
+    row.close_us = 2300;
+    row.throw_ms = 1450;
+    row.accel_ms = 310;
+    row.release_ms = 4000;
+    row.easing = SERVO_EASE_OVERSHOOT;
+    row.boot = SERVO_BOOT_HOME_RELEASE;
+    row.calibrated = true;
+
+    MapWriter writer;
+    TEST_ASSERT_TRUE(writeServoOutputTableForTest(saved, writer));
+
+    MapReader reader;
+    for (const auto& pair : writer.data()) {
+        reader.set(pair.first.c_str(), pair.second);
+    }
+
+    ServoOutputTable loaded = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &loaded, &report);
+
+    TEST_ASSERT_EQUAL_UINT8(0, report.rowsRepaired);
+    TEST_ASSERT_FALSE(report.countRepaired);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_DEFAULT_COUNT, loaded.count);
+
+    const ServoOutputRow& back = loaded.rows[1];
+    TEST_ASSERT_EQUAL_UINT8(SERVO_DRIVER_LEDC, back.driver);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX2, back.channel);
+    TEST_ASSERT_EQUAL_UINT8(2, servoOutputPartCount(back));
+    TEST_ASSERT_EQUAL_STRING("other4", servoOutputPartAt(back, 0));
+    TEST_ASSERT_EQUAL_STRING("other3", servoOutputPartAt(back, 1));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG90S, back.component);
+    TEST_ASSERT_EQUAL_UINT16(700, back.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1500, back.centre_us);
+    TEST_ASSERT_EQUAL_UINT16(2300, back.close_us);
+    TEST_ASSERT_EQUAL_UINT16(1450, back.throw_ms);
+    TEST_ASSERT_EQUAL_UINT16(310, back.accel_ms);
+    TEST_ASSERT_EQUAL_UINT16(4000, back.release_ms);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_OVERSHOOT, back.easing);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_HOME_RELEASE, back.boot);
+    TEST_ASSERT_TRUE(back.calibrated);
+
+    // The pair came back in the direction it was saved, with no flag to
+    // disagree with it; only the low/high reading sorts it.
+    TEST_ASSERT_EQUAL_UINT16(700, servoOutputLowUs(back));
+    TEST_ASSERT_EQUAL_UINT16(2300, servoOutputHighUs(back));
+}
+
+// The stored text, byte for byte (ADR 0068, amended 2026-09-27). Every word
+// each vocabulary has, a Part list both empty and full, and `calibrated` both
+// ways: a row a controller stored yesterday must read the same today, so these
+// strings only change when the stored form is meant to.
+namespace {
+
+struct GoldenRow {
+    ServoOutputRow row;
+    const char* stored;
+};
+
+ServoOutputRow goldenRow(uint8_t channel, ServoComponentType component) {
+    ServoOutputRow row = {};
+    servoOutputRowDefaults(&row, SERVO_DRIVER_LEDC, channel, component);
+    return row;
+}
+
+void goldenRows(GoldenRow out[4]) {
+    out[0] = {goldenRow(LEDC_CH_ARM1, SERVO_COMP_MG996R),
+              "ledc:0:-:2000:1500:1000:1000:250:0:none:limp:mg996r:0:1"};
+
+    ServoOutputRow full = goldenRow(LEDC_CH_ARM2, SERVO_COMP_MG90S);
+    TEST_ASSERT_TRUE(servoOutputAddPart(&full, "utilUp"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&full, "utilLo"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&full, "doorFL"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&full, "gripArm"));
+    full.open_us = 700;
+    full.centre_us = 1500;
+    full.close_us = 2300;
+    full.throw_ms = 1450;
+    full.accel_ms = 310;
+    full.release_ms = 4000;
+    full.easing = SERVO_EASE_SOFT;
+    full.boot = SERVO_BOOT_HOME_HOLD;
+    full.calibrated = true;
+    full.led_count = 7;
+    out[1] = {full, "ledc:1:utilUp,utilLo,doorFL,gripArm:700:1500:2300:1450:310:4000:soft:home-hold:mg90s:1:7"};
+
+    ServoOutputRow one = goldenRow(LEDC_CH_AUX1, SERVO_COMP_NONE);
+    TEST_ASSERT_TRUE(servoOutputAddPart(&one, "other3"));
+    one.open_us = 1100;
+    one.centre_us = 1400;
+    one.close_us = 1900;
+    one.throw_ms = SERVO_THROW_MS_MIN;
+    one.accel_ms = SERVO_ACCEL_MS_MAX;
+    one.release_ms = SERVO_RELEASE_MS_MAX;
+    one.easing = SERVO_EASE_OVERSHOOT;
+    one.boot = SERVO_BOOT_HOME_RELEASE;
+    one.calibrated = true;
+    one.led_count = SERVO_LIGHT_LEDS_MAX;
+    out[2] = {one, "ledc:3:other3:1100:1400:1900:20:10000:60000:overshoot:home-release:none:1:255"};
+
+    ServoOutputRow lit = goldenRow(LEDC_CH_AUX2, SERVO_COMP_RGB);
+    lit.throw_ms = SERVO_THROW_MS_MAX;
+    lit.accel_ms = SERVO_ACCEL_MS_MIN;
+    lit.led_count = 42;
+    out[3] = {lit, "ledc:4:-:2000:1500:1000:10000:1:0:none:limp:rgb:0:42"};
+}
+
+}  // namespace
+
+void test_the_stored_text_is_byte_for_byte_what_it_was() {
+    GoldenRow rows[4];
+    goldenRows(rows);
+    // Read over a fallback unlike every golden row, so a field the parse
+    // skipped would show as the fallback's value in the text written back.
+    ServoOutputRow fallback = goldenRow(LEDC_CH_AUX3, SERVO_COMP_MG996R);
+    fallback.throw_ms = 999;
+    fallback.accel_ms = 99;
+    fallback.release_ms = 9;
+    fallback.led_count = 9;
+    for (const GoldenRow& golden : rows) {
+        char stored[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+        TEST_ASSERT_TRUE(servoOutputRowFormat(stored, sizeof(stored), golden.row));
+        TEST_ASSERT_EQUAL_STRING(golden.stored, stored);
+
+        ServoOutputRow parsed = {};
+        TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, servoOutputRowParse(golden.stored, fallback, &parsed),
+                                         golden.stored);
+        char again[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+        TEST_ASSERT_TRUE(servoOutputRowFormat(again, sizeof(again), parsed));
+        TEST_ASSERT_EQUAL_STRING(golden.stored, again);
+    }
+}
+
+// A stored row of any length this firmware ever wrote is read, from the
+// thirteen fields stored before #413 up to today's, and each field it is too
+// short to carry keeps the fallback without being reported: calibration
+// surviving an upgrade is not a repair. The sweep runs from the oldest shape to
+// today's count, so the day a field is appended, the record that becomes
+// "today minus two" is in it.
+void test_every_older_stored_length_is_read_with_its_tail_defaulted() {
+    GoldenRow rows[4];
+    goldenRows(rows);
+    const GoldenRow& golden = rows[1];
+    const ServoOutputRow fallback = goldenRow(LEDC_CH_AUX3, SERVO_COMP_MG996R);
+
+    for (uint8_t length = SERVO_OUTPUT_FIELD_COUNT_OLDEST; length <= SERVO_OUTPUT_FIELD_COUNT;
+         ++length) {
+        char stored[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+        snprintf(stored, sizeof(stored), "%s", golden.stored);
+        uint8_t fields = 1;
+        for (char* at = stored; *at != '\0'; ++at) {
+            if (*at == ':' && ++fields > length) {
+                *at = '\0';
+                break;
+            }
+        }
+
+        ServoOutputRow parsed = {};
+        uint16_t absent = 0;
+        TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, servoOutputRowParse(stored, fallback, &parsed, &absent),
+                                         stored);
+        const uint16_t tail = (uint16_t)(((1u << SERVO_OUTPUT_FIELD_COUNT) - 1u) &
+                                         ~((1u << length) - 1u));
+        TEST_ASSERT_EQUAL_UINT16_MESSAGE(tail, absent, stored);
+        // What the record carried is the golden row's; what it lacked is the
+        // fallback's.
+        for (uint8_t f = 0; f < SERVO_OUTPUT_FIELD_COUNT; ++f) {
+            const ServoOutputRowField& field = kServoOutputRowFields[f];
+            const ServoOutputRow& want = f < length ? golden.row : fallback;
+            char wantText[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+            char gotText[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+            TEST_ASSERT_TRUE(servoOutputRowFieldFormat(field, want, wantText, sizeof(wantText)));
+            TEST_ASSERT_TRUE(servoOutputRowFieldFormat(field, parsed, gotText, sizeof(gotText)));
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(wantText, gotText, field.name);
+        }
+    }
+
+    // One field shorter than the oldest shape is not a shape anybody wrote.
+    char damaged[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+    snprintf(damaged, sizeof(damaged), "%s", golden.stored);
+    for (uint8_t cut = SERVO_OUTPUT_FIELD_COUNT - SERVO_OUTPUT_FIELD_COUNT_OLDEST + 1; cut > 0; --cut) {
+        *strrchr(damaged, ':') = '\0';
+    }
+    ServoOutputRow parsed = {};
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)((1u << SERVO_OUTPUT_FIELD_COUNT) - 1u),
+                             servoOutputRowParse(damaged, fallback, &parsed));
+}
+
+void test_a_row_added_without_an_address_is_reported() {
+    ServoOutputTable saved = {};
+    servoOutputTableDefaults(&saved);
+    // A sixth row, as an expander adds - or, on a chip that holds only the
+    // five (artoo-esp32 while LEDC is its only driver, #428), the fifth row
+    // with its address taken off, which is the same row as far as the loader
+    // can tell: stored, and nobody has addressed it.
+    const uint8_t added = (SERVO_OUTPUT_ROW_MAX > SERVO_OUTPUT_ROW_DEFAULT_COUNT)
+                              ? SERVO_OUTPUT_ROW_DEFAULT_COUNT
+                              : (uint8_t)(SERVO_OUTPUT_ROW_DEFAULT_COUNT - 1);
+    saved.count = (uint8_t)(added + 1);
+    saved.rows[added].channel = SERVO_OUTPUT_CHANNEL_UNSET;
+
+    MapWriter writer;
+    TEST_ASSERT_TRUE(writeServoOutputTableForTest(saved, writer));
+
+    MapReader reader;
+    for (const auto& pair : writer.data()) {
+        reader.set(pair.first.c_str(), pair.second);
+    }
+
+    ServoOutputTable loaded = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &loaded, &report);
+
+    // The row count is stored, so rows can be added without rewriting a field
+    // set -- and a row nobody has addressed yet says so rather than reading as
+    // channel zero.
+    TEST_ASSERT_EQUAL_UINT8(added + 1, loaded.count);
+    TEST_ASSERT_EQUAL_UINT8(1, report.rowsRepaired);
+    TEST_ASSERT_EQUAL_UINT8(added, report.firstRow);
+    TEST_ASSERT_TRUE((report.firstRowMask & SERVO_FIELD_CHANNEL) != 0);
+}
+
+void test_a_device_that_never_wrote_a_row_reports_nothing() {
+    MapReader reader;  // nothing stored at all
+    ServoOutputTable loaded = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &loaded, &report);
+
+    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_DEFAULT_COUNT, loaded.count);
+    TEST_ASSERT_EQUAL_UINT8(0, report.rowsRepaired);
+    TEST_ASSERT_EQUAL_UINT16(0, report.fieldsRepaired);
+    TEST_ASSERT_EQUAL_UINT16(2000, loaded.rows[0].open_us);
+}
+
+void test_a_damaged_stored_row_is_counted_and_named() {
+    MapWriter writer;
+    ServoOutputTable saved = {};
+    servoOutputTableDefaults(&saved);
+    TEST_ASSERT_TRUE(writeServoOutputTableForTest(saved, writer));
+
+    MapReader reader;
+    for (const auto& pair : writer.data()) {
+        reader.set(pair.first.c_str(), pair.second);
+    }
+    reader.set("so02", std::string("ledc:3:utilUp:1900:1500:1100:750:200:0:none:limp:mg996r:yes"));
+
+    ServoOutputTable loaded = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &loaded, &report);
+
+    TEST_ASSERT_EQUAL_UINT8(1, report.rowsRepaired);
+    TEST_ASSERT_EQUAL_UINT8(2, report.firstRow);
+    TEST_ASSERT_EQUAL_UINT16(1, report.fieldsRepaired);
+    TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_CALIBRATED, report.firstRowMask);
+    // An unreadable calibrated bit never reads as measured.
+    TEST_ASSERT_FALSE(loaded.rows[2].calibrated);
+    // ...and the rest of the row survived it.
+    TEST_ASSERT_EQUAL_STRING("utilUp", servoOutputPartAt(loaded.rows[2], 0));
+    TEST_ASSERT_EQUAL_UINT16(750, loaded.rows[2].throw_ms);
+}
+
+void test_an_out_of_range_stored_count_keeps_the_default() {
+    MapReader reader;
+    reader.set("so_cnt", std::string("200"));
+
+    ServoOutputTable loaded = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &loaded, &report);
+
+    TEST_ASSERT_TRUE(report.countRepaired);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_DEFAULT_COUNT, loaded.count);
+}
+
+// --- the bridge from the five fixed field sets (#286, ADR 0041) --------------
+
+void test_a_fixed_pair_arrives_with_its_direction_and_a_midpoint_centre() {
+    ServoOutputRow row = mg996rRow();
+    // A reversed linkage: the builder's open is the LOWER number.
+    const uint16_t repaired = servoOutputAdoptFixedPair(&row, 1200, 1900, SERVO_COMP_MG996R);
+
+    TEST_ASSERT_EQUAL_UINT16(0, repaired);
+    TEST_ASSERT_EQUAL_UINT16(1200, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1900, row.close_us);
+    // Halfway between the builder's own two ends, not the middle of the band.
+    TEST_ASSERT_EQUAL_UINT16(1550, row.centre_us);
+    // Sorting the pair here would be the invert flag ADR 0041 refuses.
+}
+
+void test_a_fixed_pair_carries_nothing_it_was_never_told() {
+    ServoOutputRow row = mg996rRow();
+    row.throw_ms = 2500;
+    row.accel_ms = 400;
+    row.boot = SERVO_BOOT_HOME_HOLD;
+    row.easing = SERVO_EASE_SOFT;
+    row.release_ms = 3000;
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "utilUp"));
+
+    servoOutputAdoptFixedPair(&row, 1900, 1100, SERVO_COMP_MG996R);
+
+    TEST_ASSERT_EQUAL_UINT16(2500, row.throw_ms);
+    TEST_ASSERT_EQUAL_UINT16(400, row.accel_ms);
+    TEST_ASSERT_EQUAL_UINT16(3000, row.release_ms);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_HOME_HOLD, row.boot);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_SOFT, row.easing);
+    TEST_ASSERT_EQUAL_STRING("utilUp", servoOutputPartAt(row, 0));
+    // The old form stored no such bit, and one nobody measured is not one to
+    // infer: false is the value that degrades overshoot and warns.
+    TEST_ASSERT_FALSE(row.calibrated);
+}
+
+void test_a_measured_centre_is_not_recomputed_by_a_later_crossing() {
+    ServoOutputRow row = mg996rRow();
+    servoOutputCapture(&row, SERVO_END_CENTRE, 1300);
+    TEST_ASSERT_TRUE(row.calibrated);
+
+    // The bridge is crossed again on every config write. A centre somebody
+    // measured is theirs; only an unmeasured one is a default to re-derive.
+    servoOutputAdoptFixedPair(&row, 1900, 1100, SERVO_COMP_MG996R);
+
+    TEST_ASSERT_EQUAL_UINT16(1300, row.centre_us);
+    TEST_ASSERT_EQUAL_UINT16(1900, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1100, row.close_us);
+}
+
+void test_a_fixed_pair_the_band_cannot_take_is_reported() {
+    ServoOutputRow row = mg996rRow();
+    // 500/2500 was legal in the old form; an MG996R row cannot take either.
+    const uint16_t repaired = servoOutputAdoptFixedPair(&row, 2500, 500, SERVO_COMP_MG996R);
+
+    TEST_ASSERT_EQUAL_UINT16(2000, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1000, row.close_us);
+    TEST_ASSERT_TRUE((repaired & SERVO_FIELD_OPEN) != 0);
+    TEST_ASSERT_TRUE((repaired & SERVO_FIELD_CLOSE) != 0);
+    // Nothing is silently clamped away: the note names the fields.
+    char note[96] = {};
+    servoOutputRepairNote(repaired, true, note, sizeof(note));
+    TEST_ASSERT_NOT_NULL(strstr(note, "open"));
+    TEST_ASSERT_NOT_NULL(strstr(note, "close"));
+}
+
+void test_the_component_is_settled_before_the_pair_is_clamped() {
+    ServoOutputRow row = mg996rRow();
+    // Naming the component that takes the wider band is the unlock (#286): the
+    // same 600 us that an MG996R row refuses lands untouched on an MG90S.
+    const uint16_t repaired = servoOutputAdoptFixedPair(&row, 2400, 600, SERVO_COMP_MG90S);
+
+    TEST_ASSERT_EQUAL_UINT16(0, repaired);
+    TEST_ASSERT_EQUAL_UINT16(2400, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(600, row.close_us);
+    TEST_ASSERT_EQUAL_UINT16(1500, row.centre_us);
+}
+
+// --- finding the row behind an Output Address --------------------------------
+
+void test_an_address_finds_its_row_and_an_unclaimed_one_does_not() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+
+    TEST_ASSERT_EQUAL_UINT8(0, servoOutputTableFindByAddress(table, SERVO_DRIVER_LEDC, LEDC_CH_ARM1));
+    TEST_ASSERT_EQUAL_UINT8(4, servoOutputTableFindByAddress(table, SERVO_DRIVER_LEDC, LEDC_CH_AUX3));
+    // The dome channel drives an ESC, so no servo row is addressed there.
+    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_MAX,
+                            servoOutputTableFindByAddress(table, SERVO_DRIVER_LEDC, LEDC_CH_DOME));
+    // A row past the live count is not addressed yet, whatever it holds.
+    table.count = 2;
+    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_MAX,
+                            servoOutputTableFindByAddress(table, SERVO_DRIVER_LEDC, LEDC_CH_AUX3));
+}
+
+// --- the bridge, crossed on first read ---------------------------------------
+
+void test_an_upgrading_controller_finds_its_calibration_on_the_rows() {
+    // A controller that calibrated two arms and one aux before ADR 0041: five
+    // fixed field sets in NVS, and not one row record.
+    MapReader reader;
+    reader.set("arm1_op", (uint32_t)1850);
+    reader.set("arm1_cl", (uint32_t)1150);
+    reader.set("arm1_type", (uint32_t)SERVO_COMP_MG996R);
+    reader.set("aux1_op", (uint32_t)1400);
+    reader.set("aux1_cl", (uint32_t)1900);
+    reader.set("aux1_type", (uint32_t)SERVO_COMP_MG996R);
+
+    ServoOutputTable loaded = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &loaded, &report);
+
+    const uint8_t arm1 = servoOutputTableFindByAddress(loaded, SERVO_DRIVER_LEDC, LEDC_CH_ARM1);
+    TEST_ASSERT_EQUAL_UINT16(1850, loaded.rows[arm1].open_us);
+    TEST_ASSERT_EQUAL_UINT16(1150, loaded.rows[arm1].close_us);
+    TEST_ASSERT_EQUAL_UINT16(1500, loaded.rows[arm1].centre_us);
+
+    // A reversed linkage on aux1 is still reversed on the row.
+    const uint8_t aux1 = servoOutputTableFindByAddress(loaded, SERVO_DRIVER_LEDC, LEDC_CH_AUX1);
+    TEST_ASSERT_EQUAL_UINT16(1400, loaded.rows[aux1].open_us);
+    TEST_ASSERT_EQUAL_UINT16(1900, loaded.rows[aux1].close_us);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG996R, loaded.rows[aux1].component);
+
+    // Nothing was moved, so nothing is reported.
+    TEST_ASSERT_EQUAL_UINT8(0, report.rowsRepaired);
+    // And the new fields are still the safe values, not something inferred.
+    TEST_ASSERT_FALSE(loaded.rows[arm1].calibrated);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_LIMP, loaded.rows[arm1].boot);
+}
+
+void test_a_saved_row_wins_over_the_old_form() {
+    // Both forms present, disagreeing: the row is the output from now on.
+    MapReader reader;
+    reader.set("arm1_op", (uint32_t)1850);
+    reader.set("arm1_cl", (uint32_t)1150);
+    reader.set("so00", std::string("ledc:0:utilUp:1700:1400:1200:800:200:0:soft:limp:mg996r:1"));
+
+    ServoOutputTable loaded = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &loaded, &report);
+
+    TEST_ASSERT_EQUAL_UINT16(1700, loaded.rows[0].open_us);
+    TEST_ASSERT_EQUAL_UINT16(1200, loaded.rows[0].close_us);
+    TEST_ASSERT_TRUE(loaded.rows[0].calibrated);
+    TEST_ASSERT_EQUAL_STRING("utilUp", servoOutputPartAt(loaded.rows[0], 0));
+    TEST_ASSERT_EQUAL_UINT8(0, report.rowsRepaired);
+
+    // The row beside it has no record, so it still crosses the bridge.
+    const uint8_t arm2 = servoOutputTableFindByAddress(loaded, SERVO_DRIVER_LEDC, LEDC_CH_ARM2);
+    TEST_ASSERT_EQUAL_UINT16(2000, loaded.rows[arm2].open_us);
+}
+
+void test_an_old_value_the_band_cannot_take_is_reported_at_load() {
+    // 2500 us was legal in the old form on any output. On an MG996R row it is
+    // not, so it moves -- and a builder's own number changing under them is
+    // said out loud rather than quietly clamped.
+    MapReader reader;
+    reader.set("arm1_op", (uint32_t)2500);
+    reader.set("arm1_type", (uint32_t)SERVO_COMP_MG996R);
+
+    ServoOutputTable loaded = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &loaded, &report);
+
+    TEST_ASSERT_EQUAL_UINT16(2000, loaded.rows[0].open_us);
+    TEST_ASSERT_EQUAL_UINT8(1, report.rowsRepaired);
+    TEST_ASSERT_EQUAL_UINT8(0, report.firstRow);
+    TEST_ASSERT_TRUE((report.firstRowMask & SERVO_FIELD_OPEN) != 0);
+}
+
+void test_naming_the_wider_component_carries_the_old_value_across_intact() {
+    // The same 2500 us on an output whose builder said what is fitted (#286:
+    // the wider band is an unlock, not a default).
+    MapReader reader;
+    reader.set("aux2_op", (uint32_t)2500);
+    reader.set("aux2_cl", (uint32_t)600);
+    reader.set("aux2_type", (uint32_t)SERVO_COMP_MG90S);
+
+    ServoOutputTable loaded = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &loaded, &report);
+
+    const uint8_t aux2 = servoOutputTableFindByAddress(loaded, SERVO_DRIVER_LEDC, LEDC_CH_AUX2);
+    TEST_ASSERT_EQUAL_UINT16(2500, loaded.rows[aux2].open_us);
+    TEST_ASSERT_EQUAL_UINT16(600, loaded.rows[aux2].close_us);
+    TEST_ASSERT_EQUAL_UINT16(1550, loaded.rows[aux2].centre_us);
+    TEST_ASSERT_EQUAL_UINT8(0, report.rowsRepaired);
+}
+
+// --- a Part's place: the move door (ADR 0050, #347) ---------------------------
+
+namespace {
+
+constexpr int kNone = -1;
+
+// One move, with each end an LEDC channel or kNone.
+ServoOutputPartMove ledcMove(const char* part, int from, int to) {
+    ServoOutputPartMove move = {};
+    snprintf(move.part, sizeof(move.part), "%s", part);
+    move.fromOutput = from != kNone;
+    move.fromDriver = SERVO_DRIVER_LEDC;
+    move.fromChannel = (from != kNone) ? (uint8_t)from : 0;
+    move.toOutput = to != kNone;
+    move.toDriver = SERVO_DRIVER_LEDC;
+    move.toChannel = (to != kNone) ? (uint8_t)to : 0;
+    return move;
+}
+
+uint8_t rowAt(const ServoOutputTable& table, uint8_t channel) {
+    return servoOutputTableFindByAddress(table, SERVO_DRIVER_LEDC, channel);
+}
+
+// How many live rows drive a Part. The whole point of steal-not-share is that
+// this is never more than one.
+uint8_t rowsDriving(const ServoOutputTable& table, const char* part) {
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < table.count; ++i) {
+        if (servoOutputDrivesPart(table.rows[i], part)) {
+            ++n;
+        }
+    }
+    return n;
+}
+
+}  // namespace
+
+void test_moving_a_part_takes_it_off_the_output_it_was_on() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED,
+                            servoOutputTableMovePart(&table, ledcMove("doorFL", kNone, LEDC_CH_ARM1)));
+    TEST_ASSERT_EQUAL_UINT8(rowAt(table, LEDC_CH_ARM1), servoOutputTableFindPart(table, "doorFL"));
+
+    // Assigning it elsewhere moves it; it is never shared.
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_MOVED,
+        servoOutputTableMovePart(&table, ledcMove("doorFL", LEDC_CH_ARM1, LEDC_CH_AUX1)));
+    TEST_ASSERT_EQUAL_UINT8(1, rowsDriving(table, "doorFL"));
+    TEST_ASSERT_EQUAL_UINT8(rowAt(table, LEDC_CH_AUX1), servoOutputTableFindPart(table, "doorFL"));
+    TEST_ASSERT_EQUAL_UINT8(0, servoOutputPartCount(table.rows[rowAt(table, LEDC_CH_ARM1)]));
+
+    // And off every Output, which is a move too.
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_MOVED, servoOutputTableMovePart(&table, ledcMove("doorFL", LEDC_CH_AUX1, kNone)));
+    TEST_ASSERT_EQUAL_UINT8(0, rowsDriving(table, "doorFL"));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_MAX, servoOutputTableFindPart(table, "doorFL"));
+}
+
+// A ganged wire: both breadpan doors on one Output, both reading as driven, and
+// moving one of them away leaves the other exactly where it was.
+void test_an_output_drives_every_part_ganged_to_it() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED,
+                            servoOutputTableMovePart(&table, ledcMove("doorFL", kNone, LEDC_CH_AUX2)));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED,
+                            servoOutputTableMovePart(&table, ledcMove("doorFR", kNone, LEDC_CH_AUX2)));
+
+    const uint8_t aux2 = rowAt(table, LEDC_CH_AUX2);
+    TEST_ASSERT_EQUAL_UINT8(2, servoOutputPartCount(table.rows[aux2]));
+    TEST_ASSERT_EQUAL_UINT8(aux2, servoOutputTableFindPart(table, "doorFL"));
+    TEST_ASSERT_EQUAL_UINT8(aux2, servoOutputTableFindPart(table, "doorFR"));
+
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_MOVED, servoOutputTableMovePart(&table, ledcMove("doorFL", LEDC_CH_AUX2, LEDC_CH_AUX3)));
+    TEST_ASSERT_EQUAL_UINT8(1, servoOutputPartCount(table.rows[aux2]));
+    TEST_ASSERT_EQUAL_STRING("doorFR", servoOutputPartAt(table.rows[aux2], 0));
+}
+
+// The announcement rule, mechanically: a move that names an origin the Part is
+// not on is a table its sender never read, and it changes nothing at all.
+void test_a_move_from_where_the_part_is_not_changes_nothing() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED,
+                            servoOutputTableMovePart(&table, ledcMove("doorFL", kNone, LEDC_CH_ARM1)));
+    const ServoOutputTable before = table;
+
+    // Told the Part is on nothing, when it is on ARM1: the steal nobody announced.
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_NOT_WHERE_STATED,
+                            servoOutputTableMovePart(&table, ledcMove("doorFL", kNone, LEDC_CH_AUX1)));
+    // Told it is on AUX2, when it is on ARM1: a table that changed underneath.
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_NOT_WHERE_STATED,
+        servoOutputTableMovePart(&table, ledcMove("doorFL", LEDC_CH_AUX2, LEDC_CH_AUX1)));
+    // An origin no row has is never where a Part is, even an unwired one.
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_NOT_WHERE_STATED,
+        servoOutputTableMovePart(&table, ledcMove("utilLo", LEDC_CH_DOME, LEDC_CH_AUX1)));
+
+    TEST_ASSERT_EQUAL_MEMORY(&before, &table, sizeof(table));
+}
+
+void test_a_move_that_cannot_land_is_refused_before_anything_is_touched() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+    const char* const kGang[] = {"pie1", "pie2", "pie3", "pie4"};
+    for (const char* part : kGang) {
+        TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED,
+                                servoOutputTableMovePart(&table, ledcMove(part, kNone, LEDC_CH_ARM2)));
+    }
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED,
+                            servoOutputTableMovePart(&table, ledcMove("doorFL", kNone, LEDC_CH_ARM1)));
+    const ServoOutputTable before = table;
+
+    // A full Output does not take a fifth, and the Part stays where it was
+    // rather than landing nowhere.
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_OUTPUT_FULL,
+        servoOutputTableMovePart(&table, ledcMove("doorFL", LEDC_CH_ARM1, LEDC_CH_ARM2)));
+    // The dome ESC's channel is not an Output.
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_NO_SUCH_OUTPUT,
+        servoOutputTableMovePart(&table, ledcMove("doorFL", LEDC_CH_ARM1, LEDC_CH_DOME)));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_NOT_A_PART,
+                            servoOutputTableMovePart(&table, ledcMove("banana", kNone, LEDC_CH_AUX1)));
+    TEST_ASSERT_EQUAL_MEMORY(&before, &table, sizeof(table));
+
+    // Asking for where it already is has nothing to do and is not an error.
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_ALREADY_THERE,
+        servoOutputTableMovePart(&table, ledcMove("doorFL", LEDC_CH_ARM1, LEDC_CH_ARM1)));
+    TEST_ASSERT_EQUAL_MEMORY(&before, &table, sizeof(table));
+}
+
+void test_an_output_address_is_one_token_with_one_spelling() {
+    char buf[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+    TEST_ASSERT_TRUE(servoOutputFormatAddress(buf, sizeof(buf), SERVO_DRIVER_LEDC, 255));
+    TEST_ASSERT_EQUAL_STRING("ledc:255", buf);
+
+    ServoOutputDriver driver = SERVO_DRIVER_COUNT;
+    uint8_t channel = 0;
+    TEST_ASSERT_TRUE(servoOutputParseAddress("ledc:3", &driver, &channel));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_DRIVER_LEDC, driver);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX1, channel);
+
+    // Only an address the driver has: the dome ESC is spelled like an Output and
+    // is not one.
+    const char* const kNotOutputs[] = {"ledc:2", "ledc:", ":3", "pca:16", "ledc:3x", "ledc:256",
+                                       "ledc", "", "ledc:-1"};
+    for (const char* raw : kNotOutputs) {
+        TEST_ASSERT_FALSE_MESSAGE(servoOutputParseAddress(raw, &driver, &channel), raw);
+    }
+
+    // An Output's name is what the running board prints beside it: this
+    // image is built for the Artoo PCB, which prints ARM5 on the channel
+    // protoR2 once called AUX3 (include/component_labels.inc).
+    TEST_ASSERT_EQUAL_STRING("ARM1", servoOutputAddressName(SERVO_DRIVER_LEDC, LEDC_CH_ARM1));
+    TEST_ASSERT_EQUAL_STRING("ARM5", servoOutputAddressName(SERVO_DRIVER_LEDC, LEDC_CH_AUX3));
+    TEST_ASSERT_EQUAL_STRING("", servoOutputAddressName(SERVO_DRIVER_LEDC, LEDC_CH_DOME));
+    TEST_ASSERT_EQUAL_STRING("", servoOutputAddressName(SERVO_DRIVER_LEDC, SERVO_OUTPUT_CHANNEL_UNSET));
+}
+
+int main(int, char**) {
+    UNITY_BEGIN();
+
+    RUN_TEST(test_moving_a_part_takes_it_off_the_output_it_was_on);
+    RUN_TEST(test_an_output_drives_every_part_ganged_to_it);
+    RUN_TEST(test_a_move_from_where_the_part_is_not_changes_nothing);
+    RUN_TEST(test_a_move_that_cannot_land_is_refused_before_anything_is_touched);
+    RUN_TEST(test_an_output_address_is_one_token_with_one_spelling);
+
+    RUN_TEST(test_defaults_never_hand_out_a_zero_travel_time);
+    RUN_TEST(test_defaults_are_limp_and_unmeasured);
+    RUN_TEST(test_default_table_matches_the_five_fixed_outputs);
+    RUN_TEST(test_rows_past_the_count_are_still_safe);
+
+    RUN_TEST(test_reverse_is_read_off_the_pair);
+
+    RUN_TEST(test_mg996r_row_cannot_reach_500us);
+    RUN_TEST(test_mg90s_row_takes_the_full_band);
+    RUN_TEST(test_an_unstated_component_gets_the_cautious_band);
+    RUN_TEST(test_the_stored_door_clamps_to_the_band_too);
+
+    RUN_TEST(test_overshoot_degrades_while_uncalibrated);
+    RUN_TEST(test_soft_easing_is_not_gated_on_calibration);
+
+    RUN_TEST(test_capture_marks_calibrated_and_never_ticks_boot);
+    RUN_TEST(test_capture_is_clamped_by_the_component_type);
+    RUN_TEST(test_a_capture_that_keeps_the_centre_inside_the_travel_drags_nothing);
+    RUN_TEST(test_a_captured_end_that_swallows_the_centre_drags_it_in_and_says_so);
+    RUN_TEST(test_the_drag_follows_a_reversed_pair_the_same_way_round);
+    RUN_TEST(test_capturing_the_centre_never_drags_anything);
+    RUN_TEST(test_a_capture_through_the_edit_door_measures_the_row_and_reports_the_drag);
+    RUN_TEST(test_reverse_swaps_the_pair_and_measures_nothing);
+    RUN_TEST(test_reverse_ignores_any_width_that_rides_with_it);
+    RUN_TEST(test_a_typed_edit_through_the_same_door_is_not_a_capture);
+
+    RUN_TEST(test_an_unreadable_record_takes_the_safe_defaults_and_reports);
+    RUN_TEST(test_one_bad_field_does_not_cost_the_row_its_calibration);
+    RUN_TEST(test_an_empty_field_is_not_zero);
+    RUN_TEST(test_a_partial_edit_keeps_what_it_could_not_read);
+    RUN_TEST(test_a_row_carries_up_to_four_parts_and_refuses_a_fifth);
+    RUN_TEST(test_an_empty_part_list_stays_legal);
+    RUN_TEST(test_a_ganged_pair_survives_the_wire);
+    RUN_TEST(test_one_unreadable_part_costs_only_its_own_slot);
+    RUN_TEST(test_a_part_no_build_models_is_refused_rather_than_stored);
+    RUN_TEST(test_a_stored_part_outside_the_vocabulary_drops_and_is_reported);
+    RUN_TEST(test_a_part_two_rows_claim_stays_with_the_first);
+    RUN_TEST(test_a_contested_part_is_reported_by_the_loader);
+    RUN_TEST(test_the_receipt_names_the_field_and_the_door);
+    RUN_TEST(test_an_unaddressable_channel_is_repaired);
+
+    RUN_TEST(test_every_field_round_trips_through_storage);
+    RUN_TEST(test_the_stored_text_is_byte_for_byte_what_it_was);
+    RUN_TEST(test_every_older_stored_length_is_read_with_its_tail_defaulted);
+    RUN_TEST(test_a_row_added_without_an_address_is_reported);
+    RUN_TEST(test_a_device_that_never_wrote_a_row_reports_nothing);
+    RUN_TEST(test_a_damaged_stored_row_is_counted_and_named);
+    RUN_TEST(test_an_out_of_range_stored_count_keeps_the_default);
+
+    RUN_TEST(test_a_fixed_pair_arrives_with_its_direction_and_a_midpoint_centre);
+    RUN_TEST(test_a_fixed_pair_carries_nothing_it_was_never_told);
+    RUN_TEST(test_a_measured_centre_is_not_recomputed_by_a_later_crossing);
+    RUN_TEST(test_a_fixed_pair_the_band_cannot_take_is_reported);
+    RUN_TEST(test_the_component_is_settled_before_the_pair_is_clamped);
+    RUN_TEST(test_an_address_finds_its_row_and_an_unclaimed_one_does_not);
+
+    RUN_TEST(test_an_upgrading_controller_finds_its_calibration_on_the_rows);
+    RUN_TEST(test_a_saved_row_wins_over_the_old_form);
+    RUN_TEST(test_an_old_value_the_band_cannot_take_is_reported_at_load);
+    RUN_TEST(test_naming_the_wider_component_carries_the_old_value_across_intact);
+
+    return UNITY_END();
+}

@@ -8,8 +8,11 @@
 //   - Calls the step phases in loop order and executes their plain-data actions.
 //   - Owns every side effect: driver init and playback calls, the audio UART
 //     claim (audioUartClaim/audioUartRelease, which is only an arbitration on a
-//     board without PA_CAP_DEDICATED_AUDIO_UART), NVS binding-cache refresh,
-//     RobotState audio-zone writes.
+//     board without PA_CAP_DEDICATED_AUDIO_UART) around status queries and
+//     catalog refreshes, NVS binding-cache refresh, RobotState audio-zone
+//     writes. The CHIRP driver also claims inside two calls this task makes:
+//     begin() for its bank summary, and playBackgroundTrack() to hear the
+//     module's answer (src/drivers/audio_chirp.cpp).
 // Decision logic (lifecycle transitions, '$'/command translation, playback
 // policy invocation, volume and random-mode state, status/catalog gating)
 // lives in the step core.
@@ -21,11 +24,20 @@
 // Core assignment: Core 0 (non-RT).
 // Reason: begin() and every query block for hundreds of ms, and without
 // PA_CAP_DEDICATED_AUDIO_UART the TX is a software bit-bang that additionally
-// holds a portMUX critical section for ~6 ms per command
-// (src/drivers/audio_soft_uart_tx.h). Keeping AudioTask on Core 0 prevents any
-// interaction with DriveTask / ServoTask timing on Core 1 either way.
+// holds a portMUX critical section for ~1.04 ms PER BYTE, released between
+// bytes (src/drivers/audio_soft_uart_tx.h). A command is that many times over,
+// and how many bytes it is depends on the module: 2 for an MP3 Trigger track,
+// 4 to 6 for a DY-SV5W frame, 15 for a CHIRP "PLAY:12,2,C,66" -- 22 when a
+// Background Track is held and a "STOP:1" goes first. Keeping AudioTask
+// on Core 0 prevents any interaction with DriveTask / ServoTask timing on
+// Core 1 either way.
 //
-// Driver selection: PA_AUDIO_DRIVER build flag in platformio.ini.
+// Driver selection: the Sound Component Member, a runtime setting staged at
+// reboot (ADR 0042). Every image carries a driver for every supported sound
+// module; PA_AUDIO_DRIVER now only names the one a controller that has never
+// been told starts with. Which instance runs it is not this task's to decide --
+// setup() binds it (include/audio_sound_member.h) so the status surfaces name
+// the configured module on a boot where this task is never created.
 // =============================================================================
 
 #include "audio_task.h"
@@ -35,45 +47,52 @@
 #include <esp_random.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <string.h>
+#include "audio_catalog_gate.h"
 #include "audio_config_map.h"
 #include "audio_dollar_parser.h"
 #include "audio_driver.h"
+#include "audio_sound_member.h"
 #include "audio_task_step.h"
+#include "chirp_binding_keys.h"
 #include "config.h"
 #include "config_nvsio.h"
 #include "config_cache.h"
 #include "dome_link.h"
+#include "drive_motion.h"  // driveMotionIsDriving() - idle chatter waits while driving
 #include "logging.h"
 #include "queue_drop_tracker.h"
 #include "robot_state.h"
 #include "web_server.h"
-
-// -----------------------------------------------------------------------------
-// Driver instantiation  --  one concrete driver per build
-// -----------------------------------------------------------------------------
-#if PA_AUDIO_DRIVER == AUDIO_SOFT_UART
-#include "audio_dy_sv5w.h"
-static AudioDriverDySv5w s_driver;
-#elif PA_AUDIO_DRIVER == AUDIO_CHIRP
-#include "audio_chirp.h"
-static AudioDriverChirp s_driver;
-#elif PA_AUDIO_DRIVER == AUDIO_DFPLAYER
-#error "AUDIO_DFPLAYER driver not yet implemented - see #305 and docs/spec-sheets/dfplayer-mini-sound.md"
-#elif PA_AUDIO_DRIVER == AUDIO_MP3TRIGGER
-#include "audio_mp3trigger.h"
-static AudioDriverMp3Trigger s_driver;
-#else
-#error "PA_AUDIO_DRIVER build flag is not set or has an unknown value"
+#if !PA_CAP_DEDICATED_AUDIO_UART
+#include "../drivers/audio_soft_uart_rx.h"
+#include "soft_uart_storm_guard.h"
 #endif
 
-static AudioDriver* const driver = &s_driver;
+static const char* TAG = "AudioTask";
+
+// How long a refresh waits for a catalog reader to leave before giving up. A
+// GET /api/audio/catalog response is bounded by one chunked send, so 1.5 s is
+// far past a healthy one; giving up rather than waiting is what stops a wedged
+// client from holding the catalog hostage, and the refresh reports itself
+// blocked instead of replacing storage a reader is still walking (#397 item 9).
+static constexpr uint32_t AUDIO_CATALOG_READER_DRAIN_MS = 1500u;
+static constexpr uint32_t AUDIO_CATALOG_READER_DRAIN_STEP_MS = 10u;
+
+// The driver the boot-resolved Sound Component Member runs on. setup() bound it
+// before this task existed (include/audio_sound_member.h), so it is already
+// correct here and stays correct for the Core 0 surfaces below even on a boot
+// where audio output is disabled and this task is never created (#380).
+static AudioDriver* driver() {
+    return audioActiveSoundMember().driver;
+}
 
 const char* audioGetDriverName() {
-    return driver->driverName();
+    return driver()->driverName();
 }
 
 uint8_t audioGetCapabilities() {
-    return driver->capabilities();
+    return driver()->capabilities();
 }
 
 const char* audioRxStatusToken(AudioRxStatus status) {
@@ -95,7 +114,7 @@ const char* audioRxStatusDetail(AudioRxStatus status) {
         case AUDIO_RX_AVAILABLE:
             return "Sound module RX is available";
         case AUDIO_RX_BLOCKED_BY_DOME_UART:
-            return "Status unavailable: DomeLink is using UART";
+            return "Held by protoR2link";
         case AUDIO_RX_NO_RESPONSE:
             return "Sound module did not respond on RX";
         case AUDIO_RX_UNKNOWN:
@@ -112,23 +131,34 @@ static void setAudioRxStatus(AudioRxStatus status) {
 
 const AudioCatalogEntry* audioGetCatalogEntries(uint16_t* count) {
     if (count) {
-        *count = driver->getCatalogEntryCount();
+        *count = driver()->getCatalogEntryCount();
     }
-    return driver->getCatalogEntries();
+    return driver()->getCatalogEntries();
 }
 
 const AudioCatalogBank* audioGetCatalogBanks(uint8_t* count) {
     if (count) {
-        *count = driver->getCatalogBankCount();
+        *count = driver()->getCatalogBankCount();
     }
-    return driver->getCatalogBanks();
+    return driver()->getCatalogBanks();
 }
 
 bool audioIsCatalogReady() {
-    return driver->isCatalogReady();
+    return driver()->isCatalogReady();
 }
 
-static const char* TAG = "AudioTask";
+AudioBankFit audioBankFitted(uint8_t bank) {
+    if ((driver()->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) == 0) {
+        return AudioBankFit::NotFitted;
+    }
+    if (!audioCatalogReaderAcquire()) {
+        return AudioBankFit::CatalogBusy;
+    }
+    const bool found = audioCatalogBankPage(driver()->getCatalogBanks(),
+                                            driver()->getCatalogBankCount(), bank, nullptr);
+    audioCatalogReaderRelease();
+    return found ? AudioBankFit::Fitted : AudioBankFit::NotFitted;
+}
 
 // Audio output is staged at reboot (ADR 0027); when inactive, commands are
 // accepted and discarded so callers (sequence engine, web routes) see the same
@@ -270,28 +300,6 @@ bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fa
     return true;
 }
 
-bool audioQueueStop(CommandSource src) {
-    if (audioOutputInactive()) {
-        return true;
-    }
-    AudioCommand msg{};
-    msg.type = AUDIO_CMD_STOP;
-    msg.source = src;
-    if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
-        static uint32_t lastWarnMs = 0;
-        uint32_t nowMs = millis();
-        if ((uint32_t)(nowMs - lastWarnMs) > 5000) {  // Rate-limit to once per 5s
-            PA_LOG_WARN(TAG, "audioCmdQueue full, dropped stop command");
-            lastWarnMs = nowMs;
-        }
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.queueOverflowCount++;
-        taskEXIT_CRITICAL(&robotStateMux);
-        return false;
-    }
-    return true;
-}
-
 bool audioQueueTrackStop(CommandSource src) {
     if (audioOutputInactive()) {
         return true;
@@ -299,6 +307,7 @@ bool audioQueueTrackStop(CommandSource src) {
     AudioCommand msg{};
     msg.type = AUDIO_CMD_TRACK_STOP;
     msg.source = src;
+    audioCatalogInterruptNoteStop();
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
         static uint32_t lastWarnMs = 0;
         uint32_t nowMs = millis();
@@ -309,6 +318,63 @@ bool audioQueueTrackStop(CommandSource src) {
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
         taskEXIT_CRITICAL(&robotStateMux);
+        return false;
+    }
+    return true;
+}
+
+bool audioQueueBackgroundTrackStart(const char* dollar, uint8_t vol, CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
+    AudioCommand msg{};
+    // Refused rather than cut short: a '$' with its tail cut off names some
+    // other sound.
+    if (dollar == nullptr || dollar[0] != '$' ||
+        strnlen(dollar, sizeof(msg.backgroundTrack.dollar)) >= sizeof(msg.backgroundTrack.dollar)) {
+        return false;
+    }
+    msg.type = AUDIO_CMD_BACKGROUND_TRACK_START;
+    msg.source = src;
+    strncpy(msg.backgroundTrack.dollar, dollar, sizeof(msg.backgroundTrack.dollar) - 1);
+    msg.backgroundTrack.volume = audioClampVolume(vol);
+    if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        logQueueDrop(QUEUE_AUDIO_CMD, "Background Track start");
+        return false;
+    }
+    return true;
+}
+
+bool audioQueueBackgroundTrackStop(CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
+    AudioCommand msg{};
+    msg.type = AUDIO_CMD_BACKGROUND_TRACK_STOP;
+    msg.source = src;
+    // A stop, so a catalog walk in progress yields to it like it does to a
+    // Track Stop rather than holding it for minutes.
+    audioCatalogInterruptNoteStop();
+    if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        logQueueDrop(QUEUE_AUDIO_CMD, "Background Track stop");
+        return false;
+    }
+    return true;
+}
+
+bool audioQueueStepSound(int8_t step, CommandSource src) {
+    if (step == 0) {
+        return false;
+    }
+    if (audioOutputInactive()) {
+        return true;
+    }
+    AudioCommand msg{};
+    msg.type = AUDIO_CMD_STEP_SOUND;
+    msg.source = src;
+    msg.step = step > 0 ? 1 : -1;
+    if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        logQueueDrop(QUEUE_AUDIO_CMD, step > 0 ? "next sound" : "previous sound");
         return false;
     }
     return true;
@@ -361,6 +427,11 @@ bool audioQueueQueryStatus(CommandSource src) {
 
 bool audioQueueRefreshCatalog(CommandSource src) {
     if (audioOutputInactive()) {
+        // Accepted and discarded (ADR 0027): audio output was off at boot, so
+        // this task does not exist and nothing will ever run the refresh.
+        // Settling it here is what stops a caller polling for a completion that
+        // was never going to arrive.
+        audioCatalogRefreshSettleOutstanding(AudioCatalogRefreshState::Blocked);
         return true;
     }
     AudioCommand msg{};
@@ -409,7 +480,7 @@ bool audioQueueRefreshBindings(CommandSource src) {
 static AudioBindingCache s_audioBindings = {};
 
 static bool refreshChirpBindingCacheFromNvs() {
-    const bool catalogCapable = (driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
+    const bool catalogCapable = (driver()->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
     if (!catalogCapable) {
         s_audioBindings = AudioBindingCache{};
         return false;
@@ -438,6 +509,7 @@ static const char* noneReasonToString(AudioPlaybackNoneReason reason) {
         case AUDIO_PLAYBACK_NONE_INTERVAL_NOT_READY: return "interval not ready";
         case AUDIO_PLAYBACK_NONE_INTERVAL_ZERO: return "interval zero";
         case AUDIO_PLAYBACK_NONE_DOME_SEQUENCE_ACTIVE: return "dome sequence active";
+        case AUDIO_PLAYBACK_NONE_DRIVING: return "driving";
         case AUDIO_PLAYBACK_NONE_RANDOM_DISABLED: return "random disabled";
         case AUDIO_PLAYBACK_NONE_OK:
         default:
@@ -470,7 +542,7 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
                             commandSourceToString(source));
                 return;
             }
-            driver->playTrack(intent.track);
+            driver()->playTrack(intent.track);
             if (intent.requestKind == AUDIO_PLAYBACK_REQ_RANDOM_TICK) {
                 PA_LOG_DEBUG(TAG, "random track %u%s", (unsigned)intent.track,
                              intent.flatFallbackUsed ? " (flat fallback)" : "");
@@ -498,7 +570,7 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
                             (unsigned)intent.index);
                 return;
             }
-            driver->playTrackBanked(intent.index, intent.bank, intent.page);
+            driver()->playTrackBanked(intent.index, intent.bank, intent.page);
             if (intent.slot != AUDIO_SLOT_NONE) {
                 PA_LOG_INFO(TAG, "[%s] play slot=%u bank=%u page=%c index=%u",
                             commandSourceToString(source), (unsigned)intent.slot,
@@ -523,17 +595,35 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
             break;
 
         case AUDIO_PLAYBACK_INTENT_STOP:
-            driver->stop();
+            driver()->stop();
             PA_LOG_INFO(TAG, "[%s] stop", commandSourceToString(source));
             break;
 
         case AUDIO_PLAYBACK_INTENT_TRACK_STOP:
-            driver->stop();
+            // The vocals only: a Background Track under them plays on (ADR
+            // 0054).
+            driver()->stopVocals();
             PA_LOG_INFO(TAG, "[%s] track stop", commandSourceToString(source));
             break;
 
+        case AUDIO_PLAYBACK_INTENT_BACKGROUND_TRACK_START:
+            // A refusal is the driver's to log: it alone read the module's answer.
+            if (!driver()->playBackgroundTrack(intent.index, intent.bank, intent.page,
+                                               intent.volume)) {
+                return;
+            }
+            PA_LOG_INFO(TAG, "[%s] Background Track bank=%u page=%c index=%u vol=%u",
+                        commandSourceToString(source), (unsigned)intent.bank, intent.page,
+                        (unsigned)intent.index, (unsigned)intent.volume);
+            break;
+
+        case AUDIO_PLAYBACK_INTENT_BACKGROUND_TRACK_STOP:
+            driver()->stopBackgroundTrack();
+            PA_LOG_INFO(TAG, "[%s] Background Track stop", commandSourceToString(source));
+            break;
+
         case AUDIO_PLAYBACK_INTENT_SET_VOLUME:
-            driver->setVolume(intent.volume);
+            driver()->setVolume(intent.volume);
             PA_LOG_INFO(TAG, "[%s] volume %u", commandSourceToString(source),
                         (unsigned)intent.volume);
             break;
@@ -548,8 +638,16 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
 
         case AUDIO_PLAYBACK_INTENT_NONE:
         default:
-            PA_LOG_DEBUG(TAG, "[%s] playback skipped (%s)", commandSourceToString(source),
-                         noneReasonToString(intent.reason));
+            // An authored Background Track that resolves to nothing - its Named
+            // Track set to nothing - is a WARN, as include/audio_task.h promises;
+            // skipped chatter stays at DEBUG.
+            if (intent.requestKind == AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_START) {
+                PA_LOG_WARN(TAG, "[%s] Background Track not played (%s)",
+                            commandSourceToString(source), noneReasonToString(intent.reason));
+            } else {
+                PA_LOG_DEBUG(TAG, "[%s] playback skipped (%s)", commandSourceToString(source),
+                             noneReasonToString(intent.reason));
+            }
             break;
     }
 
@@ -564,9 +662,171 @@ static void writeModuleState(const AudioModuleState& ms, AudioRxStatus rxStatus)
     robotState.audio_module_device = ms.device;
     robotState.audio_module_total_tracks = ms.totalTracks;
     robotState.audio_module_current_track = ms.currentTrack;
+    robotState.audio_module_missing_track = ms.missingTrack;
     robotState.audio_module_rx_status = rxStatus;
     taskEXIT_CRITICAL(&robotStateMux);
 }
+
+// -----------------------------------------------------------------------------
+// Catalog refresh, and everything that has to happen around one.
+// -----------------------------------------------------------------------------
+
+// The sound-list baseline the builder last saved beside the bindings. Absent is
+// a distinct answer from zero -- zero is a checksum the module can really send
+// -- so this probes for the key rather than reading through a default (#397 D4).
+static AudioSoundListIdentity readSavedSoundListBaseline() {
+    AudioSoundListIdentity saved{};
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, true)) {
+        return saved;
+    }
+    if (prefs.isKey(CHIRP_SOUND_LIST_CHECKSUM_KEY)) {
+        saved.observed = true;
+        saved.checksum = prefs.getUInt(CHIRP_SOUND_LIST_CHECKSUM_KEY, 0);
+    }
+    prefs.end();
+    return saved;
+}
+
+// What the driver observed about the card at its last manifest read, published
+// where the web handlers can see it and compared against that baseline. Called
+// at boot and after every refresh, which is the comparison timing #397 D4 sets.
+static void publishCatalogObservation() {
+    AudioCatalogObservation observation{};
+    driver()->getCatalogCompleteness(observation.completeness);
+    uint32_t checksum = 0;
+    observation.identity.observed = driver()->getSoundListChecksum(&checksum);
+    observation.identity.checksum = checksum;
+    audioCatalogObservationPublish(observation);
+    audioBindingWarningEvaluate(readSavedSoundListBaseline(), observation.identity);
+}
+
+// Captured when a walk starts; the predicate below compares against it. A stop
+// is counted by the enqueue helpers rather than looked for at the queue head,
+// because a stop queued behind a play is exactly the case a head peek misses.
+static uint32_t s_catalogWalkStopCount = 0;
+
+static bool catalogWalkShouldStop(void* /*ctx*/) {
+    bool sleeping;
+    taskENTER_CRITICAL(&robotStateMux);
+    sleeping = robotState.sleepMode;
+    taskEXIT_CRITICAL(&robotStateMux);
+    return audioCatalogInterruptFired(s_catalogWalkStopCount, sleeping);
+}
+
+static void runCatalogRefresh(CommandSource source) {
+    const uint32_t requestId = audioCatalogRefreshBegin();
+
+    // Shut the gate first, then wait for readers already inside: a
+    // GET /api/audio/catalog response walks the driver's arrays once per HTTP
+    // chunk, and refreshCatalog() deletes and replaces the entry allocation.
+    audioCatalogGateClose();
+    uint32_t waitedMs = 0;
+    while (audioCatalogReadersInside() > 0 && waitedMs < AUDIO_CATALOG_READER_DRAIN_MS) {
+        vTaskDelay(pdMS_TO_TICKS(AUDIO_CATALOG_READER_DRAIN_STEP_MS));
+        waitedMs += AUDIO_CATALOG_READER_DRAIN_STEP_MS;
+    }
+    if (audioCatalogReadersInside() > 0) {
+        audioCatalogGateOpen();
+        audioCatalogRefreshSettled(requestId, AudioCatalogRefreshState::Blocked);
+        PA_LOG_WARN(TAG, "[%s] catalog refresh skipped: a catalog read is still in flight",
+                    commandSourceToString(source));
+        return;
+    }
+
+    if (!audioUartClaim()) {
+        audioCatalogGateOpen();
+        setAudioRxStatus(AUDIO_RX_BLOCKED_BY_DOME_UART);
+        audioCatalogRefreshSettled(requestId, AudioCatalogRefreshState::Blocked);
+        PA_LOG_INFO(TAG, "[%s] catalog refresh skipped: DomeLink using UART",
+                    commandSourceToString(source));
+        return;
+    }
+
+    s_catalogWalkStopCount = audioCatalogInterruptStopCount();
+    driver()->setCatalogInterrupt(catalogWalkShouldStop, nullptr);
+    // The bool says only "did it work"; the outcome below says why it did not,
+    // which is the difference between reporting failed and reporting interrupted.
+    (void)driver()->refreshCatalog();
+    const AudioCatalogRefreshOutcome outcome = driver()->lastCatalogRefreshOutcome();
+    driver()->setCatalogInterrupt(nullptr, nullptr);
+    audioUartRelease();
+    publishCatalogObservation();
+    audioCatalogGateOpen();
+
+    AudioCatalogRefreshState settled = AudioCatalogRefreshState::Failed;
+    const char* what = "FAILED";
+    switch (outcome) {
+        case AudioCatalogRefreshOutcome::Complete:
+            settled = AudioCatalogRefreshState::Completed;
+            what = "OK";
+            setAudioRxStatus(AUDIO_RX_AVAILABLE);
+            break;
+        case AudioCatalogRefreshOutcome::Interrupted:
+            settled = AudioCatalogRefreshState::Interrupted;
+            what = "interrupted";
+            // The module answered its manifest and the walk stopped because we
+            // asked it to, which says nothing about RX -- leave that status as
+            // whatever last actually measured it.
+            break;
+        case AudioCatalogRefreshOutcome::Failed:
+        default:
+            setAudioRxStatus(AUDIO_RX_NO_RESPONSE);
+            break;
+    }
+    audioCatalogRefreshSettled(requestId, settled);
+    PA_LOG_INFO(TAG, "[%s] catalog refresh %s (request=%lu)", commandSourceToString(source), what,
+                (unsigned long)requestId);
+}
+
+// Play-state from unsolicited finish bytes. Does not take the dome UART (#396).
+static void pumpUnsolicitedRx() {
+    driver()->serviceRx();
+    AudioModuleState ms{};
+    driver()->getCachedState(ms);
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.audio_module_play_state = ms.playState;
+    robotState.audio_module_current_track = ms.currentTrack;
+    robotState.audio_module_missing_track = ms.missingTrack;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+#if !PA_CAP_DEDICATED_AUDIO_UART
+// Soft-UART RX storm guard, AudioTask's half (#417 F15). The ISR switches its
+// own interrupt off when PIN_AUDIO_RX re-enters past what the MP3 Trigger ever
+// sends; this logs it and switches it back on after the backoff. The backoff
+// holds a storm to one ~50 ms burst of ISR time per period on Core 0.
+static constexpr uint32_t SOFT_UART_RX_STORM_BACKOFF_MS = 5000u;
+
+static void serviceSoftUartRxStorm(uint32_t nowMs) {
+    static bool s_backingOff = false;
+    static uint32_t s_offSinceMs = 0;
+    if (!s_backingOff) {
+        uint32_t spanUs = 0;
+        if (!softUartRxStormTripped(&spanUs)) {
+            return;
+        }
+        s_backingOff = true;
+        s_offSinceMs = nowMs;
+        PA_LOG_WARN(TAG,
+                    "sound RX noise on GPIO %u: %u edges in %lu us - RX off for %lu ms "
+                    "(an unplugged MP3 Trigger needs a pull-up on this pin)",
+                    (unsigned)PIN_AUDIO_RX, (unsigned)(SOFT_UART_STORM_MAX_ENTRIES + 1u),
+                    (unsigned long)spanUs, (unsigned long)SOFT_UART_RX_STORM_BACKOFF_MS);
+        return;
+    }
+    if ((uint32_t)(nowMs - s_offSinceMs) < SOFT_UART_RX_STORM_BACKOFF_MS) {
+        return;
+    }
+    s_backingOff = false;
+    if (softUartRxRearm()) {
+        PA_LOG_INFO(TAG, "sound RX re-armed on GPIO %u", (unsigned)PIN_AUDIO_RX);
+    } else {
+        PA_LOG_ERROR(TAG, "sound RX re-arm refused on GPIO %u - RX stays off",
+                     (unsigned)PIN_AUDIO_RX);
+    }
+}
+#endif
 
 // Human-readable command names for the step core's ignore-reason logs.
 static const char* playCommandName(AudioCommandType type) {
@@ -578,6 +838,8 @@ static const char* playCommandName(AudioCommandType type) {
         case AUDIO_CMD_PLAY_CATEGORY:     return "category play";
         case AUDIO_CMD_REFRESH_CATALOG:   return "catalog refresh";
         case AUDIO_CMD_REFRESH_BINDINGS:  return "binding cache refresh";
+        case AUDIO_CMD_BACKGROUND_TRACK_START: return "Background Track start";
+        case AUDIO_CMD_STEP_SOUND:        return "next/previous sound";
         default:                          return "command";
     }
 }
@@ -625,7 +887,7 @@ void audioTask(void* pvParameters) {
         taskENTER_CRITICAL(&robotStateMux);
         sleepMode = robotState.sleepMode;
         taskEXIT_CRITICAL(&robotStateMux);
-        const uint8_t caps = driver->capabilities();
+        const uint8_t caps = driver()->capabilities();
         const bool catalogCapable = (caps & AudioDriver::AUDIO_CAP_CATALOG) != 0;
 
         AudioStepTickInputs tickIn{};
@@ -635,7 +897,7 @@ void audioTask(void* pvParameters) {
         const AudioStepTickActions tick = audioStepTick(step, tickIn);
 
         if (tick.stopDriver) {
-            driver->stop();
+            driver()->stop();
             if (tick.stopReason == AUDIO_STEP_STOP_DISABLED) {
                 PA_LOG_INFO(TAG, "audio disabled - stopping active playback");
             }
@@ -660,7 +922,7 @@ void audioTask(void* pvParameters) {
             // Driver begin() blocks for seconds, and a soft-UART TX additionally holds
             // a critical section per byte; AudioTask must run on Core 0.
             configASSERT(xPortGetCoreID() == 0);
-            const bool initOk = driver->begin(step.currentVol);
+            const bool initOk = driver()->begin(step.currentVol);
             const AudioStepInitResultActions ir =
                 audioStepInitResult(step, initOk, catalogCapable);
             if (ir.giveUp) {
@@ -682,18 +944,25 @@ void audioTask(void* pvParameters) {
                 bool cacheLoaded = refreshChirpBindingCacheFromNvs();
                 PA_LOG_INFO(TAG, "CHIRP binding cache %s", cacheLoaded ? "loaded" : "load failed");
             }
-            PA_LOG_INFO(TAG, "audio driver init - PA_AUDIO_DRIVER=%d vol=%u", PA_AUDIO_DRIVER,
+            const ComponentPartEntry* member = audioActiveSoundMember().part;
+            PA_LOG_INFO(TAG, "audio driver init - member=%s driver=%s vol=%u",
+                        member != nullptr ? member->id : "?", driver()->driverName(),
                         (unsigned)step.currentVol);
             if (ir.seedModuleState) {
                 // Seed RobotState from getCachedState()  --  begin() runs pre-init
                 // queries so m_device and m_totalTracks may already be populated
                 // (non-0xFF/0) if the module responded.
                 AudioModuleState ms{};
-                driver->getCachedState(ms);
-                writeModuleState(ms, driver->classifyRxStatus(ms.linkOk));
+                driver()->getCachedState(ms);
+                writeModuleState(ms, driver()->classifyRxStatus(ms.linkOk));
                 PA_LOG_INFO(TAG, "module init cached: link=%s device=0x%02X tracks=%u",
                             ms.linkOk ? "OK" : "NO_DEVICE", (unsigned)ms.device,
                             (unsigned)ms.totalTracks);
+                if (catalogCapable) {
+                    // begin() already read the manifest, so the boot half of
+                    // "compare at boot and refresh" happens here.
+                    publishCatalogObservation();
+                }
             }
         }
 
@@ -706,10 +975,20 @@ void audioTask(void* pvParameters) {
             cmdIn.nowMs = millis();
             cmdIn.sleepMode = sleepMode;
             cmdIn.catalogCapable = catalogCapable;
+            cmdIn.mixCapable = (caps & AudioDriver::AUDIO_CAP_MIXES) != 0;
+            cmdIn.backgroundTrackHeld = driver()->backgroundTrackHeld();
+            cmdIn.vocalHeld = driver()->vocalHeld();
             cmdIn.playback = &playback;
             cmdIn.named = &named;
             cmdIn.bindings = &s_audioBindings;
             cmdIn.randomValue = esp_random();
+            audioCatalogBankPage(driver()->getCatalogBanks(), driver()->getCatalogBankCount(),
+                                 AUDIO_DOLLAR_BANK, &cmdIn.dollarBankPage);
+            if (cmd.type == AUDIO_CMD_STEP_SOUND) {
+                cmdIn.currentPageCount = audioCatalogPageCount(
+                    driver()->getCatalogBanks(), driver()->getCatalogBankCount(),
+                    step.currentBank, step.currentPage);
+            }
             const AudioStepCommandActions ca = audioStepCommand(step, cmdIn, cmd);
 
             if (ca.ignored == AUDIO_STEP_IGNORE_SLEEP) {
@@ -718,21 +997,29 @@ void audioTask(void* pvParameters) {
             } else if (ca.ignored == AUDIO_STEP_IGNORE_UNSUPPORTED_BACKEND) {
                 PA_LOG_DEBUG(TAG, "[%s] %s ignored (unsupported backend)",
                              commandSourceToString(cmd.source), playCommandName(cmd.type));
+            } else if (ca.ignored == AUDIO_STEP_IGNORE_BANK_NOT_FITTED) {
+                // A vocal's $8nn or a Background Track's: the same refusal.
+                const char* said = (cmd.type == AUDIO_CMD_BACKGROUND_TRACK_START)
+                                       ? cmd.backgroundTrack.dollar
+                                       : cmd.dollar;
+                PA_LOG_WARN(TAG, "[%s] %s is bank %u, sound %s (ShadowMD numbering) - the fitted "
+                                 "sound module has no bank %u, not played",
+                            commandSourceToString(cmd.source), said, (unsigned)AUDIO_DOLLAR_BANK,
+                            said + 2, (unsigned)AUDIO_DOLLAR_BANK);
+            } else if (ca.ignored == AUDIO_STEP_IGNORE_CANNOT_MIX) {
+                PA_LOG_WARN(TAG, "[%s] Background Track %s not played: %s plays one sound at a time",
+                            commandSourceToString(cmd.source), cmd.backgroundTrack.dollar,
+                            driver()->driverName());
+            } else if (ca.ignored == AUDIO_STEP_IGNORE_NOT_A_SOUND) {
+                PA_LOG_WARN(TAG, "[%s] Background Track %s not played: it names no sound",
+                            commandSourceToString(cmd.source), cmd.backgroundTrack.dollar);
             }
             if (ca.hasIntent) {
                 executePlaybackIntent(ca.intent, cmd.source);
+                pumpUnsolicitedRx();
             }
             if (ca.refreshCatalog) {
-                bool acquired = audioUartClaim();
-                bool ok = acquired && driver->refreshCatalog();
-                if (acquired) {
-                    audioUartRelease();
-                    setAudioRxStatus(ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
-                } else {
-                    setAudioRxStatus(AUDIO_RX_BLOCKED_BY_DOME_UART);
-                }
-                PA_LOG_INFO(TAG, "[%s] catalog refresh %s", commandSourceToString(cmd.source),
-                            ok ? "OK" : (acquired ? "FAILED" : "skipped: DomeLink using UART"));
+                runCatalogRefresh(cmd.source);
             }
             if (ca.refreshBindings) {
                 bool ok = refreshChirpBindingCacheFromNvs();
@@ -746,7 +1033,7 @@ void audioTask(void* pvParameters) {
                 AudioModuleState ms{};
                 bool acquired = audioUartClaim();
                 if (acquired) {
-                    bool ok = driver->queryModuleState(ms);
+                    bool ok = driver()->queryModuleState(ms);
                     audioUartRelease();
                     writeModuleState(ms, ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
                     PA_LOG_INFO(TAG, "[%s] status poll: link=%s device=0x%02X play=0x%02X",
@@ -769,9 +1056,18 @@ void audioTask(void* pvParameters) {
         // ----------------------------------------------------------------
         uint8_t activeMood;
         bool domeSeqActive;
+        // This task's reading of "driving" (include/drive_motion.h). Static:
+        // the settle after a stop is measured across ticks.
+        static DriveMotion driveMotion = {};
+        DriveMotionReading drive;
         taskENTER_CRITICAL(&robotStateMux);
         activeMood = robotState.activeMood;
         domeSeqActive = robotState.domeSeqActive;
+        drive.driveSpeed = robotState.driveOutputSpeed;
+        drive.driveSteer = robotState.driveOutputSteer;
+        drive.feedbackValid = robotState.driveFeedbackValid;
+        drive.wheelSpeedL = robotState.driveFeedbackSpeedL;
+        drive.wheelSpeedR = robotState.driveFeedbackSpeedR;
         taskEXIT_CRITICAL(&robotStateMux);
 
         AudioStepIdleInputs idleIn{};
@@ -782,6 +1078,7 @@ void audioTask(void* pvParameters) {
         idleIn.webOtaActive = webOtaActive();
         idleIn.activeMood = activeMood;
         idleIn.domeSeqActive = domeSeqActive;
+        idleIn.driving = driveMotionIsDriving(&driveMotion, drive, idleIn.nowMs);
         idleIn.randomValue = esp_random();
         idleIn.playback = &playback;
         idleIn.bindings = &s_audioBindings;
@@ -790,11 +1087,15 @@ void audioTask(void* pvParameters) {
         if (idle.hasIntent) {
             executePlaybackIntent(idle.intent, SRC_INTERNAL);
         }
+        pumpUnsolicitedRx();
+#if !PA_CAP_DEDICATED_AUDIO_UART
+        serviceSoftUartRxStorm(millis());
+#endif
         if (idle.autoQuery) {
             AudioModuleState ms{};
             bool acquired = audioUartClaim();
             if (acquired) {
-                bool ok = driver->queryModuleState(ms);
+                bool ok = driver()->queryModuleState(ms);
                 audioUartRelease();
                 writeModuleState(ms, ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
                 PA_LOG_DEBUG(TAG, "auto-query: link=%s play=0x%02X", ok ? "OK" : "no-rsp",

@@ -39,6 +39,7 @@
 #include <freertos/queue.h>
 
 #include "audio_task.h"
+#include "board_lane_wire.h"  // kBoardLaneWire_protor2link: the baud GET /api/identity reports
 #include "config.h"
 #include "config_cache.h"
 #include "dome_cue_handler.h"
@@ -167,7 +168,7 @@ static bool acquireDomeUart() {
     }
 
     s_domeSerial.end();
-    s_domeSerial.begin(9600, SERIAL_8N1, PIN_DOME_RX, PIN_DOME_TX);
+    s_domeSerial.begin(kBoardLaneWire_protor2link.baud, SERIAL_8N1, PIN_DOME_RX, PIN_DOME_TX);
     s_uartOwned = true;
     domeUartAcquire(DOME_UART_DOME);
 
@@ -206,10 +207,12 @@ static bool readConfiguredPeerIp(IPAddress* out) {
         return false;
     }
 
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
+    // The dome section only: a whole ConfigSnapshot here would sit on the
+    // task's frame wherever this is inlined into its loop (#451).
+    DomeConfig dome = {};
+    configCacheReadDome(&dome);
     char ipBuf[16] = {0};
-    snprintf(ipBuf, sizeof(ipBuf), "%s", cfg.dome.dome_wifi_peer_ip);
+    snprintf(ipBuf, sizeof(ipBuf), "%s", dome.dome_wifi_peer_ip);
 
     if (ipBuf[0] == '\0') {
         return false;
@@ -766,15 +769,26 @@ static bool fetchDomeLayoutOverWifi(const IPAddress& peerIp) {
     return false;
 }
 
+// Whether the dome link is switched on, read once when the task starts.
+//
+// noinline, deliberately: the ConfigSnapshot it reads through is 944 B, and
+// held in domeLinkTask()'s own frame it sat under every call the task makes for
+// as long as it runs - the dome layout fetch included, the deepest route in the
+// task (tools/task_stack_recipes.json). Here it is a leaf frame that is gone
+// before that fetch can start (#451).
+static bool __attribute__((noinline)) domeLinkEnabledAtStart() {
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    return cfg.system.enable_protor2link;
+}
+
 // -----------------------------------------------------------------------------
 // domeLinkTask()
 // -----------------------------------------------------------------------------
 void domeLinkTask(void* pvParameters) {
     (void)pvParameters;
 
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    bool enabled = cfg.system.enable_protor2link;
+    bool enabled = domeLinkEnabledAtStart();
 
     if (!enabled) {
         setTransportState(DOME_LINK_TRANSPORT_DISCONNECTED);

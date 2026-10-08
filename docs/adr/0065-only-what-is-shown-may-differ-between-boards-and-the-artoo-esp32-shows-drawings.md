@@ -2,10 +2,10 @@
 
 Status: accepted (2026-09-11, issue #382). **Partly implemented.** The filesystem
 budget, the per-environment asset-set staging and the register landed on 2026-09-11
-(`88821e2d`, `7bc768d5`, `d21abbb6`, `c2c7c2a6`). What remains unbuilt is the only
-thing that is not code: the sixteen line drawings the legacy set carries, which gate
-guided Setup on every board. Both set directories are therefore still absent, and
-staging is a measured no-op until they exist.
+(`88821e2d`, `7bc768d5`, `d21abbb6`, `c2c7c2a6`). Both set directories now exist:
+the default set carries the photographs (#316) and the legacy set carries twenty line
+drawings as one inlined sprite (`9b66f0ce`). The Setup board picture draws from them
+(#382); the Component Picker's cards (#369) are still to come.
 
 **Status as of 2026-09-29 (#175 audit): built** on `epic/operator-experience`, including the Component Picker cards (#369).
 
@@ -42,7 +42,7 @@ both still carry size comments that predate the UI's growth.
 sentence — *"ESP32-P4 Target support does not relax the current requirement"* — and
 the operator reopened it on 2026-09-11. A larger-flash module is not the way out:
 the ESP32 is socketed on the Artoo PCB and Espressif ships WROOM-32E in N8 and N16,
-but no D1-Mini32-footprint board with more than 4 MB fits it. That was researched
+but no board with that footprint and more than 4 MB fits it. That was researched
 before this ticket and is closed (operator, 2026-09-11). **The 4 MB board is
 permanent**, so every lever here is a software one.
 

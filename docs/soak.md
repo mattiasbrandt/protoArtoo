@@ -1,6 +1,6 @@
 # Soak testing a controller — `tools/soak.py`
 
-A **soak** holds a protoArtoo controller's web stack under continuous load for
+A **soak** holds a protoR2 controller's web stack under continuous load for
 as long as you ask — minutes, or a whole evening — and then says, in one
 sentence and one exit code, whether it held up.
 
@@ -18,6 +18,12 @@ on it, and it will read that image's `/api/status` correctly or refuse to run.
 **It only reads.** It never flashes, never calls `make ota`, never writes
 configuration. The one write it makes at all is `POST /api/c6/reset` on the
 bench image, which is the whole point of the driver that makes it.
+
+**A soak is not a memory log of a test run.** To see what the bench's own tests
+do to the heap step by step, use `make bench-auto` (`tools/bench_auto.py`,
+[console-client.md](console-client.md)). It generates no load of its own and
+reads `/api/status` through this tool's image schemas and admission-floor
+resolution.
 
 ---
 
@@ -140,7 +146,7 @@ different shapes, and some do not publish it at all.
 
 | Mode | Image | Notable differences |
 | --- | --- | --- |
-| `artoo` | the `artoo_esp32` product image | No `bootCount`; `resetReason` is a name, not a number; no recovery-ladder block (the board has no companion radio); no reset route |
+| `artoo` | the `artoo_esp32` product image | No `bootCount`; `resetReason` is a name, not a number; no recovery-ladder block (the board has no WiFi Module); no reset route |
 | `shipping` | the `firebeetle2` product image | Same as `artoo`, plus the recovery ladder nested under `hostedLink`; still no reset route (#243) |
 | `bench` | `bench/p4_hosted_bench.cpp`, built by `firebeetle2_hosted_bench` | Built to be measured: `bootCount`, the raw reset-reason enum, flat ladder counters, a reset route, and an `/api/events` stream whose payload is a monotonic frame counter |
 
@@ -213,15 +219,15 @@ stopped looking is not a measurement.
 
 ### `c6_reset_recovery` — does the link come back on its own?
 
-Only available on the `bench` Image Mode. It schedules a reset of the companion
+Only available on the `bench` Image Mode. It schedules a reset of the
 WiFi Module through `POST /api/c6/reset`, then watches for the host to
 re-establish the link **without rebooting itself**, and for a fresh SSE stream to
 start advancing again.
 
 On both product images it is **Unavailable**: there is no reset route to
 provoke. It refuses before sending anything, and says which of the two reasons
-applies — the FireBeetle 2 has a companion radio and simply has no route yet
-(#243); artoo-esp32 has no companion radio at all, so there is nothing to reset.
+applies: the FireBeetle 2 has a WiFi Module and simply has no route yet
+(#243); artoo-esp32 has no WiFi Module at all, so there is nothing to reset.
 
 An unavailable driver is never a pass. It collapses the Run Verdict to
 `INVALID`, because a coverage gap is not evidence of health. If you want an exit
@@ -257,7 +263,7 @@ around this tool, switch on the exit code and read the JSON — not the sentence
 > apart: a real run always writes a JSON object to `stdout`, and a usage error
 > writes nothing there. Check for the report, not just the code.
 
-The artefact carries `schemaVersion` (currently `4`). It is bumped when a key is
+The artefact carries `schemaVersion`. It is bumped when a key is
 removed or changes meaning; adding a key does not bump it. A consumer that
 ignores unknown keys is unaffected by an addition — check the version before
 relying on anything else.
@@ -270,7 +276,7 @@ On `stderr`, a heartbeat line per `--progress-interval-s`, plus (on a terminal)
 one status line refreshing every second so a long wait never looks like a hang:
 
 ```
-=== protoArtoo soak ===
+=== protoR2 soak ===
   started       2026-09-03T12:36:31+0200
   device        artoo.local:80
   image mode    artoo (build env artoo_esp32)
@@ -319,7 +325,7 @@ rather than a half-written file. A checkpoint is labelled
 `IN PROGRESS / INCOMPLETE` — a verdict no finished run can carry, so you can
 never mistake one for a conclusion.
 
-**The transcript** — every line `stderr` showed, with no colour and no cursor
+**The transcript** — every line `stderr` showed, with no color and no cursor
 control, plus the per-event detail that was too noisy for the terminal. Appended,
 never truncated, so pointing two runs at one path keeps both. Its path is in the
 report as `logPath`, so the next tool does not have to parse a terminal to find

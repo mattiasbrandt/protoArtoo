@@ -8,9 +8,11 @@
 #include <ArduinoJson.h>
 #include <unity.h>
 
+#include <cstdio>
 #include <cstring>
 
 #include "api_config_snapshot.h"
+#include "board_outputs.h"
 #include "rc_mapping.h"
 
 
@@ -47,8 +49,6 @@ static ConfigSnapshot makeDefaultSnap() {
     snap.system.rc_free2 = {};
     snap.system.rc_free3 = {};
 
-    snap.servo.aux_led_pin = AUX_LED_PIN_DISABLED;
-    snap.servo.aux_led_count = AUX_LED_COUNT_DEFAULT;
     snap.drive.speedPresetActive = SpeedPresetId::Normal;
     snap.drive.sbusTimeoutMs = SBUS_TIMEOUT_MS;
     return snap;
@@ -112,8 +112,6 @@ static ConfigSnapshot makeWorstCaseSnap() {
     snap.system.rc_free1 = xtrig;
     snap.system.rc_free2 = xtrig;
     snap.system.rc_free3 = xtrig;
-    snap.servo.aux_led_pin = AUX_LED_PIN_AUX3;
-    snap.servo.aux_led_count = AUX_LED_COUNT_MAX;
 
     // Max-length Device WiFi Settings (32-char SSIDs, 63-char passwords).
     snap.wifi.provisioned = true;
@@ -192,8 +190,6 @@ void test_populateConfigJson_expected_keys_present(void) {
     TEST_ASSERT_TRUE(rc["triggers"].isNull());
     TEST_ASSERT_TRUE(rc["sbus"]["recvCh2"].is<bool>());
     TEST_ASSERT_FALSE(rc["sbus"]["recvCh2"].as<bool>());
-    TEST_ASSERT_TRUE(components["arm1"]["enabled"].is<bool>());
-    TEST_ASSERT_EQUAL_STRING("none", components["arm1"]["type"] | "");
     TEST_ASSERT_TRUE(components["drive"]["enabled"].is<bool>());
     TEST_ASSERT_TRUE(components["audio"]["enabled"].is<bool>());
     TEST_ASSERT_TRUE(components["protoR2link"]["enabled"].is<bool>());
@@ -209,40 +205,6 @@ void test_populateConfigJson_expected_keys_present(void) {
     TEST_ASSERT_TRUE(!domeEsc["rndMoveMs"].isNull());
     TEST_ASSERT_TRUE(!protoR2link["wifiPeerIp"].isNull());
     TEST_ASSERT_TRUE(!system["logLevel"].isNull());
-    TEST_ASSERT_TRUE(!doc["arm1OpenUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["arm1CloseUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["arm2OpenUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["arm2CloseUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux1OpenUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux1CloseUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux2OpenUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux2CloseUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux3OpenUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux3CloseUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux_led_pin"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux_led_count"].isNull());
-    TEST_ASSERT_EQUAL_UINT(AUX_LED_PIN_DISABLED, doc["aux_led_pin"].as<unsigned>());
-    TEST_ASSERT_EQUAL_UINT(AUX_LED_COUNT_DEFAULT, doc["aux_led_count"].as<unsigned>());
-}
-
-// --- Test 3b ---
-// AUX LED config fields retain all valid pin selections and count values.
-void test_populateConfigJson_aux_led_round_trip(void) {
-    const uint8_t pins[] = {AUX_LED_PIN_DISABLED, AUX_LED_PIN_AUX1, AUX_LED_PIN_AUX2, AUX_LED_PIN_AUX3};
-    const uint8_t counts[] = {AUX_LED_COUNT_DEFAULT, 32, AUX_LED_COUNT_MAX};
-
-    for (size_t i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
-        for (size_t j = 0; j < sizeof(counts) / sizeof(counts[0]); ++j) {
-            ConfigSnapshot snap = makeDefaultSnap();
-            snap.servo.aux_led_pin = pins[i];
-            snap.servo.aux_led_count = counts[j];
-
-            JsonDocument doc;
-            TEST_ASSERT_TRUE(populateConfigJson(doc, snap));
-            TEST_ASSERT_EQUAL_UINT(pins[i], doc["aux_led_pin"].as<unsigned>());
-            TEST_ASSERT_EQUAL_UINT(counts[j], doc["aux_led_count"].as<unsigned>());
-        }
-    }
 }
 
 // --- Test 4 ---
@@ -302,7 +264,7 @@ void test_populateConfigJson_wifi_block_exposes_password_flags_not_plaintext(voi
     snap.wifi.mode = WifiMode::CLIENT;
     snprintf(snap.wifi.sta_ssid, sizeof(snap.wifi.sta_ssid), "HomeNetwork");
     snprintf(snap.wifi.sta_password, sizeof(snap.wifi.sta_password), "supersecret");
-    snprintf(snap.wifi.ap_ssid, sizeof(snap.wifi.ap_ssid), "protoArtoo");
+    snprintf(snap.wifi.ap_ssid, sizeof(snap.wifi.ap_ssid), "protoR2");
     snap.wifi.ap_password[0] = '\0';
 
     JsonDocument doc;
@@ -314,7 +276,7 @@ void test_populateConfigJson_wifi_block_exposes_password_flags_not_plaintext(voi
     TEST_ASSERT_EQUAL_STRING("client", wifi["mode"] | "");
     TEST_ASSERT_EQUAL_STRING("HomeNetwork", wifi["staSsid"] | "");
     TEST_ASSERT_TRUE(wifi["staPasswordSet"].as<bool>());
-    TEST_ASSERT_EQUAL_STRING("protoArtoo", wifi["apSsid"] | "");
+    TEST_ASSERT_EQUAL_STRING("protoR2", wifi["apSsid"] | "");
     TEST_ASSERT_FALSE(wifi["apPasswordSet"].as<bool>());
 
     char out[kConfigJsonBudget] = {};
@@ -322,15 +284,41 @@ void test_populateConfigJson_wifi_block_exposes_password_flags_not_plaintext(voi
     TEST_ASSERT_NULL(strstr(out, "supersecret"));
 }
 
+// --- Test 8 ---
+// An Output is read whole from its row on GET /api/servo/outputs and written
+// back the same way (ADR 0068), so /api/config carries none of it: no Output
+// entry under components{}, and none of the legacy end names. One that came
+// back here would be a second place a row field is read - the drift the round
+// trip exists to prevent, and the reason a restore once had four doors.
+void test_populateConfigJson_carries_no_output_and_no_row_field(void) {
+    ConfigSnapshot snap = makeDefaultSnap();
+    snap.system.enable_aux2 = true;
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(populateConfigJson(doc, snap));
+
+    JsonObject components = doc["components"].as<JsonObject>();
+    for (const BoardOutput& output : BOARD_OUTPUTS) {
+        TEST_ASSERT_TRUE_MESSAGE(components[output.id].isNull(), output.id);
+        char name[24] = {};
+        snprintf(name, sizeof(name), "%sOpenUs", output.id);
+        TEST_ASSERT_TRUE_MESSAGE(doc[name].isNull(), name);
+        snprintf(name, sizeof(name), "%sCloseUs", output.id);
+        TEST_ASSERT_TRUE_MESSAGE(doc[name].isNull(), name);
+    }
+    for (JsonPair entry : components) {
+        TEST_ASSERT_TRUE_MESSAGE(entry.value()["address"].isNull(), entry.key().c_str());
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_populateConfigJson_typical_valid_json);
     RUN_TEST(test_populateConfigJson_worst_case_fits_buffer);
     RUN_TEST(test_populateConfigJson_expected_keys_present);
-    RUN_TEST(test_populateConfigJson_aux_led_round_trip);
     RUN_TEST(test_populateConfigJson_wifi_block_exposes_password_flags_not_plaintext);
     RUN_TEST(test_populateConfigJson_disabled_trigger_binding_serializes);
     RUN_TEST(test_populateConfigJson_clears_existing_document);
     RUN_TEST(test_populateConfigJson_overflow_is_measurable);
+    RUN_TEST(test_populateConfigJson_carries_no_output_and_no_row_field);
     return UNITY_END();
 }

@@ -81,29 +81,28 @@ DISASSEMBLY = [
 
 
 class FakeImage(sur.Image):
-    """sur.Image with objdump replaced by the canned listings above."""
+    """sur.Image with objdump replaced by the canned listings above.
+
+    Built through the real `__init__` rather than by assembling an instance
+    field by field: a fixture that mirrors the constructor has to be edited
+    every time the parser gains state, and then it is the fixture rather than
+    the parser that decides what the test exercises.
+    """
 
     def _run(self, argv):
         return iter(SYMBOL_TABLE if "-t" in argv else DISASSEMBLY)
 
 
-def build_image(**overrides):
-    image = FakeImage.__new__(FakeImage)
-    image.label = "fake"
-    image.elf = Path("fake.elf")
-    image.arch = "xtensa"
-    image.funcs = {}
-    image._starts = []
-    image.interior_jumps = []
-    image.sizes = overrides.get("sizes", image._read_symbol_sizes(Path("objdump")))
-    image.unsized = set()
-    image._disassemble(Path("objdump"))
-    image._starts = sorted(image.funcs)
-    image._drop_internal_branches()
-    for fn in image.funcs.values():
-        if fn.decoded == 0:
-            fn.frame_kind = "undecoded"
-    return image
+class UnsizedFakeImage(FakeImage):
+    """The same listing with the symbol table's sizes withheld."""
+
+    def _read_symbol_sizes(self, objdump):
+        return {}
+
+
+def build_image(sized=True):
+    cls = FakeImage if sized else UnsizedFakeImage
+    return cls("fake", Path("fake.elf"), Path("objdump"), "xtensa")
 
 
 class SymbolSizeParsing(unittest.TestCase):
@@ -176,21 +175,42 @@ class BodyBounds(unittest.TestCase):
         self.assertEqual(total, 0)
         self.assertEqual(chain, [])
 
-    def test_without_the_size_the_phantom_edge_comes_back(self):
-        """Prove the bound is what removes it, not something else in the parse.
+    def test_the_pool_is_inside_the_body_when_the_size_is_withheld(self):
+        """Prove this fixture still exercises the defect the bound exists for.
 
         Same listing, sizes withheld, so the parser falls back to "read until
-        the next symbol" - the behaviour every body had before #271. The edge
-        reappears, which is what the fix is measured against.
+        the next symbol" - the behaviour every body had before #271, and the
+        one that let the pool word become an edge.
+
+        The pool word no longer becomes an edge even unbounded, because the
+        framing check added for #401 rejects it too: it is not on a real
+        instruction boundary. The two defences overlap on this fixture, which
+        is why what is asserted here is that the pool really does enter the
+        body when the size is withheld - `misframed_insns` counts it - and
+        that it is still not followed. Which defence removes it where is
+        pinned separately: the bound by
+        `test_the_body_stops_at_its_symbol_size` and
+        `test_an_address_in_the_pool_belongs_to_no_function` above, the
+        framing by test/test_tools/test_stack_walk_call_framing.py.
         """
-        image = build_image(sizes={})
-        fn = image.funcs[FN_ADDR]
-        self.assertIn(
-            VICTIM_ADDR, [target for target, _, _ in fn.calls],
-            "the unbounded parse should still show the phantom edge; if it does "
-            "not, this test is no longer exercising the defect",
+        bounded = build_image()
+        unbounded = build_image(sized=False)
+        self.assertIn(FN_ADDR, unbounded.unsized)
+        self.assertEqual(
+            bounded.misframed_insns, 0,
+            "with the size, the pool is outside the body and is never "
+            "considered at all",
         )
-        self.assertGreater(fn.decoded, 2)
+        self.assertGreater(
+            unbounded.misframed_insns, 0,
+            "without the size, the pool words enter the body; if they do not, "
+            "this test is no longer exercising the defect",
+        )
+        self.assertEqual(
+            unbounded.funcs[FN_ADDR].calls, [],
+            "a pool word decoded as a call to a real entry must not become an "
+            "edge, bounded or not",
+        )
 
 
 if __name__ == "__main__":

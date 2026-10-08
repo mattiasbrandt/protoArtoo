@@ -1,6 +1,6 @@
 ---
 name: bench-verification
-description: Plan and run a Bench-Mode verification session for an epic's Closing Ticket - gather the verification points from the epic's sub-issues, draft the replayable Console sheet and the Playwright pass, run the automated half headless, hand him the hands-on review, and record the evidence and his sign-off. Use when an epic nears closure, when asked to plan, draft or run a bench day or bench rows, or when editing tools/bench_rows/ sheets.
+description: Plan and run a Bench-Mode verification session for an epic's Closing Ticket - gather the verification points from the epic's sub-issues, draft the replayable Console sheet and the Playwright pass, run the automated half headless (make bench-auto), hand the operator the hands-on review, and record the evidence and his sign-off. Use when an epic nears closure, when asked to plan, draft or run a bench day or bench rows, or when editing tools/bench_rows/ sheets.
 ---
 
 # Bench verification
@@ -59,9 +59,10 @@ close without the third:
 
 1. **Automated - the agents.** Every Console row, HTTP read, Playwright script,
    build and flash (asking before each device session), and the evidence
-   comment. Every Playwright script runs **headless**; a session an agent drives
-   by hand stays **headed** so he can watch along. Nothing in this phase waits
-   on him - see section 5.
+   comment. The automated run (`make bench-auto`) and every Playwright
+   script run to completion for its report are **headless**; a session an
+   agent drives by hand stays **headed** so the operator
+   can watch along. Nothing in this phase waits on him - see section 5.
 2. **Hands-on - the operator.** He uses the new UI and functions himself on the
    running board, at desktop width, and takes every deferred live look. The
    agents stand by to capture what he finds and route it (section 7).
@@ -236,7 +237,8 @@ Grammar (`tools/console_client.py`, `parse_directive_line` / `split_into_row_blo
 - Directives: `send`, `raw`, `key`, `sendlen`, `listen`, `settle`, `timeout`, `pause`.
 - Anything before the first `@row` is **preamble** and always runs - `timeout` and
   `settle` setup lives there.
-- Row **names** are the selector and must be unique.
+- Row **names** are the selector and must be unique. `python3 tools/console_client.py --check-sheet <file>` checks that, and that every directive is one the client knows, and opens no port.
+- Directives also include `http` (and `row` is the `@row` marker itself). The list this client accepts is `_DIRECTIVE_KINDS` in `tools/console_client.py`.
 - A `#` comment block above each row says what it answers and why it is shaped
   that way. What a row is *expected* to answer stays on the owning ticket, never
   as an `expect` directive - there is deliberately no such directive.
@@ -264,27 +266,46 @@ That is what makes a browser or HTTP check replayable instead of a typed session
 Use it for anything the console genuinely cannot reach - and prefer a Playwright
 script over a `pause` whenever one can do the job (section 5).
 
-## 5. The Playwright pass - scripts headless, an agent's own session headed
+## 5. The Playwright pass - the automated run headless, an agent's own session headed
 
-> **Operator, 2026-09-29, widened 2026-10-01:** a Playwright **script** run to
-> completion for its report is unattended, and its report is what gets read, so
-> it runs **headless** (`HEADLESS=true`). A session an **agent drives by hand**
-> stays **headed**, because the bench day is a collaboration. He watches the
-> browser to catch what no assertion was written for - something that looks
-> wrong, or that he simply does not like. A headless run answers *"did anything
-> throw"*; a watched run also answers *"is this good"*, and only one of those
-> has a script.
+> **Standing operator instruction** (2026-09-27, revised 2026-09-29, widened 2026-10-01):
+> - **The automated half, `make bench-auto`, runs headless.** It is unattended,
+>   runs every script, and its report is what gets read.
+> - **So does every other Playwright script run to completion for its report**
+>   (widened 2026-10-01): a worker's A/B, a regression or comparison run, any
+>   scripted check nobody steps through. Set `HEADLESS=true`.
+> - **Every Playwright session an agent drives by hand stays headed**: the MCP
+>   browser, one script run for a visual check someone looks at, a review
+>   browser. The operator
+>   watches those to catch what no assertion was written for - something that
+>   looks wrong, or that he simply does not like. A headless run answers *"did
+>   anything throw"*; a watched run also answers *"is this good"*.
+> - Never switch an agent's own session to headless on the reasoning that he is
+>   not required to watch. He watches when he wants to.
 
-So: **give a hand-driven session a pace a person can follow.** A sweep that blinks through
-every surface in twenty seconds is not a session he can take part in; the
-settle time per page is the pace.
+So a headed session gets **a pace a person can follow**. A page that blinks past
+in a second is not one he can take part in; the settle time per page is the
+pace.
 
-**Headed is a window, not a wait.** An agent's hand-driven session is headed but
-never blocks phase 1. What must stay out of that run is anything that blocks
-on a key: `STEP=1` (Enter between pages) and any `pause` only the operator can
+**Phase 1 is one command**, `make bench-auto BENCH_ROWS=tools/bench_rows/<board>.txt
+HTTP_BASE=http://<board-ip> IMAGE=artoo|shipping` (`tools/bench_auto.py`). It
+runs the sheet's agent-runnable rows, `console-sweep.js`, every droid script and
+every fixture script (on a fixture server of its own), headless, and orders the
+droid scripts by the estop state each declares, latching or clearing the estop
+before each to match (the run must begin clear; after that it clears any latch
+a clear-needing script meets, since the droid cannot say who set it). Its
+report ends with the estop state it left the board in. Each script's `// bench-auto:`
+line decides where it runs (`test/playwright/README.md`); never pick scripts by
+grepping their URLs. Run it in a Herdr pane with
+`python3 tools/pane_run.py /tmp/bench-auto-<board>.log -- make bench-auto ...`; its report, samples and logs land
+in the PRIMARY checkout's `output/bench-auto/<image>-<time>/`, whichever worktree
+ran it (a relative `RUN_DIR` lands there too), and the report's last line is
+`run dir: <path>` - read that, never the newest directory you can find.
+
+**Headed is a window, not a wait.** An agent's own headed session never blocks
+on a key: no `STEP=1` (Enter between pages) and no `pause` only the operator can
 answer. `STEP=1` is for when he asks to hold on a page, and his own hands-on
-time is phase 2. Never switch an agent's hand-driven session to headless on the
-reasoning that he is not required to watch - he watches when he wants to.
+time is phase 2.
 
 **Two required checks, every session:**
 
@@ -294,7 +315,8 @@ reasoning that he is not required to watch - he watches when he wants to.
    `networkidle` because SSE never closes.
 
    ```bash
-   BASE=http://<board-ip> node test/playwright/console-sweep.js   # headless
+   # an agent's own run, which he can watch; make bench-auto runs it headless
+   HEADED=1 BASE=http://<board-ip> node test/playwright/console-sweep.js
    ```
 
    **Before trusting it, check its `PAGES` list against `data/*.html`.** It goes
@@ -316,27 +338,41 @@ open on the real controller:**
 
 - **Performance.** Navigation timing per surface, and whether anything reloads or
   re-renders in a loop. The sweep's resource-error column is a free read on
-  wasted requests and 404s.
+  wasted requests and 404s. **Memory is read from the runner's memory log, not
+  from a green exit code**: on 2026-09-29 the sheet exited 0 and the sweep found
+  0 errors while the controller failed 11 allocations and `heapMin` fell to
+  280 B, and no 1 Hz sample saw either dip. The runner's table charges each
+  step with how far `failedAllocs`, the refusal counters and `heapMin` moved
+  inside it, and flags an advance, a reset, an unanswered poll or a Buffer
+  Reading under the compiled floor; on a `_profiler` build it also keeps each
+  step's `lastFail`. Any flag makes its exit code non-zero.
 - **Regression.** Re-run the per-surface scripts the epic did not touch. A script
   that passed last wave and fails now is the cheapest regression signal available
   and nobody has to have predicted it.
-- **What the operator says.** He is watching for the reason in the callout above.
+- **What the operator says** in a headed session. He is watching for the reason in the callout above.
   Write what he raises onto the ticket that owns those files **while the browser
   is still open on it** - that is the difference between a finding and a memory.
 
 **Close the browser as the last step of every run** - including a run that found
-nothing and a run you abandoned. A headed session is a real window left on his
-desktop. `.claude/skills/playwright/SKILL.md` carries the full shutdown
+nothing and a run you abandoned. A headed session's browser is a real window left
+on his desktop. `.claude/skills/playwright/SKILL.md` carries the full shutdown
 protocol.
 
 ## 6. Running the session
 
 - **Run it in a Herdr pane, never through a plain shell tool.** `pause` calls
   `sys.stdin.isatty()` and fails without a controlling terminal; a `sudo`
-  YubiKey cue needs the same. Tee the output to a log and parse the log - the
-  pane is for the operator to watch, the log is what you verify against.
+  YubiKey cue needs the same. `python3 tools/pane_run.py /tmp/<name>.log --
+  make bench-rows ...` does it in one call: a sibling pane, the run under
+  `tools/gate_in_pane.sh`, the wait for `GATE_EXIT=`, the tail, and the pane
+  closed after. Never pipe through `tee` (it records tee's status). Give a
+  row with `pause`s `--timeout` long enough for the operator, and `--keep` if the operator
+  should read the pane after. The pane is for the operator to watch; the log
+  is what you verify against. A command line that says `make flash`, `make ota`
+  or an upload goes in a script: `pane_run.py <log> --script /tmp/<name>.sh`
+  (the upload guard matches the command text).
 - **One build machine-wide.** `make` and the slice gate take
-  `/tmp/protoartoo-pio.lock` themselves; run them plainly, never with `flock`
+  `/tmp/protor2-pio.lock` themselves; run them plainly, never with `flock`
   in front, which is refused as a nested take.
 - **Confirm the image before any acceptance run.** `firmwareVersion` must match
   the intended commit; a `-dirty` or stale image invalidates the whole run. If

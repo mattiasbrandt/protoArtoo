@@ -10,7 +10,9 @@
 // was wired at that point - this file and its cascade entry are what closes
 // that gap.
 //
-// Six of dome's 21 dome.action.* rows are wired below. The rest already
+// Six of dome's 21 dome.action.* rows are wired below, and three more landed
+// later with their routes (dome.action.pose-sequence, #440;
+// dome.action.front-is-here and dome.action.go-home, #445). The rest already
 // dispatch through the existing ACTION_REGISTRY[] fallback with no direct
 // executor needed (verified with a temporary diagnostic sweep before writing
 // this file, not assumed):
@@ -30,15 +32,14 @@
 //     already allows them through dispatchRcTriggerActionTest() - the same
 //     guard+dispatch core POST /api/actions/test uses.
 //
-// One row, dome.action.save-sequence, stays CONSOLE_REASON_EXECUTOR_NOT_READY
-// on purpose: its REST body (POST /api/seq, a full Learned Sequence JSON v1
-// document up to SEQ_FILE_MAX_BYTES with a steps array) is exactly the
-// "document/bulk transfer" #206 names out of scope for this epic - the
-// Console's one-line key=value argument grammar (docs/console-protocol.md
-// s.1.2) has no shape for an arbitrarily large JSON body, and inventing one
-// is a new Console Record/argument shape the coordinator pin requires asking
-// about first, not building. Reported on the ticket, not silently left
-// unexplained.
+// One row, dome.action.save-sequence, is never on the Console: its registry row
+// declares it `console: excluded: file-transfer`, so it answers
+// CONSOLE_REASON_NOT_ON_CONSOLE before dispatch reaches this file (#474). Its
+// REST body (POST /api/seq, a full Learned Sequence JSON v1 document up to
+// SEQ_FILE_MAX_BYTES with a steps array) is exactly the "document/bulk
+// transfer" #206 names out of scope - the Console's one-line key=value
+// argument grammar (docs/console-protocol.md s.1.2) has no shape for an
+// arbitrarily large JSON body.
 //
 // dome.action.sequence-stop's dangling-Learned-Sequence-binding report (the
 // analogous field on dome.action.delete-sequence's REST sibling,
@@ -75,8 +76,11 @@
 #include "robot_state.h"                  // robotState, robotStateMux, DomeCommand, domeCmdQueue
 #include "config_cache.h"                 // ConfigSnapshot, configCacheRead()
 #include "dome_link.h"                    // domeQueueTx(), DomeTxCmd sizing (dome_link.h)
-#include "sequence_dispatcher.h"          // sequenceStart()
+#include "sequence_dispatcher.h"          // sequenceStart(), sequencePoseRequest()
+#include "sequence_pose.h"                // sequencePoseRefusal()
 #include "api_drive.h"                    // executeManualCommand()
+#include "api_servo.h"                    // servoOutputUndriven()
+#include "marcduino_helpers.h"            // marcduino_panel_command_output()
 #include "seq_store.h"                    // seqStoreDelete()
 #include "seq_store_index.h"              // seqStoreIndexFind()
 
@@ -84,7 +88,7 @@
 // single form field POST /api/manual-command reads (handleManualCommandPost(),
 // src/web/api_system.cpp) before handing it to executeManualCommand()
 // (src/web/api_drive.cpp) - the SAME dispatch core, reused verbatim rather
-// than reimplemented, so every prefix branch it owns ($/audio, :#/body,
+// than reimplemented, so every branch it owns ($/audio, :#/Command Ownership,
 // */@/%/&!/dome-forward, and the keyword commands) stays in that one place.
 // The rate limit handleManualCommandPost() applies (10/s) is an HTTP-abuse
 // guard, not one of this ticket's five safety guards (estop, stationary/
@@ -134,20 +138,123 @@ static void consoleExecuteDomeSendCommand(uint32_t requestId, const char* operat
         }
     }
 
-    if (!executeManualCommand(command)) {
+    const ManualCommandResult result = executeManualCommand(command);
+    if (result == ManualCommandResult::Unsupported) {
         // Matches handleManualCommandPost()'s own single failure shape
-        // (400 "unsupported command") - executeManualCommand() returns one
-        // bool for every branch it owns, so an audio-queue-full $ command
-        // and a genuinely unrecognized keyword answer the same way on both
-        // the REST route and here; that conflation is pre-existing in the
-        // reused core, not introduced by this executor.
+        // (400 "unsupported command") - executeManualCommand() answers
+        // Unsupported for every rejecting branch it owns, so an
+        // audio-queue-full $ command and a genuinely unrecognized keyword
+        // answer the same way on both the REST route and here; that
+        // conflation is pre-existing in the reused core, not introduced by
+        // this executor.
         consoleEmitArgFailure(requestId, operationName, "command", CONSOLE_REASON_OUT_OF_RANGE, sink);
         return;
     }
+    if (result == ManualCommandResult::ShadowedModeKeyword) {
+        // "#st"/"#sm" (#379): the '#' prefix hands the line to the Marcduino
+        // body parser, which matches neither, so no mode ever changed -- the
+        // same refusal POST /api/manual-command answers as a 400, reached
+        // through the same dispatch core and therefore answered here too
+        // rather than falling through to the ok record below.
+        //
+        // A result record carries no free text (ConsoleRecordSink,
+        // include/console_module.h) and the Reason set is fixed (ADR 0036),
+        // so the reason is the value one: OUT_OF_RANGE, exactly what this
+        // executor already answers for a command value the core will not run.
+        // The next move on this transport is system.action.set-mode, which is
+        // the same capability POST /api/mode exposes.
+        consoleEmitArgFailure(requestId, operationName, "command", CONSOLE_REASON_OUT_OF_RANGE,
+                              sink);
+        return;
+    }
+    if (result == ManualCommandResult::SaveFailed) {
+        // A command that applied but whose config save did not reach flash
+        // (#376). Read from consoleExecuteDirectSetMode()
+        // (include/console_direct_action_system.h), which answers the identical
+        // outcome for the identical operation over system.action.set-mode: the
+        // command ran, the store did not, and that is an internal error rather
+        // than anything the caller got wrong. Nothing produces SaveFailed
+        // today; include/api_drive.h says why it is answered anyway.
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
+                                CONSOLE_REASON_NONE);
+        }
+        return;
+    }
 
+    if (result == ManualCommandResult::BankNotFitted ||
+        result == ManualCommandResult::BankSoundMissing ||
+        result == ManualCommandResult::LineTooLong) {
+        // $8nn with no bank 8 on the fitted module, $800, or a line longer
+        // than the dome TX buffer: the command value is one this droid cannot
+        // run, which is what OUT_OF_RANGE on this key already answers for the
+        // core's other refusals of the line itself.
+        consoleEmitArgFailure(requestId, operationName, "command", CONSOLE_REASON_OUT_OF_RANGE,
+                              sink);
+        return;
+    }
+    if (result == ManualCommandResult::OutputUndriven) {
+        // The detail and reason the servo.action.* rows refuse the same Output
+        // with (consoleRefusedWhileUndriven(), include/
+        // console_direct_action_servo.h): the reason alone cannot say whether a
+        // restart or Wiring is what would drive it.
+        char undriven[96] = {};
+        servoOutputUndriven(marcduino_panel_command_output(command), undriven, sizeof(undriven));
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, operationName);
+        }
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "detail", undriven);
+        }
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                              CONSOLE_REASON_COMPONENT_DISABLED);
+        }
+        return;
+    }
+
+    // The rest map onto the fixed Reason set (ADR 0036). A forward answers
+    // queued, never applied: handed on, and what the dome does with it is the
+    // dome's to report (ADR 0055).
+    ConsoleStatus status = CONSOLE_STATUS_ERR;
+    ConsoleOutcome outcome = CONSOLE_OUTCOME_INTERNAL_ERROR;
+    ConsoleReason reason = CONSOLE_REASON_NONE;
+    switch (result) {
+        case ManualCommandResult::Applied:
+            status = CONSOLE_STATUS_OK;
+            outcome = CONSOLE_OUTCOME_APPLIED;
+            break;
+        case ManualCommandResult::Forwarded:
+            status = CONSOLE_STATUS_OK;
+            outcome = CONSOLE_OUTCOME_QUEUED;
+            break;
+        case ManualCommandResult::DomeLinkDown:
+        case ManualCommandResult::SoundCatalogBusy:
+            outcome = CONSOLE_OUTCOME_UNAVAILABLE;
+            reason = CONSOLE_REASON_TEMPORARILY_UNAVAILABLE;
+            break;
+        case ManualCommandResult::DomeQueueFull:
+        case ManualCommandResult::QueueFull:
+            outcome = CONSOLE_OUTCOME_QUEUE_FULL;
+            reason = CONSOLE_REASON_QUEUE_FULL;
+            break;
+        case ManualCommandResult::BlockedByEstop:
+            outcome = CONSOLE_OUTCOME_BLOCKED;
+            reason = CONSOLE_REASON_BLOCKED_BY_STATE;
+            break;
+        case ManualCommandResult::Unsupported:
+        case ManualCommandResult::ShadowedModeKeyword:
+        case ManualCommandResult::SaveFailed:
+        case ManualCommandResult::OutputUndriven:
+        case ManualCommandResult::BankNotFitted:
+        case ManualCommandResult::BankSoundMissing:
+        case ManualCommandResult::LineTooLong:
+            // Answered above; a result reaching here is a new value nobody
+            // mapped, and says so rather than claiming success.
+            break;
+    }
     if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
-                            CONSOLE_REASON_NONE);
+        sink->onRecordResult(requestId, status, outcome, reason);
     }
 }
 
@@ -205,9 +312,10 @@ static void consoleExecuteDomeSequence(uint32_t requestId, const char* operation
 }
 
 // dome.action.sequence-stop: no arguments, matching POST /api/seq/stop
-// (handleSeqStopPost(), src/web/api_seq.cpp) - a non-latching transient flag
-// set unconditionally, no estop/sleep/component gate in the REST source, so
-// none is added here either.
+// (handleSeqStopPost(), src/web/api_seq.cpp) - both go through the one setter,
+// sequenceStopRequest(), which raises a non-latching transient flag
+// unconditionally and cancels a pose press not yet taken. No estop/sleep/
+// component gate in the REST source, so none is added here either.
 static void consoleExecuteDomeSequenceStop(uint32_t requestId, const char* operationName,
                                            const ConsoleArgs& args, ConsoleCommandSource source,
                                            const ConsoleRecordSink* sink) {
@@ -215,9 +323,7 @@ static void consoleExecuteDomeSequenceStop(uint32_t requestId, const char* opera
     if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
         return;
     }
-    taskENTER_CRITICAL(&robotStateMux);
-    robotState.seqStopRequested = true;
-    taskEXIT_CRITICAL(&robotStateMux);
+    sequenceStopRequest();
 
     if (sink->onRecordResult) {
         sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
@@ -387,6 +493,109 @@ static void consoleExecuteDomeTestSequence(uint32_t requestId, const char* opera
     }
 }
 
+// dome.action.pose-sequence: name=DM:<NAME> t=<ms> - send the droid to one
+// instant of a Learned or Factory sequence, the same checks and the same
+// choke point handleSeqPosePost() (POST /api/seq/pose, src/web/api_seq.cpp)
+// uses (#440). The halt rule is sequencePoseRefusal()'s, asked here as the
+// route asks it, so the Console and the page refuse for one reason; a name the
+// dome runs itself has no steps to take a pose from, so sequencePoseRequest()
+// takes nothing and the name is out of range.
+static void consoleExecuteDomePoseSequence(uint32_t requestId, const char* operationName,
+                                           const ConsoleArgs& args, ConsoleCommandSource source,
+                                           const ConsoleRecordSink* sink) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    char badKey[40] = {};
+    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
+    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
+        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
+                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
+                                   ? CONSOLE_REASON_MISSING_ARGUMENT
+                                   : CONSOLE_REASON_OUT_OF_RANGE;
+        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+        return;
+    }
+
+    const char* name = consoleArgsFind(args, "name");
+    if (name == nullptr || strncmp(name, "DM:", 3) != 0) {
+        consoleEmitArgFailure(requestId, operationName, "name", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+    // Schema already confirmed "t" is an int32 in 0..INT32_MAX; reparse with
+    // the same parser the schema check used.
+    double atMs = 0.0;
+    consoleParamParseNumeric(CONSOLE_PARAM_TYPE_INT32, consoleArgsFind(args, "t"), &atMs);
+
+    taskENTER_CRITICAL(&robotStateMux);
+    const bool estopLatched = robotState.estop;
+    const bool sleepMode = robotState.sleepMode;
+    taskEXIT_CRITICAL(&robotStateMux);
+    if (sequencePoseRefusal(estopLatched, sleepMode) != nullptr) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_BLOCKED,
+                                CONSOLE_REASON_BLOCKED_BY_STATE);
+        }
+        return;
+    }
+
+    if (!sequencePoseRequest(name, (uint32_t)atMs, consoleCommandSourceFor(source))) {
+        consoleEmitArgFailure(requestId, operationName, "name", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
+    }
+}
+
+// dome.action.front-is-here / dome.action.go-home: the Dome Bearing's two
+// presses (#445), through domeBearingActRequest() (src/web/api_drive.cpp) -
+// the call POST /api/dome/front and POST /api/dome/home make - so the Console
+// and the page refuse for one reason (include/dome_bearing_act.h). Neither
+// takes an argument. A halt or a missing calibration or belief is `blocked`,
+// the Dome ESC switched off `unavailable`, each with its reason.
+static void consoleEmitDomeBearingAct(uint32_t requestId, const char* operationName,
+                                      const ConsoleArgs& args, ConsoleCommandSource source,
+                                      const ConsoleRecordSink* sink, DomeBearingAct act) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    char badKey[40] = {};
+    if (consoleValidateArgsAgainstSchema(entry != nullptr ? entry->params : nullptr, args, badKey,
+                                         sizeof(badKey)) != CONSOLE_ARG_SCHEMA_OK) {
+        consoleEmitArgFailure(requestId, operationName, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
+        return;
+    }
+    const DomeBearingActOutcome outcome =
+        domeBearingActRequest(act, consoleCommandSourceFor(source));
+    if (sink->onRecordResult == nullptr) {
+        return;
+    }
+    if (outcome.refusal == DOME_BEARING_DOME_OFF) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                             domeBearingRefusalReason(outcome.refusal));
+    } else if (outcome.refusal != DOME_BEARING_OK) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_BLOCKED,
+                             domeBearingRefusalReason(outcome.refusal));
+    } else if (!outcome.queued) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
+                             CONSOLE_REASON_QUEUE_FULL);
+    } else {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
+    }
+}
+
+static void consoleExecuteDomeFrontIsHere(uint32_t requestId, const char* operationName,
+                                          const ConsoleArgs& args, ConsoleCommandSource source,
+                                          const ConsoleRecordSink* sink) {
+    consoleEmitDomeBearingAct(requestId, operationName, args, source, sink,
+                              DOME_BEARING_ACT_FRONT_IS_HERE);
+}
+
+static void consoleExecuteDomeGoHome(uint32_t requestId, const char* operationName,
+                                     const ConsoleArgs& args, ConsoleCommandSource source,
+                                     const ConsoleRecordSink* sink) {
+    consoleEmitDomeBearingAct(requestId, operationName, args, source, sink, DOME_BEARING_ACT_TURN);
+}
+
 // dome.seq.<name>: the sixteen registry rows that name one body-owned
 // sequence outright (dome.seq.vader ... dome.seq.overload), as opposed to
 // dome.action.dome-sequence above, which takes the name as an argument. They
@@ -444,6 +653,9 @@ static const ConsoleDirectActionExecutorEntry g_domeDirectActionExecutors[] = {
     {"dome.action.move", consoleExecuteDomeMove},
     {"dome.action.delete-sequence", consoleExecuteDomeDeleteSequence},
     {"dome.action.test-sequence", consoleExecuteDomeTestSequence},
+    {"dome.action.pose-sequence", consoleExecuteDomePoseSequence},
+    {"dome.action.front-is-here", consoleExecuteDomeFrontIsHere},
+    {"dome.action.go-home", consoleExecuteDomeGoHome},
 };
 static const size_t kDomeDirectActionExecutorCount =
     sizeof(g_domeDirectActionExecutors) / sizeof(g_domeDirectActionExecutors[0]);

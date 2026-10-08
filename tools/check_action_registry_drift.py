@@ -12,6 +12,10 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from registry_yaml import load_registry_yaml
+import check_setting_words  # noqa: E402  (after the path insert above)
+import check_products_drift  # noqa: E402
+import check_wiring_cards_drift  # noqa: E402
+import check_console_catalog_drift  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,11 +31,15 @@ RC_JS_PATH = ROOT / "data" / "rc.js"
 WEB_DIR = ROOT / "src" / "web"
 DOME_CUE_HANDLER_PATH = ROOT / "src" / "drivers" / "dome_cue_handler.cpp"
 AUDIO_DOLLAR_PARSER_PATH = ROOT / "src" / "tasks" / "audio_dollar_parser.cpp"
+BOARD_OUTPUTS_PATH = ROOT / "include" / "board_outputs.h"
+# An entry about one Output names it with this placeholder, composed at runtime
+# from the running board's label (docs/action-registry.yaml header, `output:`).
+OUTPUT_PLACEHOLDER = "{output}"
 BINDABLE_CPP_FILE = "include/rc_mapping.h"
 
 DOMAIN_GROUP = {
     "drive": "Movement",
-    "servo": "Arms",
+    "servo": "Outputs",
     "dome": "Sequences",
     "sound": "Sound",
     "system": "System",
@@ -48,7 +56,9 @@ ACTION_GROUP_OVERRIDE = {
     "dome.action.set-speed": "Movement",
 }
 
-NON_TESTABLE_TOKENS = {"drive_speed", "drive_steer", "dome_speed", "estop"}
+# robotActionIsWebTestable(): the analog actions - the three axes and a puppet
+# string - and the estop never run from a single press.
+NON_TESTABLE_TOKENS = {"drive_speed", "drive_steer", "dome_speed", "puppet_part", "estop"}
 PAYLOAD_REQUIRED_TOKENS = {"seq", "cmd", "dome_seq"}
 
 
@@ -140,6 +150,7 @@ class ExpectedAction:
     build_flag: str | None
     group: str
     testable: bool
+    output: str | None
 
 
 def normalize(text: object) -> str:
@@ -229,6 +240,7 @@ def load_expected_actions(doc: dict) -> list[ExpectedAction]:
                 build_flag=entry.get("build_flag"),
                 group=action_group(entry),
                 testable=action_testable(token),
+                output=entry.get("output"),
             )
         )
 
@@ -291,11 +303,12 @@ def parse_from_string_tokens() -> dict[str, str]:
 
 def parse_action_registry(
     path: Path = ACTION_REGISTRY_PATH,
-) -> dict[str, tuple[str, str, str, str, bool, str | None, str | None]]:
+) -> dict[str, tuple[str, str, str, str, bool, str | None, str | None, str | None]]:
     text = path.read_text(encoding="utf-8")
     rows = re.findall(
         r"{\s*([A-Z0-9_]+),\s*\"([^\"]+)\",\s*\"([^\"]+)\",\s*\"([^\"]+)\","
         r"\s*\"([^\"]+)\",\s*(true|false)"
+        r"(?:\s*,\s*(nullptr|\"[^\"]+\"))?"
         r"(?:\s*,\s*(nullptr|\"[^\"]+\"))?"
         r"(?:\s*,\s*(nullptr|\"[^\"]+\"))?\s*}",
         text,
@@ -310,9 +323,47 @@ def parse_action_registry(
         enum: (
             normalize(name), normalize(display), normalize(domain), normalize(desc),
             safety == "true", nullable(board_capability), nullable(build_flag),
+            nullable(output),
         )
-        for enum, name, display, domain, desc, safety, board_capability, build_flag in rows
+        for enum, name, display, domain, desc, safety, board_capability, build_flag, output in rows
     }
+
+
+def board_output_ids() -> set[str]:
+    """The stored Output ids BOARD_OUTPUTS declares (include/board_outputs.h)."""
+    text = BOARD_OUTPUTS_PATH.read_text(encoding="utf-8")
+    body = re.search(r"BOARD_OUTPUTS\[\]\s*=\s*{(?P<body>.*?)\n};", text, re.S)
+    if not body:
+        raise ValueError("could not find BOARD_OUTPUTS in include/board_outputs.h")
+    return set(re.findall(r'{\s*"([a-z0-9]+)",\s*"enable_', body.group("body")))
+
+
+def check_output_placeholders(doc: dict, errors: list[str]) -> None:
+    """An entry about one Output names it `{output}` and carries `output:`.
+
+    The placeholder is composed at runtime from the running board's label for
+    the Output `output:` names, so a placeholder with no `output:` would be
+    served as an empty name, and an `output:` naming an id BOARD_OUTPUTS does
+    not declare would too. And no display text may name an Output by a word
+    that is one board's alone (ADR 0033 Amendment 2026-09-19).
+    """
+    ids = board_output_ids()
+    stale_words = re.compile(r"\b(ARM[1-5]|AUX ?[1-3])\b")
+    for entry in doc.get("entries", []):
+        name = entry.get("name", "<unnamed>")
+        output = entry.get("output")
+        texts = [str(entry.get(field) or "") for field in ("display_name", "description")]
+        if output is not None and output not in ids:
+            errors.append(f"{name} output {output!r} is not a BOARD_OUTPUTS id {sorted(ids)!r}")
+        if any(OUTPUT_PLACEHOLDER in text for text in texts) and output is None:
+            errors.append(f"{name} names {OUTPUT_PLACEHOLDER} but carries no output:")
+        for text in texts:
+            match = stale_words.search(text)
+            if match:
+                errors.append(
+                    f"{name} names an Output {match.group(0)!r}, which is one board's word; "
+                    f"use {OUTPUT_PLACEHOLDER} with output:"
+                )
 
 
 def parse_js_fallback() -> dict[str, tuple[str, str, str, bool, bool]]:
@@ -355,13 +406,21 @@ ROUTE_REGISTRATION_PATTERNS = (
 
 
 def find_registered_routes() -> set[str]:
-    """All literal paths registered as routes across src/web/*.cpp."""
+    """All literal API paths registered as routes across src/web/*.cpp.
+
+    The registry's api_path column is the HTTP API. A static-asset handler
+    (the Component Picker photographs at /<id>.webp, #316) is not an API
+    endpoint and is not demanded of the registry.
+    """
     routes: set[str] = set()
     for path in sorted(WEB_DIR.glob("*.cpp")):
         text = path.read_text(encoding="utf-8")
         for pattern in ROUTE_REGISTRATION_PATTERNS:
             for match in re.finditer(pattern, text):
-                routes.add(match.group(1))
+                route = match.group(1)
+                if not (route.startswith("/api/") or route.startswith("/upload/")):
+                    continue
+                routes.add(route)
     return routes
 
 
@@ -806,13 +865,37 @@ def check_no_bool_enum_values(doc: dict, errors: list[str]) -> None:
                         )
 
 
-def check_inventory_registry_alignment(doc: dict, errors: list[str]) -> None:
-    """Validate one-to-one mapping: registry entries <-> inventory rows.
+def check_param_explanations(doc: dict, errors: list[str]) -> None:
+    """Every param says what it does to the droid (ADR 0059, #459).
 
-    Each registry entry must have a matching row in the inventory files with
-    matching executor_or_core value.
+    A param used to carry a name, a type and a bound and nothing a person
+    reads, so a builder met a number that moves something with no word on what.
+    ADR 0059 makes the explanation a required field, asserted here rather than
+    populated by convention: a param with no `explanation`, or an empty one, is
+    drift.
+
+    Presence is all this can hold. What the sentence has to be is the copy rule
+    (docs/ui-copy-voice.md rule 1): end in the physical consequence, in one or
+    two sentences - "The number alone is not an explanation; say what it does
+    to the droid. Then stop." That half is read, not checked.
     """
-    import subprocess
+    for entry in doc.get('entries', []):
+        name = entry.get('name', '<unnamed>')
+        for param in entry.get('params', []) or []:
+            pname = param.get('name', '<unnamed>')
+            explanation = param.get('explanation')
+            if not isinstance(explanation, str) or not explanation.strip():
+                errors.append(f"{name} param {pname!r}: no explanation")
+
+
+def check_inventory_registry_alignment(doc: dict, errors: list[str]) -> None:
+    """Validate one-to-one mapping: registry entries <-> inventory rows, by name.
+
+    A row carries only what the registry does not: its anchor kind, evidence and
+    notes. It used to mirror the registry's executor too, and this check compared
+    the two; the mirror is gone, because the registry already holds it (ADR 0037
+    Amendment 2026-10-06, #474).
+    """
     inventory_dir = ROOT / "tools" / "console_inventory"
 
     # Load all inventory rows
@@ -834,21 +917,123 @@ def check_inventory_registry_alignment(doc: dict, errors: list[str]) -> None:
     registry_entries = {e['name']: e for e in doc.get('entries', [])}
 
     # Check bidirectional mapping
-    for name, inv_row in inventory_rows.items():
+    for name in inventory_rows:
         if name not in registry_entries:
             errors.append(f"{name} in inventory but missing from registry")
-        else:
-            inv_executor = inv_row.get('executor_or_core')
-            reg_executor = registry_entries[name].get('executor')
-            if inv_executor != reg_executor:
-                errors.append(
-                    f"{name} executor mismatch: inventory={inv_executor!r}, "
-                    f"registry={reg_executor!r}"
-                )
 
     for name in registry_entries:
         if name not in inventory_rows:
             errors.append(f"{name} in registry but missing from inventory")
+
+
+# One inventory citation: the file, " - ", then what it shows.
+INVENTORY_CITATION_RE = re.compile(r"^(?P<path>\S+) - (?P<text>.+)$", re.DOTALL)
+# A citation's anchors: the spans its text puts in backticks.
+INVENTORY_ANCHOR_RE = re.compile(r"`([^`]+)`")
+# A line number, or a range of them, on the end of a cited path.
+INVENTORY_LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")
+# An anchor that is one identifier, bare or written as a call (`name()`).
+INVENTORY_IDENT_ANCHOR_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(\(\))?$")
+
+
+def inventory_anchor_in(anchor: str, text: str) -> bool:
+    """Whether a cited file's text carries an anchor.
+
+    An identifier is matched as an identifier, never as a run of letters:
+    `configSave` is not found inside `configSaveWifi`, and `auxLedQueue` is
+    not found inside `auxLedQueueSetColor`. Written as a call, `name()`, it
+    must be followed by an opening parenthesis in the file - the call or the
+    declaration, whatever its arguments, so `processCommand()` holds against
+    `processCommand(cmd)`. Any other anchor - a statement, a quoted string, a
+    table row - is a literal substring.
+    """
+    ident = INVENTORY_IDENT_ANCHOR_RE.match(anchor)
+    if ident is None:
+        return anchor in text
+    name = re.escape(ident.group(1))
+    tail = r"\(" if ident.group(2) else r"(?![A-Za-z0-9_])"
+    return re.search(rf"(?<![A-Za-z0-9_]){name}{tail}", text) is not None
+
+
+def check_inventory_citations(errors: list[str],
+                              inventory_dir: Path = ROOT / "tools" / "console_inventory",
+                              root: Path = ROOT) -> None:
+    """Hold every inventory citation to the file it names (#459).
+
+    A row's `evidence` used to cite `file:line - what it shows`, and nothing
+    read the line: two thirds of the numbers had drifted off their symbols
+    within a few months, silently. Re-deriving the numbers would only start
+    that again, and a check on line numbers would fail every slice that adds a
+    line above one. So a citation names a SYMBOL and not a line:
+
+        src/web/api_seq.cpp - `handleSeqStopPost()` calls `sequenceStopRequest()`
+
+    Each span in backticks is an anchor: text the cited file must carry
+    (inventory_anchor_in(): an identifier whole, a `name()` wherever the file
+    opens its parenthesis, anything else as written). This check fails when
+    the file is gone, when the citation carries no anchor, when an anchor is
+    no longer in the file, or when the path still ends in a line number. An
+    anchor survives the code moving up or down; a rename or a move to another
+    file is the drift it is here to catch.
+
+    The file is read whole, comments included, and that is deliberate: some
+    citations rightly point at a comment (the `$` command table in
+    include/audio_dollar_parser.h's header). So a mention in a comment still
+    satisfies an anchor. Anchor the call or the declaration as the file
+    writes it when the claim is that the code does something.
+
+    What it does not prove is the sentence around the anchors: that a symbol
+    is "the definition", or that one calls another, is still the author's
+    claim. Words outside the backticks - a symbol from another file, a
+    sequence name - are prose, and are not checked.
+
+    Report, never rewrite: a failure names the row and the anchor, and the
+    citation is repaired by reading the code.
+    """
+    sources: dict[str, str | None] = {}
+
+    def source(path: str) -> str | None:
+        if path not in sources:
+            file = root / path
+            sources[path] = file.read_text(encoding="utf-8", errors="replace") if file.is_file() else None
+        return sources[path]
+
+    for inv_file in sorted(inventory_dir.glob("*.yaml")):
+        with open(inv_file, encoding="utf-8") as f:
+            inv_data = yaml.safe_load(f)
+        for row in inv_data.get("rows", []):
+            name = row.get("name")
+            for index, citation in enumerate(row.get("evidence") or [], start=1):
+                where = f"{inv_file.name} {name} evidence {index}"
+                # A `: ` in an unquoted citation makes YAML read it as a
+                # mapping, and the half after the colon is then never seen.
+                if not isinstance(citation, str):
+                    errors.append(f"{where}: not a string ({citation!r}) - quote it in the YAML")
+                    continue
+                match = INVENTORY_CITATION_RE.match(citation)
+                if match is None:
+                    errors.append(f"{where}: not in the form 'file - what it shows': {citation!r}")
+                    continue
+                path = match.group("path")
+                if INVENTORY_LINE_SUFFIX_RE.search(path):
+                    errors.append(
+                        f"{where}: cites a line ({path}) - cite the file and put the symbol in "
+                        f"backticks; a line number drifts and nothing can check it"
+                    )
+                    continue
+                text = source(path)
+                if text is None:
+                    errors.append(f"{where}: cites {path}, which is not a file in this tree")
+                    continue
+                anchors = INVENTORY_ANCHOR_RE.findall(match.group("text"))
+                if not anchors:
+                    errors.append(
+                        f"{where}: names no symbol - put what {path} must contain in backticks"
+                    )
+                    continue
+                for anchor in anchors:
+                    if not inventory_anchor_in(anchor, text):
+                        errors.append(f"{where}: `{anchor}` is not in {path}")
 
 
 def main() -> int:
@@ -878,9 +1063,21 @@ def main() -> int:
             add_mismatch(errors, f"{action.enum} registry safety_critical", action.safety_critical, row[4])
             add_mismatch(errors, f"{action.enum} registry board_capability", action.board_capability, row[5])
             add_mismatch(errors, f"{action.enum} registry build_flag", action.build_flag, row[6])
+            add_mismatch(errors, f"{action.enum} registry output", action.output, row[7])
 
+        # An action about one Output is named by the running board, so the
+        # browser's fallback - drawn before GET /api/actions answers - cannot
+        # carry it: it would have to name the Output itself (the browser knows
+        # no Output, operator 2026-09-19 on #411). It appears once the
+        # firmware's answer arrives.
         js = js_fallback.get(action.token)
-        if js is None:
+        if action.output is not None:
+            if js is not None:
+                errors.append(
+                    f"{action.token} is about one Output, so HARDCODED_ACTION_TARGETS must not "
+                    f"carry it: its name is the running board's"
+                )
+        elif js is None:
             errors.append(f"{action.token} missing from HARDCODED_ACTION_TARGETS")
         else:
             add_mismatch(errors, f"{action.token} JS label", action.display_name, js[0])
@@ -906,12 +1103,26 @@ def main() -> int:
     check_component_toggle_entries(doc, errors)
     check_html_data_attributes(errors)
     check_inventory_registry_alignment(doc, errors)
+    check_inventory_citations(errors)
     check_status_query_classification(doc, errors)
     check_no_bool_enum_values(doc, errors)
+    check_param_explanations(doc, errors)
     check_executor_symbols(doc, errors)
     check_none_executor_evidence(doc, errors)
     check_executor_marker_contradiction(doc, errors)
     check_console_help_file(doc, errors)
+    check_output_placeholders(doc, errors)
+    # Every declared Setting has words in the browser (ADR 0068, amended
+    # 2026-09-26): run here so the slice gate's drift stage carries it.
+    check_setting_words.check(errors)
+    # The Component Registry manifest and Wiring's product cards are what
+    # docs/products.yaml generates today (#475, #458): run here so the slice
+    # gate's drift stage carries them.
+    check_products_drift.check(errors)
+    check_wiring_cards_drift.check(errors)
+    # The Operation Catalog is what the registry generates today, byte for
+    # byte, and every `console:` row names a known reason and page (#474).
+    check_console_catalog_drift.check(errors)
 
     if errors:
         print("Action registry drift detected:", file=sys.stderr)

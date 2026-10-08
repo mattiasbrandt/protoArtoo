@@ -1,0 +1,446 @@
+#!/usr/bin/env python3
+"""Check that Component Registry metadata stays aligned across the manifest, the firmware and the browser.
+
+ADR 0042 as amended 2026-09-09 makes `include/component_registry.inc` the single
+declaration of every product, from which the firmware tables, the identity
+manifest and the operator lineup all derive. Most of that derivation is
+mechanical and cannot drift: the tables are X-macro expansions of the manifest,
+each sound driver returns its own row's capability word through
+`componentPartCapabilities()`, and a `static_assert` in
+`src/tasks/audio_sound_member.cpp` ties the driver instances to the manifest's
+selectable count. The drive backend profile reads the Foot Drive row's word the
+same way (`include/drive_backend.h`).
+
+What is left is what no compiler can see, and this is it. Three questions - and
+a fourth the compiler does see, repeated here so it is reported as a sentence
+with the row's name - all answered by reading source text, and none of them by
+rewriting a file - the convention `tools/check_action_registry_drift.py` set.
+
+1. **Every capability a supported row declares has a consumer.** ADR 0042 is
+   explicit that this is scoped to `supported` rows and never to `roadmap`
+   ones: a roadmap row's capabilities have no driver to consume them by
+   construction. The defect it guards against is the one ADR 0042's CAUTION
+   records from the reference project - a flag declared on every entry and
+   consulted by nothing, so the software confidently reproduced behaviour no
+   real board would produce. `AUDIO_CAP_TRACK_COUNT` was exactly that here
+   until #340. Every family's vocabulary is read - Sound's `AUDIO_CAP_*` and
+   the Foot Drive's `DRIVE_CAP_*` (#446) - so a bit in any of them is held to
+   it; `VOCABULARIES` below is where a family's vocabulary is registered.
+
+2. **A row's Board Capability Gate and its `included` expression agree.** The
+   `gate` column is what the identity payload reports as the reason a part is
+   missing; `included` is what actually decides. A row that reports one gate
+   and consults another - or none - tells a builder to go and check the wrong
+   board fact.
+
+3. **A family's `member_key` is the NVS key of a Member Setting.** The
+   manifest names the NVS key so an operator surface can, and nothing in the
+   compiler connects that string to the Setting's declaration in
+   `src/config_settings.cpp`, which is what the NVS save and load both loop
+   over (ADR 0068, amended 2026-09-26). Rename either half alone and the member
+   silently stops surviving a reboot.
+
+4. **A `roadmap` row is not Confirmed on a Droid.** The column records that a
+   product has run on a real droid (GLOSSARY.md "Confirmed on a Droid", #455).
+   It is evidence about a `supported` row: a roadmap row has no driver to have
+   run. `src/component_registry.cpp` holds the same rule as a `static_assert`;
+   this is the form that names the row and says what to change.
+
+Run it as `make check-component-drift`. Its own unit tests, which drive each
+check against fixtures and prove it can fail, are
+`test/test_tools/test_component_registry_drift.py`.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+import re
+import sys
+
+import setting_declarations  # tools/, beside this script
+
+ROOT = Path(__file__).resolve().parents[1]
+MANIFEST = ROOT / "include" / "component_registry.inc"
+AUDIO_DRIVER_HEADER = ROOT / "include" / "audio_driver.h"
+DRIVE_CAPABILITIES_HEADER = ROOT / "include" / "drive_capabilities.h"
+BOARD_CAPABILITIES = ROOT / "include" / "board_capabilities.inc"
+CONFIG_SETTINGS = setting_declarations.CONFIG_SETTINGS
+
+# Where a capability consumer may live. Firmware branches on a bit; the browser
+# branches on it too, and ADR 0042 counts both - two sound bits gate firmware
+# behaviour and four are reported so the browser knows which fields are
+# meaningful.
+CONSUMER_DIRS = (ROOT / "src", ROOT / "include", ROOT / "data")
+CONSUMER_SUFFIXES = (".c", ".cpp", ".h", ".hpp", ".inc", ".js")
+
+# Every Component Family that owns a capability vocabulary: the prefix its bit
+# names share, and the header that defines them (ADR 0042 as amended: "The
+# Component Family owns the vocabulary"). A family that gains a vocabulary is
+# one more line here; until it is, a row naming its bits is reported rather
+# than passed unexamined.
+VOCABULARIES = (
+    ("AUDIO_CAP_", AUDIO_DRIVER_HEADER),
+    ("DRIVE_CAP_", DRIVE_CAPABILITIES_HEADER),
+)
+
+# Any capability-shaped name, registered or not, so a row naming a vocabulary
+# nobody registered above is caught rather than read past.
+CAPABILITY_NAME = re.compile(r"\b([A-Z]+_CAP_[A-Z0-9_]+)\b")
+
+# Declaring a bit is not consuming it. These files are where the vocabularies
+# and the per-product words are written down, so a hit in any proves nothing.
+DECLARATION_FILES = {header for _, header in VOCABULARIES} | {MANIFEST}
+
+CATEGORY_COLUMNS = 4
+PART_COLUMNS = 10
+
+# PA_COMPONENT_PART's columns, by position. Named once here because every
+# check reads a row by index and a column added mid-row moves the rest.
+PART_ID = 1
+PART_STATUS = 5
+PART_CONFIRMED = 6
+PART_CAPABILITIES = 7
+PART_GATE = 8
+PART_INCLUDED = 9
+
+STATUS_SUPPORTED = "COMPONENT_STATUS_SUPPORTED"
+STATUS_ROADMAP = "COMPONENT_STATUS_ROADMAP"
+CONFIRMED_WORDS = ("COMPONENT_CONFIRMED_ON_DROID", "COMPONENT_NOT_CONFIRMED_ON_DROID")
+
+
+def split_top_level(argument_text: str) -> list[str]:
+    """Split one macro invocation's arguments on top-level commas.
+
+    A capability column is an expression full of `|` and `::`, and an
+    `included` column can be a parenthesised comparison, so a naive split on
+    "," would cut a row in half.
+    """
+    arguments: list[str] = []
+    depth = 0
+    current = ""
+    in_string = False
+    for char in argument_text:
+        if char == '"':
+            in_string = not in_string
+        if not in_string:
+            if char in "([":
+                depth += 1
+            elif char in ")]":
+                depth -= 1
+            elif char == "," and depth == 0:
+                arguments.append(current.strip())
+                current = ""
+                continue
+        current += char
+    arguments.append(current.strip())
+    return arguments
+
+
+def read_invocations(text: str, macro: str) -> list[list[str]]:
+    """Every invocation of one X-macro in the manifest, as argument lists.
+
+    Rows span several lines when a capability expression is long, so the
+    closing parenthesis is found by balancing rather than by line.
+    """
+    rows: list[list[str]] = []
+    for match in re.finditer(rf"^{re.escape(macro)}\(", text, re.MULTILINE):
+        depth = 0
+        index = match.end() - 1
+        while index < len(text):
+            if text[index] == "(":
+                depth += 1
+            elif text[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            index += 1
+        rows.append(split_top_level(text[match.end():index]))
+    return rows
+
+
+def unquote(value: str) -> str | None:
+    """A manifest string literal's content, or None for `nullptr`."""
+    value = value.strip()
+    if value == "nullptr":
+        return None
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        return value[1:-1]
+    return value
+
+
+def load_manifest(path: Path, errors: list[str]) -> tuple[list[list[str]], list[list[str]]]:
+    """Parse the manifest into category and part rows.
+
+    A malformed row is reported rather than raised: a checker that crashes on
+    the file it is meant to report on tells whoever broke it nothing.
+    """
+    text = path.read_text(encoding="utf-8")
+    categories = read_invocations(text, "PA_COMPONENT_CATEGORY")
+    parts = read_invocations(text, "PA_COMPONENT_PART")
+
+    if not categories or not parts:
+        errors.append(
+            f"{path.name} produced no rows - the manifest's macro spelling changed and "
+            "this check has stopped reading it"
+        )
+        return [], []
+
+    for row in categories:
+        if len(row) != CATEGORY_COLUMNS:
+            errors.append(
+                f"category row has {len(row)} columns, expected {CATEGORY_COLUMNS}: {row}"
+            )
+    for row in parts:
+        if len(row) != PART_COLUMNS:
+            errors.append(f"part row has {len(row)} columns, expected {PART_COLUMNS}: {row}")
+
+    if errors:
+        return [], []
+    return categories, parts
+
+
+def capability_bit_names(path: Path, prefix: str, errors: list[str]) -> dict[str, str]:
+    """`<prefix>*` name -> its hex value, read from the header that defines them."""
+    found = dict(
+        re.findall(
+            rf"constexpr\s+uint8_t\s+({re.escape(prefix)}[A-Z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+)",
+            path.read_text(encoding="utf-8"),
+        )
+    )
+    if not found:
+        errors.append(
+            f"no {prefix}* constants found in {path.name} - that family's capability "
+            "vocabulary moved and this check has stopped reading it"
+        )
+    return found
+
+
+def all_capability_bit_names(errors: list[str]) -> dict[str, str]:
+    """Every registered family's bit names, merged into one name -> value map."""
+    names: dict[str, str] = {}
+    for prefix, header in VOCABULARIES:
+        names.update(capability_bit_names(header, prefix, errors))
+    return names
+
+
+def vocabulary_header(name: str) -> Path | None:
+    """The header a bit name's prefix says should define it, or None."""
+    for prefix, header in VOCABULARIES:
+        if name.startswith(prefix):
+            return header
+    return None
+
+
+def consumer_files(directories=CONSUMER_DIRS, exclude=None) -> list[Path]:
+    exclude = DECLARATION_FILES if exclude is None else exclude
+    files: list[Path] = []
+    for directory in directories:
+        for path in sorted(directory.rglob("*")):
+            if path.suffix in CONSUMER_SUFFIXES and path not in exclude:
+                files.append(path)
+    return files
+
+
+def file_uses(path: Path, name: str) -> bool:
+    """True when this file READS the named bit, rather than defining it.
+
+    The distinction is the whole point. `data/sound.js` mirrors the C++
+    constants because a JS file cannot include a header, and a mirror that
+    nothing then branches on is precisely the defect this check exists to
+    report - the mirror would otherwise vouch for itself. Definition lines are
+    dropped and what is left has to still name the bit.
+
+    Matching on the NAME only, never on the bit value: 0x04 appears all over a
+    firmware tree, and an earlier draft of this check accepted any of those as
+    a consumer, which made it pass with AUDIO_CAP_TRACK_COUNT consulted by
+    nothing.
+    """
+    definition = re.compile(
+        rf"^\s*(?:#\s*define\s+{re.escape(name)}\b"
+        rf"|(?:static\s+|const\s+|constexpr\s+|let\s+|var\s+|uint8_t\s+)+"
+        rf"[A-Za-z_:<>\s]*\b{re.escape(name)}\s*=)"
+    )
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if name in line and not definition.match(line):
+            return True
+    return False
+
+
+def check_capability_consumers(parts: list[list[str]], errors: list[str],
+                               files: list[Path] | None = None,
+                               vocabulary: dict[str, str] | None = None) -> None:
+    """Every capability a supported row declares must have a consumer.
+
+    Scoped to supported rows. A roadmap row's capabilities have no driver to
+    consume them by construction, which is why ADR 0042 narrowed #302's
+    suggested assertion to this half.
+    """
+    declared: dict[str, list[str]] = {}
+    for row in parts:
+        part_id = unquote(row[PART_ID])
+        status = row[PART_STATUS].strip()
+        if status != STATUS_SUPPORTED:
+            continue
+        for name in CAPABILITY_NAME.findall(row[PART_CAPABILITIES]):
+            declared.setdefault(name, []).append(part_id)
+
+    if not declared:
+        errors.append(
+            "no supported row declares a capability - either the Sound and Foot Drive rows "
+            "lost theirs or the capability column moved"
+        )
+        return
+
+    # A row naming a bit its family's header does not define would not
+    # compile, but reading it here keeps the vocabulary and the rows answerable
+    # to one place and makes a typo a sentence rather than a template error.
+    if vocabulary is None:
+        vocabulary = all_capability_bit_names(errors)
+    for name in sorted(name for name in declared if name not in vocabulary):
+        header = vocabulary_header(name)
+        if header is None:
+            errors.append(
+                f"{name} is declared by a registry row but belongs to no vocabulary this check "
+                "reads - register its family's prefix and header in VOCABULARIES"
+            )
+        else:
+            errors.append(
+                f"{name} is declared by a registry row but {header.name} does not define it"
+            )
+
+    if files is None:
+        files = consumer_files()
+    for name, declaring_parts in sorted(declared.items()):
+        if not any(file_uses(path, name) for path in files):
+            errors.append(
+                f"{name} is declared by {', '.join(sorted(set(declaring_parts)))} and consulted "
+                "by nothing. A declared capability nobody reads is worse than no capability: "
+                "the firmware promises an answer no caller ever asks for, and a surface renders "
+                "a field the fitted module cannot produce (ADR 0042). Either give the bit a "
+                "consumer or take it off the row"
+            )
+
+
+def check_board_capability_gates(parts: list[list[str]], errors: list[str],
+                                 gates: set[str] | None = None) -> None:
+    """A row's reported Board Capability Gate must exist, and must be the one it consults.
+
+    The reported name is what tells a builder which board fact a missing part
+    turns on, so a row that reports one gate and decides on another sends them
+    to the wrong place.
+    """
+    if gates is None:
+        gates = set(
+            re.findall(
+                r"PA_BOARD_CAPABILITY\((PA_CAP_[A-Z0-9_]+)\)",
+                BOARD_CAPABILITIES.read_text(encoding="utf-8"),
+            )
+        )
+        if not gates:
+            errors.append(f"{BOARD_CAPABILITIES.name} produced no rows")
+            return
+
+    for row in parts:
+        part_id = unquote(row[PART_ID])
+        gate = unquote(row[PART_GATE])
+        included = row[PART_INCLUDED]
+        if gate is None:
+            # Universal. The `included` expression may still consult a PA_CAP_*
+            # one day, and if it does the row has to say so - that is the half
+            # a builder reads as the reason.
+            for used in re.findall(r"PA_CAP_[A-Z0-9_]+", included):
+                errors.append(f"{part_id} consults {used} in `included` but reports no gate")
+            continue
+        if gate not in gates:
+            errors.append(
+                f"{part_id} names {gate}, which is not a row in {BOARD_CAPABILITIES.name}"
+            )
+        elif gate not in included:
+            errors.append(
+                f"{part_id} reports {gate} as its Board Capability Gate but its `included` "
+                f"expression does not consult it: {included}"
+            )
+
+
+def check_confirmed_on_droid(parts: list[list[str]], errors: list[str]) -> None:
+    """A roadmap row cannot be Confirmed on a Droid, and the column takes two words.
+
+    The claim is evidence that a driver ran on a real droid. A roadmap row has
+    no driver, so one that carries it is asserting a run that cannot have
+    happened - and a builder choosing from the lineup would be told to trust
+    it. The second half catches a row written with anything else in the
+    column (a bare 1, a misspelt word): the readers that carry the lineup to
+    the browser fixtures match the two words, and would read it as unconfirmed.
+    """
+    for row in parts:
+        part_id = unquote(row[PART_ID])
+        confirmed = row[PART_CONFIRMED].strip()
+        if confirmed not in CONFIRMED_WORDS:
+            errors.append(
+                f"{part_id} writes `{confirmed}` in confirmed_on_droid; the column takes "
+                f"{CONFIRMED_WORDS[0]} or {CONFIRMED_WORDS[1]}"
+            )
+        elif confirmed == CONFIRMED_WORDS[0] and row[PART_STATUS].strip() != STATUS_SUPPORTED:
+            errors.append(
+                f"{part_id} is a roadmap row that says it is confirmed on a droid. Nothing "
+                "drives it yet, so nothing can have run: either the row is supported, or it "
+                f"is {CONFIRMED_WORDS[1]}"
+            )
+
+
+def check_member_keys(categories: list[list[str]], errors: list[str],
+                      settings: Path | None = None) -> None:
+    """A declared `member_key` must be the NVS key of a declared Member Setting.
+
+    The NVS save and the load both loop over the Setting declarations, so a key
+    one of them declares is both written and read. A Component Member whose key
+    no Member Setting declares stops surviving a reboot, silently and with
+    nothing else failing.
+    """
+    source = settings or CONFIG_SETTINGS
+    member_keys = {
+        setting.nvs_key for setting in setting_declarations.droid_settings(source)
+        if setting.rule == "Member"
+    }
+    for row in categories:
+        token = unquote(row[1])
+        member_key = unquote(row[3])
+        if member_key is None:
+            continue
+        if member_key not in member_keys:
+            errors.append(
+                f"{token} declares member key {member_key}, which no Member Setting in "
+                f"{source.name} declares - a member stored under it is never written or read"
+            )
+
+
+def main() -> int:
+    errors: list[str] = []
+    categories, parts = load_manifest(MANIFEST, errors)
+
+    if not errors:
+        check_capability_consumers(parts, errors)
+        check_board_capability_gates(parts, errors)
+        check_confirmed_on_droid(parts, errors)
+        check_member_keys(categories, errors)
+
+    if errors:
+        print("Component Registry drift detected:", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 1
+
+    supported = sum(1 for row in parts if row[PART_STATUS].strip() == STATUS_SUPPORTED)
+    confirmed = sum(1 for row in parts if row[PART_CONFIRMED].strip() == CONFIRMED_WORDS[0])
+    members = sum(1 for row in categories if unquote(row[3]) is not None)
+    print(
+        f"Component Registry drift check passed "
+        f"({len(categories)} families, {len(parts)} products, "
+        f"{supported} supported, {confirmed} confirmed on a droid, "
+        f"{members} with a Component Member)."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

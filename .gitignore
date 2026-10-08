@@ -4,6 +4,8 @@
 .piolibdeps
 .piolib
 .pio-build/
+# Full pio output per env and phase, kept by tools/check_build_budgets.py
+build-logs/
 
 # Arduino/ESP32 build artifacts
 *.elf
@@ -57,6 +59,10 @@ task.md
 /*.png
 /rc-snap*.md
 /rc-snapshot.md
+
+# Screenshots and traces the test/playwright/ scripts write. Every script picks
+# its own output/playwright/<something> directory, so the whole tree is theirs.
+/output/
 
 # Python/virtualenv (if using scripts or tools)
 __pycache__/

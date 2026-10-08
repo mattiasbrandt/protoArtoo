@@ -1,71 +1,24 @@
 # Teeces Dome Lighting Spec Sheet
 
-Working spec for the Teeces logic display and PSI light kit as a **Dome Controller**
-lineup member (issue [#313](https://github.com/mattiasbrandt/protoArtoo/issues/313),
-minted from [#303](https://github.com/mattiasbrandt/protoArtoo/issues/303)).
+Teeces is an astromech dome light kit: logic displays and Process State
+Indicators (PSIs) built from discrete LEDs on MAX7219 drivers, run by a small
+Arduino that takes serial commands. The classic kit runs a 5 V Arduino; the
+Teeces32 successor runs an ESP32 (Section 6). It has no web UI and no sequence
+engine: its effects are fixed animations compiled into the firmware.
 
 Research date 2026-09-10. Every protocol fact below was read from firmware source
-or vendor documentation this session; nothing is recalled. Claims that could not be
-sourced are marked `UNKNOWN` with the artefact that would settle them.
-
-## Where this sits in the lineup
-
-The **Dome Controller** category holds two products, and a builder picks one:
-
-| Product | Lighting technology | Status |
-| --- | --- | --- |
-| AstroPixels Plus | WS2812B addressable RGB | `supported` |
-| **Teeces** | MAX7219-driven discrete LEDs | `roadmap` |
-
-**AstroPixels Plus is the one protoArtoo drives today because it is the kit the
-operator installed** (#303, 2026-09-07). That is a fact about this project's
-history, not a verdict on the products. Both are current, both are bought new
-today, and neither is the other's fallback. Where they differ this sheet says how
-they differ, not which is better.
-
-What Teeces is *not*: it is not an ESP32-class board, it does not speak
-**protoR2link**, and it has no WiFi, no web UI and no sequence engine. It is a
-light kit with a small serial-commanded microcontroller. That difference in kind
-is the whole of the integration problem, and Section 11 states it precisely.
-
-## 0. Authority Contract
-
-This document is an implementation authority for **JawaLite** framing and for the
-Teeces board set's electrical and wiring behaviour.
-
-Authority order for agent decisions:
-
-1. Firmware source and vendor documentation listed in Sources.
-2. This document.
-3. Community build blogs and forum recollection.
-
-If references conflict:
-
-- Prefer firmware source over documentation, including the vendor's own. Three
-  documented values in this subject are contradicted by the code that ships with
-  them; each is named in place below.
-- If still unresolved, mark the value `UNKNOWN` and stop implementation changes
-  that depend on it.
-- Request new evidence instead of trial-and-error tuning against hardware.
-
-Agent requirements when using this document:
-
-- MUST treat Section 9 as normative and Section 12 as survey.
-- MUST NOT invent command letters, address numbers, effect numbers or timing
-  constants not present here.
-- MUST NOT assume a command that works on an AstroPixels Plus dome works on a
-  Teeces dome, or the reverse. Section 10 is the difference list and it is not
-  short.
-- MUST label anything about current draw as unmeasured; no source states it.
+or vendor documentation; nothing is recalled. Where the firmware and its own
+documentation disagree, this sheet follows the firmware; three such values are
+named in place. Claims that could not be sourced are marked `UNKNOWN` with the
+artefact that would settle them.
 
 ## 1. Scope
 
-Covers the Teeces board set, its controller module, its firmware lineage, and the
-JawaLite serial protocol it speaks. Covers what protoArtoo would have to change to
-drive one.
+Covers the Teeces board set, its controller module, its firmware lineage, the
+JawaLite serial protocol it speaks, and how other controllers reach it.
 
-Does not cover: holoprojector control (a Teeces board does not drive holos --
-Section 9.3), the Magic Panel, the Charge Bay Indicator or the Data Panel. Those
+Does not cover: holoprojector control (a Teeces board ignores holo commands --
+Section 8.3), the Magic Panel, the Charge Bay Indicator or the Data Panel. Those
 are separate devices on separate channels even in a Teeces build.
 
 ## 2. Boards Covered
@@ -87,7 +40,7 @@ PSI V1, PSI v3.2, PSI v3.4.
 > **"Teeces V4" names two unrelated products. Never use it unqualified.**
 >
 > - **Printed Droid Teeces V4** -- a re-layout of the classic MAX7219 board set:
->   better tracing, 3.5 mm screw terminals, SMD passives, colour-labelled boards.
+>   better tracing, 3.5 mm screw terminals, SMD passives, color-labelled boards.
 >   Still the same architecture this sheet describes.
 > - **JoyMonkey Teeces V4** -- a completely different RGB and fibre-optic design
 >   that was **renamed to the RSeries Logic Engine**. The originator's own words,
@@ -104,24 +57,11 @@ Attribution: the hardware was designed by **John Vannoy**, astromech.net usernam
 -- CuriousMarc's own MarcDuino page states plainly that the hardware is not his
 design.
 
-## 3. Project Integration
-
-GPIO and transport facts for the body side are linked to the project's canonical
-references:
-
-- **[`docs/pin_map.md`](../pin_map.md)** -- dome link lane (`S3`), pin budget.
-- **[`docs/commands.md`](../commands.md)** -- prefix routing, the `@` family.
-- **[`include/config.h`](../../include/config.h)** -- `PIN_DOME_TX` / `PIN_DOME_RX`.
-- **[`docs/adr/0045-the-body-models-dome-lights-and-keeps-forwarding-the-raw-families.md`](../adr/0045-the-body-models-dome-lights-and-keeps-forwarding-the-raw-families.md)**
-  -- why the raw `@` family keeps forwarding.
-- **[`docs/dome-visual-authoring-contract.md`](../dome-visual-authoring-contract.md)**
-  -- the `DL:` / `DT:` structured layer.
-
-## 4. Official Sources Checked
+## 3. Official Sources Checked
 
 | Source | URL | Extraction notes |
 | --- | --- | --- |
-| V3.2 Kit Sheet, 17 Sept 2012 | http://joymonkey.com/run/files/V3.2%20Kit%20Sheet%20Sept%202012.pdf | **The authoritative product document.** Designer credit, full BOM, LED colour counts, Iset resistors, power options, chain wiring, PVC coupling fit |
+| V3.2 Kit Sheet, 17 Sept 2012 | http://joymonkey.com/run/files/V3.2%20Kit%20Sheet%20Sept%202012.pdf | **The authoritative product document.** Designer credit, full BOM, LED color counts, Iset resistors, power options, chain wiring, PVC coupling fit |
 | CuriousMarc Teeces sketch v1.2/1.3/1.4 | vendored in Reeltwo `src/dome/TeecesLogics.h` lines 758-3247 | **The authoritative protocol document.** Parser, command table, address map, baud, buffer sizes |
 | MarcDuino command reference | https://www.curiousmarc.com/r2-d2/marcduino-system/marcduino-software-reference/marcduino-command-reference | Prefix routing; the `@`-stripping statement |
 | Original JEDI JawaLite reference | https://www.curiousmarc.com/r2-d2/marcduino-system/marcduino-software-reference/marcduino-command-reference/original-jedi-jawalite-reference | Upstream grammar; credits Scott Gray |
@@ -135,7 +75,7 @@ references:
 | OSH Park shared projects (JoyMonkey) | https://oshpark.com/profiles/JoyMonkey | Board dimensions, layer count, upload dates |
 | `barrettandcarly.com/blog/elec` | -- | John Vannoy's original v2/v3 blog, cited by the kit sheet. **Dead, no DNS response** |
 
-## 5. Electrical (board level)
+## 4. Electrical (board level)
 
 **Supply is 5 V.** Kit sheet, verbatim: *"The system runs on 5V."*
 
@@ -197,23 +137,23 @@ Reeltwo's own example instantiates the same shape (`LedControlMAX7221<4>` rear,
 | --- | --- | --- |
 | FLD (each) | 5 x 9 | 45 |
 | RLD | 5 x 27 | 135 |
-| PSI (each) | 13 + 13, two colours | 26 |
+| PSI (each) | 13 + 13, two colors | 26 |
 
 Cross-check: logic LEDs total 45 + 45 + 135 = **225**. The BOM's 3 mm LED counts
 minus its stated spares are 60 red + 62 green + 13 yellow + 54 white + 36 blue =
 **225** exactly. Two independent primary sources agree.
 
-**LED colour is a build-time choice made by the builder, hole by hole.** The kit
+**LED color is a build-time choice made by the builder, hole by hole.** The kit
 sheet: *"There are no 'correct' color patterns to use."* Logic boards take 3 mm
 flangeless LEDs in red, green, yellow, white or blue; PSIs take 5 mm, 14 each of
-red/blue/green/yellow supplied. This is the single most consequential fact for
-protoArtoo -- see Section 10.
+red/blue/green/yellow supplied. It is the deepest difference from an RGB dome
+system -- see Section 9.
 
 **Logic level:** the classic controller is a 5 V part driving 5 V MAX7219s
 directly, no shifter. The ESP32 successors are 3.3 V and do need one -- the
 Teeces32 S3 sketch comments *"CLK/CS swapped for SN74AHCT125 wiring"*.
 
-## 6. Electrical (MAX7219 chip level)
+## 5. Electrical (MAX7219 chip level)
 
 From the Analog Devices MAX7219/MAX7221 datasheet, Rev 4, 7/03. Included because
 any attempt to drive Teeces boards directly, rather than through their Arduino,
@@ -240,9 +180,9 @@ lands here.
 > [!CAUTION]
 > **`VIH` min is 3.5 V.** A 3.3 V microcontroller cannot be relied on to drive a
 > MAX7219 running at 5 V, which is why the Teeces32 design fits an SN74AHCT125
-> level shifter. Any protoArtoo scheme that drives Teeces boards directly from an
-> ESP32 needs that shifter too. This does not apply to the normal serial path,
-> where protoArtoo talks to the Teeces Arduino, not to the chips.
+> level shifter. Any scheme that drives Teeces boards directly from a 3.3 V
+> controller needs that shifter too. It does not apply to the normal serial path,
+> where the sender talks to the Teeces Arduino, not to the chips.
 
 **Register address map** (low nibble; `D15-D12` are don't-care):
 
@@ -268,10 +208,10 @@ slots with No-Op.
 shutdown, scan limit one digit, no decode, minimum intensity. Program before use.
 
 `RSET` versus segment current, for `VLED = 2.0 V`: 40 mA needs 11.8 k, 30 mA needs
-17.1 k, 20 mA needs 28.0 k, 10 mA needs 63.7 k. The Teeces Iset values in Section 5
+17.1 k, 20 mA needs 28.0 k, 10 mA needs 63.7 k. The Teeces Iset values in Section 4
 sit in that range as expected.
 
-## 7. The controller module and firmware
+## 6. The controller module and firmware
 
 **MCU.** Kit sheet: *"Almost any Arduino can be used, but the V3 was designed with
 an Arduino Pro Mini or Pro Micro in mind. A Pro Mini can be mounted directly to the
@@ -318,7 +258,7 @@ Leds with a MAX7219/MAX7221"*, with `#define MAXDEVICES 4`.
 > JawaLite commands."* Whether the original Vannoy sketch accepts serial input at
 > all is `UNKNOWN` -- it is not in any public repository. Settled by: the
 > astromech.net Teeces V3 wiki page, or the sketch bundled with an original kit.
-> In practice every controller in Section 12 assumes the CuriousMarc lineage.
+> In practice every controller in Section 10 assumes the CuriousMarc lineage.
 
 **Licence.** The classic sketch carries a bare freedom-to-modify grant with a
 warranty disclaimer and **no named licence**. OSH Park calls the boards *"open
@@ -337,7 +277,16 @@ says otherwise.
 The S3 build adds three NeoPixel holo outputs (GPIO11/12/13) and reserves I2C on
 GPIO9/10 -- reserved only; `Wire.begin()` is never called.
 
-## 8. Wiring, connectors and chains
+**Running the boards without the Teeces Arduino.** Reeltwo ships
+`TeecesRearLogics`, `TeecesFrontLogics` and `TeecesPSI` classes, and its
+`examples/teecesLogics/teecesLogics.ino` is an ESP32 program that runs real
+Teeces boards over the two MAX7219 chains directly. Those logic classes take a
+`LedControl&` and do **not** implement JawaLite: they use Reeltwo's own
+`RL<n>` / `FL<n>` / `TL<n>` / `BL<n>` `CommandEvent` grammar. Only `TeecesPSI`
+is JawaLite-addressable. A 3.3 V ESP32 on the chains needs the level shifter of
+Section 5.
+
+## 7. Wiring, connectors and chains
 
 **Two independent MAX7219 chains, not one.** Quoted from the firmware:
 
@@ -386,21 +335,24 @@ between the two grounds of the Teeces and MarcDuino ... Another wire from the
 Lights output on the MarcDuino Slave to the wire marked RXI or RX0 on your board."*
 
 So: **one signal wire (master TX -> Teeces RX) plus a common ground.** TX back is
-optional and normally left unconnected -- but see Section 9.6, because the Teeces
+optional and normally left unconnected -- but see Section 8.6, because the Teeces
 does transmit whether you listen or not.
 
 Connector type for the command link is `UNKNOWN` on classic boards -- it is bare
 terminals. Printed Droid V4 provides a labelled "RX/TX (Serial Communication)"
 3.5 mm screw terminal.
 
-## 9. The command protocol (normative)
+## 8. The command protocol (normative)
 
-### 9.1 The `@` prefix is not part of this protocol
+The protocol is **JawaLite**. It is not Teeces-only: JEDI Display, the
+commercial predecessor the Teeces firmware emulates, and the R-Series Logic
+Engine both speak it.
+
+### 8.1 The `@` prefix is not part of this protocol
 
 > [!IMPORTANT]
 > **`@` is a MarcDuino routing character, stripped before the bytes reach a Teeces
-> board.** This is the single fact most often got wrong, and it is the one that
-> decides protoArtoo's work.
+> board.** This is the single fact most often got wrong.
 
 MarcDuino's own comment, `MarcDuinoClient/main.c`:
 
@@ -439,7 +391,7 @@ first character is not a digit:
 
 Note `length>=3` on the MarcDuino side: a bare `@` or `@X` is dropped silently.
 
-### 9.2 Framing
+### 8.2 Framing
 
 ```
 command   := address letter [argument] CR
@@ -467,9 +419,9 @@ Line assembly is `\r`-terminated only. **`\n` is not a terminator.** A sender th
 emits bare LF never completes a command, and a stray `\n` is absorbed into the
 next command, which then fails the leading-digit test.
 
-Serial parameters: **8N1**. Baud is discussed in 9.7.
+Serial parameters: **8N1**. Baud is discussed in 8.7.
 
-### 9.3 Address map
+### 8.3 Address map
 
 | Addr | Target | On a Teeces board |
 | --- | --- | --- |
@@ -498,8 +450,8 @@ carrying traffic addressed to devices it is not**. It discards that traffic.
 JawaLite 2.0 (Reeltwo's `docs/JawaLite.dox`) extends the map well beyond 8 -- 80
 Magic Panel, 81 periscope, 82 life form scanner, 83 CBI, 84 data port, 85-89
 booster/CPU arm/drink/zapper/buzz-saw, 10-79 reserved, 9 other. **Teeces implements
-none of those**; they matter only for judging whether a future protoArtoo JawaLite
-driver should range-check addresses.
+none of those**; they matter only to a sender deciding whether to range-check
+addresses.
 
 > [!NOTE]
 > **This is a multi-drop addressed bus, populated with one device in the common
@@ -513,7 +465,7 @@ driver should range-check addresses.
 > (write only)"*, and the Reeltwo boards implement chaining by forwarding received
 > bytes onward.
 
-### 9.4 Commands
+### 8.4 Commands
 
 **`T` -- display mode**, verbatim from the firmware header:
 
@@ -558,7 +510,7 @@ Effect durations are compile-time, not protocol: `LEIAduration 34000`,
 | `W` | `0W<seconds>` | effect duration | **JEDI only -- rejected by Teeces** |
 | `P91` | `<a>P91` | select digital output | **JEDI only -- ignored by Teeces** |
 
-`S` values: `S0` all-on test, `S1` normal random, `S2` colour 1, `S3` colour 2,
+`S` values: `S0` all-on test, `S1` normal random, `S2` color 1, `S3` color 2,
 `S4` off.
 
 > [!CAUTION]
@@ -572,7 +524,7 @@ Effect durations are compile-time, not protocol: `LEIAduration 34000`,
 > `P91` differs: `doPcommand` handles only 60 and 61 with `default: break;`, so
 > `P91` is accepted, produces no BEL, and does nothing.
 
-### 9.5 Text
+### 8.5 Text
 
 Syntax `<addr>M<text>\r`, addresses 0 (all three logics), 1 TFLD, 2 BFLD, 3 RLD.
 The `M` case is special-cased before numeric parsing, so the rest of the line is
@@ -600,7 +552,7 @@ Limits:
   *"Only uppercase implemented."*
 - Scroll speed is local, not protocol: `#define SCROLLspeed 48` ms per column.
 
-### 9.6 Error and response behaviour
+### 8.6 Error and response behaviour
 
 **This link is not write-only, whatever the wiring suggests.** The classic sketch
 runs an interactive console on the same port. It echoes every received character,
@@ -646,9 +598,10 @@ the last command was rejected.
    `(!length) > pos`. Since `length>=2` is already guaranteed, this never fires.
 
 Neither is reachable in normal use. Both matter if anything ever fuzzes the port
-or sends long text, and both argue for protoArtoo clamping length on its side.
+or sends long text, and both argue for a sender clamping command length on its
+side.
 
-### 9.7 Baud and timing
+### 8.7 Baud and timing
 
 > [!IMPORTANT]
 > **Baud is a compile-time constant of the firmware, not a property of the
@@ -688,7 +641,7 @@ setup, 100 ms not enough`.
 
 The reason is structural, not arbitrary. The classic `loop()` reads one byte per
 iteration and the same loop body drives every MAX7219 update and effect animation.
-The echo chatter of 9.6 is a blocking `print`; while it is transmitting, RX is not
+The echo chatter of 8.6 is a blocking `print`; while it is transmitting, RX is not
 being drained, and anything beyond the 64-byte hardware ring is silently lost --
 which desynchronises the line and turns the next command into a BEL.
 
@@ -699,27 +652,28 @@ Overflow behaviour differs by generation: classic silently corrupts (the defect
 above); Teeces32 drops and signals (`Serial.write(0x7); // ASCII BEL - audible
 alert for buffer overflow`).
 
-## 10. How the two Dome Controller members differ
+## 9. How Teeces and AstroPixels Plus differ
 
-Both are current products, both are bought new, and a builder picks one. These are
-differences in kind, not a ranking.
+AstroPixels Plus is the other astromech dome lighting system in current
+production. Both are bought new today. These are differences in kind, not a
+ranking.
 
 | | Teeces | AstroPixels Plus |
 | --- | --- | --- |
 | Light source | Discrete 3 mm / 5 mm LEDs | WS2812B addressable RGB |
-| Colour | **Fixed at build time**, chosen per hole by the builder | Per-pixel, changeable at runtime |
+| Color | **Fixed at build time**, chosen per hole by the builder | Per-pixel, changeable at runtime |
 | Driver | 7 x MAX7219, two chains | One data line per display |
 | MCU | Arduino Pro Mini / Pro Micro / Micro (5 V), or ESP32 on Teeces32 | ESP32 |
 | Logic geometry | FLD 5 x 9 each, RLD 5 x 27 | FLD 9 x 10, RLD 27 x 4 (fork-dependent) |
-| Command grammar | JawaLite, no prefix | Marcduino `@` family, plus native `LE`/`HP`, plus this fork's `DV:`/`DL:`/`DT:`/`DH:` |
+| Command grammar | JawaLite, no prefix | Marcduino `@` family, plus native `LE`/`HP` |
 | Accepts a bare `0T1`? | Yes, that is its only form | Yes -- Reeltwo accepts both `@0T1` and `0T1` |
 | Network | None | WiFi, web UI, REST, WebSocket |
 | Sequence engine | None; effects are fixed compile-time animations | Full |
 | Text | Yes, uppercase only, 62 chars | Yes |
-| Holoprojectors | **Not driven** -- addresses 6-8 discarded | Driven (3 outputs) |
+| Holoprojectors | **None** -- addresses 6-8 discarded | 3 outputs |
 
 **The address semantics are not the same, and this is the trap.** Verified by
-reading `MarcduinoLogics.h` in the local AstroPixelsPlus fork:
+reading AstroPixelsPlus's `MarcduinoLogics.h`:
 
 | Command | AstroPixels Plus | Teeces / JawaLite |
 | --- | --- | --- |
@@ -749,100 +703,16 @@ and it has no `@3T` at all. `@2T1` means "rear logic to normal" on one dome and
 > [!CAUTION]
 > **`P` is overloaded across the two.** On a Teeces `1P61` selects the Aurabesh
 > font. On AstroPixels Plus `@1P1` through `@1P11` set front PSI mode. Same bytes,
-> different subsystem. protoArtoo emits `@0P1` as its PSI reset
-> (`src/tasks/sequence_engine.cpp:230-231`), which is a registered action on
-> AstroPixels Plus and **a silent no-op on a Teeces** -- `doPcommand` handles only
-> 60 and 61 and falls through `default: break;`. The Teeces equivalent is `0S1`.
+> different subsystem. A PSI reset of `@0P1` (`0P1` once the `@` is stripped) is
+> a PSI command on AstroPixels Plus and **a silent no-op on a Teeces** --
+> `doPcommand` handles only 60 and 61 and falls through `default: break;`. The
+> Teeces equivalent is `0S1`.
 
-**Colour is the deepest difference.** protoArtoo's `DL:` grammar carries a colour
-argument with eight values and two modes whose entire content is colour
-(`RAINBOW`, `FLASHCOLOR`). On a Teeces, colour is soldered in and cannot change.
-Note this is already a partial problem on the supported member: our own fork maps
-`WHITE` to `kDefault` with the comment *"ReelTwo logics have no white ColorVal."*
-Teeces widens that from one value to the whole axis.
+**Color is the deepest difference.** On AstroPixels Plus color is a runtime
+choice per pixel. On a Teeces, color is soldered in and cannot change, so a
+command whose content is color has no Teeces meaning.
 
-## 11. What protoArtoo would have to do
-
-**The gap is far narrower than the ticket assumed, and it is one specific thing.**
-
-Already matching, verified in our own source this session:
-
-| Fact | Evidence |
-| --- | --- |
-| Dome link is 9600 8N1 | `src/tasks/dome_link.cpp:170` |
-| Commands are `\r`-terminated | `src/tasks/dome_link.cpp:920-921` -- `print(txCmd.buf)` then `print('\r')` |
-| One command per line, ASCII | same |
-| Queue message is 64 bytes | `include/dome_link.h:63-65` -- matches Teeces `CMD_MAX_LENGTH` exactly |
-| `@` family already reaches the dome | `src/web/api_drive.cpp:185` |
-| `@<digit><T\|P\|M>` already validates | `src/protocol_check.cpp:713-727` |
-
-**What must change:**
-
-1. **Strip the `@`.** protoArtoo forwards `@...` verbatim. That is correct for
-   AstroPixels Plus, which emulates a MarcDuino; it is wrong for a Teeces, which
-   expects what a MarcDuino *slave* would have emitted. Supporting Teeces means
-   protoArtoo performs the hop that `MarcDuinoClient/main.c` performs. This is the
-   whole of the framing work.
-2. **Widen the accepted letter set.** `src/protocol_check.cpp:723-724` accepts only
-   `T`, `P` and `M` after the address digit. Teeces needs `S` (PSI state) and
-   optionally `R` (random style), both CuriousMarc extensions. `@0S1` is rejected
-   today.
-3. **Re-target the reset pair.** `@0T1` is correct on both. `@0P1` is a no-op on
-   Teeces; the equivalent is `0S1`. `src/tasks/sequence_engine.cpp:230-231,246-248`
-   and `src/tasks/sequence_dispatcher.cpp:323-324,371-372` emit the pair, and
-   `src/tasks/sequence_catalog.cpp:226-228` carries it as catalog steps.
-4. **Decide what `DL:` means on a monochrome dome.** The colour argument and the
-   `RAINBOW` and `FLASHCOLOR` modes have no Teeces meaning. ADR 0045's
-   intent-not-truth rule already gives the answer shape -- the model records what
-   protoArtoo commanded, never what the device is -- so a colour can be accepted
-   and reported while the device ignores it. That is a decision, not a derivation,
-   and it belongs on #313.
-5. **Map `DL:` targets onto the real address map.** `DL:`'s `FLD` is singular;
-   JawaLite has two front displays at addresses 1 and 2. Note
-   `docs/droid-parts.yaml:79` already says "Front Logic **Displays**" plural, so
-   the catalog is closer to Teeces geometry than `DL:` is.
-6. **Rate-limit.** 100 ms floor between commands, 250 ms after a text set
-   (Section 9.7). protoArtoo has no such gap today.
-7. **Do not parse the return path.** Section 9.6 -- expect about 40 bytes of ASCII
-   chatter per command and a bare `0x07` on rejection. `src/drivers/dome_rx_parser.cpp`
-   must not treat any of it as a dome line.
-
-**Component Protocol.** The ticket's "TBD" resolves to **JawaLite**. It fits
-#303's test -- it changes the driver, so it is a protocol and not configuration.
-
-> [!NOTE]
-> **JawaLite may serve more than one product**, which #303 says is the normal case
-> and the reason the registry makes the difference visible. JEDI Display (the
-> commercial predecessor Teeces emulates) and the R-Series Logic Engine both speak
-> it. If either joins the lineup, JawaLite likely deserves its own protocol sheet
-> beside this product sheet -- the split `hotrc-sbus-spec.md` and
-> `sbus-protocol.md` already model.
-
-**Board Capability Gate.** Almost certainly none is needed. Teeces reaches the body
-over the same single UART lane at the same baud as the supported member, so any
-board that can be wired for AstroPixels Plus can be wired for a Teeces. That makes
-this a **Component Member** question rather than a Gate question -- and under
-ADR 0042 a member setting appears exactly because this category would then hold
-more than one selectable option.
-
-> [!IMPORTANT]
-> **Our dome fork already compiles the MAX7219 chain driver.** `AstroPixelsPlus.ino:171-172`
-> includes `dome/TeecesPSI.h` and `dome/TeecesLogics.h` live, and `:323`
-> instantiates `LedControlMAX7221<5> ledChain1` -- bound to the Charge Bay
-> Indicator and Data Panel, not to any Teeces object. Reeltwo ships
-> `TeecesRearLogics`, `TeecesFrontLogics` and `TeecesPSI` classes. A path therefore
-> exists where an AstroPixels-class ESP32 drives real Teeces boards directly, and
-> it is not hypothetical -- Reeltwo's `examples/teecesLogics/teecesLogics.ino` is
-> exactly that program. **This is a different product shape from the one this
-> sheet costs**, and it is worth naming on #313 before the framing work is
-> scoped, because it would change which side of protoR2link the JawaLite lives on.
->
-> Caveat from Section 6: those Teeces logic classes take a `LedControl&`, and
-> Reeltwo's Teeces *logics* classes do **not** implement JawaLite -- they use
-> Reeltwo's own `RL<n>` / `FL<n>` / `TL<n>` / `BL<n>` `CommandEvent` grammar. Only
-> `TeecesPSI` is JawaLite-addressable.
-
-## 12. How other controllers reach Teeces (survey, non-normative)
+## 10. How other controllers reach Teeces (survey, non-normative)
 
 Six projects, five different integration shapes. Useful because it shows JawaLite
 is the convergence point and everything else is local choice.
@@ -858,22 +728,19 @@ is the convergence point and everything else is local choice.
 | **r2_control** (Poulson) | Custom firmware, I2C | SMBus byte writes to **0x1c**, grammar `S<n>` |
 | **R-Series Logic Engine** | Peer that can also drive Teeces PSIs | Shares the serial wire; `#error CANNOT USE BOTH TEECES AND PSI PRO` |
 
-Two findings worth carrying into #313:
+Two findings from the survey:
 
 **ShadowMD already speaks more Teeces than it speaks AstroPixels.**
 `Shadow_MD_DualController_Template.ino:3560-3599` emits `@0T10` (Star Wars),
 `@0T92` (bargraph) and `@0T100` + `@0M<text>` (custom text). All three are real
 Teeces effects and **none has a handler in AstroPixels Plus**. A ShadowMD user's
-logic-display types 5, 7 and 8 are inert on the supported member today and would
-come alive on a Teeces. ADR 0045's reason for keeping the raw families forwarding
--- *"a builder's bindings are worth more than our internal tidiness"* -- points
-directly at this.
+logic-display types 5, 7 and 8 are inert on an AstroPixels Plus dome and work on
+a Teeces.
 
 **Padawan360 shows a third shape entirely**: logic displays over **I2C to address
-10**, `triggerI2C(10, n)` with effect codes 0/1/4/5/6/10/11 and 21-25. Neither of
-our members uses it. Recorded so nobody rediscovers it as an option.
+10**, `triggerI2C(10, n)` with effect codes 0/1/4/5/6/10/11 and 21-25.
 
-## 13. Availability (2026-09-10)
+## 11. Availability (2026-09-10)
 
 Actively produced by one vendor, observed live:
 
@@ -895,7 +762,7 @@ together."* The design survived because the board files are open. No MAX7219
 supply problem exists; the historical constraint was the volunteer group-buy
 model, not the chip.
 
-## 14. Mechanical
+## 12. Mechanical
 
 Board dimensions, from the designer's own OSH Park shared projects, all 2-layer:
 
@@ -919,69 +786,63 @@ files.
 Holoprojector LEDs are not a Teeces board -- they attach via 2-pin headers
 soldered to the back of the PSI boards, fed by the 2-pin cables in the BOM.
 
-## 15. Agent Lookup Quick Reference
+## 13. Quick Reference
 
-Use this table first when implementing or reviewing Teeces behaviour.
-
-- Field: Wire framing. Required value: `<address><letter>[<argument>]\r`.
-- Field: Leading `@`. Required value: **absent on the wire**; it is a MarcDuino
+- Field: Protocol. Value: **JawaLite**, as the CuriousMarc firmware lineage
+  implements it.
+- Field: Wire framing. Value: `<address><letter>[<argument>]\r`.
+- Field: Leading `@`. Value: **absent on the wire**; it is a MarcDuino
   routing character stripped by the slave.
-- Field: Terminator. Required value: `0x0D` (CR). `\n` is not a terminator.
-- Field: Serial parameters. Required value: 8N1.
-- Field: Baud. Required value: firmware-dependent -- 2400 classic default, 9600
+- Field: Terminator. Value: `0x0D` (CR). `\n` is not a terminator.
+- Field: Serial parameters. Value: 8N1.
+- Field: Baud. Value: firmware-dependent -- 2400 classic default, 9600
   Printed Droid v3 and Teeces32.
-- Field: Address digits. Required value: one or two ASCII digits.
-- Field: Address 0. Required value: global.
-- Field: Address 1 / 2 / 3. Required value: TFLD / BFLD / RLD.
-- Field: Address 4 / 5. Required value: front PSI / rear PSI.
-- Field: Address 6 / 7 / 8. Required value: holoprojectors, accepted and ignored.
-- Field: Implemented letters. Required value: `T`, `M`, `P`, `R`, `S`, `D`.
+- Field: Address digits. Value: one or two ASCII digits.
+- Field: Address 0. Value: global.
+- Field: Address 1 / 2 / 3. Value: TFLD / BFLD / RLD.
+- Field: Address 4 / 5. Value: front PSI / rear PSI.
+- Field: Address 6 / 7 / 8. Value: holoprojectors, accepted and ignored.
+- Field: Implemented letters. Value: `T`, `M`, `P`, `R`, `S`, `D`.
 - Field: `W` command. Status: **not implemented; returns BEL.**
 - Field: `P91`. Status: accepted, no effect, no BEL.
-- Field: Text display. Required value: `<a>M<text>\r` **then** `<a>T100\r`.
-- Field: Text case. Required value: uppercase only.
-- Field: Text length. Required value: 62 usable, 64 buffer.
-- Field: Rejection response. Required value: single `0x07` BEL byte.
-- Field: Normal response. Required value: character echo plus a verbose ack, about
+- Field: Text display. Value: `<a>M<text>\r` **then** `<a>T100\r`.
+- Field: Text case. Value: uppercase only.
+- Field: Text length. Value: 62 usable, 64 buffer.
+- Field: Rejection response. Value: single `0x07` BEL byte.
+- Field: Normal response. Value: character echo plus a verbose ack, about
   40 bytes per command. Not protocol; do not parse.
-- Field: Minimum inter-command delay. Required value: 100 ms; 200 ms after `T92`;
+- Field: Minimum inter-command delay. Value: 100 ms; 200 ms after `T92`;
   250 ms after `M`.
-- Field: Command buffer. Required value: 64 bytes.
-- Field: MAX7219 count. Required value: 7 (RLD 3, each FLD 1, each PSI 1).
-- Field: Chains. Required value: two -- rear 4 devices, front 3 devices.
-- Field: Chain connector. Required value: 5-pin 1:1, Plus / Minus / L / C / D.
-- Field: Command link. Required value: one wire, master TX to Teeces RX, plus
+- Field: Command buffer. Value: 64 bytes.
+- Field: MAX7219 count. Value: 7 (RLD 3, each FLD 1, each PSI 1).
+- Field: Chains. Value: two -- rear 4 devices, front 3 devices.
+- Field: Chain connector. Value: 5-pin 1:1, Plus / Minus / L / C / D.
+- Field: Command link. Value: one wire, master TX to Teeces RX, plus
   common ground.
-- Field: Supply. Required value: 5 V.
-- Field: LED colour. Required value: **fixed at build time**, per hole.
-- Field: Component Protocol. Required value: **JawaLite**.
+- Field: Supply. Value: 5 V.
+- Field: LED color. Value: **fixed at build time**, per hole.
 
-If a required value above cannot be proven for the unit in hand, status is
-`UNKNOWN` and implementation work depending on it should stop pending
-clarification.
+## 14. Open Items
 
-## 16. Open Items
-
-Things this sheet states from documentation or source but that no one has
-confirmed on protoArtoo's bench.
+Things this sheet states from documentation or source, or cannot state at all,
+that no bench measurement has settled.
 
 1. **Current draw per board and per kit.** No published source exists. Needs bench
    measurement at a stated brightness, or a datasheet calculation from the Iset
-   values in Section 5 plus lit-segment count. This is the only genuinely missing
+   values in Section 4 plus lit-segment count. This is the only genuinely missing
    electrical number.
-2. **Which baud the unit in hand runs.** Section 9.7 -- it is a firmware constant
+2. **Which baud the unit in hand runs.** Section 8.7 -- it is a firmware constant
    and all three values are in the wild. A Teeces bought today from Printed Droid
-   is 9600, which matches protoArtoo's dome lane; a second-hand board running the
-   CuriousMarc default is 2400 and would need reflashing or a lane change.
-   **Confirm per unit; do not assume.**
-3. **Whether the original Vannoy sketch accepts serial at all.** Section 7. Not in
+   is 9600; a second-hand board running the CuriousMarc default is 2400 and needs
+   reflashing, or a sender at 2400. **Confirm per unit; do not assume.**
+3. **Whether the original Vannoy sketch accepts serial at all.** Section 6. Not in
    any public repository. Settled by the astromech.net Teeces V3 wiki page.
 4. **FLD7 versus FLD11.** The OSH Park set lists "FLD11"; the designer's own shared
    project for the same era is named "FLD7". Two revisions or two names for one
    board is `UNKNOWN`. Settled by the Eagle board files.
 5. **Hardware licence.** "Open hardware" is asserted; no licence identifier is
    stated anywhere, and `PrintedDroid/Teeces-ESP32` has no licence file. Matters
-   only if protoArtoo ever vendors code or board artefacts.
+   to anyone who vendors code or board artefacts.
 6. **Dome-make compatibility.** No source certifies fit against specific dome
    makes. Boards are dimensioned to the standard blueprint logic surrounds and
    Printed Droid ships bezel STLs, which implies fit is bezel-mediated rather than
@@ -991,15 +852,13 @@ confirmed on protoArtoo's bench.
    public. Settled by Scott Gray's *JawaLite 2.0 Programmers Reference Manual*
    (`JawaLite2_0_X12.pdf`), which was not retrievable this session.
 8. **"Stealth Controller" attribution.** No repository found under the name.
-   Excluded from Section 12 rather than guessed.
-9. **Whether protoArtoo drives Teeces across protoR2link or a dome-side board does.**
-   Section 11's note. This is a design decision for #313, not a fact to look up.
+   Excluded from Section 10 rather than guessed.
 
-Names for which **no evidence of being real Teeces products was found**, and which
-should not appear in project copy: "Tcarrier", "Teeces Deluxe", "Teeces Micro",
-"Teeces RGB", "Teeces v1.2 hardware" (v1.2 is a CuriousMarc *firmware* version).
+Names for which **no evidence of being real Teeces products was found**:
+"Tcarrier", "Teeces Deluxe", "Teeces Micro", "Teeces RGB", "Teeces v1.2
+hardware" (v1.2 is a CuriousMarc *firmware* version).
 
-## 17. Sources
+## 15. Sources
 
 **Normative (primary): firmware source**
 

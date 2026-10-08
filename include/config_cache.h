@@ -18,7 +18,10 @@
 
 #include "config_store.h"  // For type definitions (ConfigSnapshot, DomeConfig, etc.)
 #include "rc_input_active_config.h"
+#include "servo_motion_ramp.h"  // ServoMotionProfile - what a move is planned from
 #include "wifi_boot_decision.h"  // For WifiBootPosture (#189)
+
+struct RcAudioCategorySnapshot;  // include/rc_action_dispatcher.h
 
 // =============================================================================
 // Cache read-write (live runtime state)
@@ -27,16 +30,242 @@
 // configCacheRead: Fill a ConfigSnapshot from the live config cache.
 // This uses configCacheMux, not robotStateMux. Runtime tasks should copy the
 // domain they need into stack locals, then release the cache lock before doing work.
+//
+// A ConfigSnapshot carries no servo endpoint and no component type: since #345
+// both live on an addressed Servo Output row and nowhere else, so a caller that
+// wants one asks the row accessors below rather than this snapshot.
 void configCacheRead(ConfigSnapshot* out);
 void configCacheReadDome(DomeConfig* out);
 bool configCacheDomeEnabled();
-void configCacheReadServo(ServoConfig* out);
-bool configCacheServoAnyEnabled();
+// Whether the Output at `boardOutputIndex` in include/board_outputs.h's
+// BOARD_OUTPUTS is ticked as wired - boardOutputIsWired() on the live config,
+// without copying a whole snapshot (config_store.h's static_assert has its
+// size) onto the caller's frame to ask one bit.
+bool configCacheOutputIsWired(size_t boardOutputIndex);
 void configCacheReadWifi(WifiConfig* out);
 
-// configCacheApply: Replace the live config cache with a full snapshot.
+// The narrow reads an RC dispatch makes on Core 1 (src/tasks/rc_input.cpp),
+// each by field so a dispatch copies what it uses rather than a whole
+// ConfigSnapshot (its size is config_store.h's static_assert) onto the
+// real-time task's stack or into a static (#428).
+//
+// configCacheReadRcActionContext: the twelve sound-category ranges an RC
+// action picks a random track from, and the active speed preset, in one
+// configCacheMux section. Either pointer may be null.
+void configCacheReadRcActionContext(RcAudioCategorySnapshot* categories,
+                                    SpeedPresetId* speedPresetActive);
+// configCacheReadRcTriggerSlots: rcTriggerSlotsCopy() on the live config.
+size_t configCacheReadRcTriggerSlots(RcTriggerBinding* out, size_t cap);
+// configCacheSbusTimeoutMs: drive.sbusTimeoutMs, the RC signal watchdog's
+// timeout.
+uint32_t configCacheSbusTimeoutMs();
+// configCacheCadenceFloorMs: the Cadence Floor in use, in ms - the stored
+// Setting, and never zero (sequenceCadenceFloorInUse(),
+// include/sequence_bulk_centre.h).
+uint32_t configCacheCadenceFloorMs();
+
+// The addressed Servo Output rows (ADR 0041). They sit outside ConfigSnapshot,
+// on their own NVS keys -- see include/config_serializer.h for why the table is
+// not a snapshot field. The live table is filled by configLoadServoOutputs() on
+// the boot path and changed at runtime only by the Commit Step, through
+// configCacheApplyServoOutputEdits() and configCacheMoveServoOutputPart() below.
+//
+// configCacheReadServoOutput hands out ONE row: the table is far larger than
+// anything else this cache copies by value, and a task that wants one output
+// should not pay for twenty-four. It returns false for an index at or past the
+// live count, so "there is no such output" and "here is a zeroed row" are not
+// the same answer.
+bool configCacheReadServoOutput(uint8_t index, ServoOutputRow* out);
+uint8_t configCacheServoOutputCount();
+
+// The three questions the servo drive path asks, answered as values rather than
+// as a row. There is deliberately no find-me-the-row-by-address accessor: the
+// caller is ServoTask, whose worst-case static chain is a measured constant
+// ADR 0040's checker re-derives from the linked image on every slice, and a
+// ServoOutputRow is 72 B. A caller that wants an endpoint pair should not put a
+// Part list, a Motion Profile and a boot behaviour on a Core 1 frame to get it.
+//
+// An Output Address, not an index: an index is a storage slot, while the address
+// is where the wire plugs in, and rows past the five this controller ships with
+// are an expander's to address in whatever order they land.
+
+// The pulse width this output will actually be driven to, bounded by what the
+// component fitted to it takes (ADR 0041). *component names that part so a
+// caller can say what moved the number. With no live row addressed there the
+// request comes back unchanged and *component is SERVO_COMP_NONE -- an output
+// the table does not describe has no band to be held to.
+uint16_t configCacheClampServoOutputPulse(ServoOutputDriver driver, uint8_t channel,
+                                          uint16_t requestedUs, ServoComponentType* component);
+
+// The Endpoint Pair of the output addressed there, directional. False when no
+// live row is addressed there, with the out-params untouched so the caller's own
+// fallback stands.
+bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t channel,
+                                         uint16_t* openUs, uint16_t* closeUs);
+
+// The centre recorded for the output addressed there: where a Find by Moving
+// run puts a free Output before its first nudge (#411). Same false-and-untouched
+// rule as the pair above.
+bool configCacheReadServoOutputCentre(ServoOutputDriver driver, uint8_t channel,
+                                      uint16_t* centreUs);
+
+// The Output that drives a Part, and its Endpoint Pair, directional: what a
+// puppet string needs to turn a stick into a width (include/rc_puppet.h). By
+// Part id, because a string names the Part and never an address (ADR 0061),
+// and answered as values for the reason the three above are - RCInputTask's
+// chain is measured too, and a 72 B row on its frame would be paid on every
+// frame a string sends. False when no live row drives the Part - the
+// part-not-assigned case - with the out-params untouched.
+bool configCacheReadPartOutputEnds(const char* part, ServoOutputAddress* output,
+                                   uint16_t* openUs, uint16_t* closeUs);
+
+// The Motion Profile a move is planned from (ADR 0052): the recorded ends in
+// order -- whichever way round the pair was recorded -- how long a full throw
+// takes, how long the move spends getting up to speed, the ease that actually
+// runs, and whether anybody measured the ends. servoMotionProfileOf() reads it
+// off the row, so the ease comes through servoOutputEffectiveEasing() and an
+// unmeasured overshoot arrives here already degraded to `none`. False when no
+// live row is addressed there, with *profile untouched.
+bool configCacheReadServoOutputMotionProfile(ServoOutputDriver driver, uint8_t channel,
+                                             ServoMotionProfile* profile);
+
+// How long the output addressed there holds after a move arrives before it
+// lets go: its Output Release (ADR 0043, #443), as outputWireReleaseAfterMs()
+// answers it off the live row - never for a light. SERVO_RELEASE_MS_NEVER where
+// no live row is addressed there: an output the table does not describe is
+// one nobody has asked to let go, so it holds where it stops, as every output
+// did before the release was built. One number, for ServoTask's arrival path.
+uint16_t configCacheReadServoOutputReleaseMs(ServoOutputDriver driver, uint8_t channel);
+
+// What is fitted to the output addressed there, and SERVO_COMP_NONE when no
+// live row is addressed there -- "nothing is recorded as fitted here" and "this
+// output does not exist" are the same answer to a surface that only wants to
+// name the part. A caller that needs to tell the two apart asks
+// configCacheReadServoOutputEndpoints(), which returns false for the second.
+ServoComponentType configCacheReadServoOutputComponent(ServoOutputDriver driver, uint8_t channel);
+
+// The Light Type's settings on the output addressed there: how many LEDs the
+// wire carries (ADR 0067). SERVO_LIGHT_LEDS_DEFAULT where no live row is
+// addressed there, which is the same answer a row nobody has configured gives -
+// a caller reading this is about to start a strip and needs a length, not a
+// distinction it cannot act on.
+uint8_t configCacheReadServoOutputLedCount(ServoOutputDriver driver, uint8_t channel);
+
+// The pair `main` stored for the output addressed there, when the component
+// band narrowed it on the way onto the row and the builder has not saved that
+// output since (#417, include/servo_legacy_field_sets.h ServoLegacyNarrowing).
+// False, leaving both untouched, for every other output - which is almost
+// every output on almost every droid. For a surface, not a control path.
+bool configCacheReadServoOutputNarrowedFrom(ServoOutputDriver driver, uint8_t channel,
+                                            uint16_t* openUs, uint16_t* closeUs);
+
+// configCacheApplyServoOutputEdits: the runtime write onto a row's endpoints and
+// component. The Apply Core is pure and cannot reach the table, so it records
+// what a request asked for as addressed ServoOutputEdits and the Commit Step
+// hands them here. Called from the Commit Step and from nowhere else -- the boot
+// path has already read the stored rows, and an edit pushed over the top would
+// undo that. An edit naming an Output Address no live row has changes nothing
+// and reports nothing. Returns what the component band moved.
+ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* edits,
+                                                         size_t count);
+
+// configCacheMoveServoOutputPart: the runtime write onto a Part's place, and the
+// only write that touches two rows at once (ADR 0050, #347). The whole move is
+// one critical section, so no reader ever catches the Part on both Outputs or on
+// neither halfway through. Every rule and every refusal is
+// servoOutputTableMovePart()'s; this adds only the lock. Called from the Commit
+// Step and from nowhere else, for the same reason as the edits door above.
+ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& move);
+
+// configCacheServoOutputPartCountAt: how many Parts the live row addressed
+// there holds, or 0 where no live row is addressed. A count and not a row, so
+// the Commit Step can ask it after a move without a 72 B row on the Console
+// config-write chain the stack recipe measures.
+uint8_t configCacheServoOutputPartCountAt(ServoOutputDriver driver, uint8_t channel);
+
+// configCacheTicksFollowParts: every board Output's wired tick in `system`, set
+// from the Parts its live row holds (boardOutputTickFollowsParts()). Called at
+// start, before the snapshot is taken into the cache, and by the Commit Step
+// after a request's Parts have moved, so an Output with a Part on it is wired
+// and one with none is free whatever wrote the tick before.
+void configCacheTicksFollowParts(SystemConfig* system);
+
+// configCacheAddServoOutputRows: a member's Outputs as rows of the live table,
+// each one the table does not hold yet appended at its defaults
+// (servoOutputTableAddDriverRows()). Returns how many were added; `missing` is
+// how many channels a full table left without a row. The boot path calls it
+// for a fitted PCA9685, after the stored rows are loaded and before any task
+// reads the table (#444).
+uint8_t configCacheAddServoOutputRows(ServoOutputDriver driver, uint8_t channelCount,
+                                      uint8_t* missing);
+
+// The Records - the Droid Build and guided Setup's record - are not here:
+// each Record's module keeps its own live copy, filled on the boot path and
+// changed at runtime only by the Commit Step (include/config_records.h).
+
+// configCacheApply: write a full snapshot into the live config cache, except
+// the fields RC input also writes at runtime - the speed group
+// (drive.speedLimitMax, drive.speedPresetActive) and system.stationary - which
+// keep their live value. It is configCacheApplyKeepingLive(snap, false, false).
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
+//
+// The write every Write Window after boot makes (#420). Each one writes back a
+// whole snapshot it read when it took the config write lock, and RC input on
+// Core 1 never takes that lock, so an RC speed preset or stationary toggle can
+// land in between. None of those windows can state either field, so keeping
+// both is always their answer, and it is the default rather than a flag each
+// caller has to remember. The config POST, the one writer that can state them,
+// calls configCacheApplyKeepingLive() below with what its request stated.
+//
+// This, configCacheApplyKeepingLive(), configCacheReplace(), the Servo Output
+// edit and Part-move doors, and the Droid Build and Guided Setup writers above
+// run inside a Write Window after boot (include/config_write_window_check.h):
+// each checks that its caller holds the config write lock, and logs when it
+// does not.
 void configCacheApply(const ConfigSnapshot& snap);
+
+// configCacheApplyKeepingLive: configCacheApply(), except that the writer says
+// which of the RC live fields it stated, and a stated one takes the snapshot's
+// value (#417). For the config POST's Commit Step, whose request can set the
+// speed limit and stationary; whichever it did not state keeps its live value,
+// as in configCacheApply(). The live values are read inside the same
+// configCacheMux section that writes the snapshot, so nothing can land between
+// the two.
+void configCacheApplyKeepingLive(const ConfigSnapshot& snap, bool speedLimitStated,
+                                 bool stationaryStated);
+
+// configCacheReplace: replace the live config cache with a full snapshot, the
+// RC live fields included. configCacheApplyKeepingLive(snap, true, true).
+//
+// Only where replacing everything is the point: the boot load
+// (src/main.cpp loadConfigToState(), before RC input exists) and a native
+// test seeding known state. Never from a Write Window after boot: its
+// snapshot was read before RC input on Core 1 could change the speed group or
+// stationary, and replacing them would revert a change the window never
+// stated (#420). The same holder check as configCacheApply().
+void configCacheReplace(const ConfigSnapshot& snap);
+
+// configCacheSelectSpeedPreset: make `preset` the active speed preset and the
+// drive limit the value it names, both in one configCacheMux section, from the
+// three preset values the cache holds at that moment. Returns the limit.
+//
+// The RC speed preset's write, and safe where that runs: RCInputTask, Core 1
+// (src/rc_dispatcher_helpers.cpp). It used to be a whole-snapshot read, two
+// field edits and configCacheApply() across two critical sections - 916 B of
+// snapshot on the real-time task's stack, and a write that replaced every
+// other field with what it had read, so a config POST landing between the two
+// sections lost its fields (#417). No mutex is taken, ever: a blocking take on
+// Core 1 is the thing ConfigWriteLock's own contract forbids.
+//
+// Marks RobotState.rcConfigDirty, unlike configCacheSetStationary() below: the
+// RC mapping caches the drive limit as its maxOut (src/tasks/rc_input.cpp), so
+// it has to rebuild to drive at the new one.
+int16_t configCacheSelectSpeedPreset(SpeedPresetId preset);
+
+// configCacheSetSpeedLimit: the same two fields, set to a pair the caller
+// already holds - the revert applySpeedPresetPersisted() makes when its save
+// fails. One section, rcConfigDirty marked, for the reasons above.
+void configCacheSetSpeedLimit(int16_t speedLimitMax, SpeedPresetId preset);
 
 // configCacheSetStationary: write the one field the Commanded Mode setters
 // mirror into the cache, by field.
@@ -44,8 +273,9 @@ void configCacheApply(const ConfigSnapshot& snap);
 // commandedSetStationary() (src/commanded_modes.cpp) keeps this in step with
 // RobotState.stationary so the next config save persists the commanded mode
 // instead of reverting it from a stale cache. It used to do that with a
-// whole-snapshot round trip - read all 944 B of ConfigSnapshot out, set one
-// bool, write all 944 B back through configCacheApply() - on the SBUS path
+// whole-snapshot round trip - read all of ConfigSnapshot out (its size is
+// config_store.h's static_assert), set one bool, write it all back through
+// configCacheApply() - on the SBUS path
 // (Core 1, once per frame while driving, src/tasks/rc_input.cpp), on the httpd
 // task and on the Console alike. That also marked RobotState.rcConfigDirty on
 // every toggle, making RcInputTask rebuild its cached mapping config for a
@@ -136,6 +366,48 @@ void configCacheSetActiveComponentToggles(const SystemConfig& system);
 bool configCacheReadActiveComponentToggle(size_t bitIndex);
 
 // =============================================================================
+// Active Component Members (staged at reboot, ADR 0042)
+// =============================================================================
+
+// configCacheSetActiveSoundMember / configCacheReadActiveSoundMember: which
+// sound module is actually running since the last boot, as a Component Registry
+// part `value`. The pair exists for the same reason the Component Toggle pair
+// above does: configCacheRead()'s SystemConfig.sound_member is the latest saved
+// choice, which is not what the droid is playing through until it reboots, and
+// an operator surface has to be able to show both without guessing which it
+// has. Set once by setup() from the boot config snapshot.
+void configCacheSetActiveSoundMember(uint8_t memberValue);
+uint8_t configCacheReadActiveSoundMember();
+
+// configCacheReadSoundMember: the Sound Component Member the builder last
+// SAVED, as a Component Registry part `value` - the picked module, where the
+// pair above answers the running one. One field under the lock rather than a
+// whole configCacheRead(), because its readers are status handlers whose
+// frames are measured (#370).
+uint8_t configCacheReadSoundMember();
+
+// configCacheSetActiveBodyServoMember / configCacheReadActiveBodyServoMember:
+// which body servo controller this boot runs (#444), as a Component Registry
+// part `value` - the board's GPIO alone, or the PCA9685 beside it. The same
+// pair as Sound's, for the same reason: the saved choice is read once at start
+// (ADR 0027), so what a surface shows as chosen and what ServoTask drives can
+// differ until the droid restarts. Set once by setup(), resolved, before
+// servoTaskInit() reads it.
+void configCacheSetActiveBodyServoMember(uint8_t memberValue);
+uint8_t configCacheReadActiveBodyServoMember();
+
+// configCacheReadRcMember: the Radio Controller's stored Component Member, as
+// a Component Registry part `value` - the radio the builder picked. Unlike
+// Sound there is no boot latch: nothing on the controller branches on the
+// radio, so the saved choice is the running one. Resolve it with
+// componentResolveMember(COMPONENT_CATEGORY_RADIO_CONTROLLER, ...). One field
+// under the lock, so GET /api/identity/components and the Console's
+// system.api.get-components read the radio the same way without either
+// putting a whole ConfigSnapshot on its frame (the Console task's static chain
+// is a measured constant).
+uint8_t configCacheReadRcMember();
+
+// =============================================================================
 // Log level accessor (lightweight, used by logging.h)
 // =============================================================================
 
@@ -164,8 +436,9 @@ bool configAudioGetTrackByKey(const AudioConfig& config, const char* key, uint16
 // Returns false if key is not found; true on success.
 bool configAudioSetTrackByKey(AudioConfig* config, const char* key, uint16_t value);
 
-// configAudioCategoryCompanionKey: Given an audio key (e.g., "snd_rand_min"),
-// return the companion category boundary key ("snd_rand_max"), or nullptr if none.
+// configAudioCategoryCompanionKey: Given a category bound's key (e.g.,
+// "snd_cat_gen_lo"), return the other bound of its pair ("snd_cat_gen_hi"), or
+// nullptr if none.
 const char* configAudioCategoryCompanionKey(const char* key);
 
 // configUpdateAudioMoodMasks: Atomically update mood category bounds in NVS.

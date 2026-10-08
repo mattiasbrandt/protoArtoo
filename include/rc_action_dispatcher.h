@@ -49,7 +49,7 @@ struct RcActionResult {
     uint8_t servoSequenceId;    // sequence ID (e.g. 30-36) when servoIsSequence
 
     char domeTxCmd[20];         // [0]=='\0' = none; command for domeQueueTx
-    char marcduinoCmd[20];      // [0]=='\0' = none; command for parseMarcduinoCommand
+    char marcduinoCmd[20];      // [0]=='\0' = none; a :/#/$ line, routed by rcDispatchSingleAction()
 
     bool triggerEstop;
     bool setSleep;
@@ -58,13 +58,16 @@ struct RcActionResult {
     bool newStationaryMode;
     bool setSpeedPreset;
     SpeedPresetId newSpeedPreset;
+    // 0 = none; +1 the next sound, -1 the previous one, via audioQueueStepSound().
+    // Last, in the struct's tail padding, so the result does not grow.
+    int8_t audioStep;
 };
 
 RcActionResult rcDispatchAction(const RcActionPayload& input);
 
 // True when the result carries at least one side effect a dispatcher would
-// act on (audio track, dollar sequence, servo action, dome tx, marcduino
-// command, or a system-mode change). False means the target's action
+// act on (audio track, dollar sequence, a next/previous sound step, servo
+// action, dome tx, marcduino command, or a system-mode change). False means the target's action
 // legitimately produced nothing right now - e.g. a SOUND_ACTION_RANDOM_*
 // target whose configured category range is empty (lo==0 or lo>hi, see
 // selectRandomTrackInRange() above) - which is distinct from a dispatch

@@ -9,7 +9,7 @@ check and was wrong; both are guarded below.
 
 Hand the worker the N rows, never "produce a table of N things". Generate the
 rows yourself from the fields the source manifest already carries
-(`api_path`, `cpp_enum`, `cpp_file`, `sse_event`, `nvs_key`, ...) and put the
+(`api_path`, `cpp_enum`, `cpp_file`, `sse_event`, ...) and put the
 literal sentinel `FILL` in every cell the worker must decide. Incompleteness
 is then `grep -c FILL`, and a returned table containing `FILL` is unfinished
 by definition. Split a large population by domain across workers so no single

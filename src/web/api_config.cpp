@@ -15,7 +15,8 @@
 // Notes:
 // - This route is the sole web entrypoint for config writes.
 // - Hardware access is not performed here; values are validated, written to
-//   the config cache, and persisted via configSave().
+//   the config cache, and persisted through the config store's saves
+//   (configPersist(), configPersistSystem()).
 // =============================================================================
 
 #include "api_config.h"
@@ -23,65 +24,46 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <ctype.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
 #include <string.h>
 
 #include "api_config_apply.h"
 #include "api_config_snapshot.h"
 #include "api_json_response.h"
 #include "api_rc_map_apply.h"
+#include "api_status.h"  // captureServoOutputCommanded(), shared with the Console
 #include "api_wifi_apply.h"
+#include "board_outputs.h"  // BOARD_OUTPUTS, boardComponentLabel() - one label source
+#include "board_output_enabled.h"  // BOARD_OUTPUTS indices, which configCacheOutputIsWired() takes
 #include "web_param_source.h"
+#include "web_request_scratch.h"
 #include "drive_speed_preset.h"
 #include "audio_task.h"
 #include "commanded_modes.h"
+#include "component_registry.h"
 #include "config.h"
 #include "config_store.h"
 #include "config_cache.h"
+#include "config_records.h"  // every Record's GET answer and its merge
+#include "config_settings.h"  // every Setting's GET path, and its value
+#include "config_write_lock.h"  // this file implements the config and RC Map Write Windows
+#include "console_config_fields.h"  // kComponentToggleFields - the boot mask's bit order
 #include "logging.h"
 #include "robot_state.h"
 #include "seq_store_index.h"   // Learned Sequence names accepted for RC binding
+#include "sequence_bulk_centre.h"  // SEQ_CADENCE_FLOOR_MS - the dome's figure, the floor's default
 #include "servo_component_helpers.h"
+#include "aux_led.h"  // auxLedWireAtStart() - what each wire carried at start
+#include "output_wire.h"  // outputWirePinKeptForLight() - whether that was a Light Type
+#include "servo_backend.h"  // kServoBackendPca9685RegistryId - the expander's product id
+#include "servo_task.h"  // servoTaskWiredAtStart(), servoTaskDrivesOutput() - what the droid started with
 #include "web_server.h"
-
-#include <Preferences.h>
 
 static const char* TAG = "WebServer";
 
 namespace {
-constexpr uint16_t kServoPulseMinUs = 500;
-constexpr uint16_t kServoPulseMaxUs = 2500;
-
-
-const char* rcModeToString(RcInputMode mode) {
-    switch (mode) {
-        case RC_INPUT_STANDARD_PWM:
-            return "standard_pwm";
-        case RC_INPUT_SINGLE_SBUS:
-            return "single_sbus";
-        case RC_INPUT_DUAL_SBUS:
-        default:
-            return "dual_sbus";
-    }
-}
 
 bool triggerTargetAllowedByRuntime(const RcTriggerBinding& binding) {
     return true;
-}
-
-const char* rcMapSourceToString(RcBindingSource source) {
-    switch (source) {
-        case RC_BINDING_PWM:
-            return "pwm";
-        case RC_BINDING_SBUS1:
-            return "sbus1";
-        case RC_BINDING_SBUS2:
-            return "sbus2";
-        case RC_BINDING_NONE:
-        default:
-            return "none";
-    }
 }
 
 const char* wifiModeToString(WifiMode mode) {
@@ -158,6 +140,12 @@ bool rcMapBuildBackboneBinding(RcBindingSource source, uint8_t channel,
         return false;
     }
 
+    // An axis is a radio channel's and nothing else's. A droid condition has a
+    // legal channel of its own, so it is refused here by what it is.
+    if (rcBindingSourceIsDroidCondition(source)) {
+        return false;
+    }
+
     RcBindingConfig binding =
         (source == RC_BINDING_PWM) ? defaultPwmBinding(channel) : defaultSbusBinding(source, channel);
 
@@ -183,6 +171,34 @@ bool rcMapBuildTriggerBinding(const RcMapEntry& entry, const ConfigSnapshot& exi
                               RcTriggerBinding* out) {
     if (out == nullptr || !rcBindingChannelIsValid(entry.source, entry.channel)) {
         return false;
+    }
+
+    // A Reaction: its threshold and quiet period as the request gave them,
+    // else as the stored Reaction on this condition holds them, else the
+    // defaults. No calibration to reuse - a droid condition has none.
+    if (rcBindingSourceIsDroidCondition(entry.source)) {
+        uint16_t threshold = rcReactionThresholdDefault(entry.source);
+        uint16_t quietS = RC_REACTION_QUIET_DEFAULT_S;
+        // By pointer, never a copy of the slots: this runs on the HTTP server
+        // task under two ConfigSnapshots already.
+        const SystemConfig& sys = existing.system;
+        const RcTriggerBinding* stored[RC_TRIGGER_SLOT_COUNT] = {
+            &sys.rc_arm1,  &sys.rc_arm2,  &sys.rc_aux1,  &sys.rc_aux2,
+            &sys.rc_aux3,  &sys.rc_audio, &sys.rc_opmode, &sys.rc_free0,
+            &sys.rc_free1, &sys.rc_free2, &sys.rc_free3,
+        };
+        for (const RcTriggerBinding* slot : stored) {
+            if (slot->source == entry.source && slot->channel == entry.channel) {
+                threshold = rcReactionThreshold(*slot);
+                quietS = rcReactionQuietS(*slot);
+                break;
+            }
+        }
+        if (entry.threshold != kRcMapEntryKeep) threshold = entry.threshold;
+        if (entry.quietS != kRcMapEntryKeep) quietS = entry.quietS;
+        *out = makeRcReactionBinding(entry.source, entry.channel, entry.action, entry.payload,
+                                     threshold, quietS);
+        return rcTriggerBindingIsValid(*out);
     }
 
     uint16_t min = 1000;
@@ -214,21 +230,22 @@ RcBindingConfig rcMapSelectBackboneForMode(const ConfigSnapshot& snap, const RcB
     return rcMapBindingIsMapped(sbus) ? sbus : pwm;
 }
 
-void rcMapAppendEntry(JsonArray map, RcBindingSource source, uint8_t channel, RobotActionId action,
-                      const char* payload) {
+JsonObject rcMapAppendEntry(JsonArray map, RcBindingSource source, uint8_t channel,
+                            RobotActionId action, const char* payload) {
     JsonObject item = map.add<JsonObject>();
-    item["source"] = rcMapSourceToString(source);
+    item["source"] = rcBindingSourceToString(source);
     item["channel"] = channel;
     item["action"] = robotActionIdToString(action);
     if (payload != nullptr && payload[0] != '\0') {
         item["payload"] = payload;
     }
+    return item;
 }
 
 }  // namespace
 bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     doc.clear();
-    doc["mode"] = rcModeToString(snap.system.rc_input_mode);
+    doc["mode"] = rcInputModeToString(snap.system.rc_input_mode);
 
     JsonArray map = doc["map"].to<JsonArray>();
 
@@ -258,7 +275,12 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
         if (!rcMapTriggerIsMapped(binding)) {
             continue;
         }
-        rcMapAppendEntry(map, binding.source, binding.channel, binding.target, binding.marcduinoPayload);
+        JsonObject item = rcMapAppendEntry(map, binding.source, binding.channel, binding.target,
+                                           binding.marcduinoPayload);
+        if (rcBindingSourceIsDroidCondition(binding.source)) {
+            item["threshold"] = rcReactionThreshold(binding);
+            item["quietS"] = rcReactionQuietS(binding);
+        }
     }
 
     JsonObject capacity = doc["capacity"].to<JsonObject>();
@@ -320,7 +342,14 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     // - op_mode     -> rcOpmode
     //
     // All remaining trigger actions fill first-free in this order:
-    // rcSound, rcFree0, rcFree1, rcFree2, rcFree3.
+    // rcSound, rcFree0, rcFree1, rcFree2, rcFree3. A puppet string (#442) is
+    // one of them, so the droid holds at most five strings, shared with every
+    // other cue that has no slot of its own.
+    //
+    // A Reaction (a droid-condition source, #450) always fills first-free in
+    // that same order, whatever its action: a named slot is one action's radio
+    // binding, and a Reaction on arm1_toggle must not take rcArm1 from the
+    // switch that also toggles it.
     RcBindingConfig backbone = disabledRcBinding();
     RcTriggerBinding trigger = disabledRcTriggerBinding();
 
@@ -348,7 +377,9 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         return false;
     }
 
-    if (entry.action == SERVO_ACTION_ARM1_TOGGLE) {
+    const bool reaction = rcBindingSourceIsDroidCondition(entry.source);
+
+    if (!reaction && entry.action == SERVO_ACTION_ARM1_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_arm1)) {
             snprintf(error, errorSize, "conflict: arm1_toggle mapped more than once");
             return false;
@@ -356,7 +387,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         working->system.rc_arm1 = trigger;
         return true;
     }
-    if (entry.action == SERVO_ACTION_ARM2_TOGGLE) {
+    if (!reaction && entry.action == SERVO_ACTION_ARM2_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_arm2)) {
             snprintf(error, errorSize, "conflict: arm2_toggle mapped more than once");
             return false;
@@ -364,7 +395,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         working->system.rc_arm2 = trigger;
         return true;
     }
-    if (entry.action == SERVO_ACTION_AUX1_TOGGLE) {
+    if (!reaction && entry.action == SERVO_ACTION_AUX1_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_aux1)) {
             snprintf(error, errorSize, "conflict: aux1_toggle mapped more than once");
             return false;
@@ -372,7 +403,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         working->system.rc_aux1 = trigger;
         return true;
     }
-    if (entry.action == SERVO_ACTION_AUX2_TOGGLE) {
+    if (!reaction && entry.action == SERVO_ACTION_AUX2_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_aux2)) {
             snprintf(error, errorSize, "conflict: aux2_toggle mapped more than once");
             return false;
@@ -380,7 +411,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         working->system.rc_aux2 = trigger;
         return true;
     }
-    if (entry.action == SERVO_ACTION_AUX3_TOGGLE) {
+    if (!reaction && entry.action == SERVO_ACTION_AUX3_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_aux3)) {
             snprintf(error, errorSize, "conflict: aux3_toggle mapped more than once");
             return false;
@@ -410,159 +441,116 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     return false;
 }
 
-// Component label lookup table, built via X-macro expansion from component_labels.inc.
-// Maps component names (e.g., "enable_drive") to board-specific physical labels (e.g., "S1").
+// A component's Board Component Label on the running board (ADR 0033), or
+// nullptr where this board declares none. The lookup is boardComponentLabel()
+// (include/board_outputs.h), over include/component_labels.inc - the same one
+// every Output's name is read through, so a label this answer reports and the
+// word POST /api/servo and the Console take for it cannot disagree.
+const char* getComponentLabel(const char* componentName) {
+    return boardComponentLabel(runningBoardName(), componentName);
+}
 
-struct ComponentLabelEntry {
-    const char* component;
-    const char* label;
+// The slot a dotted GET path names, made on the way: every key but the last
+// is an object. Keys are copied - the pool keeps one copy of each - because a
+// key cut out of a longer literal cannot be linked by length.
+JsonVariant getShapeSlot(JsonObject root, const char* dotted) {
+    JsonObject parent = root;
+    const char* cursor = dotted;
+    for (;;) {
+        const char* dot = strchr(cursor, '.');
+        const size_t span = dot != nullptr ? (size_t)(dot - cursor) : strlen(cursor);
+        char key[24] = {};
+        memcpy(key, cursor, span < sizeof(key) ? span : sizeof(key) - 1);
+        if (dot == nullptr) {
+            return parent[key].to<JsonVariant>();  // made now, while `key` lives
+        }
+        JsonObject next = parent[key].as<JsonObject>();
+        parent = next.isNull() ? parent[key].to<JsonObject>() : next;
+        cursor = dot + 1;
+    }
+}
+
+// Each Component Toggle's Board Component Label, beside its `enabled`. A label
+// is a reading, not a Setting, so it is named here rather than declared.
+struct ComponentLabel {
+    const char* key;        // under "components"
+    const char* component;  // its key in include/component_labels.inc
 };
 
-// Helper macro to stringify board identifiers so they can be compared as strings.
-#define BOARD_NAME_STR(board) #board
+constexpr ComponentLabel kComponentLabels[] = {
+    {"domeEsc", "enable_dome_esc"}, {"rcCh1", "enable_rc_ch1"}, {"rcCh2", "enable_rc_ch2"},
+    {"rcCh3", "enable_rc_ch3"},     {"rcCh4", "enable_rc_ch4"}, {"rcCh5", "enable_rc_ch5"},
+    {"rcCh6", "enable_rc_ch6"},     {"drive", "enable_drive"},  {"audio", "enable_audio"},
+    {"protoR2link", "enable_protor2link"},
+};
 
-// Expand component_labels.inc to build the lookup table for the current board.
-// The macro expands entries and filters them by comparing stringified board names.
-
-#if PA_BOARD == PA_BOARD_ARTOO_ESP32
-#define CURRENT_BOARD_NAME BOARD_NAME_STR(artoo_esp32)
-#elif PA_BOARD == PA_BOARD_FIREBEETLE2
-#define CURRENT_BOARD_NAME BOARD_NAME_STR(firebeetle2)
-#else
-#define CURRENT_BOARD_NAME ""
-#endif
-
-namespace {
-    const ComponentLabelEntry COMPONENT_LABELS[] = {
-#define PA_COMPONENT_LABEL(board, component, label)                           \
-        (strcmp(BOARD_NAME_STR(board), CURRENT_BOARD_NAME) == 0)              \
-            ? ComponentLabelEntry{#component, label}                          \
-            : ComponentLabelEntry{"", nullptr},
-#include "component_labels.inc"
-#undef PA_COMPONENT_LABEL
-    };
-}
-
-// Helper function to get board component label for a given component name.
-// Returns the label string if found and applicable to the current board, nullptr otherwise.
-const char* getComponentLabel(const char* componentName) {
-    for (size_t i = 0; i < sizeof(COMPONENT_LABELS) / sizeof(COMPONENT_LABELS[0]); ++i) {
-        if (COMPONENT_LABELS[i].component[0] != '\0' && strcmp(COMPONENT_LABELS[i].component, componentName) == 0) {
-            return COMPONENT_LABELS[i].label;
-        }
-    }
-    return nullptr;
-}
-
-// -----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 // populateConfigJson()
 //
 // Pure function - no global state, no FreeRTOS. Accepts a snapshot produced by
-// captureConfigSnapshot() and builds the ArduinoJson document field by field.
-// Builds the JSON snapshot consumed by the web config UI and API clients.
-// Returns false only if the JsonDocument overflows.
+// captureConfigSnapshot() and builds the ArduinoJson document. Every droid
+// Setting is written at its GET path by its declaration
+// (include/config_settings.h), which is also where POST reads it back, so the
+// two cannot drift (ADR 0068). An Output's wired tick has no path here: it is
+// read whole from its row on GET /api/servo/outputs and written back the same
+// way. Returns false only if the JsonDocument overflows.
 // -----------------------------------------------------------------------------
 bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     doc.clear();
+    JsonObject root = doc.to<JsonObject>();
 
-    JsonObject drive = doc["drive"].to<JsonObject>();
-    drive["speedLimitMax"] = snap.drive.speedLimitMax;
-    drive["speedPresetSlow"] = snap.drive.speedPresetSlow;
-    drive["speedPresetNormal"] = snap.drive.speedPresetNormal;
-    drive["speedPresetTurbo"] = snap.drive.speedPresetTurbo;
-    drive["speedPreset"] = speedPresetIdToString(snap.drive.speedPresetActive);
-    drive["webDriveTimeoutMs"] = snap.drive.webDriveTimeoutMs;
-    drive["stationary"] = snap.system.stationary;
+    for (size_t i = 0; i < configSettingCount(); ++i) {
+        const ConfigSetting& setting = configSettingAt(i);
+        if (setting.path == nullptr) {
+            continue;
+        }
+        char text[24] = {};
+        switch (setting.rule) {
+            case SettingRule::Bool:
+                getShapeSlot(root, setting.path).set(configSettingNumber(setting, snap) != 0);
+                break;
+            case SettingRule::Range:
+                getShapeSlot(root, setting.path).set(configSettingNumber(setting, snap));
+                break;
+            case SettingRule::Member:
+                // The Component Member, as its Component Registry id, so a
+                // picker never carries its own copy of the numbering (ADR
+                // 0042). Absent when the stored value names nothing this image
+                // knows, which is the one case where an id would have to be
+                // invented. This is the SAVED choice: what the droid is
+                // actually playing through until it reboots is
+                // `activeMember`, added in sendConfigSnapshot().
+                configSettingFormat(setting, snap, text, sizeof(text));
+                if (text[0] != '\0') {
+                    getShapeSlot(root, setting.path).set(text);  // char[]: copied
+                }
+                break;
+            case SettingRule::Words:
+            case SettingRule::Ipv4:
+            case SettingRule::SequenceName:
+            default:
+                configSettingFormat(setting, snap, text, sizeof(text));
+                getShapeSlot(root, setting.path).set(text);  // char[]: copied
+                break;
+        }
+    }
 
-    JsonObject rc = doc["rc"].to<JsonObject>();
-    rc["inputMode"] = rcModeToString(snap.system.rc_input_mode);
-    rc["sbusTimeoutMs"] = snap.drive.sbusTimeoutMs;
-
-    JsonObject rcSbus = rc["sbus"].to<JsonObject>();
-    rcSbus["recvCh2"] = snap.system.single_sbus_use_ch2;
-
-    JsonObject components = doc["components"].to<JsonObject>();
-    components["arm1"]["enabled"] = snap.system.enable_arm1;
-    components["arm1"]["type"] = servoCompTypeToString(snap.servo.arm1_type);
-    if (const char* label = getComponentLabel("enable_arm1")) components["arm1"]["label"] = label;
-
-    components["arm2"]["enabled"] = snap.system.enable_arm2;
-    components["arm2"]["type"] = servoCompTypeToString(snap.servo.arm2_type);
-    if (const char* label = getComponentLabel("enable_arm2")) components["arm2"]["label"] = label;
-
-    components["aux1"]["enabled"] = snap.system.enable_aux1;
-    components["aux1"]["type"] = servoCompTypeToString(snap.servo.aux1_type);
-    if (const char* label = getComponentLabel("enable_aux1")) components["aux1"]["label"] = label;
-
-    components["aux2"]["enabled"] = snap.system.enable_aux2;
-    components["aux2"]["type"] = servoCompTypeToString(snap.servo.aux2_type);
-    if (const char* label = getComponentLabel("enable_aux2")) components["aux2"]["label"] = label;
-
-    components["aux3"]["enabled"] = snap.system.enable_aux3;
-    components["aux3"]["type"] = servoCompTypeToString(snap.servo.aux3_type);
-    if (const char* label = getComponentLabel("enable_aux3")) components["aux3"]["label"] = label;
-
-    components["domeEsc"]["enabled"] = snap.system.enable_dome_esc;
-    if (const char* label = getComponentLabel("enable_dome_esc")) components["domeEsc"]["label"] = label;
-
-    components["rcCh1"]["enabled"] = snap.system.enable_rc_ch1;
-    if (const char* label = getComponentLabel("enable_rc_ch1")) components["rcCh1"]["label"] = label;
-
-    components["rcCh2"]["enabled"] = snap.system.enable_rc_ch2;
-    if (const char* label = getComponentLabel("enable_rc_ch2")) components["rcCh2"]["label"] = label;
-
-    components["rcCh3"]["enabled"] = snap.system.enable_rc_ch3;
-    if (const char* label = getComponentLabel("enable_rc_ch3")) components["rcCh3"]["label"] = label;
-
-    components["rcCh4"]["enabled"] = snap.system.enable_rc_ch4;
-    if (const char* label = getComponentLabel("enable_rc_ch4")) components["rcCh4"]["label"] = label;
-
-    components["rcCh5"]["enabled"] = snap.system.enable_rc_ch5;
-    if (const char* label = getComponentLabel("enable_rc_ch5")) components["rcCh5"]["label"] = label;
-
-    components["rcCh6"]["enabled"] = snap.system.enable_rc_ch6;
-    if (const char* label = getComponentLabel("enable_rc_ch6")) components["rcCh6"]["label"] = label;
-
-    components["drive"]["enabled"] = snap.system.enable_drive;
-    if (const char* label = getComponentLabel("enable_drive")) components["drive"]["label"] = label;
-
-    components["audio"]["enabled"] = snap.system.enable_audio;
-    if (const char* label = getComponentLabel("enable_audio")) components["audio"]["label"] = label;
-
-    components["protoR2link"]["enabled"] = snap.system.enable_protor2link;
-    if (const char* label = getComponentLabel("enable_protor2link")) components["protoR2link"]["label"] = label;
-
-    // Legacy top-level calibration fields consumed by data/servo.js
-    doc["arm1OpenUs"] = snap.servo.arm1_open_us;
-    doc["arm1CloseUs"] = snap.servo.arm1_close_us;
-    doc["arm2OpenUs"] = snap.servo.arm2_open_us;
-    doc["arm2CloseUs"] = snap.servo.arm2_close_us;
-    doc["aux1OpenUs"] = snap.servo.aux1_open_us;
-    doc["aux1CloseUs"] = snap.servo.aux1_close_us;
-    doc["aux2OpenUs"] = snap.servo.aux2_open_us;
-    doc["aux2CloseUs"] = snap.servo.aux2_close_us;
-    doc["aux3OpenUs"] = snap.servo.aux3_open_us;
-    doc["aux3CloseUs"] = snap.servo.aux3_close_us;
-    doc["aux_led_pin"] = snap.servo.aux_led_pin;
-    doc["aux_led_count"] = snap.servo.aux_led_count;
-
-    JsonObject domeEsc = doc["domeEsc"].to<JsonObject>();
-    domeEsc["neutralUs"] = snap.dome.dome_neutral_us;
-    domeEsc["minPulseUs"] = snap.dome.dome_min_pulse_us;
-    domeEsc["maxPulseUs"] = snap.dome.dome_max_pulse_us;
-    domeEsc["speedLimitPct"] = snap.dome.dome_speed_limit_pct;
-    domeEsc["rndEnable"] = snap.dome.dome_rnd_enable;
-    domeEsc["rndSpeedPct"] = snap.dome.dome_rnd_speed_pct;
-    domeEsc["rndPauseMin"] = snap.dome.dome_rnd_pause_min;
-    domeEsc["rndPauseMax"] = snap.dome.dome_rnd_pause_max;
-    domeEsc["rndMoveMs"] = snap.dome.dome_rnd_move_ms;
-
-    JsonObject protoR2link = doc["protoR2link"].to<JsonObject>();
-    protoR2link["wifiPeerIp"] = snap.dome.dome_wifi_peer_ip;
-
-    JsonObject system = doc["system"].to<JsonObject>();
-    system["logLevel"] = snap.system.logLevel;
+    // Readings beside the Settings: which preset is active, whose figure the
+    // Cadence Floor is, and each Component Toggle's label on the running board.
+    root["drive"]["speedPreset"] = speedPresetIdToString(snap.drive.speedPresetActive);
+    // "dome" while the floor is the dome's measured figure, the default, and
+    // "builder" once somebody has set another. Wiring says the first is the
+    // dome's and never says the second is, without holding the dome's number
+    // itself (#453). Neither word says the body's has been measured: it has not
+    // (include/sequence_bulk_centre.h).
+    root["servo"]["cadenceFloorSource"] =
+        (snap.system.cadence_floor_ms == SEQ_CADENCE_FLOOR_MS) ? "dome" : "builder";
+    JsonObject components = root["components"];
+    for (const ComponentLabel& entry : kComponentLabels) {
+        if (const char* label = getComponentLabel(entry.component)) {
+            components[entry.key]["label"] = label;
+        }
+    }
 
     // Device WiFi Settings (ADR 0015): password-safe read shape only. The
     // "pendingApply" flag (active-vs-pending for a Staged Network Switch) and
@@ -583,123 +571,348 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
 
 namespace {
 
+// The active Component Members of the families read once at start: the sound
+// module AudioTask actually bound at boot, and the body servo controller
+// ServoTask runs (#444), as against the saved choices populateConfigJson()
+// reports. Each pair differs exactly while a member change is staged and the
+// droid has not rebooted, which is the state an operator surface has to be
+// able to show.
+//
+// Out here rather than in populateConfigJson(): the boot-latched value is
+// runtime state a pure snapshot serializer cannot see.
+void addActiveMemberFields(JsonDocument& doc) {
+    JsonObject components = doc["components"];
+    if (components.isNull()) {
+        return;
+    }
+    const ComponentPartEntry* sound = componentPartByValue(configCacheReadActiveSoundMember());
+    if (sound != nullptr) {
+        components["audio"]["activeMember"] = sound->id;
+        // Whether that module mixes, from its registry row, the one
+        // declaration of its bits: what the Rehearsal reads to warn that a
+        // Background Track will not play (ADR 0054, data/seq_rehearsal.js).
+        components["audio"]["activeMixes"] =
+            (sound->capabilities & AudioDriver::AUDIO_CAP_MIXES) != 0;
+    }
+    const ComponentPartEntry* bodyServo =
+        componentPartByValue(configCacheReadActiveBodyServoMember());
+    if (bodyServo != nullptr) {
+        components["bodyServo"]["activeMember"] = bodyServo->id;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// addActiveFields()
+// What the droid STARTED with, for every key that is read once at start: the
+// Component Toggles (ADR 0027) and the RC Receiver mode. A surface that says a
+// saved change is still waiting compares these against the saved values beside
+// them - never against what it happened to read first, which a page reload
+// resets to the saved value and so reports nothing waiting while the droid
+// still runs the old setting (#371).
+//
+// Both come from the boot projections setup() already publishes
+// (configCacheSetActiveComponentToggles(), configCacheSetActiveRcInput()), so
+// this costs no resident byte. The toggles go out as the list of ids switched
+// on at start, not as a flag on every entry: one list of the ones that are on
+// is about half the bytes of fifteen "activeEnabled" fields, on a payload every
+// page load reads.
+//
+// The id is the payload's own component key: the param name without its
+// "enable" and with the first letter lowered (enableDomeEsc -> domeEsc), so the
+// list names exactly the entries under "components" and nothing keeps a second
+// spelling of them. An Output's tick is left out for the same reason: an Output
+// is not under "components" but on its row (ADR 0068), and a page reads what
+// it was first reported with from there.
+// -----------------------------------------------------------------------------
+void addActiveFields(JsonDocument& doc) {
+    static constexpr char kPrefix[] = "enable";
+    constexpr size_t kPrefixLen = sizeof(kPrefix) - 1;
+
+    JsonArray toggles = doc["activeToggles"].to<JsonArray>();
+    for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
+        if (!configCacheReadActiveComponentToggle(i)) {
+            continue;
+        }
+        const char* param = kComponentToggleFields[i].paramKey;
+        const size_t len = strlen(param);
+        // A mutable array, so ArduinoJson copies it rather than keeping a
+        // pointer into a buffer that is gone by the time the document
+        // serializes (the rule each Record's GET answer relies on too).
+        char id[24] = {};
+        if (strncmp(param, kPrefix, kPrefixLen) != 0 || len <= kPrefixLen ||
+            len - kPrefixLen >= sizeof(id)) {
+            continue;
+        }
+        memcpy(id, param + kPrefixLen, len - kPrefixLen);
+        id[0] = (char)tolower((unsigned char)id[0]);
+        if (boardOutputById(id) != nullptr) {
+            continue;
+        }
+        toggles.add(id);
+    }
+
+    RcInputActiveConfig activeRc = {};
+    configCacheReadActiveRcInput(&activeRc);
+    doc["rc"]["activeInputMode"] = rcInputModeToString(static_cast<RcInputMode>(activeRc.mode));
+}
+
+// -----------------------------------------------------------------------------
+// refusePartMove()
+// A refused Part move as a refusal like any other (ADR 0068, second amendment):
+// the act field it is about and why, so a page words it from those and never
+// from the sentence. False for a move that landed or had nothing to do.
+//
+// A Part that is not where the move says, and a destination already full, are
+// each a value fine on its own that clashes with the table as it stands:
+// `conflict`. The caller that meets one is a surface whose table has changed
+// since it read it. An address nothing answers at, and a Part this build does
+// not model, are values the field does not take.
+// -----------------------------------------------------------------------------
+bool refusePartMove(ServoPartMoveOutcome outcome, ConfigCommitOutcome* commit) {
+    switch (outcome) {
+        case SERVO_PART_MOVED:
+        case SERVO_PART_ALREADY_THERE:
+            return false;
+        case SERVO_PART_NOT_WHERE_STATED:
+            commit->refusal = "that Part is not on the Output movePartFrom names - read the outputs "
+                              "again, then move it";
+            commit->refusalField = "movePartFrom";
+            commit->refusalReason = ApplyRefusalReason::Conflict;
+            return true;
+        case SERVO_PART_OUTPUT_FULL:
+            commit->refusal = "that Output already has as many Parts as it can take - move one off it "
+                              "first";
+            commit->refusalField = "movePartTo";
+            commit->refusalReason = ApplyRefusalReason::Conflict;
+            return true;
+        case SERVO_PART_NO_SUCH_OUTPUT:
+            commit->refusal = "no Output is addressed at movePartTo";
+            commit->refusalField = "movePartTo";
+            commit->refusalReason = ApplyRefusalReason::OutOfRange;
+            return true;
+        case SERVO_PART_NOT_A_PART:
+        default:
+            commit->refusal = "movePart names a Part this build does not model";
+            commit->refusalField = "movePart";
+            commit->refusalReason = ApplyRefusalReason::OutOfRange;
+            return true;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// addRecordFields()
+// Every Record, each under its own key and in its own module's words
+// (include/config_records.h). Out here with the others because a Record lives
+// outside ConfigSnapshot, on its own NVS keys, so a pure snapshot serializer
+// cannot see it.
+// -----------------------------------------------------------------------------
+void addRecordFields(JsonDocument& doc) {
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        const ConfigRecordId id = (ConfigRecordId)r;
+        configRecordAnswer(id, doc[configRecordKey(id)].to<JsonObject>());
+    }
+}
+
+// The recorded widths this write stored at a different number than it was
+// sent, as rows: keyed by Output Address, each under the row key the request
+// names it by and holding the number the row now has (#417, ADR 0068). The
+// component band's clamp is deliberate (#286 decision 5): an MG996R cannot take
+// 2200 us however it arrives, the band can narrow after the ends were recorded,
+// and a type-only edit pulls the ends it did not name into the new band.
+// Refusing would break a type change and throw a restored calibration away, so
+// the write stands; this is what makes it not silent. Only on a write that
+// clamped something, and only the write route passes a commit here, so a read
+// never carries it.
+void addClampedEndpointFields(JsonDocument& doc, const ConfigCommitOutcome& commit) {
+    const uint32_t moved = commit.openClampedRows | commit.closeClampedRows | commit.centreClampedRows;
+    if (moved == 0) {
+        return;
+    }
+    JsonObject clamped = doc["clamped"].to<JsonObject>();
+    const uint8_t count = configCacheServoOutputCount();
+    for (uint8_t i = 0; i < count; ++i) {
+        const uint32_t bit = (uint32_t)1u << i;
+        ServoOutputRow row = {};
+        if ((moved & bit) == 0 || !configCacheReadServoOutput(i, &row)) {
+            continue;
+        }
+        // A mutable buffer, so ArduinoJson copies the key rather than keeping a
+        // pointer into a frame that is gone by the time the answer serializes.
+        char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+        if (!servoOutputFormatAddress(address, sizeof(address), row.driver, row.channel)) {
+            continue;
+        }
+        JsonObject at = clamped[address].to<JsonObject>();
+        if ((commit.openClampedRows & bit) != 0) {
+            at["openUs"] = row.open_us;
+        }
+        if ((commit.centreClampedRows & bit) != 0) {
+            at["centreUs"] = row.centre_us;
+        }
+        if ((commit.closeClampedRows & bit) != 0) {
+            at["closeUs"] = row.close_us;
+        }
+    }
+}
+
 // The config snapshot response, shared by the read route and the write route's
 // echo. Both must return the same shape for the same device state, so they
 // build it the same way rather than twice.
 //
-// pendingApply and networkRecovery are added on top of populateConfigJson():
-// they are runtime state (is a Staged Network Switch outstanding, was Network
-// Recovery Mode the posture actually entered at boot) that a pure snapshot
-// serializer cannot see.
-void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
+// pendingApply, networkRecovery and the rest are added on top of
+// populateConfigJson(): they are runtime state (is a Staged Network Switch
+// outstanding, was Network Recovery Mode the posture actually entered at boot,
+// what did the droid start with) that a pure snapshot serializer cannot see.
+void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap,
+                        const ConfigCommitOutcome* commit = nullptr) {
     JsonDocument doc;
     if (!populateConfigJson(doc, snap)) {
         webSendJsonError(req, 500, "config json build failed");
         return;
     }
+    if (commit != nullptr) {
+        addClampedEndpointFields(doc, *commit);
+    }
+    addActiveMemberFields(doc);
+    addActiveFields(doc);
+    addRecordFields(doc);
     WifiConfig activeWifi = {};
     configCacheReadActiveWifi(&activeWifi);
     doc["wifi"]["pendingApply"] = wifiConfigsDiffer(snap.wifi, activeWifi);
     doc["wifi"]["networkRecovery"] = configCacheReadActiveWifiRecovery();
 
-    // Static, not stack: the payload measures ~1.3 KB on a provisioned device,
-    // and even that is more than the psychic server task's 8 KB stack should
-    // carry next to ArduinoJson's serializer frames. Handlers serialize on one
-    // task under both backends, so a shared buffer is race-free - the same
-    // argument /api/status and /api/logs already make.
+    // Serialized into a buffer allocated at the measured size and freed before
+    // this returns (include/api_json_response.h), not into a fixed static one.
+    // The payload measures ~1.3 KB on a provisioned device, but its reachable
+    // worst case - every Part fitted, every string at its longest, the guided
+    // run's record full - outgrew the 3,072 B static buffer this route used to
+    // own, and a config read that 500s is a Configuration, Setup and Backup that
+    // will not load. A static buffer sized to that worst case spends permanent
+    // BSS, the scarcest budget on this target, on a case almost no droid is in
+    // (operator decision, 2026-09-19 on #371). Too big for the stack either way:
+    // the psychic server task has 8 KB, beside ArduinoJson's serializer frames.
     //
-    // Sized to kConfigJsonBudget, the worst-case bound test_api_config_json
-    // holds populateConfigJson() to; the overflow branch below is what makes a
-    // future field that breaks that bound a visible 500 rather than a silently
-    // truncated config.
-    //
-    // Serializing into a bounded buffer instead of a response stream also
-    // means no heap response object per request, which is the point of the
-    // migration for a route the dashboard hits on every page load.
-    static char body[3072];
-    if (measureJson(doc) >= sizeof(body)) {
-        webSendJsonError(req, 500, "config response overflow");
-        return;
-    }
-    serializeJson(doc, body, sizeof(body));
-    req.send(200, "application/json", body);
+    // kConfigResponseCeiling is a sanity ceiling, not a size: the measured worst
+    // case (test_api_config_get) is about 3.4 KB, and a payload at or past the
+    // ceiling is a 500 rather than a runaway allocation.
+    static constexpr size_t kConfigResponseCeiling = 6144;
+    webSendJsonDocument(req, doc, kConfigResponseCeiling, TAG);
 }
 
-// WebRequest-free per ADR 0036's Consequences ("persistSystemConfig(WebRequest&,
-// ...), which sends its own HTTP error today, is the first such extraction"):
-// the caller renders its own failure, so this stays reachable from a future
-// non-web caller without a request object in scope. handleRcMapPost is the
-// only caller today.
-bool persistSystemConfig(const SystemConfig& system) {
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, false)) {
+// Write Window for POST /api/rc/map (ADR 0011, amended 2026-09-24). The route
+// read-modify-writes the same config cache and the same NVS namespace the
+// config write does, so it is guarded the same way. False -> busy, nothing
+// read or written. True -> `*result` holds rcMapApply()'s answer, and when it
+// is ok the map is in the cache and `*persisted` says whether NVS took it.
+// One adapter today, so it stays in this file.
+bool rcMapWriteWindow(const ConfigParamSource& params, ConfigSnapshot* working,
+                      RcMapApplyResult* result, bool* persisted) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
         return false;
     }
-    if (!configSaveSystem(prefs, system)) {
-        prefs.end();
-        return false;
+    configCacheRead(working);
+    rcMapApply(params, working, result);
+    if (result->ok) {
+        configCacheApply(*working);
+        // Re-read what the cache actually holds, then persist from that - one
+        // snapshot on the caller's stack, not two. WebRequest-free, as ADR
+        // 0036's Consequences asked of the persistSystemConfig(WebRequest&,
+        // ...) this once was: the caller renders its own failure.
+        configCacheRead(working);
+        *persisted = configPersistSystem(working->system);
     }
-    prefs.end();
     return true;
 }
 
 }  // namespace
-
-// =============================================================================
-// The config write lock - see include/api_config.h for the contract.
-// =============================================================================
-
-// Static storage and no init call: xSemaphoreCreateMutexStatic() takes no
-// heap, and a static FreeRTOS mutex may be created before the scheduler
-// starts, which is where a namespace-scope initializer runs. Nothing in
-// setup() has to remember to create it - which matters because the adapters
-// that take it (these routes and the Console module) share no init point,
-// and the one that used to own the mutex is not the seam that owns the
-// serialization.
-static StaticSemaphore_t s_configWriteMutexStorage;
-static SemaphoreHandle_t s_configWriteMutex = xSemaphoreCreateMutexStatic(&s_configWriteMutexStorage);
-
-// The bound a contended take waits before answering busy. One second is long
-// enough to cover the other adapter's whole window including its NVS write,
-// and short enough that a browser POST answers rather than hangs.
-static const TickType_t kConfigWriteLockTimeoutTicks = pdMS_TO_TICKS(1000);
-
-ConfigWriteLock::ConfigWriteLock() : held_(false) {
-    if (s_configWriteMutex == nullptr) {
-        // Cannot happen with static creation above; kept as the same
-        // defensive single-threaded-boot fallback src/seq_store.cpp's lock()
-        // takes, so a future move of the creation point cannot turn config
-        // writes into a hard failure.
-        held_ = true;
-        return;
-    }
-    held_ = (xSemaphoreTake(s_configWriteMutex, kConfigWriteLockTimeoutTicks) == pdTRUE);
-}
-
-ConfigWriteLock::~ConfigWriteLock() {
-    if (held_ && s_configWriteMutex != nullptr) {
-        xSemaphoreGive(s_configWriteMutex);
-    }
-}
 
 // See include/api_config.h for the full contract.
 ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApplyResult& result,
                                          CommandSource source) {
     ConfigCommitOutcome outcome;
 
+    // A Part move goes first, and decides whether anything happens at all.
+    // Whether the Part is where the request says can only be answered against
+    // the live table, and a request that would take a Part off an Output its
+    // sender never read it on must change nothing - not the move, and not the
+    // fields riding beside it (#347). configWriteWindow() holds the config write
+    // lock across this call, so no other writer can move the Part between this
+    // answer and the write.
+    if (result.partMove.requested) {
+        if (refusePartMove(configCacheMoveServoOutputPart(result.partMove.move), &outcome)) {
+            PA_LOG_WARN(TAG, "movePart %s refused: %s", result.partMove.move.part,
+                        outcome.refusal);
+            return outcome;
+        }
+    }
+
     for (size_t i = 0; i < result.applied.count; ++i) {
         PA_LOG_INFO(TAG, "%s", result.applied.lines[i]);
     }
+    if (result.applied.dropped > 0) {
+        PA_LOG_INFO(TAG, "[CFG] and %u more field(s) updated", (unsigned)result.applied.dropped);
+    }
 
-    configCacheApply(*working);
+    // An Output's settings arrive as rows (ADR 0068) and as the capture and
+    // reverse acts, and the Apply Core that validated them is pure, so this is
+    // where they reach the addressed rows the firmware reads (#286, ADR 0041).
+    // A pulse width the component band moved is said out loud rather than
+    // quietly applied -- an MG996R output cannot take 500 us, and a builder
+    // who sent it is owed the reason.
+    const ServoOutputRepairReport servoOutputRepair = configCacheApplyServoOutputEdits(
+        result.servoOutputs.edits, result.servoOutputs.count);
+    if (servoOutputRepair.rowsRepaired > 0) {
+        // 64 B rather than the boot path's 96: this frame is on the Console
+        // config-write chain the stack recipe measures, and an edit can only
+        // ever report the three pulse widths plus the component -- the row it
+        // lands on was normalised when it was loaded, so nothing else on it can
+        // newly fail. "openUs, centreUs, closeUs, component took the safe
+        // default" is 58. The note truncates safely if that ever grows.
+        char note[64] = {};
+        servoOutputRepairNote(servoOutputRepair.firstRowMask, true, note, sizeof(note));
+        PA_LOG_WARN(TAG, "servo output %u: %s - the fitted component's range does not reach it",
+                    (unsigned)servoOutputRepair.firstRow, note);
+    }
+    outcome.openClampedRows = servoOutputRepair.openMovedRows;
+    outcome.closeClampedRows = servoOutputRepair.closeMovedRows;
+    outcome.centreClampedRows = servoOutputRepair.centreMovedRows;
 
-    // Sync stationary mode with edge detection and drive-on cue. Safe to call
-    // unconditionally: when the request omits "stationary", configApply() left
-    // working->system.stationary at the cache value read before the call, which
-    // always matches robotState.stationary (commandedSetStationary is the only
-    // runtime writer of both, keeping them in lockstep) - so the edge-detect
-    // inside it is a no-op and no cue fires.
-    commandedSetStationary(working->system.stationary, source);
+    // Every board Output's wired tick from the Parts its row holds now, after
+    // the move above and the rows' `parts` just applied - and after a row that
+    // took a Part off an Output it did not name
+    // (servoOutputTableEnforcePartOwnership()). The Part wins over any tick the request stated: a row's
+    // `wired` is read but not written (readOutputRow()), and the form names are
+    // refused (configApply()). BEFORE the system apply below, deliberately, so
+    // the ticks land in the cache and in the save with everything else in one
+    // pass (#411).
+    configCacheTicksFollowParts(&working->system);
+
+    // Not configCacheApply(), which keeps both: this request can state the
+    // speed group and stationary, and a stated one must land. They are also
+    // written at runtime by RC input on Core 1, which cannot take the config
+    // write lock this commit holds, so `working` may carry a value from before
+    // one landed. Whichever of them the request did not state keeps its live
+    // value (#417).
+    configCacheApplyKeepingLive(*working, result.speedLimitStated, result.stationaryStated);
+
+    // What the request stated of each Record, onto its live copy. Each Record's
+    // merge leaves a field the request did not state exactly as it stood: a
+    // builder changing their Dome Design is not saying anything about their
+    // body, and marking a step visited says nothing about whether the run has
+    // ended (include/config_records.h).
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        configRecordMerge((ConfigRecordId)r, result.records);
+    }
+
+    // Sync stationary mode with edge detection and drive-on cue - only when the
+    // request stated it. When it did not, `working` holds the value read at the
+    // start of the request, and an RC toggle since (commandedSetStationary() on
+    // Core 1, which keeps robotState and the cache in lockstep) would be undone
+    // here and its cue replayed; the apply above has kept the live value (#417).
+    if (result.stationaryStated) {
+        commandedSetStationary(working->system.stationary, source);
+    }
 
     if (result.actions.playDomeOnCue) {
         audioQueuePlaySlot(AUDIO_SLOT_SYS_DOME_ON, SRC_INTERNAL);
@@ -713,21 +926,45 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     // inside ConfigCommitOutcome and be copied again into the caller's local.
     configCacheRead(working);
 
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, false)) {
+    // What this request changed is the Commit Step's to say; the order it
+    // lands in is the store's (include/config_store.h, "Store-opened saves").
+    //
+    // A Record only where the request said something about it: an absent
+    // Fitted Parts record is what tells the next boot that nobody has answered
+    // yet, and an absent visited record that guided Setup has never been drawn
+    // on this controller. Writing either on every config POST would spend that
+    // distinction on a request that was about the log level.
+    ConfigSaveExtras extras;
+    extras.records = configRecordsStated(result.records);
+    if (!configPersist(*working, extras)) {
         outcome.persisted = false;
         return outcome;
     }
-    if (!configSave(prefs, *working)) {
-        prefs.end();
-        outcome.persisted = false;
-        return outcome;
-    }
-    prefs.end();
 
     requestStatusBroadcastNow();
     outcome.persisted = true;
     return outcome;
+}
+
+// See include/api_config.h for the full contract.
+ConfigWriteWindowAnswer configWriteWindow(const ConfigParamSource& params, ConfigSnapshot* working,
+                                          ConfigApplyResult* result, CommandSource source,
+                                          ConfigCommitOutcome* commit, ApplyRefusal* refused) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return ConfigWriteWindowAnswer::Busy;
+    }
+    configCacheRead(working);
+    const bool domeEnabledBefore = working->system.enable_dome_esc;
+    configApply(params, working, domeEnabledBefore, result);
+    if (result->error.hasError) {
+        if (refused != nullptr) {
+            *refused = result->error.refusal;
+        }
+        return ConfigWriteWindowAnswer::Refused;
+    }
+    *commit = configCommitApplied(working, *result, source);
+    return ConfigWriteWindowAnswer::Committed;
 }
 
 // GET /api/config - the config snapshot data/app.js fetches on every page load.
@@ -747,15 +984,20 @@ void handleRcMapGet(WebRequest& req) {
         return;
     }
 
-    // Bounded like the config snapshot above, and for the same reasons. The
-    // map holds at most kRcMapMaxEntries entries of source/channel/action plus
-    // an optional Marcduino payload; 2 KB clears a full map with headroom.
-    static char body[2048];
-    if (measureJson(doc) >= sizeof(body)) {
+    // Bounded like the config snapshot above, and for the same reasons, at
+    // RC_MAP_JSON_BODY_BYTES (include/web_request_scratch.h).
+    WebRequestScratch<WebScratchText<RC_MAP_JSON_BODY_BYTES>> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
+    }
+    char* body = scratch->text;
+    const size_t bodySize = sizeof(scratch->text);
+    if (measureJson(doc) >= bodySize) {
         webSendJsonError(req, 500, "rc map response overflow");
         return;
     }
-    serializeJson(doc, body, sizeof(body));
+    serializeJson(doc, body, bodySize);
     req.send(200, "application/json", body);
 }
 
@@ -765,33 +1007,19 @@ void handleRcMapPost(WebRequest& req) {
 
     ConfigSnapshot working;
 
-    // RcMapApplyResult is small (~150 bytes); static kept for consistency
-    // with the ADR 0011 apply-core out-parameter convention.
-    static RcMapApplyResult result;
-
-    // This route read-modify-writes the same config cache and the same NVS
-    // namespace the config write path does, so it takes the same lock across
-    // the same window. Answers are rendered after the release: nothing below
-    // touches config state.
-    bool busy = false;
-    bool persisted = false;
-    {
-        ConfigWriteLock lock;
-        if (!lock.acquired()) {
-            busy = true;
-        } else {
-            configCacheRead(&working);
-            rcMapApply(params, &working, &result);
-            if (result.ok) {
-                configCacheApply(working);
-                // Re-read what the cache actually holds, then persist from
-                // that - one snapshot local on this task's stack, not two.
-                configCacheRead(&working);
-                persisted = persistSystemConfig(working.system);
-            }
-        }
+    // RcMapApplyResult is small (163 B on artoo-esp32); it shares the web
+    // request scratch rather than holding a static of its own (#428).
+    WebRequestScratch<RcMapApplyResult> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
     }
+    RcMapApplyResult& result = *scratch;
 
+    // Answers are rendered after the Write Window returns: nothing below
+    // touches config state.
+    bool persisted = false;
+    const bool busy = !rcMapWriteWindow(params, &working, &result, &persisted);
     if (busy) {
         webSendJsonError(req, 503, "config write busy");
         return;
@@ -822,44 +1050,44 @@ void handleRcMapPost(WebRequest& req) {
 
 // POST /api/config - the sole web entrypoint for config writes.
 void handleConfigPost(WebRequest& req) {
+    // A body past the route's bound is not buffered, and without this it would
+    // read as a request that sent nothing: say what happened instead.
+    if (req.contentLength() > kConfigPostMaxBodyBytes) {
+        webSendJsonError(req, 413, "payload too large");
+        return;
+    }
     ConfigParamSource params = webParamSource(req);
 
     ConfigSnapshot working;
 
-    // ConfigApplyResult is ~2.5 KB (dominated by the applied-fields log
-    // record) - static avoids a large stack frame on the server task,
-    // matching api_seq.cpp's SeqRunEvidence precedent. Only this task calls
-    // this handler, so the instance needs no protection of its own; the lock
-    // below is about the shared config cache and NVS, not about this buffer.
-    static ConfigApplyResult result;
-
-    // The lock spans the cache read through the commit: a writer that read
-    // the cache before another writer's commit and applies afterwards is
-    // exactly how the loser's fields used to be reverted before NVS.
-    bool busy = false;
-    ConfigCommitOutcome commit = {};
-    {
-        ConfigWriteLock lock;
-        if (!lock.acquired()) {
-            busy = true;
-        } else {
-            configCacheRead(&working);
-            const bool domeEnabledBefore = working.system.enable_dome_esc;
-            configApply(params, &working, domeEnabledBefore, &result);
-            if (!result.error.hasError) {
-                // configCommitApplied() leaves the post-commit snapshot in
-                // `working`.
-                commit = configCommitApplied(&working, result, SRC_WEB_API);
-            }
-        }
+    // ConfigApplyResult is 2,088 B on artoo-esp32 (dominated by the
+    // applied-fields log record) - too large for the server task's stack, so
+    // it lives in the web request scratch (include/web_request_scratch.h), as
+    // api_seq.cpp's SeqRunEvidence does. The Write Window's lock is about the
+    // shared config cache and NVS, not this buffer.
+    WebRequestScratch<ConfigApplyResult> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
     }
+    ConfigApplyResult& result = *scratch;
 
-    if (busy) {
+    // configWriteWindow() leaves the post-commit snapshot in `working`.
+    ConfigCommitOutcome commit = {};
+    const ConfigWriteWindowAnswer answer =
+        configWriteWindow(params, &working, &result, SRC_WEB_API, &commit);
+    if (answer == ConfigWriteWindowAnswer::Busy) {
         webSendJsonError(req, 503, "config write busy");
         return;
     }
-    if (result.error.hasError) {
-        webSendJsonError(req, 400, result.error.message);
+    if (answer == ConfigWriteWindowAnswer::Refused) {
+        webSendApplyRefusal(req, 400, result.error.message, result.error.refusal);
+        return;
+    }
+    if (commit.refusal != nullptr) {
+        ApplyRefusal refusal;
+        applyRefusalSet(&refusal, commit.refusalReason, commit.refusalField);
+        webSendApplyRefusal(req, 409, commit.refusal, refusal);
         return;
     }
     if (!commit.persisted) {
@@ -867,7 +1095,242 @@ void handleConfigPost(WebRequest& req) {
         return;
     }
 
-    sendConfigSnapshot(req, working);
+    sendConfigSnapshot(req, working, &commit);
+}
+
+// GET /api/servo/outputs - every live Servo Output row, the Parts each drives,
+// and where each has been told to be.
+//
+// Both projections of the Parts destination read this one answer, so the
+// part-first table and the output-first table cannot disagree about which
+// Output moves which Part (ADR 0050, #347).
+//
+// It is also the Parts destination's bench feed: the page reads it on a short
+// cadence only while Parts is on screen, which is how a commanded position
+// reaches the output-first table without riding the shared /api/events stream
+// that carries the estop (#318, #362).
+//
+// Its own route rather than more keys on /api/config, for three reasons: that
+// response already runs to about 3.4 KB at its worst, and a table of
+// twenty-four rows beside it would double every page load's read; the Parts surface asks
+// for this far more often than a page asks for the whole config; and the
+// output-first table adds columns to every row. A per-request document spends
+// no BSS, which is the scarcest budget on this target
+// (include/api_json_response.h).
+//
+// A row is copied out one at a time. That is 72 B on the web server task's frame
+// per iteration, on Core 0, which is exactly the caller configCacheReadServoOutput()
+// is shaped for; the real-time path asks for values instead.
+void handleServoOutputsGet(WebRequest& req) {
+    JsonDocument doc;
+    JsonArray outputs = doc["outputs"].to<JsonArray>();
+    const uint8_t count = configCacheServoOutputCount();
+    for (uint8_t i = 0; i < count; ++i) {
+        ServoOutputRow row = {};
+        if (!configCacheReadServoOutput(i, &row)) {
+            break;
+        }
+        JsonObject output = outputs.add<JsonObject>();
+        char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+        servoOutputFormatAddress(address, sizeof(address), row.driver, row.channel);
+        output["address"] = address;
+        output["name"] = servoOutputAddressName(row.driver, row.channel);
+
+        // `id` is the Output's stored config id where the board has one, never
+        // shown; the flags say what the row can save as data, so no surface
+        // works it out from a form name.
+        const BoardOutput* board =
+            row.driver == SERVO_DRIVER_LEDC ? boardOutputOnChannel(row.channel) : nullptr;
+        if (board != nullptr) {
+            output["id"] = board->id;
+        }
+        // An Output with a wired tick can be switched off; one with none - an
+        // expander's - is always wired, and says so.
+        output["switchable"] = board != nullptr;
+        // Whether a Light Type may go on this wire (ADR 0067): its LED count is
+        // a Setting exactly there.
+        output["lightCapable"] = board != nullptr && board->lightCapable;
+        // The Part this Output usually carries, where the board has one
+        // (include/board_outputs.h): Wiring marks it in a Part's Output picker.
+        // Absent elsewhere, so a row that suggests nothing costs nothing.
+        if (board != nullptr && board->suggestedPart != nullptr) {
+            output["suggestedPart"] = board->suggestedPart;
+        }
+
+        // Every Setting of an Output, each by its declaration
+        // (include/config_settings.h), in the shape POST /api/config takes it
+        // back as a row (ADR 0068): this answer is the row door's own read.
+        // The ends are directional as they are stored: `openUs` is whichever
+        // end the builder recorded as open, larger or smaller than `closeUs`,
+        // because a reversed linkage is open < close and there is no invert
+        // flag anywhere (ADR 0041). `calibrated` says whether anybody has
+        // measured this Output against its linkage - what test sweep needs and
+        // what degrades overshoot (ADR 0052).
+        for (size_t s = 0; s < outputRowSettingCount(); ++s) {
+            const OutputRowSetting& setting = outputRowSettingAt(s);
+            if (!outputRowSettingIsOn(setting, board)) {
+                continue;
+            }
+            switch (setting.store) {
+                case RowSettingStore::Wired:
+                    output[setting.key] = board == nullptr ||
+                                          configCacheOutputIsWired((size_t)(board - BOARD_OUTPUTS));
+                    break;
+                case RowSettingStore::Parts: {
+                    JsonArray parts = output[setting.key].to<JsonArray>();
+                    const uint8_t partCount = servoOutputPartCount(row);
+                    for (uint8_t slot = 0; slot < partCount; ++slot) {
+                        parts.add(servoOutputPartAt(row, slot));
+                    }
+                    break;
+                }
+                case RowSettingStore::Row:
+                default:
+                    if (setting.rule == SettingRule::Words) {
+                        output[setting.key] = outputRowSettingWord(setting, row);
+                    } else if (setting.rule == SettingRule::Bool) {
+                        output[setting.key] = outputRowSettingNumber(setting, row) != 0;
+                    } else {
+                        output[setting.key] = outputRowSettingNumber(setting, row);
+                    }
+                    break;
+            }
+        }
+
+        // The span both position marks are drawn across, and the span the
+        // calibration dial opens at: the band this Output can be driven in, set
+        // by the component fitted to it. Every commanded width is clamped into
+        // it on the way to the pin (servoOutputClampPulse()), so neither mark
+        // can fall off either end and the dial cannot offer a width the
+        // firmware would refuse (ADR 0041, #364). `component` above is what
+        // decides it, so the dial can say WHICH band it opened at and why.
+        const ServoPulseBand band = servoComponentBand(row.component);
+        output["bandLoUs"] = band.lo;
+        output["bandHiUs"] = band.hi;
+        // The pair `main` stored here, when the component band narrowed it on
+        // the way onto this row and the builder has not saved this Output
+        // since (#417). The operator's call: the band stays, and it narrows
+        // visibly - so the Servos row can say what the builder's own numbers
+        // were. null on every other Output.
+        uint16_t narrowedOpenUs = 0;
+        uint16_t narrowedCloseUs = 0;
+        if (configCacheReadServoOutputNarrowedFrom(row.driver, row.channel, &narrowedOpenUs,
+                                                   &narrowedCloseUs)) {
+            JsonObject narrowedFrom = output["narrowedFrom"].to<JsonObject>();
+            narrowedFrom["openUs"] = narrowedOpenUs;
+            narrowedFrom["closeUs"] = narrowedCloseUs;
+        } else {
+            output["narrowedFrom"] = nullptr;
+        }
+
+        // Commanded, both: where ServoTask has told the Output to be now, and
+        // where the move in progress ends. Nothing reads a servo back. null for
+        // an Output with no pulse on it, rather than a zero that reads as a
+        // position.
+        ServoOutputCommandedSnapshot commanded = {};
+        captureServoOutputCommanded(row.driver, row.channel, &commanded);
+        if (commanded.pulsing) {
+            output["commandedUs"] = commanded.nowUs;
+            output["targetUs"] = commanded.targetUs;
+        } else {
+            output["commandedUs"] = nullptr;
+            output["targetUs"] = nullptr;
+        }
+        // Whether the calibration dial has this Output, and why it has no pulse
+        // when it has none (#364, ADR 0064). `held` says both firmware bounds
+        // are armed; `limp` is only meaningful while `commandedUs` is null, and
+        // it is what lets the surface say "went limp -- ten minutes is the most
+        // a dial holds" rather than only that the pulse has gone.
+        output["held"] = commanded.held;
+        output["limp"] = servoLimpReasonToString(commanded.limp);
+        // How many Find by Moving nudges have ended on this Output since boot
+        // (#363). A run reads it before it asks for a nudge and knows the
+        // nudge is over when it has gone up -- returned, cut short, or refused
+        // -- which a "nudging" flag could not promise, since a whole nudge can
+        // fall between two of the page's one-second reads. Always a number,
+        // even for an Output with no pulse: a count of nothing is 0.
+        output["nudgesDone"] = commanded.nudgesDone;
+        // What the droid started with (#364), beside `wired`, which is the tick
+        // as saved: a tick saved since is only read at the next start
+        // (ADR 0027), so the two differ exactly while one waits for a restart -
+        // the `member`/`activeMember` shape GET /api/config uses. `driven`
+        // says whether ServoTask puts servo pulses on it this boot, which is
+        // what POST /api/servo refuses on. Both are ServoTask's boot snapshot
+        // (include/servo_task.h), so no page works either out from config. An
+        // expander's row has no tick, and reads as wired like `wired` above;
+        // `driven` is what says whether ServoTask drives it - a Part on it at
+        // start, and the expander chosen and answering (#444).
+        const size_t boardIndex = board != nullptr ? (size_t)(board - BOARD_OUTPUTS) : 0;
+        const ServoOutputAddress at = {row.driver, row.channel};
+        output["activeWired"] = board == nullptr || servoTaskWiredAtStart(at);
+        output["driven"] = servoTaskDrivesOutput(at);
+        // And what was on the wire, from AuxLedTask's own start (#364): the
+        // Light Type it carried, or null for a servo, and - where a light can
+        // go, beside `ledCount` - its LED count. Both are read at start, so a
+        // page measures a wait against these, never against its first read.
+        // Absent on a row AuxLedTask never read: an expander's, or before it
+        // started.
+        ServoComponentType componentAtStart = SERVO_COMP_NONE;
+        uint8_t ledCountAtStart = 0;
+        if (board != nullptr && auxLedWireAtStart(boardIndex, &componentAtStart, &ledCountAtStart)) {
+            const OutputWireInputs atStart = {false, componentAtStart};
+            if (outputWirePinKeptForLight(atStart, boardIndex)) {
+                output["activeLight"] = servoCompTypeToString(componentAtStart);
+            } else {
+                output["activeLight"] = nullptr;
+            }
+            if (board->lightCapable) {
+                output["activeLedCount"] = ledCountAtStart;
+            }
+        }
+    }
+    // A sanity ceiling, not a buffer. The largest answer the table can give -
+    // twenty-four rows at their longest address holding every Part the catalog
+    // declares between them - is held under it by test_api_config_get. It was
+    // 2560 B over a 1621 B answer until #362 gave every row its band and its
+    // commanded position, 67 B a row; 4096 over 3229 B until #363 added the
+    // nudge count, 15 B a row; and 4096 over 3589 B until #364 added the seven
+    // fields the calibration dial reads, 109 B a row, taking the same answer to
+    // 6209 B. Raised to 8192 for that, deliberately and once: it is a bound on
+    // a per-request malloc, so the spend is transient rather than BSS, and 8192
+    // leaves the same kind of headroom 4096 left over 3589. `narrowedFrom`
+    // (#417) took the measured answer to 6800 B, and 6920 B with a pair on all
+    // five rows that can carry one. The row became the one place an Output is
+    // read (ADR 0068, #423): its wired tick, what it can save, its light's LED
+    // count and its Motion Profile and boot behaviour took the answer to
+    // 9536 B, about 9660 B with those five pairs. Raised to 12288 for that, on
+    // the same reasoning as 8192: a per-request bound, not BSS. What the droid
+    // started with (#364), `activeWired` and `driven`, adds 33-35 B a row -
+    // about 10.4 KB on the twenty-four, still under it - and its Output
+    // Release time (#443), `"release":0,` to `"release":60000,`, 12-16 B a
+    // row: about 10.8 KB at the most, still under it.
+    //
+    // What that worst case is NOT is what most controllers send: the five
+    // LEDC outputs answer in 1948 B (1219 B before #423), and that is what the
+    // Parts page's one-second bench feed carries. A fitted PCA9685 (#444) makes
+    // it twenty-one rows, about 8 KB a second on that feed - the moment to ask
+    // whether calibration fields belong on a feed that repeats them every
+    // second; they change only when somebody edits one (#364).
+    //
+    // The expander itself, when it is this boot's body servo controller: its
+    // address, the span of Outputs it owns and whether it is answering - the
+    // three facts the reference project's boot report gives (#444). Here, on
+    // the route that carries its Outputs, and not on GET /api/identity, whose
+    // answer is bounded with 18 B to spare (include/api_identity.h). null when
+    // the board's GPIO is the only member running.
+    const ServoExpanderFacts expander = servoTaskExpanderFacts();
+    if (expander.chosen) {
+        JsonObject facts = doc["expander"].to<JsonObject>();
+        facts["product"] = kServoBackendPca9685RegistryId;
+        char address[5] = {};  // "0x40"
+        snprintf(address, sizeof(address), "0x%02X", (unsigned)expander.address);
+        facts["address"] = address;
+        facts["outputs"] = PCA9685_OUTPUT_SPAN;
+        facts["answering"] = expander.answering;
+    } else {
+        doc["expander"] = nullptr;
+    }
+    webSendJsonDocument(req, doc, 12288, TAG);
 }
 
 // POST /api/wifi - stage Device WiFi Settings (ADR 0015 Staged Network Switch).
@@ -876,42 +1339,24 @@ void handleWifiPost(WebRequest& req) {
 
     WifiConfig working = {};
 
-    // WifiApplyResult is small; static kept for consistency with the
-    // ADR 0011 apply-core out-parameter convention.
-    static WifiApplyResult result;
-
-    // wifiCommitApplied() read-modify-writes the shared config-cache snapshot
-    // and then writes NVS, so an interleaved config write on any adapter
-    // would lose one of the two updates. The read of the current settings is
-    // inside the window too - reading them outside it would reopen exactly
-    // that gap one statement earlier. The Console's own WiFi write
-    // (src/console/console_module.cpp) takes the same lock.
-    bool busy = false;
-    WifiCommitOutcome commit = {};
-    {
-        ConfigWriteLock lock;
-        if (!lock.acquired()) {
-            busy = true;
-        } else {
-            configCacheReadWifi(&working);
-            wifiApply(params, &working, &result);
-            if (result.ok) {
-                // Commit Step (ADR 0036, api_wifi_apply.h): persist to NVS,
-                // stage the config cache (Staged Network Switch, ADR 0015),
-                // and broadcast status - shared with the Console WiFi write
-                // path instead of each adapter carrying its own copy of the
-                // sequence.
-                commit = wifiCommitApplied(&working);
-            }
-        }
+    // WifiApplyResult is small (274 B on artoo-esp32); it shares the web
+    // request scratch rather than holding a static of its own (#428).
+    WebRequestScratch<WifiApplyResult> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
     }
+    WifiApplyResult& result = *scratch;
 
+    // The Write Window shared with the Console's WiFi write (api_wifi_apply.h).
+    WifiCommitOutcome commit = {};
+    const bool busy = !wifiWriteWindow(params, &working, &result, &commit);
     if (busy) {
         webSendJsonError(req, 503, "config write busy");
         return;
     }
     if (!result.ok) {
-        webSendJsonError(req, 400, result.errorMessage);
+        webSendApplyRefusal(req, 400, result.errorMessage, result.refusal);
         return;
     }
     if (!commit.persisted) {

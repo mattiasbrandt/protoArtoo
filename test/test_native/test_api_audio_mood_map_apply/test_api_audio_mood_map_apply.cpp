@@ -69,7 +69,9 @@ void test_audioMoodMapApply_form_non_integer_rejected(void) {
     AudioMoodMapApplyResult result;
     audioMoodMapApply(makeSource(&m), &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("quiet must be a non-negative integer", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("quiet must be 0..4095", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("quiet", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("0..4095", result.error.refusal.accepts);
 }
 
 void test_audioMoodMapApply_form_out_of_range_rejected(void) {

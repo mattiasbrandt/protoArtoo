@@ -37,6 +37,13 @@ struct ActionEntry {
     bool          safety_critical;  // true for estop and drive safety actions
     const char*   board_capability = nullptr;  // nullable PA_CAP_* requirement
     const char*   build_flag = nullptr;        // nullable PA_* requirement
+    // The stored id (arm1..aux3) of the one Output this action is about, or
+    // nullptr. `{output}` in display_name and description is that Output's
+    // label on the running board, composed when the row is served
+    // (boardOutputComposeText(), include/board_outputs.h): the registry is one
+    // table for every board, and an Output is called by what its board prints
+    // (ADR 0033 Amendment 2026-09-19).
+    const char*   output = nullptr;
 };
 
 // -----------------------------------------------------------------------------

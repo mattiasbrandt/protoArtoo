@@ -14,11 +14,51 @@
 //              editor's clone-to-retrain).
 //
 // Format v1:
-//   boundAudio (STEP_AUDIO only, optional, default true): Track Stop this track on
-//   normal sequence completion too (ADR 0010 Bounded Audio); set false to let it ring
-//   out past SEQ_TERM like SEQ_AUDIO_CAT does.
+//   boundAudio (STEP_AUDIO and backgroundTrack only, optional, default true): stop
+//   this track on normal sequence completion too (ADR 0010 Bounded Audio); set false
+//   to let it ring out past SEQ_TERM like SEQ_AUDIO_CAT does.
+//
+//   body (STEP_BODY): `part` is a Droid Parts Catalog id and is required;
+//   `shape` (open|close|flutter), `howFar` (1..100 percent of that Part's own
+//   throw) and `flutterMs` are all optional, and each is written only when it
+//   differs from its default, so a clone reads as the builder authored it. An
+//   absent shape is an open and an absent howFar is the whole throw; `howFar:0`
+//   is refused here, because zero in storage is how absence is recorded.
+//
+//   backgroundTrack / backgroundTrackStop (ADR 0054): start a Background
+//   Track, music that plays under the routine at its own volume, and stop it.
+//   The start's `cmd` names the sound as an audio step's does and must play
+//   one; `vol` (0..30) is required; `boundAudio` (optional, default true)
+//   stops it when the sequence ends normally too, as on an audio step. Any
+//   abnormal end stops it either way. The stop step carries nothing else.
+//
+//   tempo (top level, optional, ADR 0058): the beat the sequence is written
+//   against. `bpm` (1..600, one decimal), `source` (typed|tapped|analysed) and
+//   `confidence` (0..1) are required; `phase` (ms where beat 0 sits, default
+//   0), `barLen` (beats in a bar, default 4), `barPhase` (the beat a bar starts
+//   on, default 0), `duration` (ms the track runs) and `hash` (lowercase hex
+//   of the file analysed, the analysed route only) are optional. A sequence
+//   with no tempo parses exactly as one saved before tempos existed.
+//
+//   takes (top level, optional, #442): the takes the sequence holds, each
+//   {"id","t"}. Not parsed here and never in SeqDraft: the store checks it
+//   at save (seq_store.cpp readTakeRefs()) and reads it again when the
+//   sequence is loaded to run (stageTakes()), and the Sequence Coordinator
+//   plays the takes beside the steps (include/take_replay.h). The engine
+//   never sees it.
+//
+//   beat / spanBeats (any step, optional, need a tempo): `beat` is the whole
+//   beat the step starts on and `spanBeats` how many beats its duration lasts
+//   (a dome turn's durationMs, a body flutter's flutterMs). Both are resolved
+//   to milliseconds HERE, at parse, and never reach SeqStep: the engine runs
+//   the millisecond, unchanged in kind. Where a step carries `t` beside a
+//   `beat`, the beat wins -- the browser writes `t` resolved from it, and a
+//   tempo edited since is exactly when the two disagree. A step inside a loop
+//   body is timed from its pass and carries no beat; the loop header can.
 //
 //   { "format":1, "name":"DM:X", "suppressMs":8000, "toggleGroup":"none",
+//     "tempo":{"bpm":130,"phase":0,"barLen":4,"barPhase":0,
+//              "source":"typed","confidence":1},
 //     "meta":{...},
 //     "steps":[ {"t":0,"type":"audio","cmd":"$H","boundAudio":true},
 //               {"t":0,"type":"dome","cmd":":SM0,150,2200"},
@@ -26,6 +66,10 @@
 //               {"t":0,"type":"random","set":"ring","pulseMin":1150,"pulseMax":1500,
 //                "moveMs":300,"jitterMs":500,"distinct":true},
 //               {"t":0,"type":"audioCat","category":"alert","fallback":"scream"},
+//               {"t":0,"type":"body","part":"doorFL","shape":"flutter",
+//                "howFar":60,"flutterMs":1200},
+//               {"t":0,"type":"backgroundTrack","cmd":"$W","vol":12,"boundAudio":true},
+//               {"t":400,"type":"backgroundTrackStop"},
 //               {"t":500,"type":"end"} ],
 //     "closeSteps":[] }
 // =============================================================================

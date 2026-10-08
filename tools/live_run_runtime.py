@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Hardened primitives for live-controller evidence runs.
 
-Extracted from tools/issue65_live_ab_runtime.py, which is where they were first
-written and where they stayed long after they stopped being about issue #65.
+Extracted from #65's A/B runtime (tools/issue65_live_ab_runtime.py, removed in
+#466), which is where they were first written and where they stayed long after
+they stopped being about issue #65.
 Three tools that have nothing to do with that ticket already depend on them --
 tools/webload_baseline_run.py (the ADR 0017 acceptance coordinator),
 tools/response_deadline_probe.py and tools/webload_sse_stall.py -- so a harness
@@ -15,8 +16,8 @@ ping/status/serial sampling loop, cooldown and primary-outcome classification,
 evidence-root and artifact-identity capture, and bounded subprocess logging.
 
 What does NOT belong here is anything that knows about a specific comparison:
-per-commit worktrees, vendor package pinning, role tables. Those stay in
-tools/issue65_live_ab_runtime.py, which now imports from this module.
+per-commit worktrees, vendor package pinning, role tables. Those stayed in the
+#65 runtime and went with it.
 
 The stop-reason and primary-outcome vocabularies moved verbatim. They are
 compared against strings inside already-recorded evidence bundles, so tidying

@@ -1,11 +1,15 @@
 // =============================================================================
 // include/config.h
 //
-// GPIO pin assignments and compile-time constants for protoArtoo.
+// GPIO pin assignments and compile-time constants for protoR2.
 // Supports multiple controller board variants on different chip targets.
 // See docs/pin_map.md and docs/adr/0028-two-layer-board-abstraction.md
 //
-// PCB serial port legend (from PCB silkscreen):
+// artoo-esp32 PCB serial port legend, read off that board's silkscreen. It is
+// one Board Variant's wiring, not a project-wide fact: firebeetle2 has no S1,
+// S2 or S3 header and routes all three signals to other GPIO. Where a signal
+// is routed on the board being built is a Board Lane (include/board_lanes.inc),
+// and the silkscreen text is a Board Component Label (include/component_labels.inc).
 //   S0 = ESP debug           (UART0, GPIO 1/3)
 //   S1 = Hoverboard          (UART1, GPIO 16 TX / 17 RX)
 //   S2 = Sound               (GPIO 26 TX / 35 RX)
@@ -102,6 +106,9 @@
 // Keep invalid images from compiling even if an environment is configured by hand.
 // Every checked-in PlatformIO environment leaves this at 0 deliberately.
 #if PA_HEAP_TRACING
+  // The guard below reads CONFIG_HEAP_TRACING, which only sdkconfig.h defines.
+  // Without it the macro reads as 0 and the build #errors with tracing ON (#467).
+  #include <sdkconfig.h>
   #if !PA_HEAP_PROFILE
     #error "PA_HEAP_TRACING=1 requires PA_HEAP_PROFILE=1"
   #endif
@@ -124,7 +131,7 @@ constexpr uint8_t PA_PIN_UNASSIGNED = 0xFF;
 
 #if PA_BOARD == PA_BOARD_ARTOO_ESP32
 // ────────────────────────────────────────────────────────────────────────────
-// artoo-esp32: artoo.uk Artoo Controller PCB on classic ESP32 D1 Mini clone
+// artoo-esp32: artoo.uk Artoo Controller PCB on a classic-generation dual-header ESP32 board clone
 // All pins confirmed by PCB continuity trace on 2026-03-12 (PCB v1.2).
 // See docs/pin_map.md for full trace results and revision notes.
 // ────────────────────────────────────────────────────────────────────────────
@@ -184,47 +191,21 @@ constexpr uint8_t PIN_SBUS1_RX = PIN_RC_CH1;  // CH1  --  SBUS #1 (drive)
 constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)
 
 // -----------------------------------------------------------------------------
-// Servo outputs (LEDC PWM)
+// Servo outputs (LEDC PWM), named by what the Artoo PCB prints beside each
+// (include/component_labels.inc; ADR 0033 Amendment 2026-09-19)
 // ARM1 = Utility arm servo #1  --  Top / Left arm (GPIO 23)
 // ARM2 = Utility arm servo #2  --  Bottom / Right arm (GPIO 5)
-// AUX1 = Spare servo output (GPIO 19, also labelled ARM3)
-// AUX2 = Spare servo output (GPIO 18, also labelled ARM4)
-// AUX3 = Spare servo output (GPIO 32, also labelled ARM5)
-// DOME = Dome rotation ESC (GPIO 25)  --  drives brushless motor, not a servo
+// ARM3 = Servo output that can carry the LED strip (GPIO 19)
+// ARM4 = Servo output that can carry the LED strip (GPIO 18)
+// ARM5 = Servo output that can carry the LED strip (GPIO 32)
+// DOME = Dome rotation ESC (GPIO 25)  --  a brushed-motor ESC, not a servo
 // -----------------------------------------------------------------------------
 constexpr uint8_t PIN_ARM1_SERVO = 23;
 constexpr uint8_t PIN_ARM2_SERVO = 5;
-constexpr uint8_t PIN_ARM3_SERVO = 19;  // AUX1  --  spare servo output
-constexpr uint8_t PIN_ARM4_SERVO = 18;  // AUX2  --  spare servo output
-constexpr uint8_t PIN_ARM5_SERVO = 32;  // AUX3  --  spare servo output
+constexpr uint8_t PIN_ARM3_SERVO = 19;  // ARM3  --  can carry the LED strip
+constexpr uint8_t PIN_ARM4_SERVO = 18;  // ARM4  --  can carry the LED strip
+constexpr uint8_t PIN_ARM5_SERVO = 32;  // ARM5  --  can carry the LED strip
 constexpr uint8_t PIN_DOME_ESC = 25;
-
-// AUX LED strip selection values (NVS aux_led_pin)
-constexpr uint8_t AUX_LED_PIN_DISABLED = 0;
-constexpr uint8_t AUX_LED_PIN_AUX1 = 1;
-constexpr uint8_t AUX_LED_PIN_AUX2 = 2;
-constexpr uint8_t AUX_LED_PIN_AUX3 = 3;
-constexpr uint8_t AUX_LED_PIN_MAX = AUX_LED_PIN_AUX3;
-constexpr uint8_t AUX_LED_COUNT_DEFAULT = 1;
-constexpr uint8_t AUX_LED_COUNT_MAX = 255;
-
-inline bool auxLedPinSettingValid(uint8_t selection) {
-    return selection <= AUX_LED_PIN_MAX;
-}
-
-inline uint8_t auxLedSelectionToGpio(uint8_t selection) {
-    switch (selection) {
-        case AUX_LED_PIN_AUX1:
-            return PIN_ARM3_SERVO;
-        case AUX_LED_PIN_AUX2:
-            return PIN_ARM4_SERVO;
-        case AUX_LED_PIN_AUX3:
-            return PIN_ARM5_SERVO;
-        case AUX_LED_PIN_DISABLED:
-        default:
-            return 0;
-    }
-}
 
 // -----------------------------------------------------------------------------
 // I2C
@@ -301,22 +282,24 @@ constexpr uint8_t PIN_RC_CH1 = 28;  // P2 unimpeachable, SBUS #1 (drive) receive
 constexpr uint8_t PIN_RC_CH2 = 29;  // P2 unimpeachable, SBUS #2 (dome) receiver
 constexpr uint8_t PIN_RC_CH3 = 30;  // P2 unimpeachable
 constexpr uint8_t PIN_RC_CH4 = 31;  // P2 unimpeachable, spec sheet: "best clean pin in <=36 range"
-constexpr uint8_t PIN_RC_CH5 = 32;  // P1-for-I3C, reassignable (protoArtoo does not use I3C)
-constexpr uint8_t PIN_RC_CH6 = 33;  // P1-for-I3C, reassignable (protoArtoo does not use I3C)
+constexpr uint8_t PIN_RC_CH5 = 32;  // P1-for-I3C, reassignable (protoR2 does not use I3C)
+constexpr uint8_t PIN_RC_CH6 = 33;  // P1-for-I3C, reassignable (protoR2 does not use I3C)
 
 constexpr uint8_t PIN_SBUS1_RX = PIN_RC_CH1;  // CH1  --  SBUS #1 (drive)
 constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)
 
 // Servo outputs (LEDC PWM)
-// Allocation: standard arm servos on LDO-backed pins (49-50 on VDD_IO_6).
-// AUX pins (1-3, which drive the optional WS2812B strip via auxLedSelectionToGpio())
-// use non-LDO main IO to avoid placing a high-frequency timing-critical line on
-// unmeasured LDO rails. AUX1/AUX2 on GPIO4/5 cost JTAG, which is acceptable post-debug.
+// Allocation: the first two Outputs on LDO-backed pins (49-50 on VDD_IO_6). The
+// three that can carry the optional WS2812B strip (include/board_outputs.h
+// `lightCapable`) use non-LDO main IO where they can, to avoid placing
+// a high-frequency timing-critical line on unmeasured LDO rails. GPIO 4 and 5
+// cost JTAG, which is acceptable post-debug. Each is named by the GPIO number
+// the shield prints (include/component_labels.inc; ADR 0033 Amendment 2026-09-19).
 constexpr uint8_t PIN_ARM1_SERVO = 49;  // LEDC PWM, LDO caution (VDD_IO_6), ADC2_CHANNEL0
 constexpr uint8_t PIN_ARM2_SERVO = 50;  // LEDC PWM, LDO caution (VDD_IO_6), ADC2_CHANNEL1
-constexpr uint8_t PIN_ARM3_SERVO = 4;   // AUX1, WS2812B strip capable, P3 JTAG MTMS (post-debug)
-constexpr uint8_t PIN_ARM4_SERVO = 5;   // AUX2, WS2812B strip capable, P3 JTAG MTDO (post-debug)
-constexpr uint8_t PIN_ARM5_SERVO = 51;  // AUX3, WS2812B strip capable, LDO caution (VDD_IO_6)
+constexpr uint8_t PIN_ARM3_SERVO = 4;   // GPIO 4, WS2812B strip capable, P3 JTAG MTMS (post-debug)
+constexpr uint8_t PIN_ARM4_SERVO = 5;   // GPIO 5, WS2812B strip capable, P3 JTAG MTDO (post-debug)
+constexpr uint8_t PIN_ARM5_SERVO = 51;  // GPIO 51, WS2812B strip capable, LDO caution (VDD_IO_6)
 constexpr uint8_t PIN_DOME_ESC = 48;    // ESC PWM, LDO caution (VDD_IO_5)
 
 // I2C
@@ -324,33 +307,6 @@ constexpr uint8_t PIN_DOME_ESC = 48;    // ESC PWM, LDO caution (VDD_IO_5)
 // GPIO7 is "Board default SDA". Header table (lines 826-827): J7 = 8/SCL, J1 = 7/SDA.
 constexpr uint8_t PIN_I2C_SCL = 8;   // I2C clock, board default
 constexpr uint8_t PIN_I2C_SDA = 7;   // I2C data, board default
-
-// AUX LED strip selection values (NVS aux_led_pin)
-constexpr uint8_t AUX_LED_PIN_DISABLED = 0;
-constexpr uint8_t AUX_LED_PIN_AUX1 = 1;
-constexpr uint8_t AUX_LED_PIN_AUX2 = 2;
-constexpr uint8_t AUX_LED_PIN_AUX3 = 3;
-constexpr uint8_t AUX_LED_PIN_MAX = AUX_LED_PIN_AUX3;
-constexpr uint8_t AUX_LED_COUNT_DEFAULT = 1;
-constexpr uint8_t AUX_LED_COUNT_MAX = 255;
-
-inline bool auxLedPinSettingValid(uint8_t selection) {
-    return selection <= AUX_LED_PIN_MAX;
-}
-
-inline uint8_t auxLedSelectionToGpio(uint8_t selection) {
-    switch (selection) {
-        case AUX_LED_PIN_AUX1:
-            return PIN_ARM3_SERVO;
-        case AUX_LED_PIN_AUX2:
-            return PIN_ARM4_SERVO;
-        case AUX_LED_PIN_AUX3:
-            return PIN_ARM5_SERVO;
-        case AUX_LED_PIN_DISABLED:
-        default:
-            return 0;
-    }
-}
 
 // FireBeetle 2 pin coherence guards — constexpr-driven inventory-driven checks.
 //
@@ -454,18 +410,44 @@ static_assert((UART_PORT_AUDIO == UART_PORT_DOME) == (PA_CAP_DEDICATED_AUDIO_UAR
     "PA_CAP_DEDICATED_AUDIO_UART must agree with the UART controller allocation:"
     " capability 0 means audio shares UART_PORT_DOME, capability 1 means it does not");
 
+// -----------------------------------------------------------------------------
+// Board Lane coherence guards (GLOSSARY.md "Board Lane").
+//
+// Every lane in include/board_lanes.inc is reported to the browser in the
+// identity manifest, so an unrouted lane would put PA_PIN_UNASSIGNED (255) on
+// an operator's screen as a GPIO number. Fail the build instead: a lane that
+// is declared is a lane that is routed. A shared TX/RX pin is the other way a
+// lane row can be wrong by construction -- one wire cannot be both ends.
+// -----------------------------------------------------------------------------
+#define PA_BOARD_LANE(name, uart_port, tx_pin, rx_pin)                             \
+    static_assert((tx_pin) != PA_PIN_UNASSIGNED,                                   \
+        "board lane " #name " declares an unassigned TX pin");                     \
+    static_assert((rx_pin) != PA_PIN_UNASSIGNED,                                   \
+        "board lane " #name " declares an unassigned RX pin");                     \
+    static_assert((tx_pin) != (rx_pin),                                            \
+        "board lane " #name " routes TX and RX to the same GPIO");
+#include "board_lanes.inc"
+#undef PA_BOARD_LANE
+
 // =============================================================================
 // Protocol and Feature Constants (chip-target specific, board-agnostic)
 // =============================================================================
 
 // Drive constants
-// These constants apply to all chip targets; board-specific pins are defined above.
+// These constants apply to all chip targets; board-specific pins are defined
+// above. A drive controller's own wire settings -- baud, framing, how long its
+// far end tolerates a gap -- are not here: they belong to the backend that
+// speaks them, in its catalogue row in include/drive_backend.h.
 constexpr int16_t SPEED_LIMIT_MAX = 600;  // Absolute max drive output (never exceeded)
 constexpr int16_t SPEED_PRESET_SLOW = 200;
 constexpr int16_t SPEED_PRESET_NORMAL = 350;
 constexpr int16_t SPEED_PRESET_TURBO = SPEED_LIMIT_MAX;
-constexpr uint32_t HOVERBOARD_BAUD = 115200;
-constexpr uint32_t DRIVE_FREQ_HZ = 50;  // Frame rate for hoverboard UART
+constexpr uint32_t DRIVE_FREQ_HZ = 50;  // Zero-frame continuity rate, every drive backend
+// The tick period DriveTask actually sleeps, derived so the number has one
+// home: include/drive_backend.h static_asserts it against the active backend's
+// declared continuity deadline. Integer division truncates, which errs toward
+// a SHORTER period -- feeding the far end sooner than it asked, never later.
+constexpr uint16_t DRIVE_FRAME_PERIOD_MS = (uint16_t)(1000 / DRIVE_FREQ_HZ);
 
 // -----------------------------------------------------------------------------
 // SBUS constants
@@ -479,6 +461,30 @@ constexpr uint32_t SBUS_TIMEOUT_MS = 200;  // Watchdog timeout for drive receive
 // -----------------------------------------------------------------------------
 constexpr uint32_t WEB_DRIVE_TIMEOUT_MS = 500;  // Web drive command expiry
 
+// The calibration dial's hold on a Servo Output (ADR 0064, #364). While a dial
+// has an Output the Part stays driven so the builder can look and listen, and
+// firmware bounds that hold in two ways, neither of which a page can extend:
+//
+//   SERVO_HOLD_EXPIRY_MS   how long after the last hold command for that
+//                          Output the pulse comes off. The same shape as
+//                          WEB_DRIVE_TIMEOUT_MS above -- firmware observing
+//                          arrivals, not a page asserting liveness -- so a
+//                          closed lid or a dropped link is caught in seconds.
+//                          The page keeps a hold alive at one command a second,
+//                          so 3 s is three missed beats, not one late one.
+//   SERVO_HOLD_CEILING_MS  the most a dial holds from when it took the Output,
+//                          however many commands keep arriving. Ten minutes:
+//                          long enough to fight one stubborn linkage, short
+//                          enough that a bench left at lunchtime is not driving
+//                          a servo all afternoon (ADR 0064's considered options).
+//
+// Both are judged in ServoTask (include/servo_hold.h is the rule), which
+// releases the Output and says why (ServoLimpReason, include/robot_state.h).
+// Not configurable on purpose: one more number a builder can set wrong, for a
+// bound that has no reason to differ between droids.
+constexpr uint32_t SERVO_HOLD_EXPIRY_MS = 3000;
+constexpr uint32_t SERVO_HOLD_CEILING_MS = 600000;
+
 // -----------------------------------------------------------------------------
 // Watchdog
 // -----------------------------------------------------------------------------
@@ -487,318 +493,86 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // -----------------------------------------------------------------------------
 // Task stacks (chip-target specific)
 // -----------------------------------------------------------------------------
-// EVERY project-created task has a Measured Chain and a compile-enforced floor
-// here, on both chip arms (ADR 0040). Thirteen of them: the ten created in
+// EVERY project-created task has a Recorded Chain and a compile-enforced floor,
+// on both chip arms (ADR 0040). Thirteen of them: the ten created in
 // src/main.cpp, plus WebEvents and the ArduinoOTA task (src/web/web_server.cpp)
 // and HostedRecovery (src/web/web_network_manager_hosted.cpp, which exists only
 // where PA_CAP_HOSTED_WIFI is 1, so twelve tasks on artoo-esp32 and thirteen on
 // the ESP32-P4). loopTask is sized by ARDUINO_LOOP_STACK_SIZE in platformio.ini
 // and stays outside.
 //
-// The chain is a `*_MEASURED_CHAIN_BYTES` constant rather than a number in this
-// comment, and `static_assert(*_STACK_BYTES >= *_MEASURED_CHAIN_BYTES)` below
-// makes a stack that no longer covers its own measurement fail at the
-// declaration. The recipe that produced each chain -- environment, root
-// symbols, the frames stitched by hand across an indirect call, the
-// profiler-image substitution -- is tools/task_stack_recipes.json, and
-// tools/check_task_stack_chains.py re-walks every one of them from a linked
-// image, so a slice that deepens a chain past its constant fails there instead
-// of on a board. That is the half #226 found the expensive way: the assert
-// stops the CONSTANT being trimmed; only the re-walk notices the CHAIN growing.
+// The figures are not written here. tools/task_stack_recipes.json is their one
+// home (ADR 0040, amended 2026-09-27): per task and per chip, the chain the
+// product image walks, the task's stack, the reason wherever that stack is not
+// what the rule below gives, and why the chain is as deep as it is today.
+// include/task_stack_figures.h is generated from it and declares every
+// `*_MEASURED_CHAIN_BYTES` and `*_STACK_BYTES` constant for the selected chip
+// target. A re-derivation is a command rather than an edit of this file:
+//
+//   python3 tools/check_task_stack_chains.py --rewrite --chip esp32
+//
+// builds and walks the chip's product image, records every chain, prints the
+// stack the rule wants against the stack each task has and what taking it
+// costs, and moves a stack only when told to (--accept): a raise is the
+// operator's decision. Without --rewrite the same tool is the slice gate's
+// row, re-walking the recipes and failing a chain that outgrew its figure.
 //
 // Task stacks differ per chip target. The cause is not the boards, and it is
 // not a general "RISC-V frames are wider": the deepest call chain under several
 // of these tasks runs through newlib, whose float-formatting frames are much
 // wider on RISC-V (_svfprintf_r 800 -> 1152 B, _dtoa_r 160 -> 416) while the
-// P4's allocator frames are smaller and partly cancel it (#245).
+// P4's allocator frames are smaller and partly cancel it (#245). The artoo-esp32
+// image links newlib nano printf and the ESP32-P4 keeps full newlib, so a
+// chain that reaches a formatted log line is shallower on artoo-esp32.
 //
 // SIZING RULE: the stack holds the measured worst-case static chain plus 25%,
-// rounded up to the next 512 bytes. Two things make that a rule rather than a
-// preference:
+// rounded up to the next 512 bytes (taskStackByTheRule() in the generated
+// header). Two things make that a rule rather than a preference:
 //
 //  - It reproduces, from the measurement alone, the size #245 arrived at by
 //    judgement: that chain is 3152 B, and 3152 * 1.25 = 3940 -> 4096.
-//  - 25% of each chain here is at least 800 B, which covers the interrupt cost
-//    the chain figures deliberately exclude. The RISC-V exception frame is
+//  - 25% of every chain here is several hundred bytes, more than the interrupt
+//    cost the chain figures deliberately exclude. The RISC-V exception frame is
 //    RV_STK_FRMSZ = 160 B (37 words aligned to 16, riscv/rvruntime-frames.h),
 //    and vectors.S allocates it with save_general_regs on the *interrupted
 //    task's* stack before any switch to the ISR stack -- so a nested pair of
-//    interrupts costs 320 B here, on top of every number below.
+//    interrupts costs 320 B here, on top of every chain.
 //
-// #248 raised DomeTask (3072 was 208 B SHORT of its P4 chain), AuxLedTask and
-// SafetyMonitor on the ESP32-P4 by that rule; their chains are the constants
-// below now, re-walked at this tip rather than restated from that ticket.
-//
-// Every chain is a LOWER bound: indirect calls are not followed, and a cycle in
-// the call graph is cut. Read the margin as cover for what the measurement
-// cannot see, not as slack to spend.
-//
-// The Xtensa measurement is much weaker than the RISC-V one: objdump emits
-// ~37% of the artoo image's function bodies as data rather than instructions
-// (2530 of roughly 6800 at this tip -- tools/check_task_stack_chains.py prints
-// the exact figure for the image it just read, which moves by a function or two
-// between builds), so any artoo chain crossing one is truncated, while the
-// ESP32-P4 image decodes whole (none of roughly 7450). Artoo numbers can prove
-// an overrun and cannot prove a margin. That asymmetry is exactly what makes
-// the re-walk safe to fail a build on: it can MISS growth and cannot report
-// FALSE growth.
+// Every chain is a LOWER bound: an indirect call the recipe does not stitch is
+// not followed, and a cycle in the call graph is cut. Read the margin as cover
+// for what the measurement cannot see, not as slack to spend. The Xtensa walk
+// is the weaker of the two: objdump prints about a third of the artoo image's
+// function bodies as data, and tools/stack_usage_report.py decodes those from a
+// copy of the image without .xt.prop -- tools/check_task_stack_chains.py prints
+// how many it recovered and how many it could not. That asymmetry is what
+// makes the re-walk safe to fail a build on: it can MISS growth and cannot
+// report FALSE growth.
 //
 // Which arms get the rule, and why the two chips answer differently:
 //
 //  - ESP32-P4: every arm is exactly the rule applied to its own chain. The
-//    board has the free heap to buy the margin, and #245/#248/#250/#256 already
-//    put eight of them there.
-//  - artoo-esp32: four arms are the rule, two sit ABOVE it because an earlier
-//    ticket deliberately raised them past it, and six DECLINE it on #248's
-//    reason -- raising all six costs 6144 B against ~42.7 KB of measured free
-//    heap, for margin the Xtensa walk cannot confirm. Each decline is recorded
-//    beside its constant. Declining the rule never declines the floor: every
-//    arm still covers its own chain, and the static_asserts below are what say
-//    so.
+//    board has the free heap to buy the margin.
+//  - artoo-esp32: an arm may sit ABOVE the rule, where an earlier decision
+//    raised it past it on evidence the rule does not carry, or DECLINE it on
+//    #248's reason: the margin costs heap on the scarce chip, for cover the
+//    Xtensa walk cannot confirm. Declining the rule never declines the floor:
+//    every arm still covers its own chain, and the static_asserts below are
+//    what say so.
 //
-// `#if defined` rather than `#if`: PA_CHIP_TARGET_* are presence macros defined
-// only for the selected chip (see "Chip target mapping" above), not 0/1 Board
-// Capability Gates, so `#if` on the undefined one would silently take the wrong
-// branch. Keying on the chip target rather than on PA_BOARD also means a second
-// board variant on either chip inherits the right size without a new case here.
-// DriveTask and DomeLinkTask were sized the same way and for the same reason
-// (#250): both exceeded their old stacks on ESP32-P4, and on ESP32 DriveTask
-// was at risk.
+// Which arm is which is derived from its two figures every time it is needed,
+// never stored, so it cannot disagree with them; the generated header names it
+// beside each stack, and the recipe carries the reason for every departure.
 //
-// Why the two chips diverge here at all: DomeLinkTask's own frame is 2256 B on
-// RISC-V against far less on Xtensa, because GCC splits an allocation past
-// 2032 B into two `addi sp,sp,-N` instructions -- the same split that hid this
-// overrun until tools/stack_usage_report.py was taught to accumulate them.
-//
-// ⚠️ DriveTask's ESP32 arm was raised past its own figure deliberately: that
-// figure read as 32 B under the old 4096 and is the floor of an unknown, not
-// headroom, so the 50 Hz drive loop is raised on both chips rather than only
-// where an overrun is provable (#250). DomeLinkTask's ESP32 arm was held at
-// 6144 by the same tight-heap argument that holds it there now.
-//
-// RCInputTask, AudioTask and WebEvents were sized the same way (#256). These
-// three were still single-valued artoo-era literals. WebEvents is the one that
-// moved: its own comment already named the risk -- 4096 overflowed on ESP32 in
-// _dtoa_r, and that frame is 160 -> 416 B on RISC-V -- and the P4 chain sat
-// past the inherited 6144 before the 25% margin.
-//
-// ESP32 WebEvents was recorded from the profiler image at #256, because the
-// product image's body was emitted as data (.xt.prop) then. It decodes in both
-// images at this tip and they agree, so the arm is walked from the product
-// image now; AudioTask's ESP32 arm is still the profiler image, which is the
-// deeper of the two. Both substitutions are recorded per arm in
-// tools/task_stack_recipes.json rather than only here.
-//
-// ConsoleTask, sized the same way (#226). It is the only stack in this block
-// whose under-size was reproduced as a device fault rather than inferred from a
-// walk, and it was reproduced on BOTH boards: `system.config.log-level
-// value=debug` over the serial Console Adapter reboots the FireBeetle 2 with a
-// RISC-V "Stack protection fault" (SP 476 B below the 5120 B bounds) and the
-// artoo-esp32 with the Xtensa spelling of the same event, "Stack canary
-// watchpoint triggered (Console)". The same write over HTTP answers normally on
-// both boards: it shares configApply()/configCommitApplied() and every
-// ConfigSnapshot copy below them, and differs only in the task it runs on --
-// the web server task has 8 KB.
-//
-// So this is not the P4 chain divergence the rest of this block is about. The
-// literal was justified by a measured high-water mark, which is exactly the
-// evidence that cannot see a path that has not run yet, and no config write
-// could reach this task until the write path landed. The firmware's own
-// instrumentation says both boards were already close after one trivial
-// command: 1448 B free on artoo-esp32, 900-1124 B on the FireBeetle 2.
-//
-//                   old    ESP32 chain    ESP32-P4 chain
-//   ConsoleTask    5120       9008           9120       <- both chips over, by ~4 KB
-//
-// The cause is frame depth, and it is provable without leaving project code:
-// consoleTask 320 + embeddedCliProcess 80 + onCliCommand 64 +
-// consoleExecuteCommand 1888 + consoleWriteScalarConfigField 2064 +
-// configCommitApplied 320 + commandedSetStationary 1264 = 6000 B on ESP32
-// (6048 on ESP32-P4) before one byte of newlib or ESP-IDF. Not recursion, not a
-// VLA, not alloca: every frame on the chain is reported fixed, and the only
-// cycles the walk cuts sit in the ESP-IDF heap and log tail underneath it -- a
-// cut edge makes the reported total a LOWER bound, so it cannot be where the
-// number came from. Three nested frames on the config-write path each carried a
-// ConfigSnapshot (944 B) by value --
-// consoleWriteScalarConfigField's `working` plus the ConfigCommitOutcome it got
-// back (944 + 948 in one frame), and commandedSetStationary's `cfg` -- on top of
-// consoleExecuteCommand's own 1888 B and the ~2.3 KB newlib tail that every
-// PA_LOG_* from this task pays through embedded-cli's print path.
-//
-// Reproducing it needs the two halves stitched by hand, because embedded-cli
-// reaches the command callback through `cli->onCommand`, an indirect call the
-// walker does not follow:
-//
-//   export PLATFORMIO_BUILD_SRC_FLAGS="-Wall -Wextra -Werror -fstack-usage"
-//   make build BUILD_ENV=<env>
-//   python3 tools/stack_usage_report.py --env <env> --root onCliCommand
-//   python3 tools/stack_usage_report.py --env <env> --root consoleTask --frames embeddedCliProcess
-//
-// chain = onCliCommand total + consoleTask frame + embeddedCliProcess frame
-// (8608 + 320 + 80 on ESP32; 8688 + 336 + 96 on ESP32-P4 when the panic was
-// diagnosed). embeddedCliProcess's frame already contains parseCommand and
-// onControlInput, which GCC inlines into it -- both are ABSENT as symbols, which
-// is what confirms it rather than a missing measurement.
-//
-// Where on the chain the peak sat, which the bench observed independently: the
-// value read back unchanged after the reboot, so the frame blew before the NVS
-// write committed. The walk said the same thing -- the deepest point was
-// commandedSetStationary and the log emit under it, which configCommitApplied()
-// reaches before it opens Preferences. No configuration was ever half-applied by
-// that fault.
-//
-// The raise was the correct first move and was never the resting state: it paid
-// the rule on a chain carrying 1892 B of snapshot copies that did not have to be
-// there. ADR 0011's 2026-09-04 amendment took them out (#269) -- the Commit Step
-// writes its post-commit snapshot back through `working` instead of returning
-// one, and the Commanded Mode setters sync the config cache by field instead of
-// round-tripping the whole snapshot -- and the chain fell again with them.
-//
-// The two frames that lost a snapshot each: consoleWriteScalarConfigField
-// 2064 -> 1104 (1120 on ESP32-P4) and commandedSetStationary 1264 -> 320. The
-// walk's deepest branch is no longer the config write at all -- it now runs
-// through the RC trigger dispatch the Console action executor shares
-// (processTriggerAction and the newlib tail below it), which is why the chain
-// falls by less than the 1904 B those two frames gave back.
-//
-// The constants below are re-derived from a walk at this tip, and a walk is the
-// only thing they may be derived from: #269 measured 7568/7552 on its own
-// branch and #270 measured 8512 on its own, both cutting the same deepest
-// branch, so neither figure described the merged tree. Then #226 wave 10 put a
-// deeper branch back: consoleExecuteCommand now reaches
-// consoleWriteAudioTracksField (1216 B) and audioTracksCommitApplied (1280 B)
-// on its way to the newlib tail, and the chain rose to 7360 on ESP32 and 7984
-// on the ESP32-P4. The two chips no longer land on the same 512-byte step, and
-// the reason they briefly did was coincidence: the chains differ, and each
-// field on either side moves them independently.
-//
-// The two chips also moved by different amounts -- +336 B on ESP32 against
-// +848 B on the ESP32-P4, for the same source change -- and that asymmetry is
-// the Xtensa lower bound showing itself: the new branch is partly invisible on
-// an image where a third of the function bodies are emitted as data. Read the
-// ESP32 figure as the smaller of two truths, not as the better outcome.
-//
-// Why the standard margin here and not a smaller one: the chains are LOWER
-// bounds in the same two ways the raised ones were -- objdump emits Xtensa bodies
-// as data, and the walk cuts cycles in the ESP-IDF heap and log tail -- so 25% is
-// buying headroom against what the tool cannot see, not against what it measured.
-// The one shrink that was available and rejected at the time, hoisting `working`
-// and the commit outcome into the module's static area, stays rejected: 1892 B of
-// .bss to save stack was never the trade to make when the copies themselves could
-// go, and they now have.
-//
-// The Console pays the rule on artoo-esp32 where DomeLinkTask above declines it,
-// and the difference is the evidence, not the size: DomeLinkTask's raise would
-// buy margin no measurement could confirm, while the Console's under-size was two
-// reboots on two boards. The same tight-heap argument points the other way.
-//
-// One block for every per-chip task stack. #248 and #250 each added a pair and
-// arrived here by separate branches; keeping two adjacent, identical #if ladders
-// would mean a third ticket adds a third, and a reader has to check all of them
-// to answer "what is this task's stack on this chip".
-//
-// Each arm carries the task's chain and its stack, in that order, with the
-// derivation in the trailing comment: `rule` where the stack is exactly the
-// chain by the rule, `above rule` where an earlier ticket deliberately went
-// further, and `rule declined` with the reason where the arm pays the floor
-// only. Sorted the same way on both arms so the two are diffable side by side.
-#if defined(PA_CHIP_TARGET_ESP32P4)
-// Every arm below is exactly the rule applied to its own chain.
-constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 4368;
-constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;  // rule: 4368 -> 5460 -> 5632
-constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5360;
-constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;  // rule: 5360 -> 6700 -> 7168
-constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3488;
-constexpr uint32_t SERVO_TASK_STACK_BYTES = 4608;  // rule: 3488 -> 4360 -> 4608
-constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 3280;
-constexpr uint32_t DOME_TASK_STACK_BYTES = 4608;  // rule: 3280 -> 4100 -> 4608
-constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 4848;
-constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;  // rule: 4848 -> 6060 -> 6144
-constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 3984;
-constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 5120;  // rule: 3984 -> 4980 -> 5120
-constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 7360;
-constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 9216;  // rule: 7360 -> 9200 -> 9216
-constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3216;
-constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;  // rule: 3216 -> 4020 -> 4096
-constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4448;
-constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4448 -> 5560 -> 5632
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7984;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 10240;  // rule: 7984 -> 9980 -> 10240
-constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5808;
-constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;  // rule: 5808 -> 7260 -> 7680
-constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 4000;
-constexpr uint32_t OTA_TASK_STACK_BYTES = 5120;  // rule: 4000 -> 5000 -> 5120
-// HostedRecovery exists only where PA_CAP_HOSTED_WIFI is 1, which today is this
-// chip alone (src/web/web_network_manager_hosted.cpp is whole-file guarded on
-// it), so its pair is declared on this arm only. A future board on another chip
-// that turns the capability on fails at the static_assert below rather than
-// inheriting a number measured on someone else's silicon.
-constexpr uint32_t HOSTED_RECOVERY_TASK_MEASURED_CHAIN_BYTES = 3648;
-constexpr uint32_t HOSTED_RECOVERY_TASK_STACK_BYTES = 4608;  // rule: 3648 -> 4560 -> 4608
-#elif defined(PA_CHIP_TARGET_ESP32)
-constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 4080;
-// above rule (5120): #250 raised the 50 Hz drive loop on both chips rather than
-// only where an overrun is provable, because this figure is the floor of an
-// unknown. Not lowered to the rule here -- that would undo that decision.
-constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;
-constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5248;
-// above rule (6656): the pre-#256 literal, kept rather than lowered onto a
-// Xtensa figure that can prove an overrun and cannot prove a margin.
-constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;
-constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3200;
-constexpr uint32_t SERVO_TASK_STACK_BYTES = 4096;  // rule: 3200 -> 4000 -> 4096
-constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 2992;
-// rule declined (4608, +1536 B): #248's tight-heap reason. This is the thinnest
-// floor in the block -- 80 B on a lower-bound walk, which is under the cost of
-// one interrupt entry -- and it is the pre-existing shipping value, recorded
-// here as a known exposure rather than raised by this ticket (#271).
-constexpr uint32_t DOME_TASK_STACK_BYTES = 3072;
-constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 5280;
-// rule declined (6656, +512 B): #248's tight-heap reason. The chain grew 608 B
-// when #226 wave 10 landed, and the growth is the walk seeing further rather
-// than this task running deeper -- the extra frames are an ESP-IDF log/queue
-// tail below esp_cache_get_alignment() that the product image still reports as
-// 4528 because a body on the way is emitted as data. Floor holds by 864 B.
-constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;
-constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 3504;
-// rule declined (4608, +512 B): #248's tight-heap reason. Floor holds by 592 B.
-constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 4096;
-constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 5872;
-// rule declined (7680, +1536 B): #248's tight-heap reason, named on #250. Floor
-// holds by 272 B.
-constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 6144;
-constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3088;
-// rule: 3088 -> 3860 -> 4096. Raised from 3072 by #271, and this is the one arm
-// in the block where the floor did NOT already hold: the artoo profiler image
-// (PA_LOG_LEVEL=4, PA_HEAP_PROFILE=1 -- the image you flash when the board is
-// already misbehaving) walks 3088 B here against the product image's 2944, and
-// the constant is compiled into both. #245 sized the ESP32-P4 arm from the same
-// deeper image for the same reason. A floor that fails is not the margin
-// question #248 declined; it is an overrun, so the rule is paid.
-constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;
-constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4336;
-constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4336 -> 5420 -> 5632
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7360;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9216;  // rule: 7360 -> 9200 -> 9216
-constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5904;
-// rule declined (7680, +1536 B): #248's tight-heap reason, named on #256. Floor
-// holds by 240 B. Re-walked from 5888 at #228: buildStatusJson()'s own frame is
-// the deepest in this chain, and publishing failedAllocs and queueOverflowCount
-// grew it 16 B. Xtensa only -- the ESP32-P4 arm re-walked unchanged.
-constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 6144;
-constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 3696;
-// rule declined (5120, +1024 B): #248's tight-heap reason, applied to this
-// task's first measurement (#271). Floor holds by 400 B.
-constexpr uint32_t OTA_TASK_STACK_BYTES = 4096;
-#else
-  #error "task stack sizes have no value for this chip target"
-#endif
+// Not a lever: moving a task's large locals into static storage to shorten its
+// chain. It was rejected for the Console's config write (#269) -- 1892 B of
+// .bss to save stack, when the copies themselves could go, and they went.
+#include "task_stack_figures.h"
 
 // The floor is compile-enforced rather than promised by the comment above,
 // because a comment is what let ConsoleTask stand 4 KB below its own chain until
-// it took both boards down (#226). A later edit that lowers a stack below its
-// chain, or raises a chain past its stack, fails at the declaration -- on both
-// chips, in every environment that includes this header.
+// it took both boards down (#226). A recipe that lowers a stack below its chain,
+// or records a chain past its stack, fails the compile here -- on both chips, in
+// every environment that includes this header.
 //
 // This is half the guard. It fixes the constant to the chain; nothing here can
 // notice the CHAIN growing, because the chain is itself a recorded number. That
@@ -828,6 +602,9 @@ static_assert(SEQ_DISPATCHER_TASK_STACK_BYTES >= SEQ_DISPATCHER_TASK_MEASURED_CH
 static_assert(CONSOLE_TASK_STACK_BYTES >= CONSOLE_TASK_MEASURED_CHAIN_BYTES,
               "CONSOLE_TASK_STACK_BYTES is below the Console task's measured "
               "worst-case static chain");
+static_assert(REACTION_TASK_STACK_BYTES >= REACTION_TASK_MEASURED_CHAIN_BYTES,
+              "REACTION_TASK_STACK_BYTES is below ReactionTask's measured worst-case static "
+              "chain");
 static_assert(WEB_EVENTS_TASK_STACK_BYTES >= WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES,
               "WEB_EVENTS_TASK_STACK_BYTES is below the WebEvents task's measured worst-case "
               "static chain");
@@ -844,22 +621,28 @@ static_assert(HOSTED_RECOVERY_TASK_STACK_BYTES >= HOSTED_RECOVERY_TASK_MEASURED_
 // NVS
 // -----------------------------------------------------------------------------
 constexpr char NVS_NAMESPACE[] = "proto";
-constexpr char NVS_KEY_AUX_LED_PIN[] = "aux_led_pin";
-constexpr char NVS_KEY_AUX_LED_COUNT[] = "aux_led_count";
-constexpr char DROID_NAME_DEFAULT[] = "protoartoo";
+// Retired with #413, and read once more on the way out. They were the single
+// lit wire and its LED count, one pair for the whole droid; a Light Type and
+// its settings now live on the Output that carries them (ADR 0067). A
+// controller upgrading still holds them, so configDeserializeServoOutputs()
+// reads them onto the row they were about and configSaveServoOutputs() removes
+// them once that row is safely down. Nothing writes them.
+constexpr char NVS_KEY_RETIRED_AUX_LED_PIN[] = "aux_led_pin";
+constexpr char NVS_KEY_RETIRED_AUX_LED_COUNT[] = "aux_led_count";
+constexpr char DROID_NAME_DEFAULT[] = "protor2";
 constexpr size_t DROID_NAME_MAX_LEN = 32;
 
 // -----------------------------------------------------------------------------
 // WiFi AP
 // -----------------------------------------------------------------------------
-constexpr char WIFI_AP_SSID[] = "protoArtoo";
+constexpr char WIFI_AP_SSID[] = "protoR2";
 constexpr char WIFI_AP_IP[] = "192.168.4.1";
 
 // Default AP Credential (ADR 0015): the documented bootstrap password an
 // Unprovisioned Controller uses for WiFi Provisioning and Network Recovery
 // Mode. Public and shared by design  --  it is a bootstrap credential, not a
 // security boundary  --  and operator-changeable through Device WiFi Settings.
-constexpr char WIFI_DEFAULT_AP_PASSWORD[] = "protoArtoo1";
+constexpr char WIFI_DEFAULT_AP_PASSWORD[] = "protoArtoo123";
 
 // -----------------------------------------------------------------------------
 // WiFi hostname / mDNS

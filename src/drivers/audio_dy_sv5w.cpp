@@ -291,6 +291,7 @@ bool AudioDriverDySv5w::queryModuleState(AudioModuleState& out) {
     out.device = m_device;            // carry forward cached value from begin()
     out.totalTracks = m_totalTracks;  // not re-queried on every poll
     out.currentTrack = 0;
+    out.missingTrack = 0;
 
     // Query device online (0x09)
     // Validate rsp[0]==0xAA and rsp[1]==0x09 to reject spontaneous bytes
@@ -337,6 +338,7 @@ void AudioDriverDySv5w::getCachedState(AudioModuleState& out) const {
     out.totalTracks = m_totalTracks;
     out.playState = 0xFF;  // not cached  --  requires active query
     out.currentTrack = 0;  // not cached  --  requires active query
+    out.missingTrack = 0;
 }
 
 // -----------------------------------------------------------------------------

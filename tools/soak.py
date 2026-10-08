@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""protoArtoo soak harness -- a permanent instrument, not one epic's scaffold.
+"""protoR2 soak harness -- a permanent instrument, not one epic's scaffold.
 
-Holds a protoArtoo controller's web stack under load for as long as it is
+Holds a protoR2 controller's web stack under load for as long as it is
 asked to, and answers one question: did it hold up? A run ends in one Run
 Verdict (PASS / FAIL / INVALID), one exit code and one JSON artefact carrying
 every number the verdict was taken from. Operator documentation is
@@ -1759,6 +1759,14 @@ class StatusSchema:
     sse_refused_cap_field: Optional[str] = None
     sse_evicted_field: Optional[str] = None
     sse_clients_peak_field: Optional[str] = None
+    # Recorded only, for the same reason and with the same None convention as
+    # the progress-line fields above: no soak verdict reads them, so they stay
+    # out of fields_read(). tools/bench_auto.py's memory log reads them through
+    # memory_reading() below. heap_largest_block_field is the Internal Data
+    # Heap's largest free block, beside heap_field's Buffer Reading;
+    # failed_allocs_field counts failed allocations since boot.
+    heap_largest_block_field: Optional[str] = None
+    failed_allocs_field: Optional[str] = None
     ladder_container: Optional[str] = None
     ladder_fields: dict[str, str] = {}
     # False on an image built for a board with no ESP-Hosted link supervisor:
@@ -1870,6 +1878,42 @@ class StatusSchema:
                 row[key] = value
             rows.append(row)
         return rows
+
+    def memory_fields(self) -> list[str]:
+        """The payload names of every heap, allocation, refusal and restart
+        reading this image publishes, in a fixed order. A field the image does
+        not publish is left out, never listed as a placeholder."""
+        admission = (
+            (self.refused_heap_floor_field, self.refused_heap_floor_diag_field)
+            if self.enforces_admission_floor else ()
+        )
+        candidates = (
+            self.heap_free_field, self.heap_min_field, self.heap_largest_block_field,
+            self.heap_field, self.failed_allocs_field, *admission, self.restart_field,
+        )
+        return [field for field in candidates if field]
+
+    def memory_reading(self, body: dict, anomalies: list[str]) -> dict:
+        """{payload name: value} for one poll, over memory_fields().
+
+        The per-poll read for a caller that logs every sample as it arrives
+        rather than collecting a series first (tools/bench_auto.py). Same rule as
+        collect_heap_series(): a field this image publishes that the sample is
+        missing or mistypes is an anomaly and is left out of the result -- an
+        absent key is recoverable, an invented zero is not."""
+        reading: dict = {}
+        for field in self.memory_fields():
+            if field not in body:
+                anomalies.append(f"missing field {field!r}")
+                continue
+            value = body[field]
+            if _type_mismatch(value, int):
+                anomalies.append(
+                    f"field {field!r} has type {type(value).__name__}, expected int"
+                )
+                continue
+            reading[field] = value
+        return reading
 
     def admission(self, body: dict, context: str) -> Optional[AdmissionReading]:
         """One admission-counter sample, or None on an image that compiles no
@@ -2158,6 +2202,13 @@ class ProductImageStatusSchema(StatusSchema):
     sse_refused_cap_field = "refusedSseCap"
     sse_evicted_field = "sseEvicted"
     sse_clients_peak_field = "sseClientsPeak"
+    # Recorded only (see StatusSchema), from the same unconditional snprintf
+    # (src/web/status_json.cpp:138): heapLargestBlock is the Internal Data
+    # Heap's largest block (captureStatusHeapReadings(), :100) and failedAllocs
+    # the always-compiled tracker's count since boot (web_server.cpp:261). The
+    # bench image publishes neither.
+    heap_largest_block_field = "heapLargestBlock"
+    failed_allocs_field = "failedAllocs"
     # No bootCount, so the restart evidence is uptimeMs (millis(),
     # web_server.cpp:360) stepping backwards -- see restart_detected().
     restart_field = "uptimeMs"
@@ -2475,7 +2526,7 @@ DEFAULT_PROGRESS_INTERVAL_S = 30.0
 # how long for, which after two hours is the same as saying nothing.
 STATUS_LINE_REFRESH_S = 1.0
 
-# Semantic tokens, ASCII in every environment. Colour is the only thing that
+# Semantic tokens, ASCII in every environment. Color is the only thing that
 # varies with the terminal, and rich decides that (see RunConsole): these
 # never become glyphs or emoji, so a redirected stderr and the transcript log
 # read identically to a terminal minus the escape codes.
@@ -2721,9 +2772,9 @@ class RunConsole:
                       line that updates in place.
       no spinner      the status line carries clocks. An animation says
                       "something is happening" without saying for how long.
-      semantic only   colour and the [OK]/[FAIL]/[WARN] tokens mark meaning,
+      semantic only   color and the [OK]/[FAIL]/[WARN] tokens mark meaning,
                       never decoration, and the tokens are ASCII everywhere so
-                      only the colour varies with the terminal.
+                      only the color varies with the terminal.
       log always      every line an operator would have seen is also written
                       to a plain transcript, with no ANSI and no emoji, whose
                       path the JSON report carries so the next tool can find
@@ -2731,12 +2782,12 @@ class RunConsole:
 
     rich owns the degradation and is not second-guessed here: Console(file=
     sys.stderr) reports is_terminal False for a redirected stream and drops
-    colour, and it honours NO_COLOR and TERM=dumb on its own. Measured against
+    color, and it honours NO_COLOR and TERM=dumb on its own. Measured against
     a real pty rather than assumed, because the two are not the same:
     TERM=dumb makes rich report is_terminal False, so nothing is emitted but
-    plain text; NO_COLOR removes the COLOUR codes and deliberately keeps bold
+    plain text; NO_COLOR removes the COLOR codes and deliberately keeps bold
     and dim and keeps the status line, which is what NO_COLOR asks for -- it
-    is a colour switch, not a cursor-control switch. Neither is worth
+    is a color switch, not a cursor-control switch. Neither is worth
     overriding, and a "fix" that stripped bold under NO_COLOR would be going
     beyond the standard.
 
@@ -2813,7 +2864,7 @@ class RunConsole:
     # -- output ----------------------------------------------------------
 
     def line(self, text: str, kind: Optional[str] = None) -> None:
-        """One appended line. `kind` selects a semantic token and colour; None
+        """One appended line. `kind` selects a semantic token and color; None
         is a plain data line (a heartbeat), which is what keeps the transcript
         greppable."""
         token, style = CONSOLE_KINDS.get(kind or "", ("", ""))
@@ -4948,6 +4999,7 @@ FIXTURE_SHIPPING_STATUS_BODY = {
     "heapMin": 240000,
     "heapLargestBlock": 150000,
     "heapLargest8bit": 123456,
+    "failedAllocs": 0,
     "sseClients": 1,
     "sseClientsPeak": 3,
     # The admission evidence, from the same unconditional snprintf
@@ -6659,7 +6711,7 @@ def run_self_test() -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "protoArtoo soak harness: hold a controller's web stack under load for as "
+            "protoR2 soak harness: hold a controller's web stack under load for as "
             "long as you ask, and say in one verdict and one exit code whether it held "
             "up. Reads only -- it never flashes, never calls `make ota` and never writes "
             "to the controller's configuration. See docs/soak.md."
@@ -6806,7 +6858,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--log", default=None,
         help="path for the plain transcript of this run -- every line stderr showed, with "
-             "no colour and no cursor control, so it can be read, grepped and archived. "
+             "no color and no cursor control, so it can be read, grepped and archived. "
              "Always written: defaults to the --json path with '.log' appended, or to "
              "./soak-<timestamp>.log when there is no --json. Appended to, never "
              "truncated, so pointing two runs at one path keeps both transcripts. The "
@@ -6905,7 +6957,7 @@ def main(argv: list[str]) -> int:
         if args.driver == "all" else [args.driver]
     )
     planned = {name: planned_driver_duration_s(name, args) for name in drivers_to_run}
-    monitor.rule("protoArtoo soak")
+    monitor.rule("protoR2 soak")
     monitor.rows([
         ("started", format_timestamp(started_at)),
         ("device", f"{args.device}:{args.port}"),

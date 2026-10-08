@@ -11,7 +11,10 @@
 #include <Arduino.h>      // portMUX_TYPE, taskENTER_CRITICAL (native: stubbed)
 #include <string.h>
 
+#include "droid_parts.h"  // DROID_PART_ID_MAX_LEN -- the longest id the catalog has
 #include "robot_state.h"  // portMUX_TYPE
+#include "sequence_gesture.h"  // seqGestureIsDome()
+#include "web_server.h"        // requestStatusBroadcastNow()
 
 static portMUX_TYPE seqEvidenceMux = portMUX_INITIALIZER_UNLOCKED;
 static SeqRunEvidence g;                         // the live record (zero-initialized)
@@ -35,7 +38,8 @@ static int ringBitForNumber(int n) {
 static void applyScope(SeqRunEvidence& r, const char* cmd) {
     if (cmd[0] == ':') {
         if ((cmd[1] == 'O' && (cmd[2] == 'P' || cmd[2] == 'F')) ||
-            (cmd[1] == 'C' && cmd[2] == 'L')) {
+            (cmd[1] == 'C' && cmd[2] == 'L') ||
+            (cmd[1] == 'M' && cmd[2] == 'V')) {  // a panel moved part way (#438)
             r.fxScopes |= SEQ_EVID_FX_PANEL;
         } else if (cmd[1] == 'S' && cmd[2] == 'E') {
             r.fxScopes |= SEQ_EVID_FX_DOME_SEQ;
@@ -97,10 +101,70 @@ static void actionToString(const SeqAction& act, char* out, size_t cap) {
             strncpy(out, "<stop>", cap - 1);
             out[cap - 1] = '\0';
             break;
+        case SEQ_ACT_BACKGROUND_TRACK_START: {
+            // The sound and its volume, as the engine handed them over. Whether
+            // the fitted module could mix is answered at dispatch and reported
+            // there (module-cannot-mix). A '$' is at most 7 characters
+            // (Protocol Check), sized here so the line cannot be cut.
+            char sound[8];
+            strncpy(sound, act.payload, sizeof(sound) - 1);
+            sound[sizeof(sound) - 1] = '\0';
+            snprintf(out, cap, "<backgroundTrack:%s:%u>", sound, (unsigned)act.audioCategory);
+            break;
+        }
+        case SEQ_ACT_BACKGROUND_TRACK_STOP:
+            strncpy(out, "<backgroundTrackStop>", cap - 1);
+            out[cap - 1] = '\0';
+            break;
         case SEQ_ACT_DOME_ROTATE:
             snprintf(out, cap, "<domeRotate:%d:%u>",
                      (int)act.domeSpeedPct, (unsigned)act.domeDurationMs);
             break;
+        case SEQ_ACT_DOME_BEARING: {
+            // The target as the engine handed it over; whether the dome turned
+            // is answered at dispatch and reported there. Sized against the
+            // catalog, as a Body Step's Part is below.
+            char target[DROID_PART_ID_MAX_LEN + 1];
+            strncpy(target, act.payload, sizeof(target) - 1);
+            target[sizeof(target) - 1] = '\0';
+            snprintf(out, cap, "<domeBearing:%s>", target);
+            break;
+        }
+        case SEQ_ACT_GESTURE: {
+            // The set, or the start of a listed one: what the engine handed
+            // over. What the Coordinator then sent for it is its own log.
+            char set[DROID_PART_ID_MAX_LEN + 1];
+            strncpy(set, act.payload, sizeof(set) - 1);
+            set[sizeof(set) - 1] = '\0';
+            snprintf(out, cap, "<gesture:%s>", set);
+            break;
+        }
+        case SEQ_ACT_BODY_MOVE: {
+            // Part, shape and how-far, plus a flutter's duration when there is
+            // one. This is what the engine emitted, which is what this record is
+            // for -- whether an Output claimed the Part is answered at dispatch
+            // and reported there.
+            //
+            // The Part id is copied into a buffer sized against the CATALOG
+            // rather than formatted straight out of the 64-byte payload. Both
+            // halves matter: an entry is 48 bytes on artoo-esp32, so the wide
+            // field genuinely could not fit, and a string longer than the
+            // longest id the catalog declares is not a Part id in the first
+            // place -- Protocol Check gated it at save.
+            char part[DROID_PART_ID_MAX_LEN + 1];
+            strncpy(part, act.payload, sizeof(part) - 1);
+            part[sizeof(part) - 1] = '\0';
+            if (act.bodyFlutterMs != 0) {
+                snprintf(out, cap, "<body:%s:%s:%u:%u>", part,
+                         seqBodyShapeToString(act.bodyShape),
+                         (unsigned)act.bodyHowFar, (unsigned)act.bodyFlutterMs);
+            } else {
+                snprintf(out, cap, "<body:%s:%s:%u>", part,
+                         seqBodyShapeToString(act.bodyShape),
+                         (unsigned)act.bodyHowFar);
+            }
+            break;
+        }
         default:
             strncpy(out, "<none>", cap - 1);
             out[cap - 1] = '\0';
@@ -134,13 +198,24 @@ void seqEvidenceBegin(const char* name, uint8_t source, uint32_t startMs,
     g.startMs = startMs;
     gBodyQueueFullBaseline = bodyQueueFullBaseline;
     taskEXIT_CRITICAL(&seqEvidenceMux);
+    // The status document carries the run (`seqRun`), and the stream sends a
+    // status only when asked: a run that begins or ends asks once, so a page
+    // hears a run started from an RC Channel without polling for it (#451).
+    // An edge, never per step. Outside the lock: the ask takes its own.
+    requestStatusBroadcastNow();
 }
 
 void seqEvidenceRecordTx(const SeqAction& act, bool cleanup) {
     char rep[SEQ_EVID_CMD_LEN];
     actionToString(act, rep, sizeof(rep));
-    const bool isDome = (act.kind == SEQ_ACT_DOME_CMD ||
-                         act.kind == SEQ_ACT_DOME_ROTATE);
+    // Named by what they ARE, not by what they are not: the audio scope used to
+    // be inferred as "anything that is not dome", which made every future
+    // non-dome action kind an audio effect by default.
+    const bool isAudio = (act.kind == SEQ_ACT_AUDIO_DOLLAR ||
+                          act.kind == SEQ_ACT_AUDIO_CATEGORY ||
+                          act.kind == SEQ_ACT_AUDIO_STOP ||
+                          act.kind == SEQ_ACT_BACKGROUND_TRACK_START ||
+                          act.kind == SEQ_ACT_BACKGROUND_TRACK_STOP);
 
     taskENTER_CRITICAL(&seqEvidenceMux);
     if (g.outcome == SEQ_RUN_RUNNING) {
@@ -165,10 +240,18 @@ void seqEvidenceRecordTx(const SeqAction& act, bool cleanup) {
         if (act.kind == SEQ_ACT_DOME_CMD) {
             applyScope(g, rep);
             applyRing(g, rep);
-        } else if (!isDome) {
-            // SEQ_ACT_DOME_ROTATE has no Marcduino payload, no scope/ring tracking.
+        } else if (act.kind == SEQ_ACT_GESTURE && seqGestureIsDome(act.payload)) {
+            // A dome Gesture moves dome panels, which is the panel scope its
+            // FX_PANEL stamp puts terminal cleanup on.
+            g.fxScopes |= SEQ_EVID_FX_PANEL;
+        } else if (isAudio) {
             g.fxScopes |= SEQ_EVID_FX_AUDIO;
         }
+        // SEQ_ACT_DOME_ROTATE and SEQ_ACT_DOME_BEARING have no Marcduino
+        // payload, so no scope or ring tracking. SEQ_ACT_BODY_MOVE sets no scope bit either, and that is the
+        // model rather than a gap: a body step stamps no effect class, so there
+        // is no terminal cleanup for a scope bit to be diffed against
+        // (ADR 0049).
     }
     taskEXIT_CRITICAL(&seqEvidenceMux);
 }
@@ -185,7 +268,8 @@ void seqEvidenceNoteRetry(void) {
 void seqEvidenceEnd(SeqRunOutcome outcome, const char* reason, uint32_t endMs,
                     uint32_t bodyQueueFullNow) {
     taskENTER_CRITICAL(&seqEvidenceMux);
-    if (g.outcome == SEQ_RUN_RUNNING) {
+    const bool ended = (g.outcome == SEQ_RUN_RUNNING);
+    if (ended) {
         g.outcome = outcome;
         strncpy(g.reason, reason != nullptr ? reason : "", SEQ_EVID_REASON_LEN - 1);
         g.reason[SEQ_EVID_REASON_LEN - 1] = '\0';
@@ -196,11 +280,37 @@ void seqEvidenceEnd(SeqRunOutcome outcome, const char* reason, uint32_t endMs,
                 : 0;
     }
     taskEXIT_CRITICAL(&seqEvidenceMux);
+    // The run's end, said on the status stream as its start was (#451). Only
+    // the call that ended it asks: the later COMPLETED fallback changes nothing.
+    if (ended) requestStatusBroadcastNow();
 }
 
 bool seqEvidenceSnapshot(SeqRunEvidence& out) {
     taskENTER_CRITICAL(&seqEvidenceMux);
     memcpy(&out, &g, sizeof(g));
+    taskEXIT_CRITICAL(&seqEvidenceMux);
+    return out.valid;
+}
+
+bool seqEvidenceSummary(SeqRunSummary& out) {
+    taskENTER_CRITICAL(&seqEvidenceMux);
+    out.valid = g.valid;
+    out.outcome = g.outcome;
+    memcpy(out.name, g.name, sizeof(out.name));
+    out.source = g.source;
+    memcpy(out.reason, g.reason, sizeof(out.reason));
+    out.startMs = g.startMs;
+    out.endMs = g.endMs;
+    taskEXIT_CRITICAL(&seqEvidenceMux);
+    return out.valid;
+}
+
+bool seqEvidenceRunState(SeqRunState& out) {
+    taskENTER_CRITICAL(&seqEvidenceMux);
+    out.valid = g.valid;
+    out.running = (g.outcome == SEQ_RUN_RUNNING);
+    out.startMs = g.startMs;
+    memcpy(out.name, g.name, sizeof(out.name));
     taskEXIT_CRITICAL(&seqEvidenceMux);
     return out.valid;
 }

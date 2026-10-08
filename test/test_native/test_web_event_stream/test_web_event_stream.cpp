@@ -17,6 +17,7 @@
 #include <cstring>
 
 #include "api_events.h"
+#include "commanded_modes_test_hooks.h"  // g_test_status_broadcast_count
 #include "web_event_stream.h"
 #include "web_request_test_backend.h"
 
@@ -231,6 +232,57 @@ void test_a_client_below_the_cap_gets_a_stream() {
     TEST_ASSERT_EQUAL_UINT(0, backend.sendCalls);
 }
 
+// --- Admission is an edge: a client that has just arrived is told the state ---
+//
+// The stream carries a status only when something asks for one, so a client
+// connecting to a droid that is not changing used to be told nothing at all --
+// and a tab reconnecting after a latch showed its own cached frame until some
+// unrelated change came along. Publishing every failsafe edge fixes the
+// browser that was already listening, not the one that was not there (#346).
+
+void test_a_newly_admitted_client_is_told_the_current_state() {
+    g_test_event_stream_clients = PA_ADMISSION_MAX_SSE_CLIENTS - 1;
+    g_test_status_broadcast_count = 0;
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleEventsGet(req);
+
+    TEST_ASSERT_TRUE(backend.eventStreamStarted);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+    // Asked for, not written here. The payload is built on the event stream
+    // task, which owns the buffer and has the stack measured for it; a frame
+    // written from this handler would race the broadcaster for both.
+    TEST_ASSERT_EQUAL_UINT(0, backend.sendCalls);
+}
+
+void test_a_client_refused_at_the_cap_asks_for_nothing() {
+    g_test_event_stream_clients = PA_ADMISSION_MAX_SSE_CLIENTS;
+    g_test_status_broadcast_count = 0;
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleEventsGet(req);
+
+    // No stream was opened, so there is nobody to tell -- and a fourth tab
+    // retrying behind its backoff must not make the droid rebuild its whole
+    // status payload on every attempt.
+    TEST_ASSERT_FALSE(backend.eventStreamStarted);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_status_broadcast_count);
+}
+
+void test_a_client_whose_stream_would_not_start_asks_for_nothing() {
+    g_test_status_broadcast_count = 0;
+    WebRequestTestBackend backend;
+    backend.eventStreamFails = true;
+    WebRequest req(&backend);
+
+    handleEventsGet(req);
+
+    TEST_ASSERT_FALSE(backend.eventStreamStarted);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_status_broadcast_count);
+}
+
 void test_a_client_past_the_cap_is_refused_before_the_upgrade() {
     g_test_event_stream_clients = PA_ADMISSION_MAX_SSE_CLIENTS;
     WebRequestTestBackend backend;
@@ -299,6 +351,9 @@ int main(int, char**) {
     RUN_TEST(test_a_dead_connection_is_an_error_even_past_the_deadline);
 
     RUN_TEST(test_a_client_below_the_cap_gets_a_stream);
+    RUN_TEST(test_a_newly_admitted_client_is_told_the_current_state);
+    RUN_TEST(test_a_client_refused_at_the_cap_asks_for_nothing);
+    RUN_TEST(test_a_client_whose_stream_would_not_start_asks_for_nothing);
     RUN_TEST(test_a_client_past_the_cap_is_refused_before_the_upgrade);
     RUN_TEST(test_a_refusal_is_answered_so_the_frontend_can_back_off);
     RUN_TEST(test_a_transport_that_cannot_start_a_stream_still_answers);

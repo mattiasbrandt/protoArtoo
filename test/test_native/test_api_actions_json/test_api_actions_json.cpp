@@ -103,11 +103,29 @@ void test_body_carries_nullable_feature_requirements_for_every_entry() {
     TEST_ASSERT_EQUAL_UINT(ACTION_REGISTRY_SIZE, buildFields);
 }
 
+// An action about one Output is named by what the running board prints beside
+// it, composed as the row is served (ADR 0033 Amendment 2026-09-19): the
+// native image is the Artoo PCB's, which prints ARM3 on the Output stored as
+// aux1. No placeholder reaches the wire, and the composed name survives the
+// chunk boundaries the test above walks.
+void test_an_output_action_is_named_by_the_board() {
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleActionsGet(req);
+
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody,
+                                "\"name\":\"servo.action.toggle-aux1\",\"display_name\":\"ARM3 Toggle\""));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"description\":\"Open or close the part on ARM3.\""));
+    TEST_ASSERT_NULL(strstr(backend.sentBody, "{output}"));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_get_sends_chunked_json_array);
     RUN_TEST(test_body_contains_every_registry_entry);
     RUN_TEST(test_body_has_no_gap_or_overlap_at_chunk_boundaries);
     RUN_TEST(test_body_carries_nullable_feature_requirements_for_every_entry);
+    RUN_TEST(test_an_output_action_is_named_by_the_board);
     return UNITY_END();
 }

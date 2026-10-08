@@ -38,9 +38,11 @@
 
 #define PROF_LABEL_MAX 20
 #define PROF_SNAPSHOT_MAX 8
-// Thirteen project-created tasks plus loopTask. Raised from 11 at #271, when
-// the three created outside src/main.cpp joined the list (api_profiler.cpp).
-#define PROF_TASK_MAX 14
+// Fifteen project-created tasks plus loopTask. Raised from 11 at #271, when
+// the three created outside src/main.cpp joined the list (api_profiler.cpp),
+// from 14 at #450, for ReactionTask, and from 15 at #444, for the PCA9685's
+// sender (src/drivers/pca9685.cpp).
+#define PROF_TASK_MAX 16
 #define PROF_REQUEST_PATH_MAX 28
 #define PROF_REQUEST_TRACE_MAX 32
 
@@ -70,7 +72,7 @@ typedef struct {
 } ProfilerRequestTrace;
 
 typedef struct {
-    // Tier 1 globals, read straight from the IDF heap APIs
+    // Tier 1 globals: the Internal Data Heap (include/heap_reading.h)
     uint32_t heapFree;
     uint32_t heapMin;
     uint32_t heapLargest;
@@ -121,9 +123,10 @@ static inline const char* profilerHwmStatus(uint32_t hwmBytes) {
 // failedAllocTrackerInit() beside this call.
 void profilerInit();
 
-// Close the current monitoring window (reading its local low-water mark via
-// heap_caps_get_info before stopping) and open a new window with newLabel.
-// Each closed window is stored as a snapshot entry in the ring.
+// Close the current monitoring window (reading the Internal Data Heap's local
+// low-water mark via heapReadInternalDataInfo() before stopping) and open a new
+// window with newLabel. Each closed window is stored as a snapshot entry in the
+// ring.
 // Call from SafetyMonitorTask on mode transitions (RC link, dome connect, etc.).
 void profilerModeTransition(const char* newLabel);
 

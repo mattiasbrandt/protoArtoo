@@ -6,8 +6,19 @@
 // Implements the 4-tier fallback hierarchy from ADR 0009:
 //   1. Live: fetch /api/dome/layout with supported schema -> cached
 //   2. Cached-live: fetch fails but localStorage has prior live layout
-//   3. Vendored: no cache -> offline MK4 fallback (no geometry)
+//   3. Stated design: no cache -> the Dome Design the builder stated, which
+//      replaces the hardcoded vendored MK4 here (ADR 0047, #333)
 //   4. Unsupported: 200 OK but schema_revision not in SUPPORTED_DOME_LAYOUT_SCHEMAS
+//
+// Tier 3 asks window.DroidBuild what dome the builder says they built and
+// answers with the vendored drawing only where that drawing IS their dome. It
+// still carries no geometry of its own: the catalog records a bearing per Part
+// and no shape (docs/droid-parts.yaml; 0 dead astern, 180 dead ahead, the dome
+// bearings taken from the vendored drawing - operator, 2026-09-30 (convention)
+// and 2026-10-02 (drawing), #445), so drawing a complement without a vendored
+// picture is not something this tier can do yet - what it can do is stop
+// claiming an MK4 dome belongs to a builder who stated otherwise, and say
+// which case they are in.
 //
 // Subscribes to dome connection state changes (dome_link.state) and refetches
 // when transitioning INTO connected state. No polling.
@@ -15,8 +26,15 @@
 // Exposes window.DomeLayout with:
 //   - load() / refresh(): fetch and resolve the model
 //   - getModel(): current normalized model
-//   - onChange(cb): register callback fired after each resolve
-//   - getSource(): 'live' | 'cached' | 'vendored' | 'unsupported'
+//   - onChange(cb): register callback fired after each resolve; returns
+//     the function that releases it
+//   - getSource(): 'live' | 'cached' | 'vendored' | 'stated-design' | 'unsupported'
+//     'vendored' and 'stated-design' are both tier 3: the first says the
+//     built-in drawing is this builder's dome, the second that it is not.
+//   - severityClause(elem): what an element's severity says out loud, or null
+//     where it is available; the caller adds its own consequence
+//   - statedDesignDifference(): the connected dome's panels against the stated
+//     Dome Design's, for the builder to resolve; it changes neither (#368)
 // =============================================================================
 
 (() => {
@@ -184,6 +202,145 @@
     };
   }
 
+  /**
+   * Tier 3: what the builder says their dome is, and whether the built-in
+   * drawing is a drawing of it.
+   *
+   * The Dome Design is the builder's statement, so this reads it through the
+   * one Droid Build seam rather than working out a complement of its own
+   * (data/droid_build.js). Three outcomes, and they are different sentences to
+   * a builder standing at a bench:
+   *
+   *   the built-in drawing IS their dome  -> show it, as this tier always has
+   *   it is a drawing of another design   -> do not show it as theirs
+   *   this build does not record what     -> say so; an `mk4/basic` dome is that case
+   *     their design and variant carry       today, and drawing an empty dome
+   *                                          would read as "you fitted nothing"
+   *
+   * A page that has not loaded the Droid Build seam, or a controller too old to
+   * answer, leaves the design unstated - and an unstated design keeps exactly
+   * the behaviour this tier had before, which is the vendored drawing.
+   *
+   * Tier 4 - an unsupported schema - resolves the same way and says so on top:
+   * its geometry is not trusted either, so what it can show is exactly what
+   * this tier can show, plus the schema warning.
+   *
+   * @param {string} [forcedSource] - tier 4 passes 'unsupported'
+   * @param {string} [forcedWarning] - tier 4's schema warning, which wins
+   * @returns {object} the normalized model, with tier-3 fields on top
+   */
+  function statedDesignLayout(forcedSource, forcedWarning) {
+    const build = window.DroidBuild?.current?.() || null;
+    const designId = build ? build.dome.design : '';
+    const variantId = build ? build.dome.variant : '';
+    const complement = window.DroidBuild?.complementFor
+      ? window.DroidBuild.complementFor(designId, variantId, 'dome')
+      : { ids: [], known: false };
+
+    // A stated design can only have come through the seam, so the seam's own
+    // answer decides it; an unstated one keeps the drawing.
+    const drawingIsTheirs =
+      designId === '' || window.DroidBuild.showsBuiltInDome(designId, variantId);
+
+    let warning = null;
+    if (designId !== '' && !complement.known) {
+      warning = 'This build does not record which panels that dome design carries';
+    } else if (!drawingIsTheirs) {
+      warning = 'The built-in dome map is not the design you stated';
+    }
+
+    const source = forcedSource || (drawingIsTheirs ? 'vendored' : 'stated-design');
+    const model = normalizeLayout({}, false, source, forcedWarning || warning);
+    model.domeDesign = designId;
+    model.domeVariant = variantId;
+    model.complementKnown = complement.known;
+    // What the two consumers of this tier actually branch on: may the built-in
+    // MK4 drawing be shown as this builder's dome.
+    model.usesVendoredDrawing = drawingIsTheirs;
+    return model;
+  }
+
+  /**
+   * The connected dome's panels, set against the stated Dome Design's.
+   *
+   * The Dome Design is the builder's statement and the dome's layout is the
+   * dome's; when both are present and disagree, the difference is reported for
+   * the builder to resolve and nothing here changes either one (GLOSSARY.md
+   * "Dome Design", #333, #368). This returns the difference and writes nothing.
+   *
+   * Only a LIVE layout is a connected dome. A cached one is a dome that was
+   * connected once, and is not compared.
+   *
+   * What is compared is the panels - the pies and the side panels - because
+   * those are named the same on both sides: the dome's canonical element id
+   * (`PP1`, `P7`, ADR 0009) is the catalog's community shorthand for that part
+   * (docs/droid-parts.yaml `shorthand:`), and a panel is what a variant adds or
+   * leaves out ("a basic dome cannot grow the complex pies"). Holoprojectors,
+   * lights and fixtures are spelled differently on the two sides and are not
+   * compared rather than matched by guesswork.
+   *
+   * @returns {object|null} null with no connected dome;
+   *   {comparable: false} when the stated design declares no dome complement
+   *   to compare (unknown, or my own build);
+   *   otherwise {comparable: true, designLabel, domeOnly, designOnly, differs,
+   *   sentence}: the two lists are panel shorthands, and the last two are the
+   *   words every surface says the difference in - `differs` the clause after
+   *   "it" ("has PP1 and lacks P7"), `sentence` the whole note - both "" when
+   *   the panels are the same.
+   */
+  function statedDesignDifference() {
+    if (currentSource !== 'live' || !currentModel) {
+      return null;
+    }
+    const build = window.DroidBuild?.current?.() || null;
+    const parts = window.DroidParts?.parts || [];
+    const design = (window.DroidParts?.designs || []).find((row) => row.id === build?.dome.design);
+    if (!build || !design) {
+      return { comparable: false };
+    }
+    const complement = window.DroidBuild.complementFor(build.dome.design, build.dome.variant, 'dome');
+    // My own build seeds nothing on purpose, so it states no complement for a
+    // dome to disagree with; an unknown complement cannot be compared at all.
+    if (!complement.known || design.card === 'own-build') {
+      return { comparable: false };
+    }
+
+    const panels = parts.filter(
+      (part) => part.section === 'dome_pies' || part.section === 'dome_panels'
+    );
+    const stated = new Set(complement.ids);
+    const reported = new Set(
+      currentModel.elements
+        .filter((elem) => elem.in_layout === true && elem.element_type === 'panel')
+        .map((elem) => elem.id)
+    );
+
+    const variant = (design.variants || []).find((row) => row.id === build.dome.variant);
+    const designLabel = variant ? `${design.short} ${variant.label}` : design.short;
+    const domeOnly = panels
+      .filter((part) => reported.has(part.shorthand) && !stated.has(part.id))
+      .map((part) => part.shorthand);
+    const designOnly = panels
+      .filter((part) => stated.has(part.id) && !reported.has(part.shorthand))
+      .map((part) => part.shorthand);
+    // The words live beside the comparison, so Configuration's note and
+    // Wiring's row cannot come to say it two ways.
+    const clauses = [];
+    if (domeOnly.length > 0) clauses.push(`has ${domeOnly.join(', ')}`);
+    if (designOnly.length > 0) clauses.push(`lacks ${designOnly.join(', ')}`);
+    const differs = clauses.join(' and ');
+    return {
+      comparable: true,
+      designLabel,
+      domeOnly,
+      designOnly,
+      differs,
+      sentence: differs
+        ? `The connected dome differs from ${designLabel}: it ${differs}. Your answer stands until you change it.`
+        : '',
+    };
+  }
+
   // ── Fetch & Resolve ────────────────────────────────────────────────────
 
   /**
@@ -213,6 +370,13 @@
    * @returns {Promise<void>}
    */
   async function resolveLayout() {
+    // The boot re-apply of the Droid Build, before anything can need it. It is
+    // held by the seam, so every surface on the page that asks joins this one
+    // request rather than opening another, and a failure to read it leaves the
+    // design unstated - which is the pre-#343 behaviour rather than a broken
+    // picker.
+    await window.DroidBuild?.load?.();
+
     const liveLayout = await fetchLiveLayout();
 
     let model;
@@ -236,9 +400,12 @@
         );
       } else {
         // Tier 4: Schema not supported
-        // Emit warning and fall back to vendored
         warning = `Layout schema ${schemaRev} not supported (supported: ${Array.from(SUPPORTED_DOME_LAYOUT_SCHEMAS).join(', ')})`;
-        model = normalizeLayout({}, false, 'unsupported', warning);
+        // Tier 4 is tier 3 plus this warning: an unsupported schema's geometry
+        // is not trusted, so what can be shown is what the stated Dome Design
+        // allows - including, for a design the built-in drawing is not of, no
+        // drawing at all (ADR 0047).
+        model = statedDesignLayout('unsupported', warning);
         source = 'unsupported';
       }
     } else if (liveLayout === null) {
@@ -274,9 +441,9 @@
         model = normalizeLayout(cachedLayout.rawLayout, false, 'cached');
         source = 'cached';
       } else {
-        // Tier 3: Vendored fallback
-        model = normalizeLayout({}, false, 'vendored');
-        source = 'vendored';
+        // Tier 3: the stated Dome Design (ADR 0047)
+        model = statedDesignLayout();
+        source = model.source;
       }
     }
 
@@ -300,16 +467,18 @@
    * Refetch layout when transitioning INTO "connected" state.
    */
   function subscribeToStatusStream() {
-    if (statusStreamSubscribed || !window.PAStatusStream) {
+    if (statusStreamSubscribed || !window.PALiveReading) {
       return;
     }
 
-    window.PAStatusStream.subscribe((_eventType, payload) => {
-      if (payload?.dome_link?.state === undefined) {
+    // The dome link's state is a status field, so it is read off the Live
+    // Reading like every other (data/live_reading.js).
+    window.PALiveReading.subscribe((reading) => {
+      const newState = reading.status?.dome_link?.state;
+      if (newState === undefined) {
         return;
       }
 
-      const newState = payload.dome_link.state;
       // Refetch only when transitioning INTO connected
       if (lastDomeLinkState !== 'connected' && newState === 'connected') {
         resolveLayout();
@@ -353,24 +522,19 @@
    * Register a change listener.
    * Fired after each resolveLayout() completes (on load/refresh/dome-reconnect).
    * @param {Function} cb - callback(normalizedModel)
+   * @returns {Function} releases the callback
    */
   function onChange(cb) {
-    if (typeof cb === 'function') {
-      listeners.add(cb);
-    }
-  }
-
-  /**
-   * Unregister a change listener.
-   * @param {Function} cb
-   */
-  function offChange(cb) {
-    listeners.delete(cb);
+    if (typeof cb !== 'function') return () => {};
+    listeners.add(cb);
+    // The release: a caller that subscribes again drops the old callback with
+    // it, or every resolve runs both (#472, the Dashboard's dome drawing).
+    return () => listeners.delete(cb);
   }
 
   /**
    * Get the current source tier.
-   * @returns {string} 'live' | 'cached' | 'vendored' | 'unsupported'
+   * @returns {string} 'live' | 'cached' | 'vendored' | 'stated-design' | 'unsupported'
    */
   function getSource() {
     return currentSource;
@@ -387,6 +551,41 @@
     }, { once: true });
   }
 
+  // ── What a severity says out loud ──────────────────────────────────────
+  //
+  // One clause per severity, naming the STATE and nothing else. Two surfaces
+  // ask - the Dashboard's dome control and the sequence editor - and each
+  // appends its own consequence, because pressing a button and authoring a
+  // step are not the same act. Before #348 each surface carried its own copy
+  // of all six, and they had already drifted: one said "is disabled on the
+  // dome", the other "is off".
+  //
+  // None of them names a destination. `disabled` and `active` are the dome's
+  // own runtime state (ADR 0009) and `unmapped` is its command map: there is
+  // no screen on this droid that changes any of them, so these are settled
+  // nos, and a settled no stops rather than inventing a route.
+  const SEVERITY_CLAUSE = Object.freeze({
+    disabled: (id, reason) => `${id} is off on the dome${reason}.`,
+    inactive: (id) => `${id} is not active on the dome.`,
+    in_layout_false: (id) => `${id} is not in the selected layout.`,
+    unverified: (id) => `The dome has not confirmed ${id}.`,
+    unmapped: (id) => `Nothing maps to ${id}.`,
+  });
+
+  /**
+   * The state clause for a resolved element, or null where it is available.
+   *
+   * @param {object} elem - an element from the normalized model
+   * @returns {string|null}
+   */
+  function severityClause(elem) {
+    if (!elem || !elem.severity) return null;
+    const clause = SEVERITY_CLAUSE[elem.severity];
+    if (!clause) return `${elem.id} is not available.`;
+    const reason = elem.disabled_reason ? ` (${elem.disabled_reason})` : '';
+    return clause(elem.id, reason);
+  }
+
   // ── Export ────────────────────────────────────────────────────────────
 
   window.DomeLayout = {
@@ -395,7 +594,8 @@
     refresh,
     getModel,
     onChange,
-    offChange,
     getSource,
+    severityClause,
+    statedDesignDifference,
   };
 })();

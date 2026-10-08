@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en" data-scripts="/web_api.js,/overlay.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/feature_availability.js,/droid_parts.js,/outputs.js,/dome_command_map.js,/servo_motion.js,/seq_rehearsal.js,/maintenance.js">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Maintenance - protoR2</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- Thin delegate. This file is the one copy of this surface's markup and
+         the Operator Shell fetches it; fetching never runs scripts, so this
+         line is inert for the shell. A browser that lands here directly -- a
+         bookmark, an old link, a support conversation -- is handed to the shell
+         at this surface's route instead, so the address keeps opening what it
+         names (ADR 0048). -->
+    <script>window.PAShellDelegate = true; location.replace("/#maintenance");</script>
+  </head>
+  <body data-page="maintenance">
+
+    <!-- The title is the name in the nav, and nothing under it (ADR 0066,
+         docs/ui-copy-voice.md rule 14). Every act on this page is named beside
+         the thing it acts on, so the title carries none of its own. -->
+    <div class="title">
+      <div>
+        <h1>Maintenance</h1>
+      </div>
+    </div>
+
+    <!-- Serial Connection Status. The rows name the LANE, never the
+         connector: "S1" and friends are the Artoo PCB's silkscreen and a
+         FireBeetle 2 prints GPIO numbers there. Which pins a lane is on, and
+         at what baud, is Wiring's answer, drawn from the running board
+         (#348). -->
+    <div class="card">
+      <div class="sect"><h2>Serial links</h2></div>
+      <div class="health-grid">
+        <div class="health-item">
+          <div class="indicator" id="serial-s1-light"></div>
+          <span>Foot Drive</span>
+          <span class="indicator-text waiting" id="serial-s1-state"></span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="serial-s2-light"></div>
+          <span>Sound</span>
+          <span class="indicator-text waiting" id="serial-s2-state"></span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="serial-s3-light"></div>
+          <span>protoR2link</span>
+          <span class="indicator-text waiting" id="serial-s3-state"></span>
+        </div>
+      </div>
+      <div id="serial-status-line" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- Diagnostics -->
+    <div class="card">
+      <div class="sect"><h2>Diagnostics</h2><span class="sub">live memory</span></div>
+      <dl class="status-grid">
+          <div class="status-item">
+            <dt>Uptime</dt>
+            <dd><span class="waiting" id="diag-uptime"></span></dd>
+            <span class="hint">since boot</span>
+          </div>
+          <div class="status-item">
+            <dt>Memory free</dt>
+            <dd><span class="waiting" id="diag-heap-free"></span></dd>
+            <span class="hint">free now</span>
+          </div>
+          <div class="status-item">
+            <dt>Memory lowest</dt>
+            <dd><span class="waiting" id="diag-heap-min"></span></dd>
+            <span class="hint">since boot</span>
+          </div>
+          <div class="status-item">
+            <dt>Largest block</dt>
+            <dd><span class="indicator" id="diag-heap-largest-light"></span><span class="waiting" id="diag-heap-largest"></span></dd>
+            <span class="hint">small means fragmented</span>
+          </div>
+      </dl>
+    </div>
+
+    <!-- Memory Profiler availability is declared by /api/identity. -->
+    <div class="card feature-availability-panel feature-state-checking" id="profiler-card"
+         data-feature-entry="system.api.get-profiler" data-build-flag="PA_HEAP_PROFILE">
+      <div class="feature-availability-header">
+        <div class="sect"><h2>Memory profiler</h2><span class="sub">memory by task</span></div>
+        <div class="feature-availability-rail">
+          <span id="profiler-availability-status" class="feature-availability-status feature-state feature-state-checking">Checking</span>
+          <div id="profiler-availability-lamp" class="feature-availability-lamp-indicator feature-state-checking">
+            <span class="feature-availability-lamp" aria-hidden="true"></span>
+          </div>
+        </div>
+      </div>
+      <div id="profiler-availability-reason" class="feature-availability-reason" role="status" aria-live="polite">Checking Memory Profiler…</div>
+
+      <div id="profiler-content" class="feature-availability-content" inert aria-hidden="true">
+
+        <div class="sect"><h3>Fragmentation</h3><span class="sub">1 - largest block over free</span></div>
+        <div class="prof-bar-wrap" id="prof-frag-bar-wrap">
+          <div id="prof-frag-bar" class="prof-bar"></div>
+        </div>
+        <p id="prof-frag-label" class="hint"></p>
+
+        <dl class="status-grid">
+            <div class="status-item">
+              <dt>Heap free</dt>
+              <dd id="prof-heap-free">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Heap min</dt>
+              <dd id="prof-heap-min">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Largest block</dt>
+              <dd id="prof-heap-largest">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Frag ratio</dt>
+              <dd id="prof-frag-ratio">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Alloc blocks</dt>
+              <dd id="prof-alloc-blocks">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Free blocks</dt>
+              <dd id="prof-free-blocks">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Failed allocs</dt>
+              <dd id="prof-failed-allocs">...</dd>
+            </div>
+        </dl>
+
+        <div class="sect"><h3>Task stack headroom</h3><span class="sub">lowest free stack per task</span></div>
+        <div class="prof-table-wrap">
+          <table id="prof-hwm-table" class="prof-table">
+            <thead>
+              <tr>
+                <th scope="col">Task</th>
+                <th scope="col" class="num">Headroom</th>
+                <th scope="col" class="num">State</th>
+              </tr>
+            </thead>
+            <tbody id="prof-hwm-tbody"></tbody>
+          </table>
+        </div>
+
+        <div id="prof-task-heap-section" hidden>
+          <div class="sect"><h3>Task heap</h3><span class="sub">per task, if recorded</span></div>
+          <div class="prof-table-wrap">
+            <table id="prof-heap-table" class="prof-table">
+              <thead>
+                <tr>
+                  <th scope="col">Task</th>
+                  <th scope="col" class="num">Current</th>
+                  <th scope="col" class="num">Peak</th>
+                  <th scope="col" class="num">Count</th>
+                </tr>
+              </thead>
+              <tbody id="prof-heap-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="sect"><h3>Mode snapshots</h3><span class="sub">lowest per window</span></div>
+        <p id="prof-current-window" class="hint" hidden></p>
+        <div class="prof-table-wrap">
+          <table id="prof-snap-table" class="prof-table">
+            <thead>
+              <tr>
+                <th scope="col">Window</th>
+                <th scope="col" class="num">Min during</th>
+                <th scope="col" class="num">Largest block</th>
+                <th scope="col" class="num">Opened T+ms</th>
+              </tr>
+            </thead>
+            <tbody id="prof-snap-tbody"></tbody>
+          </table>
+        </div>
+        <div id="profiler-feedback" class="feedback" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <!-- The crash dump the controller keeps from its last crash, handed over
+         as a file (GET /api/coredump/status, GET /api/coredump). Reading it
+         is docs/troubleshooting.md's; data/maintenance.js only says whether
+         one is stored and offers the download when it is. -->
+    <div class="card" id="crash-dump-card">
+      <div class="sect"><h2>Crash dump</h2><span class="sub" id="crash-dump-state">checking</span></div>
+      <div id="crash-dump-row" class="button-row button-row-compact" hidden>
+        <a id="crash-dump-download" class="btn btn-sm icon-act" href="/api/coredump" download="coredump.elf"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download-outline"/></svg><span class="act-label">Download the crash dump</span></a>
+      </div>
+      <div id="crash-dump-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- Backup & Restore -->
+    <div class="card">
+      <div class="sect"><h2>Backup</h2><span class="sub">a copy on your computer</span></div>
+      <p class="prose">A restore <b>replaces</b> the parts you tick; it never merges.</p>
+
+      <div class="button-row button-row-compact">
+        <button id="backup-download-btn" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download-outline"/></svg><span class="act-label">Download backup</span></button>
+        <button id="backup-file-trigger" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Choose a file to restore</span></button>
+      </div>
+      <input type="file" id="backup-file-input" accept=".json" hidden aria-label="Select backup file">
+
+      <div id="backup-summary" class="hint" hidden></div>
+
+      <!-- The three parts a restore may write (ADR 0056). What each replaces
+           and leaves is the part's own, in data/maintenance.js, so no part is
+           drawn without both lines. -->
+      <div id="restore-sections" hidden>
+        <div class="restore-grid">
+          <div class="restore-part">
+            <label class="field-checkbox"><input type="checkbox" id="restore-chk-sequences"> <span>Sequences</span></label>
+            <span class="restore-count" id="restore-count-sequences"></span>
+            <p class="hint" id="restore-touches-sequences"></p>
+            <p class="hint" id="restore-leaves-sequences"></p>
+            <p class="hint" id="restore-why-sequences" hidden></p>
+          </div>
+          <div class="restore-part">
+            <label class="field-checkbox"><input type="checkbox" id="restore-chk-configuration"> <span>Configuration</span></label>
+            <span class="restore-count" id="restore-count-configuration"></span>
+            <p class="hint" id="restore-touches-configuration"></p>
+            <p class="hint" id="restore-leaves-configuration"></p>
+            <p class="hint" id="restore-why-configuration" hidden></p>
+          </div>
+          <div class="restore-part">
+            <label class="field-checkbox"><input type="checkbox" id="restore-chk-rc-map"> <span>RC Map</span></label>
+            <span class="restore-count" id="restore-count-rc-map"></span>
+            <p class="hint" id="restore-touches-rc-map"></p>
+            <p class="hint" id="restore-leaves-rc-map"></p>
+            <p class="hint" id="restore-why-rc-map" hidden></p>
+          </div>
+        </div>
+      </div>
+
+      <div id="restore-btn-row" class="button-row button-row-compact" hidden>
+        <button id="backup-restore-btn" class="btn btn-sm icon-act act-keeps-words" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Restore the ticked parts</span></button>
+      </div>
+
+      <!-- Asked after the parts and before the first write: nothing reaches
+           the droid until one of these is pressed. -->
+      <div id="restore-question" hidden>
+        <p class="note note-act" id="restore-question-text"></p>
+        <div class="button-row button-row-compact">
+          <button id="restore-cancel-btn" class="btn btn-sm btn-quiet icon-act act-keeps-words" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-close"/></svg><span class="act-label">Keep what I have</span></button>
+          <button id="restore-copy-btn" class="btn btn-sm icon-act act-keeps-words" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download-outline"/></svg><span class="act-label">Save a copy first, then restore</span></button>
+          <button id="restore-replace-btn" class="btn btn-sm danger icon-act act-keeps-words" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload-outline"/></svg><span class="act-label">Replace</span></button>
+        </div>
+      </div>
+
+      <div id="backup-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- The single deliberate way back into guided Setup (#297, GLOSSARY.md
+         "Maintenance"). The run itself is drawn over Configuration; this only
+         reopens it (data/maintenance.js). -->
+    <div class="card">
+      <div class="sect"><h2>Guided Setup</h2><span class="sub">the first run, again</span></div>
+      <div class="button-row button-row-compact">
+        <button id="setup-again-button" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-compass-outline"/></svg><span class="act-label">Run guided Setup again</span></button>
+      </div>
+      <p class="hint">For a droid you skipped setting up, or rebuilt. Nothing you set is cleared.</p>
+      <div id="setup-again-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- System Controls -->
+    <div class="card">
+      <div class="sect"><h2>Restart</h2><span class="sub">about ten seconds off the air</span></div>
+      <p class="hint">Every output cuts out; nothing saved is lost.</p>
+      <div class="button-row button-row-compact">
+        <button id="reboot-button" class="btn btn-sm danger icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-restart"/></svg><span class="act-label">Restart the Body Controller</span></button>
+      </div>
+      <div id="reboot-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
+  </body>
+</html>

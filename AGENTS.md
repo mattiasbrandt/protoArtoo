@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Agent-focused instructions for the `protoArtoo` firmware repository.
+Agent-focused instructions for the `protoR2` firmware repository.
 
 This file is the model-agnostic canonical instruction source for mixed-agent
 workflows. It outranks the Claude adapter (`.claude/CLAUDE.md`), the agent
@@ -10,22 +10,26 @@ epic issue. Material an agent needs only on some paths lives under
 
 ## Project Context
 
-- Project: `protoArtoo` (ESP32 body controller firmware for MK4 astromech droids)
+- Project: `protoR2` (ESP32 body controller firmware for MK4 astromech droids)
 - Build system: PlatformIO (`artoo_esp32` and `firebeetle2` firmware targets +
   `native` tests)
 - Companion dome firmware: `mattiasbrandt/AstroPixelsPlus`
+
+The shell on this bench is zsh. Quote a glob (`--include='*.cpp'`). An unquoted `$var` does not word-split. `=word` is equals-expansion, so write `echo '======'`. `git rev-parse --short` takes one revision.
 
 ## Source of Truth Files
 
 - Public planning baseline (commit/push allowed): `docs/status.md`, `docs/goal.md`.
   These two carry no agent/tool/model wording ("agent", "LLM", "model",
   "Copilot", "Claude").
-- Project language decisions: `GLOSSARY.md`; architecture decisions: `docs/adr/`
+- Project language decisions: `GLOSSARY.md`; architecture decisions: `docs/adr/`.
+  An operator's rejection of a word is recorded the day it is made, in
+  `GLOSSARY.md` Flagged Ambiguities or in an ADR.
 - Operator intent and design source (local only, never commit/push):
   `tasks/research-r2d2-*` — the operator's own curated statement of what
-  protoArtoo should become, carrying dated operator decisions, a source-verified
+  protoR2 should become, carrying dated operator decisions, a source-verified
   findings pass, a ranked recommendation list and 23 reference screenshots.
-  **For what protoArtoo should do it outranks the code; for what protoArtoo does
+  **For what protoR2 should do it outranks the code; for what protoR2 does
   today the code outranks it.** See "Planning Mode".
 - Other internal planning/agent working docs (local only, never commit/push):
   `tasks/**` — including the RC diagnostics/mapping contract
@@ -34,6 +38,12 @@ epic issue. Material an agent needs only on some paths lives under
 - Shared state truth: `include/robot_state.h`
 - Action registry: `docs/action-registry.yaml`
 - Droid parts catalog: `docs/droid-parts.yaml`
+- Component Registry and each product's project facts (its spec sheet, wiring
+  card, notes): `docs/products.yaml`. It generates
+  `include/component_registry.inc` and Wiring's product cards; edit the YAML,
+  never the generated files. The spec sheets under `docs/spec-sheets/` below
+  hold vendor and community facts only; what the project does with a product
+  goes in its `notes:` there
 - Operator-facing copy voice: `docs/ui-copy-voice.md`
 - REST API contracts: `docs/api.md`
 - Core error-signalling conventions: `docs/core-error-signalling.md`
@@ -42,7 +52,7 @@ epic issue. Material an agent needs only on some paths lives under
   `docs/soak.md` (the contract itself is ADR 0035)
 - SBUS protocol truth: `docs/spec-sheets/sbus-protocol.md`
 - ESP-IDF5 RMT driver truth: `docs/spec-sheets/rmt-esp32-idf5.md`
-- HotRC DS-650 product and HOTRC profile truth: `docs/spec-sheets/hotrc-ds650-radio.md`
+- HotRC DS-650 product truth: `docs/spec-sheets/hotrc-ds650-radio.md`
   (supersedes `docs/spec-sheets/hotrc-sbus-spec.md`, kept as the older summary)
 - Teeces / JawaLite truth: `docs/spec-sheets/teeces-dome-lighting.md`
 - PCA9685 / I2C PWM expander truth: `docs/spec-sheets/pca9685-servo-expander.md`
@@ -56,8 +66,8 @@ epic issue. Material an agent needs only on some paths lives under
 - DY-SV5W / DY UART truth: `docs/spec-sheets/dy-sv5w-sound.md`
 - ISDT ESC70 / dome ESC RC PWM truth: `docs/spec-sheets/isdt-esc70-dome-esc.md`
 - SparkFun MP3 Trigger / MP3 Trigger serial truth: `docs/spec-sheets/mp3-trigger-sound.md`
-- CHIRP Audio Trigger / `chirp_ascii_uart` truth: `docs/spec-sheets/chirp-audio-trigger-sound.md`
-- AstroPixels product, AstroPixelsPlus firmware and protoR2link truth:
+- CHIRP Audio Trigger / CHIRP serial truth: `docs/spec-sheets/chirp-audio-trigger-sound.md`
+- AstroPixels product and AstroPixelsPlus firmware truth:
   `docs/spec-sheets/astropixels-dome-controller.md`
 - Long-term project memory: MemPalace — see "Memory" below
 - Espressif MCP servers (repo-level): `espressif-documentation`, `esp-component-registry`
@@ -130,11 +140,11 @@ otherwise.
 
 **The code prices a decision. It never bounds one.** Read the implementation to
 learn what a choice costs, what it breaks and where it would land. Never read it
-to decide what protoArtoo *should* do. "It does not work that way today" is a
+to decide what protoR2 *should* do. "It does not work that way today" is a
 price tag, never an argument: a question about what the product should do is not
 a question of fact, and the codebase can only report what somebody already built.
 
-**Order of authority for what protoArtoo should become:**
+**Order of authority for what protoR2 should become:**
 
 1. A dated operator decision — an issue comment, an ADR, this file.
 2. `tasks/research-r2d2-*`, the operator's design source. Read it before the
@@ -143,14 +153,14 @@ a question of fact, and the codebase can only report what somebody already built
    already taken; they do not fence off decisions not yet taken.
 4. The implementation.
 
-Reverse that order for what protoArtoo **does today**: the code wins, and the
+Reverse that order for what protoR2 **does today**: the code wins, and the
 research is a snapshot of another project taken in August 2026. Where the
 research and a later operator decision disagree, the operator decision wins.
 
 **Naming what does not exist is the work, not a guess.** The Effort Policy's
 no-guessing rule governs facts about what exists: never invent a pin number, a
 wire format or a field name in shipped code. It does not reach proposals. In a
-planning ticket, naming a component, a term or a capability protoArtoo does not
+planning ticket, naming a component, a term or a capability protoR2 does not
 have yet is the deliverable. Mark it a proposal; never mark it `UNKNOWN`, and
 never suppress it because you could not cite a file for it.
 
@@ -204,7 +214,7 @@ make the call.
 
 ## Verification Scale (Non-Negotiable)
 
-protoArtoo is a small hobby project with one known user, the operator. Verification
+protoR2 is a small hobby project with one known user, the operator. Verification
 is sized to that, not to a production product with a support obligation. Operator
 decision, 2026-09-04, after epic #206 ended with seven open sub-issues that were all
 bench rows, audit bookkeeping and closure steps for one bench day (folded into #274).
@@ -234,6 +244,11 @@ what gets verified, that one decides how honestly each piece is done.
   timing, a boot). A cell a native seam test already proves, a second adapter for a
   guard that lives in the shared core, a both-boards duplicate of a board-independent
   behaviour: cut it, and say so.
+- **A web test earns its place the same way.** `node:test` coverage under
+  `test/test_web/` is sized by the same three: a safety invariant, a shipped
+  defect, or a behaviour only the harness can see (abort ownership, a session,
+  "this surface does not write"). Copy, order, timing constants and layout are
+  not a criterion and do not get a `test()`; the operator is looking at the screen.
 - **All boxes ticked closes the ticket.** A ticket whose every criterion is ticked
   closes in the same pass. It does not stay open for one unobtainable number, a row
   nobody can run, or "in case something turns up". The remainder is a one-line note
@@ -268,10 +283,9 @@ worktree alike, never a wing derived from the directory you happen to be in. The
 convention on this machine is `wing_<project>` (`wing_mattias`, `wing_dotfiles`,
 `wing_work`); the bare form `protoartoo` is not a wing and neither is
 `protoArtoo`, which case-sensitively matches nothing and returns "No results
-found" rather than an error. The palace was consolidated on 2026-09-17 (3.9.0 ->
-3.10.0): 82 wings became 17, and `protoartoo`, all 65 `wing_wt_*` and the
-protoArtoo part of `sessions` were merged into `wing_protoartoo`, which now holds
-**144,948 records**. Nothing needs re-mining.
+found" rather than an error. The wing keeps the project's old name until it is
+renamed outside this repository. The older `protoartoo` and `wing_wt_*` wings were
+merged into `wing_protoartoo` on 2026-09-17; nothing needs re-mining.
 
 **Writes are refused, and that is expected.** The MemPalace daemon holds the
 palace's single writer lease for its whole lifetime, and the lease is
@@ -336,11 +350,13 @@ Role-specific behavior belongs in project subagent files under `.claude/agents/`
 Keep AGENTS.md as the canonical policy/invariant source and avoid duplicating
 full policy blocks across individual agent definitions.
 
-- Default mode for non-trivial work is planner-orchestrator:
-  - Main model owns deep reasoning, architecture, risk checks, and a detailed TODO packet.
-  - Subagents execute scoped tasks from that packet.
-- Do not collapse delegated work back to main-model solo execution unless the user explicitly asks.
-- Delegate by default when work is parallelizable, read-heavy, repetitive, or review-oriented.
+- Delegate when the payoff clears the overhead: each subagent re-establishes context,
+  re-explores and reports back, and you then re-read its report. That pays for
+  genuinely independent, sizeable tracks - a wide multi-file sweep, parallel research,
+  an epic's worker slices. A few reads, searches or edits, and checking your own work,
+  stay in the main loop.
+- Once work is delegated, do not collapse it back to main-model solo execution unless the
+  user explicitly asks.
 - Subagent tasks must be narrowly scoped and deliverable-driven:
   - one objective per subagent,
   - concrete inputs and expected outputs,
@@ -453,7 +469,7 @@ fine. Do not wait for a window or schedule around anyone.
 
 This rule is enforced, not remembered: every `pio` invocation in the Makefile,
 and every pio phase of `tools/slice_verify.py`, goes through
-`tools/pio_lock.py`, which takes `/tmp/protoartoo-pio.lock` and waits there
+`tools/pio_lock.py`, which takes `/tmp/protor2-pio.lock` and waits there
 until it is free.
 
 So run `make build`, `make test` and the slice gate **plainly. Do not put
@@ -467,10 +483,10 @@ For a contiguous window across several commands, which a both-chip-target
 ticket wants so the alternation is not interleaved:
 
 ```
-PROTOARTOO_PIO_LOCK_HELD=1 flock /tmp/protoartoo-pio.lock <commands>
+PROTOR2_PIO_LOCK_HELD=1 flock /tmp/protor2-pio.lock <commands>
 ```
 
-`PROTOARTOO_PIO_LOCK_HELD=1` tells everything underneath that the lock is
+`PROTOR2_PIO_LOCK_HELD=1` tells everything underneath that the lock is
 already held, so nothing inside tries to take it again. A bare `pio` you type
 yourself is still outside the lock — one more reason the dual-target rule above
 routes through `make`; run `python3 tools/pio_lock.py pio run -e <env>` when you
@@ -478,10 +494,10 @@ must call pio directly.
 
 The lock file says who holds it. Every field is derived, never passed in — pid,
 worktree, branch, target, command, timestamp, plus optional
-`PROTOARTOO_LOCK_OWNER` free text — written the moment the lock is taken and
+`PROTOR2_LOCK_OWNER` free text — written the moment the lock is taken and
 deliberately **left behind on release**: the stale record is what tells the next
 agent which chip target last touched the shared framework packages, which is
-where a suspect image size is explained. `cat /tmp/protoartoo-pio.lock` reads it
+where a suspect image size is explained. `cat /tmp/protor2-pio.lock` reads it
 without taking the lock, and a build that gives up waiting prints it. The pid
 names the last holder, not necessarily a live process — check with `kill -0`.
 
@@ -490,8 +506,15 @@ names the last holder, not necessarily a live process — check with `kill -0`.
 build's own `<core>/penv` (the core dir comes from the build's env, not your
 shell). A penv that upgraded itself past 6.1.19 breaks every build with SCons
 errors, so the lock refuses it with exit 5 and prints the one fix line:
-`<core>/penv/bin/python -m pip install platformio==6.1.19`. Run that line and
-nothing else, then re-run the build. Never `pacman -S scons`.
+`<core>/penv/bin/uv pip install --python <core>/penv/bin/python --reinstall-package pioarduino pioarduino==6.1.19`
+(the penv is a `uv venv` with no pip, and the platform reads the `pioarduino`
+dist, #473). Run that line and nothing else, then re-run the build. Never `pacman -S scons`.
+
+## Suite pause (through 2026-10-31, #464)
+
+Operator experiment, started 2026-10-02. Through 2026-10-31 the native suite, the web suite, and mutation checks do not run per slice, and a missing run is not a reason to reject a slice. `make test` and `make test-web` print the pause and return. `tools/slice_verify.py` skips those stages, including the base-suite run. `tools/mutation_verify.py` returns without applying patches. The test files stay. CI still runs the native suite and the web suite on a pull request into `main` when its files reach them: Verification classifies the pull request's whole range, so the epic's closure pull request reaches both.
+
+This overrides, until 2026-11-01, the "never skip verification" bullet above, the one-test floor, the worker-slice-gate suite rows, and "add `make test`" in Default completion evidence below. It does not override the build, a second agent's read of the production diff, or the safety-critical rules. Do not add tests or mutation patches to stand in for the paused runs. `PROTOR2_SUITES=1` runs the suites anyway; a worker does not set it. On 2026-11-01 the skip ends by itself (`tools/suite_pause.py`).
 
 ## Verification and Reporting
 
@@ -530,8 +553,8 @@ makes a build fail is product and ships at any stage; a probe matrix proving tha
 `static_assert` fires is scaffolding and waits.
 
 **Project-wide renames are classified, never blanket-substituted.** A term that
-names two different things (`protoArtoo` is both the project and, historically,
-a PlatformIO env) cannot be renamed with one substitution. Classify every hit as
+names two different things (`protoArtoo` was both the project's old name and,
+historically, a PlatformIO env) cannot be renamed with one substitution. Classify every hit as
 *identifier* (rename), *project or product name* (keep), *history* (keep), or
 *intentional fixture* (keep); then sweep the whole tree — `tools/`, `.claude/`,
 `.github/`, `.gitignore` carry identifiers and operator-facing strings just as
@@ -557,11 +580,17 @@ locally when specifically investigating a static analysis issue.
 **Worker slice gate:** after committing a slice, run
 `python3 tools/slice_verify.py --base <base-ref>` with the `--fenced` pathspecs,
 `--mutations` patches and any waiver flag the coordinator's brief names, and paste
-its full block verbatim — provenance lines included — into the issue status
+its full block verbatim — provenance lines included, which carry the blob
+hashes of the three verifier scripts (`tools/slice_verify.py`,
+`tools/mutation_verify.py`, `tools/web_load_trace.cjs`) — into the issue status
 comment. The coordinator checks that block's provenance against the branch -
 cheap, and per slice - and runs the gate itself **once per wave, on the merged
 tree**, rather than re-running it behind every slice. Divergence at either point
-marks the slice unverified. Waiver flags are coordinator-granted only. Contract,
+marks the slice unverified. Waiver flags (`--expect-gate-edit`,
+`--expect-no-new-tests`, `--expect-no-mutations`, `--expect-test-shrink`,
+`--expect-heap-growth <bytes>`) are coordinator-granted only;
+`--expect-test-shrink` is the one that lets a slice delete tests or test files,
+and its ACK names the count and every file. Contract,
 evidence rules and the mutation stage: `docs/agents/slice-gate.md`.
 
 **CI gate:** `verification` workflow runs on every PR to `main` — do not bypass it.
@@ -573,7 +602,12 @@ budget's rationale field — a conscious decision, never a silent bump — and a
 separate fixed hard ceiling below the partition size never moves. The artoo-esp32
 image sits within ~31 KB of its budget, so an ordinary artoo feature can trip it,
 not only spill from another target. The RAM budget moves by the same
-explicit-decision rule.
+explicit-decision rule. So does the **boot heap baseline**
+(`boot_heap_baseline_bytes`, #468): static RAM plus the stack and TCB of every
+task each boot creates. The gate fails a slice that grows it more than
+`boot_heap_threshold_bytes` past the baseline, unless the coordinator granted
+`--expect-heap-growth <bytes>`; only an operator-approved edit re-stamps the
+baseline. It is not runtime heap - `make bench-auto`'s memory log is.
 
 **The filesystem image is measured by the coordinator, not by a slice**
 (operator decision, 2026-09-17). `tools/check_build_budgets.py` images the
@@ -601,6 +635,13 @@ size budget. Avoid low-value tests that only mirror implementation details.
 `test/test_web/`, read `test/test_web/README.md`. A suite is vacuous until a
 production-code mutation turns it red; bug-fix coverage additionally requires
 red against the pre-fix commit. Green alone is a claim, not evidence.
+A web test is an invariant that is still true after the ticket is forgotten, not
+the acceptance list typed out as `test()` blocks: "Verification Scale" decides
+how many there are, and the README names the three things that earn one. One
+invariant, in a file named for the surface, and one mutation that kills it - the
+mechanical kill stays, a patch per checkbox does not. A `data/` change whose
+only content is copy or layout has no invariant to add; the coordinator grants
+`--expect-no-new-tests` for it rather than the worker inventing a receipt.
 
 Classify verification status explicitly — use only these labels:
 
@@ -611,7 +652,7 @@ Classify verification status explicitly — use only these labels:
 - `full-hardware-required` — the remaining exposure is droid-only; recorded, not scheduled
 
 **These labels describe evidence. They are not a gate** (operator decision,
-2026-09-01). protoArtoo is a small open-source hobby project, and integrated-droid
+2026-09-01). protoR2 is a small open-source hobby project, and integrated-droid
 confirmation is a desirable outcome, not a precondition for closing work.
 
 - A ticket, a PR, or an epic **closes on the strongest evidence the available
@@ -646,10 +687,25 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
 - Keep copy focused on device state, controls, and diagnostics
 - Operator surfaces carry no emoji (operator decision 2026-09-13 on #395, ADR 0066).
   A heading, a nav entry or a card is text plus, where a glyph earns its place, an
-  icon from the project's own small SVG set that inherits text colour and keeps
-  its label alongside. State chips stay verb-free text labels. The earlier rule
-  preferring emoji over verbose labels is retired; it produced the generic look
-  the **Surface Anatomy** (`GLOSSARY.md`) replaces.
+  icon from the project's own small SVG set that inherits text color and keeps
+  its label alongside. State chips stay verb-free text labels; the **Surface
+  Anatomy** (`GLOSSARY.md`) is the standard for the look.
+
+## Docs Level
+
+Operator decision 2026-10-06 (#475): docs do not carry detail that goes stale or
+wrong with a minor UI change.
+
+- **Leave out:** exact button labels and copy strings, click-by-click paths,
+  which section a control sits in, screen layouts, per-page script counts,
+  line numbers into source, and counts that move with every slice.
+- **Keep:** what a feature does, concepts, safety behaviour, hardware and wiring
+  facts, Console commands and their words, and protocol and API contracts. The
+  API reference (`docs/api.md`) stays exact: it is a contract, not UI.
+- Name a page by its nav name at most. When a stale UI detail turns up, cut it
+  rather than patch it; a thin doc that stays true beats a full one that drifts.
+- Public docs name a product's state **Supported**, **Tested** or **Roadmap**
+  (operator decision 2026-10-06, #475; `GLOSSARY.md` "Confirmed on a Droid").
 
 ## Change Hygiene
 
@@ -669,7 +725,7 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
   in the issue checklist comment. Write what the code does and why it is that way, then cite the
   issue. This binds commit subjects too: `Refs #189` yes, "slice 3" no.
 - **Borrowed code carries its origin's notice; borrowed ideas carry a README credit.**
-  protoArtoo credits what it learned from
+  protoR2 credits what it learned from
   [r2d2-astromech-simulator](https://github.com/mikeeddington-lgtm/r2d2-astromech-simulator)
   in `README.md`. Crediting a pattern is our choice — no licence condition attaches to an
   idea. The condition fires on **code**: a file holding Mike Eddington's source, copied or
@@ -722,18 +778,19 @@ release-versioning role of its own.
 `main` releases itself: `.github/workflows/auto-release.yml` reads the
 Conventional Commits since the last release tag, applies CONTRIBUTING.md's type
 table (`feat` -> MINOR, `fix` -> PATCH, `feat!`/`fix!` or a `BREAKING CHANGE:`
-footer -> MAJOR, everything else -> no release) and tags `main` itself. Nobody
-tags by hand, and a merge that releases nothing is a normal outcome rather than
-a failed run.
+footer -> MAJOR, everything else -> no release) and tags `main` itself: a patch
+on the push, a minor or major only after a green Verification of the commit it
+tags. Nobody tags by hand, and a merge that releases nothing is a normal outcome
+rather than a failed run.
 
 Two tiers: a **patch** ships generated notes and the source tag only; a **minor
-or major** ships the curated `CHANGELOG.md` section and all eight images, as
-before. An epic merge therefore still lands as a minor release — what changed is
+or major** ships the curated `CHANGELOG.md` section and, for each board, the
+update images, the blank-board parts and their manifest. An epic merge therefore still lands as a minor release — what changed is
 that the fixes between epics no longer wait for one.
 
 The obligation this puts on an agent: **write the `[Unreleased]` section of
 `CHANGELOG.md` in the same change as any `feat`.** Merging it cuts a minor
-release within seconds, CI renames that heading to the version, and an empty
+release once Verification of that commit is green, CI renames that heading to the version, and an empty
 `[Unreleased]` fails the release rather than publishing a bare heading. A `fix`
 needs no entry — its release note is its commit subject, so write the subject
 accordingly. Full detail in CONTRIBUTING.md "Versioning and releases".
@@ -794,7 +851,9 @@ type(scope): summary
 
 The phase-era `type(phase:vX.Y.Z/T<NN>)` token is history (`CONTRIBUTING.md`
 "Commit scope"). Per-slice tracking lives in the issue checklist comment
-(below), never in the scope.
+(below), never in the scope. The commit hook accepts `-m`, `--message`, and a
+short cluster whose last letter is `m` (`-qam`). `git commit --no-edit` is
+accepted when `MERGE_HEAD` exists.
 
 ### Incremental slice workflow (required)
 
@@ -858,3 +917,4 @@ Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents
 - MemPalace protocol: `docs/agents/mempalace.md`
 - Wrap-up procedure: `docs/agents/wrap-up.md`
 - Worker slice gate contract and evidence rules: `docs/agents/slice-gate.md`
+- Surface-owned polling (`PASurface.poll`, `holdUnmount`): `docs/agents/surface-polling.md`

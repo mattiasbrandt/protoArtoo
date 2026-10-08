@@ -3,7 +3,7 @@
 //
 // Gen2.x hoverboard UART frame builder.
 // Protocol: 8-byte frame  --  [0xABCD start][int16 steer][int16 speed][uint16 XOR checksum]
-// Reference: https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x
+// Reference: https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32/blob/main/HoverBoardGigaDevice/Src/RemoteROS2.c
 //
 // Pure logic  --  no FreeRTOS, no Serial, no task code.
 // DriveTask owns UART1 and calls these functions at 50 Hz.
@@ -84,28 +84,6 @@ static void parseGen2xFrame(const uint8_t* buf, HoverboardFeedback* out) {
     memcpy(&out->currentR, buf + 16, sizeof(out->currentR));
     memcpy(&out->batteryRaw, buf + 18, sizeof(out->batteryRaw));
     memcpy(&out->boardTempRaw, buf + 20, sizeof(out->boardTempRaw));
-}
-
-// -----------------------------------------------------------------------------
-// parseHoverboardFeedbackFrame()
-// Pure parser for one complete feedback frame.
-// -----------------------------------------------------------------------------
-bool parseHoverboardFeedbackFrame(const uint8_t* buf, int len, HoverboardFeedback* out) {
-    if (buf == nullptr || out == nullptr) {
-        return false;
-    }
-
-    if (len == kHoverFocFrameLen && validateXorFrame(buf, 9)) {
-        parseFocFrame(buf, out);
-        return true;
-    }
-
-    if (len == kHoverGen2xFrameLen && validateXorFrame(buf, 13)) {
-        parseGen2xFrame(buf, out);
-        return true;
-    }
-
-    return false;
 }
 
 // initHoverboardFeedbackParser()

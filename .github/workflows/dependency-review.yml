@@ -1,5 +1,9 @@
 name: Dependency review
 
+# Every `uses:` is pinned to a full commit SHA with its `# vX.Y.Z`, and a new
+# action lands pinned the same way (#473). Dependabot's grouped weekly
+# updates move the pins.
+
 on:
   pull_request:
     branches:
@@ -12,13 +16,13 @@ permissions:
 jobs:
   dependency-review:
     name: dependency-review
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: ⬇️ Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: 🔒 Dependency review
-        uses: actions/dependency-review-action@v5
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
         with:
           # Block newly introduced high or critical vulnerable dependencies.
           # License enforcement is deferred — no audited allowlist exists yet.

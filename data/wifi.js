@@ -32,7 +32,8 @@
   const staIp = document.getElementById("wifi-sta-ip");
   const apIp = document.getElementById("wifi-ap-ip");
   const wifiSignal = document.getElementById("wifi-signal");
-  const wifiRssi = document.getElementById("wifi-rssi");
+  const compareState = document.getElementById("wifi-compare-state");
+  const applyState = document.getElementById("wifi-apply-state");
   const activeSummaryMode = document.getElementById("wifi-active-summary-mode");
   const activeSummaryNetwork = document.getElementById("wifi-active-summary-network");
   const activeSummaryAddress = document.getElementById("wifi-active-summary-address");
@@ -65,13 +66,17 @@
     rebootRequestPending: false,
   };
 
+  // Signal strength is a measurement, not a Health Signal: it takes no color
+  // and the word is the whole of what the four glyphs here used to say
+  // (GLOSSARY.md "Status Color"). The dBm reading rides in the same plate
+  // rather than in a second line under it, which is where this surface printed
+  // the same number twice. The thresholds are unchanged.
   const signalLabel = (rssi) => {
     const value = Number(rssi || 0);
-    if (!value) return "--";
-    if (value >= -67) return `✅ Excellent (${value} dBm)`;
-    if (value >= -75) return `✅ Good (${value} dBm)`;
-    if (value >= -85) return `⚠️ Fair (${value} dBm)`;
-    return `❌ Poor (${value} dBm)`;
+    if (!value) return "—";
+    const strength =
+      value >= -67 ? "Excellent" : value >= -75 ? "Good" : value >= -85 ? "Fair" : "Poor";
+    return `${strength} · ${value} dBm`;
   };
 
   const modeLabel = (mode) =>
@@ -88,13 +93,13 @@
   const setFeedback = (message, variant = "") => {
     if (!settingsFeedback) return;
     settingsFeedback.textContent = message;
-    settingsFeedback.className = variant ? `feedback mt-12 ${variant}` : "feedback mt-12";
+    settingsFeedback.className = variant ? `feedback ${variant}` : "feedback";
   };
 
   const setApplyFeedback = (message, variant = "") => {
     if (!applyFeedback) return;
     applyFeedback.textContent = message;
-    applyFeedback.className = variant ? `feedback mt-12 ${variant}` : "feedback mt-12";
+    applyFeedback.className = variant ? `feedback ${variant}` : "feedback";
   };
 
   const setApplyButtonState = () => {
@@ -103,13 +108,33 @@
     applyButton.disabled = !canApply;
     applyButton.setAttribute("aria-disabled", canApply ? "false" : "true");
     applyButton.classList.toggle("is-pending", state.rebootRequestPending);
+    if (applyState) {
+      applyState.textContent = state.rebootRequestPending
+        ? "reboot requested"
+        : state.wifiConfig?.pendingApply
+          ? "staged, waiting for a reboot"
+          : "nothing staged";
+    }
   };
 
-  const setPendingSummary = (text, stateName = "info") => {
+  // The Network posture head's subtitle. It is a word for the posture the
+  // controller answered with and takes no color of its own: the plate's left
+  // edge carries the signal, and a colored subtitle would be the same fact
+  // twice (ADR 0066, GLOSSARY.md "Status Color").
+  const setPendingSummary = (text) => {
     if (!pendingSummary) return;
-    const classMap = { ok: "pill-ok", warn: "pill-warn", error: "pill-error", info: "pill-info" };
-    pendingSummary.className = `status-pill ${classMap[stateName] || classMap.info} status-pill-compact`;
     pendingSummary.textContent = text;
+  };
+
+  // The Active against saved head's subtitle: whether the two halves under it
+  // agree, which is the question the heading raises.
+  const setCompareState = (wifi) => {
+    if (!compareState) return;
+    compareState.textContent = !wifi?.provisioned
+      ? "nothing saved yet"
+      : wifi.pendingApply
+        ? "saved settings wait for a reboot"
+        : "saved settings are the ones running";
   };
 
   const setFieldError = (name, message = "") => {
@@ -125,13 +150,6 @@
 
   const clearFieldErrors = () => {
     Object.keys(fields).forEach((name) => setFieldError(name, ""));
-  };
-
-  const fieldForMessage = (message) => {
-    const errorFields = ["staSsid", "staPassword", "apSsid", "apPassword", "wifiMode"];
-    const match = errorFields.find((name) => new RegExp(name, "i").test(message));
-    if (match) return match;
-    return "";
   };
 
   const selectedMode = () =>
@@ -215,11 +233,11 @@
     const diag = state.diagnostics || {};
     const posture = currentPosture(wifi, diag);
     const apAddress = apUrl(diag);
-    const staAddress = posture.staConnected && diag.staIp ? `http://${diag.staIp}` : "--";
+    const staAddress = posture.staConnected && diag.staIp ? `http://${diag.staIp}` : "—";
     const hostAddress = `http://${mdnsHost()}`;
     const activeNetwork = posture.staEnabled
       ? (posture.staConnected ? (diag.staSsid || "Connected client") : "Client not connected")
-      : (diag.apSsid || wifi.apSsid || "--");
+      : (diag.apSsid || wifi.apSsid || "—");
 
     if (activeSummaryMode) {
       activeSummaryMode.textContent = activeModeText;
@@ -237,11 +255,12 @@
       savedSummaryMode.textContent = wifi.provisioned ? modeLabel(wifi.mode) : "Not provisioned";
     }
     if (savedSummarySta) {
-      savedSummarySta.textContent = wifi.staSsid || "--";
+      savedSummarySta.textContent = wifi.staSsid || "—";
     }
     if (savedSummaryAp) {
-      savedSummaryAp.textContent = wifi.apSsid || diag.apSsid || "--";
+      savedSummaryAp.textContent = wifi.apSsid || diag.apSsid || "—";
     }
+    setCompareState(wifi);
   };
 
   const renderPosture = () => {
@@ -249,7 +268,7 @@
     const diag = state.diagnostics || {};
 
     if (!wifi) {
-      setPendingSummary("Loading", "info");
+      setPendingSummary("");
       return;
     }
 
@@ -260,63 +279,63 @@
       postureCard.dataset.posture = posture.stateName;
     }
 
+    // Three readouts that carried a glyph apiece. The word is the whole of
+    // what each one said, and the plate's left edge is where this surface
+    // reports how it is doing (ADR 0066, GLOSSARY.md "Status Color").
     if (provisioningState) {
       provisioningState.textContent = posture.networkRecovery
-        ? "🛠️ Network Recovery Mode"
-        : posture.provisioned ? "✅ Provisioned" : "⚠️ WiFi Provisioning";
+        ? "Network Recovery Mode"
+        : posture.provisioned ? "Provisioned" : "WiFi Provisioning";
     }
     if (activeMode) {
       activeMode.textContent = posture.modeText;
     }
     if (clientState) {
       clientState.textContent = posture.staEnabled
-        ? (posture.staConnected ? "✅ Connected" : "⏸️ Not connected")
+        ? (posture.staConnected ? "Connected" : "Not connected")
         : "Not active";
     }
     if (staIp) {
-      staIp.textContent = posture.staConnected && diag.staIp ? diag.staIp : "--";
+      staIp.textContent = posture.staConnected && diag.staIp ? diag.staIp : "—";
     }
     if (apIp) {
-      apIp.textContent = diag.apIp || "--";
+      apIp.textContent = diag.apIp || "—";
     }
     if (wifiSignal) {
-      wifiSignal.textContent = posture.staConnected ? signalLabel(diag.wifiRssi) : "--";
-    }
-    if (wifiRssi) {
-      wifiRssi.textContent = posture.staConnected && diag.wifiRssi ? diag.wifiRssi : "--";
+      wifiSignal.textContent = posture.staConnected ? signalLabel(diag.wifiRssi) : "—";
     }
     renderActiveVsSaved(posture.modeText);
 
     if (posture.networkRecovery) {
-      setPendingSummary("Recovery", "error");
+      setPendingSummary("Recovery");
       if (postureDesc) {
-        postureDesc.textContent = "Network Recovery Mode: a local power-cycle gesture temporarily opened WiFi Provisioning. Your saved Device WiFi Settings below are untouched — fix them, save, then reboot to return to your normal posture.";
+        postureDesc.textContent = "Network Recovery Mode: a power-cycle opened WiFi Provisioning for now. Your saved Device WiFi Settings are untouched; fix them below, save, then reboot.";
       }
     } else if (posture.stateName === "provisioning") {
-      setPendingSummary("Provisioning", "warn");
+      setPendingSummary("Provisioning");
       if (postureDesc) {
-        postureDesc.textContent = "WiFi Provisioning is temporary setup; the controller is waiting for saved Device WiFi Settings.";
+        postureDesc.textContent = "WiFi Provisioning is temporary. The droid waits for saved Device WiFi Settings.";
       }
     } else if (pendingApply) {
-      setPendingSummary("Pending apply", "warn");
+      setPendingSummary("Pending apply");
       if (postureDesc) {
-        postureDesc.textContent = `Saved ${modeLabel(wifi.mode)} settings are staged but not active yet.`;
+        postureDesc.textContent = `Saved ${modeLabel(wifi.mode)} settings wait for a reboot.`;
       }
     } else if (posture.stateName === "client-failure") {
-      setPendingSummary("Client not connected", "error");
+      setPendingSummary("Client not connected");
       if (postureDesc) {
-        postureDesc.textContent = "WiFi Client Mode is active, but the controller is not connected to the saved network.";
+        postureDesc.textContent = "WiFi Client Mode is on, but the droid has not joined the saved network.";
       }
     } else {
-      setPendingSummary("Active", "ok");
+      setPendingSummary("Active");
       if (postureDesc) {
         // Connected as a client without Device WiFi Settings ever being saved
         // (`provisioned` false) only happens via the Developer WiFi Shortcut
         // (ADR 0015, self-build only) — compiled from secrets.h at build time.
         postureDesc.textContent =
           posture.staConnected && !posture.provisioned
-            ? `WiFi Client Mode is active (from secrets.h at build time, dev only) — not saved Device WiFi Settings.`
-            : `${modeLabel(wifi.mode)} settings are applied.`;
+            ? `WiFi Client Mode, joined with the build's own credentials (dev only). No Device WiFi Settings are saved.`
+            : `${modeLabel(wifi.mode)} settings are running.`;
       }
     }
 
@@ -329,62 +348,62 @@
     const wifi = state.wifiConfig;
     const diag = state.diagnostics || {};
     if (!wifi) {
-      applyGuidance.textContent = "Loading reconnect guidance...";
+      applyGuidance.textContent = "";
       return;
     }
 
     const posture = currentPosture(wifi, diag);
     const apAddress = apUrl(diag);
     const pendingApAddress = apUrl(diag, true);
-    const apName = wifi.apSsid || diag.apSsid || "the controller AP";
+    const apName = wifi.apSsid || diag.apSsid || "the Body Controller AP";
     // WiFi Provisioning and Network Recovery Mode both broadcast the
     // documented Default AP Credential (WIFI_AP_SSID), never the operator's
     // saved Standalone AP Mode SSID — diag.apSsid reflects what is actually
     // running, so it (not wifi.apSsid) is the right name to point at here.
-    const provisioningApName = diag.apSsid || "the controller AP";
+    const provisioningApName = diag.apSsid || "the Body Controller AP";
     const activeOtaApTarget = apAddress.replace(/^http:\/\//, "");
     const pendingOtaApTarget = pendingApAddress.replace(/^http:\/\//, "");
-    const staAddress = diag.staIp ? `http://${diag.staIp}` : "the controller IP from your router";
+    const staAddress = diag.staIp ? `http://${diag.staIp}` : "the Body Controller IP from your router";
     const hostAddress = `http://${mdnsHost()}`;
 
     if (posture.networkRecovery) {
       applyGuidance.textContent = wifi.pendingApply
-        ? `Network Recovery Mode is active. Corrected Device WiFi Settings are saved — connect to ${provisioningApName}, open ${apAddress}, then use Reboot to Apply below to return to ${modeLabel(wifi.mode)}.`
-        : `Network Recovery Mode is active from a local power-cycle gesture. Your saved Device WiFi Settings are unchanged — connect to ${provisioningApName}, open ${apAddress}, fix Client network / AP settings below, save, then reboot to return to them.`;
+        ? `Network Recovery Mode is on and your fixes are saved. Join ${provisioningApName}, open ${apAddress}, then Reboot to Apply to return to ${modeLabel(wifi.mode)}.`
+        : `Network Recovery Mode is on; saved settings are unchanged. Join ${provisioningApName}, open ${apAddress}, fix the settings below, save, then reboot.`;
       return;
     }
 
     if (posture.stateName === "provisioning") {
       applyGuidance.textContent =
-        `WiFi Provisioning is temporary setup, not saved Standalone AP Mode. Save Device WiFi Settings, then reboot. Until then, connect to ${provisioningApName} and open ${apAddress}.`;
+        `WiFi Provisioning is temporary, not Standalone AP Mode. Join ${provisioningApName}, open ${apAddress}, save settings below, then reboot.`;
       return;
     }
 
     if (wifi.pendingApply) {
       if (wifi.mode === WIFI_MODE_STANDALONE_AP) {
         applyGuidance.textContent =
-          `Saved Standalone AP Mode is pending. Reboot the controller to apply it, then connect to ${apName}, open ${pendingApAddress}, and use ${pendingOtaApTarget} for OTA while your computer is on that AP.`;
+          `After the reboot, join ${apName} and open ${pendingApAddress}. OTA goes to ${pendingOtaApTarget} while you are on that network.`;
       } else {
         applyGuidance.textContent =
-          `Saved WiFi Client Mode is pending. Reboot the controller to apply it, then reconnect from the WiFi network at ${hostAddress} or ${staAddress}.`;
+          `After the reboot, reach the droid on your network at ${hostAddress} or ${staAddress}.`;
       }
       return;
     }
 
     if (wifi.mode === WIFI_MODE_STANDALONE_AP) {
       applyGuidance.textContent =
-        `Standalone AP Mode is active. Connect to ${apName}, open ${apAddress}, and use ${activeOtaApTarget} for OTA while your computer is on that AP.`;
+        `Join ${apName} and open ${apAddress}. OTA goes to ${activeOtaApTarget} while you are on that network.`;
       return;
     }
 
     if (posture.stateName === "client-failure") {
       applyGuidance.textContent =
-        `WiFi Client Mode is active but not connected. This is a client-mode connection problem, not Standalone AP Mode; check the saved network or use Network Recovery Mode to repair settings.`;
+        `Not joined. Check the saved network, or use Network Recovery Mode to fix it.`;
       return;
     }
 
     applyGuidance.textContent =
-      `WiFi Client Mode is active. Open ${hostAddress} or ${staAddress}.`;
+      `Open ${hostAddress} or ${staAddress}.`;
   };
 
   const loadIdentity = async ({ handle = null } = {}) => {
@@ -483,11 +502,10 @@
     // Nothing here is safe to operate until its data lands.
     gateOnSectionState([{ name: "wifi-config", status: "pending" }]);
     window.PABootstrap.setResourceLabels?.({
-      "/web_api.js": "controller connection",
+      "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
       "/wifi.js": "WiFi settings",
-      "/footer.js": "page footer",
     });
     SECTIONS.forEach(([name, load, label]) =>
       window.PABootstrap.registerSection(name, load, { label })
@@ -524,39 +542,38 @@
     clearFieldErrors();
     if (saveButton) saveButton.disabled = true;
     setFeedback("Saving WiFi settings...");
+    const body = buildSaveBody();
     try {
-      const result = await window.PAApi.postForm("/api/wifi", buildSaveBody(), { timeoutMs: 5000 });
+      const result = await window.PAApi.postForm("/api/wifi", body, { timeoutMs: 5000 });
       renderSettings(result.data?.wifi || null);
       renderPosture();
       setApplyFeedback("");
-      setFeedback("WiFi settings saved. Reboot the controller to apply the staged network switch.", "success");
+      setFeedback("WiFi settings saved. Reboot the Body Controller to apply the staged network switch.", "success");
     } catch (error) {
-      const message = error?.message || window.PAApi.messageFor(error);
-      const fieldName = fieldForMessage(message);
-      if (fieldName) {
-        setFieldError(fieldName, message);
+      // The refusal in the builder's words, from its field, reason and
+      // accepts (data/web_api.js), on the box its field names. The droid's
+      // sentence carries the wire name of the field and is never shown, nor
+      // searched for which box it is about (ADR 0059, #355).
+      const said = window.PAApi.messageFor(error, body);
+      if (typeof error?.field === "string" && Object.hasOwn(fields, error.field)) {
+        setFieldError(error.field, said);
       }
-      setFeedback(window.PAApi.messageFor(error), "error");
+      setFeedback(said, "error");
     } finally {
       if (saveButton) saveButton.disabled = false;
     }
   };
 
-  let pollTimer = null;
-  const refreshDiagnostics = (label) => {
-    loadWifiDiagnostics().catch((error) => {
-      console.warn(`[wifi] diagnostics ${label} failed:`, error);
-    });
-  };
-
-  const startPolling = () => {
-    if (pollTimer !== null) return;
-    pollTimer = window.setInterval(() => {
-      if (document.visibilityState !== "hidden") {
-        refreshDiagnostics("poll");
-      }
-    }, POLL_INTERVAL_MS);
-  };
+  // Owned by this surface: the shell stops it when the operator leaves WiFi and
+  // starts it again on the way back (ADR 0048, #360). The hidden-tab pause and
+  // the refresh on returning to the tab are the poll's own, so the separate
+  // visibilitychange handler this page used to carry is gone. So is the failed
+  // read: reporting it is PASurface.poll()'s, and catching it here is what used
+  // to tell WiFi its diagnostics were current when nothing had answered (#360).
+  const diagnosticsPoll = window.PASurface.poll(
+    () => loadWifiDiagnostics(),
+    { cadenceMs: POLL_INTERVAL_MS, refreshOnReturn: true }
+  );
 
   const rebootToApply = async () => {
     if (!window.PAApi || state.rebootRequestPending || !state.wifiConfig?.pendingApply) return;
@@ -573,12 +590,6 @@
     }
   };
 
-  const onVisibilityChange = () => {
-    if (document.visibilityState !== "hidden") {
-      refreshDiagnostics("refresh");
-    }
-  };
-
   // With the bootstrap driving the page, an explicit Refresh has to go through
   // it too -- running the three loads directly would put requests on the wire
   // outside the single active-request slot the whole design depends on.
@@ -592,32 +603,29 @@
     window.PABootstrap.refreshSections(SECTIONS.map(([name]) => name));
   };
 
-  // Save and reboot are user commands: they take priority over automatic page
-  // work, and are never auto-retried, so a non-idempotent write cannot be
-  // replayed by recovery.
-  const onSaveSubmit = (event) => {
-    if (!window.PABootstrap) return saveSettings(event);
-    event.preventDefault();
-    window.PABootstrap.submitCommand("wifi-save", () => saveSettings(event));
-  };
-
-  const onApplyClicked = () => {
-    if (!window.PABootstrap) return rebootToApply();
-    window.PABootstrap.submitCommand("wifi-reboot", () => rebootToApply());
-  };
-
-  if (form) form.addEventListener("submit", onSaveSubmit);
-  if (applyButton) applyButton.addEventListener("click", onApplyClicked);
+  // Save and reboot are user commands: they run on the press, straight to the
+  // droid, and are never auto-retried, so a non-idempotent write cannot be
+  // replayed by recovery. They used to go through PABootstrap.submitCommand,
+  // which 857f4787 removed as unused while these two still called it, so both
+  // presses threw and did nothing (#355 finding 2).
+  if (form) form.addEventListener("submit", saveSettings);
+  if (applyButton) applyButton.addEventListener("click", rebootToApply);
   if (reloadButton) reloadButton.addEventListener("click", onReloadClicked);
   [modeClient, modeStandaloneAp].forEach((input) => {
     if (input) input.addEventListener("change", syncModeOptions);
   });
-  document.addEventListener("visibilitychange", onVisibilityChange);
 
   // The bootstrap announces readiness once required resources are in and every
   // section has settled -- which is where a "loaded" message becomes true.
   // Settled includes a section that is visibly waiting to retry, so report
   // what actually happened rather than claiming a clean load.
+  //
+  // Reported off the bootstrap's own section state rather than off
+  // pa:assets-ready, which is a once-per-session event: under the Operator
+  // Shell this surface mounts long after that event has fired, and a listener
+  // registered then would never hear it -- leaving the page with no load
+  // message and, worse, never starting its polling (ADR 0048, #344).
+  let loadOutcomeReported = false;
   const reportLoadOutcome = () => {
     const bootstrap = window.PABootstrap?.getState?.();
     const failing = bootstrap?.sections?.filter((s) => s.status !== "done") || [];
@@ -626,17 +634,20 @@
     } else {
       setFeedback(`WiFi settings partly loaded; retrying ${failing.length} of ${bootstrap.sections.length}.`, "error");
     }
-    startPolling();
+    diagnosticsPoll.start();
   };
 
   if (window.PABootstrap) {
-    window.addEventListener("pa:assets-ready", reportLoadOutcome, { once: true });
     window.addEventListener("pa:bootstrap-change", (event) => {
       gateOnSectionState(event.detail?.sections || []);
+      if (event.detail?.sectionsStable && !loadOutcomeReported) {
+        loadOutcomeReported = true;
+        reportLoadOutcome();
+      }
     });
     startPageLoad();
   } else {
     loadPageData();
-    startPolling();
+    diagnosticsPoll.start();
   }
 })();

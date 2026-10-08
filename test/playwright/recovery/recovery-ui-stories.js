@@ -1,3 +1,4 @@
+// bench-auto: fixture index.html
 const assert = require("node:assert/strict");
 const { chromium } = require("playwright");
 const fs = require("fs");
@@ -6,7 +7,7 @@ const { resolveProfile } = require("../../../tools/webload_page_profiles");
 
 const TARGET_URL = process.env.TARGET_URL || "http://127.0.0.1:4173/index.html";
 const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR || "/tmp/recovery-ui-screenshots";
-const HEADLESS = process.env.HEADLESS === "true";
+const HEADLESS = process.env.HEADLESS !== "false";
 const INDUCED = process.env.INDUCED === "true";
 
 // FORCE_FAIL=1 marks story "forced-fail" as FAIL for exit-code verification
@@ -16,6 +17,16 @@ const FORCE_FAIL = process.env.FORCE_FAIL === "1";
 
 // BACKOFF_VISIBLE_AFTER_ATTEMPT from data/page_bootstrap.js line 450
 const BACKOFF_VISIBLE_AFTER_ATTEMPT = 1;
+
+// How long the first app.js request is held before it fails (Scenario 1). A
+// droid takes about this long to answer it (see Stories 15-16); a local
+// fixture answers in a few ms, so without the hold the loading phase is over
+// before Stories 2-3 can sample it.
+const LOADING_HOLD_MS = 1500;
+
+// How long GET /api/wifi is held open in Scenario 3, so a section is still
+// loading while /api/config answers busy (see the scenario's comment).
+const BUSY_HOLD_MS = 2500;
 
 if (!fs.existsSync(SCREENSHOT_DIR)) {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
@@ -36,15 +47,15 @@ function getPageName() {
 function getAppResourceName() {
   const pageName = getPageName();
   const profile = resolveProfile(pageName);
-  // The main app script is the last resource (before footer.js) in requiredResources.
+  // The main app script is the last resource in requiredResources.
   // For index.html, it's /app.js. For wifi.html, it's /wifi.js.
   const resources = profile.requiredResources;
   // Return the resource that looks like a page-specific app script (not style.css, js libs, etc).
   // For index.html: "app.js", for wifi.html: "wifi.js"
   if (pageName === "index") return "app.js";
   if (pageName === "wifi") return "wifi.js";
-  // Fallback: use the second-to-last resource (assuming last is footer.js)
-  return resources[resources.length - 2];
+  // Fallback: the last resource.
+  return resources[resources.length - 1];
 }
 
 const json = (payload, status = 200) => ({
@@ -188,9 +199,11 @@ async function scenarioResourceRetry(browser) {
     const maxFailures = 2;
     const appResource = getAppResourceName();
 
-    await page.route(`**/${appResource}`, (route) => {
+    await page.route(`**/${appResource}`, async (route) => {
       appJsAttempts++;
       if (appJsAttempts <= maxFailures) {
+        // The first failure lands as late as a droid's would (LOADING_HOLD_MS).
+        if (appJsAttempts === 1) await new Promise((resolve) => setTimeout(resolve, LOADING_HOLD_MS));
         route.abort("failed");
       } else {
         route.continue();
@@ -249,7 +262,7 @@ async function scenarioResourceRetry(browser) {
     }
 
     // The third app.js request being SEEN is not the panel being gone: the
-    // download, footer.js, and the next render tick still have to land.
+    // download and the next render tick still have to land.
     // Poll for the hide instead of sampling once, so device latency does not
     // race the tail of the chain.
     let finalBackdropActive = true;
@@ -404,6 +417,16 @@ async function scenarioNoResponse(browser) {
 // index.html has no bootstrap sections, making in-page recovery panels unreachable.
 // REDUCER CONTRACT (data/page_bootstrap.js line 512-513):
 //   If step.reason === "busy" -> mode = "busy" (immediately, regardless of attempt)
+//
+// WHEN THE BUSY PANEL IS UP. A busy section is failed-retrying, which counts
+// as stable (recomputeSectionsStable), so - as in Scenario 2 - the panel hides
+// as soon as every other section has settled, and inline feedback takes over.
+// It is the panel's to show only while a sibling is still loading. On wifi.html
+// the section after wifi-config is wifi-diagnostics (GET /api/wifi), which the
+// fixture answers with an instant 404, so the busy panel lasted no frame at all
+// and Stories 9-13 read nothing. GET /api/wifi is held open for BUSY_HOLD_MS
+// here, as a droid answering slowly would, and the panel is read inside that
+// window. Story 14 then reads it gone once the held section settles.
 async function scenarioBusyMode(browser) {
   console.log("\n=== Scenario 3: Busy Mode (wifi.html, 503 + Retry-After) ===");
 
@@ -433,6 +456,13 @@ async function scenarioBusyMode(browser) {
       route.fulfill(json({ droidName: "r5unit", mdnsUseName: true }))
     );
     await page.route("**/api/status", (route) => route.fulfill(json(statusPayload)));
+
+    // A section still loading while /api/config is refused (see above). The
+    // fixture's own answer follows the hold.
+    await page.route("**/api/wifi", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, BUSY_HOLD_MS));
+      return route.fallback();
+    });
 
     // Return 503 + Retry-After on every attempt to /api/config
     await page.route("**/api/config", async (route) => {
@@ -473,7 +503,8 @@ async function scenarioBusyMode(browser) {
       : 0;
     recordResult("busy-banner", refusedBanner > 0 ? "PASS" : "UI-NOT-IMPLEMENTED", `Expected >= 1 banner, found ${refusedBanner}`);
 
-    // Story 10: Busy mode shows "Controller busy"
+    // Story 10: Busy mode shows "Body Controller busy" (an unqualified
+    // controller is named the Body Controller since 421cc157)
     // Sample elements while backdrop is active to avoid stale reads
     const busyState = await page.evaluate(() => {
       if (!document.body.classList.contains("recovery-active")) {
@@ -492,8 +523,8 @@ async function scenarioBusyMode(browser) {
 
     recordResult(
       "busy-status",
-      busyState?.statusReason === "Controller busy" ? "PASS" : "UI-NOT-IMPLEMENTED",
-      `Expected "Controller busy", found "${busyState?.statusReason}"`
+      busyState?.statusReason === "Body Controller busy" ? "PASS" : "UI-NOT-IMPLEMENTED",
+      `Expected "Body Controller busy", found "${busyState?.statusReason}"`
     );
 
     // Story 11-12: Countdown panel and value

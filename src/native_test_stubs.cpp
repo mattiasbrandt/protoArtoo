@@ -23,10 +23,6 @@ portMUX_TYPE robotStateMux = 0;
 // Arduino Serial instance (referenced by code compiled in native tests)
 SerialStub Serial;
 
-// Arduino ESP instance (heap methods used by console_module.cpp)
-// Minimal stub with zero values — avoids affecting other 1756 tests
-ESPClass ESP;
-
 // Logging sinks. Defined further down, beside the log ring stand-in they are
 // built on -- see "Log ring stand-in" below. paLogInit() stays a no-op here:
 // the ring is lazily initialised on first use so a test that fills
@@ -55,17 +51,11 @@ unsigned long millis() {
     return g_test_millis;
 }
 
-// NVS save stub  --  not under test; POST handler calls it but tests call
-// populateConfigJson() directly without going through registerConfigRoutes().
-bool saveConfigToNvs() {
-    return true;
-}
-
 // dome_link.cpp is excluded from the native build. Provide a controllable stub
 // so audio_chirp.cpp's UART2 ownership guard can be exercised in tests.
 // Default: DOME_UART_NONE (no owner). Tests set g_test_dome_uart_owner in
 // setUp() and reset it in tearDown().
-#include "dome_link.h"
+#include "dome_uart_test_hooks.h"  // declares the global this section defines
 DomeUartOwner g_test_dome_uart_owner = DOME_UART_NONE;
 bool domeUartOwnedBy(DomeUartOwner owner) {
     return g_test_dome_uart_owner == owner;
@@ -85,16 +75,32 @@ void domeUartRelease(DomeUartOwner requester) {
         g_test_dome_uart_owner = DOME_UART_NONE;
     }
 }
-bool domeConnected() { return true; }
+#include "marcduino_test_hooks.h"  // declares the dome link and body handler seams
+bool g_test_dome_connected = true;
+bool g_test_dome_tx_ok = true;
+unsigned g_test_dome_tx_calls = 0;
+char g_test_dome_last_tx[64] = {};
+MarcduinoBodyOutcome g_test_marcduino_body_outcome = MarcduinoBodyOutcome::Applied;
+char g_test_marcduino_last_line[32] = {};
 
-// sequence_dispatcher.cpp needs domeQueueTx.
-// No-op stub: routing tests use sequenceLookup() directly and do not need
-// side-effect capture from this function. audioQueueDollar()'s real stub
+bool domeConnected() { return g_test_dome_connected; }
+
+// sequence_dispatcher.cpp needs domeQueueTx, and Command Ownership's forward
+// (include/marcduino_router.h) is asserted through it: it records the line it
+// was handed and refuses when g_test_dome_tx_ok says so (#449). The sequence
+// routing tests use sequenceLookup() directly and never read it. audioQueueDollar()'s real stub
 // (records calls, respects g_test_audio_queue_ok) lives below with its
 // sibling audio command queue stubs, #258 - it used to be this unconditional
 // no-op, which left g_test_audio_dollar_calls/g_test_audio_last_dollar
 // declared but never written by anything.
-bool domeQueueTx(const char* /*cmd*/) { return true; }
+bool domeQueueTx(const char* cmd) {
+    if (!g_test_dome_tx_ok) {
+        return false;
+    }
+    g_test_dome_tx_calls++;
+    snprintf(g_test_dome_last_tx, sizeof(g_test_dome_last_tx), "%s", cmd != nullptr ? cmd : "");
+    return true;
+}
 
 #include "audio_task.h"
 
@@ -168,6 +174,65 @@ void sequenceDispatcherInit() {
 QueueHandle_t servoCmdQueue = nullptr;
 QueueHandle_t domeCmdQueue = nullptr;
 
+// ServoTask's boot snapshot (#364), one bit per slot (include/servo_backend.h).
+// The real answer is servoTaskInit()'s; include/servo_task_test_hooks.h says
+// why both default to every Output.
+#include "servo_task.h"
+#include "servo_task_test_hooks.h"  // declares the three masks, defined here
+#include "config_cache.h"     // the live row facts servoTaskMayTakeForRun() reads
+#include "output_wire.h"      // outputWirePinKeptForLight() - a light may be on the pin
+#include "servo_backend.h"    // servoOutputSlotOf(), boardOutputIndexOf()
+#include "servo_run.h"        // servoRunMayTake() - the one rule
+uint8_t g_test_servo_wired_at_start_mask = 0xFF;
+uint8_t g_test_servo_driven_mask = 0xFF;
+
+// Whether this Output's bit is set in one of the masks; an address with no
+// slot has no bit.
+static bool servoTestMaskHas(uint8_t mask, ServoOutputAddress output) {
+    const uint8_t slot = servoOutputSlotOf(output);
+    return slot < SERVO_OUTPUT_SLOT_COUNT && slot < 8 && (mask & (1u << slot)) != 0;
+}
+
+bool servoTaskWiredAtStart(ServoOutputAddress output) {
+    return servoTestMaskHas(g_test_servo_wired_at_start_mask, output);
+}
+
+bool servoTaskDrivesOutput(ServoOutputAddress output) {
+    return servoTestMaskHas(g_test_servo_driven_mask, output);
+}
+
+uint8_t g_test_servo_lit_at_start_mask = 0;
+uint8_t g_test_servo_run_held_mask = 0;
+
+bool servoTaskRunHolds(ServoOutputAddress output) {
+    return servoTestMaskHas(g_test_servo_run_held_mask, output);
+}
+
+// No expander in the native build: the board's GPIO is the member running, so
+// every route reports `expander` null and an expander's Output as one nobody
+// chose (src/web/api_servo.cpp).
+ServoExpanderFacts servoTaskExpanderFacts() {
+    return ServoExpanderFacts{false, PCA9685_ADDRESS_DEFAULT, false};
+}
+
+// The same inputs servo_task.cpp assembles, from the masks above and the live
+// cache, through the one rule.
+bool servoTaskMayTakeForRun(ServoOutputAddress output) {
+    if (servoOutputSlotOf(output) >= SERVO_OUTPUT_SLOT_COUNT) {
+        return false;
+    }
+    ServoRunTakeInputs in = {};
+    in.drivenNow = servoTaskDrivesOutput(output);
+    in.wiredAtStart = servoTaskWiredAtStart(output);
+    in.litAtStart = servoTestMaskHas(g_test_servo_lit_at_start_mask, output);
+    in.lightNow = outputWirePinKeptForLight(
+        {false, configCacheReadServoOutputComponent(output.driver, output.channel)},
+        boardOutputIndexOf(output));
+    in.partCount = configCacheServoOutputPartCountAt(output.driver, output.channel);
+    in.backendReady = true;
+    return servoRunMayTake(in);
+}
+
 bool g_test_commanded_web_control = false;
 unsigned g_test_web_control_calls = 0;
 unsigned g_test_restart_requests = 0;
@@ -184,9 +249,28 @@ void requestSystemRestart(uint32_t /*delayMs*/) {
 }
 
 #include "dome_rx_parser.h"
-bool parseMarcduinoCommand(const char* /*line*/) {
+bool parseMarcduinoCommand(const char* line) {
     g_test_marcduino_calls++;
+    snprintf(g_test_marcduino_last_line, sizeof(g_test_marcduino_last_line), "%s",
+             line != nullptr ? line : "");
     return true;
+}
+
+MarcduinoBodyOutcome executeMarcduinoBodyCommand(const char* line) {
+    g_test_marcduino_calls++;
+    snprintf(g_test_marcduino_last_line, sizeof(g_test_marcduino_last_line), "%s",
+             line != nullptr ? line : "");
+    return g_test_marcduino_body_outcome;
+}
+
+void marcduinoTestHooksReset() {
+    g_test_dome_connected = true;
+    g_test_dome_tx_ok = true;
+    g_test_dome_tx_calls = 0;
+    g_test_dome_last_tx[0] = '\0';
+    g_test_marcduino_body_outcome = MarcduinoBodyOutcome::Applied;
+    g_test_marcduino_last_line[0] = '\0';
+    g_test_marcduino_calls = 0;
 }
 
 #include "mood.h"
@@ -207,59 +291,55 @@ bool applySpeedPresetPersisted(SpeedPresetId preset) {
 }
 
 // AUX LED strip. aux_led.cpp is a task translation unit and stays out of the
-// native build, so the effect-name mapping the handler depends on is
-// reproduced here rather than stubbed away -- the payload assertions would be
-// vacuous otherwise.
+// native build, so its command queue is stood in for here: a queued command is
+// applied to robotState.auxLed directly. Everything else a handler depends on -
+// the effect names, the target rule, auxLedTargetIsLit() - is the real code,
+// header-only in include/aux_led.h. A test that wants "no light here" clears
+// that entry's `lit`/`available`, which is what the real refusal reads too.
 #include "aux_led.h"
+#include "aux_led_test_hooks.h"  // declares g_test_aux_led_queue_ok, defined here
+#include "board_outputs.h"
 bool g_test_aux_led_queue_ok = true;
+bool g_test_aux_led_at_start_set = false;
+ServoComponentType g_test_aux_led_component_at_start[BOARD_OUTPUT_COUNT] = {};
+uint8_t g_test_aux_led_count_at_start[BOARD_OUTPUT_COUNT] = {};
 
-const char* auxLedEffectToString(AuxLedEffect effect) {
-    switch (effect) {
-        case AUX_LED_EFFECT_SOLID:
-            return "solid";
-        case AUX_LED_EFFECT_BLINK:
-            return "blink";
-        case AUX_LED_EFFECT_PULSE:
-            return "pulse";
-        case AUX_LED_EFFECT_OFF:
-        default:
-            return "off";
+bool auxLedWireAtStart(size_t index, ServoComponentType* component, uint8_t* ledCount) {
+    if (!g_test_aux_led_at_start_set || index >= BOARD_OUTPUT_COUNT || component == nullptr ||
+        ledCount == nullptr) {
+        return false;
     }
+    *component = g_test_aux_led_component_at_start[index];
+    *ledCount = g_test_aux_led_count_at_start[index];
+    return true;
 }
 
-bool parseAuxLedEffect(const char* raw, AuxLedEffect* out) {
-    if (raw == nullptr || out == nullptr) {
+bool auxLedQueueSetColor(uint8_t target, uint8_t r, uint8_t g, uint8_t b,
+                         CommandSource /*source*/) {
+    if (!g_test_aux_led_queue_ok || !auxLedTargetIsLit(target)) {
         return false;
     }
-    if (strcmp(raw, "off") == 0) {
-        *out = AUX_LED_EFFECT_OFF;
-    } else if (strcmp(raw, "solid") == 0) {
-        *out = AUX_LED_EFFECT_SOLID;
-    } else if (strcmp(raw, "blink") == 0) {
-        *out = AUX_LED_EFFECT_BLINK;
-    } else if (strcmp(raw, "pulse") == 0) {
-        *out = AUX_LED_EFFECT_PULSE;
-    } else {
-        return false;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (!auxLedTargetReaches(target, i) || !auxLedTargetIsLit((uint8_t)i)) {
+            continue;
+        }
+        robotState.auxLed[i].r = r;
+        robotState.auxLed[i].g = g;
+        robotState.auxLed[i].b = b;
     }
     return true;
 }
 
-bool auxLedQueueSetColor(uint8_t r, uint8_t g, uint8_t b, CommandSource /*source*/) {
-    if (!g_test_aux_led_queue_ok) {
+bool auxLedQueueSetEffect(uint8_t target, AuxLedEffect effect, CommandSource /*source*/) {
+    if (!g_test_aux_led_queue_ok || !auxLedTargetIsLit(target)) {
         return false;
     }
-    robotState.auxLed.r = r;
-    robotState.auxLed.g = g;
-    robotState.auxLed.b = b;
-    return true;
-}
-
-bool auxLedQueueSetEffect(AuxLedEffect effect, CommandSource /*source*/) {
-    if (!g_test_aux_led_queue_ok) {
-        return false;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (!auxLedTargetReaches(target, i) || !auxLedTargetIsLit((uint8_t)i)) {
+            continue;
+        }
+        robotState.auxLed[i].effect = effect;
     }
-    robotState.auxLed.effect = effect;
     return true;
 }
 
@@ -350,6 +430,24 @@ const AudioCatalogBank* audioGetCatalogBanks(uint8_t* count) {
     return g_test_audio_catalog_banks;
 }
 
+// The real function's own question, asked of the stub's capability word and
+// bank table, so a test fits a bank 8 the way a module would report one.
+#include "audio_catalog_gate.h"  // audioCatalogReaderAcquire()
+// The catalog reader gate is the real one (audio_catalog_gate.cpp is
+// native-built), so a test that closes it sees what a refresh would cause.
+AudioBankFit audioBankFitted(uint8_t bank) {
+    if ((g_test_audio_capabilities & AudioDriver::AUDIO_CAP_CATALOG) == 0) {
+        return AudioBankFit::NotFitted;
+    }
+    if (!audioCatalogReaderAcquire()) {
+        return AudioBankFit::CatalogBusy;
+    }
+    const bool found = audioCatalogBankPage(g_test_audio_catalog_banks,
+                                            g_test_audio_catalog_bank_count, bank, nullptr);
+    audioCatalogReaderRelease();
+    return found ? AudioBankFit::Fitted : AudioBankFit::NotFitted;
+}
+
 const AudioCatalogEntry* audioGetCatalogEntries(uint16_t* count) {
     if (count != nullptr) {
         *count = g_test_audio_catalog_entry_count;
@@ -437,6 +535,17 @@ bool audioQueuePlayTrackBanked(uint16_t index, uint8_t bank, char page, CommandS
     return true;
 }
 
+// The Background Track seam, called by dispatchAction() in
+// sequence_dispatcher.cpp. Answers the queue like every other stub here.
+bool audioQueueBackgroundTrackStart(const char* /*dollar*/, uint8_t /*vol*/,
+                                    CommandSource /*src*/) {
+    return g_test_audio_queue_ok;
+}
+
+bool audioQueueBackgroundTrackStop(CommandSource /*src*/) {
+    return g_test_audio_queue_ok;
+}
+
 // The RX diagnostic strings GET /api/audio embeds. Reproduced from
 // src/tasks/audio_task.cpp rather than stubbed to a constant: the payload
 // assertion would be vacuous otherwise.
@@ -459,7 +568,7 @@ const char* audioRxStatusDetail(AudioRxStatus status) {
         case AUDIO_RX_AVAILABLE:
             return "Sound module RX is available";
         case AUDIO_RX_BLOCKED_BY_DOME_UART:
-            return "Status unavailable: DomeLink is using UART";
+            return "Held by protoR2link";
         case AUDIO_RX_NO_RESPONSE:
             return "Sound module did not respond on RX";
         case AUDIO_RX_UNKNOWN:
@@ -565,7 +674,16 @@ bool copyLogLineAt(size_t idx, char* out, size_t outSize) {
 #include <string.h>
 
 #include "web_request.h"
+#include "web_request_scratch.h"
 #include "web_request_test_backend.h"
+
+// The host harness is one task, and it stands in for the one the device
+// serves every web request on. Bound at static initialisation, so every suite
+// that drives a handler finds the web request scratch owned by the task it
+// runs on (include/web_request_scratch.h); the device binds the httpd task
+// once the server has started (src/web/web_request_psychic.cpp).
+[[maybe_unused]] static const bool s_webRequestScratchBound =
+    (webRequestScratchBindOwner(xTaskGetCurrentTaskHandle()), true);
 
 static const char* testParamLookup(const WebRequestTestBackend* b, const char* name) {
     // The staged preemption, if the test staged one. Cleared before the call
@@ -739,6 +857,24 @@ bool seqStoreCommit(SequenceEntry& /*out*/) {
 
 void seqStoreReleaseRun() {
 }
+
+// No sequence the host loads names a take (#442): the store's commit is a stub
+// that never commits, so there is no run for a take to play in.
+TakeReplayRun* seqStoreClaimRunTakes(SeqStoreTakesUnplayed* unplayed) {
+    *unplayed = {};
+    return nullptr;
+}
+
+#include "take_store.h"
+
+// The take store is LittleFS's; the host holds no take file to read.
+bool takeStoreReadBegin(const char* /*owner*/, const char* /*take*/, size_t /*offset*/) {
+    return false;
+}
+size_t takeStoreReadOn(uint8_t* /*out*/, size_t /*capacity*/) {
+    return 0;
+}
+void takeStoreReadEnd() {}
 
 ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
     g_test_seq_save_calls++;
@@ -944,4 +1080,32 @@ RcDispatchOutcome dispatchRcTriggerActionTest(RobotActionId target, const char* 
     return g_test_dispatch_outcome;
 }
 
+// -----------------------------------------------------------------------------
+// Heap readings (include/heap_reading.h). src/heap_reading.cpp reads the
+// ESP-IDF heap and is not in the native build; these return values a test sets
+// through include/heap_reading_test_hooks.h, defaulting to 262144, the figure
+// the native tests written before the module assumed.
+#include "heap_reading_test_hooks.h"
+HeapInternalDataReading g_test_heap_internal_data = {262144, 262144, 262144};
+uint32_t g_test_heap_buffer_largest = 262144;
+
+HeapInternalDataReading heapReadInternalData() {
+    return g_test_heap_internal_data;
+}
+
+uint32_t heapReadInternalDataFree() {
+    return g_test_heap_internal_data.free;
+}
+
+uint32_t heapReadBufferLargest() {
+    return g_test_heap_buffer_largest;
+}
+
+void heapReadInternalDataInfo(HeapInternalDataInfo* out) {
+    if (out == nullptr) {
+        return;
+    }
+    *out = HeapInternalDataInfo{};
+    out->minimumFreeBytes = g_test_heap_internal_data.minEver;
+}
 #endif

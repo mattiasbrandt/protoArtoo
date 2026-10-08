@@ -134,16 +134,20 @@ constexpr size_t kDefaultMaxBodyBytes = 4096;
 
 // Register a handler for path+method with the backend's server. Registration
 // has to happen inside the server bring-up (initPsychicWebServer()), which runs
-// on the WiFi event callback path.
+// on the WiFi event callback path. The path must start with /api/: the
+// PsychicHttp backend serves rows through one /api/* dispatcher and refuses
+// any other path, or a row past its table's capacity, at boot with an error.
 //
-// maxBodyBytes bounds the raw body this route will buffer. It is per-route
+// maxBodyBytes is the largest raw body this route takes. It is per-route
 // rather than global because one route legitimately carries far more than the
 // rest -- POST /api/seq saves up to SEQ_FILE_MAX_BYTES, which is chip-target
-// specific (12 KB on ESP32, 24 KB on ESP32-P4; seq_store_util.h) -- and raising
-// the default for everything to accommodate it would hand every other route
-// the same allocation ceiling for nothing. A body over the limit is not
-// buffered, so body() reports null and the handler answers 413 from
-// contentLength(); see the parity rules in the ported handlers.
+// specific (12 KB on ESP32, 24 KB on ESP32-P4; seq_store_util.h). The
+// PsychicHttp backend buffers against ONE server-wide ceiling, the largest
+// bound any route declares (web_body_ceiling.h), so a body over this route's
+// bound but under that ceiling is still buffered and reaches the handler,
+// which answers 413 from contentLength(); see the parity rules in the ported
+// handlers. Keep the default low: a route that declares more raises what every
+// route buffers.
 void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler handler,
                       size_t maxBodyBytes = kDefaultMaxBodyBytes);
 

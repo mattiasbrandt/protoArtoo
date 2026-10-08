@@ -1,6 +1,6 @@
-# Topology - Classic MarcDuino vs protoArtoo
+# Topology - Classic MarcDuino vs protoR2
 
-This document defines the wiring, signal ownership, and runtime control topology for protoArtoo.
+This document defines the wiring, signal ownership, and runtime control topology for protoR2.
 It is intended as the practical architecture map that links hardware pinout, control flow,
 and subsystem responsibility in one place.
 
@@ -8,7 +8,8 @@ and subsystem responsibility in one place.
 
 - [Source of Truth Contract](#source-of-truth-contract)
 - [High-Level Architecture](#high-level-architecture)
-- [Classic Baseline vs protoArtoo](#classic-baseline-vs-protoartoo)
+- [Component Families](#component-families)
+- [Classic Baseline vs protoR2](#classic-baseline-vs-protor2)
 - [Physical Topology](#physical-topology)
 - [Body Controller Port Topology](#body-controller-port-topology)
 - [RC Input Topology](#rc-input-topology)
@@ -24,75 +25,118 @@ and subsystem responsibility in one place.
 Use the following precedence when topology details are needed:
 1. docs/pin_map.md
 2. include/config.h
-3. docs/failsafe.md
-4. docs/goal.md
+3. docs/products.yaml, the Component Registry (each product's state: Supported, Tested, Roadmap)
+4. docs/failsafe.md
+5. docs/goal.md
 
 If these sources diverge, reconcile them in the same change.
 
 ## High-Level Architecture
 
-protoArtoo is a body-controller-centered architecture with explicit subsystem ownership:
-- Body controller (Artoo PCB + ESP32) owns drive, RC input processing, safety enforcement,
-	API/web control, and body-side audio.
-- Dome controller (AstroPixelsPlus-class stack) owns dome-local lighting/animation behavior.
-- Body and dome communicate over a bidirectional serial link through the slip ring.
+protoR2 is a body-controller-centered architecture with explicit subsystem ownership:
+- The Body Controller owns the Foot Drive, RC input processing, safety enforcement,
+  API/web control, body-side audio, the body's servos and lights, and Dome Rotation.
+- The Dome Controller (AstroPixelsPlus-class stack) owns dome-local panels, lighting and
+  animation behavior.
+- Body and dome communicate over protoR2link: bidirectional serial through the slip ring,
+  with WiFi as the fallback transport.
+
+Each box below is a Component Family. The builder fits one member of it, and the
+Body Controller reaches that member through the family's interface.
 
 ```
-Operator (browser or RC TX)
-				|
-				v
-Body Controller (protoArtoo on Artoo PCB)
-	|- Drive control -> Hoverboard controller (UART)
-	|- Audio control -> Audio module (UART)
-	|- Dome link    <-> Dome controller (UART over slip ring)
-	|- Servo/ESC    -> Body servos + dome ESC (PWM)
+Operator (browser, Controller Console, or RC Radio)
+        |
+        v
+Body Controller (protoR2 on the Artoo PCB or the FireBeetle 2)
+    |- Foot Drive            -> wheel controller (UART)
+    |- Sound                 -> sound module (UART)
+    |- protoR2link          <-> Dome Controller (UART over slip ring; WiFi fallback)
+    |- Body servo controller -> servos and LED strips on the board's Outputs (PWM),
+    |                           or a PCA9685 (I2C)
+    |- Dome Rotation         -> dome ESC (PWM)
 ```
 
-## Classic Baseline vs protoArtoo
+## Component Families
 
-| Aspect | Classic MarcDuino-style baseline | protoArtoo topology |
+From the Component Registry, `docs/products.yaml`. **Supported**: in the project and works.
+**Tested**: has run on a real droid. **Roadmap**: planned. Products in a family are peers.
+
+| Family | Supported | Roadmap | How the Body Controller reaches it |
+|---|---|---|---|
+| Body Controller | Artoo PCB (Tested); FireBeetle 2 (ESP32-P4) | | the running image is the answer |
+| Radio Controller | HotRC DS-650 (Tested); RC Radio; RC Receiver - PWM; RC Receiver - SBUS | RC Receiver - ELRS; Xbox Controller | PWM or SBUS receiver input; none fitted is also an answer |
+| Body servo controller | Body controller board GPIO (Tested); PCA9685 | Pololu Maestro | LEDC PWM on the board's Outputs; I2C |
+| Dome Rotation | ISDT ESC70 (RC ESC) (Tested) | SyRen 10 | LEDC PWM |
+| Dome Controller | AstroPixels Plus (Tested) | Teeces | protoR2link |
+| Foot Drive | Hoverboard, hacked firmware | Sabertooth 2x25; Flipsky Mini V6 VESC | UART (Gen2.x 8-byte frames for the hoverboard) |
+| Sound | DY-SV5W (Tested); MP3 Trigger; CHIRP Audio Trigger (Tested) | DFPlayer Mini | UART |
+
+## Classic Baseline vs protoR2
+
+| Aspect | Classic MarcDuino-style baseline | protoR2 topology |
 |---|---|---|
-| Body controller class | ATmega/Arduino body master patterns | ESP32 body controller on Artoo PCB |
-| Dome serial model | Primarily one-way body-to-dome command direction | Bidirectional body-dome command and status flow |
+| Body controller class | ATmega/Arduino body master patterns | ESP32 Body Controller: the Artoo PCB or the FireBeetle 2 |
+| Dome serial model | Primarily one-way body-to-dome command direction | Bidirectional body-dome command and status flow (protoR2link) |
 | Sound ownership | Commonly dome-side module ownership | Body-side audio authority |
-| Drive transport | Sabertooth/SyRen ecosystems are common | Hoverboard UART contract is primary target |
-| RC/control posture | Gamepad-centric and mixed legacy patterns | RC receiver modes plus browser-first operation |
+| Drive transport | Sabertooth/SyRen ecosystems are common | A pluggable Foot Drive behind one interface; the hoverboard is Supported, Sabertooth and VESC are Roadmap |
+| RC/control posture | Gamepad-centric and mixed legacy patterns | RC receivers plus browser-first operation, or the browser alone |
 
 ## Physical Topology
 
-- Body board: Artoo Controller PCB v1.1/v1.2 with ESP32 D1 Mini form factor module.
+- Body board: one Body Controller - the Artoo PCB (artoo.uk, carrying a generic ESP32
+  clone) or the FireBeetle 2 ESP32-P4 with its DFR1237 IO shield.
 - Dome board: AstroPixelsPlus-class ESP32 controller.
 - Body-dome interconnect: slip ring carrying at least TX, RX, and shared GND for serial.
 - Motion peripherals:
-	- Hoverboard motor controller on body-side UART link.
-	- Dome motor ESC on PWM output.
-	- Utility arms and AUX channels on PWM outputs.
+	- The Foot Drive's wheel controller on a body-side UART.
+	- The Dome Rotation ESC on a PWM output.
+	- Servos (utility arms, doors) and LED strips on the board's Outputs, each named by what
+	  the board prints beside it; a PCA9685 on I2C adds sixteen more.
 
 ## Body Controller Port Topology
 
-Serial headers and ownership:
+Each board has its own serial allocation. `docs/pin_map.md` is the full map.
+
+**Artoo PCB** (silkscreen headers):
 
 | Header | Function | GPIO | Baud | Direction |
 |---|---|---|---|---|
 | S0 | USB debug | TX1 / RX3 | 115200 | Bidirectional |
-| S1 | Hoverboard drive | TX16 / RX17 | 115200 | Bidirectional transport, drive-owned protocol |
+| S1 | Foot Drive (hoverboard) | TX16 / RX17 | 115200 | Bidirectional transport, drive-owned protocol |
 | S2 | Sound module | TX26 / RX35 | 9600 | TX-primary with optional status RX |
-| S3 | Dome link | TX33 / RX34 | 9600 | Bidirectional Marcduino-style serial |
+| S3 | protoR2link | TX33 / RX34 | 9600 | Bidirectional Marcduino-style serial |
 
-Important electrical/topology notes:
 - GPIO34 and GPIO35 are input-only.
+- The chip has three UART controllers, so S3 and S2's RX share one: audio status queries
+  run only while protoR2link is on its WiFi fallback, and S2's TX is a software UART.
+
+**FireBeetle 2** (DFR1237 main-field rows):
+
+| Rows | Function | GPIO | Baud | Direction |
+|---|---|---|---|---|
+| `20` + `21` | Foot Drive (UART1) | TX20 / RX21 | 115200 | Bidirectional transport, drive-owned protocol |
+| `22` + `23` | protoR2link (UART2) | TX22 / RX23 | 9600 | Bidirectional Marcduino-style serial |
+| `34` + `36` | Sound module (UART3) | TX34 / RX36 | 9600 | Hardware UART both directions |
+
+- The ESP32-P4 has five UART controllers, so nothing is shared.
+
+On both boards:
 - Dome serial requires TX-RX cross-connection across the slip ring path.
-- SBUS decoding uses RMT on GPIO15 and GPIO13, avoiding UART port conflicts.
+- SBUS decoding uses RMT, avoiding UART port conflicts.
 
 ## RC Input Topology
 
-protoArtoo supports three mutually exclusive runtime RC modes:
+The RC mode follows the Radio Controller and receiver picked on Configuration:
 
-| Mode | Wiring | Intended use |
+| Mode | Wiring (Artoo PCB / FireBeetle 2) | Intended use |
 |---|---|---|
-| standard_pwm | CH1-CH6 as PWM inputs (GPIO 15,13,2,4,12,27) | Conventional multi-channel PWM receivers |
-| single_sbus | SBUS on CH1 / GPIO15 | One receiver for core control |
-| dual_sbus | SBUS1 on CH1 / GPIO15 and SBUS2 on CH2 / GPIO13 | Split drive/dome control workflows |
+| standard_pwm | CH1-CH6 as PWM inputs (GPIO 15,13,2,4,12,27 / GPIO 28-33) | Conventional multi-channel PWM receivers |
+| single_sbus | SBUS on CH1 (GPIO15 / GPIO28) | One receiver for core control |
+| dual_sbus | SBUS1 on CH1, SBUS2 on CH2 (GPIO15 + GPIO13 / GPIO28 + GPIO29) | Split drive/dome control workflows |
+| not fitted | none | A droid driven from the web alone |
+
+An ELRS receiver is Roadmap.
 
 Default behavioral intent:
 - SBUS1 carries drive-centric controls.
@@ -105,10 +149,10 @@ Ownership by subsystem is explicit to reduce ambiguity:
 
 | Signal domain | Owner | Notes |
 |---|---|---|
-| Drive command output | Body drive path | Safety-gated, speed-capped before transmit |
+| Foot Drive command output | Body drive path | Safety-gated, speed-capped before transmit |
 | Dome ESC output | Body PWM path | Receives mapped dome speed intent |
 | Body audio playback | Body audio path | Body is authoritative sound source |
-| Dome-local effects | Dome controller | Managed dome-side by dome firmware |
+| Dome-local effects | Dome Controller | Managed dome-side by dome firmware |
 | RC decode and mapping | Body RC path | Runtime mode + mapping profile driven |
 | Browser control and configuration | Body web/API path | Persists config and updates runtime state |
 
@@ -121,7 +165,7 @@ RC receiver input (PWM or SBUS)
 	-> RC decode/mapping
 	-> drive intent (speed/steer)
 	-> safety and limit gating
-	-> hoverboard UART frame output
+	-> Foot Drive frame output (hoverboard UART today)
 ```
 
 ### Browser-to-drive path
@@ -132,25 +176,34 @@ HTTP API request
 	-> drive intent update
 	-> web-command timeout supervision
 	-> safety and limit gating
-	-> hoverboard UART frame output
+	-> Foot Drive frame output (hoverboard UART today)
 ```
 
 ### Body-dome coordination path
 
 ```
 Body command/status routing
-	<-> bidirectional serial link over slip ring
-	<-> dome controller behavior/state
+	<-> protoR2link: bidirectional serial over the slip ring (WiFi fallback)
+	<-> Dome Controller behavior/state
 ```
 
 ## Safety Topology
 
-Drive safety is layered and converges on zero output behavior:
-1. RC receiver hardware failsafe signaling.
-2. SBUS software watchdog timeout.
-3. Web-drive command timeout.
-4. ESP32 task watchdog reset behavior.
-5. Hoverboard-side UART timeout.
+Drive safety is layered and converges on zero output behavior (`docs/failsafe.md`):
+1. RC receiver hardware failsafe signaling (SBUS failsafe flag).
+2. SBUS software watchdog timeout (200 ms default).
+3. Web-drive command timeout (500 ms default).
+4. ESP32 task watchdog reset (3 s); the next boot latches estop.
+5. Latching Estop.
+
+Layers 1 and 2 apply only while a Radio Controller is fitted; with none, the web-drive
+timeout and the estop hold the feet.
+
+Beyond the five Failsafe Layers, a Foot Drive may carry a timeout of its own, and it is
+not one of them. Starved, a hoverboard keeps acting on its last frame: EFeru firmware
+for 800 ms, then it coasts; RoboDurden firmware for 500 ms, then it soft-brakes. That is
+up to 0.8 s of motion nobody commanded, which is why the Body Controller never goes
+silent and keeps sending zero frames. Another Foot Drive brings its own rule.
 
 Estop topology:
 - Estop is latching and requires explicit clear action.
@@ -160,7 +213,8 @@ Estop topology:
 
 Configuration model:
 - Runtime configuration is persisted and applied without requiring rebuilds for normal operation.
-- RC mode, mapping, calibration, and major subsystem settings are operator-editable via web surfaces.
+- The fitted member of each Component Family, RC mode, mapping, calibration, and major
+  subsystem settings are operator-editable via web surfaces.
 
 State visibility model:
 - Status and diagnostics API surfaces expose control-state and health context.
@@ -177,9 +231,9 @@ Boundary intent for long-term maintainability:
 ## Bring-Up and Verification Checklist
 
 Use this checklist when validating a new build or wiring refresh:
-1. Verify serial-port wiring against docs/pin_map.md (S1/S2/S3, including dome TX-RX cross).
+1. Verify serial-port wiring against docs/pin_map.md for your board, including the dome TX-RX cross.
 2. Verify selected RC mode wiring matches configured mode.
 3. Confirm drive zero-output behavior under failsafe and estop states.
-4. Confirm dome link bidirectional traffic and state transitions.
+4. Confirm protoR2link bidirectional traffic and state transitions.
 5. Confirm audio authority is body-side and commands route correctly.
 6. Confirm status/diagnostic endpoints reflect expected live topology state.

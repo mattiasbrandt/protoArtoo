@@ -3,8 +3,9 @@
 //
 // DomeLinkTask  --  bidirectional Marcduino serial link to the dome controller.
 //
-// Physical link: UART_PORT_DOME (Serial2), 9600 baud 8N1, on PIN_DOME_TX /
-// PIN_DOME_RX. Both are per Board Variant (include/config.h); on artoo-esp32
+// Physical link: UART_PORT_DOME (Serial2), 9600 baud 8N1 (kBoardLaneWire_protor2link,
+// include/board_lane_wire.h, which GET /api/identity reports), on PIN_DOME_TX /
+// PIN_DOME_RX. The pins are per Board Variant (include/config.h); on artoo-esp32
 // that is PCB header S3 ("Dome Control"), GPIO 33 TX / GPIO 34 RX. Connected
 // over slip ring to AstroPixelsPlus.
 //
@@ -36,6 +37,7 @@
 // =============================================================================
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -63,6 +65,11 @@ struct DomeLayoutCacheStatus {
 struct DomeTxCmd {
     char buf[64];
 };
+
+// The longest line domeQueueTx() carries whole. It copies into buf with
+// strncpy and would queue a longer line cut short, so every door that
+// forwards a builder's line refuses one longer than this instead (#449).
+constexpr size_t DOME_TX_LINE_MAX = sizeof(DomeTxCmd::buf) - 1;
 
 // Queue handle  --  defined in main.cpp alongside other queues.
 extern QueueHandle_t domeTxQueue;

@@ -219,8 +219,35 @@ AudioPlaybackIntent audioPlaybackResolveRequest(const AudioPlaybackContext& cont
             AudioPlaybackIntent intent{};
             intent.kind = AUDIO_PLAYBACK_INTENT_TRACK_STOP;
             intent.requestKind = request.kind;
-            intent.clearAudioActive = true;
+            // A Background Track is not a vocal and plays on (ADR 0054).
+            intent.clearAudioActive = !request.backgroundTrackHeld;
             intent.updateLastPlayMs = true;  // anti-spam cadence bump (ADR 0010 Track Stop)
+            return intent;
+        }
+
+        case AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_START: {
+            // No anti-spam gate and no cadence bump: a Background Track is
+            // authored, not chatter, and it plays under the vocals the cadence
+            // paces.
+            AudioPlaybackIntent intent{};
+            if (!audioPlaybackNormalizeBanked(request.backgroundTrack.index,
+                                              request.backgroundTrack.bank,
+                                              request.backgroundTrack.page, &intent)) {
+                return makeNone(request.kind, AUDIO_PLAYBACK_NONE_INVALID_BANKED);
+            }
+            intent.kind = AUDIO_PLAYBACK_INTENT_BACKGROUND_TRACK_START;
+            intent.requestKind = request.kind;
+            intent.volume = request.backgroundTrack.volume;
+            intent.markAudioActive = true;
+            return intent;
+        }
+
+        case AUDIO_PLAYBACK_REQ_BACKGROUND_TRACK_STOP: {
+            AudioPlaybackIntent intent{};
+            intent.kind = AUDIO_PLAYBACK_INTENT_BACKGROUND_TRACK_STOP;
+            intent.requestKind = request.kind;
+            // The droid's sound is over unless a vocal may still be playing.
+            intent.clearAudioActive = !request.vocalHeld;
             return intent;
         }
 
@@ -252,12 +279,28 @@ AudioPlaybackIntent audioPlaybackResolveRequest(const AudioPlaybackContext& cont
     }
 }
 
+AudioPlaybackIntent audioPlaybackResolveSlot(const AudioPlaybackContext& context,
+                                             AudioPlaybackSlot slot) {
+    return resolveSlotNoGate(context, slot);
+}
+
 AudioPlaybackIntent audioPlaybackResolveRandomTick(const AudioPlaybackRandomContext& context) {
     if (!context.randomMode) {
         return makeNone(AUDIO_PLAYBACK_REQ_RANDOM_TICK, AUDIO_PLAYBACK_NONE_RANDOM_DISABLED);
     }
     if (context.config == nullptr) {
         return makeNone(AUDIO_PLAYBACK_REQ_RANDOM_TICK, AUDIO_PLAYBACK_NONE_CATEGORY_EMPTY);
+    }
+
+    // Idle chatter is Resting Behaviour, and that is held while the droid is
+    // driving (GLOSSARY.md, #450). Asked before the interval, and restarting it
+    // on every tick, so the chatter comes back a whole pause after the droid
+    // stops rather than on the tick it does.
+    if (context.driving) {
+        AudioPlaybackIntent intent =
+            makeNone(AUDIO_PLAYBACK_REQ_RANDOM_TICK, AUDIO_PLAYBACK_NONE_DRIVING);
+        intent.updateLastRandMs = true;
+        return intent;
     }
 
     const uint16_t intSec = audioPlaybackIntervalForMood(*context.config, context.activeMood);

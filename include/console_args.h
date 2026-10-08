@@ -29,6 +29,8 @@
 #include <cstring>
 
 #include "api_param_source.h"
+#include "board_outputs.h"  // boardOutputForWord() - a board_output param's words
+#include "servo_output_row.h"  // servoOutputParseExpanderAddress() - an expander Output's name
 #include "console_catalog.h"
 
 // =============================================================================
@@ -118,7 +120,7 @@ inline bool consoleUtf8Valid(const char* s) {
             if (c > 0xF4) return false;  // beyond U+10FFFF
             extra = 3;
         } else {
-            return false;  // stray continuation byte or 0xF8-0xFF lead byte
+            return false;  // stray continuation byte or 0xF8-0xFF wire byte
         }
 
         unsigned char c1 = p[1];
@@ -349,6 +351,21 @@ inline bool consoleParamValueInEnum(const ConsoleParamDescriptor& param, const c
     return false;
 }
 
+// A board_output param takes the running board's word for one of its Outputs
+// (include/board_outputs.h: ARM3 on the Artoo PCB, GPIO 49 on the FireBeetle 2,
+// case and spaces set aside), an expander's Output by its address (`pca:3`,
+// #444, since no board prints a word for one), or one of the extra words its
+// enum lists - `both`. The registry is one file for every board, so the labels
+// cannot be in the catalog's enum: they are read from the one label source
+// instead. An operation that cannot use an expander's Output - a light goes on
+// the board's own wires only - refuses it in its own executor, with the same
+// OUT_OF_RANGE this check would have given.
+inline bool consoleParamValueNamesOutput(const ConsoleParamDescriptor& param, const char* value) {
+    if (param.enum_values != nullptr && consoleParamValueInEnum(param, value)) return true;
+    ServoOutputAddress expander = {};
+    return boardOutputForWord(value) != nullptr || servoOutputParseExpanderAddress(value, &expander);
+}
+
 // Sweeps every argument the operator supplied against `params` (unknown-key
 // pass), then every declared param against what was supplied (missing-
 // required, then type/range/enum on whatever is present). `params` may be
@@ -403,6 +420,14 @@ inline ConsoleArgSchemaStatus consoleValidateArgsAgainstSchema(const ConsolePara
         // 11, 13, 14]` are numeric in the registry YAML but rendered as
         // strings by the generator (tools/generate_console_catalog.py), so
         // this is the one comparison every enum param needs.
+        if (p->board_output) {
+            if (!consoleParamValueNamesOutput(*p, value)) {
+                setBadKey(p->name);
+                return CONSOLE_ARG_SCHEMA_OUT_OF_RANGE;
+            }
+            continue;
+        }
+
         if (p->enum_values != nullptr) {
             if (!consoleParamValueInEnum(*p, value)) {
                 setBadKey(p->name);

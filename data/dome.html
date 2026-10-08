@@ -1,33 +1,51 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/dome.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/dome_bearing.js,/dome.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Dome - protoArtoo</title>
+    <title>Dome - protoR2</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
-    <!-- PA:INCLUDE _recovery_kernel.html -->
+    <!-- Thin delegate. This file is the one copy of this surface's markup and
+         the Operator Shell fetches it; fetching never runs scripts, so this
+         line is inert for the shell. A browser that lands here directly -- a
+         bookmark, an old link, a support conversation -- is handed to the shell
+         at this surface's route instead, so the address keeps opening what it
+         names (ADR 0048). -->
+    <script>window.PAShellDelegate = true; location.replace("/#dome");</script>
   </head>
   <body data-page="dome">
-    <div id="shell-top"></div>
 
-
-    <!-- Dome Rotation Control -->
-    <!-- Disabled notice (hidden when DOME is enabled) -->
-    <div id="dome-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
-      <h3>🔄 Dome Hardware Disabled</h3>
-      <div class="desc">Dome rotation controls are unavailable because Dome ESC is disabled.</div>
-      <div class="desc disabled-reason"><strong>Required component:</strong> DOME — Dome ESC</div>
-      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable <strong>DOME — Dome ESC</strong> to restore dome controls.</div>
+    <!-- The title is the name in the nav (ADR 0066). Every act here is named
+         beside the thing it acts on, so the title carries none. -->
+    <div class="title">
+      <div>
+        <h1>Dome</h1>
+      </div>
     </div>
 
-    <div class="card">
-      <h3>🔄 Dome Rotation</h3>
-      <div class="dome-toolbar mt-16">
-        <span id="dome-hardware-pill" class="status-pill pill-info status-pill-compact">🧩 DOME status pending</span>
-        <span id="dome-web-pill" class="status-pill pill-info status-pill-compact">🕹️ Web control status pending</span>
+    <!-- Dome ESC switched off in Configuration. An Availability Family "change it
+         here" (GLOSSARY.md): the card names the move and routes to it, and it is
+         told apart by treatment and never by hue. -->
+    <div id="dome-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
+      <div class="sect"><h2>Dome rotation</h2><span class="sub">switched off in Configuration</span></div>
+      <p class="note"><b>Off:</b> the dome stays put, even through a sequence. <a class="setup-link" href="/configuration.html">Switch Dome ESC on in Configuration</a></p>
+    </div>
+
+    <!-- What the dome is being told to do, right now. A readout and nothing
+         else: this page has no control that turns the dome, so the gauge is
+         not draggable and does not pretend to be. -->
+    <div class="card dome-rotation">
+      <div class="sect"><h2>Dome rotation</h2><span class="sub waiting" id="dome-hardware-state"></span></div>
+      <div class="dome-live-meta">
+        <div class="slider-value" id="dome-speed-display">0%</div>
+        <!-- The direction the dome is being turned is a value, not a symptom,
+             so it is a word and never a color (GLOSSARY.md "Status Color").
+             Forward used to read green and reverse amber, which promised the
+             builder something to do about turning left. -->
+        <span id="dome-rotation-state" class="dome-rotation-state">Idle</span>
       </div>
-      <div class="dome-live-track mt-16" role="img" aria-label="Live dome rotation target from RC input">
+      <div class="dome-live-track" role="img" aria-label="Live dome rotation target from RC input">
         <div id="dome-live-fill" class="dome-live-fill"></div>
         <div class="dome-live-center"></div>
       </div>
@@ -36,92 +54,115 @@
         <span>Stop</span>
         <span>Forward</span>
       </div>
-      <div class="dome-live-meta mt-12">
-        <div class="slider-value" id="dome-speed-display">0%</div>
-        <span id="dome-rotation-state" class="status-pill pill-info">⏸️ Idle</span>
-      </div>
-      <div id="dome-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Dome ready.</div>
-    </div>
-
-    <!-- Dome ESC Settings -->
-    <div class="card">
-      <h3>⚙️ Dome ESC Settings</h3>
-      <div class="desc">Configure the dome rotation ESC pulse width range.</div>
-      <div class="info-note mt-12">
-        <strong>Note:</strong> ESC calibration, PWM frequency, and voltage cutoff are configured
-        via the ISD Go mobile app over Bluetooth. These settings only adjust the pulse width range.
-      </div>
-      <form id="esc-form" class="form-grid dome-settings-grid mt-16">
-        <label class="field">
-          <span>Neutral Pulse (µs)</span>
-          <input id="dome-neutral" class="compact-number" name="domeEscNeutralUs" type="number" min="1000" max="2000" step="1"
-            title="ESC neutral/stop pulse width in microseconds">
-        </label>
-        <label class="field">
-          <span>Minimum Pulse (µs)</span>
-          <input id="dome-min-pulse" class="compact-number" name="domeEscMinPulseUs" type="number" min="1000" max="2000" step="1"
-            title="ESC full-reverse pulse width in microseconds">
-        </label>
-        <label class="field">
-          <span>Maximum Pulse (µs)</span>
-          <input id="dome-max-pulse" class="compact-number" name="domeEscMaxPulseUs" type="number" min="1000" max="2000" step="1"
-            title="ESC full-forward pulse width in microseconds">
-        </label>
-        <label class="field">
-          <span>Speed Limit (%)</span>
-          <input id="dome-speed-limit" class="compact-number" name="domeEscSpeedLimitPct" type="number" min="0" max="100" step="1"
-            title="Maximum dome rotation speed as a percentage of the full ESC range">
-        </label>
-        <div class="button-row">
-          <button id="reload-esc-button" class="btn" type="button">🔄 Reload</button>
+      <!-- Where the dome believes it points (#445): the number, and the word
+           that says it is believed, in the row it qualifies. Unknown is a word
+           in the number's place. Front is here is how a builder gets it back;
+           Go home turns the dome to it. -->
+      <div class="dome-bearing-row">
+        <span class="dome-bearing-name">Points</span>
+        <span id="dome-bearing-value" class="dome-bearing-value is-unknown">Unknown</span>
+        <span id="dome-bearing-word" class="dome-bearing-word" hidden>believed</span>
+        <div class="dome-bearing-acts">
+          <button id="dome-front-button" class="btn btn-sm btn-quiet icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-target"/></svg><span class="act-label">Front is here</span></button>
+          <button id="dome-home-button" class="btn btn-sm icon-act act-keeps-words" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-home-outline"/></svg><span class="act-label">Go home</span></button>
         </div>
-      </form>
-      <div id="esc-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading motor settings...</div>
+      </div>
+      <div id="dome-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Dome ready.</div>
     </div>
 
-    <!-- Random Dome Movement -->
-    <div class="card">
-      <h3>🎲 Random Dome Movement</h3>
-      <div class="desc">Autonomous idle dome rotation when no RC or web command is active.</div>
-      <form id="rnd-dome-form" class="form-grid dome-settings-grid mt-16">
-        <label class="field field-full">
-          <span>Enable random movement</span>
-          <input id="dome-rnd-enable" name="domeEscRndEnable" type="checkbox"
-            title="Enable autonomous idle dome rotation">
-        </label>
-        <label class="field">
-          <span>Speed (%)</span>
-          <input id="dome-rnd-speed" class="compact-number" name="domeEscRndSpeedPct"
-            type="number" min="5" max="100" step="1"
-            title="Rotation speed during each random movement as a percentage of maximum dome speed">
-        </label>
-        <label class="field">
-          <span>Min pause (s)</span>
-          <input id="dome-rnd-pause-min" class="compact-number" name="domeEscRndPauseMin"
-            type="number" min="1" max="120" step="1"
-            title="Minimum idle pause duration between random movements in seconds">
-        </label>
-        <label class="field">
-          <span>Max pause (s)</span>
-          <input id="dome-rnd-pause-max" class="compact-number" name="domeEscRndPauseMax"
-            type="number" min="1" max="120" step="1"
-            title="Maximum idle pause duration between random movements in seconds">
-        </label>
-        <label class="field">
-          <span>Move duration (ms)</span>
-          <input id="dome-rnd-move-ms" class="compact-number" name="domeEscRndMoveMs"
-            type="number" min="500" max="10000" step="100"
-            title="Duration of each random rotation movement in milliseconds">
-        </label>
-        <div class="button-row">
-          <button id="reload-rnd-button" class="btn" type="button">🔄 Reload</button>
+    <!-- The motor and its idle turns, side by side in one bay: two short lists
+         of numbers, each row a name, its cue and a box the size of the
+         number it holds (#399, operator review 2026-09-28). -->
+    <div class="bay dome-settings">
+      <section>
+        <div class="sect"><h2>Dome ESC</h2><span class="sub">saved as you change</span></div>
+        <div class="note note-info" role="note">
+          Calibration, PWM frequency and voltage cutoff live in the <b>ISD Go</b> app, over Bluetooth.
         </div>
-      </form>
-      <div id="rnd-feedback" class="feedback mt-12" role="status"
-           aria-live="polite" aria-atomic="true">Loading random movement settings...</div>
-    </div>
+        <form id="esc-form" class="setting-rows">
+          <label class="setting-row">
+            <span class="setting-name">Neutral pulse<span class="hint">Wrong, and the dome creeps on its own.</span></span>
+            <span class="setting-number"><input id="dome-neutral" class="number-cell" name="domeEscNeutralUs" type="number" step="1"><span class="setting-unit">µs</span></span>
+          </label>
+          <label class="setting-row">
+            <span class="setting-name">Minimum pulse<span class="hint">Narrower than neutral.</span></span>
+            <span class="setting-number"><input id="dome-min-pulse" class="number-cell" name="domeEscMinPulseUs" type="number" step="1"><span class="setting-unit">µs</span></span>
+          </label>
+          <label class="setting-row">
+            <span class="setting-name">Maximum pulse<span class="hint">Wider than neutral.</span></span>
+            <span class="setting-number"><input id="dome-max-pulse" class="number-cell" name="domeEscMaxPulseUs" type="number" step="1"><span class="setting-unit">µs</span></span>
+          </label>
+          <label class="setting-row">
+            <span class="setting-name">Speed limit<span class="hint">20 is a slow scan, 100 is as fast as the dome turns.</span></span>
+            <span class="setting-number"><input id="dome-speed-limit" class="number-cell" name="domeEscSpeedLimitPct" type="number" step="1"><span class="setting-unit">%</span></span>
+          </label>
+        </form>
+        <div class="setting-foot">
+          <div id="esc-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading motor settings...</div>
+          <button id="reload-esc-button" class="btn btn-sm btn-quiet icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg><span class="act-label">Reload</span></button>
+        </div>
+      </section>
 
-    <div id="shell-status"></div>
+      <section>
+        <div class="sect"><h2>Random movement</h2><span class="sub">idle turns</span></div>
+        <p class="hint">Only while the sticks are still and no sequence runs. These pauses are Full-Awake's: Awake+ is quicker, Mid-Awake slower, Quiet never turns.</p>
+        <form id="rnd-dome-form" class="setting-rows">
+          <!-- The tick is drawn as a switch: it turns a behaviour on and off,
+               and it stays an <input type="checkbox"> underneath, so dome.js
+               reads .checked exactly as before. -->
+          <label class="setting-row">
+            <span class="setting-name">Turn the dome on its own</span>
+            <input id="dome-rnd-enable" class="switch" name="domeEscRndEnable" type="checkbox">
+          </label>
+          <label class="setting-row">
+            <span class="setting-name">Speed<span class="hint">A share of the dome's own limit, not of the ESC's full rate.</span></span>
+            <span class="setting-number"><input id="dome-rnd-speed" class="number-cell" name="domeEscRndSpeedPct" type="number" step="1"><span class="setting-unit">%</span></span>
+          </label>
+          <label class="setting-row">
+            <span class="setting-name">Move duration<span class="hint">How long one turn lasts.</span></span>
+            <span class="setting-number"><input id="dome-rnd-move-ms" class="number-cell" name="domeEscRndMoveMs" type="number" step="100"><span class="setting-unit">ms</span></span>
+          </label>
+          <label class="setting-row">
+            <span class="setting-name">Shortest pause</span>
+            <span class="setting-number"><input id="dome-rnd-pause-min" class="number-cell" name="domeEscRndPauseMin" type="number" step="1"><span class="setting-unit">s</span></span>
+          </label>
+          <label class="setting-row">
+            <span class="setting-name">Longest pause</span>
+            <span class="setting-number"><input id="dome-rnd-pause-max" class="number-cell" name="domeEscRndPauseMax" type="number" step="1"><span class="setting-unit">s</span></span>
+          </label>
+        </form>
+        <div class="setting-foot">
+          <div id="rnd-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading random movement settings...</div>
+          <button id="reload-rnd-button" class="btn btn-sm btn-quiet icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg><span class="act-label">Reload</span></button>
+        </div>
+      </section>
+
+      <!-- What the droid needs to follow a turn (#445): nothing on it can
+           measure the dome, so the builder times one full turn. -->
+      <section>
+        <div class="sect"><h2>Full turn</h2><span class="sub" id="dome-turn-state">not set</span></div>
+        <form id="dome-turn-form" class="setting-rows">
+          <label class="setting-row">
+            <span class="setting-name">Time for one turn<span class="hint">Stopwatch one full turn.</span></span>
+            <span class="setting-number"><input id="dome-turn-ms" class="number-cell" name="domeEscFullTurnMs" type="number" step="10" placeholder="-"><span class="setting-unit">ms</span></span>
+          </label>
+          <label class="setting-row">
+            <span class="setting-name">Timed at<span class="hint">Full stick under a 60% speed limit is 60.</span></span>
+            <span class="setting-number"><input id="dome-turn-pct" class="number-cell" name="domeEscFullTurnPct" type="number" step="1" placeholder="-"><span class="setting-unit">%</span></span>
+          </label>
+          <div class="setting-row">
+            <span class="setting-name" id="dome-turn-dir-name">Positive turns<span class="hint">Seen from above.</span></span>
+            <div class="seg" id="dome-turn-dir" role="radiogroup" aria-labelledby="dome-turn-dir-name">
+              <button type="button" role="radio" aria-checked="false" aria-pressed="false" data-value="cw">Clockwise</button>
+              <button type="button" role="radio" aria-checked="false" aria-pressed="false" data-value="ccw">Anticlockwise</button>
+            </div>
+          </div>
+        </form>
+        <div class="setting-foot">
+          <div id="turn-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading full turn...</div>
+        </div>
+      </section>
+    </div>
 
     <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
          fetches /page_bootstrap.js itself, with retry, and hands it the script

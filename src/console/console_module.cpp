@@ -11,6 +11,7 @@
 #include "console_module.h"
 #include "console_record.h"
 #include "console_catalog.h"
+#include "board_outputs.h"  // BOARD_OUTPUTS, boardOutputLabel() - an Output's name here
 #include "console_args.h"  // ConsoleArgs, consoleSplitCommandLine(), consoleParseArgs(),
                            // consoleValidateArgsAgainstSchema() - the shared argument
                            // contract (#221, ADR 0036, docs/console-protocol.md s.1.2)
@@ -28,7 +29,6 @@
 
 #ifdef ARDUINO
 #include <freertos/FreeRTOS.h>
-#include <esp_heap_caps.h>
 #endif
 
 #include "logging.h"
@@ -38,9 +38,20 @@
                               // consoleExecuteSystemStatusLogs() below streams from (#239)
 #include "log_buffer.h"       // LOG_LINE_MAX - sizes that executor's per-line scratch buffer
 #include "web_network_manager.h"
+// #if, not #ifdef (ADR 0029), and config.h named here so the capability is
+// defined before the gate rather than through whichever header happens to
+// bring it in. hosted_link_status.h's accessor is defined only on a board
+// with the Hosted backend, so the include, consoleExecuteSystemStatusHostedLink()
+// and its dispatch-table row vanish together elsewhere; the catalog row then
+// answers not-on-this-board from consoleExecuteCommand()'s board guard.
+#include "config.h"
+#if PA_CAP_HOSTED_WIFI
+#include "hosted_link_status.h"  // hostedLinkQueryStatus() - system.status.hosted-link (#471)
+#endif
 #include "api_status.h"
 #include "api_audio.h"
 #include "audio_task.h"
+#include "audio_sound_member.h"  // audioSoundStatusIdentity() - sound.status.current with sound off (#370)
 #include "rc_diagnostics_snapshot.h"
 #include "validation_snapshot.h"  // ValidationSnapshot, captureValidationSnapshot() -
                                  // the Zone Snapshot behind GET /api/validation
@@ -52,19 +63,24 @@
                                // - the existing validators the live RC trigger path already
                                // calls (#221 reuses them verbatim for the raw Marcduino console
                                // operations, rather than inventing a second set of format rules)
-#include "api_config.h"        // configCommitApplied() - the ADR 0036 Commit Step beside
-                               // configApply(), shared verbatim with handleConfigPost (#226) -
-                               // and ConfigWriteLock, the one lock every config writer takes
+#include "api_config.h"        // configWriteWindow() - the config write's Write Window
+                               // (ADR 0011, amended 2026-09-24), shared verbatim with
+                               // handleConfigPost: configApply() and its Commit Step under the
+                               // one config write lock
+#include "config_settings.h"   // every Setting's declaration - the single-field ops read and write by it
 #include "api_config_apply.h"  // configApply(), ConfigApplyResult
-#include "api_wifi_apply.h"    // wifiApply(), wifiCommitApplied() - the POST /api/wifi
-                               // Apply Core and its ADR 0036 Commit Step, shared verbatim
-                               // with handleWifiPost (#227; the Commit Step was extracted
-                               // for exactly this second caller in that ticket's phase 1)
+#include "pca9685.h"           // PCA9685_OUTPUT_SPAN - the span servo.api.get-outputs names
+#include "servo_task.h"        // servoTaskExpanderFacts() - the expander the droid started with
+#include "api_wifi_apply.h"    // wifiWriteWindow() - the POST /api/wifi Apply Core and its
+                               // ADR 0036 Commit Step under the config write lock, shared
+                               // verbatim with handleWifiPost (#227 extracted the Commit Step
+                               // for exactly this second caller)
 #include "api_helpers.h"       // parseBoolValue() - reused verbatim for rc.action.toggle-debug's
                                // enabled= argument, matching src/web/api_rc.cpp's own JSON body parse
 #include "commanded_modes.h"   // commandedSetStationary/Sleep/WebControl/RcDebug() - Commanded
                                // Mode setters (#226 criterion 4: Commanded Modes go only
                                // through these, never the queued RC-dispatch core below)
+#include "component_registry.h"  // the Component Registry tables system.api.get-components reads
 #include "config_cache.h"      // configCacheRead/Apply, configCacheReadActiveComponentToggle
 #include "console_config_fields.h"  // kComponentToggleFields[] - Component Toggle name<->field
                                      // table (#226; see its own header for why this is
@@ -80,17 +96,14 @@
                                  // handleAudioMoodMapGet() applies before rendering the
                                  // four mood-category words (sound.config.mood-category-map)
 #include "mood.h"              // applyMood() - system.config.mood's and system.action.set-mood's
-                               // real executor (registry drift note: the registry's own
-                               // `executor:` field for system.config.mood says configApply,
-                               // which is wrong - see the status comment; not fixed here, that
-                               // edit reaches the fenced data/console_help.txt)
-#include "api_servo.h"         // parseArmId(), servoSubmitCommand() - the ADR 0036 Commit Step
+                               // executor
+#include "api_servo.h"         // servoParseTarget(), servoSubmitCommand() - the ADR 0036 Commit Step
                                // beside handleServoPost() (#221 remainder), reused verbatim by
                                // servo.action.open/close/set-position below
 #include "ledc_pwm.h"          // SERVO_PULSE_MIN_US/MAX_US - the same pulse-width bounds
                                // handleServoPost() enforces for its own position_us range
-#include "api_identity.h"      // identitySetCommitApplied() - the ADR 0036 Commit Step beside
-                               // handleIdentityPost() (#221 remainder), reused verbatim by
+#include "api_identity.h"      // identitySetWriteWindow() - the identity write's Write Window,
+                               // shared with handleIdentityPost() (#221 remainder) by
                                // system.action.set-identity below
 #include "aux_led.h"           // AuxLedEffect, parseAuxLedEffect(), auxLedQueueSetColor/SetEffect()
                                // - reused verbatim by aux.action.led-color/-effect below (#221
@@ -103,9 +116,10 @@
                                    // own "retrained" check, both reused verbatim from
                                    // handleSeqBuiltinsGet()/handleSeqListGet() (src/web/api_seq.cpp)
 #include "seq_json.h"          // seqToggleGroupToString() - reused verbatim by both list executors
-#include "sequence_run_evidence.h"  // SeqRunEvidence, seqEvidenceSnapshot(), seqRunOutcomeName() -
-                                     // dome.api.get-sequence-last-run below, the same snapshot
-                                     // GET /api/seq/last-run serializes (src/seq_last_run_json.cpp)
+#include "sequence_run_evidence.h"  // SeqRunSummary, seqEvidenceSummary(), seqRunOutcomeName() -
+                                     // dome.api.get-sequence-last-run below, read under the same
+                                     // lock as the snapshot GET /api/seq/last-run serializes
+                                     // (src/seq_last_run_json.cpp)
 #include "api_profiler.h"           // ProfilerReading, profilerRead(), profilerRequestTrace*() -
                                      // the shared read GET /api/profiler renders as JSON and
                                      // system.api.get-profiler renders as records (#224). Included
@@ -136,19 +150,22 @@ static const ConsoleHelpReader* g_helpReader = nullptr;
 // only the first four fields are rendered, so what has to fit is the row up to
 // and including the executor's closing delimiter -- never the params tail.
 //
-// 512 sat below the catalog it reads. Three rows in data/console_help.txt are
-// longer than that at this tip (561, 562 and 585 bytes; the last prose
-// delimiter any of them needs is at byte 561), so those delimiters fell past
-// the cut and their description and executor were never emitted at all --
-// absent rather than truncated, because the parser in
-// consoleEmitHelpForOperation() emits a field only when it reaches the `|` that
-// closes it (#282). 768 clears the longest of them with ~200 bytes of headroom.
+// 512 once sat below the catalog it reads: rows longer than that had their
+// executor's closing delimiter fall past the cut, and their description and
+// executor were never emitted at all -- absent rather than truncated, because
+// the parser in consoleEmitHelpForOperation() emits a field only when it
+// reaches the `|` that closes it (#282). Measured 2026-10-01, the longest row
+// in data/console_help.txt is 319 bytes and the deepest executor delimiter
+// any row needs is at byte 296, so 768 is well clear of today's catalog.
 //
-// The cost is 256 bytes of stack on whichever task is answering: the Console
-// task (10240 B on ESP32, 9216 B on ESP32-P4, measured chains 7984/7360 --
-// include/config.h) or the httpd task (8192 B, whose handleConsolePost() frame
-// is 240 B since #266). Neither is close: the deepest chain on both tasks is
-// the config-write path, and the help branch is a shallow one.
+// The cost is HELP_TEXT_MAX bytes of stack on whichever task is answering: the
+// Console task or the httpd task (handleConsolePost()). The Console task's
+// stack and measured chain have one home, tools/task_stack_recipes.json
+// (generated into include/task_stack_figures.h), and
+// tools/check_task_stack_chains.py catches a change here growing it; the httpd
+// task's stack is set where the server is configured
+// (src/web/web_request_psychic.cpp). The help branch is a shallow route on
+// either task.
 //
 // It is still a bound, not a guarantee. A row whose executor delimiter falls
 // past it is reported as `unreadable` rather than half-answered -- see the
@@ -259,6 +276,34 @@ static bool consoleGetHelpText(const char* canonicalName, uint16_t help_offset,
     return true;
 }
 
+// The words a board_output parameter takes on the running board - its Output
+// labels in table order, then the extra words the registry lists beside them
+// (`both`) - comma-joined into one field value, and quoted when a label carries
+// a space (GPIO 49), so the value stays one token on the wire (console_record.h
+// consoleQuoteValue()). A refusal and `help` both answer with this, so a builder
+// who typed a word the board does not print is shown the ones it does
+// (ADR 0033 Amendment 2026-09-19). `joined` holds the unquoted list and
+// `quoted` the quoted copy; the return points at whichever is the value.
+static const char* consoleOutputWords(const ConsoleParamDescriptor& param, char* joined,
+                                      size_t joinedSize, char* quoted, size_t quotedSize) {
+    boardOutputWordList(",", joined, joinedSize);
+    size_t used = strlen(joined);
+    if (param.enum_values != nullptr) {
+        for (const char* const* extra = param.enum_values; *extra != nullptr; ++extra) {
+            const int wrote = snprintf(joined + used, joinedSize - used, ",%s", *extra);
+            if (wrote < 0 || (size_t)wrote >= joinedSize - used) {
+                break;
+            }
+            used += (size_t)wrote;
+        }
+    }
+    return consoleQuoteValue(joined, quoted, quotedSize);
+}
+
+// Sized for the longest list a board declares: firebeetle2's
+// "GPIO 49,GPIO 50,GPIO 4,GPIO 5,GPIO 51,both" is 41 bytes, and quoting adds two.
+static const size_t CONSOLE_OUTPUT_WORDS_MAX = 64;
+
 // Emit one prose field of a help row, clamped to the buffer it is given, and
 // say so on the wire when the clamp actually cut bytes.
 //
@@ -282,20 +327,23 @@ static bool consoleGetHelpText(const char* canonicalName, uint16_t help_offset,
 // the prose is present and shorter than the row's
 // (docs/console-protocol.md s.3.4). The "status instead of a half-answer,
 // never both" rule below is about the first case and is untouched by this.
+//
+// A row about one Output (`outputId`, the catalog's `output`) names it with the
+// `{output}` placeholder, which is composed here into the running board's label
+// before the clamp, so the marker still means "shorter than the row said".
 static void consoleEmitProseField(uint32_t requestId, const ConsoleRecordSink* sink,
                                   const char* name, const char* truncatedName,
-                                  const char* fieldStart, size_t fieldLen, char* buffer,
-                                  size_t bufferSize) {
+                                  const char* fieldStart, size_t fieldLen, const char* outputId,
+                                  char* buffer, size_t bufferSize) {
     if (sink->onRecordField == nullptr) {
         return;
     }
 
-    size_t cpyLen = (fieldLen < bufferSize - 1) ? fieldLen : bufferSize - 1;
-    memcpy(buffer, fieldStart, cpyLen);
-    buffer[cpyLen] = '\0';
+    const size_t fullLen =
+        boardOutputComposeText(fieldStart, fieldLen, outputId, buffer, bufferSize);
     sink->onRecordField(requestId, name, buffer);
 
-    if (cpyLen < fieldLen) {
+    if (fullLen > bufferSize - 1) {
         sink->onRecordField(requestId, truncatedName, "true");
     }
 }
@@ -339,10 +387,11 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
     // field list mirrors a REST JSON schema (docs/console-protocol.md s.3.5) -
     // these fields have no REST counterpart to mirror.
     //
-    // These three are the whole availability set help reports, and each is a
-    // compile-time fact. There is deliberately no readiness field: whether an
-    // executor is wired is answered by running the operation and reading its
-    // outcome/reason, never claimed at discovery (ADR 0037).
+    // These three, and console_excluded below, are the whole availability set
+    // help reports, and each is a compile-time fact. There is deliberately no
+    // readiness field: whether an executor is wired is answered by running the
+    // operation and reading its outcome/reason, never claimed at discovery
+    // (ADR 0037).
     if (sink->onRecordField) {
         sink->onRecordField(requestId, "available_on_board",
                            entry->available_on_board ? "true" : "false");
@@ -358,13 +407,34 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
         // value that only a refusal can follow. Where to set it instead is
         // the entry's own description, the same answer write_excluded gives.
         sink->onRecordField(requestId, "read_only", entry->read_only ? "true" : "false");
+
+        // An operation never on the Console says why, and names the page that
+        // does it instead by the name the nav shows - "Sequences", never the
+        // `seq` id (ADR 0037 Amendment 2026-10-06, #474). Present only on
+        // those rows, like `aliases` below. The name is quoted when it carries
+        // a space ("RC Control") so the value stays one token on the wire.
+        // Both come from the in-image catalog, so they render with the help
+        // file down; the help row and its #282 length bound are unchanged.
+        const char* exclusion = consoleCatalogExclusionName(entry->console_excluded);
+        if (exclusion != nullptr) {
+            sink->onRecordField(requestId, "console_excluded", exclusion);
+            if (entry->console_page != nullptr) {
+                // The longest SURFACES name is 13 bytes ("Configuration");
+                // quoting adds two and the terminator one.
+                char quotedPage[40];
+                sink->onRecordField(requestId, "console_page",
+                                    consoleQuoteValue(entry->console_page, quotedPage,
+                                                      sizeof(quotedPage)));
+            }
+        }
     }
 
     // Aliases: comma-joined into one field value. Neither adapter's record
-    // emitter quotes values today (docs/console-protocol.md s.7 asks for it,
-    // but consoleQuoteValue() is unused - a pre-existing gap out of scope
-    // here), so this stays comma-joined rather than space-separated to keep
-    // the value one whitespace-free token regardless.
+    // emitter quotes values itself (docs/console-protocol.md s.7 asks for it);
+    // a caller quotes a value that needs it with consoleQuoteValue(), as the
+    // Output words below and console_page above do. This stays comma-joined
+    // rather than space-separated so the value is one whitespace-free token
+    // and needs no quoting.
     if (entry->aliases != nullptr) {
         char aliasesBuf[128] = {};
         size_t used = 0;
@@ -405,6 +475,22 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
         if (sink->onRecordField) {
             sink->onRecordField(requestId, "params", paramsBuf);
         }
+
+        // A board_output parameter's words are the running board's, so help
+        // lists them rather than the registry, which cannot: `target_accepts`
+        // is ARM1..ARM5 and `both` on the Artoo PCB, GPIO 49 .. GPIO 51 and
+        // `both` on the FireBeetle 2 (ADR 0033 Amendment 2026-09-19).
+        for (const ConsoleParamDescriptor* p = entry->params; p->name != nullptr; ++p) {
+            if (!p->board_output || sink->onRecordField == nullptr) {
+                continue;
+            }
+            char fieldName[40];
+            snprintf(fieldName, sizeof(fieldName), "%s_accepts", p->name);
+            char joined[CONSOLE_OUTPUT_WORDS_MAX];
+            char quoted[CONSOLE_OUTPUT_WORDS_MAX];
+            sink->onRecordField(requestId, fieldName,
+                                consoleOutputWords(*p, joined, sizeof(joined), quoted, sizeof(quoted)));
+        }
     }
 
     // Help text from file - addressed by offset+length
@@ -434,15 +520,17 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
                     char displayName[64] = {};
                     consoleEmitProseField(requestId, sink, "display_name",
                                           "display_name_truncated", fieldStart, fieldLen,
-                                          displayName, sizeof(displayName));
+                                          entry->output, displayName, sizeof(displayName));
                 } else if (field == 2 && fieldLen > 0) {
                     char description[256] = {};
                     consoleEmitProseField(requestId, sink, "description", "description_truncated",
-                                          fieldStart, fieldLen, description, sizeof(description));
+                                          fieldStart, fieldLen, entry->output, description,
+                                          sizeof(description));
                 } else if (field == 3 && fieldLen > 0) {
                     char executor[64] = {};
                     consoleEmitProseField(requestId, sink, "executor", "executor_truncated",
-                                          fieldStart, fieldLen, executor, sizeof(executor));
+                                          fieldStart, fieldLen, nullptr, executor,
+                                          sizeof(executor));
                 }
 
                 field++;
@@ -545,6 +633,15 @@ static bool consoleIsAvailableInBuild(const char* operationName) {
     return entry->available_in_build;
 }
 
+// Whether the registry declares the operation is never on the Console (its
+// `console: excluded:`, carried by the catalog). A declared fact like the two
+// above, so the same live read: no list of names lives in this file.
+static bool consoleIsNeverOnConsole(const char* operationName) {
+    const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(operationName);
+    if (!entry) return false;
+    return entry->console_excluded != CONSOLE_EXCLUSION_NONE;
+}
+
 // Get the operation type from its name
 static ConsoleOperationType consoleGetOperationType(const char* operationName) {
     const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(operationName);
@@ -645,6 +742,14 @@ static void consoleExecuteSystemStatusHealth(uint32_t requestId, const ConsoleRe
     if (sink->onRecordField) sink->onRecordField(requestId, "heapMin", tempBuf);
     snprintf(tempBuf, sizeof(tempBuf), "%lu", snap.heapLargestBlock);
     if (sink->onRecordField) sink->onRecordField(requestId, "heapLargestBlock", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", snap.heapLargest8bit);
+    if (sink->onRecordField) sink->onRecordField(requestId, "heapLargest8bit", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", snap.allocBlocks);
+    if (sink->onRecordField) sink->onRecordField(requestId, "allocBlocks", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%d", snap.httpSocketsOpen);
+    if (sink->onRecordField) sink->onRecordField(requestId, "httpSocketsOpen", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.sseClients);
+    if (sink->onRecordField) sink->onRecordField(requestId, "sseClients", tempBuf);
     snprintf(tempBuf, sizeof(tempBuf), "%ld", snap.wifiRssi);
     if (sink->onRecordField) sink->onRecordField(requestId, "wifiRssi", tempBuf);
     snprintf(tempBuf, sizeof(tempBuf), "%lu", snap.uptimeMs);
@@ -685,6 +790,85 @@ static void consoleExecuteSystemStatusWifi(uint32_t requestId, const ConsoleReco
     }
 }
 
+#if PA_CAP_HOSTED_WIFI
+// system.status.hosted-link (#471): /api/status's hostedLink object as one
+// record, for a serial session once the link it describes, and HTTP with it,
+// is gone. Field names are its JSON keys and values read as formatStatusJson()
+// writes them (src/web/status_json.cpp), strings unquoted and null as "null",
+// the way domeBearingDeg reads here.
+static void consoleExecuteSystemStatusHostedLink(uint32_t requestId,
+                                                 const ConsoleRecordSink* sink) {
+    HostedLinkStatusSnapshot snap;
+    hostedLinkQueryStatus(&snap);
+    const HostedLinkLastAttempt& la = snap.lastAttempt;
+    const bool attempted = la.init != HostedLinkInitOutcome::None;
+    const bool asked = attempted && la.livenessAsked;
+
+    if (sink->onRecordField == nullptr) {
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                              CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    // Wide enough for a uint32_t and for an int32_t at its most negative.
+    char tempBuf[16] = {};
+    sink->onRecordField(requestId, "phase", hostedLinkPhaseName(snap.phase));
+    sink->onRecordField(requestId, "terminal",
+                        snap.phase == HostedLinkPhase::Degraded ? "true" : "false");
+
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.transportFailureEventCount);
+    sink->onRecordField(requestId, "transportFailureCount", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.transportUpEventCount);
+    sink->onRecordField(requestId, "transportUpEventCount", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.attemptCount);
+    sink->onRecordField(requestId, "attemptCount", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.totalAttemptCount);
+    sink->onRecordField(requestId, "totalAttemptCount", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.recoveredCount);
+    sink->onRecordField(requestId, "recoveredCount", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", (unsigned long)snap.lastFailureAtMs);
+    sink->onRecordField(requestId, "lastFailureAtMs", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", (unsigned long)snap.lastAttemptAtMs);
+    sink->onRecordField(requestId, "lastAttemptAtMs", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", (unsigned long)snap.degradedAtMs);
+    sink->onRecordField(requestId, "degradedAtMs", tempBuf);
+
+    sink->onRecordField(requestId, "livenessSource",
+                        hostedLinkLivenessSourceName(snap.livenessSource));
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.livenessMissCount);
+    sink->onRecordField(requestId, "livenessMissCount", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%u", snap.heartbeatCount);
+    sink->onRecordField(requestId, "heartbeatCount", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", (unsigned long)snap.lastHeartbeatNumber);
+    sink->onRecordField(requestId, "lastHeartbeatNumber", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%ld", (long)snap.livenessAgeMs);
+    sink->onRecordField(requestId, "livenessAgeMs", tempBuf);
+
+    sink->onRecordField(requestId, "lastAttemptInit",
+                        attempted ? hostedLinkInitOutcomeName(la.init) : "null");
+    sink->onRecordField(requestId, "lastAttemptRefusal",
+                        attempted && la.refusal != nullptr ? la.refusal : "null");
+    if (asked) {
+        snprintf(tempBuf, sizeof(tempBuf), "%ld", (long)la.heartbeatConfigResult);
+        sink->onRecordField(requestId, "lastAttemptHeartbeatConfig", tempBuf);
+        snprintf(tempBuf, sizeof(tempBuf), "%ld", (long)la.wifiGetModeResult);
+        sink->onRecordField(requestId, "lastAttemptWifiGetMode", tempBuf);
+    } else {
+        sink->onRecordField(requestId, "lastAttemptHeartbeatConfig", "null");
+        sink->onRecordField(requestId, "lastAttemptWifiGetMode", "null");
+    }
+    sink->onRecordField(requestId, "lastAttemptHeartbeatSeen",
+                        !asked ? "null" : (la.heartbeatSeen ? "true" : "false"));
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                          CONSOLE_REASON_NONE);
+    }
+}
+#endif  // PA_CAP_HOSTED_WIFI
+
 static void consoleExecuteDomeStatusCurrent(uint32_t requestId, const ConsoleRecordSink* sink) {
     DomeStatusSnapshot snap = {};
     captureDomeStatusSnapshot(&snap);
@@ -693,9 +877,15 @@ static void consoleExecuteDomeStatusCurrent(uint32_t requestId, const ConsoleRec
     // (src/web/web_server.cpp) so the value reads identically on both adapters.
     char tempBuf[24] = {};
     snprintf(tempBuf, sizeof(tempBuf), "%.3f", (double)snap.domeTargetSpeed);
+    // The Dome Bearing in the status document's own words (#445): its state,
+    // and its number or null - an unknown bearing has no number.
+    char bearingBuf[DOME_BEARING_DEG_TEXT_MAX] = {};
+    domeBearingFormatDeg(snap.bearing, bearingBuf, sizeof(bearingBuf));
     if (sink->onRecordField) {
         sink->onRecordField(requestId, "domeTargetSpeed", tempBuf);
         sink->onRecordField(requestId, "domeEnabled", snap.domeEnabled ? "true" : "false");
+        sink->onRecordField(requestId, "domeBearing", domeBearingStateWord(snap.bearing));
+        sink->onRecordField(requestId, "domeBearingDeg", bearingBuf);
     }
 
     if (sink->onRecordEnd) {
@@ -710,10 +900,15 @@ static void consoleExecuteSoundStatusCurrent(uint32_t requestId, const ConsoleRe
 
     char tempBuf[16] = {};
 
+    // With sound off this names the module the builder picked and says so,
+    // never the driver bound at boot (#370, include/audio_sound_member.h) -
+    // the same answer GET /api/audio gives.
+    const SoundStatusIdentity sound = audioSoundStatusIdentity();
     if (sink->onRecordField) {
-        sink->onRecordField(requestId, "driver", audioGetDriverName());
+        sink->onRecordField(requestId, "driver", sound.driver);
+        sink->onRecordField(requestId, "output", sound.on ? "on" : "off");
     }
-    snprintf(tempBuf, sizeof(tempBuf), "%u", (unsigned)audioGetCapabilities());
+    snprintf(tempBuf, sizeof(tempBuf), "%u", (unsigned)sound.capabilities);
     if (sink->onRecordField) sink->onRecordField(requestId, "capabilities", tempBuf);
     if (sink->onRecordField) {
         sink->onRecordField(requestId, "link_ok", snap.linkOk ? "true" : "false");
@@ -725,6 +920,8 @@ static void consoleExecuteSoundStatusCurrent(uint32_t requestId, const ConsoleRe
     if (sink->onRecordField) sink->onRecordField(requestId, "total_tracks", tempBuf);
     snprintf(tempBuf, sizeof(tempBuf), "%u", (unsigned)snap.currentTrack);
     if (sink->onRecordField) sink->onRecordField(requestId, "current_track", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%u", (unsigned)snap.missingTrack);
+    if (sink->onRecordField) sink->onRecordField(requestId, "missing_track", tempBuf);
     if (sink->onRecordField) {
         sink->onRecordField(requestId, "rx_status", audioRxStatusToken(snap.rxStatus));
         sink->onRecordField(requestId, "rx_detail", audioRxStatusDetail(snap.rxStatus));
@@ -757,9 +954,9 @@ static void consoleExecuteDomeStatusSerialLink(uint32_t requestId, const Console
 
 // Renders one RcDiagnosticsSourceSnapshot as a single whitespace-free token.
 // Colon-separated (not "="): the record's own wire format is space-separated
-// key=value tokens and no adapter quotes values yet (docs/console-protocol.md
-// s.3.5 asks for it; consoleQuoteValue() is unused, a pre-existing gap out of
-// scope here - same reasoning as the alias/param comma-joining above). An
+// key=value tokens and no adapter quotes values itself (docs/console-protocol.md
+// s.3.5 asks for it; a caller quotes with consoleQuoteValue() - same reasoning
+// as the alias/param comma-joining above, which needs no quoting). An
 // internal "=" would still parse under a first-"="-split reader, but would
 // violate the documented "quote a value containing =" rule for no benefit, so
 // this avoids "=" entirely instead.
@@ -860,9 +1057,12 @@ static void consoleExecuteSystemStatusLogs(uint32_t requestId, const ConsoleReco
     }
 }
 
-// dome.api.get-sequence-last-run (#221 remainder): a plain snapshot copy
-// under lock (seqEvidenceSnapshot(), src/sequence_run_evidence.cpp), not a
-// paginated read - #223's field-based query shape fits directly. Field names
+// dome.api.get-sequence-last-run (#221 remainder): a plain copy under lock
+// (seqEvidenceSummary(), src/sequence_run_evidence.cpp), not a paginated
+// read - #223's field-based query shape fits directly. It copies only the
+// scalar header it emits, never a whole SeqRunEvidence: that record is
+// 8284 B on ESP32-P4, and on the stack here it took this op past the
+// 8,192 B httpd stack a web Console request runs on (#427). Field names
 // and their presence conditions are read straight off populateSeqLastRunJson()
 // (src/seq_last_run_json.cpp) for the eight scalar keys the registry's
 // fields: list claims (see that entry's own comment for why the nested
@@ -872,8 +1072,8 @@ static void consoleExecuteSystemStatusLogs(uint32_t requestId, const ConsoleReco
 // been recorded (have == true) - the same "nothing to report yet" shape the
 // REST JSON's own early return uses.
 static void consoleExecuteDomeApiGetSequenceLastRun(uint32_t requestId, const ConsoleRecordSink* sink) {
-    SeqRunEvidence ev = {};
-    bool have = seqEvidenceSnapshot(ev);
+    SeqRunSummary ev = {};
+    bool have = seqEvidenceSummary(ev);
 
     if (sink->onRecordField) {
         sink->onRecordField(requestId, "valid", have ? "true" : "false");
@@ -919,8 +1119,12 @@ static void consoleExecuteDomeApiGetSequenceLastRun(uint32_t requestId, const Co
 // (handleSeqListGet()/handleSeqBuiltinsGet(), src/web/api_seq.cpp),
 // colon-separated per-field rather than "=" - the same
 // consoleFormatRcSourceSummary() convention above, so a value can never be
-// mistaken for a second key=value pair on the wire. Both stores are
-// small and fully in-memory (SEQ_STORE_MAX = 16, the Factory catalog is a
+// mistaken for a second key=value pair on the wire. Two things are on the
+// REST rows only: the Learned row's `id`, and what the Sequences list shows
+// in its row cells (#441) - the Learned row's stepCount, lengthMs, purpose
+// and purposeCut and the Factory row's lengthMs. Both stores are
+// small and fully in-memory (at most SEQ_INDEX_CAPACITY = 10 on every board,
+// even where the board's save cap is lower; the Factory catalog is a
 // flash-resident const table), so - like system.status.logs' bounded ring -
 // no separate paging protocol is needed.
 static void consoleExecuteDomeApiListSequences(uint32_t requestId, const ConsoleRecordSink* sink) {
@@ -1191,6 +1395,177 @@ static void consoleExecuteRcApiGetBindableActions(uint32_t requestId,
     }
 }
 
+// system.api.get-components (#340): item-indexed over COMPONENT_CATEGORIES[]
+// and COMPONENT_PARTS[] (src/component_registry.cpp), the same two tables
+// GET /api/identity/components serializes, read element by element the way
+// rc.api.get-bindable-actions reads ACTION_REGISTRY[] rather than through that
+// route's chunked JSON writer (which is file-static in
+// src/web/api_identity_serializers.cpp anyway).
+//
+// Categories come first because they carry the answer an operator at a serial
+// console is usually after -- which sound module this controller is actually
+// running -- and the parts that follow are the lineup it was chosen from. Each
+// item names its own kind, so "sound" the category and a part in it can never
+// be read as the same row. `-` is the absent value throughout: no member
+// setting, no active member, no Board Capability Gate.
+//
+// Each family with a member setting is named explicitly rather than keyed off
+// memberKey, because each brings its own accessor: Sound's and the body servo
+// controller's are boot-latched, the Radio Controller's is the saved choice (nothing on the controller runs
+// on the radio), resolved the way GET /api/identity/components resolves it.
+// Reusing one family's accessor for another would report its member under the
+// wrong family's name.
+//
+// One buffer for both loops: this runs on the Console task, whose worst-case
+// static chain is a measured constant ADR 0040's checker re-derives from the
+// linked image, so two buffers in two scopes is a frame this row does not need
+// to cost. 256 B against a longest row of 215 today (`hoverboard`, the one part
+// carrying a Board Capability Gate name; 216 on an image that leaves it out);
+// snprintf truncates in silence, so the margin is the guard, and
+// test_console_module asserts every part item still ends in its last field.
+static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
+                                                 const ConsoleRecordSink* sink) {
+    if (sink->onRecordItem) {
+        char itemBuf[256];
+
+        for (size_t i = 0; i < COMPONENT_CATEGORY_TABLE_SIZE; ++i) {
+            const ComponentCategoryEntry& cat = COMPONENT_CATEGORIES[i];
+            const ComponentPartEntry* active = nullptr;
+            if (cat.id == COMPONENT_CATEGORY_SOUND) {
+                active = componentPartByValue(configCacheReadActiveSoundMember());
+            } else if (cat.id == COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER) {
+                active = componentPartByValue(configCacheReadActiveBodyServoMember());
+            } else if (cat.id == COMPONENT_CATEGORY_RADIO_CONTROLLER) {
+                active = componentResolveRadio(configCacheReadRcMember());
+            }
+            snprintf(itemBuf, sizeof(itemBuf),
+                     "category:%s name:%s selectable:%u memberKey:%s activeMember:%s", cat.token,
+                     cat.name, (unsigned)componentCategorySelectableCount(cat.id),
+                     cat.memberKey != nullptr ? cat.memberKey : "-",
+                     active != nullptr ? active->id : "-");
+            sink->onRecordItem(requestId, itemBuf);
+        }
+
+        for (size_t i = 0; i < COMPONENT_PART_COUNT; ++i) {
+            const ComponentPartEntry& part = COMPONENT_PARTS[i];
+            snprintf(itemBuf, sizeof(itemBuf),
+                     "part:%s name:%s category:%s protocol:%s status:%s confirmedOnDroid:%s "
+                     "capabilities:%u included:%s boardCapability:%s",
+                     part.id, part.name, componentCategory(part.category)->token, part.protocol,
+                     part.status == COMPONENT_STATUS_SUPPORTED ? "supported" : "roadmap",
+                     part.confirmedOnDroid ? "true" : "false", (unsigned)part.capabilities,
+                     part.included ? "true" : "false", part.gate != nullptr ? part.gate : "-");
+            sink->onRecordItem(requestId, itemBuf);
+        }
+    }
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                          CONSOLE_REASON_NONE);
+    }
+}
+
+// servo.api.get-outputs (#362): the rows GET /api/servo/outputs answers, one
+// item per live Servo Output - what it drives, the band its widths are clamped
+// into, and where it has been told to be. This is the bench side's read: on a
+// FireBeetle 2 whose WiFi is not up the Console is the only route to the rows,
+// and before it existed a builder there could not see their wiring at all.
+//
+// Read through the two functions the REST handler reads through -
+// configCacheReadServoOutput() for the row, captureServoOutputCommanded() for
+// the position - so the adapters cannot disagree about an Output (ADR 0036).
+// The keys are the REST answer's JSON names, and `-` is the absent value, as in
+// system.api.get-components: no name, no Part, no pulse, and no reason to be
+// limp while there is a pulse. `limp` is the REST answer's token, read through
+// the same servoLimpReasonToString(), so a bench sheet reads a timed Output
+// Release (`release`, #443) exactly as a page does. Both widths are commanded;
+// nothing on the droid reads a servo back.
+//
+// A row (72 B) and one line on the Console task's measured chain. The longest
+// line is 165 B - an expander's address, four Parts at the longest id, the two
+// four-digit band widths, no pulse, a three-digit nudge count and
+// `limp:unreachable`; a pulsing line carries two more widths and `limp:-`,
+// 161 B - against 192, and snprintf truncates in silence, so the margin is the
+// guard.
+//
+// With a PCA9685 the chosen body servo controller, one item more after the
+// rows: the expander's address, the span it owns and whether it is answering,
+// the facts GET /api/servo/outputs reports as `expander` (#444).
+static void consoleExecuteServoApiGetOutputs(uint32_t requestId, const ConsoleRecordSink* sink) {
+    if (sink->onRecordItem) {
+        char itemBuf[192];
+        const uint8_t count = configCacheServoOutputCount();
+        for (uint8_t i = 0; i < count; ++i) {
+            ServoOutputRow row = {};
+            if (!configCacheReadServoOutput(i, &row)) {
+                break;
+            }
+
+            char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+            servoOutputFormatAddress(address, sizeof(address), row.driver, row.channel);
+            const char* name = servoOutputAddressName(row.driver, row.channel);
+
+            // Every Part the Output drives, not the first: a ganged wire names
+            // all of them (ADR 0050).
+            char parts[SERVO_OUTPUT_PART_SLOTS * (SERVO_OUTPUT_PART_ID_MAX + 1) + 1] = {};
+            size_t used = 0;
+            const uint8_t partCount = servoOutputPartCount(row);
+            for (uint8_t slot = 0; slot < partCount; ++slot) {
+                const int wrote = snprintf(parts + used, sizeof(parts) - used, "%s%s",
+                                           slot == 0 ? "" : ",", servoOutputPartAt(row, slot));
+                if (wrote < 0 || (size_t)wrote >= sizeof(parts) - used) {
+                    break;
+                }
+                used += (size_t)wrote;
+            }
+
+            const ServoPulseBand band = servoComponentBand(row.component);
+            ServoOutputCommandedSnapshot commanded = {};
+            captureServoOutputCommanded(row.driver, row.channel, &commanded);
+
+            // The name is what the board prints, and a FireBeetle 2 prints a
+            // space in it (GPIO 49): quoted, so the item stays one token per
+            // value on the wire, the way a record's human text is.
+            char nameQuoted[24];  // the longest label, "GPIO 51", quoted, with room
+            const int head = snprintf(itemBuf, sizeof(itemBuf),
+                                      "address:%s name:%s parts:%s bandLoUs:%u bandHiUs:%u ",
+                                      address,
+                                      name[0] != '\0'
+                                          ? consoleQuoteValue(name, nameQuoted, sizeof(nameQuoted))
+                                          : "-",
+                                      used > 0 ? parts : "-", (unsigned)band.lo,
+                                      (unsigned)band.hi);
+            if (head > 0 && (size_t)head < sizeof(itemBuf)) {
+                if (commanded.pulsing) {
+                    snprintf(itemBuf + head, sizeof(itemBuf) - (size_t)head,
+                             "commandedUs:%u targetUs:%u nudgesDone:%u limp:-",
+                             (unsigned)commanded.nowUs, (unsigned)commanded.targetUs,
+                             (unsigned)commanded.nudgesDone);
+                } else {
+                    snprintf(itemBuf + head, sizeof(itemBuf) - (size_t)head,
+                             "commandedUs:- targetUs:- nudgesDone:%u limp:%s",
+                             (unsigned)commanded.nudgesDone,
+                             servoLimpReasonToString(commanded.limp));
+                }
+            }
+            sink->onRecordItem(requestId, itemBuf);
+        }
+
+        const ServoExpanderFacts expander = servoTaskExpanderFacts();
+        if (expander.chosen) {
+            snprintf(itemBuf, sizeof(itemBuf), "expander:pca9685 address:0x%02X outputs:%s answering:%s",
+                     (unsigned)expander.address, PCA9685_OUTPUT_SPAN,
+                     expander.answering ? "true" : "false");
+            sink->onRecordItem(requestId, itemBuf);
+        }
+    }
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                          CONSOLE_REASON_NONE);
+    }
+}
+
 // =============================================================================
 // Status executor dispatch table (#223)
 //
@@ -1211,6 +1586,9 @@ struct ConsoleStatusExecutorEntry {
 static const ConsoleStatusExecutorEntry g_statusExecutors[] = {
     {"system.status.health", consoleExecuteSystemStatusHealth},
     {"system.status.wifi", consoleExecuteSystemStatusWifi},
+#if PA_CAP_HOSTED_WIFI
+    {"system.status.hosted-link", consoleExecuteSystemStatusHostedLink},
+#endif
     {"dome.status.current", consoleExecuteDomeStatusCurrent},
     {"sound.status.current", consoleExecuteSoundStatusCurrent},
     {"dome.status.serial-link", consoleExecuteDomeStatusSerialLink},
@@ -1222,8 +1600,10 @@ static const ConsoleStatusExecutorEntry g_statusExecutors[] = {
     {"sound.api.get-mood-map", consoleExecuteSoundApiGetMoodMap},
     {"sound.api.get-catalog", consoleExecuteSoundApiGetCatalog},
     {"system.api.get-identity", consoleExecuteSystemApiGetIdentity},
+    {"system.api.get-components", consoleExecuteSystemApiGetComponents},
     {"system.api.get-validation", consoleExecuteSystemApiGetValidation},
     {"rc.api.get-bindable-actions", consoleExecuteRcApiGetBindableActions},
+    {"servo.api.get-outputs", consoleExecuteServoApiGetOutputs},
 #if PA_HEAP_PROFILE
     {"system.api.get-profiler", consoleExecuteSystemApiGetProfiler},
 #endif
@@ -1266,18 +1646,104 @@ static ConsoleStatusExecutorFn consoleFindStatusExecutor(const char* operationNa
 // criterion 2 the single-record onRecordResult() sink call has no field
 // for. Reused by schema failures (unknown/missing/out-of-range) and the
 // Marcduino payload's own format check below.
+//
+// `accepts`, when the caller has one, is what the argument would have taken -
+// an Apply Core's refusal carries it (consoleEmitApplyRefusal() below).
 static void consoleEmitArgFailure(uint32_t requestId, const char* operationName,
                                   const char* badKey, ConsoleReason reason,
-                                  const ConsoleRecordSink* sink) {
+                                  const ConsoleRecordSink* sink, const char* accepts = nullptr) {
     if (sink->onRecordBegin) {
         sink->onRecordBegin(requestId, operationName);
     }
     if (sink->onRecordField) {
         sink->onRecordField(requestId, "argument", badKey != nullptr ? badKey : "");
     }
+    // A word that names none of the running board's Outputs is refused with the
+    // words that do (ADR 0033 Amendment 2026-09-19): `accepts=` is this board's
+    // labels and the extras, so `target=aux1` on the Artoo answers
+    // accepts=ARM1,ARM2,ARM3,ARM4,ARM5,both rather than leaving the builder to
+    // guess what the board prints.
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    if (accepts != nullptr && accepts[0] != '\0') {
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "accepts", accepts);
+        }
+    } else if (reason == CONSOLE_REASON_OUT_OF_RANGE && badKey != nullptr && entry != nullptr &&
+        entry->params != nullptr && sink->onRecordField) {
+        for (const ConsoleParamDescriptor* p = entry->params; p->name != nullptr; ++p) {
+            if (p->board_output && strcmp(p->name, badKey) == 0) {
+                char joined[CONSOLE_OUTPUT_WORDS_MAX];
+                char quoted[CONSOLE_OUTPUT_WORDS_MAX];
+                sink->onRecordField(requestId, "accepts",
+                                    consoleOutputWords(*p, joined, sizeof(joined), quoted,
+                                                       sizeof(quoted)));
+                break;
+            }
+        }
+    }
     if (sink->onRecordEnd) {
         sink->onRecordEnd(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID, reason);
     }
+}
+
+// An Apply Core refused the write: answer from its refusal data, never from
+// its sentence (ADR 0011 amended 2026-09-25, #425) - the argument the builder
+// typed, the core's reason as its Console token, and `accepts=` when the
+// refusal says what would be taken. `argument` is the caller's: each adapter
+// maps the core's field back to the Console argument that carried it.
+static void consoleEmitApplyRefusal(uint32_t requestId, const char* operationName,
+                                    const char* argument, const ApplyRefusal& refusal,
+                                    const ConsoleRecordSink* sink) {
+    consoleEmitArgFailure(requestId, operationName, argument,
+                          consoleReasonFromApplyRefusal(refusal.reason), sink, refusal.accepts);
+}
+
+// The registry schema's answer for an op that writes a Setting. It rules on
+// the op's arguments - one it does not take, one it needs and was not sent, a
+// word outside a selector's enum (`key=` scoping which Settings a row writes) -
+// but not on a Setting's VALUE: a number the schema's type cannot hold is left
+// to the Setting's declaration (src/config_settings.cpp), which refuses it
+// with what it takes, as HTTP does (ADR 0068, amended 2026-09-26). The
+// registry carries no range for a Setting's param, so the type is the only
+// value check the schema could make. True when it answered.
+static bool consoleRefuseSettingArgKeys(uint32_t requestId, const char* operationName,
+                                        const ConsoleParamDescriptor* params,
+                                        ConsoleArgSchemaStatus status, const char* badKey,
+                                        const ConsoleRecordSink* sink) {
+    if (status == CONSOLE_ARG_SCHEMA_OK) {
+        return false;
+    }
+    if (status == CONSOLE_ARG_SCHEMA_OUT_OF_RANGE && params != nullptr) {
+        for (const ConsoleParamDescriptor* p = params; p->name != nullptr; ++p) {
+            if (strcmp(p->name, badKey) == 0 && p->enum_values == nullptr && !p->board_output) {
+                return false;  // a Setting's value: its declaration answers
+            }
+        }
+    }
+    const ConsoleReason reason = status == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY
+                                     ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                                 : status == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED
+                                     ? CONSOLE_REASON_MISSING_ARGUMENT
+                                     : CONSOLE_REASON_OUT_OF_RANGE;
+    consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+    return true;
+}
+
+// A value checked by its Setting's declaration, the check HTTP makes: false,
+// with the refusal answered on `argument` with the Setting's reason and accepts.
+// noinline, deliberately: the refusal is live only here, so it never joins the
+// frame of an executor on the Console chain's deepest route (the volume write,
+// tools/task_stack_recipes.json). No sentence is formatted - the Console answers
+// from the refusal's data.
+static bool __attribute__((noinline)) consoleCheckSettingArg(
+    uint32_t requestId, const char* operationName, const char* argument,
+    const ConfigSetting& setting, const char* raw, int32_t* value, const ConsoleRecordSink* sink) {
+    ApplyRefusal refusal;
+    if (configSettingCheck(setting, raw, setting.form, value, &refusal, nullptr, 0)) {
+        return true;
+    }
+    consoleEmitApplyRefusal(requestId, operationName, argument, refusal, sink);
+    return false;
 }
 
 // Argument-parse failures (malformed quoting/escaping/UTF-8, or too many
@@ -1311,10 +1777,12 @@ static bool consoleFindRobotActionId(const char* canonicalName, RobotActionId* o
 }
 
 // Maps the dispatch core's adapter-agnostic outcome onto a Console outcome +
-// reason. Only the three outcomes rcDispatchSingleAction()/
-// dispatchRcTriggerActionTest() can produce are handled; there is no default
-// case so a future RcDispatchOutcome addition fails this switch at compile
-// time instead of silently falling through to a wrong reason.
+// reason. Every outcome rcDispatchSingleAction()/dispatchRcTriggerActionTest()
+// can produce is handled; there is no default case so a future
+// RcDispatchOutcome addition fails this switch at compile time instead of
+// silently falling through to a wrong reason. The last three are a
+// dome.action.marcduino-command line the body owns and did not run (#449); an
+// undriven Output answers what the servo.action.* rows answer for it.
 static ConsoleOutcome consoleMapDispatchOutcome(RcDispatchOutcome outcome, ConsoleReason* outReason) {
     switch (outcome) {
         case RcDispatchOutcome::kQueued:
@@ -1325,6 +1793,15 @@ static ConsoleOutcome consoleMapDispatchOutcome(RcDispatchOutcome outcome, Conso
             return CONSOLE_OUTCOME_QUEUE_FULL;
         case RcDispatchOutcome::kBlockedByState:
             *outReason = CONSOLE_REASON_TEMPORARILY_UNAVAILABLE;
+            return CONSOLE_OUTCOME_UNAVAILABLE;
+        case RcDispatchOutcome::kBlockedByEstop:
+            *outReason = CONSOLE_REASON_BLOCKED_BY_STATE;
+            return CONSOLE_OUTCOME_BLOCKED;
+        case RcDispatchOutcome::kOutputUndriven:
+            *outReason = CONSOLE_REASON_COMPONENT_DISABLED;
+            return CONSOLE_OUTCOME_UNAVAILABLE;
+        case RcDispatchOutcome::kNotExecutable:
+            *outReason = CONSOLE_REASON_NOT_EXECUTABLE;
             return CONSOLE_OUTCOME_UNAVAILABLE;
     }
     *outReason = CONSOLE_REASON_NONE;
@@ -1486,13 +1963,16 @@ static void consoleExecuteAction(uint32_t requestId, const ConsoleCatalogEntry* 
 // ConsoleArgs are reused verbatim, only the schema check is local).
 // =============================================================================
 
-// ConfigApplyResult is ~2.5 KB (include/api_config_apply.h) - too large for
-// the Console task's 5120 B stack (src/main.cpp), smaller than the 8 KB web
-// server task the header's own warning was written for (pin fact 3). The web
-// handler (api_config.cpp) already keeps its own static instance rather than
-// a stack local; sharing that ONE instance across the web server task and
-// this module's two adapter tasks would recreate exactly the shared-single-
-// caller-buffer hazard #239 rejected for the log ring. Unlike #239's case,
+// ConfigApplyResult is 2,088 B on artoo-esp32 (include/api_config_apply.h) -
+// more than a stack local should cost the Console task, whose stack is sized
+// against a measured chain (CONSOLE_TASK_STACK_BYTES, include/config.h), and
+// the web server task the header's own warning was written for (pin fact 3).
+// The web handler (api_config.cpp) keeps its instance in the web request
+// scratch (include/web_request_scratch.h) rather than a stack local, and that
+// scratch refuses any task but the web server's; sharing ONE instance across
+// the web server task and this module's two adapter tasks would recreate
+// exactly the shared-single-caller-buffer hazard #239 rejected for the log
+// ring. Unlike #239's case,
 // there is no "read the underlying source directly" alternative here:
 // configApply()'s only contract is to fill a ConfigApplyResult out-parameter,
 // so a second static instance - scoped to this module, never shared with
@@ -1510,20 +1990,21 @@ static void consoleExecuteAction(uint32_t requestId, const ConsoleCatalogEntry* 
 // module seam - browser and serial cannot race configuration persistence or
 // shared result state").
 //
-// The config write lock (ConfigWriteLock, include/api_config.h) covers that
-// window and more: every adapter, this module and the REST routes alike,
-// holds it from the configCacheRead() of its working snapshot through
-// configCommitApplied()'s NVS write. This module used to hold a mutex of its
-// own there, which serialized its two adapters against each other but not
-// against a dashboard form POST - a lock held in one adapter is the copy of
-// correctness ADR 0011's 2026-08-27 amendment forbids, and the write path is
-// the seam's, not an adapter's. Because that one lock spans this instance's
+// The config Write Window (configWriteWindow(), include/api_config.h) covers
+// that window and more: it holds the config write lock from the
+// configCacheRead() of the working snapshot through configCommitApplied()'s
+// NVS write, for this module and the REST route alike. This module used to
+// hold a mutex of its own there, which serialized its two adapters against
+// each other but not against a dashboard form POST - a lock held in one
+// adapter is the copy of correctness ADR 0011's 2026-08-27 amendment forbids,
+// and the write path is the seam's, not an adapter's (#269; the lock left the
+// adapters altogether in #418). Because that one lock spans this instance's
 // entire in-flight window, it protects this static too and no second mutex
-// is needed here (#269).
+// is needed here. It is released before this module's answer is emitted.
 static ConfigApplyResult s_consoleConfigApplyResult;
 
-// Bridges a Console write onto the exact param name api_config_apply.cpp's
-// `boolFields[]` table already reads for this field. The wire grammar allows
+// Bridges a Console write onto the Setting's form name, which is what
+// configApply() reads it under (include/config_settings.h). The wire grammar allows
 // both the generic `value=` shorthand (docs/console-protocol.md s.1: "system.
 // config.log-level value=debug") and the underlying named key (criterion 3:
 // "value= (or the named keys)"), so this ctx answers a lookup for `fieldKey`
@@ -1566,15 +2047,91 @@ static bool consoleScalarConfigArgsValid(const ConsoleArgs& args, const char* fi
     return true;
 }
 
+// One Setting of one Output, written on the form as the row door's one row
+// (ADR 0068): `outputRow` names the Output Address and the Setting rides beside
+// it under its row key, so the Console reaches the row door's own check without
+// building a body.
+struct OutputRowField {
+    const char* address;
+    const char* key;
+    const char* value;
+};
+
+static const char* consoleOutputRowParamGet(void* ctx, const char* name) {
+    const OutputRowField* row = static_cast<const OutputRowField*>(ctx);
+    if (strcmp(name, "outputRow") == 0) {
+        return row->address;
+    }
+    return strcmp(name, row->key) == 0 ? row->value : nullptr;
+}
+
+// The config write every Console config op shares: the config Write Window,
+// shared with the REST route - it reads the cache, runs configApply() and
+// commits under the one config write lock, and releases it before anything
+// below emits the answer. `refusalField` is the core's name for the field this
+// write carries, and `argument` the Console argument a refusal about it is
+// pinned on: the builder typed `value=` or the field's own key, never the
+// core's name.
+static void consoleWriteConfig(uint32_t requestId, const char* operationName,
+                               const ConfigParamSource& params, const char* refusalField,
+                               const char* argument, ConsoleCommandSource source,
+                               ConsoleOutcome successOutcome, const ConsoleRecordSink* sink) {
+    ConfigSnapshot working = {};
+
+    CommandSource src = (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
+    // The verdict comes back from inside the window: s_consoleConfigApplyResult
+    // is shared with this module's other adapter, which may overwrite it as
+    // soon as the lock is released, so nothing below reads it.
+    ConfigCommitOutcome commit = {};
+    ApplyRefusal refused;
+    const ConfigWriteWindowAnswer answer =
+        configWriteWindow(params, &working, &s_consoleConfigApplyResult, src, &commit, &refused);
+    if (answer == ConfigWriteWindowAnswer::Busy) {
+        // Another writer is mid-write - report busy rather than
+        // proceeding unserialized into the shared config path.
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                                CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
+        }
+        return;
+    }
+
+    if (answer == ConfigWriteWindowAnswer::Refused) {
+        // A refusal about some other field - none today, since each write
+        // carries exactly one - is named as the core gave it rather than
+        // pinned on an argument that was not at fault.
+        const char* named = strcmp(refused.field, refusalField) == 0 ? argument : refused.field;
+        consoleEmitApplyRefusal(requestId, operationName, named, refused, sink);
+        return;
+    }
+
+    if (!commit.persisted) {
+        // "a failed NVS write is an explicit error" (criterion 3) - status=err
+        // with the module's existing catch-all outcome; no dedicated
+        // persistence-failure reason exists in the hand-maintained
+        // ConsoleReason set (include/console_module.h), and none is added
+        // here for these call sites alone.
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
+                                CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, successOutcome, CONSOLE_REASON_NONE);
+    }
+}
+
 // Shared write path for a single-field scalar config write through
 // configApply() + configCommitApplied() - the tokenize/validate/apply/
 // commit sequence every scalar config write shares regardless of which
 // outcome a clean write reports (Component Toggles below always answer
-// staged-until-reboot per ADR 0027; the four non-toggle scalar fields this
-// ticket also wires - drive.config.speed-limit, aux.config.led-pin/
-// led-count, rc.config.mode - answer applied, matching how their owning
-// task already reads config_cache live, the same as every other non-toggle
-// configApply field REST already exposes).
+// staged-until-reboot per ADR 0027; the non-toggle scalar fields this module
+// also wires - drive.config.speed-limit, rc.config.mode and the log level -
+// answer applied, matching how their owning task already reads config_cache
+// live, the same as every other non-toggle configApply field REST already
+// exposes).
 static void consoleWriteScalarConfigField(uint32_t requestId, const char* operationName,
                                           const char* fieldKey, char* rawArgs,
                                           ConsoleCommandSource source, ConsoleOutcome successOutcome,
@@ -1599,68 +2156,17 @@ static void consoleWriteScalarConfigField(uint32_t requestId, const char* operat
         return;
     }
 
-    ConfigSnapshot working = {};
-    configCacheRead(&working);
-    const bool domeEnabledBefore = working.system.enable_dome_esc;
-
     ScalarConfigArg adapter{&parsedArgs, fieldKey};
     ConfigParamSource params;
     params.ctx = &adapter;
     params.get = consoleScalarConfigParamGet;
 
-    // Serialized against every other config writer, this module's other
-    // adapter and the REST routes alike (s_consoleConfigApplyResult's own
-    // declaration comment above has the reasoning): a scoped lock so it
-    // releases as soon as this module's last read of
-    // s_consoleConfigApplyResult is done, in configCommitApplied(), rather
-    // than being held any longer than the shared state needs protecting.
-    bool applyHadError = false;
-    ConfigCommitOutcome commit = {};
-    {
-        ConfigWriteLock guard;
-        if (!guard.acquired()) {
-            // Another writer is mid-write - report busy rather than
-            // proceeding unserialized into the shared config path.
-            if (sink->onRecordResult) {
-                sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
-                                    CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
-            }
-            return;
-        }
-
-        configApply(params, &working, domeEnabledBefore, &s_consoleConfigApplyResult);
-        applyHadError = s_consoleConfigApplyResult.error.hasError;
-        if (!applyHadError) {
-            CommandSource src = (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
-            commit = configCommitApplied(&working, s_consoleConfigApplyResult, src);
-        }
-    }  // guard released here, after the last read of s_consoleConfigApplyResult
-
-    if (applyHadError) {
-        // configApply()'s only failure for a single supplied field is that
-        // field's own type/range/enum check - OUT_OF_RANGE matches
-        // consoleValidateArgsAgainstSchema()'s classification for the same
-        // shape of failure on the registry-driven path.
-        consoleEmitArgFailure(requestId, operationName, fieldKey, CONSOLE_REASON_OUT_OF_RANGE, sink);
-        return;
-    }
-
-    if (!commit.persisted) {
-        // "a failed NVS write is an explicit error" (criterion 3) - status=err
-        // with the module's existing catch-all outcome; no dedicated
-        // persistence-failure reason exists in the hand-maintained
-        // ConsoleReason set (include/console_module.h), and none is added
-        // here for these call sites alone.
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
-                                CONSOLE_REASON_NONE);
-        }
-        return;
-    }
-
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, successOutcome, CONSOLE_REASON_NONE);
-    }
+    // The refusal names the core's field (the POST field, `speedLimitMax`),
+    // which no Console builder types: they typed `value=` or the field's own
+    // key, and that is the argument named back.
+    const char* argument = consoleArgsFind(parsedArgs, "value") != nullptr ? "value" : fieldKey;
+    consoleWriteConfig(requestId, operationName, params, fieldKey, argument, source, successOutcome,
+                       sink);
 }
 
 // system.config.enable_* (Component Toggles, ADR 0027/0033): a read with no
@@ -1682,7 +2188,8 @@ static void consoleExecuteComponentToggle(uint32_t requestId, const ConsoleCatal
     if (!isWrite) {
         ConfigSnapshot snap = {};
         configCacheRead(&snap);
-        const bool saved = snap.system.*(field->field);
+        const ConfigSetting* setting = configSettingByForm(field->paramKey);
+        const bool saved = setting != nullptr && configSettingNumber(*setting, snap) != 0;
         const size_t bitIndex = (size_t)(field - kComponentToggleFields);
         const bool active = configCacheReadActiveComponentToggle(bitIndex);
 
@@ -1709,256 +2216,161 @@ static void consoleExecuteComponentToggle(uint32_t requestId, const ConsoleCatal
 }
 
 // =============================================================================
-// Private: the remaining scalar config.type rows configApply() already
-// handles live (not staged - unlike the Component Toggles above, these
-// fields are read from config_cache every control-loop iteration by their
-// owning task, the same "applied" semantics REST already gives them).
-// Confirmed one at a time by reading src/web/api_config_apply.cpp, not
-// assumed from the registry: sound.config.volume and sound.config.mood-
-// interval-* claim executor: configApply too but that function has no
-// "volume"/"sndIntQuiet"-shaped param at all (volume is set inline in
-// handleAudioPost's action=volume branch; the mood-interval fields have no
-// write path anywhere in this codebase today) - both are registry/
-// implementation gaps flagged in the status comment, not wired here since
-// there is no real Apply Core behind either to reuse.
+// Private: the single-field Setting ops. Each writes one droid Setting live
+// (not staged - unlike the Component Toggles above, these fields are read from
+// config_cache every control-loop iteration by their owning task, the same
+// "applied" semantics REST already gives them), checked by that Setting's
+// declaration (src/config_settings.cpp) through configApply(). The audio
+// Settings' ops are below, through the audio write paths.
 // =============================================================================
 
-// drive.config.speed-limit: value=<0..600> (speedLimitMax).
-static void consoleExecuteDriveSpeedLimit(uint32_t requestId, const ConsoleCatalogEntry* entry,
-                                          char* rawArgs, ConsoleCommandSource source,
-                                          const ConsoleRecordSink* sink) {
-    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
-    if (!isWrite) {
-        ConfigSnapshot snap = {};
-        configCacheRead(&snap);
-        char buf[12] = {};
-        snprintf(buf, sizeof(buf), "%d", (int)snap.drive.speedLimitMax);
-        if (sink->onRecordBegin) {
-            sink->onRecordBegin(requestId, entry->name);
-        }
-        if (sink->onRecordField) {
-            sink->onRecordField(requestId, "value", buf);
-        }
-        if (sink->onRecordEnd) {
-            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
-                             CONSOLE_REASON_NONE);
-        }
-        return;
-    }
-    consoleWriteScalarConfigField(requestId, entry->name, "speedLimitMax", rawArgs, source,
-                                  CONSOLE_OUTCOME_APPLIED, sink);
-}
-
-// aux.config.led-pin: value=<0..AUX_LED_PIN_MAX> (aux_led_pin).
-static void consoleExecuteAuxLedPin(uint32_t requestId, const ConsoleCatalogEntry* entry,
-                                   char* rawArgs, ConsoleCommandSource source,
-                                   const ConsoleRecordSink* sink) {
-    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
-    if (!isWrite) {
-        ConfigSnapshot snap = {};
-        configCacheRead(&snap);
-        char buf[8] = {};
-        snprintf(buf, sizeof(buf), "%u", (unsigned)snap.servo.aux_led_pin);
-        if (sink->onRecordBegin) {
-            sink->onRecordBegin(requestId, entry->name);
-        }
-        if (sink->onRecordField) {
-            sink->onRecordField(requestId, "value", buf);
-        }
-        if (sink->onRecordEnd) {
-            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
-                             CONSOLE_REASON_NONE);
-        }
-        return;
-    }
-    consoleWriteScalarConfigField(requestId, entry->name, "aux_led_pin", rawArgs, source,
-                                  CONSOLE_OUTCOME_APPLIED, sink);
-}
-
-// aux.config.led-count: value=<AUX_LED_COUNT_DEFAULT..AUX_LED_COUNT_MAX>
-// (aux_led_count).
-static void consoleExecuteAuxLedCount(uint32_t requestId, const ConsoleCatalogEntry* entry,
-                                     char* rawArgs, ConsoleCommandSource source,
-                                     const ConsoleRecordSink* sink) {
-    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
-    if (!isWrite) {
-        ConfigSnapshot snap = {};
-        configCacheRead(&snap);
-        char buf[8] = {};
-        snprintf(buf, sizeof(buf), "%u", (unsigned)snap.servo.aux_led_count);
-        if (sink->onRecordBegin) {
-            sink->onRecordBegin(requestId, entry->name);
-        }
-        if (sink->onRecordField) {
-            sink->onRecordField(requestId, "value", buf);
-        }
-        if (sink->onRecordEnd) {
-            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
-                             CONSOLE_REASON_NONE);
-        }
-        return;
-    }
-    consoleWriteScalarConfigField(requestId, entry->name, "aux_led_count", rawArgs, source,
-                                  CONSOLE_OUTCOME_APPLIED, sink);
-}
-
-// rc.config.mode: value=standard_pwm|single_sbus|dual_sbus (rcInputMode).
-// The registry used to name this row's executor as rcMapApply, which handles
-// the RC BINDING table rather than the input-mode enum; it now names
-// configApply(), whose own "rcInputMode" param (src/web/api_config_apply.cpp)
-// is the real writer. #221 corrected it once data/console_help.txt was in the
-// same slice's hands - the reason it was only reported before.
-static void consoleExecuteRcMode(uint32_t requestId, const ConsoleCatalogEntry* entry, char* rawArgs,
-                                 ConsoleCommandSource source, const ConsoleRecordSink* sink) {
-    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
-    if (!isWrite) {
-        ConfigSnapshot snap = {};
-        configCacheRead(&snap);
-        const char* mode = "dual_sbus";
-        switch (snap.system.rc_input_mode) {
-            case RC_INPUT_STANDARD_PWM:
-                mode = "standard_pwm";
-                break;
-            case RC_INPUT_SINGLE_SBUS:
-                mode = "single_sbus";
-                break;
-            case RC_INPUT_DUAL_SBUS:
-            default:
-                mode = "dual_sbus";
-                break;
-        }
-        if (sink->onRecordBegin) {
-            sink->onRecordBegin(requestId, entry->name);
-        }
-        if (sink->onRecordField) {
-            sink->onRecordField(requestId, "value", mode);
-        }
-        if (sink->onRecordEnd) {
-            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
-                             CONSOLE_REASON_NONE);
-        }
-        return;
-    }
-    consoleWriteScalarConfigField(requestId, entry->name, "rcInputMode", rawArgs, source,
-                                  CONSOLE_OUTCOME_APPLIED, sink);
-}
-
-// Case-insensitive whole-string equality for the log-level word form below.
-// Written out rather than calling strcasecmp() (POSIX <strings.h>, not part
-// of the freestanding C++ surface this module otherwise sticks to - the same
-// rule consoleStartsWithIgnoringCase() states further down this file for its
-// own WiFi-password-key check; not reused directly here, since that helper
-// is defined after this point in the file and reusing it would need a
-// forward declaration for no real benefit - the two checks serve unrelated
-// domains).
-static bool consoleWordEqualsIgnoringCase(const char* s, const char* lowerWord) {
-    size_t i = 0;
-    for (; lowerWord[i] != '\0'; ++i) {
-        if (tolower((unsigned char)s[i]) != lowerWord[i]) {
-            return false;
-        }
-    }
-    return s[i] == '\0';
-}
-
-// system.config.log-level: value=<1..4> or the human word
-// (error/warning/info/debug) - docs/console-protocol.md s.1's own grammar
-// example is the word form ("system.config.log-level value=debug"). Read
-// renders the live numeric level (configCurrentLogLevel(), the same
-// lock-free byte the log macros read, include/logging.h); write accepts
-// both spellings, translating a recognized word into its digit into a fresh
-// local buffer before handing off to the shared scalar-config write path,
-// so api_config_apply.cpp's paramInt16(1, 4) range check stays the one place
-// that owns what a valid level is - this executor only knows the
-// word<->digit mapping the Apply Core does not.
-static void consoleExecuteSystemLogLevel(uint32_t requestId, const ConsoleCatalogEntry* entry,
-                                         char* rawArgs, ConsoleCommandSource source,
-                                         const ConsoleRecordSink* sink) {
-    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
-    if (!isWrite) {
-        char buf[4] = {};
-        snprintf(buf, sizeof(buf), "%u", (unsigned)configCurrentLogLevel());
-        if (sink->onRecordBegin) {
-            sink->onRecordBegin(requestId, entry->name);
-        }
-        if (sink->onRecordField) {
-            sink->onRecordField(requestId, "value", buf);
-        }
-        if (sink->onRecordEnd) {
-            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
-                             CONSOLE_REASON_NONE);
-        }
-        return;
-    }
-
-    // Detected on a disposable local copy, never on `rawArgs` itself:
-    // consoleParseArgs() tokenizes in place (NUL-splits key/value substrings
-    // into the same storage), so parsing the real rawArgs here would leave
-    // nothing for consoleWriteScalarConfigField()'s own parse below to split
-    // on. Only a single, exactly-named `value=`/`logLevel=` argument is
-    // translated; anything else (extra or unknown keys, an already-numeric
-    // value) is passed through untouched so the shared write path's own
-    // unknown-key and range checks are still the ones that decide it.
-    char detectBuf[256];
-    snprintf(detectBuf, sizeof(detectBuf), "%s", rawArgs);
-    ConsoleArgs detected = {};
-    char translated[32];
-    char* effectiveArgs = rawArgs;
-    if (consoleParseArgs(detectBuf, &detected) == CONSOLE_ARGS_PARSE_OK && detected.count == 1 &&
-        (strcmp(detected.items[0].key, "value") == 0 ||
-         strcmp(detected.items[0].key, "logLevel") == 0)) {
-        struct LogLevelWord {
-            const char* word;
-            const char* digit;
-        };
-        static const LogLevelWord kLogLevelWords[] = {
-            {"error", "1"},
-            {"warning", "2"},
-            {"info", "3"},
-            {"debug", "4"},
-        };
-        static const size_t kLogLevelWordCount =
-            sizeof(kLogLevelWords) / sizeof(kLogLevelWords[0]);
-        for (size_t i = 0; i < kLogLevelWordCount; ++i) {
-            if (consoleWordEqualsIgnoringCase(detected.items[0].value, kLogLevelWords[i].word)) {
-                snprintf(translated, sizeof(translated), "logLevel=%s", kLogLevelWords[i].digit);
-                effectiveArgs = translated;
-                break;
-            }
-        }
-    }
-
-    consoleWriteScalarConfigField(requestId, entry->name, "logLevel", effectiveArgs, source,
-                                  CONSOLE_OUTCOME_APPLIED, sink);
-}
-
-typedef void (*ConsoleScalarConfigExecutorFn)(uint32_t requestId, const ConsoleCatalogEntry* entry,
-                                              char* rawArgs, ConsoleCommandSource source,
-                                              const ConsoleRecordSink* sink);
-
-struct ConsoleScalarConfigExecutorEntry {
+// A single-field op onto one droid Setting, named by its form name: the read
+// renders the Setting as its declaration writes it (include/config_settings.h),
+// the write goes through configApply(), which checks it by the same
+// declaration - its range, and its words where it takes words, so
+// `system.config.log-level value=debug` and `logLevel=debug` over HTTP are one
+// check (ADR 0068, amended 2026-09-26).
+struct ConsoleSettingOp {
     const char* operationName;
-    ConsoleScalarConfigExecutorFn executor;
+    const char* form;
 };
 
-static const ConsoleScalarConfigExecutorEntry g_scalarConfigExecutors[] = {
-    {"drive.config.speed-limit", consoleExecuteDriveSpeedLimit},
-    {"aux.config.led-pin", consoleExecuteAuxLedPin},
-    {"aux.config.led-count", consoleExecuteAuxLedCount},
-    {"rc.config.mode", consoleExecuteRcMode},
-    {"system.config.log-level", consoleExecuteSystemLogLevel},
+static const ConsoleSettingOp g_settingOps[] = {
+    {"dome.config.stand-down", "standDownSequence"},
+    {"drive.config.speed-limit", "speedLimitMax"},
+    {"rc.config.mode", "rcInputMode"},
+    {"servo.config.cadence-floor", "cadenceFloorMs"},
+    {"system.config.log-level", "logLevel"},
 };
-static const size_t kScalarConfigExecutorCount =
-    sizeof(g_scalarConfigExecutors) / sizeof(g_scalarConfigExecutors[0]);
 
-static ConsoleScalarConfigExecutorFn consoleFindScalarConfigExecutor(const char* canonicalName) {
-    for (size_t i = 0; i < kScalarConfigExecutorCount; ++i) {
-        if (strcmp(g_scalarConfigExecutors[i].operationName, canonicalName) == 0) {
-            return g_scalarConfigExecutors[i].executor;
+static const ConfigSetting* consoleFindSettingOp(const char* canonicalName) {
+    for (const ConsoleSettingOp& op : g_settingOps) {
+        if (strcmp(op.operationName, canonicalName) == 0) {
+            return configSettingByForm(op.form);
         }
     }
     return nullptr;
 }
+
+// noinline, deliberately, as consoleExecuteAuxLedCount() below: each is called
+// from one site in consoleExecuteCommand(), and inlined there its locals would
+// join the frame every Console op carries, not only its own (the Console chain,
+// tools/task_stack_recipes.json).
+static void __attribute__((noinline)) consoleExecuteSettingOp(
+    uint32_t requestId, const ConsoleCatalogEntry* entry, const ConfigSetting& setting,
+    char* rawArgs, ConsoleCommandSource source, const ConsoleRecordSink* sink) {
+    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+    if (!isWrite) {
+        ConfigSnapshot snap = {};
+        configCacheRead(&snap);
+        char buf[24] = {};
+        configSettingFormat(setting, snap, buf, sizeof(buf));
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, entry->name);
+        }
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "value", buf);
+        }
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                             CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+    consoleWriteScalarConfigField(requestId, entry->name, setting.form, rawArgs, source,
+                                  CONSOLE_OUTCOME_APPLIED, sink);
+}
+
+// aux.config.led-count: target=<board output> [value=<1..255>].
+//
+// A light's settings are one per Output since #413 (ADR 0067), so this op names
+// the Output first and the number second. With no value it reads that Output's
+// count; with one it writes it through the row door the pages save through: a
+// one-row JSON body naming the Output by its address (ADR 0068), checked by the
+// same row check in configApply().
+//
+// aux.config.led-pin went with the single stored pin. Which Output carries a
+// light is that Output's own stored type now, and a droid may have several.
+static void __attribute__((noinline)) consoleExecuteAuxLedCount(
+    uint32_t requestId, const ConsoleCatalogEntry* entry, char* rawArgs, ConsoleCommandSource source,
+    const ConsoleRecordSink* sink) {
+    ConsoleArgs parsedArgs = {};
+    ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
+    if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
+        consoleEmitArgParseError(requestId, parseStatus, sink);
+        return;
+    }
+
+    const char* badKey = nullptr;
+    for (size_t i = 0; i < parsedArgs.count; ++i) {
+        if (strcmp(parsedArgs.items[i].key, "target") != 0 &&
+            strcmp(parsedArgs.items[i].key, "value") != 0) {
+            badKey = parsedArgs.items[i].key;
+            break;
+        }
+    }
+    if (badKey != nullptr) {
+        consoleEmitArgFailure(requestId, entry->name, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
+        return;
+    }
+
+    const char* target = consoleArgsFind(parsedArgs, "target");
+    if (target == nullptr || target[0] == '\0') {
+        consoleEmitArgFailure(requestId, entry->name, "target", CONSOLE_REASON_MISSING_ARGUMENT,
+                              sink);
+        return;
+    }
+
+    const BoardOutput* output = boardOutputForWord(target);
+    if (output == nullptr || !output->lightCapable) {
+        // Either this board has no such Output, or it has one that cannot carry
+        // a light. Both are "that is not an answer here", which is what
+        // OUT_OF_RANGE says for a named value.
+        consoleEmitArgFailure(requestId, entry->name, "target", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    const char* value = consoleArgsFind(parsedArgs, "value");
+    if (value == nullptr || value[0] == '\0') {
+        char buf[8] = {};
+        snprintf(buf, sizeof(buf), "%u",
+                 (unsigned)configCacheReadServoOutputLedCount(SERVO_DRIVER_LEDC, output->channel));
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, entry->name);
+        }
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "value", buf);
+        }
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                             CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    // The row: its address, and the count as the text it was typed, so the
+    // row check refuses anything but a number in range - the same answer a
+    // page's save gets.
+    char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+    servoOutputFormatAddress(address, sizeof(address), SERVO_DRIVER_LEDC, output->channel);
+    OutputRowField row{address, "ledCount", value};
+    ConfigParamSource params;
+    params.ctx = &row;
+    params.get = consoleOutputRowParamGet;
+    char refusalField[APPLY_REFUSAL_FIELD_MAX] = {};
+    snprintf(refusalField, sizeof(refusalField), "%s.ledCount", address);
+    consoleWriteConfig(requestId, entry->name, params, refusalField, "value", source,
+                       CONSOLE_OUTCOME_APPLIED, sink);
+}
+
+typedef void (*ConsoleConfigExecutorFn)(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                              char* rawArgs, ConsoleCommandSource source,
+                                              const ConsoleRecordSink* sink);
+
+struct ConsoleConfigExecutorEntry {
+    const char* operationName;
+    ConsoleConfigExecutorFn executor;
+};
 
 // system.config.mood (#226): the config-typed view of the same active-mood
 // mechanism system.action.set-mood exposes as an action - both are backed by
@@ -2146,27 +2558,17 @@ static const char* consoleWifiModeToken(WifiMode mode) {
     return (mode == WifiMode::STANDALONE_AP) ? "standalone_ap" : "client";
 }
 
-// wifiApply() reports a field failure as a human sentence, not a field id -
-// that is its contract and POST /api/wifi renders the sentence verbatim, so
-// it is not changed here. Every sentence it can produce opens with the API
-// key it is about (src/web/api_wifi_apply.cpp: the three param helpers'
-// snprintf, the wifiMode parse, and the two mode-vs-SSID rules), so the
-// failing field is recovered by matching that opening word back through the
-// SAME table this adapter used to feed the core. The alternative - deciding
-// which rule fired by re-testing the WiFi rules here - would be a second copy
-// of exactly the logic this ticket routes through the core. Returns the
-// Console key, or NULL for a message that names no field.
-static const char* consoleWifiFailingConsoleKey(const char* message) {
-    if (message == nullptr) return nullptr;
+// The Console key for a field wifiApply() refused, through the SAME table this
+// adapter feeds the core with - the refusal names the core's field (`staSsid`),
+// and the builder typed `sta-ssid`. A field the table does not carry is named
+// as the core gave it.
+static const char* consoleWifiConsoleKeyFor(const char* applyKey) {
     for (size_t i = 0; i < kWifiSettingsFieldCount; ++i) {
-        const char* applyKey = kWifiSettingsFields[i].applyKey;
-        size_t len = strlen(applyKey);
-        if (strncmp(message, applyKey, len) == 0 &&
-            (message[len] == ' ' || message[len] == '\0')) {
+        if (strcmp(kWifiSettingsFields[i].applyKey, applyKey) == 0) {
             return kWifiSettingsFields[i].consoleKey;
         }
     }
-    return nullptr;
+    return applyKey;
 }
 
 // The read side. Field names are POST /api/wifi's own JSON keys verbatim
@@ -2299,42 +2701,22 @@ static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogE
     WifiConfig working = {};
     WifiApplyResult applyResult;
     WifiCommitOutcome commit = {};
-    {
-        // Serialized against every other config writer, for the reason
-        // s_consoleConfigApplyResult's declaration gives above:
-        // wifiCommitApplied() read-modify-writes the shared config-cache
-        // snapshot and then writes NVS, so an interleaved config write on any
-        // adapter would lose one of the two updates. The read of the current
-        // settings is inside the guard too - reading them outside it would
-        // reopen the same window one statement earlier.
-        ConfigWriteLock guard;
-        if (!guard.acquired()) {
-            if (sink->onRecordResult) {
-                sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
-                                     CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
-            }
-            return;
+    // The WiFi Write Window handleWifiPost calls too (api_wifi_apply.h).
+    if (!wifiWriteWindow(params, &working, &applyResult, &commit)) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                                 CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
         }
-
-        configCacheReadWifi(&working);
-        wifiApply(params, &working, &applyResult);
-        if (applyResult.ok) {
-            commit = wifiCommitApplied(&working);
-        }
-    }  // guard released here
+        return;
+    }
 
     if (!applyResult.ok) {
-        const char* failing = consoleWifiFailingConsoleKey(applyResult.errorMessage);
-        // A field the operator did not type is missing; a field they did type
-        // failed on its value. That split is what makes `mode=client` with no
-        // SSID anywhere read as missing-argument sta-ssid - the grouped rule
-        // this operation exists for - while an over-long or empty SSID they
-        // actually supplied reads as out-of-range on the same field.
-        ConsoleReason reason =
-            (failing != nullptr && consoleArgsFind(parsedArgs, failing) == nullptr)
-                ? CONSOLE_REASON_MISSING_ARGUMENT
-                : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, entry->name, failing, reason, sink);
+        // The core's reason is the answer: it is the core that knows `mode=client`
+        // with no SSID anywhere is a missing sta-ssid, while an over-long or empty
+        // SSID the builder actually supplied is out of range on the same field.
+        consoleEmitApplyRefusal(requestId, entry->name,
+                                consoleWifiConsoleKeyFor(applyResult.refusal.field),
+                                applyResult.refusal, sink);
         return;
     }
 
@@ -2396,10 +2778,10 @@ static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogE
 // consoleValidateArgsAgainstSchema() checks shape and leaves every bound to
 // the core - the precedent sound.action.set-category-range states for the
 // identical parameters ("the apply core's own validation is the real gate
-// here, not the schema"). A value the core refuses is answered as
-// out-of-range, the same undifferentiated classification every other Apply
-// Core rejection in this module gets, because a grouped rule (lo>hi, an
-// unusable key pair) has no one attributable argument to name.
+// here, not the schema"). A value the core refuses is answered from the
+// core's refusal (consoleEmitApplyRefusal()): the argument it names, which is
+// the core's own parameter name and so this row's argument key, and its
+// reason - a grouped rule such as lo above hi reads as `conflict`.
 //
 // bank/page/clear_binding - REST's optional CHIRP-binding extension to two of
 // these routes - are absent from every one of these schemas, so they are
@@ -2407,8 +2789,8 @@ static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogE
 // subset of what REST accepts, never a superset ("no widening").
 //
 // Read field names are GET /api/audio/tracks' and GET /api/audio/mood-map's
-// JSON keys verbatim (docs/console-protocol.md s.3.5), which is also the key
-// vocabulary src/config_store.cpp's AUDIO_TRACK_KEYS map uses - so a value a
+// JSON keys verbatim (docs/console-protocol.md s.3.5), which is also the name
+// each audio Setting is declared under (src/config_settings.cpp) - so a value a
 // read prints is addressable by a write under the same spelling, and the two
 // halves cannot drift into separate name sets.
 //
@@ -2419,16 +2801,16 @@ static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogE
 // digit decimal values nowhere near its 2048-byte value arena.
 // =============================================================================
 
-// GET /api/audio/tracks' field order for the 20 named tracks, the 7 system
+// GET /api/audio/tracks' field order for the 21 named tracks, the 7 system
 // tracks and the 12 category lo/hi pairs (src/web/api_audio.cpp's
 // fillTracksResponse()), split into the three sets the registry splits these
-// rows into. Spellings are that response's keys, which are also
-// AUDIO_TRACK_KEYS' - note snd_cat_snrk_* , whose wire name is the short form
+// rows into. Spellings are that response's keys, which are also the audio
+// Settings' names - note snd_cat_snrk_* , whose wire name is the short form
 // even though the config member is snd_cat_snarky_* .
 static const char* const kSoundNamedTrackKeys[] = {
-    "scream",  "faint",  "leia",   "cantina_s", "sw_theme", "imp_march", "cantina_l",
-    "startup", "doodoo", "failure", "disco",    "mahna",    "inlove",    "macho",
-    "gangnam", "uptown", "celebr", "stayin",    "harlem",   "pbjtime",
+    "scream",  "faint",  "leia",    "cantina_s", "sw_theme", "imp_march", "cantina_l",
+    "startup", "happy",  "doodoo",  "failure",   "disco",    "mahna",     "inlove",
+    "macho",   "gangnam", "uptown", "celebr",    "stayin",   "harlem",    "pbjtime",
 };
 static const size_t kSoundNamedTrackKeyCount =
     sizeof(kSoundNamedTrackKeys) / sizeof(kSoundNamedTrackKeys[0]);
@@ -2457,11 +2839,11 @@ static void consoleEmitAudioTrackField(uint32_t requestId, const AudioConfig& au
                                        const char* key, const ConsoleRecordSink* sink) {
     uint16_t value = 0;
     if (!configAudioGetTrackByKey(audio, key, &value)) {
-        // Unreachable while the tables above hold only keys AUDIO_TRACK_KEYS
-        // declares, which a native test pins. Logged rather than dropped: a
+        // Unreachable while the tables above hold only keys the audio Setting
+        // declarations name, which a native test pins. Logged rather than dropped: a
         // key that stopped resolving would otherwise leave a hole in a read
         // that still reported ok.
-        PA_LOG_ERROR(TAG, "[CONSOLE] audio key %s is not in the track key map", key);
+        PA_LOG_ERROR(TAG, "[CONSOLE] audio key %s is not a declared audio Setting", key);
         return;
     }
     char buf[8] = {};
@@ -2503,20 +2885,12 @@ static bool consoleParseAudioConfigWrite(uint32_t requestId, const ConsoleCatalo
         return false;
     }
 
+    // Every audio config row writes an audio Setting, whose own check rules on
+    // the value (the apply core, or consoleCheckSettingArg() for the volume).
     char badKey[40] = {};
-    ConsoleArgSchemaStatus schema =
+    const ConsoleArgSchemaStatus schema =
         consoleValidateArgsAgainstSchema(entry->params, *outArgs, badKey, sizeof(badKey));
-    if (schema != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = CONSOLE_REASON_OUT_OF_RANGE;
-        if (schema == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY) {
-            reason = CONSOLE_REASON_UNKNOWN_ARGUMENT;
-        } else if (schema == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED) {
-            reason = CONSOLE_REASON_MISSING_ARGUMENT;
-        }
-        consoleEmitArgFailure(requestId, entry->name, badKey, reason, sink);
-        return false;
-    }
-    return true;
+    return !consoleRefuseSettingArgKeys(requestId, entry->name, entry->params, schema, badKey, sink);
 }
 
 // Answer a Commit Step that could not reach NVS. "A failed NVS write is an
@@ -2558,13 +2932,12 @@ static const char* consoleAudioTracksParamGet(void* ctx, const char* name) {
     return consoleArgsFind(*adapter->args, name);
 }
 
-// The shared write half of every audioTracksApply row. The config write lock
-// spans the snapshot read, the core and the Commit Step for the reason
+// The shared write half of every audioTracksApply row. It runs through the
+// tracks Write Window, which holds the config write lock across the snapshot
+// read, the core and the Commit Step for the reason
 // s_consoleConfigApplyResult's declaration gives above: audioTracksCommitApplied()
 // read-modify-writes the shared config cache and then writes NVS, so an
 // interleaved config write on any adapter would lose one of the two updates.
-// Reading the snapshot outside the guard would reopen that window one
-// statement earlier.
 static void consoleWriteAudioTracksField(uint32_t requestId, const ConsoleCatalogEntry* entry,
                                          const char* fixedKey, const ConsoleArgs& args,
                                          const ConsoleRecordSink* sink) {
@@ -2573,37 +2946,29 @@ static void consoleWriteAudioTracksField(uint32_t requestId, const ConsoleCatalo
     params.ctx = &adapter;
     params.get = consoleAudioTracksParamGet;
 
-    // ~190 B, unlike ConfigApplyResult's ~2.5 KB - small enough to be an
+    // ~270 B, unlike ConfigApplyResult's 2,088 B - small enough to be an
     // ordinary local on the Console task's stack, so it needs neither a
     // module static nor the sharing hazard one would bring (pin fact 4).
     AudioTracksApplyResult result;
     AudioTracksCommitOutcome commit;
-    bool applyHadError = false;
-    {
-        ConfigWriteLock guard;
-        if (!guard.acquired()) {
-            consoleAnswerConfigWriteBusy(requestId, sink);
-            return;
-        }
-        ConfigSnapshot working = {};
-        configCacheRead(&working);
-        audioTracksApply(params, consoleAudioCatalogSupported(), &working, &result);
-        applyHadError = result.error.hasError;
-        if (!applyHadError) {
-            commit = audioTracksCommitApplied(&working, result);
-        }
-    }  // guard released here, after the Commit Step's last shared-state write
+    ConfigSnapshot working = {};
+    // The Write Window POST /api/audio/tracks calls (include/api_audio.h).
+    if (!audioTracksWriteWindow(params, consoleAudioCatalogSupported(), &working, &result, &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
+        return;
+    }
+    const bool applyHadError = result.error.hasError;
 
     if (applyHadError) {
-        // The core reports its refusal as a human sentence, not a field id
-        // (its contract; POST /api/audio/tracks renders it verbatim). For a
-        // row whose key is fixed there is exactly one operator-supplied
-        // field to name, and for the aggregate rows the failure can be
-        // either the key or the value, so `track` is named only when the
-        // operator supplied a key the core accepted.
-        consoleEmitArgFailure(requestId, entry->name,
-                              (fixedKey != nullptr) ? "track" : "key",
-                              CONSOLE_REASON_OUT_OF_RANGE, sink);
+        // The core names the field it refused by its own parameter names, which
+        // are these rows' argument keys - except a refused value, which it names
+        // by the audio Setting it was for (the key, include/config_settings.h).
+        // The builder typed that value as `track=`, so that is what is named.
+        const char* key = consoleAudioTracksParamGet(&adapter, "key");
+        const char* named = (key != nullptr && strcmp(result.error.refusal.field, key) == 0)
+                                ? "track"
+                                : result.error.refusal.field;
+        consoleEmitApplyRefusal(requestId, entry->name, named, result.error.refusal, sink);
         return;
     }
     if (!commit.ok) {
@@ -2727,6 +3092,22 @@ static void consoleExecuteSoundSystemTrackAssignments(uint32_t requestId,
                                       kSoundSystemTrackKeyCount, rawArgs, sink);
 }
 
+// The argument a category-range refusal is pinned on. The core names a refused
+// bound by its audio Setting - the key it was for (include/config_settings.h) -
+// and the builder typed that bound as `lo=` or `hi=`; every other refusal is
+// already in the core's own parameter names, which are the argument keys.
+static const char* consoleAudioBoundArgument(const char* field, const ConsoleArgs& args) {
+    const char* loKey = consoleArgsFind(args, "lo_key");
+    const char* hiKey = consoleArgsFind(args, "hi_key");
+    if (loKey != nullptr && strcmp(field, loKey) == 0) {
+        return "lo";
+    }
+    if (hiKey != nullptr && strcmp(field, hiKey) == 0) {
+        return "hi";
+    }
+    return field;
+}
+
 // sound.config.category-ranges: lo_key=/hi_key=/lo=/hi= through
 // audioCategoryRangeApply() and audioCategoryRangeCommitApplied() - the same
 // pair handleAudioCategoryRangePost() runs, and the same pair
@@ -2759,29 +3140,23 @@ static void consoleExecuteSoundCategoryRanges(uint32_t requestId, const ConsoleC
 
     AudioCategoryRangeApplyResult result;
     AudioCategoryRangeCommitOutcome commit;
-    bool applyHadError = false;
-    {
-        ConfigWriteLock guard;
-        if (!guard.acquired()) {
-            consoleAnswerConfigWriteBusy(requestId, sink);
-            return;
-        }
-        ConfigSnapshot working = {};
-        configCacheRead(&working);
-        audioCategoryRangeApply(consoleArgsAsParamSource(parsedArgs), consoleAudioCatalogSupported(),
-                                &working, &result);
-        applyHadError = result.error.hasError;
-        if (!applyHadError) {
-            commit = audioCategoryRangeCommitApplied(&working, result);
-        }
-    }  // guard released here
+    ConfigSnapshot working = {};
+    // The Write Window POST /api/audio/category-range calls (include/api_audio.h).
+    if (!audioCategoryRangeWriteWindow(consoleArgsAsParamSource(parsedArgs),
+                                       consoleAudioCatalogSupported(), &working, &result, &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
+        return;
+    }
+    const bool applyHadError = result.error.hasError;
 
     if (applyHadError) {
-        // Any of: an unusable lo_key/hi_key pair, an out-of-range bound, or
-        // lo>hi. One undifferentiated `invalid`, for the reason
-        // consoleExecuteSoundSetCategoryRange() gives for the identical core:
-        // a multi-field range rule has no single attributable argument.
-        consoleEmitArgFailure(requestId, entry->name, "lo_key", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        // An unusable key pair, a bound out of range, or a pair that clashes
+        // (lo above hi): the core says which and why. A bound is named by its
+        // audio Setting (the key it was for); the builder typed it as `lo=` or
+        // `hi=`, so that is the argument named.
+        consoleEmitApplyRefusal(requestId, entry->name,
+                                consoleAudioBoundArgument(result.error.refusal.field, parsedArgs),
+                                result.error.refusal, sink);
         return;
     }
     if (!commit.ok) {
@@ -2797,10 +3172,10 @@ static void consoleExecuteSoundCategoryRanges(uint32_t requestId, const ConsoleC
 // sound.config.mood-category-map: quiet=/mid=/full=/awakeplus= through
 // audioMoodMapApply() and audioMoodMapCommitApplied(). Same relationship to
 // sound.action.set-mood-map as the row above has to
-// sound.action.set-category-range, and the same registry schema - this row's
-// params: predate this ticket and are reused unchanged, ranges included
-// (0-4095 is MOOD_CATEGORY_MASK_MAX, so the schema and the core agree by
-// construction rather than by a second rule).
+// sound.action.set-category-range, and the same registry schema, which names
+// the four masks and carries no range for them: each mask is checked by its
+// Setting's declaration inside the core (src/config_settings.cpp), so a mask it
+// does not take comes back with its range, as over HTTP.
 //
 // This core touches neither the config cache nor a ConfigSnapshot: its Commit
 // Step calls configUpdateAudioMoodMasks(), which bundles validate+apply+persist
@@ -2836,27 +3211,24 @@ static void consoleExecuteSoundMoodCategoryMap(uint32_t requestId, const Console
     }
 
     AudioMoodMapApplyResult result;
-    AudioMoodMapCommitOutcome commit;
-    bool applyHadError = false;
-    {
-        ConfigWriteLock guard;
-        if (!guard.acquired()) {
-            consoleAnswerConfigWriteBusy(requestId, sink);
-            return;
-        }
-        audioMoodMapApply(consoleArgsAsParamSource(parsedArgs), &result);
-        applyHadError = result.error.hasError;
-        if (!applyHadError) {
-            commit = audioMoodMapCommitApplied(result);
-        }
-    }  // guard released here
+    audioMoodMapApply(consoleArgsAsParamSource(parsedArgs), &result);
 
-    if (applyHadError) {
+    if (result.error.hasError) {
         // All four fields are required with range 0-4095 in the registry
         // schema, so the schema check above already refused everything this
         // core can refuse - handled explicitly rather than assumed away, the
-        // same way consoleExecuteSoundSetMoodMap() handles its own.
-        consoleEmitArgFailure(requestId, entry->name, "quiet", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        // same way consoleExecuteSoundSetMoodMap() handles its own, and named
+        // by the core's refusal like every other Apply Core answer here.
+        consoleEmitApplyRefusal(requestId, entry->name, result.error.refusal.field,
+                                result.error.refusal, sink);
+        return;
+    }
+    // The Write Window POST /api/audio/mood-map calls (include/api_audio.h).
+    // The Apply Core above reads no config, so it runs before the window, as
+    // the REST route runs it.
+    AudioMoodMapCommitOutcome commit;
+    if (!audioMoodMapWriteWindow(result, &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
         return;
     }
     if (!commit.ok) {
@@ -2885,11 +3257,10 @@ static void consoleExecuteSoundMoodCategoryMap(uint32_t requestId, const Console
 // inline in the handler" predated the Commit Step's extraction and is gone
 // with it.
 //
-// Unlike consoleExecuteMoodConfig() above, which hand-checks its enum because
-// its registry row declares no params, this row's `volume` param carries
-// type and range in the registry (uint8, 0-30) - so the shared schema
-// validator is the whole check and there is no second copy of the bound
-// here. `volume` is also POST /api/audio's own parameter spelling for this
+// The level is checked by the volume Setting's declaration
+// (consoleCheckSettingArg(), src/config_settings.cpp), the check POST /api/audio
+// makes, and refused with its range; the registry names the param and carries
+// no range of its own. `volume` is also POST /api/audio's own parameter spelling for this
 // value and GET /api/audio/tracks' JSON key for it, so the read field name
 // is that key verbatim (docs/console-protocol.md s.3.5) and a read is
 // pasteable straight back into a write.
@@ -2924,22 +3295,22 @@ static void consoleExecuteSoundVolumeConfig(uint32_t requestId, const ConsoleCat
         return;
     }
 
-    // Range-checked by the schema above, so this cannot be out of the uint8
-    // the Commit Step takes.
-    const long level = strtol(consoleArgsFind(parsedArgs, "volume"), nullptr, 10);
+    // Checked by the volume Setting's declaration, the check POST /api/audio
+    // makes, and refused with its range (src/config_settings.cpp).
+    const ConfigSetting* volume = audioSettingByName("volume", SettingDoor::AudioVolume);
+    int32_t level = 0;
+    if (volume == nullptr ||
+        !consoleCheckSettingArg(requestId, entry->name, "volume", *volume,
+                                consoleArgsFind(parsedArgs, "volume"), &level, sink)) {
+        return;
+    }
 
+    // The Write Window POST /api/audio's volume branch calls (include/api_audio.h).
     AudioSetVolumeCommitOutcome commit;
-    {
-        // The Commit Step read-modify-writes the shared config-cache snapshot
-        // and then writes NVS, the same window every other config write in
-        // this module serializes on.
-        ConfigWriteLock guard;
-        if (!guard.acquired()) {
-            consoleAnswerConfigWriteBusy(requestId, sink);
-            return;
-        }
-        commit = audioSetVolumeCommitApplied((uint8_t)level, consoleCommandSourceFor(source));
-    }  // guard released here
+    if (!audioSetVolumeWriteWindow((uint8_t)level, consoleCommandSourceFor(source), &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
+        return;
+    }
 
     if (!commit.queued) {
         // The live apply never reached AudioTask, so nothing was persisted
@@ -2963,10 +3334,9 @@ static void consoleExecuteSoundVolumeConfig(uint32_t requestId, const ConsoleCat
 
 // The rows above that carry their own argument set, rather than having their
 // key fixed by the operation name (g_audioTrackKeyConfigRows[] holds those).
-// Same executor signature as g_scalarConfigExecutors[] so the cascade below
-// dispatches both the same way; a separate table because these are grouped
-// writes through an audio core, not single-field writes through configApply().
-static const ConsoleScalarConfigExecutorEntry g_audioConfigExecutors[] = {
+// A table because these are grouped writes through an audio core, each
+// reached through the executor pointer found here.
+static const ConsoleConfigExecutorEntry g_audioConfigExecutors[] = {
     {"sound.config.track-assignments", consoleExecuteSoundTrackAssignments},
     {"sound.config.system-track-assignments", consoleExecuteSoundSystemTrackAssignments},
     {"sound.config.category-ranges", consoleExecuteSoundCategoryRanges},
@@ -2976,7 +3346,7 @@ static const ConsoleScalarConfigExecutorEntry g_audioConfigExecutors[] = {
 static const size_t kAudioConfigExecutorCount =
     sizeof(g_audioConfigExecutors) / sizeof(g_audioConfigExecutors[0]);
 
-static ConsoleScalarConfigExecutorFn consoleFindAudioConfigExecutor(const char* canonicalName) {
+static ConsoleConfigExecutorFn consoleFindAudioConfigExecutor(const char* canonicalName) {
     for (size_t i = 0; i < kAudioConfigExecutorCount; ++i) {
         if (strcmp(g_audioConfigExecutors[i].operationName, canonicalName) == 0) {
             return g_audioConfigExecutors[i].executor;
@@ -3228,11 +3598,14 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // Emit each operation as an item record
             // Format: name (type, [reason if unavailable])
             //
-            // The two annotations are the two availability facts knowable
-            // without executing. Discovery never annotates executor-not-ready:
-            // that is an execution-time answer (ADR 0037), and the branch that
-            // used to emit it here was unreachable for the life of the catalog's
-            // readiness flag, which read `true` for every entry.
+            // The three annotations are the three availability facts knowable
+            // without executing, in the order execution checks them: board,
+            // build, then not-on-console (the registry's `console:`, ADR 0037
+            // Amendment 2026-10-06). Discovery never annotates
+            // executor-not-ready: that is an execution-time answer (ADR 0037),
+            // and the branch that used to emit it here was unreachable for the
+            // life of the catalog's readiness flag, which read `true` for every
+            // entry.
             if (sink->onRecordItem) {
                 char itemBuf[256];
                 if (!entry->available_on_board) {
@@ -3240,6 +3613,9 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                             entry->name, entry->type);
                 } else if (!entry->available_in_build) {
                     snprintf(itemBuf, sizeof(itemBuf), "%s (%s, not-in-this-build)",
+                            entry->name, entry->type);
+                } else if (entry->console_excluded != CONSOLE_EXCLUSION_NONE) {
+                    snprintf(itemBuf, sizeof(itemBuf), "%s (%s, not-on-console)",
                             entry->name, entry->type);
                 } else {
                     snprintf(itemBuf, sizeof(itemBuf), "%s (%s)",
@@ -3295,6 +3671,19 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
         if (sink->onRecordResult) {
             sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
                                 CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_NOT_IN_THIS_BUILD);
+        }
+        return;
+    }
+
+    // An operation the registry declares is never on the Console answers so
+    // before any type's dispatch, and so before the ACTION_REGISTRY[] name
+    // lookup an action would otherwise fall through to executor-not-ready.
+    // Third, after board and build, in the order the `operations` listing
+    // renders its annotation. `help <op>` names the page that does it instead.
+    if (consoleIsNeverOnConsole(opName)) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_NOT_ON_CONSOLE);
         }
         return;
     }
@@ -3415,35 +3804,33 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // Resolve the (possibly aliased) operation name to its
             // RobotActionId via ACTION_REGISTRY[] (#220). Not found here
             // means this action has no RC-bindable target yet - a motion
-            // target #222 owns, or one of the twelve rows below.
+            // target #222 owns, or one of the three rows below.
             //
             // EVERY action row that still answers EXECUTOR_NOT_READY lands
             // here on purpose, and each one has a recorded reason on its own
-            // docs/action-registry.yaml entry (#221). They are twelve, in
-            // three groups; test_the_executor_not_ready_set_is_exactly_the_
-            // recorded_rows (test/test_native/test_console_module) names them
-            // and fails if a thirteenth appears, so a new unwired row cannot
-            // join this set silently.
+            // docs/action-registry.yaml entry (#221). They are three: a real
+            // core the Console module cannot reach without editing a file
+            // #221 fenced. Probed, not assumed - the compiler and linker
+            // errors are quoted on each registry entry:
+            //   system.api.get-coredump-status   esp_core_dump_image_get()
+            //   system.action.erase-coredump     esp_core_dump_image_erase()
+            //   system.api.get-admission-trace   webAdmissionTraceInstance()
+            // test_the_executor_not_ready_set_is_exactly_the_unwired_rows
+            // (test/test_native/test_console_module) names them and fails if a
+            // fourth appears, so a new unwired row cannot join this set
+            // silently.
             //
-            // 1. #206's document/bulk-transfer exclusion - the transfer IS the
-            //    operation, and the Console's one-line key=value grammar has
-            //    no shape for it:
-            //      dome.api.get-sequence      seqStoreReadFileSlice()
-            //      dome.api.get-layout        domeLayoutCacheReadChunk()
-            //      dome.action.save-sequence  a whole Learned Sequence JSON v1
-            //      rc.api.get-map             the RC-map document, read half
-            //      rc.action.set-map          the RC-map document, write half
-            //      system.api.get-coredump    the raw ELF image
-            //      system.action.upload-firmware / -filesystem  OTA images
-            // 2. A real core the Console module cannot reach without editing a
-            //    file this ticket fences. Probed, not assumed - the compiler and
-            //    linker errors are quoted on each registry entry:
-            //      system.api.get-coredump-status   esp_core_dump_image_get()
-            //      system.action.erase-coredump     esp_core_dump_image_erase()
-            //      system.api.get-admission-trace   webAdmissionTraceInstance()
-            // 3. Not an operation at all:
-            //      system.console  is the browser Console Adapter itself
-            //                      (POST /api/console, ADR 0036)
+            // The operations that are never on the Console - file transfers,
+            // editor steps, browser-only acts, the browser Console Adapter -
+            // never reach here: the registry declares them with `console:` and
+            // the not-on-console guard above answers them (ADR 0037 Amendment
+            // 2026-10-06, #474).
+            //
+            // servo.api.get-outputs was once a group of its own - a read with
+            // no Console record shape yet (#347) - until #362 gave it one: it
+            // is a status row now, answered by consoleExecuteServoApiGetOutputs()
+            // through g_statusExecutors[], because the bench side needs the
+            // rows where there is no WiFi.
             RobotActionId target = ROBOT_ACTION_NONE;
             if (entry != nullptr && consoleFindRobotActionId(entry->name, &target)) {
                 // Tokenize the argument remainder ONCE here (#221 criterion
@@ -3543,17 +3930,25 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                 break;
             }
 
-            ConsoleScalarConfigExecutorFn audioExecutor =
+            ConsoleConfigExecutorFn audioExecutor =
                 (entry != nullptr) ? consoleFindAudioConfigExecutor(entry->name) : nullptr;
             if (audioExecutor != nullptr) {
                 audioExecutor(request->requestId, entry, rawArgs, request->source, sink);
                 break;
             }
 
-            ConsoleScalarConfigExecutorFn scalarExecutor =
-                (entry != nullptr) ? consoleFindScalarConfigExecutor(entry->name) : nullptr;
-            if (scalarExecutor != nullptr) {
-                scalarExecutor(request->requestId, entry, rawArgs, request->source, sink);
+            const ConfigSetting* setting =
+                (entry != nullptr) ? consoleFindSettingOp(entry->name) : nullptr;
+            if (setting != nullptr) {
+                consoleExecuteSettingOp(request->requestId, entry, *setting, rawArgs,
+                                        request->source, sink);
+                break;
+            }
+
+            // One Setting of one Output: named by its board Output rather than
+            // by a form name, so it is not a row of g_settingOps.
+            if (entry != nullptr && strcmp(entry->name, "aux.config.led-count") == 0) {
+                consoleExecuteAuxLedCount(request->requestId, entry, rawArgs, request->source, sink);
                 break;
             }
 

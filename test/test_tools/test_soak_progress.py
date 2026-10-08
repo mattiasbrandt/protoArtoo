@@ -37,7 +37,10 @@ sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 import soak  # noqa: E402
 
-WEB_SERVER_CPP = (REPO_ROOT / "src" / "web" / "web_server.cpp").read_text()
+# buildStatusJson()'s payload is written by src/web/status_json.cpp since
+# #428; web_server.cpp captures the state it is written from.
+STATUS_BUILDER_CPP = ((REPO_ROOT / "src" / "web" / "web_server.cpp").read_text()
+                      + (REPO_ROOT / "src" / "web" / "status_json.cpp").read_text())
 BENCH_CPP = (REPO_ROOT / "bench" / "p4_hosted_bench.cpp").read_text()
 
 BENCH = soak.SCHEMAS["bench"]
@@ -120,7 +123,7 @@ class ProgressFieldsAreHonestAboutAbsence(unittest.TestCase):
         turning every product progress line into a row of '?'."""
         for field in (SHIPPING.sse_refused_cap_field, SHIPPING.sse_evicted_field,
                       SHIPPING.sse_clients_peak_field):
-            self.assertIn(f'\\"{field}\\":', WEB_SERVER_CPP,
+            self.assertIn(f'\\"{field}\\":', STATUS_BUILDER_CPP,
                           f"{field} is not in buildStatusJson()'s payload")
         self.assertEqual(ARTOO.sse_refused_cap_field, SHIPPING.sse_refused_cap_field,
                          "both product images share one unconditional snprintf")
@@ -195,12 +198,12 @@ class TheConsoleDegradesAndKeepsTheTranscriptPlain(unittest.TestCase):
         self.assertIn("[OK] everything fine", stream.getvalue())
         self.assertIn("[FAIL] something is wrong", stream.getvalue())
 
-    def test_a_terminal_gets_colour_and_the_same_ascii_tokens(self):
+    def test_a_terminal_gets_color_and_the_same_ascii_tokens(self):
         stream = io.StringIO()
         console = soak.RunConsole(stream=stream, log_path=None, force_terminal=True)
         console.line("everything fine", kind="ok")
         console.close()
-        self.assertIn("\x1b[", stream.getvalue(), "a terminal should get colour")
+        self.assertIn("\x1b[", stream.getvalue(), "a terminal should get color")
         self.assertIn("[OK]", stream.getvalue(), "the token stays ASCII everywhere")
 
     def test_the_transcript_has_no_ansi_even_when_the_terminal_does(self):

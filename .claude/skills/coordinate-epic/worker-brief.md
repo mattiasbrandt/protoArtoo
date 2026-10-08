@@ -16,11 +16,30 @@ command. Everything ticket-specific stays in the ticket.
 
 You are implementing sub-issue #{ISSUE} in the worktree {WORKTREE}.
 
-READ FIRST, IN FULL: issue #{ISSUE} - body, acceptance criteria, and the
-pinned coordinator comment whose first line is {PIN_MARKER} (attempt log,
-rejected approaches, verification harness). That comment is this slice's; an
-issue can carry several slices, and another slice's pin is not yours. Rejected approaches are out of scope: do not attempt a variation of
-a rejected category. Then read AGENTS.md.
+READ FIRST: issue #{ISSUE} - body, acceptance criteria, and the pinned
+coordinator comment whose first line is {PIN_MARKER} (attempt log, rejected
+approaches, verification harness). That comment is this slice's; an issue can
+carry several slices, and another slice's pin is not yours. Rejected
+approaches are out of scope: do not attempt a variation of a rejected
+category.
+
+Then these sections of AGENTS.md, not the whole file: Architecture
+Guardrails, The build lock, Suite pause, Verification Scale, Web/UI Copy
+Rules when the slice touches `data/`, Change Hygiene (Commit scope format
+and Incremental slice workflow), and the shell paragraph under Project
+Context. Safety-critical rules are the short list in `.claude/CLAUDE.md`.
+
+Stage one web image with
+`python3 tools/stage_fsdata.py --set legacy|default --out DIR [--serve PORT]`
+(`legacy` is artoo-esp32, `default` is firebeetle2). Run a folder of fixture
+Playwright scripts with `make pw-fixture DIR=<folder>`. The env, and the rule
+that a route installed after mount needs `page.reload()` because
+`loadRehearsalFacts()` caches `/api/servo/outputs`, are in
+`test/playwright/README.md` under "Run offline". A shared CSS class is
+`python3 tools/css_where.py <selector>`.
+
+SUITES PAUSED THROUGH 2026-10-31 (#464)
+This overrides every later line that tells you to run `make test`, `make test-web`, `pio test`, `node --test`, `tools/mutation_verify.py`, or to add a test or a mutation patch. Do not run them. Do not write them. `make test` and `make test-web` return immediately and that is correct. A slice is accepted when a second agent has read the production diff. One `make build` when something compiles. The existing tests stay in the tree and run in CI when a pull request into main opens. Do not set `PROTOR2_SUITES=1`. On 2026-11-01 the pause ends by itself.
 
 THE TICKET IS YOUR SOURCE
 You are building a decision somebody already took, so everything it turned on
@@ -28,6 +47,11 @@ is written into the ticket itself: the numbers, the strings verbatim, and the
 small code pattern showing how the problem was already solved elsewhere. Work
 from that. It is there precisely so you do not have to reach the same quality
 by iteration.
+
+Verbatim strings are for the production surface, not for test() titles or
+assertions. A test-shaped acceptance list - "assert the four words", "one test
+per checkbox" - is a defect in the ticket: say so on the issue, and do not
+implement it as coverage.
 
 This project's planning research is gitignored and absent from a worktree by
 default. Under `tasks/` here you will find only the files THIS ticket cites,
@@ -40,7 +64,7 @@ If a pattern, a number or a string you need is missing from the ticket, SAY SO
 on the issue, then use the copied research to unblock yourself. Reporting it is
 not optional: a thin ticket is a coordinator defect that gets repaired for the
 next wave, and a gap you quietly work around stays a gap. Do NOT re-derive the
-pattern, and do not substitute an audit of protoArtoo's own code for it.
+pattern, and do not substitute an audit of protoR2's own code for it.
 
 NO SELF-IMPOSED BUDGETS
 You have no token budget to manage, no efficiency target, and no deadline.
@@ -69,19 +93,21 @@ The source code is the deliverable; tests are scaffolding that proves it.
 Spend your time on the change itself - is it wired in and called, are the
 rules it replaces actually deleted, did you miss call sites, is the result
 simpler to read than what was there. A module added beside the thing it was
-meant to replace is not the ticket, however well tested it is. Write focused
-tests, not exhaustive suites, and do not polish them; you will not be
-rejected for test naming, structure or volume, and you will be rejected for
-production code that does not do the job.
+meant to replace is not the ticket, however well tested it is.
 
-Weight your evidence toward BEHAVIOUR, not coverage. The gate's floor is ONE
-native test per production change - a floor, not a target, and nobody counts
-past it. What earns its keep is evidence the change does its job where it
-actually runs: a record the firmware really emits, a transcript from a board,
-an integration path exercised end to end. This epic's most valuable findings
-came from replaying a bench sheet against real hardware, not from unit tests -
-two live defects sat behind a fully green suite. If you are adding the
-fifteenth assertion to a parser table, stop and go prove the thing works.
+From 2026-11-01, when the suite pause has ended: write focused tests, not
+exhaustive suites, and do not polish them. You will not be rejected for test
+naming or structure, and you will be rejected for production code that does
+not do the job. One mutation per changed rule, proved able to fail, is the
+gate's expectation again. Until that date the next paragraph is the rule,
+and this one is not.
+
+DO NOT ADD A TEST OR A MUTATION PATCH. The suite pause above is the rule
+through 2026-10-31. A test the ticket already names in one sentence may stay
+in the diff; you do not invent one, and you do not run the suite to prove it.
+Copy, heading words, chip order, timing constants and visual anatomy stay on
+the ticket. The operator looks at the screen and the critic reads the
+production diff.
 
 Verification is sized to the project (AGENTS.md "Verification Scale"): a small
 hobby project with one user. Prove the change where it runs, once. Do not build
@@ -107,6 +133,15 @@ criteria are test-shaped and the epic is at PoC stage, say so on the issue
 rather than building the harness silently.
 
 SURFACE WORK - IF YOUR SLICE TOUCHES `data/`
+
+YOU OWN THE WHOLE PAGE, NOT YOUR DIFF. The operator, 2026-10-01: *"the workers
+need to align the page allover that they are working on. only focusing on the
+new stuff is simply bad work."* Any surface your slice touches is yours to
+bring into line end to end - every section on that page, including controls
+and copy that predate your ticket: one grid, one control family, card-scale
+text. "It came from older work" is not a reason to leave it. This is in scope
+without a ticket line saying so; it does not reach pages your slice does not
+touch.
 Load the project's `frontend-designer` skill BEFORE you write any markup, copy
 or CSS, and follow it. It carries the operator's standing review rules, and
 this project keeps paying for them in rejected iterations rather than reading
@@ -126,11 +161,18 @@ them once:
 - **Desktop width only.** Phone and tablet are out of scope; never put those
   widths in a test, a note or a screenshot.
 
-Do NOT stop for a look. Go end to end - tests, mutations, the gate and your
-report - and hand the surface over finished. The operator looks at every
+Do NOT stop for a look. Go end to end on the page, the build, and your
+report, and hand the surface over finished. Do not add the suite run. The operator looks at every
 surface once, live, at the Closing Ticket's bench session, not mid-epic
 (operator, 2026-09-29, the third time it was said). A ticket criterion, a
 handoff or an older brief that says "stop for a look" does not override this.
+
+DOCS LEVEL (AGENTS.md "Docs Level", operator 2026-10-06)
+A doc you write or touch carries no detail a minor UI change makes wrong:
+no exact button labels or copy strings, no click-by-click paths, no line
+numbers into source, no counts that move with every slice. Keep what a
+feature does, safety, hardware facts, commands, and API contracts. Cut a
+stale UI detail rather than patch it.
 
 BOUNDARIES
 - Operate ONLY inside {WORKTREE}. Never edit, checkout, stash, restore, or
@@ -163,6 +205,13 @@ BOUNDARIES
   (operator, 2026-10-01).
 - Never edit a shared test harness to accommodate the code under test; fix
   the code or report the conflict.
+- If you opened a browser, close it. Playwright here runs HEADED by default,
+  so every browser you open is a window left on the operator's desktop. Close
+  it with the runtime's browser-close tool as the last step of the check,
+  before you write your report - including a check that found nothing and a
+  check you abandoned. The `playwright` skill's Shutdown protocol is the
+  detail. Leaving one open has already cost the operator real desktop clutter
+  (2026-09-12).
 - If a stated requirement of the ticket cannot be met, STOP and report on
   the issue. Shipping the remainder while reporting the ticket complete is
   an automatic reject.
@@ -212,7 +261,13 @@ SLICE WORKFLOW (AGENTS.md, binding)
 
 VERIFICATION (software-verified cap)
 - One PlatformIO build runs on this machine at a time, and the tooling takes
-  the lock for you: run `make build`, `make test` and the slice gate plainly.
+  the lock for you: run `make build` plainly. `make test` is paused (#464)
+  and returns without running; do not follow it with `pio test`.
+  A build that exits 5 is the toolchain, not your code: the lock found a
+  PlatformIO penv past 6.1.19 and printed one fix line
+  (`<core>/penv/bin/uv pip install --python <core>/penv/bin/python
+  --reinstall-package pioarduino pioarduino==6.1.19`). Run that
+  line and nothing else, re-run the build, and say so in your report.
   Do NOT put `flock` in front - that nests two locks on one file and is
   refused (AGENTS.md "The build lock"). Other agents are building here at the
   same time; the lock serialises you, so do not wait for a window. Keep this
@@ -224,64 +279,39 @@ VERIFICATION (software-verified cap)
   until a number looks right; the coordinator owns the repair. Chase a number
   that disagrees with your brief instead of taking whichever reads better -
   three of this epic's most valuable findings came from exactly that.
-- Per-commit verification is a FAST, TARGETED step, not the full gate: the
-  existing tests covering what you touched, plus a build when you changed
-  something that compiles. Seconds to a minute, so a break is caught at the
-  commit that caused it.
-- Slice gate: run it ONCE, after your final commit, before you report - NOT
-  after every commit. It diffs merge-base..HEAD, so one run at the end covers
-  every commit in the slice; running it four times to land four commits buys
-  nothing and costs four full suites and four builds. Run
-  `python3 tools/slice_verify.py --base {BASE} --json {GATE_JSON}` (plus the
-  --fenced pathspecs below, if any, and --mutations with your mutation patches
-  when your diff touches web production JS) and paste its FULL block verbatim
-  into your status comment, provenance lines included (AGENTS.md "Worker slice
-  gate" - commit first; the gate diffs merge-base..HEAD). The coordinator
-  accepts the slice by checking {GATE_JSON} against your worktree with
-  `tools/accept_slice.py`, so: write the JSON to exactly that path; commit
-  everything before the run and nothing after it (a later commit makes the
-  block stale and sends the slice back); leave the tree clean but for
-  `data/fs-version.json` and `data/fw-version.json`. The gate runs the native
-  suite, the web suite, the mutation stage, the build, and the diff checks;
-  it fails on deleted test files, a shrinking test total, a flat test total
-  over production changes, a changed web production JS file no mutation
-  patch touches, or an edit to either verifier script. The waiver flags
-  (--expect-gate-edit, --expect-no-new-tests, --expect-no-mutations) are
-  coordinator-granted in this brief only - never self-granted; every ACK is
-  visible in the block. The coordinator re-runs the same command and
-  compares blocks, provenance included.
-- All pasted evidence carries process exit codes - never a hand-summarised
-  pass/fail line, and never a grep of the TAP `# fail` line (hangs vanish
-  from it; the exit code is the signal).
-- The ticket's acceptance checks, on top of the gate.
-- NEVER flash, never run make ota, never run pio test concurrently with any
-  OTA anywhere.
-- Tests you add or change must be PROVEN ABLE TO FAIL before you report
-  green: for bug fixes, run them against the pre-fix commit and show red;
-  then mutate the production code you fixed and show red. Web tests follow
-  test/test_web/README.md exactly. Mutation evidence is the gate block run
-  with --mutations - the gate applies each patch itself and fails unless
-  every mutation is KILLED by assertion and every changed web production JS
-  file is hit by at least one patch. Author patches against HEAD (edit,
-  `git diff > mX.patch`, revert); standalone
-  `python3 tools/mutation_verify.py <patches>` runs are for authoring only.
-  A test that fails only by hanging or timing out is not coverage. A green
-  run alone, or a hand-written mutation table, will be rejected.
-- A red run against old code happens in a THROWAWAY checkout, never by
-  writing old files over your worktree: `git worktree add --detach
-  /tmp/red-<n> <base>`, copy your test files in, run there, then `git
-  worktree remove --force` it. Wrap every hand-run test in `timeout 60`.
-  On 2026-09-29 a red run wrote old files in place, the test ran away at
-  about 1 GB/s, and the `; git checkout` restore chained after it never ran:
-  systemd-oomd killed the terminal holding every agent session, twice. Your
-  pane is memory-capped, so a runaway now kills only its own process - if a
-  command of yours dies with no message, check `journalctl --user --since
-  -5min | grep -i oom` before running it again, and never run it again
-  unchanged.
-- If the ticket's pinned comment provides a verification harness, run it and
-  paste its output verbatim; do not substitute your own summary of it.
+- Per-commit verification during the pause is the build, when you changed
+  something that compiles. Do not run the existing tests "to be sure".
+- Do not run `tools/slice_verify.py` in order to execute the suites. If a
+  pinned comment still names that command, run it once, as
+  `python3 tools/slice_verify.py --base {BASE} --json {GATE_JSON}`: the native,
+  web, and mutation rows skip themselves through 2026-10-31 and that skip is a
+  pass of the gate, not of the suite. The coordinator accepts the slice by
+  checking {GATE_JSON} against your worktree with `tools/accept_slice.py`,
+  so: write the JSON to exactly that path; commit everything before the run
+  and nothing after it (a later commit makes the block stale and sends the
+  slice back); leave the tree clean but for `data/fs-version.json` and
+  `data/fw-version.json`. Do not pass `--mutations`. Do not author
+  patches. The coordinator does not re-run it for the suites.
+- NEVER flash, never run make ota.
+- If the ticket's pinned comment provides a verification harness that is a
+  product suite or a mutation run, do not run it. Say so in the report. A
+  harness that is a build or a diff check still runs.
 
 REPORT
-Final status comment: slices with SHAs, verification evidence (including the
-red runs above), AGENTS.md verification label, and anything you could not
-prove with the reason.
+Final status comment: slices with SHAs, the build result when you built, and
+anything you could not prove with the reason. There is no suite block and no
+red-run block during the pause. Keep the comment to the frontier, under about
+20 KB. When it would pass that, post the current text as a new history comment
+and reset the marked one.
+
+Finish in this order: write the final status comment without the done line;
+run the gate, when your brief has one, as the last step; then add the done
+line (editing the status comment is not a commit, so it may follow the
+gate). The done signal is the last line of that comment, `WORKER_DONE: ok` or
+`WORKER_DONE: blocked`. A trailing `//` signature is not that line, and a
+later line that is not the token means the worker is not done. `{GATE_JSON}`
+alone is not the signal: it is written the moment the gate ends, report or
+not. The coordinator waits with
+`python3 tools/wait_worker.py --issue {ISSUE} --marker '{STATUS_MARKER}'`,
+adding `--file {GATE_JSON}` when your brief has a gate run; with both, ok
+needs both. An idle pane is not the signal.

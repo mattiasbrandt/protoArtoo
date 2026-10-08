@@ -15,6 +15,7 @@ void rcInputProcessorInit(RcInputProcessor* proc) {
     }
     for (size_t i = 0; i < RC_TRIGGER_MAX; ++i) {
         proc->triggerStates[i] = {};
+        proc->puppetStates[i] = {};
     }
     proc->domeInputFilter = {};
     proc->lastSoundPressed = false;
@@ -72,6 +73,13 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
             continue;
         }
 
+        // A Reaction is never evaluated on an RC frame, whatever the filter
+        // says: its condition is the droid's own state, read by ReactionTask
+        // whether or not a radio is fitted (#450).
+        if (rcBindingSourceIsDroidCondition(binding.source)) {
+            continue;
+        }
+
         // Filter triggers by source (SBUS1, SBUS2, PWM)
         if (input.sourceFilter != RC_BINDING_NONE && binding.source != input.sourceFilter) {
             continue;
@@ -79,6 +87,18 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
 
         // Get raw channel value (0-indexed)
         int raw = input.channels.channels[binding.channel - 1];
+
+        // A puppet string is a stick, not a press: it is never debounced and
+        // never dispatched as an action, so it cannot fire a cue, and it reads
+        // only its own slot - no drive or dome-speed binding (#442). A latched
+        // estop takes its leave to move, so it lets go of its Part and picks
+        // it up afresh once the estop clears and the stick moves.
+        if (binding.target == SERVO_ACTION_PUPPET_PART) {
+            output.puppet[i] = rcPuppetStep(&proc->puppetStates[i], binding,
+                                            rcPuppetPermille(raw, binding), input.nowMs,
+                                            input.puppetGapMs, !input.config.estopActive);
+            continue;
+        }
 
         // Build backbone binding config from trigger binding
         RcBindingConfig backbone = makeRcBindingConfig(
@@ -109,6 +129,7 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
 
             // Dispatch action
             output.triggerResults[i] = rcDispatchAction(ap);
+            output.triggerPressed[i] = dr.pressed;
 
             // Update stationary lock if action requested it
             if (output.triggerResults[i].setStationary) {

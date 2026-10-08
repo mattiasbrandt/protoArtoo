@@ -1,0 +1,366 @@
+"""Unit coverage for tools/check_component_registry_drift.py (#340).
+
+Two jobs, the same split `test_action_registry_drift.py` uses.
+
+**Fixtures prove each check can fail.** Every check is driven against a
+hand-written manifest with the defect planted in it, so "this check would catch
+that" is demonstrated rather than asserted. Before the checker moved into
+`tools/` the only way to show this was to mutate the real tree and put it back;
+these do it without touching a shipped file.
+
+**Live-tree assertions keep the slice gate covering the repo.** The gate runs
+`python3 -m unittest discover -s test/test_tools` as its `gate self-tests`
+stage and does not run `make check-component-drift`, so without the three
+`RealTree` cases below, moving the checker out of here would have taken the
+repo's own drift out of the gate. `make check-component-drift` and the CI step
+are the operator-facing entry points; these are what make the gate fail on a
+real drift.
+"""
+
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+
+import check_component_registry_drift as drift  # noqa: E402
+
+
+SUPPORTED = "COMPONENT_STATUS_SUPPORTED"
+ROADMAP = "COMPONENT_STATUS_ROADMAP"
+CONFIRMED = "COMPONENT_CONFIRMED_ON_DROID"
+NOT_CONFIRMED = "COMPONENT_NOT_CONFIRMED_ON_DROID"
+
+
+def manifest(categories: str = "", parts: str = "") -> str:
+    return f"{categories}\n{parts}\n"
+
+
+def write(tmp: str, name: str, text: str) -> Path:
+    path = Path(tmp) / name
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+class ManifestParsing(unittest.TestCase):
+    def test_a_row_spanning_several_lines_is_one_row(self):
+        # The Sound rows wrap, because a capability expression is long. A
+        # line-based parser would cut them in half and see columns that are
+        # not there.
+        text = manifest(parts='''PA_COMPONENT_PART(18, "dy_sv5w", "DY-SV5W", COMPONENT_CATEGORY_SOUND, "soft_uart_binary", COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,
+                  AudioDriver::AUDIO_CAP_STATUS_QUERY | AudioDriver::AUDIO_CAP_DEVICE_TYPE,
+                  nullptr, 1)''')
+        rows = drift.read_invocations(text, "PA_COMPONENT_PART")
+        self.assertEqual(1, len(rows))
+        self.assertEqual(drift.PART_COLUMNS, len(rows[0]))
+        self.assertEqual("dy_sv5w", drift.unquote(rows[0][1]))
+
+    def test_a_parenthesised_included_expression_is_one_column(self):
+        text = manifest(parts='PA_COMPONENT_PART(1, "a", "A", C, "p", COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID, 0, nullptr, (PA_BOARD == PA_BOARD_ARTOO_ESP32))')
+        rows = drift.read_invocations(text, "PA_COMPONENT_PART")
+        self.assertEqual(drift.PART_COLUMNS, len(rows[0]))
+        self.assertEqual("(PA_BOARD == PA_BOARD_ARTOO_ESP32)", rows[0][drift.PART_INCLUDED])
+
+    def test_a_comma_inside_a_string_does_not_split_a_row(self):
+        # "Hoverboard, hacked firmware" is a real row's name.
+        text = manifest(parts='PA_COMPONENT_PART(15, "hoverboard", "Hoverboard, hacked firmware", C, "p", COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 1)')
+        rows = drift.read_invocations(text, "PA_COMPONENT_PART")
+        self.assertEqual(drift.PART_COLUMNS, len(rows[0]))
+        self.assertEqual("Hoverboard, hacked firmware", drift.unquote(rows[0][2]))
+
+    def test_a_manifest_it_cannot_read_is_reported_not_raised(self):
+        # A checker that crashes on the file it reports on tells whoever broke
+        # it nothing.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write(tmp, "component_registry.inc", "// nothing here\n")
+            errors: list[str] = []
+            categories, parts = drift.load_manifest(path, errors)
+        self.assertEqual(([], []), (categories, parts))
+        self.assertTrue(any("produced no rows" in e for e in errors), errors)
+
+    def test_a_row_with_the_wrong_column_count_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write(tmp, "component_registry.inc",
+                         'PA_COMPONENT_CATEGORY(C, "c", "C", nullptr)\n'
+                         'PA_COMPONENT_PART(1, "a", "A", C, "p", COMPONENT_STATUS_SUPPORTED, 0)\n')
+            errors: list[str] = []
+            drift.load_manifest(path, errors)
+        self.assertTrue(any("columns, expected 10" in e for e in errors), errors)
+
+
+class CapabilityConsumers(unittest.TestCase):
+    """The check ADR 0042 scoped to supported rows."""
+
+    VOCABULARY = {"AUDIO_CAP_STATUS_QUERY": "0x01", "AUDIO_CAP_TRACK_COUNT": "0x04",
+                  "DRIVE_CAP_REPORTS_FEEDBACK": "0x01"}
+
+    def part(self, part_id="dy_sv5w", status=SUPPORTED, capabilities="AudioDriver::AUDIO_CAP_TRACK_COUNT"):
+        return [f"18", f'"{part_id}"', '"DY-SV5W"', "COMPONENT_CATEGORY_SOUND",
+                '"soft_uart_binary"', status, NOT_CONFIRMED, capabilities, "nullptr", "1"]
+
+    def run_check(self, parts, consumer_text):
+        with tempfile.TemporaryDirectory() as tmp:
+            files = [write(tmp, "consumer.js", consumer_text)]
+            errors: list[str] = []
+            drift.check_capability_consumers(parts, errors, files=files,
+                                             vocabulary=self.VOCABULARY)
+        return errors
+
+    def test_a_bit_with_a_real_consumer_passes(self):
+        errors = self.run_check(
+            [self.part()],
+            "const AUDIO_CAP_TRACK_COUNT = 0x04;\n"
+            "const supports = (caps & AUDIO_CAP_TRACK_COUNT) !== 0;\n",
+        )
+        self.assertEqual([], errors)
+
+    def test_a_bit_nothing_mentions_is_reported(self):
+        # The pre-#340 state: three drivers declared AUDIO_CAP_TRACK_COUNT and
+        # data/sound.js did not even mirror the constant.
+        errors = self.run_check([self.part()], "const unrelated = 1;\n")
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("AUDIO_CAP_TRACK_COUNT", errors[0])
+        self.assertIn("consulted by nothing", errors[0])
+
+    def test_a_mirror_that_nothing_branches_on_is_still_reported(self):
+        # The stealth case. A file that only DEFINES the constant would
+        # otherwise vouch for itself, which is what makes this check more than
+        # a grep.
+        errors = self.run_check([self.part()], "const AUDIO_CAP_TRACK_COUNT = 0x04;\n")
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("AUDIO_CAP_TRACK_COUNT", errors[0])
+
+    def test_the_bit_value_alone_is_not_a_consumer(self):
+        # An earlier draft accepted the VALUE as evidence of a consumer, which
+        # made this check pass with the bit consulted by nothing: 0x04 appears
+        # all over a firmware tree.
+        errors = self.run_check([self.part()], "const somethingElse = 0x04;\n")
+        self.assertEqual(1, len(errors), errors)
+
+    def test_a_roadmap_row_is_exempt(self):
+        # A roadmap row's capabilities have no driver to consume them by
+        # construction (ADR 0042), so scoping this to supported rows is the
+        # whole point. Declared alongside a supported row that IS consulted, so
+        # the run has something to pass on.
+        errors = self.run_check(
+            [self.part(),
+             self.part(part_id="dfplayer_mini", status=ROADMAP,
+                       capabilities="AudioDriver::AUDIO_CAP_STATUS_QUERY")],
+            "const supports = (caps & AUDIO_CAP_TRACK_COUNT) !== 0;\n",
+        )
+        self.assertEqual([], errors)
+
+    def test_a_bit_the_interface_header_does_not_define_is_reported(self):
+        errors = self.run_check(
+            [self.part(capabilities="AudioDriver::AUDIO_CAP_INVENTED")],
+            "const supports = (caps & AUDIO_CAP_INVENTED) !== 0;\n",
+        )
+        self.assertTrue(any("AUDIO_CAP_INVENTED" in e and "does not define it" in e
+                            for e in errors), errors)
+
+    def foot_drive(self, capabilities="DRIVE_CAP_REPORTS_FEEDBACK"):
+        return ["15", '"hoverboard"', '"Hoverboard, hacked firmware"', "COMPONENT_CATEGORY_FOOT_DRIVE",
+                '"hoverboard_gen2_uart"', SUPPORTED, NOT_CONFIRMED, capabilities,
+                '"PA_CAP_DRIVE_BACKEND_HOVERBOARD"', "PA_CAP_DRIVE_BACKEND_HOVERBOARD"]
+
+    def test_a_foot_drive_bit_nothing_reads_is_reported(self):
+        # Before #446 this check read AUDIO_CAP_* and nothing else, so a Foot
+        # Drive bit passed unexamined however few readers it had.
+        errors = self.run_check(
+            [self.part(), self.foot_drive()],
+            "const supports = (caps & AUDIO_CAP_TRACK_COUNT) !== 0;\n"
+            "const DRIVE_CAP_REPORTS_FEEDBACK = 0x01;\n",
+        )
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("DRIVE_CAP_REPORTS_FEEDBACK", errors[0])
+        self.assertIn("consulted by nothing", errors[0])
+
+    def test_a_foot_drive_bit_with_a_reader_passes(self):
+        errors = self.run_check(
+            [self.part(), self.foot_drive()],
+            "const supports = (caps & AUDIO_CAP_TRACK_COUNT) !== 0;\n"
+            "const reports = (caps & DRIVE_CAP_REPORTS_FEEDBACK) !== 0;\n",
+        )
+        self.assertEqual([], errors)
+
+    def test_a_bit_from_a_vocabulary_nobody_registered_is_reported(self):
+        # A family that gains bits without a line in VOCABULARIES would
+        # otherwise be read past, the way the Foot Drive's was.
+        errors = self.run_check(
+            [self.part(capabilities="DOME_CAP_INVENTED")],
+            "const supports = (caps & DOME_CAP_INVENTED) !== 0;\n",
+        )
+        self.assertTrue(any("DOME_CAP_INVENTED" in e and "no vocabulary" in e for e in errors),
+                        errors)
+
+    def test_a_registry_with_no_declared_capability_at_all_is_reported(self):
+        errors = self.run_check([self.part(capabilities="0")], "")
+        self.assertTrue(any("no supported row declares a capability" in e for e in errors),
+                        errors)
+
+
+class BoardCapabilityGates(unittest.TestCase):
+    GATES = {"PA_CAP_DRIVE_BACKEND_HOVERBOARD", "PA_CAP_NATIVE_WIFI"}
+
+    def part(self, gate, included):
+        return ["15", '"hoverboard"', '"Hoverboard"', "COMPONENT_CATEGORY_FOOT_DRIVE",
+                '"hoverboard_gen2_uart"', SUPPORTED, NOT_CONFIRMED, "0", gate, included]
+
+    def run_check(self, parts):
+        errors: list[str] = []
+        drift.check_board_capability_gates(parts, errors, gates=self.GATES)
+        return errors
+
+    def test_a_row_that_reports_the_gate_it_consults_passes(self):
+        errors = self.run_check([self.part('"PA_CAP_DRIVE_BACKEND_HOVERBOARD"',
+                                           "PA_CAP_DRIVE_BACKEND_HOVERBOARD")])
+        self.assertEqual([], errors)
+
+    def test_a_universal_row_passes(self):
+        errors = self.run_check([self.part("nullptr", "1")])
+        self.assertEqual([], errors)
+
+    def test_a_gate_no_manifest_declares_is_reported(self):
+        errors = self.run_check([self.part('"PA_CAP_INVENTED"', "PA_CAP_INVENTED")])
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("PA_CAP_INVENTED", errors[0])
+
+    def test_reporting_one_gate_and_consulting_another_is_reported(self):
+        # The defect a builder feels: they are told to check the wrong board
+        # fact for a part that is missing.
+        errors = self.run_check([self.part('"PA_CAP_NATIVE_WIFI"',
+                                           "PA_CAP_DRIVE_BACKEND_HOVERBOARD")])
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("does not consult it", errors[0])
+
+    def test_consulting_a_gate_while_reporting_none_is_reported(self):
+        errors = self.run_check([self.part("nullptr", "PA_CAP_DRIVE_BACKEND_HOVERBOARD")])
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("reports no gate", errors[0])
+
+
+class ConfirmedOnDroid(unittest.TestCase):
+    """Confirmed on a Droid is evidence about a supported row (#455)."""
+
+    def part(self, status, confirmed, part_id="syren10"):
+        return ["12", f'"{part_id}"', '"SyRen 10"', "COMPONENT_CATEGORY_DOME_ROTATION",
+                '"de_packet_serial"', status, confirmed, "0", "nullptr",
+                "1" if status == SUPPORTED else "0"]
+
+    def run_check(self, parts):
+        errors: list[str] = []
+        drift.check_confirmed_on_droid(parts, errors)
+        return errors
+
+    def test_a_roadmap_row_that_says_it_is_confirmed_is_reported(self):
+        # Nothing drives a roadmap product, so nothing can have run on a droid.
+        errors = self.run_check([self.part(ROADMAP, CONFIRMED)])
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("syren10", errors[0])
+        self.assertIn("roadmap row", errors[0])
+
+    def test_supported_rows_pass_either_way_and_an_unconfirmed_roadmap_row_passes(self):
+        errors = self.run_check([self.part(SUPPORTED, CONFIRMED), self.part(SUPPORTED, NOT_CONFIRMED),
+                                 self.part(ROADMAP, NOT_CONFIRMED)])
+        self.assertEqual([], errors)
+
+    def test_a_column_written_in_any_other_word_is_reported(self):
+        # The fixture readers match the two words; a bare 1 would compile and
+        # reach the browser fixtures as unconfirmed.
+        errors = self.run_check([self.part(SUPPORTED, "1")])
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("confirmed_on_droid", errors[0])
+
+
+class MemberKeys(unittest.TestCase):
+    def category(self, member_key):
+        return ["COMPONENT_CATEGORY_SOUND", '"sound"', '"Sound"', member_key]
+
+    def run_check(self, categories, settings_text):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = write(tmp, "config_settings.cpp", settings_text)
+            errors: list[str] = []
+            drift.check_member_keys(categories, errors, settings=settings)
+        return errors
+
+    @staticmethod
+    def settings(entries):
+        return "const ConfigSetting kConfigSettings[] = {\n" + entries + "\n};\n"
+
+    def test_the_key_of_a_member_setting_passes(self):
+        errors = self.run_check(
+            [self.category('"snd_member"')],
+            self.settings('    PA_MEMBER("soundMember", "components.audio.member", "snd_member", '
+                          'AtReboot, System, SystemConfig, sound_member, COMPONENT_CATEGORY_SOUND, "x"),'),
+        )
+        self.assertEqual([], errors)
+
+    def test_a_key_no_member_setting_declares_is_reported(self):
+        # Rename either half alone and the member silently stops surviving a
+        # reboot, with nothing else failing.
+        errors = self.run_check(
+            [self.category('"snd_member"')],
+            self.settings('    PA_MEMBER("soundMember", "components.audio.member", "snd_membr", '
+                          'AtReboot, System, SystemConfig, sound_member, COMPONENT_CATEGORY_SOUND, "x"),'),
+        )
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("snd_member", errors[0])
+
+    def test_the_key_of_a_setting_that_is_not_a_member_is_reported(self):
+        errors = self.run_check(
+            [self.category('"snd_member"')],
+            self.settings('    PA_BOOL("x", "a.b", "snd_member", AtReboot, System, SystemConfig, x, false),'),
+        )
+        self.assertEqual(1, len(errors), errors)
+
+    def test_a_family_with_no_member_setting_is_not_asked_for_one(self):
+        errors = self.run_check([self.category("nullptr")], self.settings(""))
+        self.assertEqual([], errors)
+
+
+class RealTree(unittest.TestCase):
+    """The repo's own state, so the slice gate still fails on a real drift.
+
+    The gate runs this directory, not `make check-component-drift`. Without
+    these three, moving the checker into `tools/` would have taken the repo's
+    own Component Registry out of the gate entirely.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.errors: list[str] = []
+        cls.categories, cls.parts = drift.load_manifest(drift.MANIFEST, cls.errors)
+        if cls.errors:
+            raise AssertionError(f"the shipped manifest does not parse: {cls.errors}")
+
+    def test_every_capability_a_supported_row_declares_has_a_consumer(self):
+        errors: list[str] = []
+        drift.check_capability_consumers(self.parts, errors)
+        self.assertEqual([], errors)
+
+    def test_every_familys_vocabulary_is_read(self):
+        errors: list[str] = []
+        names = drift.all_capability_bit_names(errors)
+        self.assertEqual([], errors)
+        self.assertIn("AUDIO_CAP_TRACK_COUNT", names)
+        self.assertIn("DRIVE_CAP_REPORTS_FEEDBACK", names)
+
+    def test_every_named_gate_exists_and_is_the_one_the_row_consults(self):
+        errors: list[str] = []
+        drift.check_board_capability_gates(self.parts, errors)
+        self.assertEqual([], errors)
+
+    def test_no_roadmap_row_is_confirmed_on_a_droid(self):
+        errors: list[str] = []
+        drift.check_confirmed_on_droid(self.parts, errors)
+        self.assertEqual([], errors)
+
+    def test_every_declared_member_key_is_a_member_settings_key(self):
+        errors: list[str] = []
+        drift.check_member_keys(self.categories, errors)
+        self.assertEqual([], errors)
+
+
+if __name__ == "__main__":
+    unittest.main()

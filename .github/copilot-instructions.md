@@ -1,4 +1,4 @@
-# Copilot Instructions - protoArtoo
+# Copilot Instructions - protoR2
 
 Adapter file for GitHub Copilot.
 Canonical cross-agent instructions live in `AGENTS.md` at repository root.

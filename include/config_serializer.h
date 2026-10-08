@@ -12,6 +12,8 @@
 
 #include "config_store.h"
 #include "config_io.h"
+#include "servo_legacy_field_sets.h"  // ServoLegacyNarrowing
+#include "servo_output_row.h"
 
 // configDeserialize: Load a ConfigSnapshot from a ConfigReader.
 // Applies defaults from configSnapshotDefaults(), then overwrites with stored values.
@@ -27,7 +29,6 @@ bool configSerialize(const ConfigSnapshot& snap, ConfigWriter& writer);
 // Domain-level serializers (used by domain-specific save functions in config_store)
 bool configSerializeDrive(const DriveConfig& cfg, ConfigWriter& w);
 bool configSerializeAudio(const AudioConfig& cfg, ConfigWriter& w);
-bool configSerializeServo(const ServoConfig& cfg, ConfigWriter& w);
 bool configSerializeDome(const DomeConfig& cfg, ConfigWriter& w);
 bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w);
 bool configSerializeWifi(const WifiConfig& cfg, ConfigWriter& w);
@@ -36,7 +37,51 @@ bool configSerializeWifi(const WifiConfig& cfg, ConfigWriter& w);
 // Each fills *out with defaults then overwrites with stored values.
 void configDeserializeDrive(const ConfigReader& r, DriveConfig* out);
 void configDeserializeAudio(const ConfigReader& r, AudioConfig* out);
-void configDeserializeServo(const ConfigReader& r, ServoConfig* out);
 void configDeserializeDome(const ConfigReader& r, DomeConfig* out);
+// Whether the dome ESC pulse set in NVS is out of order, which the dome
+// deserialisers above answer with the defaults (#417). For the loader's
+// warning: the deserialisers are pure and cannot say so themselves.
+bool configDomePulsesStoredOutOfOrder(const ConfigReader& r);
 void configDeserializeSystem(const ConfigReader& r, SystemConfig* out);
 void configDeserializeWifi(const ConfigReader& r, WifiConfig* out);
+
+// -----------------------------------------------------------------------------
+// Addressed Servo Output rows (ADR 0041)
+//
+// The only place an endpoint is stored (#345), on their own keys, and
+// deliberately NOT part of ConfigSnapshot: the snapshot crosses three nested
+// stack frames on the serial config-write path and the table is far larger than
+// any field this schema has added before (see the static_assert in
+// config_store.h for why that number is load-bearing).
+//
+// One key holds the row count and one string key holds each row. A save writes
+// the count and rows 0..count-1, so a record left above the count by an earlier
+// larger table is never read; the save that raises the count again writes those
+// rows in the same pass.
+// -----------------------------------------------------------------------------
+bool configSerializeServoOutputCount(uint8_t count, ConfigWriter& w);
+bool configSerializeServoOutputRow(uint8_t index, const ServoOutputRow& row, ConfigWriter& w);
+
+// Fills *out with servoOutputTableDefaults() then overwrites with stored rows.
+// A row whose record exists but cannot be read is repaired field by field and
+// counted in *report.
+//
+// A row whose key is absent crosses the bridge instead (#286): it adopts
+// whatever the fixed key set addressed to its channel still holds in NVS, so a
+// builder's existing calibration arrives on the rows on first read, with no
+// migration marker to keep and no write on the boot path. A stored row always
+// wins over the old form, which is what makes the adoption idempotent -- it
+// stops mattering for a row the moment that row is saved, and
+// configSaveServoOutputs() then removes the old keys. The key names are
+// include/servo_legacy_field_sets.h's. The only repair an adoption can report
+// is a pulse width the component band had to move, and it is counted like any
+// other.
+//
+// *narrowing, when given, names the rows that still stand where the band put
+// `main`'s pair, with that pair: their keys are kept by the next save, and GET
+// /api/servo/outputs reports the pair, until the builder saves that Output
+// (#417). *report also says whether the retired lit wire was adopted and onto
+// which Output, so the loader can tick it wired.
+void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
+                                   ServoOutputRepairReport* report,
+                                   ServoLegacyNarrowing* narrowing = nullptr);

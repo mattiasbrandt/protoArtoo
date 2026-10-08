@@ -1,96 +1,118 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/wifi.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/wifi.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>WiFi - protoArtoo</title>
+    <title>WiFi - protoR2</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
-    <!-- PA:INCLUDE _recovery_kernel.html -->
+    <!-- Thin delegate. This file is the one copy of this surface's markup and
+         the Operator Shell fetches it; fetching never runs scripts, so this
+         line is inert for the shell. A browser that lands here directly -- a
+         bookmark, an old link, a support conversation -- is handed to the shell
+         at this surface's route instead, so the address keeps opening what it
+         names (ADR 0048). -->
+    <script>window.PAShellDelegate = true; location.replace("/#wifi");</script>
   </head>
   <body data-page="wifi">
-    <div id="shell-top"></div>
 
+    <!-- The title is the name in the nav (ADR 0066). Every act here is named beside the thing it acts on, so the title carries none of
+         its own. -->
+    <div class="title">
+      <div>
+        <h1>WiFi</h1>
+      </div>
+    </div>
+
+    <!-- What the droid is doing on the network right now. The section head's
+         subtitle is the posture the controller answered with, and the plate's
+         left edge carries its signal color: amber where the builder has
+         something to do, red where the droid tried and failed (GLOSSARY.md
+         "Status Color"). -->
     <div class="card" id="wifi-posture-card">
-      <div class="card-header-row">
-        <h3>📶 Network Posture</h3>
-        <span id="wifi-pending-summary" class="status-pill pill-info status-pill-compact">Loading</span>
-      </div>
-      <div class="desc" id="wifi-posture-desc">Loading WiFi posture...</div>
-      <div class="status-grid mt-16">
-        <dl>
-          <div class="status-item">
-            <dt>Device setup</dt>
-            <dd id="wifi-provisioning-state">--</dd>
-          </div>
-          <div class="status-item">
-            <dt>Active posture</dt>
-            <dd id="wifi-active-mode">--</dd>
-          </div>
-          <div class="status-item">
-            <dt>Client connection</dt>
-            <dd id="wifi-client-state">--</dd>
-          </div>
-          <div class="status-item">
-            <dt>Signal</dt>
-            <dd id="wifi-signal">--</dd>
-            <div class="desc mt-6">RSSI: <span id="wifi-rssi">--</span> dBm</div>
-          </div>
-          <div class="status-item">
-            <dt>STA IP</dt>
-            <dd id="wifi-sta-ip">--</dd>
-          </div>
-          <div class="status-item">
-            <dt>AP IP</dt>
-            <dd id="wifi-ap-ip">--</dd>
-          </div>
-        </dl>
-      </div>
-      <div class="section-label mt-16">Active vs Saved Settings</div>
-      <div class="wifi-compare-grid mt-12">
+      <div class="sect"><h2>Network posture</h2><span class="sub waiting" id="wifi-pending-summary"></span></div>
+      <p class="note waiting" id="wifi-posture-desc"></p>
+      <!-- The readouts ARE the grid. A .status-grid wrapping an unclassed <dl>
+           makes the list the one grid item and every reading sits at full
+           width; Maintenance and Foot Drive both carry <dl class="status-grid">, and
+           that is the spelling matched here. -->
+      <dl class="status-grid">
+        <div class="status-item">
+          <dt>Device setup</dt>
+          <dd id="wifi-provisioning-state">&mdash;</dd>
+        </div>
+        <div class="status-item">
+          <dt>Active posture</dt>
+          <dd id="wifi-active-mode">&mdash;</dd>
+        </div>
+        <div class="status-item">
+          <dt>Client connection</dt>
+          <dd id="wifi-client-state">&mdash;</dd>
+        </div>
+        <div class="status-item">
+          <dt>Signal</dt>
+          <dd id="wifi-signal">&mdash;</dd>
+        </div>
+        <div class="status-item">
+          <dt>Client address</dt>
+          <dd id="wifi-sta-ip">&mdash;</dd>
+        </div>
+        <div class="status-item">
+          <dt>AP address</dt>
+          <dd id="wifi-ap-ip">&mdash;</dd>
+        </div>
+      </dl>
+      <p class="hint">Closer to zero is stronger. Below -85 dBm, pages drop out mid-load.</p>
+    </div>
+
+    <!-- Two easily-confused things, defined side by side at the point of
+         confusion (docs/ui-copy-voice.md rule 9): what is running now, and what
+         the next boot would start. -->
+    <div class="card">
+      <div class="sect"><h2>Active against saved</h2><span class="sub waiting" id="wifi-compare-state"></span></div>
+      <div class="wifi-compare-grid">
         <dl class="wifi-summary-list" aria-label="Active network settings">
           <dt>Active now</dt>
-          <dd id="wifi-active-summary-mode">--</dd>
+          <dd id="wifi-active-summary-mode">&mdash;</dd>
           <dt>Network</dt>
-          <dd id="wifi-active-summary-network">--</dd>
+          <dd id="wifi-active-summary-network">&mdash;</dd>
           <dt>Address</dt>
-          <dd id="wifi-active-summary-address">--</dd>
+          <dd id="wifi-active-summary-address">&mdash;</dd>
         </dl>
         <dl class="wifi-summary-list" aria-label="Saved network settings">
           <dt id="wifi-saved-summary-title">Saved after reboot</dt>
-          <dd id="wifi-saved-summary-mode">--</dd>
+          <dd id="wifi-saved-summary-mode">&mdash;</dd>
           <dt>Client network</dt>
-          <dd id="wifi-saved-summary-sta">--</dd>
+          <dd id="wifi-saved-summary-sta">&mdash;</dd>
           <dt>AP network</dt>
-          <dd id="wifi-saved-summary-ap">--</dd>
+          <dd id="wifi-saved-summary-ap">&mdash;</dd>
         </dl>
       </div>
     </div>
 
     <div class="card" id="wifi-settings-card">
-      <h3>💾 Device WiFi Settings</h3>
-      <div class="desc">Save network settings first. The active connection changes after the controller reboots.</div>
-      <form id="wifi-settings-form" class="wifi-settings-form mt-16" novalidate>
-        <div class="section-label">Mode</div>
+      <div class="sect"><h2>Device WiFi settings</h2><span class="sub">saved now &middot; active at the next boot</span></div>
+      <form id="wifi-settings-form" novalidate>
+        <div class="sect"><h3>Mode</h3><span class="sub">pick one</span></div>
         <div class="wifi-mode-options" role="radiogroup" aria-label="WiFi mode">
           <label class="wifi-mode-option" for="wifi-mode-client">
             <input id="wifi-mode-client" name="wifiMode" type="radio" value="client" required>
             <span>
-              <span class="wifi-mode-title">🌐 WiFi Client Mode</span>
-              <span class="desc">Join the operator's WiFi network.</span>
+              <span class="wifi-mode-title">WiFi Client Mode</span>
+              <span class="hint">The droid joins your network. Reach it by name from any machine on it.</span>
             </span>
           </label>
           <label class="wifi-mode-option" for="wifi-mode-standalone-ap">
             <input id="wifi-mode-standalone-ap" name="wifiMode" type="radio" value="standalone_ap" required>
             <span>
-              <span class="wifi-mode-title">📡 Standalone AP Mode</span>
-              <span class="desc">Host the controller WiFi network.</span>
+              <span class="wifi-mode-title">Standalone AP Mode</span>
+              <span class="hint">The droid hosts its own network and you join it. For a field away from home.</span>
             </span>
           </label>
         </div>
 
-        <div class="section-label">🌐 WiFi Client Settings</div>
-        <div class="wifi-settings-grid mt-12">
+        <div class="sect"><h3>Client network</h3><span class="sub">the network it joins</span></div>
+        <div class="wifi-settings-grid">
           <label class="field" for="wifi-sta-ssid">
             <span>Network name</span>
             <input id="wifi-sta-ssid" name="staSsid" type="text" maxlength="32" autocomplete="off" spellcheck="false">
@@ -99,13 +121,13 @@
           <label class="field" for="wifi-sta-password">
             <span>Password</span>
             <input id="wifi-sta-password" name="staPassword" type="password" maxlength="63" autocomplete="new-password">
-            <span id="wifi-sta-password-hint" class="desc">Blank keeps the saved password.</span>
+            <span id="wifi-sta-password-hint" class="hint">Blank keeps the saved password.</span>
             <span id="wifi-sta-password-error" class="field-error-message" role="alert"></span>
           </label>
         </div>
 
-        <div class="section-label mt-16">📡 Standalone AP Settings</div>
-        <div class="wifi-settings-grid mt-12">
+        <div class="sect"><h3>The droid's own network</h3><span class="sub">the network it hosts</span></div>
+        <div class="wifi-settings-grid">
           <label class="field" for="wifi-ap-ssid">
             <span>Network name</span>
             <input id="wifi-ap-ssid" name="apSsid" type="text" maxlength="32" autocomplete="off" spellcheck="false">
@@ -114,35 +136,35 @@
           <label class="field" for="wifi-ap-password">
             <span>Password</span>
             <input id="wifi-ap-password" name="apPassword" type="password" maxlength="63" autocomplete="new-password">
-            <span id="wifi-ap-password-hint" class="desc">Blank keeps the saved password.</span>
+            <span id="wifi-ap-password-hint" class="hint">Blank keeps the saved password.</span>
             <span id="wifi-ap-password-error" class="field-error-message" role="alert"></span>
           </label>
         </div>
 
-        <div class="button-row button-row-compact mt-16">
-          <button id="wifi-save-settings-button" class="btn accent" type="submit">💾 Save Settings</button>
-          <button id="reload-wifi-button" class="btn" type="button">🔄 Refresh</button>
+        <div class="button-row button-row-compact">
+          <button id="wifi-save-settings-button" class="btn btn-sm accent icon-act" type="submit"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-content-save-outline"/></svg><span class="act-label">Save settings</span></button>
+          <button id="reload-wifi-button" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg><span class="act-label">Refresh</span></button>
         </div>
-        <div id="wifi-settings-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading WiFi settings...</div>
+        <div id="wifi-settings-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading WiFi settings...</div>
       </form>
     </div>
 
+    <!-- The one act on this surface that touches the droid rather than the
+         page, so it sits apart on its own plate with the consequence beside it
+         (docs/ui-copy-voice.md rule 12). -->
     <div class="card" id="wifi-apply-card">
-      <h3>🔄 Staged Network Switch</h3>
-      <div id="wifi-apply-guidance" class="desc">Loading reconnect guidance...</div>
-      <div class="button-row button-row-compact mt-16">
-        <button id="wifi-apply-reboot-button" class="btn danger" type="button" disabled>🔄 Reboot to Apply</button>
+      <div class="sect"><h2>Staged network switch</h2><span class="sub waiting" id="wifi-apply-state"></span></div>
+      <p class="prose waiting" id="wifi-apply-guidance"></p>
+      <div class="button-row button-row-compact">
+        <button id="wifi-apply-reboot-button" class="btn btn-sm danger icon-act" type="button" disabled><svg class="i" aria-hidden="true" focusable="false"><use href="#i-restart"/></svg><span class="act-label">Reboot to Apply</span></button>
       </div>
-      <div id="wifi-apply-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
+      <p class="hint">Refused while nothing is staged. The reboot drops this page.</p>
+      <div id="wifi-apply-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
-
-    <div id="shell-status"></div>
-
 
     <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
          fetches /page_bootstrap.js itself, with retry, and hands it the script
          chain from <html data-scripts>. A bare tag has no retry, and the
          controller sheds connections in the opening burst by design. -->
-
   </body>
 </html>

@@ -17,14 +17,6 @@ other halves and are not repeated here:
 - [console-protocol.md](console-protocol.md) - the wire format the records below
   are printed in.
 
-> [!WARNING]
-> **`system.config.log-level value=<x>` over serial panics the controller today.**
-> That is a live firmware defect tracked on #226, not something this client
-> causes, and it is in `tools/bench_rows/`'s `scalar-config-and-commanded-modes`
-> row - so a replay of a whole sheet will meet it. Reading the value
-> (`system.config.log-level` with no argument) is fine; writing one over serial
-> is not, until #226 closes.
-
 ---
 
 ## Which mode you want
@@ -37,7 +29,7 @@ other halves and are not repeated here:
 
 The mode also decides how much the program tells you about itself: only
 **scripted** mode prints the [provenance header](#the-provenance-header) and
-only scripted mode [colours](#colour) record lines.
+only scripted mode [colors](#color) record lines.
 
 ---
 
@@ -117,7 +109,7 @@ A board's mDNS name is **configurable by design**, so guess it in an order rathe
 than pinning one. The compiled-in default is `WIFI_MDNS_HOST`
 (`include/config.h`) - `artoo` on artoo-esp32, `firebeetle2` on a FireBeetle 2,
 so the two never contest one LAN. But when an operator sets a Droid Name and
-ticks *Use as network hostname (mDNS)* on the **Setup** page (`mdnsUseName` in the
+uses it as the network hostname on Configuration (`mdnsUseName` in the
 API), *that* name, lowercased, is what the board advertises, and the compiled
 default is only the fallback (`configResolvedMdnsHostname()`,
 `src/config_store.cpp`).
@@ -125,7 +117,7 @@ default is only the fallback (`configResolvedMdnsHostname()`,
 | # | Try | Where the name comes from |
 |---|---|---|
 | 1 | `http://artoo.local`, or `http://firebeetle2.local` | The compiled default. This is the right **first** attempt, and the one a tool or an agent should make when it knows nothing else about the board. |
-| 2 | `http://<droid-name>.local` | The configured name: `GET /api/identity` -> `droidName`, advertised whenever `mdnsUseName` is true. A droid named `protoartoo` answers at `protoartoo.local` and **not** at `artoo.local`. |
+| 2 | `http://<droid-name>.local` | The configured name: `GET /api/identity` -> `droidName`, advertised whenever `mdnsUseName` is true. A droid named `protor2` answers at `protor2.local` and **not** at `artoo.local`. |
 | 3 | `http://<ip>` | The WiFi Client address (`staIp` in `GET /api/wifi`), or your network's lease table. Never guessable, always right. |
 
 **Step 1 failing is not evidence the board is offline.** The ordinary meaning is
@@ -147,8 +139,8 @@ host that is not there is a different thing: that fails, and exits 1.
 ### Transports
 
 `--port <device>` (default `/dev/ttyUSB0`) is the serial adapter. `--http
-<base-url>` is the browser adapter - the same `POST /api/console` the dashboard's
-Live Logs box uses. Every `send` and `sendlen` works on both, and the HTTP
+<base-url>` is the browser adapter - the same `POST /api/console` the Dashboard's
+Console uses. Every `send` and `sendlen` works on both, and the HTTP
 transport re-renders the JSON it gets back into the serial line grammar, so a
 transcript from one adapter diffs line for line against the other. That is what
 makes a parity check a one-program job.
@@ -165,6 +157,11 @@ ERROR: listen is serial-only (no continuous stream to watch over --http)
 Scripted mode also refuses `--pyserial`, and refuses to be combined with
 `--interactive`, `--stream` or `--until`.
 
+Beside either transport, a sheet can also make plain requests to the droid's own
+HTTP routes with the [`http` directive](#the-http-directive-the-droids-own-routes).
+That is a side channel, not a third transport: it never carries a Console
+command, and it needs the droid's address even on a serial run.
+
 ### The directives
 
 One per line in a `--script` file. Blank lines and `#` comments are ignored. An
@@ -178,8 +175,9 @@ unknown directive stops the run - nothing is skipped silently.
 | `sendlen` | `N [prefix]` | both | Builds a line of exactly N bytes - the prefix kept whole and padded with `x`, or cut to N if it is already longer - and sends it as `send` would. This is how an overflow row is written. |
 | `listen` | seconds | serial | Watches without sending for that long, **and** sets the window later `raw`/`key` directives use. |
 | `settle` | seconds | serial | How long to wait before the **first** send, so an attach reprint lands before your command does. A later `settle` changes nothing once that first send has happened. Ignored over HTTP. |
-| `timeout` | seconds | both | How long later `send`/`sendlen` wait for the group to close. Starts at 8.0, or at `--timeout` if you gave one. |
+| `timeout` | seconds | both | How long later `send`/`sendlen` wait for the group to close, and how long an `http` step waits for its answer. Starts at 8.0, or at `--timeout` if you gave one. |
 | `pause` | message | both | Prints `[PAUSE] <message>` and waits for Enter on the controlling terminal. With no terminal to wait on it is an error, not a skip. |
+| `http` | `GET <path> [> FILE]` or `POST <path> [key=value ...] [> FILE]` | both | One request to the droid's own routes at `--http-base`, printed into the transcript; `> FILE` also keeps the answer in `--run-dir`. See [below](#the-http-directive-the-droids-own-routes). |
 | `@row` | `<ticket> <name>` | both | Starts a row block - see [Bench sheets](#bench-sheets-and-row). |
 
 `settle` defaults to 0.3 s (`--settle`), and `listen` to 2.0 s until a `listen`
@@ -210,7 +208,75 @@ python3 tools/console_client.py --port /dev/ttyACM0 \
 ```
 
 **`--sendlen` takes one argument, so quote it**: `--sendlen '70 sys.status.'`.
-Written as two words the argument parser rejects the second one.
+Written as two words the argument parser rejects the second one. The same goes
+for `http`, whose flag is `--http-step` (`--http` was already the transport):
+`--http-step 'GET /api/status'`.
+
+### The `http` directive: the droid's own routes
+
+A bench row often needs a plain request beside its Console commands: keep
+`GET /api/config` before a flash, or `POST /api/config rcMember=rc_radio` before a
+reboot. A sheet writes those as `http` steps rather than asking a person to make
+them at a `pause`:
+
+```
+http GET /api/config > before-flash-config.json
+http POST /api/config rcMember=rc_radio
+http POST /api/manual-command command=#st
+http GET /api/seq?name=wave
+```
+
+| Part | Rule |
+|---|---|
+| Method | `GET` or `POST`, in capitals. Nothing else is accepted. |
+| Path | Starts with a single `/`. The host never appears in the sheet; it comes from `--http-base`. A query rides in the path. |
+| `key=value` pairs | POST only, sent `application/x-www-form-urlencoded` in the order written - the way the droid's routes read their parameters and the dashboard sends them. A repeated key is sent twice. Tokens split with shell quoting, so a value with a space is written `droidName="R2 D2"`. A POST with no pairs sends an empty body. |
+| `> FILE` | Optional, last on the line. Also writes the raw answer body to `FILE` inside `--run-dir`. The name is letters, digits, `.`, `_` and `-` only - no path, no leading dot. |
+
+A malformed step is refused when the sheet loads, before anything is sent.
+
+**Where it goes.** `--http-base http://<droid>` names the droid (see
+[Finding `<controller>`](#finding-controller)); on an `--http` run it defaults to
+that same base. A kept answer needs `--run-dir <directory>`, which is created if
+it is missing. A file that is already there is **never overwritten**: a replayed
+row cannot quietly replace a before-the-flash copy with an after one, so give
+each run its own directory. `tasks/` is gitignored and a natural home for one.
+
+**What it prints.** The step's marker, the answer's status line, then the body
+as the droid sent it:
+
+```
+--- http POST http://10.0.0.22/api/config body=b'rcMember=rc_radio' ---
+HTTP 200 OK (1834 bytes, application/json)
+{"ok":true,...}
+--- kept /home/me/protoR2/tasks/bench-run/after.json (1834 bytes, HTTP 200) ---
+```
+
+**No verdict, ever.** Any HTTP status - a `404`, a `400` refusal, a `500` - is the
+droid answering, is printed like any other answer, can be kept, and never changes
+the exit code, exactly as a `status=err` record does not. Only *no answer at all*
+is a failed step: the connection refused, no answer within the current
+`timeout`, the peer hanging up mid-answer, or an answer that could not be kept.
+That prints `[HTTP-FAILED] <method> <url>: <why>`, the run **carries on** to the
+next directive, and the run exits `5`.
+
+**Refused before anything runs.** The checks are made on the rows actually
+selected, before the port is opened, and the refusal names the rows so you know
+what to pass or what to leave out with `--rows`:
+
+```
+ERROR: these rows send `http` steps and there is no --http-base to send them to: 413 before-the-flash, 355 the-image-is-what-we-think. Pass --http-base http://<droid>, or --no-http on a board with no network, or leave those rows out with --rows.
+ERROR: these rows keep HTTP answers with `> FILE` and there is no --run-dir to keep them in: 413 before-the-flash. Pass --run-dir <directory>.
+```
+
+**A board with no network.** `--no-http` asserts it (FireBeetle board 1, whose
+C6 cannot be flashed). Every `http` step then prints
+`[HTTP-SKIPPED] <method> <path>: --no-http (this board has no network)` and sends
+nothing, so the row's Console commands still run and the transcript says what was
+not done. It is refused alongside `--http` or `--http-base`, which name a network.
+
+**It is a request, not an assertion.** Like the rest of a sheet, an `http` step
+carries only what to ask; what the answer must say stays on the ticket.
 
 ### What the run prints
 
@@ -228,23 +294,32 @@ the `[console] <port> @ ... (scripted)` attach line and any error go to stderr.
 | `[ADAPTER-CAPPED] ...` | The adapter said it could not carry the whole answer. |
 | `[ANOMALY] blank line inside record group id=<n>` | A wire oddity, reported where it happened - never treated as the loss signal itself. |
 | `--- gap: ... ---` / `--- reattached: ... ---` | The port vanished mid-run and came back; see [Detach](#a-detach-mid-run). |
+| `--- http <method> <url> [body=b'...'] ---` | An `http` step about to go out, with the exact form body a POST sends. |
+| `HTTP <code> <reason> (<n> bytes, <type>)` | The droid's answer to it, followed by the body as sent. Any status is an answer. |
+| `--- kept <path> (<n> bytes, HTTP <code>) ---` | The answer was written to `<path>` in `--run-dir`. |
+| `[HTTP-FAILED] <method> <url>: <why>` | No answer at all, or one that could not be kept. The run carries on. |
+| `[HTTP-SKIPPED] <method> <path>: --no-http ...` | Nothing was sent: `--no-http` said this board has no network. |
 
 ### Exit codes
 
 | Code | Meaning |
 |---|---|
 | `0` | Every request closed, nothing was dropped, nothing was capped. |
-| `1` | The run could not proceed at all: a malformed directive, one used on the wrong adapter, a port that would not open, an unreachable HTTP host, or a `--rows` name the sheet does not have. |
+| `1` | The run could not proceed at all: a malformed directive or an unreadable sheet, one used on the wrong adapter, a port that would not open, an unreachable `--http` Console host, a `--rows` name the sheet does not have, or selected `http` rows with no `--http-base` (or no `--run-dir` for the answers they keep). |
 | `2` | At least one request never closed within its timeout. |
 | `3` | A closing record carried `dropped=`, so the firmware itself reported loss. |
 | `4` | The adapter reported it could not carry the whole answer: HTTP 500 `response too large for this adapter`, or a 200 whose envelope carries `"truncated":true`. |
+| `5` | At least one `http` step got no answer at all, or its answer could not be kept (`[HTTP-FAILED]`). |
 
-One run reports **one** code: the highest one it saw, because the higher number
-is the more specific finding.
+One run reports **one** code: the highest one it saw. Up to 4, the higher number
+is the more specific finding; 5 ranks above them because it means evidence a row
+exists to collect is missing from the transcript entirely, where 2-4 describe an
+answer that is there but incomplete.
 
 > [!IMPORTANT]
-> **A `status=err` record is data, and never changes the exit code.** A record
-> reading `status=err outcome=unavailable reason=not-in-this-build` is the
+> **A `status=err` record is data, and never changes the exit code** - nor does
+> an `http` step's `404` or `400`. A record reading
+> `status=err outcome=unavailable reason=not-in-this-build` is the
 > Console answering your question correctly - the question just had a negative
 > answer. The run still exits `0`. The exit codes above are about whether the
 > *transport* delivered the conversation, never about whether the droid liked
@@ -298,17 +373,46 @@ make bench-rows BENCH_ROWS=tools/bench_rows/firebeetle2.txt ROWS=discovery,respo
 make bench-rows BENCH_ROWS=tools/bench_rows/firebeetle2.txt SKIP_MANUAL=1
 ```
 
+`python3 tools/console_client.py --check-sheet <file>` checks the sheet and exits without opening a port: every `@row` has a label, labels are unique, and every directive is one this client knows.
+
 `--skip-manual` drops every row containing a `pause`, which is what makes a sheet
-runnable by an agent with nobody at the bench. It applies on top of `--rows`. A
-name that is not in the sheet is refused with the list of names that are:
+runnable by an agent with nobody at the bench. It applies on top of `--rows`. An
+`http` step needs no person, so it never makes a row manual - but a selected row
+that has one needs `--http-base` (and `--run-dir` if it keeps an answer), or
+`--no-http` on a board with no network; `make bench-rows` passes them as
+`HTTP_BASE=`, `RUN_DIR=` and `NO_HTTP=1`:
+
+```bash
+make bench-rows BENCH_ROWS=tools/bench_rows/artoo_esp32.txt SKIP_MANUAL=1 \
+  HTTP_BASE=http://10.0.0.22 RUN_DIR=tasks/bench-run-artoo
+make bench-rows BENCH_ROWS=tools/bench_rows/firebeetle2.txt SKIP_MANUAL=1 NO_HTTP=1
+```
+
+A name that is not in the sheet is refused with the list of names that are:
 
 ```
 ERROR: --rows: unknown row name(s) nope; available: detach-replug, discovery, ...
 ```
 
+The automated half of a bench session - these rows, the console sweep and
+every Playwright script, with a memory log beside them - is one command,
+`make bench-auto` (`tools/bench_auto.py`). It replays the sheet with
+`--skip-manual` exactly as above, then reports what each step did to the
+controller's heap. It is for a Bench-Mode session: the run must begin with the
+estop clear, and the runner then latches or clears it before each browser
+script to match the state that script declares, so the report ends with the
+state the estop was left in:
+
+```bash
+make bench-auto BENCH_ROWS=tools/bench_rows/artoo_esp32.txt HTTP_BASE=http://10.0.0.22 IMAGE=artoo
+```
+
 A sheet carries **commands only**. What a row is expected to answer stays on the
 runbook ticket, deliberately - there is no `expect` directive, and a reviewer
-reads the transcript against the ticket.
+reads the transcript against the ticket. The same holds for `http` steps: a
+`pause` stays only where a person must act (a flash, a replug, a browser page)
+or where the request needs a value only the droid knows, and a "compare with"
+judgement is the ticket's, never a step.
 
 ---
 
@@ -333,7 +437,9 @@ IMAGE: firmwareVersion=v1.0.0 fsVersion=fs-v1.0.0
 | `HOST-TIME:` | The **host's** UTC clock at the start of the run. |
 | `REPO:` | The short HEAD sha of this checkout, plus `(dirty)` if the tree has uncommitted changes. `REPO: UNKNOWN` if there is no git metadata to read. |
 | `BOARD:` | Whatever you passed to `--board`, marked `(asserted)`, or `BOARD: (not asserted)`. The tool never decides this itself - a CP2102 bridge fronts any board and there is nothing to check an assertion against. |
-| `IMAGE:` | `firmwareVersion` and `fsVersion` fetched from `/api/status`: automatically when the transport is `--http`, or from `--status <base-url>` while staying on serial. Failing that, the label you passed to `--image`. Failing that, `IMAGE: UNKNOWN (not evidence)`. |
+| `HTTP-BASE:` | Where `http` steps go, when the run has a base (`--http-base`, or `--http`'s). `HTTP-BASE: none (--no-http asserted: http steps are skipped)` under `--no-http`. Absent otherwise. |
+| `RUN-DIR:` | The absolute `--run-dir`, when one was given: where kept answers are. |
+| `IMAGE:` | `firmwareVersion` and `fsVersion` fetched from `/api/status`: automatically when the transport is `--http`, or from `--status <base-url>` while staying on serial, or else from `--http-base` when the run has one. Failing that, the label you passed to `--image`. Failing that, `IMAGE: UNKNOWN (not evidence)`. |
 
 **`IMAGE: UNKNOWN (not evidence)` means what it says.** `REPO:` is the sha of the
 source tree on your laptop, not of the code running on the board; a transcript
@@ -344,18 +450,18 @@ read from the board rather than typed by a human.
 
 ---
 
-## Colour
+## Color
 
 Scripted mode tints Console Record lines: red when the record carries
 `status=err`, cyan otherwise. Nothing else is touched - log lines, the send
 markers and the verdict markers stay plain.
 
-Colour is **on only when stdout is a terminal**. Redirect the output and the
+Color is **on only when stdout is a terminal**. Redirect the output and the
 transcript is clean text with no escape sequences in it, which is the point:
 a transcript pasted into a ticket should not carry ANSI. `--color` forces it on
 anyway and `--no-color` forces it off on a terminal.
 
-Capture and interactive modes never colour anything.
+Capture and interactive modes never color anything.
 
 ---
 

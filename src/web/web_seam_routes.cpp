@@ -25,6 +25,7 @@
 #include "../../include/api_servo.h"
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"
+#include "../../include/api_take.h"
 #include "../../include/api_upload.h"
 #include "../../include/api_validation.h"
 #include "../../include/seq_store_util.h"  // SEQ_FILE_MAX_BYTES
@@ -33,6 +34,12 @@
 void webRegisterSeamRoutes() {
     webRegisterRoute("/api/identity", WebMethod::kGet, handleIdentityGet);
     webRegisterRoute("/api/identity", WebMethod::kPost, handleIdentityPost);
+    // The Component Registry lineup. Order does not decide between this and the
+    // shorter /api/identity above it, nor between any other pair in this table:
+    // the backend's route dispatcher matches a path exactly, equal length and
+    // equal bytes, so /api/identity cannot swallow /api/identity/components
+    // (dispatchSeamRoute() in web_request_psychic.cpp).
+    webRegisterRoute("/api/identity/components", WebMethod::kGet, handleComponentsGet);
 
     // The routes data/app.js and data/shell.js fetch on every page load.
     webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet);
@@ -63,7 +70,7 @@ void webRegisterSeamRoutes() {
 
     // Config, RC-map and WiFi writes. Their decision logic stays in the
     // ADR 0011 apply cores; these routes only carry values across.
-    webRegisterRoute("/api/config", WebMethod::kPost, handleConfigPost);
+    webRegisterRoute("/api/config", WebMethod::kPost, handleConfigPost, kConfigPostMaxBodyBytes);
     webRegisterRoute("/api/rc/map", WebMethod::kGet, handleRcMapGet);
     webRegisterRoute("/api/rc/map", WebMethod::kPost, handleRcMapPost);
     webRegisterRoute("/api/wifi", WebMethod::kGet, handleWifiGet);
@@ -92,9 +99,16 @@ void webRegisterSeamRoutes() {
 
     webRegisterRoute("/api/dome", WebMethod::kPost, handleDomeSpeedPost);
     webRegisterRoute("/api/dome/cmd", WebMethod::kPost, handleDomeCmdPost);
+    webRegisterRoute("/api/dome/front", WebMethod::kPost, handleDomeFrontPost);
+    webRegisterRoute("/api/dome/home", WebMethod::kPost, handleDomeHomePost);
     webRegisterRoute("/api/dome/layout", WebMethod::kGet, handleDomeLayoutGet);
 
     webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost);
+    webRegisterRoute("/api/servo/outputs", WebMethod::kGet, handleServoOutputsGet);
+    // Order does NOT decide between this and the shorter /api/servo above it.
+    // The route dispatcher compares whole paths, so a prefix cannot swallow a
+    // longer path (dispatchSeamRoute() in web_request_psychic.cpp).
+    webRegisterRoute("/api/servo/centre", WebMethod::kPost, handleServoCentrePost);
 
     webRegisterRoute("/api/aux-led/color", WebMethod::kPost, handleAuxLedColorPost);
     webRegisterRoute("/api/aux-led/effect", WebMethod::kPost, handleAuxLedEffectPost);
@@ -108,9 +122,9 @@ void webRegisterSeamRoutes() {
 
     // Audio. The read and control surface, the two track-assignment routes and
     // the mood map, all reusing the ADR 0011 apply cores and the ADR 0013 config
-    // map. /api/audio/tracks is registered ahead of /api/audio because the async
-    // backend matches in registration order, and the shorter path would
-    // otherwise swallow requests for the longer one.
+    // map. /api/audio/tracks sits ahead of /api/audio, and that order decides
+    // nothing: PsychicHttp matches a path exactly (the /api/servo/centre note
+    // above), so the shorter path cannot swallow requests for the longer one.
     webRegisterRoute("/api/audio/tracks", WebMethod::kGet, handleAudioTracksGet);
     webRegisterRoute("/api/audio/tracks", WebMethod::kPost, handleAudioTracksPost);
     webRegisterRoute("/api/audio/category-range", WebMethod::kPost,
@@ -137,10 +151,23 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/seq/builtins", WebMethod::kGet, handleSeqBuiltinsGet);
     webRegisterRoute("/api/seq/test", WebMethod::kPost, handleSeqTestPost);
     webRegisterRoute("/api/seq/stop", WebMethod::kPost, handleSeqStopPost);
+    webRegisterRoute("/api/seq/pose", WebMethod::kPost, handleSeqPosePost);
     webRegisterRoute("/api/seq/last-run", WebMethod::kGet, handleSeqLastRunGet);
+    webRegisterRoute("/api/seq/pins", WebMethod::kGet, handleSeqPinsGet);
+    webRegisterRoute("/api/seq/pins", WebMethod::kPost, handleSeqPinsPost);
     webRegisterRoute("/api/seq", WebMethod::kGet, handleSeqGet);
     webRegisterRoute("/api/seq", WebMethod::kPost, handleSeqPost, SEQ_FILE_MAX_BYTES);
     webRegisterRoute("/api/seq", WebMethod::kDelete, handleSeqDelete);
+
+    // Takes (#442, ADR 0061): a performance kept off the sticks, in a file of
+    // its own that a sequence names. The file goes back to the droid as an
+    // upload rather than a buffered body, so no route here raises the
+    // server-wide body ceiling (web_body_ceiling.h) to a take file's size.
+    webRegisterRoute("/api/take", WebMethod::kGet, handleTakeGet);
+    webRegisterRoute("/api/take/arm", WebMethod::kPost, handleTakeArmPost);
+    webRegisterRoute("/api/take/keep", WebMethod::kPost, handleTakeKeepPost);
+    webRegisterRoute("/api/take/file", WebMethod::kGet, handleTakeFileGet);
+    webRegisterUploadRoute("/api/take/file", handleTakeFileUploadChunk, handleTakeFileUploadDone);
 
 #if PA_ADMISSION_TRACE
     // Absent entirely on builds without the admission trace, so a harness that

@@ -20,36 +20,58 @@
 
   const moodFeedback = document.getElementById("mood-feedback");
 
-  const estopToggle = document.getElementById("estop-toggle");
-  const estopFeedback = document.getElementById("estop-feedback");
   const sleepToggle = document.getElementById("sleep-toggle");
   const sleepOverlay = document.getElementById("sleep-overlay");
   const sleepOverlayWake = document.getElementById("sleep-overlay-wake");
   const sleepFeedback = document.getElementById("sleep-feedback");
   const topbarReboot = document.getElementById("topbar-reboot");
   const rebootFeedback = document.getElementById("reboot-feedback");
-  const staleBanner = document.getElementById('status-stale-banner');
-  const setStale = (stale, options = {}) => {
-    const rerender = options.rerender !== false;
-    statusIsStale = stale === true;
-    if (staleBanner) staleBanner.style.display = statusIsStale ? "" : "none";
-    if (rerender && lastStatus) renderHealth(lastStatus);
-  };
-  const snapshotWebControl = document.getElementById("snapshot-web-control");
+  // This surface makes no freshness claim of its own. It used to carry a banner
+  // saying "The status stream was interrupted. These are the values the droid
+  // last sent" - the same fact the Status Plate's one freshness line already
+  // states, in a second aria-live region on the same screen, so a screen reader
+  // heard it twice. The plate's line is the better of the two because it
+  // carries the AGE, which is the half a builder actually needs, and GLOSSARY.md
+  // "Status Plate" already makes it the surface's one freshness statement
+  // (#324, #402). Nothing here replaces it: one fact, one place.
+  // The Controls section head's subtitle: a state, in three words, read off the
+  // same frame the controls under it render from (ADR 0066). Web control and
+  // the estop are not here - both are Status Plate cells, and the plate is on
+  // every surface, so repeating them would be one fact said twice (#324).
   const snapshotMode = document.getElementById("snapshot-mode");
-  const snapshotEstop = document.getElementById("snapshot-estop");
   const snapshotMood = document.getElementById("snapshot-mood");
+  const snapshotSleep = document.getElementById("snapshot-sleep");
+  const opmodeNow = document.getElementById("opmode-now");
+  const moodNow = document.getElementById("mood-now");
+  const sleepNow = document.getElementById("sleep-now");
+  const healthSummary = document.getElementById("health-summary");
+  const componentSummary = document.getElementById("component-summary");
+  const consoleDisclosure = document.getElementById("console-disclosure");
+  const sleepToggleLabel = document.getElementById("sleep-toggle-label");
+  // The Sleep switch in Controls: a second entrance to the topbar's one Sleep
+  // act, never a second act (operator, 2026-09-29, #399).
+  const sleepSwitch = document.getElementById("sleep-switch");
+
+  // The identity plate and the two readouts the Status Plate leaves off. Every
+  // value here comes out of the /api/status frame this surface already reads
+  // or the /api/config payload it already fetches for the log level, so the
+  // plate costs the controller nothing it was not already being asked.
+  const buildDesign = document.getElementById("build-design");
+  const buildDesignDetail = document.getElementById("build-design-detail");
+  const buildFirmware = document.getElementById("build-firmware");
+  const buildFirmwareDetail = document.getElementById("build-firmware-detail");
+  const buildUptime = document.getElementById("build-uptime");
+  const buildUptimeDetail = document.getElementById("build-uptime-detail");
+  const readoutHeap = document.getElementById("readout-heap");
+  const readoutHeapDetail = document.getElementById("readout-heap-detail");
+  const readoutWifi = document.getElementById("readout-wifi");
+  const readoutWifiDetail = document.getElementById("readout-wifi-detail");
 
   let lastStatus = null;
-  let statusIsStale = false;
   let modePending = false;
   let moodPending = false;
-  let pollFailCount = 0;
-  let estopPending = false;
   let sleepPending = false;
   let isSleeping = false;
-  let isEstopLatched = false;
-  let estopStateKnown = false;
   let rebootPending = false;
 
   const INDICATOR_TEXT = {
@@ -69,38 +91,36 @@
     off: "OFF",
   };
 
-  const COMPONENT_LABELS = [
-    ["arm1", "🦾", "Utility Arm 1"],
-    ["arm2", "🦾", "Utility Arm 2"],
-    ["aux1", "🦾", "AUX 1"],
-    ["aux2", "🦾", "AUX 2"],
-    ["aux3", "🦾", "AUX 3"],
-    ["domeEsc", "🔄", "Dome ESC"],
-    ["rcCh1", "🕹️", "RC Channel 1"],
-    ["rcCh2", "🕹️", "RC Channel 2"],
-    ["rcCh3", "🕹️", "RC Channel 3"],
-    ["rcCh4", "🕹️", "RC Channel 4"],
-    ["rcCh5", "🕹️", "RC Channel 5"],
-    ["rcCh6", "🕹️", "RC Channel 6"],
-    ["drive", "🔌", "Drive"],
-    ["audio", "🔊", "Audio"],
-    ["protoR2link", "🔌", "protoR2link"],
-  ];
+  // The name, and only the name. Fifteen rows that all wore one of four emoji
+  // said nothing the word beside them did not (ADR 0066), and the three that
+  // shared an arm glyph were not even the same kind of thing.
+  //
+  // The Outputs are not in this list: which ones the droid has and what each is
+  // called - what its board prints beside the pin, ARM3 on the Artoo PCB, GPIO 4
+  // on the FireBeetle 2 - is the firmware's answer, which data/outputs.js reads
+  // from GET /api/config (#415), and this page knows no Output of its own (ADR
+  // 0033 Amendment 2026-09-19). They wire the card, as the firmware lists
+  // them, once that answer has arrived. Each is [key, label HTML, Part ids].
+  let outputLabels = [];
+  // The Component Toggles that are not an Output, by the key the status
+  // reports each under, each named by its Setting's label in the one words
+  // table (data/web_api.js) - the key with "enable" in front is its form name.
+  // Named when drawn, not when this file loads: the words table is PAApi's.
+  const SUBSYSTEM_KEYS = ["domeEsc", "rcCh1", "rcCh2", "rcCh3", "rcCh4", "rcCh5", "rcCh6", "drive", "audio",
+    "protoR2link"];
+  const subsystemLabels = () =>
+    SUBSYSTEM_KEYS.map((key) => [key, window.PAApi.labelOf(`enable${key.charAt(0).toUpperCase()}${key.slice(1)}`)]);
 
   const MOOD_LABELS = {
-    0: "Idle 😐",
-    10: "Quiet 🤐",
-    11: "Full-Awake 😄",
-    13: "Mid-Awake 😐",
-    14: "Awake+ 🤩",
+    0: "Idle",
+    10: "Quiet",
+    11: "Full-Awake",
+    13: "Mid-Awake",
+    14: "Awake+",
   };
 
-  const PILL_CLASS_MAP = {
-    ok: "pill-ok",
-    warn: "pill-warn",
-    error: "pill-error",
-    info: "pill-info",
-  };
+  const COMPONENT_ENABLED_TEXT = "Enabled";
+  const COMPONENT_DISABLED_TEXT = "Disabled";
 
   const showFeedback = (el, message, level = "") => {
     if (!el) return;
@@ -111,29 +131,9 @@
     el.className = level ? `${el.dataset.baseClass} ${level}` : el.dataset.baseClass;
   };
 
-  const setEstopPending = (pending) => {
-    estopPending = pending;
-    if (!estopToggle) return;
-    estopToggle.disabled = pending;
-    estopToggle.classList.toggle("is-pending", pending);
-    estopToggle.setAttribute("aria-disabled", pending ? "true" : "false");
-  };
-
-  const setEstopUi = (latched) => {
-    isEstopLatched = !!latched;
-    if (!estopToggle) return;
-    estopToggle.classList.toggle("danger", isEstopLatched);
-    estopToggle.title = isEstopLatched ? "Clear E-Stop" : "Latch E-Stop";
-    estopToggle.setAttribute("aria-pressed", isEstopLatched.toString());
-    if (!estopStateKnown) {
-      estopStateKnown = true;
-      estopToggle.disabled = false;
-    }
-  };
-
   const setSleepPending = (pending) => {
     sleepPending = pending;
-    [sleepToggle, sleepOverlayWake].forEach((el) => {
+    [sleepToggle, sleepSwitch, sleepOverlayWake].forEach((el) => {
       if (!el) return;
       el.disabled = pending;
       el.classList.toggle("is-pending", pending);
@@ -144,12 +144,21 @@
   const setSleepUi = (sleeping) => {
     isSleeping = !!sleeping;
     if (sleepToggle) {
-      sleepToggle.textContent = isSleeping ? "💤 Wake" : "💤 Sleep";
-      sleepToggle.title = isSleeping ? "Wake droid subsystems" : "Park droid subsystems";
-      sleepToggle.classList.toggle("danger", isSleeping);
+      // Only the label moves: the icon beside it is an element, and writing
+      // textContent over the button would take it with the word.
+      if (sleepToggleLabel) sleepToggleLabel.textContent = isSleeping ? "Wake" : "Sleep";
+      sleepToggle.title = isSleeping ? "Wake lights, panels and chatter" : "Rest lights, panels and chatter. Drive stays awake.";
+      // Waking a sleeping droid is the one primary act on this surface, so the
+      // button takes the interaction blue while the droid is asleep and is a
+      // plain control the rest of the time. It used to take `danger` AND
+      // `accent` together, which painted it red - and red is reserved for
+      // something stopped or refused (#327), which a parked droid is not.
       sleepToggle.classList.toggle("accent", isSleeping);
       sleepToggle.setAttribute("aria-pressed", isSleeping.toString());
     }
+    // The switch is on only when the droid says it is asleep: a press moves it
+    // through this, from the frame, and not on the press alone.
+    sleepSwitch?.setAttribute("aria-checked", isSleeping.toString());
     if (sleepOverlay) {
       sleepOverlay.classList.toggle("active", isSleeping);
       sleepOverlay.setAttribute("aria-hidden", (!isSleeping).toString());
@@ -158,41 +167,159 @@
   };
 
 
-  const setIndicator = (id, state, reason = "", detail = "") => {
+  const setIndicator = (id, state, reason = "") => {
     const el = document.getElementById(id);
     if (!el) return;
     el.className = `indicator ${state}`;
     const textEl = INDICATOR_TEXT[id] ? document.getElementById(INDICATOR_TEXT[id]) : null;
     if (textEl) {
+      // The evaluator's reason, not its state: the signal light beside it
+      // already says ok / degraded / faulted / not reporting, and "OK: Frames
+      // ok" says one of those twice. The state label is the fallback for an
+      // evaluator that returned no reason, so a signal is never wordless.
+      // No hover title: the raw key=value detail that used to sit there named
+      // firmware fields, not anything a builder reads (#298, #422).
       const label = INDICATOR_STATE_LABELS[state] || String(state).toUpperCase();
-      textEl.textContent = reason ? `${label}: ${reason}` : label;
-
-      if (detail) {
-        textEl.title = detail;
-      } else {
-        textEl.removeAttribute("title");
-      }
+      textEl.textContent = reason || label;
     }
   };
 
   const renderHealth = (payload) => {
     if (!HEALTH_SIGNAL_MODEL || typeof HEALTH_SIGNAL_MODEL.deriveHealthSignals !== "function") {
       Object.keys(INDICATOR_TEXT).forEach((id) => {
-        setIndicator(id, "warn", "Health model missing", "health_signals.js failed to load");
+        setIndicator(id, "off", "Health model missing");
       });
       return;
     }
 
-    const signals = HEALTH_SIGNAL_MODEL.deriveHealthSignals(payload, { stale: statusIsStale });
-    signals.forEach(({ id, state, reason, detail }) => setIndicator(id, state, reason, detail));
+    const signals = HEALTH_SIGNAL_MODEL.deriveHealthSignals(payload, { unknown: window.PALiveReading.UNKNOWN });
+    signals.forEach(({ id, state, reason }) => setIndicator(id, state, reason));
+    renderHealthSummary(signals);
+  };
+
+  // The section head's subtitle is a count (ADR 0066), and it counts the states
+  // the evaluators actually returned rather than restating how many rows the
+  // markup has. A state with nothing in it is left out, so "7 signals - 5 ok"
+  // never has to say "0 fail" to be complete.
+  const HEALTH_SUMMARY_WORDS = { ok: "ok", warn: "degraded", fail: "faulted", off: "not reporting" };
+
+  const renderHealthSummary = (signals) => {
+    if (!healthSummary) return;
+    const counted = new Map();
+    signals.forEach(({ state }) => counted.set(state, (counted.get(state) || 0) + 1));
+    const parts = Object.keys(HEALTH_SUMMARY_WORDS)
+      .filter((state) => counted.get(state))
+      .map((state) => `${counted.get(state)} ${HEALTH_SUMMARY_WORDS[state]}`);
+    healthSummary.textContent = [`${signals.length} signals`, ...parts].join(" \u00b7 ");
   };
 
   let renderedComponentIds = null;
 
+  // Keyed by the stored id the status frame reports each Output under, and
+  // named by the Part on it, with the board's silk beside it in small print
+  // (operator, 2026-10-05, #472: "simply listing GPIO XX says nothing about
+  // what it's about"). An Output with no Part on it is not listed. An Output
+  // may carry more than one Part, so all are named, in catalog order; a Part
+  // is on at most one Output.
+  const partNamesOn = (output) => {
+    const catalog = window.DroidParts && Array.isArray(window.DroidParts.parts) ? window.DroidParts.parts : [];
+    return catalog.filter((part) => output.parts.includes(part.id) && typeof part.name === "string")
+      .map((part) => part.name);
+  };
+  const adoptOutputLabels = (outputs) => {
+    outputLabels = outputs
+      .filter((output) => output.fromConfig && output.parts.length > 0)
+      .map((output) => {
+        // A Part the catalog does not name is never named by its id, which is
+        // wire vocabulary: the row keeps the board's silk alone.
+        const names = partNamesOn(output);
+        const silk = window.PAUtils.escapeHtml(output.name);
+        return [output.id,
+          names.length > 0 ? `${window.PAUtils.escapeHtml(names.join(", "))} <small>${silk}</small>` : silk,
+          output.parts];
+      });
+    // Whichever arrived first, the card is drawn again from the last status
+    // this page applied, so the names follow on every delivery path - the
+    // stream and the fallback poll alike.
+    if (lastStatus) renderComponentStatus(lastStatus);
+  };
+
+  // What one row of the Readouts card says. protoR2link, the sound link, the
+  // Dome ESC and the Foot Drive are the health-signal model's word, the same
+  // one Health shows (and, for the two links, the Status Plate, Maintenance
+  // and Sound: data/health_signals.js, #422, #399). The links carry no line of
+  // their own beneath it: the firmware's detail there restated the state in
+  // other words. The Dome ESC and the Foot Drive carry what the droid commands
+  // as their line ("Target 0%", "Command 120/0"). An Output's row is its
+  // Part's, and says where that Part is (partReading() below). Every other row
+  // is the firmware's state and detail.
+  const LINK_COMPONENT_READERS = {
+    protoR2link: (payload) => HEALTH_SIGNAL_MODEL.readProtoR2link(payload, { unknown: window.PALiveReading.UNKNOWN }),
+    audio: (payload) => HEALTH_SIGNAL_MODEL.readSoundLink(payload, { unknown: window.PALiveReading.UNKNOWN }),
+    domeEsc: (payload) => HEALTH_SIGNAL_MODEL.readDomeEsc(payload, { unknown: window.PALiveReading.UNKNOWN }),
+    drive: (payload) => HEALTH_SIGNAL_MODEL.readFootDrive(payload),
+  };
+
+  // The lamp beside each row's state (GLOSSARY.md "Status Color"). The rows
+  // above take the health-signal model's own light, so they match Health.
+  // Every other row is the firmware's state word (src/web/status_json.cpp),
+  // and only a word that reports something heard lights: SBUS frames arriving
+  // or lost. Everything else is grey, `ready` above all: an Output says ready
+  // whether or not a servo is on it, and PWM channels say it with nothing
+  // measured, so a green there would be the "we did not check" the colour must
+  // never say. A command is not a report either, which is why the Dome ESC
+  // and the Foot Drive are no longer in this table (#399).
+  const COMPONENT_STATE_LIGHTS = Object.freeze({
+    active: "ok",
+    signal_lost: "fail",
+  });
+
+  // The firmware's state word and detail for one status entry. Its token as a
+  // word, capitalised like the readers' words above, so "Ready" and "No
+  // answer" sit side by side as one voice.
+  const firmwareReading = (entry) => {
+    let state = entry ? "enabled" : "disabled";
+    let detail = entry ? COMPONENT_ENABLED_TEXT : COMPONENT_DISABLED_TEXT;
+    if (entry && typeof entry === "object") {
+      state = entry.state || "enabled";
+      detail = entry.detail || COMPONENT_ENABLED_TEXT;
+    }
+    const word = String(state).replace(/_/g, " ");
+    return { state: word.charAt(0).toUpperCase() + word.slice(1), detail, light: COMPONENT_STATE_LIGHTS[state] || "off" };
+  };
+
+  // A row named by its Part says where that Part is, in the picture's one word
+  // (data/body_view.js LEGEND_TEXT: Open, Closed, Unmeasured, Limp), worked out
+  // by the picture's own rule (data/droid_picture.js partMark), never the
+  // firmware's commanded pulse: "Target 0 us" told a builder nothing. A limp
+  // Part says why in the one phrase Servos uses ("Limp - no pulse") rather
+  // than Limp twice. A Part the picture has no word for - a light - says what
+  // the picture says of it, or else the firmware's state. No row has a line.
+  const partReading = (parts, entry) => {
+    const view = window.BodyView;
+    const mark = window.PADroidPicture.partMark(parts[0]);
+    const word = view.LEGEND_TEXT[view.markClass(mark, true)];
+    if (mark.mark === view.MARKS.LIMP && mark.said) return { state: mark.said, detail: "", light: "off" };
+    if (word) return { state: word, detail: "", light: "off" };
+    if (mark.said) return { state: mark.said.charAt(0).toUpperCase() + mark.said.slice(1), detail: "", light: "off" };
+    return { ...firmwareReading(entry), detail: "" };
+  };
+
+  const componentReading = (key, payload) => {
+    const partRow = outputLabels.find(([id]) => id === key);
+    if (partRow) return partReading(partRow[2], payload[key]);
+    const readLink = LINK_COMPONENT_READERS[key];
+    if (readLink && HEALTH_SIGNAL_MODEL) {
+      const { state, word, detail = "" } = readLink(payload);
+      return { state: word, detail, light: state };
+    }
+    return firmwareReading(payload[key]);
+  };
+
   const renderComponentStatus = (payload) => {
     if (!componentStatusCard || !componentStatusGrid) return;
 
-    const active = COMPONENT_LABELS.filter(([key]) => key in payload);
+    const active = [...outputLabels, ...subsystemLabels()].filter(([key]) => key in payload);
     if (active.length === 0) {
       componentStatusCard.classList.add("hidden");
       componentStatusGrid.innerHTML = "";
@@ -201,64 +328,57 @@
     }
 
     componentStatusCard.classList.remove("hidden");
+    if (componentSummary) {
+      componentSummary.textContent = `${active.length} reported`;
+    }
 
-    // Build signature: component IDs + flags that affect transport lines
-    const transportFlags = [
-      payload.dome_link?.state === "connected" && payload.dome_link?.uart_owned_by_dome ? "dome-uart" : "",
-      payload.audio?.rx_status === "blocked_by_dome_uart" ? "sound-blocked" : ""
-    ].filter(Boolean).join(",");
-    const signature = active.map(([key]) => key).join(",") + "|" + transportFlags;
+    const signature = active.map(([key, label]) => `${key}:${label}`).join(",");
 
-    // Rebuild only if component IDs or transport flags changed
+    // Rebuild only if the component set changed
     if (signature !== renderedComponentIds) {
       renderedComponentIds = signature;
-      const items = active.map(([key, icon, label]) => {
-        const entry = payload[key];
-        let state = entry ? "enabled" : "disabled";
-        let detail = entry ? "✅ Enabled" : "⏸️ Disabled";
-        if (entry && typeof entry === "object") {
-          state = entry.state || "enabled";
-          detail = entry.detail || "✅ Enabled";
-        }
-        const stateText = String(state).replace(/_/g, " ");
-        const safeState = window.PAUtils.escapeHtml(stateText);
+      const items = active.map(([key, label]) => {
+        const { state, detail, light } = componentReading(key, payload);
         const safeDetail = window.PAUtils.escapeHtml(detail);
-        let transportLine = "";
-        if (key === "protoR2link" && payload.dome_link?.state === "connected") {
-          if (payload.dome_link?.uart_owned_by_dome === true) {
-            transportLine = `<div class="desc mt-6">${window.PAUtils.escapeHtml("UART2 owned by protoR2link")}</div>`;
-          }
-        }
-        if (key === "audio" && entry?.rx_status === "blocked_by_dome_uart") {
-          transportLine += `<div class="desc mt-6">${window.PAUtils.escapeHtml("CHIRP RX unavailable while protoR2link owns UART2")}</div>`;
-        }
         return `
-        <div class="status-item" id="comp-${key}">
-          <dt>${icon} ${label}</dt>
-          <dd id="state-${key}">${safeState}</dd>
-          <div class="desc mt-6" id="detail-${key}">${safeDetail}</div>${transportLine}
+        <div class="readout" id="comp-${key}" data-light="${light}">
+          <dt>${label}</dt>
+          <dd id="state-${key}">${window.PAUtils.escapeHtml(state)}</dd>${detail
+            ? `
+          <div class="readout-detail" id="detail-${key}" title="${safeDetail}">${safeDetail}</div>`
+            : ""}
         </div>`;
       }).join("");
-      componentStatusGrid.innerHTML = `<dl class="status-grid">${items}</dl>`;
+      componentStatusGrid.innerHTML = `<dl class="readouts">${items}</dl>`;
     } else {
       // Patch only the text content when component set hasn't changed
       active.forEach(([key]) => {
-        const entry = payload[key];
-        let state = entry ? "enabled" : "disabled";
-        let detail = entry ? "✅ Enabled" : "⏸️ Disabled";
-        if (entry && typeof entry === "object") {
-          state = entry.state || "enabled";
-          detail = entry.detail || "✅ Enabled";
-        }
-        const stateText = String(state).replace(/_/g, " ");
-        const safeState = window.PAUtils.escapeHtml(stateText);
-        const safeDetail = window.PAUtils.escapeHtml(detail);
+        const { state, detail, light } = componentReading(key, payload);
+
+        const itemEl = document.getElementById(`comp-${key}`);
+        if (itemEl) itemEl.dataset.light = light;
 
         const stateEl = document.getElementById(`state-${key}`);
-        if (stateEl) stateEl.textContent = safeState;
+        if (stateEl) stateEl.textContent = state;
 
-        const detailEl = document.getElementById(`detail-${key}`);
-        if (detailEl) detailEl.textContent = safeDetail;
+        // A line comes and goes with a row's reading (a Part's row has none,
+        // and a firmware detail can arrive late), so it is added or taken away
+        // here as well as rewritten.
+        let detailEl = document.getElementById(`detail-${key}`);
+        if (!detail) {
+          detailEl?.remove();
+        } else {
+          if (!detailEl && itemEl) {
+            detailEl = document.createElement("div");
+            detailEl.className = "readout-detail";
+            detailEl.id = `detail-${key}`;
+            itemEl.appendChild(detailEl);
+          }
+          if (detailEl) {
+            detailEl.textContent = detail;
+            detailEl.title = detail;
+          }
+        }
       });
     }
   };
@@ -283,57 +403,190 @@
     });
   };
 
-  const setStatusPill = (el, text, state = "info", compact = true) => {
-    if (!el) return;
-    const sizeClass = compact ? "status-pill status-pill-compact" : "status-pill";
-    el.textContent = text;
-    el.className = `${sizeClass} ${PILL_CLASS_MAP[state] || PILL_CLASS_MAP.info}`;
+  const setText = (el, text) => {
+    if (el) el.textContent = text;
   };
 
+  // The Controls section head's subtitle, and the same three words beside the
+  // control each of them belongs to. Three postures the operator chose, so
+  // none of them takes a color: a chosen posture is a readout, not a symptom
+  // (#327 "Status Color", as amended 2026-09-16).
+  //
+  // Web control and the estop used to be here as two more pills. Both are
+  // Status Plate cells (CONTROL, ESTOP), the plate is on every surface, and
+  // #324's whole argument is that one fact belongs in one place - so they are
+  // read there and not restated here.
   const renderMissionSnapshot = (payload) => {
-    const isStationary = !!payload.stationary;
-    const moodText = MOOD_LABELS[payload.activeMood] || `Mood ${payload.activeMood || 0}`;
+    const modeText = payload.stationary ? "Stationary" : "Driving";
+    // A mood this surface has no name for is not mood zero. The fallback used
+    // to print `Mood ${payload.activeMood || 0}`, so a frame that carried no
+    // mood at all - the state a page is in before the first one arrives - read
+    // "Mood 0" beside two readouts that say Unknown for the same thing.
+    // It is also the only place on this surface a raw number would reach the
+    // operator, which ADR 0059 keeps behind the mapping table above.
+    const moodText = MOOD_LABELS[payload.activeMood] || window.PALiveReading.UNKNOWN;
+    const sleepText = payload.sleepMode ? "asleep" : "awake";
 
-    setStatusPill(
-      snapshotWebControl,
-      payload.webControlEnabled ? "🕹️ Web control: Enabled" : "🕹️ Web control: Disabled",
-      payload.webControlEnabled ? "ok" : "warn",
-    );
-    setStatusPill(
-      snapshotMode,
-      isStationary ? "🧭 Mode: Stationary" : "🧭 Mode: Driving",
-      isStationary ? "warn" : "ok",
-    );
-    setStatusPill(
-      snapshotEstop,
-      payload.estop ? "🛑 E-Stop: Latched" : "🛑 E-Stop: Clear",
-      payload.estop ? "error" : "ok",
-    );
-    setStatusPill(snapshotMood, `🎬 Mood: ${moodText}`, "info");
+    setText(snapshotMode, modeText);
+    setText(snapshotMood, moodText);
+    setText(snapshotSleep, sleepText);
+    setText(opmodeNow, modeText);
+    setText(moodNow, moodText);
+    setText(sleepNow, sleepText);
   };
 
-  const applyStatus = (payload) => {
+  // ---------------------------------------------------------------------------
+  // Build, and the two readouts the Status Plate leaves off
+  //
+  // Both render from the /api/status frame this surface already has. Nothing
+  // here asks the controller for anything of its own: the plate's rule is that
+  // telemetry belongs to the Dashboard (#324), not that the Dashboard may go
+  // and fetch more of it.
+  // ---------------------------------------------------------------------------
+  const KB = 1024;
+
+  const kilobytes = (bytes) => {
+    const value = Number(bytes);
+    return Number.isFinite(value) && value >= 0 ? Math.round(value / KB) : null;
+  };
+
+  // hh:mm:ss, which is what a builder reads an uptime as. Days are spelled out
+  // rather than rolled into the hours, because "73:04:11" is not a number
+  // anyone converts in their head.
+  const uptimeText = (ms) => {
+    const total = Number(ms);
+    if (!Number.isFinite(total) || total < 0) return null;
+    const seconds = Math.floor(total / 1000);
+    const days = Math.floor(seconds / 86400);
+    const clock = [Math.floor((seconds % 86400) / 3600), Math.floor((seconds % 3600) / 60), seconds % 60]
+      .map((part) => String(part).padStart(2, "0"))
+      .join(":");
+    return days > 0 ? `${days}d ${clock}` : clock;
+  };
+
+  // tools/extract_version.py stamps the filesystem with "fs-" and then the
+  // firmware's own version, so the two strings of one build differ by exactly
+  // that prefix and must never be compared as they stand.
+  const FS_VERSION_PREFIX = "fs-";
+  const assetsBuild = (assets) =>
+    assets.startsWith(FS_VERSION_PREFIX) ? assets.slice(FS_VERSION_PREFIX.length) : assets;
+
+  const renderIdentityPlate = (payload) => {
+    const firmware = String(payload.firmwareVersion || "").trim();
+    const assets = String(payload.fsVersion || "").trim();
+    setText(buildFirmware, firmware || window.PALiveReading.UNKNOWN);
+    // Firmware and web assets are built and flashed separately, so the one
+    // thing worth saying about the pair is whether they came from the same
+    // build. A mismatch is how a surface ends up talking to an API that moved.
+    setText(
+      buildFirmwareDetail,
+      !firmware || !assets
+        ? ""
+        : firmware === assetsBuild(assets)
+          ? `web assets ${assets} - match`
+          : `web assets ${assets} - does not match the firmware`,
+    );
+
+    const uptime = uptimeText(payload.uptimeMs);
+    setText(buildUptime, uptime || window.PALiveReading.UNKNOWN);
+    const reason = String(payload.resetReason || "").trim();
+    setText(buildUptimeDetail, reason ? `since a ${reason.toLowerCase()} reset` : "");
+  };
+
+  // The Droid Build, from the /api/config payload the log level already
+  // fetched - droid_build.js's own documented "a page holding a config payload
+  // calls adopt() with it and spends no request at all".
+  const renderDroidBuild = (build) => {
+    // Both halves or neither: this runs inside the log level's section loader,
+    // where a throw becomes a failed section rather than a visible error.
+    if (!buildDesign || !buildDesignDetail) return;
+    const designs = (window.DroidParts && window.DroidParts.designs) || [];
+    const nameOf = (half) => {
+      const design = designs.find((candidate) => candidate.id === half.design);
+      if (!design) return half.design || "";
+      const variant = (design.variants || []).find((candidate) => candidate.id === half.variant);
+      return variant ? `${design.label} ${variant.label.toLowerCase()}` : design.label;
+    };
+    if (!build) {
+      setText(buildDesign, "Not answered yet");
+      setText(buildDesignDetail, "");
+      return;
+    }
+    const dome = nameOf(build.dome);
+    const body = nameOf(build.body);
+    setText(buildDesign, dome === body ? dome : `${dome} dome, ${body} body`);
+    const fitted = Array.isArray(build.fitted) ? build.fitted.length : 0;
+    buildDesignDetail.innerHTML =
+      `${fitted} ${fitted === 1 ? "part" : "parts"} fitted. ` +
+      window.PAUi.setupActionHtml("Change it");
+  };
+
+  const renderReadouts = (payload) => {
+    const free = kilobytes(payload.heapFree);
+    if (readoutHeap) {
+      readoutHeap.innerHTML = free === null
+        ? window.PALiveReading.UNKNOWN
+        : `${free}<small>kB</small>`;
+    }
+    // The Internal Data Heap's largest free block, not the total, because that
+    // is the number the Health signal beside it judges memory on
+    // (data/health_signals.js). A builder looking at plenty free and a red
+    // Memory light has to be able to see why from here.
+    const largest = kilobytes(payload.heapLargestBlock);
+    setText(
+      readoutHeapDetail,
+      largest === null ? "" : `largest free piece ${largest} kB. The Memory light reads this one.`,
+    );
+
+    // wifiRssi is only set while the droid is joined to a network as a station;
+    // it is zero in every other case (deriveWiFiConnectivityFields,
+    // src/web/api_status_serializers.cpp). A readout may only print what
+    // something measured, so zero prints as nothing measured rather than as a
+    // very strong signal.
+    const rssi = Number(payload.wifiRssi);
+    const joined = Number.isFinite(rssi) && rssi !== 0;
+    if (readoutWifi) {
+      readoutWifi.innerHTML = joined ? `${rssi}<small>dBm</small>` : "--";
+    }
+    setText(
+      readoutWifiDetail,
+      joined
+        ? "on the network the droid joined"
+        : "Not on a network. Nothing to measure.",
+    );
+  };
+
+  // Before the droid has sent a frame, every readout that waits on one says
+  // so in the Live Reading's words, rather than in a placeholder of its own.
+  const WAITING_READOUTS = [
+    buildFirmware, buildUptime, snapshotMode, snapshotMood, snapshotSleep,
+    opmodeNow, moodNow, sleepNow, readoutHeap, readoutWifi,
+  ];
+
+  const applyReading = (reading) => {
+    const payload = reading.status;
     lastStatus = payload;
-    pollFailCount = 0;
-    setStale(false, { rerender: false });
+    if (payload === null) {
+      WAITING_READOUTS.forEach((node) => setText(node, window.PALiveReading.slotText(window.PALiveReading.WAITING)));
+      return;
+    }
     renderHealth(payload);
     renderComponentStatus(payload);
     renderMissionSnapshot(payload);
+    renderIdentityPlate(payload);
+    renderReadouts(payload);
     renderOpMode(payload);
     renderActiveMood(payload);
-    setEstopUi(!!payload.estop);
     setSleepUi(!!payload.sleepMode);
+    // The run record's name and ending, which the run watch below does not
+    // announce when no run of it was ever under way on this page.
+    paintShowRun();
   };
 
-  const refreshStatusOnce = async ({ handle } = {}) => {
-    if (!window.PAApi) return;
-    // When called as a section loader, handle is always present and carries the
-    // section's deadline. When called from non-section contexts (fallback polling),
-    // handle is absent and we use PAApi directly (which uses DEFAULT_TIMEOUT_MS).
-    const api = handle || window.PAApi;
-    const result = await api.get("/api/status", { cache: "no-store" });
-    applyStatus(result.data);
-  };
+  // Asks the droid once, after an act that changed something. The answer is
+  // not kept here: it arrives through the Live Reading like every frame, and
+  // this surface paints it from there (data/live_reading.js).
+  const refreshStatusOnce = () => window.PALiveReading.read();
 
   const toggleSleepWake = async (forceWake = false) => {
     if (!window.PAApi || sleepPending) return;
@@ -354,24 +607,6 @@
       if (lastStatus) setSleepUi(!!lastStatus.sleepMode);
     } finally {
       setSleepPending(false);
-    }
-  };
-
-  const toggleEstop = async () => {
-    if (!window.PAApi || estopPending) return;
-    const targetLatched = !isEstopLatched;
-    setEstopPending(true);
-    showFeedback(estopFeedback, targetLatched ? "Latching E-Stop..." : "Clearing E-Stop...");
-
-    try {
-      await window.PAApi.estopPostForm(targetLatched ? "/api/estop" : "/api/estop/clear", {}, { timeoutMs: 3000 });
-      await refreshStatusOnce();
-      showFeedback(estopFeedback, targetLatched ? "E-Stop latched" : "E-Stop clear", "success");
-    } catch (error) {
-      showFeedback(estopFeedback, `E-Stop failed: ${window.PAApi.messageFor(error)}`, "error");
-      if (lastStatus) setEstopUi(!!lastStatus.estop);
-    } finally {
-      setEstopPending(false);
     }
   };
 
@@ -468,7 +703,7 @@
   // the newest lines for the log ring (docs/api.md), and nothing more
   // specific is true for whatever query bounds out next.
   const CONSOLE_TRUNCATED_TEXT =
-    "[CUT] The controller could not fit the whole answer — some lines are missing from the reply above.";
+    "[CUT] The Body Controller could not fit the whole answer — some lines are missing from the reply above.";
   const COMMAND_HISTORY_MAX = 20;
   const CONSOLE_HISTORY_STORAGE_KEY = "pa-console-history";
   let logLines = [];
@@ -690,11 +925,13 @@
     applyLogHistory(historyLines);
   };
 
+  // The four levels wore the same emoji, so it told an operator which of the
+  // four they were on exactly never (ADR 0066). The word does that.
   const LOG_LEVELS = {
-    1: { label: "Error", icon: "🪵", cls: "pill-error", hint: "Loss of function only" },
-    2: { label: "Warning", icon: "🪵", cls: "pill-info", hint: "Faults + safety warnings" },
-    3: { label: "Info", icon: "🪵", cls: "pill-info", hint: "Boot + service health" },
-    4: { label: "Debug", icon: "🪵", cls: "pill-warn", hint: "Verbose" },
+    1: { label: "Error", cls: "pill-error", hint: "Loss of function only" },
+    2: { label: "Warning", cls: "pill-info", hint: "Faults + safety warnings" },
+    3: { label: "Info", cls: "pill-info", hint: "Boot + service health" },
+    4: { label: "Debug", cls: "pill-warn", hint: "Verbose" },
   };
   let currentLogLevel = null;
   let logLevelPending = false;
@@ -703,27 +940,45 @@
     if (!logLevelPill) return;
     const info = LOG_LEVELS[level];
     if (!info) {
-      logLevelPill.textContent = "🪵 ...";
-      logLevelPill.title = "Log level unknown — click to retry";
+      logLevelPill.textContent = "...";
+      logLevelPill.title = "Log level unknown - click to retry";
       logLevelPill.setAttribute("aria-label", "Log level unknown. Click to retry.");
       return;
     }
     logLevelPill.className = `status-pill status-pill-compact ${info.cls}`;
-    logLevelPill.textContent = `${info.icon} ${info.label}`;
-    logLevelPill.title = `Log level: ${info.label} (${info.hint}) — click to cycle`;
+    logLevelPill.textContent = info.label;
+    logLevelPill.title = `Log level: ${info.label} (${info.hint}) - click to cycle`;
     logLevelPill.setAttribute("aria-label", `Log level: ${info.label}. Click to cycle to the next level.`);
   };
 
   const loadLogLevel = async ({ handle = null } = {}) => {
     if (!window.PAApi || !logLevelPill) throw new Error("API or pill unavailable");
     const api = handle ?? window.PAApi;
-    const result = await api.get("/api/config", { cache: "no-store" });
-    const level = Number(result.data?.system?.logLevel);
+    // The config alone (PAApi reads no-store by default). The Outputs' names
+    // are not on it - an Output is its row in the servo table (ADR 0068) - so
+    // they are a section of their own below, and a failed table read cannot
+    // take the log level or the Droid Build down with it (#423).
+    const answer = await api.get("/api/config");
+    const config = answer?.data && typeof answer.data === "object" ? answer.data : {};
+    // The identity plate's Droid Build row rides this payload rather than
+    // fetching one of its own: droid_build.js's adopt() takes a config the page
+    // already holds, and the controller sheds connections under load, so a
+    // second GET of the same document would cost a client slot to learn what
+    // this one already said.
+    renderDroidBuild(window.DroidBuild?.adopt(config) || null);
+    adoptStandDown(config);
+    const level = Number(config?.system?.logLevel);
     if (!LOG_LEVELS[level]) {
       throw new Error(`Unknown log level: ${level}`);
     }
     currentLogLevel = level;
     renderLogLevelPill(level);
+  };
+
+  // The Outputs' names for the Readouts card: the servo table alone, read
+  // through data/outputs.js (#415).
+  const loadOutputNames = async ({ handle = null } = {}) => {
+    adoptOutputLabels(await window.PAOutputs.refresh({ handle: handle ?? window.PAApi }));
   };
 
   const cycleLogLevel = async () => {
@@ -1236,11 +1491,474 @@
     });
   });
 
-  estopToggle?.addEventListener("click", toggleEstop);
+  // ---- Sleep switch (Controls) ----
+  // It presses the same act as the topbar button, through the same function
+  // and its sleepPending guard, so the two can never send twice.
+  sleepSwitch?.addEventListener("click", () => toggleSleepWake(false));
+
+  // The Console is a disclosure. It starts open, but an operator can shut it,
+  // and while it is shut the log has no layout at all and scrollHeight is 0 -
+  // every stick-to-bottom while it was shut left scrollTop at 0. Opening it
+  // again therefore has to put the newest line back under the operator's eye,
+  // which is the whole reason the log sticks to the bottom in the first place.
+  consoleDisclosure?.addEventListener("toggle", () => {
+    if (!consoleDisclosure.open || !logConsole) return;
+    if (hasActiveLogSelection()) return;
+    logConsole.scrollTop = logConsole.scrollHeight;
+    logPaused?.classList.remove("visible");
+  });
+
   sleepToggle?.addEventListener("click", () => toggleSleepWake(false));
   sleepOverlayWake?.addEventListener("click", () => toggleSleepWake(true));
   topbarReboot?.addEventListener("click", rebootController);
 
+
+  // -------------------------------------------------------------------------
+  // Sequences: a show run from the Dashboard (#330, #451, #472)
+  //
+  // One line: the heading and what is running, then every Sequence on the
+  // droid as a chip, then +N for the ones the line has no room for, then
+  // Rest (#472, the operator's mock A, 2026-10-05). A chip is its Play - its
+  // icon and its name - and the one running is its Stop instead. Each chip
+  // also carries a very small pin: a pinned Sequence comes to the front, on
+  // every browser, because the pins are kept on the droid (GET/POST
+  // /api/seq/pins, docs/api.md).
+  //
+  // The order: the running Sequence, then the pinned ones in the order they
+  // were pinned, then the ones mapped to an RC Channel, then the rest in the
+  // two groups Sequences lists them in - Yours, then the Factory ones yours do
+  // not shadow (a Learned name shadows a Factory one, the rule the droid
+  // resolves a name by; 76d9735c^:data/dome_control.js). A pin naming a
+  // Sequence no longer on the droid is skipped, not an error: only a pin's
+  // form is checked, as the Stand Down Sequence's is. A mapped one says
+  // which RC Channel, from GET /api/rc/map: the RC Map is the running order,
+  // so the RC Radio and this line are one list read from two ends, never
+  // stored twice. A chip has no line of its own: how long a run is and what it
+  // does are its hover title and its accessible description.
+  //
+  // Rest runs the droid's Stand Down Sequence, which is chosen on Sequences;
+  // the chip of the one it runs carries the Rest mark, so Rest needs no words
+  // of its own beside it (operator, 2026-10-04). The Factory DM:RESET default
+  // says in its title that it leaves the pies open (GLOSSARY.md "Stand Down
+  // Sequence").
+  //
+  // What is running is the Live Reading's run watch (data/live_reading.js,
+  // "The run watch"), the one the Sequences page reads too. It starts and
+  // stops runs, judges a press by the run's start time, and says when a run -
+  // from here, an RC Channel or anywhere - begins and ends. A run of a name
+  // with no chip - not on the droid - gets a chip of its own, first, so it
+  // can still be stopped.
+  //
+  // A name the RC Map fires that has no Sequence behind it - a Learned one
+  // deleted since - is listed and says it will do nothing. POST /api/seq/test
+  // would accept it and the dome would ignore it, so the answer cannot say so
+  // (src/tasks/sequence_dispatcher.cpp): the page knows from the library, sends
+  // nothing, and a press raises the Ignored Input Notice (data/shell.js).
+  // -------------------------------------------------------------------------
+  const showBay = document.getElementById("show-bay");
+  const showNow = document.getElementById("show-now");
+  const showLine = document.getElementById("show-line");
+  const showRail = document.getElementById("show-rail");
+  const showMore = document.getElementById("show-more");
+  const showOverflow = document.getElementById("show-overflow");
+  const showFeedbackEl = document.getElementById("show-feedback");
+  const standDownBtn = document.getElementById("standdown-btn");
+  const postureBtn = document.getElementById("show-posture");
+
+  // What a never-chosen Stand Down runs: the words table's, one home for the
+  // Dashboard and the Sequences page (data/web_api.js, standDownSequence).
+  // Asked when it is needed, not when this script runs: the page can execute
+  // before web_api.js has published PAApi, and its section loaders then say
+  // so rather than the whole script failing to load.
+  const standDownUnset = () => window.PAApi.unsetOf("standDownSequence");
+  const NOT_ON_DROID = "Not on the droid. Does nothing.";
+  const NEEDS_REPAIR = "Needs repair on Sequences.";
+  const LEAVES_PIES_OPEN = "Leaves the pies open.";
+
+  // Each null until the droid has answered it once.
+  let showLearned = null;
+  let showFactory = null;
+  let showMapped = null; // [{ name, channel }] - the RC Map's Sequence bindings
+  let standDownChoice = null; // "" when never chosen; null while not known
+  // The pinned names in the order they were pinned, [] when none. False on a
+  // droid whose firmware keeps no pins - it answers GET /api/seq/pins with a
+  // 404, since the web image and the firmware are uploaded apart - and its
+  // chips then carry no pin.
+  let showPins = null;
+
+  const esc = (text) => window.PAUtils.escapeHtml(text);
+  const escAttr = (text) => window.PAUtils.escapeAttr(text);
+  const icon = (name) => `<svg class="i" aria-hidden="true" focusable="false"><use href="#i-${name}"/></svg>`;
+
+  const libraryEntry = (name) =>
+    showLearned?.find((seq) => seq.name === name) || showFactory?.find((seq) => seq.name === name) || null;
+  const libraryAnswered = () => showLearned !== null && showFactory !== null;
+  const standDownEffective = () => (standDownChoice === null ? null : standDownChoice || standDownUnset());
+
+  // Why a name cannot run, as the chip says it and as the notice says it, and
+  // where it is changed; null when it can run. A name only the RC Map holds is
+  // changed on RC; one that needs repair, or the Stand Down Sequence whatever
+  // is wrong with it, on Sequences, where it is chosen.
+  const refusalOf = (name) => {
+    const entry = libraryEntry(name);
+    if (!entry) {
+      const page = name === standDownEffective() ? "seq" : "rc";
+      return { says: NOT_ON_DROID, notice: `${name} is not on the droid`, page };
+    }
+    if (entry.valid === false) {
+      return { says: NEEDS_REPAIR, notice: `${name} fails Protocol Check until it is repaired`, page: "seq" };
+    }
+    return null;
+  };
+  const refusedAttrs = (refusal) =>
+    (refusal
+      ? ` disabled aria-disabled="true" data-ignored-says="${escAttr(refusal.notice)}" data-ignored-page="${refusal.page}"`
+      : "");
+
+  // How long a run is: "6 s", "1.5 s", "0 s" - the same words and the same
+  // condition as Runs on Sequences (data/seq.js lengthWords, reportedLength):
+  // nothing when the droid sent no length, and nothing for the 0 it sends for
+  // an invalid stored Sequence it could not find the end of. A valid 0 ms
+  // Sequence reads "0 s".
+  const lengthWords = (entry) =>
+    (!Number.isInteger(entry?.lengthMs) || (entry.lengthMs === 0 && entry.valid === false)
+      ? "" : `${Number((entry.lengthMs / 1000).toFixed(2))} s`);
+
+  // What a chip says on hover and to a screen reader as its description: why
+  // it does nothing, or how long a run is and what it does. The Factory
+  // DM:RESET default says it leaves the pies open instead of its purpose. A
+  // running chip's act is Stop, which always does something, so it never says
+  // the name does nothing - a run of a name not on the droid included.
+  const aboutOf = (name, running) => {
+    const refusal = running ? null : refusalOf(name);
+    if (refusal) return refusal.says;
+    const entry = libraryEntry(name);
+    const factoryDefault = name === standDownEffective() && name === standDownUnset()
+      && !showLearned.some((seq) => seq.name === name);
+    const purpose = entry?.purpose ? `${entry.purpose}${entry.purposeCut ? "..." : ""}` : "";
+    return [lengthWords(entry), factoryDefault ? LEAVES_PIES_OPEN : purpose].filter(Boolean).join(" - ");
+  };
+
+  // A chip: one Play - its icon and the name, then the Rest mark and the RC
+  // Channels that fire it, each said in words to a screen reader only - and a
+  // small pin beside it, its own button, never one inside the other. The
+  // running chip's act is its Stop, with the running lamp.
+  const chipHtml = (name, running) => {
+    const refusal = running ? null : refusalOf(name);
+    const about = aboutOf(name, running);
+    const act = running ? "stop" : "play";
+    const channels = (showMapped || []).filter((mapped) => mapped.name === name).map((mapped) => mapped.channel);
+    const pinned = Array.isArray(showPins) && showPins.includes(name);
+    const pin = Array.isArray(showPins)
+      ? `<button type="button" class="show-pin" data-act="pin" aria-pressed="${pinned}" aria-label="Pin ${escAttr(name)}" title="${pinned ? "Unpin" : "Pin"}">${icon(pinned ? "pin" : "pin-outline")}</button>`
+      : "";
+    return `<li class="show-chip${running ? " is-running" : ""}${pinned ? " is-pinned" : ""}${refusal ? " is-inert" : ""}" data-name="${escAttr(name)}">`
+      + `<button type="button" class="show-act" data-act="${act}"${about ? ` title="${escAttr(about)}"` : ""}${refusedAttrs(refusal)}>`
+      + `${icon(act)}<span class="show-said">${running ? "Stop" : "Play"} </span><span class="show-name">${esc(name)}</span>`
+      + (name === standDownEffective() ? `<span class="show-rest-mark">${icon("human-handsdown")}<span class="show-said">Rest</span></span>` : "")
+      + channels.map((channel) => `<span class="show-rc"><span class="show-said">RC Channel </span>${esc(channel)}</span>`).join("")
+      + (running ? `<span class="indicator ok seq-live" aria-hidden="true"></span>` : "")
+      + `</button>${pin}</li>`;
+  };
+
+  // Every name the line lists, Yours then Factory. Yours holds the builder's
+  // own and every name the droid would fire that it does not hold - one the RC
+  // Map binds, or the Stand Down Sequence - which can only ever have been
+  // theirs: a Factory name is never missing.
+  const listedNames = () => {
+    const factoryNames = new Set(showFactory.map(({ name }) => name));
+    const yours = [];
+    const factory = [];
+    const standDown = standDownEffective();
+    [...showLearned, ...showFactory, ...(showMapped || []), ...(standDown ? [{ name: standDown }] : [])]
+      .forEach(({ name }) => {
+        if (!name || yours.includes(name) || factory.includes(name)) return;
+        const learned = showLearned.some((seq) => seq.name === name);
+        (learned || !factoryNames.has(name) ? yours : factory).push(name);
+      });
+    return [...yours, ...factory];
+  };
+
+  // The line's order: running, pinned, on an RC Channel, then the rest. A pin
+  // naming a Sequence not listed is skipped. A run of a name not listed still
+  // gets the first chip, so it can be stopped.
+  const railOrder = (listed, running) => {
+    const pinned = Array.isArray(showPins) ? showPins.filter((name) => listed.includes(name)) : [];
+    const mapped = listed.filter((name) => (showMapped || []).some((entry) => entry.name === name));
+    return [...new Set([...(running !== null ? [running] : []), ...pinned, ...mapped, ...listed])];
+  };
+
+  // The chips the line has no room for go behind +N, measured again whenever
+  // the line changes width or its chips change. +N first takes the width of
+  // the widest count it could say, so writing the real count cannot shrink the
+  // rail and clip its last chip - mock A's first cut did. In the full-screen
+  // posture the rail wraps instead and nothing goes behind +N: the posture is
+  // there to put every trigger on one screen (operator, 2026-10-04).
+  const showMoreCount = showMore?.querySelector(".show-more-n");
+  const fitRail = () => {
+    if (!showRail || !showMore || !showOverflow || !showMoreCount) return;
+    const all = [...showRail.children, ...showOverflow.children];
+    all.forEach((chip) => showRail.appendChild(chip));
+    showRail.style.flex = "";
+    showMore.classList.remove("is-empty");
+    showMoreCount.textContent = `+${all.length}`;
+    const box = showRail.getBoundingClientRect();
+    // Off screen - another surface is showing (ADR 0048) - there is nothing to
+    // measure; the line's observer measures again when it comes back.
+    if (box.width === 0) return;
+    const wraps = window.getComputedStyle(showRail).flexWrap === "wrap";
+    const spill = wraps ? [] : all.filter((chip) => chip.getBoundingClientRect().right > box.right + 0.5);
+    spill.forEach((chip) => showOverflow.appendChild(chip));
+    showMoreCount.textContent = `+${spill.length}`;
+    showMore.querySelector("summary")?.setAttribute("aria-label", `${spill.length} more Sequences`);
+    showMore.classList.toggle("is-empty", spill.length === 0);
+    if (spill.length === 0) showMore.open = false;
+    // +N sits right after the last chip that fits, and Rest at the far end.
+    if (!wraps) showRail.style.flex = "0 1 auto";
+  };
+  // The heading is watched as well as the line: "DM:CANTINA running" is wider
+  // than a count, and the rail gives up what the heading takes.
+  if (showLine && typeof window.ResizeObserver === "function") {
+    const watch = new window.ResizeObserver(() => fitRail());
+    watch.observe(showLine);
+    if (showNow?.parentElement) watch.observe(showNow.parentElement);
+  }
+
+  // The run the line was last ordered for: it is ordered again only when that
+  // changes, so a status frame landing mid-press never replaces the Stop being
+  // pressed.
+  let railRunning = null;
+  const renderShowList = () => {
+    if (!showRail || !showOverflow || !libraryAnswered()) return;
+    const focused = document.activeElement?.closest?.(".show-chip button");
+    const refocus = focused ? { name: focused.closest(".show-chip").dataset.name, act: focused.dataset.act } : null;
+    railRunning = runWatch.running();
+    showOverflow.replaceChildren();
+    showRail.innerHTML = railOrder(listedNames(), railRunning)
+      .map((name) => chipHtml(name, name === railRunning)).join("");
+    paintShowNow();
+    fitRail();
+    // The chip pressed keeps the focus through the redraw its press caused.
+    if (refocus) {
+      const chip = [...showBay.querySelectorAll(".show-chip")].find((node) => node.dataset.name === refocus.name);
+      (chip?.querySelector(`[data-act="${refocus.act}"]`) || chip?.querySelector("button"))?.focus();
+    }
+    paintStandDown();
+  };
+
+  // A changed run reorders the line, which paints the heading as it goes.
+  const paintShowRun = () => {
+    if (runWatch.running() !== railRunning) renderShowList();
+    else paintShowNow();
+  };
+
+  const paintShowNow = () => {
+    if (!showNow) return;
+    const name = runWatch.running();
+    const record = runWatch.record();
+    const answered = libraryAnswered();
+    showNow.classList.toggle("waiting", !answered && name === null && !record);
+    // "ended" only when the record says so: out of touch, the last record
+    // can still say running, and the run watch then says neither.
+    showNow.textContent = name !== null ? `${name} running`
+      : record && record.running !== true ? `${record.name} ended`
+      : answered ? String(listedNames().length) : "";
+  };
+
+  // Rest's own state. The chip of the Sequence it runs says which that is and
+  // why it does nothing, if it does nothing; the button itself says Rest.
+  const paintStandDown = () => {
+    if (!standDownBtn) return;
+    const name = standDownEffective();
+    const answered = name !== null && libraryAnswered();
+    const refusal = answered ? refusalOf(name) : null;
+    // Until the droid has said which it is, Rest waits rather than run the
+    // default over a choice it has not heard yet.
+    standDownBtn.disabled = !answered || Boolean(refusal);
+    standDownBtn.classList.toggle("is-pending", !answered);
+    standDownBtn.setAttribute("aria-disabled", String(!answered || Boolean(refusal)));
+    if (refusal) {
+      standDownBtn.dataset.ignoredSays = refusal.notice;
+      // The Stand Down Sequence is chosen on Sequences, whatever is wrong with it.
+      standDownBtn.dataset.ignoredPage = "seq";
+    } else {
+      delete standDownBtn.dataset.ignoredSays;
+      delete standDownBtn.dataset.ignoredPage;
+    }
+  };
+
+  // The run whose ending the feedback line holds, so the run being heard
+  // again - after a reconnect, say - takes back "Lost touch" rather than leave
+  // it under a chip that reads Running.
+  let endingOf = null;
+  const sayShow = (message, level = "") => {
+    endingOf = null;
+    showFeedback(showFeedbackEl, message, level);
+  };
+  const runWatch = window.PALiveReading.watchRuns(({ name, running, outcome }) => {
+    paintShowRun();
+    if (running) {
+      if (endingOf === name) sayShow("");
+      return;
+    }
+    const ending = window.PALiveReading.runEnding(outcome, name);
+    if (!ending) return;
+    sayShow(ending, "error");
+    endingOf = name;
+  });
+
+  const playSequence = async (name, button) => {
+    button.disabled = true;
+    button.classList.add("is-pending");
+    sayShow("");
+    try {
+      await runWatch.start(name);
+    } catch (error) {
+      sayShow(`${name} did not play: ${window.PAApi.messageFor(error)}`, "error");
+    } finally {
+      button.disabled = false;
+      button.classList.remove("is-pending");
+      // Stand Down's own state is paintStandDown()'s, not this press's.
+      paintStandDown();
+    }
+  };
+
+  const stopSequence = async (button) => {
+    button.disabled = true;
+    sayShow("");
+    try {
+      await runWatch.stop();
+    } catch (error) {
+      sayShow(`Stop failed: ${window.PAApi.messageFor(error)}`, "error");
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  // The droid's answer to a pin read or a pin press is the whole list as it
+  // now stands, in pin order. An answer with no list is none pinned, as the
+  // library reads above take one with no array: a pin is kept by the droid,
+  // which adds or removes one name a press, so a list missed here is never
+  // written back over.
+  const adoptPins = (answer) => {
+    showPins = Array.isArray(answer?.pins) ? answer.pins.filter((name) => typeof name === "string") : [];
+    renderShowList();
+  };
+
+  // A press pins or unpins one name; the droid refuses a ninth and says so.
+  const pinSequence = async (name, button) => {
+    const pinned = button.getAttribute("aria-pressed") !== "true";
+    button.disabled = true;
+    sayShow("");
+    try {
+      adoptPins((await window.PAApi.postJson("/api/seq/pins", { name, pinned }))?.data);
+    } catch (error) {
+      sayShow(`${name} ${pinned ? "not pinned" : "still pinned"}: ${window.PAApi.messageFor(error)}`, "error");
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  showBay?.addEventListener("click", (event) => {
+    const button = event.target.closest?.("button[data-act]");
+    if (!button || button.disabled) return;
+    const name = button.closest(".show-chip")?.dataset.name;
+    if (button.dataset.act === "stop") stopSequence(button);
+    else if (button.dataset.act === "pin") pinSequence(name, button);
+    else playSequence(name, button);
+  });
+
+  // The +N popover closes on a press outside it and on Escape.
+  document.addEventListener("click", (event) => {
+    if (showMore?.open && !showMore.contains(event.target)) showMore.open = false;
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && showMore?.open) showMore.open = false;
+  });
+
+  standDownBtn?.addEventListener("click", () => {
+    const name = standDownEffective();
+    if (name !== null && !standDownBtn.disabled) playSequence(name, standDownBtn);
+  });
+
+  // The posture is the shell's: this asks for it and paints what it says.
+  postureBtn?.addEventListener("click", () => {
+    const on = !document.body.classList.contains("shell-performing");
+    window.dispatchEvent(new CustomEvent("pa:posture", { detail: { on } }));
+  });
+  window.addEventListener("pa:posture-changed", (event) => {
+    if (!postureBtn) return;
+    const on = event.detail?.on === true;
+    postureBtn.setAttribute("aria-pressed", String(on));
+    postureBtn.innerHTML = on ? `${icon("fullscreen-exit")}<span>Leave full screen</span>`
+      : `${icon("fullscreen")}<span>Full screen</span>`;
+  });
+
+  const loadShowLearned = async ({ handle = null } = {}) => {
+    const answer = await (handle ?? window.PAApi).get("/api/seq/list");
+    showLearned = Array.isArray(answer?.data) ? answer.data : [];
+    renderShowList();
+  };
+
+  const loadShowFactory = async ({ handle = null } = {}) => {
+    const answer = await (handle ?? window.PAApi).get("/api/seq/builtins");
+    showFactory = Array.isArray(answer?.data) ? answer.data : [];
+    renderShowList();
+  };
+
+  const loadShowMap = async ({ handle = null } = {}) => {
+    const answer = await (handle ?? window.PAApi).get("/api/rc/map");
+    const map = Array.isArray(answer?.data?.map) ? answer.data.map : [];
+    showMapped = map
+      .filter((entry) => entry.action === "dome_seq" && entry.payload && window.PAApi.isRcChannelSource(entry.source))
+      .map((entry) => ({ name: entry.payload, channel: window.PAApi.rcChannelTitle(entry.source, entry.channel) }));
+    renderShowList();
+  };
+
+  // A 404 is a droid whose firmware keeps no pins: its chips carry none. Any
+  // other failure is the section's, retried like the rest.
+  const loadShowPins = async ({ handle = null } = {}) => {
+    let answer = null;
+    try {
+      answer = await (handle ?? window.PAApi).get("/api/seq/pins");
+    } catch (error) {
+      if (error?.kind !== "http" || error.status !== 404) throw error;
+      showPins = false;
+      renderShowList();
+      return;
+    }
+    adoptPins(answer?.data);
+  };
+
+  // The Stand Down choice rides the /api/config payload the log level reads.
+  // Only an answer that carries the key is one: a droid whose firmware does
+  // not know the Setting has not said "never chosen", so Stand Down waits.
+  const adoptStandDown = (config) => {
+    const chosen = config?.seq?.standDown;
+    if (typeof chosen !== "string") return;
+    standDownChoice = chosen;
+    // The list draws the Rest mark and may list the name itself.
+    renderShowList();
+    paintStandDown();
+  };
+
+  // Back on the Dashboard after Sequences or RC, the library, the RC Map, the
+  // pins and the Stand Down choice may have moved - the pins from another
+  // browser, too: read again each time the Dashboard returns (PASurface
+  // starts its polls again then, ADR 0048). The Factory catalog is the
+  // firmware's and does not change. The first start is the mount, whose own
+  // sections read all of it.
+  let showMounted = false;
+  window.PASurface.poll(async () => {
+    if (!showMounted) {
+      showMounted = true;
+      return;
+    }
+    await loadShowLearned();
+    await loadShowMap();
+    if (showPins !== false) await loadShowPins();
+    adoptStandDown((await window.PAApi.get("/api/config"))?.data);
+  }, { runOnStart: true }).start();
 
   // -------------------------------------------------------------------------
   // Boot — load recent logs, log level, and action tokens
@@ -1250,37 +1968,34 @@
   // can show recovery state if any fetch fails.
   // See docs/page-load-recovery-architecture.md and ADR 0019.
 
-  // Initial status fetch: loads the current state when the stream is cold.
-  // This is registered as a section so the bootstrap can show recovery state
-  // if the fetch fails. For the stream-supported case, this section only runs
-  // if the stream has no cached value. For the fallback case, it ensures the
-  // page shows data before polling begins.
-  const loadInitialStatus = async ({ handle = null } = {}) => {
-    const hasStream = window.PAStatusStream?.isSupported();
-    const hasCachedStatus = hasStream && window.PAStatusStream?.getLastStatus();
-    if (!hasStream || !hasCachedStatus) {
-      await refreshStatusOnce({ handle });
-    }
-  };
-
   const SECTIONS = [
-    ["app-initial-status", loadInitialStatus, "initial status"],
     ["app-recent-logs", loadRecentLogs, "recent logs"],
     ["app-log-level", loadLogLevel, "log level setting"],
+    ["app-output-names", loadOutputNames, "Output names"],
     ["app-console-catalog", loadConsoleCatalog, "console commands"],
+    ["app-seq-learned", loadShowLearned, "your sequences"],
+    ["app-seq-factory", loadShowFactory, "factory sequences"],
+    ["app-rc-map", loadShowMap, "RC Map"],
+    ["app-seq-pins", loadShowPins, "pinned sequences"],
   ];
 
   const startPageLoad = () => {
     if (!window.PABootstrap) {
       loadRecentLogs().catch(() => {});
       loadLogLevel().catch(() => {});
+      loadOutputNames().catch(() => {});
       loadConsoleCatalog().catch(() => {});
+      loadShowLearned().catch(() => {});
+      loadShowFactory().catch(() => {});
+      loadShowMap().catch(() => {});
+      loadShowPins().catch(() => {});
       return;
     }
     window.PABootstrap.setResourceLabels?.({
-      "/web_api.js": "controller connection",
-      "/diagnostics.js": "diagnostics constants",
+      "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
+      "/live_reading.js": "live updates",
+      "/dome_bearing.js": "where the dome points",
       "/shell.js": "page layout",
       "/health_signals.js": "health indicator logic",
       "/dome_command_map.js": "dome command map",
@@ -1289,48 +2004,35 @@
       "/dome_layout_render.js": "dome panel rendering",
       "/dome_control.js": "dome control",
       "/app.js": "home dashboard",
-      "/footer.js": "page footer",
     });
     SECTIONS.forEach(([name, load, label]) =>
       window.PABootstrap.registerSection(name, load, { label })
     );
   };
 
+  // The state to paint before the droid has said anything. It has to be
+  // written BEFORE the subscribe below: the Live Reading hands a new
+  // subscriber the reading it already holds, synchronously, and the Operator
+  // Shell seeds that from its own boot read (ADR 0048). Run after the
+  // subscription, it would overwrite a seeded frame -- which once left the
+  // Dashboard disabling its estop release on a latched droid until the droid
+  // emitted a status, which a quiet latched droid never does (#359).
+  setSleepUi(false);
+
   startPageLoad();
 
+  // Every status this surface paints rides the Live Reading, which owns the
+  // stream or the one fallback poll for the whole shell (data/live_reading.js).
+  window.PALiveReading.subscribe(applyReading);
+
+  // The log lines are the stream's own events, not the status, so they are
+  // read off the stream directly; with no stream there are none to read.
   if (window.PAStatusStream?.isSupported()) {
     window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") {
-        applyStatus(payload);
-      }
       if (eventType === "log") payload.split("\x01").forEach((line) => appendLogLine(line));
       if (eventType === "stream_error") {
         appendLogLine(LOG_UNREACHABLE_TEXT);
-        setStale(true);
       }
-    });
-  } else {
-    // Fallback polling for pages without stream support
-    const refreshFromFallback = () => {
-      return refreshStatusOnce().catch(() => {
-        pollFailCount++;
-        if (pollFailCount >= 2) setStale(true);
-      });
-    };
-
-    const fallbackPoll = window.PageBootstrap.createBackgroundPoll(
-      refreshFromFallback,
-      {
-        cadenceMs: 3000,
-        refreshOnReturn: true,
-      }
-    );
-    fallbackPoll.start();
-
-    window.addEventListener("beforeunload", () => {
-      fallbackPoll.stop();
     });
   }
-  setEstopUi(false);
-  setSleepUi(false);
 })();

@@ -1,10 +1,48 @@
 # Behavioral tests for shipped web modules
 
+**Paused through 2026-10-31 (#464).** Do not add a web test or a mutation patch in this window, and do not run this suite per slice. The rules below still describe what a test is when one is earned. CI runs the existing files on a pull request into `main`. The pause ends on 2026-11-01.
+
 Two defects (#148, #149) shipped behind green suites, and two rework attempts
 were rejected with green suites over unchanged behavior. The recurring failure
 mode is the **vacuous test** - a test that cannot fail. Work from this
 assumption: your suite is vacuous until a mutation of production code turns it
 red.
+
+## What earns a test here
+
+A web test earns its place the way a bench row does (AGENTS.md "Verification
+Scale"). It is one of three things:
+
+1. A **safety invariant** the change could violate. `the sheet writes nothing
+   to the droid`. A frame missing a safety field is not read as safe. E-Stop
+   cannot be cancelled by someone else's abort.
+2. A **defect this repo has actually shipped.** #148 and #149 are the model:
+   the test is red on the bad commit.
+3. A behaviour **only the harness can see**: who owns an abort, what a session
+   does, that a surface does not write.
+
+Everything else is a **ticket test** - the acceptance list typed out as
+`test()` blocks - and does not get written. Copy, heading words, chip order, a
+1500 ms window, visual anatomy, emoji-or-word, an implementation helper: the
+operator is looking at the screen, and the critic reads the production diff.
+Those stay on the ticket.
+
+The check: is the test still true after the issue number is forgotten? If it
+only restates what the ticket asked for this week, it is a receipt.
+
+One invariant, in a file named for the surface or the contract
+(`test_status_plate.js`, `test_paapi_cancellation.js`), never for the ticket.
+The ticket number may sit in a comment. When the surface already has a file,
+add to it. Plus **one** mutation that kills it. A slice that touches `data/`
+still adds at least one test (the gate's `delta +0` floor); that floor is one
+test, not one per checkbox.
+
+**If the `data/` change is copy or layout, do not invent a test to clear the
+floor.** It has no invariant to add. Stop and ask the coordinator for
+`--expect-no-new-tests`; a waiver is never self-granted, and a test written
+only to turn `delta +0` green is a receipt and a reject.
+
+## Mutations
 
 A **mutation** is a small bug planted in production code on purpose - invert a
 flag, delete a stop() call - to test the tests: if the suite stays green with
@@ -16,6 +54,34 @@ which proves each one applied, requires the kill to be an assertion (a hang or
 timeout does not count), requires every changed `data/*.js` file to be hit by
 at least one patch, and restores the tree. Standalone `tools/mutation_verify.py`
 runs are for authoring patches before the gate run.
+
+### What the runner counts as a kill
+
+The runner does not run the whole suite per patch. It runs **one test file at a
+time**, in its own `node --test` process: only the files that load the patched
+file (the load map, traced from the gate's HEAD web run by
+`tools/web_load_trace.cjs`), shortest first, and it **stops at the first file
+that kills the patch by assertion**. Anything it cannot be sure of - no map, a
+patched file no test opens, a patched file that is not `data/*.js` - widens to
+every test file.
+
+- **KILLED** - one file exited non-zero with a `not ok`, no cancelled test, no
+  `testTimeoutFailure`, and not by the runner's own 60 s timeout. The files
+  after it are not run.
+- **KILLED-BY-HANG** - no file killed by assertion, and at least one exited
+  non-zero some other way: a hang, a timeout, a crash. Rejected.
+- **SURVIVED** - no test that loads this file killed it. Rejected.
+
+A patch that one file kills by assertion while another file hangs is now
+KILLED. Before #405 that patch was KILLED-BY-HANG and rejected, because the
+whole suite ran and the hang was seen; stopping at the first kill never sees
+the hang. The behaviour is asserted. That is the rule now.
+
+The table's `ran` column is files run / files in the likely-set, e.g. `3/21`.
+It depends on how long each file took last time, so it can differ between two
+runs of the same patch; the verdict cannot. `tools/mutation_verify.py
+--whole-suite <patches>` runs the old way - every file in one invocation, no
+likely-set, no stop-early - for debugging a verdict you do not believe.
 
 ## Harness pattern
 
@@ -34,26 +100,29 @@ runs are for authoring patches before the gate run.
 - **vm-hosting the browser host:** `unref()` every timer the code under test
   schedules, or its retry clock holds the `node:test` process open forever.
 
-## Prove the suite can fail - required before reporting green
+## Prove the test can fail - required before reporting green
 
-1. **Calibrate against the known-bad commit.** Extract the pre-fix files
-   (`git show <bad>:data/<module>.js`) into a scratch tree beside a copy of the
-   new tests and run them there. The tests covering the defect must be red; a
-   test that passes on the bad commit covers nothing.
-2. **Mutate production code, never assertions.** One mutation at a time, each
-   reverting one fix aspect; every mutation must turn at least one test red.
-   Include **stealth mutations** - behavior changes that leave every asserted
-   string byte-identical (invert a flag assignment, swap a return value). These
-   are what defeat source-text assertions.
-3. **Pristine green on both sides.** Full suite green before mutating and after
-   restoring. Commit the fix before running any script that restores files via
-   `git checkout` - restore targets the last commit, and uncommitted work is
-   wiped silently.
+One kill per changed `data/*.js` file. Not one per checkbox, not one per
+aspect of the fix.
 
-Report the calibration result alongside the green run; mutation evidence is
-the gate block itself, run with `--mutations`. If a mutation turns nothing
-red, fix the test - a gap explained away ("logically correct per the
-specification") is how both rejected attempts shipped.
+1. **Mutate production code, never assertions.** Plant the bug that breaks the
+   invariant you wrote the test for, and watch that test go red. That patch is
+   the one the gate runs.
+2. **For a bug fix, run the new test against the known-bad commit.** Extract
+   the pre-fix files (`git show <bad>:data/<module>.js`) into a scratch tree
+   beside a copy of the new test. It must be red there; a test that passes on
+   the bad commit covers nothing.
+3. **Commit before running anything that restores files via `git checkout`** -
+   restore targets the last commit, and uncommitted work is wiped silently.
+
+A **stealth mutation** - a behavior change that leaves every asserted string
+byte-identical (invert a flag assignment, swap a return value) - is the tool
+for one risk: a test that asserts source text. Reach for it when that is the
+risk. It is not a quota.
+
+Mutation evidence is the gate block itself, run with `--mutations`. If the
+mutation turns nothing red, fix the test - a gap explained away ("logically
+correct per the specification") is how both rejected attempts shipped.
 
 ## Traps that shipped real bugs here
 

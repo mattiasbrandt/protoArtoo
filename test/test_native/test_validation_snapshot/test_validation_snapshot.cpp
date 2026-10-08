@@ -179,7 +179,7 @@ void test_captureValidationSnapshot_reports_boot_active_rc_and_live_timeout() {
     saved.system.enable_rc_ch1 = false;
     saved.system.enable_rc_ch2 = true;
     saved.drive.sbusTimeoutMs = 4321;
-    configCacheApply(saved);
+    configCacheReplace(saved);
 
     ValidationSnapshot snapshot = {};
     captureValidationSnapshot(&snapshot);

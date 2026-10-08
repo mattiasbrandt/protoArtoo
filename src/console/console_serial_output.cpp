@@ -13,6 +13,7 @@
 // =============================================================================
 
 #include "console_serial_output.h"
+#include "console_serial_output_test_hooks.h"  // consoleSerialEmitLine(), defined below for tests only
 
 #include <Arduino.h>
 #include <stdio.h>

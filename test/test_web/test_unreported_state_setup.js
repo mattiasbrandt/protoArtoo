@@ -1,0 +1,63 @@
+// =============================================================================
+// test/test_web/test_unreported_state_setup.js
+//
+// A serial lane nobody asked about reads unlit, never green. The lanes were
+// Setup's and are Maintenance's since #404 split that page; the file keeps its
+// name because a renamed test file reads to the gate as a deleted one.
+// Maintenance runs through helpers/page_module_env.js - the shipped module, a
+// permissive DOM stub, and a responder standing in for the droid - with the
+// shipped Feature Availability module its page loads first handed in for real.
+//
+// Thinned from the #399 Surface Anatomy checklist (#406).
+// =============================================================================
+
+import { test } from "node:test";
+import assert from "node:assert";
+
+import { createRequire } from "node:module";
+
+import { loadPageModule } from "./helpers/page_module_env.js";
+import { statusFrame } from "./helpers/fake_droid.js";
+
+const require = createRequire(import.meta.url);
+const { createFeatureAvailability } = require("../../data/feature_availability.js");
+// The Sound and protoR2link lanes are the health-signal model's answer, which
+// every page loads ahead of the shell (data/health_signals.js).
+const PAHealthSignals = require("../../data/health_signals.js");
+
+// Maintenance fed whole frames through the stream and the Live Reading.
+const loadMaintenance = (config = {}, respond = null) => {
+  const env = loadPageModule("maintenance.js", {
+    respond: respond || (() => ({ data: config })),
+    overrides: { PAFeatureAvailability: createFeatureAvailability(), PAHealthSignals },
+  });
+  env.status = (changes) => env.pushStatus(statusFrame(changes));
+  return env;
+};
+
+const HEAP_GOOD = { heapFree: 177152, heapMin: 150000, heapLargestBlock: 61440 };
+
+test("a lane nobody asked about reads grey, never green", () => {
+  const env = loadMaintenance();
+  env.status({ ...HEAP_GOOD });
+
+  assert.equal(env.element("serial-s1-light").className, "indicator off", "no drive in the frame at all");
+  assert.equal(env.element("serial-s1-state").textContent, "Off");
+  assert.equal(env.element("serial-s2-light").className, "indicator off");
+  assert.equal(env.element("serial-s3-light").className, "indicator off");
+});
+
+
+// protoR2link is never held by sound: while sound holds the line protoR2link
+// runs on WiFi, so a lost there is a real loss and the lane says so in red,
+// in the model's word (#422).
+test("a protoR2link lost while sound holds the line reads lost on its lane", () => {
+  const env = loadMaintenance();
+  env.status({
+    ...HEAP_GOOD,
+    dome_link: { state: "lost", transport: "wifi", last_rx_ms: 9000, uart_owner: "audio", uart_owned_by_dome: false },
+  });
+
+  assert.equal(env.element("serial-s3-light").className, "indicator fail");
+  assert.match(env.element("serial-s3-state").textContent, /^Lost\b/);
+});

@@ -62,6 +62,21 @@ ProtocolCheckResult seqStorePrepare(const char* name);
 // is refused gracefully rather than crashing on a tight heap).
 bool seqStoreCommit(SequenceEntry& out);
 
+// The takes of the sequence just committed (#442, include/take_replay.h), or
+// nullptr when it names none: read off its `takes` array by seqStorePrepare()
+// and handed on with the steps by seqStoreCommit(). The caller owns the block
+// from here and free()s it when the run ends; a block not claimed is freed by
+// seqStoreReleaseRun(). `*unplayed` counts the takes the sequence names that
+// will not play, by reason, for the caller to report; the run plays its steps
+// either way. Dispatcher task only.
+struct TakeReplayRun;
+struct SeqStoreTakesUnplayed {
+    uint8_t noMemory;  // the load could not get the memory for them
+    uint8_t overCap;   // past what this board keeps (TAKE_STORE_CAP): a sequence
+                       // restored from a board that keeps more
+};
+TakeReplayRun* seqStoreClaimRunTakes(SeqStoreTakesUnplayed* unplayed);
+
 // Free the heap run buffers after a Learned Sequence run has fully drained.
 // The dispatcher calls this at sequence end/abort so an idle body (or a
 // Factory-only run  --  Factory steps live in flash) holds zero run-buffer RAM.
@@ -69,16 +84,31 @@ bool seqStoreCommit(SequenceEntry& out);
 void seqStoreReleaseRun();
 
 // Validate + persist a Learned Sequence from JSON text. Runs Protocol Check
-// (transient heap staging), enforces capacity (16-file cap + free-space floor +
-// per-file size), writes temp-file + rename, and reindexes. Returns a
-// field-level error on rejection (nothing written), ok on success.
+// (transient heap staging), enforces capacity (the board's store cap,
+// SEQ_STORE_CAP + free-space floor + per-file size), writes temp-file + rename,
+// and reindexes. Returns a field-level error on rejection (nothing written), ok
+// on success. Once saved, the takes it names are kept and its other takes are
+// deleted (takeStoreSequenceSaved(), include/take_store.h).
 ProtocolCheckResult seqStoreSave(const char* json, size_t len);
 
-// Delete a Learned Sequence and its index entry (Memory Wipe). Returns true
+// Delete a Learned Sequence, its index entry and its takes (Memory Wipe;
+// takeStoreSequenceDeleted(), unless another sequence carries its id). Returns true
 // only if the file is actually gone (removed, or index-only entry cleaned
 // up); a failed file removal keeps the index entry so the store and the
 // filesystem cannot diverge.
 bool seqStoreDelete(const char* name);
+
+// Whether running the sequence `name` can open a body Part, answered without
+// loading it: a Learned Sequence from the flag its index row was given when it
+// was saved, a Factory Sequence from its steps, and a name the dome runs - an
+// alias, or one this controller does not know - never, because nothing the
+// dome does moves a body Part. Same precedence as sequenceLookup().
+//
+// From any task, and it never waits: the index is read under the store's
+// lock, taken only if it is free. The answer decides whether a body Part may
+// open while the droid drives (#450), so a store that is busy - a save, a
+// delete, a load - answers yes, the side that keeps the Part shut.
+bool seqStoreMayOpenBodyPart(const char* name);
 
 // Copy up to `capacity` bytes of a Learned Sequence file's raw JSON, starting
 // at byte `offset`, into `out` (GET /api/seq?name=). Returns the number of

@@ -42,16 +42,17 @@
 #include "console_module.h"               // ConsoleCommandSource, ConsoleRecordSink
 #include "console_args.h"                 // ConsoleArgs, consoleArgsFind()
 #include "console_catalog.h"              // ConsoleCatalogEntry, consoleCatalogFindByName()
-#include "robot_state.h"                  // robotState, robotStateMux, CommandSource, saveConfigToNvs()
+#include "robot_state.h"                  // robotState, robotStateMux, CommandSource
 #include "commanded_modes.h"              // commandedSetStationary/Sleep/WebControl()
 #include "drive_arbiter.h"                // driveArbiterSubmit(), DriveSource
 #include "web_server.h"                   // requestStatusBroadcastNow()
 #include "failsafe_gate.h"                // failsafeClearEstop() - the single
                                           // explicit-intent ESTOP release path
 #include "mood.h"                         // applyMood()
-#include "config_cache.h"                 // ConfigSnapshot, configCacheRead()
+#include "config_cache.h"                 // ConfigSnapshot
 #include "api_helpers.h"                  // normalizeDroidName(), parseBoolValue()
-#include "api_identity.h"                 // identitySetCommitApplied(), IdentitySetCommitOutcome
+#include "api_identity.h"                 // identitySetWriteWindow(), IdentitySetCommitOutcome
+#include "api_drive.h"                    // saveCommandedMode() - the mode save's Write Window
 #include "config.h"                       // DROID_NAME_MAX_LEN
 #include "api_profiler.h"                 // profilerTraceStart()/profilerTraceStop() and
                                           // ProfilerTraceOutcome - the Tier 3 leak-trace cores
@@ -104,12 +105,15 @@ static void consoleExecuteDirectSetMode(uint32_t requestId, const char* operatio
     }
 
     commandedSetStationary(stationary, consoleCommandSourceFor(source));
-    // saveConfigToNvs() persists the whole cache (commandedSetStationary()
-    // already synced robotState.stationary into it) - the same call
-    // handleModePost makes, its result unchecked there; the Console checks
-    // it so a failed write is an explicit error (criterion 3) rather than a
-    // silently discarded one.
-    const bool persisted = saveConfigToNvs();
+    // The mode save's Write Window (saveCommandedMode(), include/api_drive.h),
+    // the one POST /api/mode calls: it persists the whole cache
+    // (commandedSetStationary() already synced robotState.stationary into it).
+    // This executor checked the save's result first and the REST route
+    // discarded it; #376 settled that in this executor's favour, so the two
+    // adapters for this one operation answer alike. A busy lock and a failed
+    // write both come back false, and both are a save that did not happen,
+    // answered like one.
+    const bool persisted = saveCommandedMode();
     requestStatusBroadcastNow();
 
     if (sink->onRecordResult) {
@@ -296,12 +300,13 @@ static void consoleExecuteDirectSetIdentity(uint32_t requestId, const char* oper
         return;
     }
 
+    // The Write Window POST /api/identity calls (include/api_identity.h).
     ConfigSnapshot working = {};
-    configCacheRead(&working);
-    snprintf(working.system.droid_name, sizeof(working.system.droid_name), "%s", normalized);
-    working.system.mdns_use_name = mdnsUseName;
-
-    IdentitySetCommitOutcome commit = identitySetCommitApplied(&working);
+    IdentitySetCommitOutcome commit;
+    if (!identitySetWriteWindow(normalized, mdnsUseName, &working, &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
+        return;
+    }
     if (sink->onRecordResult) {
         sink->onRecordResult(requestId, commit.persisted ? CONSOLE_STATUS_OK : CONSOLE_STATUS_ERR,
                             commit.persisted ? CONSOLE_OUTCOME_APPLIED : CONSOLE_OUTCOME_INTERNAL_ERROR,
@@ -381,10 +386,10 @@ static void consoleExecuteDirectProfilerTraceStop(uint32_t requestId, const char
 // system.action.reboot: no arguments, matching POST /api/reboot
 // (handleRebootPost, src/web/api_system.cpp) - a status broadcast, then the
 // complete record group, THEN the deferred restart flag, in that order:
-// requestSystemRestart() (include/web_server.h) only arms loop()'s restart
-// (src/main.cpp) after delayMs, so emitting the record after arming it
-// would risk it racing the restart for nothing, where emitting it first
-// costs nothing and is provably ordered before the reboot lands (ticket
+// requestSystemRestart() (include/web_server.h) only arms SafetyMonitor's
+// restart (src/tasks/safety.cpp) after delayMs, so emitting the record after
+// arming it would risk it racing the restart for nothing, where emitting it
+// first costs nothing and is provably ordered before the reboot lands (ticket
 // acceptance criterion 3). ADR 0032 ("requestSystemRestart() keeps its
 // operator-initiated callers only") is satisfied by construction: a Console
 // reboot is operator-initiated, and this adds no new caller of it anywhere
@@ -404,9 +409,12 @@ static void consoleExecuteDirectReboot(uint32_t requestId, const char* operation
     requestSystemRestart(500);
 }
 
-// system.action.estop-clear: no arguments, the same failsafeClearEstop() +
-// requestStatusBroadcastNow() pair handleEstopClearPost() (POST
-// /api/estop/clear, src/web/api_estop.cpp) runs, in that order.
+// system.action.estop-clear: no arguments, the same failsafeClearEstop() call
+// handleEstopClearPost() (POST /api/estop/clear, src/web/api_estop.cpp) makes.
+// Neither adapter asks the event stream to publish: failsafeClearEstop()
+// publishes the edge itself (src/failsafe_gate.cpp, #346), so both paths
+// broadcast exactly once on a clear and neither broadcasts when there was
+// nothing latched.
 //
 // The latch itself is untouched: failsafeClearEstop() (src/failsafe_gate.cpp)
 // remains the single explicit-intent path that can release ESTOP, and this
@@ -422,7 +430,6 @@ static void consoleExecuteDirectEstopClear(uint32_t requestId, const char* opera
         return;
     }
     failsafeClearEstop();
-    requestStatusBroadcastNow();
 
     if (sink->onRecordResult) {
         sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
@@ -445,8 +452,8 @@ static void consoleExecuteDirectEstopClear(uint32_t requestId, const char* opera
 //  - ADR 0032 is the reason there is nothing to guard. The network is never
 //    load-bearing: a network fault never restarts the controller and never
 //    degrades a droid function. The WiFi module carries the network and only
-//    the network -- drive goes out over the hoverboard UART, the dome over its
-//    own serial link, servos over LEDC, sound over the audio UART -- so
+//    the network -- drive goes out over the drive lane, the dome over its
+//    own serial link, servos over LEDC, sound over the audio lane -- so
 //    dropping it takes no droid function with it, and a stationary/estop gate
 //    would guard nothing.
 //  - The concrete risk raised on the ticket was not a lost control line but a

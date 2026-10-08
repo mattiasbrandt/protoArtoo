@@ -1,7 +1,7 @@
 {
-  "name": "protoartoo",
+  "name": "protor2",
   "version": "1.0.0",
-  "description": "<p align=\"center\">   <img src=\"data/r2d2body.svg\" alt=\"protoArtoo logo\" width=\"96\" height=\"96\"> </p>",
+  "description": "Open-source ESP32 body controller firmware for hoverboard-driven MK4 astromech droids.",
   "main": "index.js",
   "directories": {
     "doc": "docs",
@@ -22,6 +22,7 @@
   },
   "homepage": "https://github.com/mattiasbrandt/protoArtoo#readme",
   "devDependencies": {
+    "esbuild": "0.28.2",
     "playwright": "^1.63.0"
   }
 }

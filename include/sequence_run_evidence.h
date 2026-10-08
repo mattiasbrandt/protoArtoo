@@ -22,10 +22,12 @@
 #include "protocol_check.h"   // PC_CMD_MAX, PC_MAX_STEPS -- the model's own ceilings
 #include "sequence_engine.h"  // SeqAction
 
-// Bounded buffers, sized per chip target. The record is held as TWO static
-// copies -- the live record on the dispatcher task (sequence_run_evidence.cpp)
-// and the snapshot GET /api/seq/last-run serializes from (api_seq.cpp) -- so
-// every byte here costs 2x static DRAM.
+// Bounded buffers, sized per chip target. The record is held twice -- the live
+// record on the dispatcher task (sequence_run_evidence.cpp), a static, and the
+// snapshot GET /api/seq/last-run serializes from (api_seq.cpp), in the web
+// request scratch (include/web_request_scratch.h, #428). Every byte here costs
+// static DRAM once, and a second time wherever this record is the largest
+// thing that scratch holds - on ESP32-P4 today.
 //
 // ESP32 (artoo-esp32): the operator-sanctioned minimum, unchanged. Steady-state
 // free heap is tight -- see the 2026-06-18 heap-exhaustion fix -- so the ring is
@@ -45,16 +47,21 @@
 //                               48 clipped 16 characters off a full-length
 //                               Marcduino text command such as @1M<message>.
 //   SEQ_EVID_TX_CAP      112  = PC_MAX_STEPS (96) + the engine's terminal drain
-//                               queue (SeqEngineState::finalQ, 16 entries).
-//                               One run executes ONE branch, and one of its
-//                               steps is the STEP_END sentinel, so a non-looping
-//                               run emits at most 95 authored commands followed
-//                               by at most 16 cleanup actions: 111 <= 112.
-//   SEQ_EVID_CLEANUP_CAP  16  = finalQ depth exactly. Cleanup is only ever
+//                               queue (SeqEngineState::finalQ, SEQ_FINAL_Q_CAP =
+//                               17 entries) - 1. One run executes ONE branch,
+//                               and one of its steps is the STEP_END sentinel,
+//                               so a non-looping run emits at most 95 authored
+//                               commands followed by at most 17 cleanup
+//                               actions: 112 <= 112.
+//   SEQ_EVID_CLEANUP_CAP  16  = one short of finalQ's 17. Cleanup is only ever
 //                               recorded while the engine is finishing, and
 //                               everything it serves then comes out of finalQ
 //                               (sequence_dispatcher.cpp drainBestEffort and the
-//                               seqEngineFinishing() tick path).
+//                               seqEngineFinishing() tick path). The 17th needs
+//                               every terminal class in one run, the Background
+//                               Track's stop (ADR 0054) included; it is counted
+//                               and signalled by cleanupTruncated rather than
+//                               paid for with 128 B more of static DRAM.
 //
 // A STEP_LOOP body still repeats without a static bound (period >= 100 ms across
 // a duration <= 120 s), so truncation stays possible on BOTH chips and stays
@@ -168,3 +175,38 @@ void seqEvidenceEnd(SeqRunOutcome outcome, const char* reason, uint32_t endMs,
 // Copy the current record under lock for the API handler. Returns false (and an
 // out.valid==false record) when no run has been recorded yet.
 bool seqEvidenceSnapshot(SeqRunEvidence& out);
+
+// The scalar header of the record: the fields dome.api.get-sequence-last-run
+// emits, and nothing else. A caller that serializes only these reads them here
+// instead of taking a whole SeqRunEvidence, which is 8284 B on ESP32-P4 -
+// larger than that board's whole httpd stack (#427).
+struct SeqRunSummary {
+    bool          valid;                 // a run has been recorded
+    SeqRunOutcome outcome;
+    char          name[SEQ_EVID_NAME_LEN];
+    uint8_t       source;                // CommandSource of the trigger
+    char          reason[SEQ_EVID_REASON_LEN];
+    uint32_t      startMs;
+    uint32_t      endMs;                 // 0 while still running
+};
+
+// Copy the summary fields under the same lock seqEvidenceSnapshot() takes, so
+// they come from one consistent record. Returns false (and an out.valid==false
+// summary) when no run has been recorded yet.
+bool seqEvidenceSummary(SeqRunSummary& out);
+
+// What the status document says of the run (`seqRun`, include/status_json.h,
+// #451): which Sequence it is, whether it is still under way, and when it
+// began - the start time is what tells one run of a Sequence from the next.
+// Narrower than SeqRunSummary on purpose: it is captured on the status
+// builder's frame, which is on a measured stack chain.
+struct SeqRunState {
+    bool     valid;                      // a run has been recorded
+    bool     running;
+    uint32_t startMs;
+    char     name[SEQ_EVID_NAME_LEN];
+};
+
+// Copy the run's state under the record's lock. Returns false (and an
+// out.valid==false state) when no run has been recorded yet.
+bool seqEvidenceRunState(SeqRunState& out);

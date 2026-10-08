@@ -4,7 +4,7 @@
 // Native unit tests for SBUS watchdog timeout and transition detection.
 //
 // Safety relevance: SBUS signal loss must be detected to enter failsafe mode
-// and stop the robot when RC transmitter disconnects.
+// and stop the robot when the RC receiver disconnects.
 // =============================================================================
 #include <unity.h>
 

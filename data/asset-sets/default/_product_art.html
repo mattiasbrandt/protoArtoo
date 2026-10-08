@@ -1,0 +1,11 @@
+<!--
+  The default set's counterpart to the legacy set's product drawings (#382,
+  ADR 0065). It is deliberately empty of art: this set carries photographs, and
+  a card that finds no drawing in the document falls back to /<id>.webp.
+
+  It exists because tools/gzip_fsdata.py resolves an included partial from the
+  active set and then the common data root, and refuses the build when it finds
+  it in neither. A page may therefore include the drawings only while every set
+  answers to that name. A partial is not imaged, so this file costs the image
+  nothing on its own.
+-->

@@ -301,7 +301,7 @@ void test_captureRcDiagnosticsSnapshot_reports_boot_active_rc_and_live_bindings(
     saved.system.enable_rc_ch1 = false;
     saved.system.enable_rc_ch2 = true;
     saved.system.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 9);
-    configCacheApply(saved);
+    configCacheReplace(saved);
 
     RcDiagnosticsSnapshot snapshot = {};
     captureRcDiagnosticsSnapshot(&snapshot);

@@ -1,8 +1,15 @@
 // =============================================================================
 // src/tasks/aux_led.cpp
 //
-// AuxLedTask - single WS2812B strip driver on selectable AUX header.
+// AuxLedTask - the WS2812B strips on the droid's lit wires. One driver per wire
+// that carries a Light Type (ADR 0067, #413), where there used to be one strip
+// on one selectable header.
+//
 // Runs on Core 0 (non real-time path) and never blocks Core 1 control loops.
+// Which wires are lit is read ONCE at start, like every other Component Toggle
+// (ADR 0027): a builder changing what a wire carries is told it bites at the
+// next restart, and the alternative is re-creating an RMT driver underneath a
+// running strip.
 // =============================================================================
 
 #include "aux_led.h"
@@ -10,13 +17,17 @@
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
-#include <string.h>
 
+#include "board_output_enabled.h"
+#include "board_outputs.h"
 #include "config.h"
 #include "config_cache.h"
+#include "ledc_pwm.h"
 #include "logging.h"
+#include "output_wire.h"  // which wires carry a strip (#416)
 #include "queue_drop_tracker.h"
 #include "robot_state.h"
+#include "servo_output_row.h"
 #include "web_server.h"
 
 #ifdef ARDUINO
@@ -35,52 +46,115 @@ enum AuxLedCommandType : uint8_t {
 struct AuxLedCommand {
     AuxLedCommandType type;
     CommandSource source;
+    uint8_t target;  // a BOARD_OUTPUTS index, or AUX_LED_TARGET_ALL
     uint8_t r;
     uint8_t g;
     uint8_t b;
     AuxLedEffect effect;
 };
 
-static constexpr uint8_t AUX_LED_QUEUE_LEN = 8;
+// Eight deep per wire: a builder dragging the brightness slider on one plate
+// must not push another wire's pending command off the queue.
+static constexpr uint8_t AUX_LED_QUEUE_LEN = 8 * BOARD_OUTPUT_COUNT;
 static constexpr uint16_t AUX_LED_BLINK_PERIOD_MS = 1000;
 static constexpr uint16_t AUX_LED_PULSE_PERIOD_MS = 1800;
 
 static QueueHandle_t s_auxLedQueue = nullptr;
 
+// One lit wire, as the task holds it. Indexed by its Output's place in
+// BOARD_OUTPUTS, which is also robotState.auxLed's index, so neither end keeps
+// a list of its own.
+struct LitWire {
+    bool lit;        // the builder wired a light here
+    bool available;  // and its driver started - see AuxLedState's own note
+    uint8_t gpio;
+    uint8_t ledCount;
+    uint8_t baseR;
+    uint8_t baseG;
+    uint8_t baseB;
+    AuxLedEffect effect;
+    // What was last rendered, so a frame that resolves to the same color does
+    // not re-drive the strip. 255/255/255 is deliberately not a color the
+    // strip starts at, so the first frame always renders.
+    uint8_t lastR;
+    uint8_t lastG;
+    uint8_t lastB;
 #ifdef ARDUINO
-static Adafruit_NeoPixel* s_strip = nullptr;
+    Adafruit_NeoPixel* strip;
 #endif
+};
 
-static bool setAuxLedStateLocked(uint8_t pin, uint8_t r, uint8_t g, uint8_t b, AuxLedEffect effect,
-                                 bool available) {
+static LitWire s_wires[BOARD_OUTPUT_COUNT] = {};
+
+// What each wire carried when the droid started, for auxLedWireAtStart(). Kept
+// apart from s_wires, which readLitWires() fills twice - once here, once from
+// the task - so the reported value is one reading, taken before anything runs.
+struct WireAtStart {
+    ServoComponentType component;
+    uint8_t ledCount;
+};
+static WireAtStart s_atStart[BOARD_OUTPUT_COUNT] = {};
+static bool s_atStartTaken = false;
+
+// Whether this Output carries a light, as the stored config says: a line the
+// board allows a light on, ticked as wired AND with a Light Type on its Servo
+// Output row. include/output_wire.h holds the rule - outputWireStripDriven(),
+// narrower on purpose than the one that keeps LEDC off the pin.
+static bool outputIsLit(const ConfigSnapshot& cfg, size_t index) {
+    const OutputWireInputs in = {
+        boardOutputIsWired(cfg.system, index),
+        configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, BOARD_OUTPUTS[index].channel),
+    };
+    return outputWireStripDriven(in, index);
+}
+
+// Read the lit wires out of config into s_wires. Called by both entry points -
+// auxLedTaskInit() to publish what the droid has, and auxLedTask() to drive it -
+// because the two run in different tasks and neither may depend on the other
+// having run first.
+static void readLitWires() {
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        LitWire& wire = s_wires[i];
+        wire.lit = outputIsLit(cfg, i);
+        wire.available = false;
+        wire.gpio = wire.lit ? getChannelGpio(BOARD_OUTPUTS[i].channel) : 0;
+        wire.ledCount = configCacheReadServoOutputLedCount(SERVO_DRIVER_LEDC,
+                                                           BOARD_OUTPUTS[i].channel);
+        wire.effect = AUX_LED_EFFECT_OFF;
+        wire.lastR = 255;
+        wire.lastG = 255;
+        wire.lastB = 255;
+        // A wire whose GPIO could not be resolved cannot be driven, so it is
+        // not lit however the config reads.
+        if (wire.gpio == 0) {
+            wire.lit = false;
+        }
+    }
+}
+
+static bool setAuxLedStateLocked(size_t index, bool lit, uint8_t r, uint8_t g, uint8_t b,
+                                 AuxLedEffect effect, bool available) {
     bool changed = false;
     taskENTER_CRITICAL(&robotStateMux);
-    if (robotState.auxLed.pin != pin || robotState.auxLed.r != r || robotState.auxLed.g != g ||
-        robotState.auxLed.b != b || robotState.auxLed.effect != effect ||
-        robotState.auxLed.available != available) {
-        robotState.auxLed.pin = pin;
-        robotState.auxLed.r = r;
-        robotState.auxLed.g = g;
-        robotState.auxLed.b = b;
-        robotState.auxLed.effect = effect;
-        robotState.auxLed.available = available;
+    AuxLedState& state = robotState.auxLed[index];
+    if (state.lit != lit || state.r != r || state.g != g || state.b != b ||
+        state.effect != effect || state.available != available) {
+        state.lit = lit;
+        state.r = r;
+        state.g = g;
+        state.b = b;
+        state.effect = effect;
+        state.available = available;
         changed = true;
     }
     taskEXIT_CRITICAL(&robotStateMux);
     return changed;
 }
 
-static bool auxLedCommandsAccepted() {
-    taskENTER_CRITICAL(&robotStateMux);
-    const bool available = robotState.auxLed.available;
-    const uint8_t pin = robotState.auxLed.pin;
-    taskEXIT_CRITICAL(&robotStateMux);
-
-    return available && pin != 0;
-}
-
 static uint8_t clampLedCount(uint8_t rawCount) {
-    return constrain(rawCount, AUX_LED_COUNT_DEFAULT, AUX_LED_COUNT_MAX);
+    return constrain(rawCount, SERVO_LIGHT_LEDS_MIN, SERVO_LIGHT_LEDS_MAX);
 }
 
 static uint8_t pulseLevel(uint32_t nowMs) {
@@ -136,96 +210,95 @@ static void resolveDisplayedColor(uint8_t baseR, uint8_t baseG, uint8_t baseB, A
 }
 
 #ifdef ARDUINO
-static void renderStrip(uint8_t r, uint8_t g, uint8_t b, uint8_t count) {
-    if (s_strip == nullptr) {
+static void renderStrip(LitWire& wire, uint8_t r, uint8_t g, uint8_t b) {
+    if (wire.strip == nullptr) {
         return;
     }
 
-    uint32_t color = s_strip->Color(r, g, b);
-    for (uint8_t i = 0; i < count; ++i) {
-        s_strip->setPixelColor(i, color);
+    uint32_t color = wire.strip->Color(r, g, b);
+    for (uint8_t i = 0; i < wire.ledCount; ++i) {
+        wire.strip->setPixelColor(i, color);
     }
-    s_strip->show();
+    wire.strip->show();
+}
+
+// Bring one wire's strip up. Returns false and says why when its driver refuses,
+// which leaves the wire lit and unavailable: the builder wired a light here and
+// the controller could not start it, which is a different answer from "no light
+// on this wire" and is reported as one.
+static bool startStrip(LitWire& wire) {
+    wire.strip = new Adafruit_NeoPixel(wire.ledCount, wire.gpio, NEO_GRB + NEO_KHZ800);
+    if (wire.strip == nullptr) {
+        PA_LOG_ERROR(TAG, "NeoPixel allocation failed for GPIO %u count %u", (unsigned)wire.gpio,
+                     (unsigned)wire.ledCount);
+        return false;
+    }
+    if (!wire.strip->begin()) {
+        PA_LOG_WARN(TAG, "NeoPixel begin failed on GPIO %u (RMT channel unavailable?)",
+                    (unsigned)wire.gpio);
+        return false;
+    }
+    wire.strip->clear();
+    wire.strip->show();
+    return true;
 }
 #endif
 
 }  // namespace
-
-const char* auxLedEffectToString(AuxLedEffect effect) {
-    switch (effect) {
-        case AUX_LED_EFFECT_OFF:
-            return "off";
-        case AUX_LED_EFFECT_SOLID:
-            return "solid";
-        case AUX_LED_EFFECT_BLINK:
-            return "blink";
-        case AUX_LED_EFFECT_PULSE:
-            return "pulse";
-        default:
-            return "off";
-    }
-}
-
-bool parseAuxLedEffect(const char* raw, AuxLedEffect* out) {
-    if (raw == nullptr || out == nullptr) {
-        return false;
-    }
-
-    if (strcmp(raw, "off") == 0) {
-        *out = AUX_LED_EFFECT_OFF;
-        return true;
-    }
-    if (strcmp(raw, "solid") == 0) {
-        *out = AUX_LED_EFFECT_SOLID;
-        return true;
-    }
-    if (strcmp(raw, "blink") == 0) {
-        *out = AUX_LED_EFFECT_BLINK;
-        return true;
-    }
-    if (strcmp(raw, "pulse") == 0) {
-        *out = AUX_LED_EFFECT_PULSE;
-        return true;
-    }
-
-    return false;
-}
 
 bool auxLedTaskInit() {
     if (s_auxLedQueue != nullptr) {
         return true;
     }
 
+    // First, before anything can fail: what the droid started with is true
+    // whether or not a strip comes up.
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        s_atStart[i].component =
+            configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, BOARD_OUTPUTS[i].channel);
+        s_atStart[i].ledCount =
+            configCacheReadServoOutputLedCount(SERVO_DRIVER_LEDC, BOARD_OUTPUTS[i].channel);
+    }
+    s_atStartTaken = true;
+
     s_auxLedQueue = xQueueCreate(AUX_LED_QUEUE_LEN, sizeof(AuxLedCommand));
     if (s_auxLedQueue == nullptr) {
         PA_LOG_ERROR(TAG, "failed to create aux LED command queue");
-        setAuxLedStateLocked(0, 0, 0, 0, AUX_LED_EFFECT_OFF, false);
+        for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+            setAuxLedStateLocked(i, false, 0, 0, 0, AUX_LED_EFFECT_OFF, false);
+        }
         return false;
     }
 
-    uint8_t selection = AUX_LED_PIN_DISABLED;
-    uint8_t count = AUX_LED_COUNT_DEFAULT;
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    selection = cfg.servo.aux_led_pin;
-    count = cfg.servo.aux_led_count;
-
-    const uint8_t gpio = auxLedSelectionToGpio(selection);
-    const bool enabled = gpio != 0;
-    (void)clampLedCount(count);
-
-    setAuxLedStateLocked(enabled ? gpio : 0, 0, 0, 0, AUX_LED_EFFECT_OFF, enabled);
+    readLitWires();
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        // available follows lit here and is corrected by the task if a driver
+        // refuses, which is what the single-strip form did: a command arriving
+        // between init and the task's first pass is queued rather than refused.
+        setAuxLedStateLocked(i, s_wires[i].lit, 0, 0, 0, AUX_LED_EFFECT_OFF, s_wires[i].lit);
+    }
     return true;
 }
 
-bool auxLedQueueSetColor(uint8_t r, uint8_t g, uint8_t b, CommandSource source) {
-    if (s_auxLedQueue == nullptr || !auxLedCommandsAccepted()) {
+bool auxLedWireAtStart(size_t index, ServoComponentType* component, uint8_t* ledCount) {
+    if (!s_atStartTaken || index >= BOARD_OUTPUT_COUNT || component == nullptr ||
+        ledCount == nullptr) {
+        return false;
+    }
+    *component = s_atStart[index].component;
+    *ledCount = s_atStart[index].ledCount;
+    return true;
+}
+
+bool auxLedQueueSetColor(uint8_t target, uint8_t r, uint8_t g, uint8_t b, CommandSource source) {
+    if (s_auxLedQueue == nullptr || !auxLedTargetIsLit(target)) {
         return false;
     }
 
     AuxLedCommand cmd{};
     cmd.type = AUX_LED_CMD_SET_COLOR;
     cmd.source = source;
+    cmd.target = target;
     cmd.r = r;
     cmd.g = g;
     cmd.b = b;
@@ -238,14 +311,15 @@ bool auxLedQueueSetColor(uint8_t r, uint8_t g, uint8_t b, CommandSource source) 
     return true;
 }
 
-bool auxLedQueueSetEffect(AuxLedEffect effect, CommandSource source) {
-    if (s_auxLedQueue == nullptr || !auxLedCommandsAccepted()) {
+bool auxLedQueueSetEffect(uint8_t target, AuxLedEffect effect, CommandSource source) {
+    if (s_auxLedQueue == nullptr || !auxLedTargetIsLit(target)) {
         return false;
     }
 
     AuxLedCommand cmd{};
     cmd.type = AUX_LED_CMD_SET_EFFECT;
     cmd.source = source;
+    cmd.target = target;
     cmd.effect = effect;
 
     if (xQueueSend(s_auxLedQueue, &cmd, 0) != pdTRUE) {
@@ -267,101 +341,95 @@ bool auxLedQueueSetEffect(AuxLedEffect effect, CommandSource source) {
 void auxLedTask(void* pvParameters) {
     (void)pvParameters;
 
-    uint8_t selection = AUX_LED_PIN_DISABLED;
-    uint8_t ledCount = AUX_LED_COUNT_DEFAULT;
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    selection = cfg.servo.aux_led_pin;
-    ledCount = cfg.servo.aux_led_count;
+    readLitWires();
 
-    ledCount = clampLedCount(ledCount);
-
-    const uint8_t gpio = auxLedSelectionToGpio(selection);
-    if (gpio == 0) {
-        if (setAuxLedStateLocked(0, 0, 0, 0, AUX_LED_EFFECT_OFF, false)) {
-            requestStatusBroadcastNow();
+    uint8_t litLeads = 0;
+    bool broadcast = false;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        LitWire& wire = s_wires[i];
+        if (!wire.lit) {
+            broadcast = setAuxLedStateLocked(i, false, 0, 0, 0, AUX_LED_EFFECT_OFF, false) ||
+                        broadcast;
+            continue;
         }
-        PA_LOG_DEBUG(TAG, "AUX LED disabled (aux_led_pin=0)");
+        wire.ledCount = clampLedCount(wire.ledCount);
+        wire.available = true;
+#ifdef ARDUINO
+        wire.available = startStrip(wire);
+#endif
+        broadcast = setAuxLedStateLocked(i, true, 0, 0, 0, AUX_LED_EFFECT_OFF, wire.available) ||
+                    broadcast;
+        if (wire.available) {
+            ++litLeads;
+            PA_LOG_INFO(TAG, "%s lit on GPIO %u, %u pixel(s)", BOARD_OUTPUTS[i].id,
+                        (unsigned)wire.gpio, (unsigned)wire.ledCount);
+        }
+    }
+    if (broadcast) {
+        requestStatusBroadcastNow();
+    }
+
+    if (litLeads == 0) {
+        // No wire to drive, and nothing will change that until a restart: the
+        // lit set is read once, so this task idles rather than polling config
+        // it has already been told is settled (ADR 0027).
+        PA_LOG_DEBUG(TAG, "no lit wires on this droid");
         for (;;) {
             vTaskDelay(pdMS_TO_TICKS(250));
         }
     }
 
-#ifdef ARDUINO
-    s_strip = new Adafruit_NeoPixel(ledCount, gpio, NEO_GRB + NEO_KHZ800);
-    if (s_strip == nullptr) {
-        PA_LOG_ERROR(TAG, "NeoPixel allocation failed for GPIO %u count %u", (unsigned)gpio,
-                     (unsigned)ledCount);
-        if (setAuxLedStateLocked(gpio, 0, 0, 0, AUX_LED_EFFECT_OFF, false)) {
-            requestStatusBroadcastNow();
-        }
-        for (;;) {
-            vTaskDelay(pdMS_TO_TICKS(500));
-        }
-    }
-
-    if (!s_strip->begin()) {
-        PA_LOG_WARN(TAG, "NeoPixel begin failed on GPIO %u (RMT channel unavailable?)",
-                    (unsigned)gpio);
-        if (setAuxLedStateLocked(gpio, 0, 0, 0, AUX_LED_EFFECT_OFF, false)) {
-            requestStatusBroadcastNow();
-        }
-        for (;;) {
-            vTaskDelay(pdMS_TO_TICKS(500));
-        }
-    }
-
-    s_strip->clear();
-    s_strip->show();
-#endif
-
-    uint8_t baseR = 0;
-    uint8_t baseG = 0;
-    uint8_t baseB = 0;
-    AuxLedEffect effect = AUX_LED_EFFECT_OFF;
-
-    if (setAuxLedStateLocked(gpio, baseR, baseG, baseB, effect, true)) {
-        requestStatusBroadcastNow();
-    }
-
     AuxLedCommand cmd{};
-    uint8_t lastOutR = 255;
-    uint8_t lastOutG = 255;
-    uint8_t lastOutB = 255;
-
-    PA_LOG_INFO(TAG, "AUX LED task ready on GPIO %u, %u pixel(s)", (unsigned)gpio, (unsigned)ledCount);
 
     for (;;) {
         bool stateChanged = false;
 
         while (xQueueReceive(s_auxLedQueue, &cmd, 0) == pdTRUE) {
-            if (cmd.type == AUX_LED_CMD_SET_COLOR) {
-                baseR = cmd.r;
-                baseG = cmd.g;
-                baseB = cmd.b;
-                stateChanged = true;
-            } else if (cmd.type == AUX_LED_CMD_SET_EFFECT) {
-                effect = cmd.effect;
+            for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+                if (!s_wires[i].available || !auxLedTargetReaches(cmd.target, i)) {
+                    continue;
+                }
+                if (cmd.type == AUX_LED_CMD_SET_COLOR) {
+                    s_wires[i].baseR = cmd.r;
+                    s_wires[i].baseG = cmd.g;
+                    s_wires[i].baseB = cmd.b;
+                } else if (cmd.type == AUX_LED_CMD_SET_EFFECT) {
+                    s_wires[i].effect = cmd.effect;
+                }
                 stateChanged = true;
             }
         }
 
-        if (stateChanged && setAuxLedStateLocked(gpio, baseR, baseG, baseB, effect, true)) {
-            requestStatusBroadcastNow();
-        }
+        const uint32_t nowMs = millis();
+        bool published = false;
+        for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+            LitWire& wire = s_wires[i];
+            if (!wire.available) {
+                continue;
+            }
+            if (stateChanged &&
+                setAuxLedStateLocked(i, true, wire.baseR, wire.baseG, wire.baseB, wire.effect,
+                                     true)) {
+                published = true;
+            }
 
-        uint8_t outR = 0;
-        uint8_t outG = 0;
-        uint8_t outB = 0;
-        resolveDisplayedColor(baseR, baseG, baseB, effect, millis(), &outR, &outG, &outB);
+            uint8_t outR = 0;
+            uint8_t outG = 0;
+            uint8_t outB = 0;
+            resolveDisplayedColor(wire.baseR, wire.baseG, wire.baseB, wire.effect, nowMs, &outR,
+                                  &outG, &outB);
 
-        if (outR != lastOutR || outG != lastOutG || outB != lastOutB) {
+            if (outR != wire.lastR || outG != wire.lastG || outB != wire.lastB) {
 #ifdef ARDUINO
-            renderStrip(outR, outG, outB, ledCount);
+                renderStrip(wire, outR, outG, outB);
 #endif
-            lastOutR = outR;
-            lastOutG = outG;
-            lastOutB = outB;
+                wire.lastR = outR;
+                wire.lastG = outG;
+                wire.lastB = outB;
+            }
+        }
+        if (published) {
+            requestStatusBroadcastNow();
         }
 
         vTaskDelay(pdMS_TO_TICKS(20));

@@ -16,20 +16,25 @@
 #include "failsafe_gate.h"
 #include "logging.h"
 #include "robot_state.h"
-#include "web_server.h"
 
 static const char* TAG = "WebServer";
 
+// Neither handler asks the event stream to publish. failsafeTrigger() and
+// failsafeClearEstop() publish the edge themselves (src/failsafe_gate.cpp,
+// #346), so the ask belongs to the state change rather than to the route -
+// which is what makes a latch raised from the radio, where there is no route
+// at all, reach the browser too. A second ask here would publish a POST that
+// changed nothing, and would make these two paths disagree with the sleep and
+// wake routes, which have always broadcast only on an actual transition
+// (api_system.cpp).
 void handleEstopClearPost(WebRequest& req) {
     failsafeClearEstop();
-    requestStatusBroadcastNow();
     PA_LOG_INFO(TAG, "[WEB] POST /api/estop/clear - estop cleared");
     req.send(200, "application/json", "{\"ok\":true}");
 }
 
 void handleEstopPost(WebRequest& req) {
     failsafeTrigger(FailsafeLayer::ESTOP);
-    requestStatusBroadcastNow();
     PA_LOG_INFO(TAG, "[WEB] POST /api/estop - estop latched");
     req.send(200, "application/json", "{\"ok\":true}");
 }

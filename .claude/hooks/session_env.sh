@@ -2,7 +2,7 @@
 set -eu
 
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-    OTA_HOST_DEFAULT="${PROTOARTOO_OTA_HOST:-artoo.local}"
+    OTA_HOST_DEFAULT="${PROTOR2_OTA_HOST:-artoo.local}"
     OTA_IP_RESOLVED=""
 
     if command -v getent >/dev/null 2>&1; then

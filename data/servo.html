@@ -1,213 +1,90 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/servo.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/overlay.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/outputs.js,/parts_mapping.js,/servo.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Servos - protoArtoo</title>
+    <title>Servos - protoR2</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
-    <!-- PA:INCLUDE _recovery_kernel.html -->
+    <!-- Thin delegate. This file is the one copy of this surface's markup and
+         the Operator Shell fetches it; fetching never runs scripts, so this
+         line is inert for the shell. A browser that lands here directly -- a
+         bookmark, an old link, a support conversation -- is handed to the shell
+         at this surface's route instead, so the address keeps opening what it
+         names (ADR 0048). -->
+    <script>window.PAShellDelegate = true; location.replace("/#servo");</script>
   </head>
   <body data-page="servo">
-    <div id="shell-top"></div>
 
-
-    <!-- Arm Controls (ARM1 / ARM2 only) -->
-    <div class="card hidden" id="arm-controls-card">
-      <h3>🎮 Arm Controls</h3>
-      <div class="desc">Open, close, or stop each utility arm. Commands are sent immediately.</div>
-      <div id="arm-controls-container" class="mt-12"></div>
-      <div id="arm-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
-    </div>
-
-    <!-- No arms enabled notice -->
-    <div class="card disabled-card hidden" id="no-arms-card" role="status" aria-live="polite" aria-atomic="true">
-      <h3>🦾 Servo Hardware Disabled</h3>
-      <div class="desc">Servo control buttons are unavailable because no arm servos are enabled.</div>
-      <div class="desc disabled-reason"><strong>Required component:</strong> ARM1 and/or ARM2</div>
-      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable at least one arm servo to restore arm controls.</div>
-    </div>
-
-    <!-- AUX (AUX1 / AUX2 / AUX3) -->
-    <div class="card" id="aux-controls-card">
-      <h3>🔌 AUX</h3>
-      <div class="desc">Controls for enabled AUX outputs. 💡 LED strip options are configured in <a class="setup-link" href="/setup.html">Setup</a>.</div>
-      <div id="aux-controls-container" class="mt-12"></div>
-      <div id="aux-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
-    </div>
-
-    <!-- Servo Calibration (ARM1 / ARM2 / AUX servo channels) -->
-    <div class="card hidden" id="servo-calib-card">
-      <h3>⚙️ Servo Calibration</h3>
-      <div class="desc">
-        Set the open and close pulse widths (µs) for each servo output. MG996R standard range is
-        1000–2000 µs; MG90S micro servo range is 500–2500 µs. Use the test buttons to move the
-        servo live while adjusting, changes auto-save immediately as you adjust.
+    <!-- The title is the name in the nav (ADR 0066). The acts are all on the
+         rows they act on, so the title carries none. -->
+    <div class="title">
+      <div>
+        <h1>Servos</h1>
       </div>
-
-      <div class="caution-banner" role="alert">
-        ⚠️ Test buttons move real hardware. Ensure arms and panels are clear before testing.
-      </div>
-
-      <form id="calib-form" class="mt-16">
-
-        <!-- ARM1 calibration (shown only when ARM1 enabled) -->
-        <div class="hidden" id="arm1-calib-section">
-          <div class="section-label">Utility Arm 1 — ARM1</div>
-          <div class="form-grid">
-            <label class="field">
-              <span>Open position (µs)</span>
-              <input id="arm1-open-us" name="arm1OpenUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to ARM1 when commanded to open. MG996R: 2000 µs, MG90S: 2500 µs.">
-            </label>
-            <label class="field">
-              <span>Close position (µs)</span>
-              <input id="arm1-close-us" name="arm1CloseUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to ARM1 when commanded to close. MG996R: 1000 µs, MG90S: 500 µs.">
-            </label>
-          </div>
-          <div class="field mt-8">
-            <span>Test position (µs)</span>
-            <div class="button-row mt-4">
-              <input id="arm1-test-us" type="number" min="500" max="2500" step="10" value="1500"
-                title="Move the servo to this pulse width immediately without saving."
-                aria-label="ARM1 test pulse width microseconds" class="input-narrow">
-              <button class="btn" type="button" id="arm1-test-btn" title="Send test position to ARM1">
-                ▶ Test ARM1
-              </button>
-              <button class="btn" type="button" id="arm1-open-test-btn">▶ Test Open</button>
-              <button class="btn" type="button" id="arm1-close-test-btn">▶ Test Close</button>
-            </div>
-          </div>
-          <div class="section-divider"></div>
-        </div>
-
-        <!-- ARM2 calibration (shown only when ARM2 enabled) -->
-        <div class="hidden" id="arm2-calib-section">
-          <div class="section-label">Utility Arm 2 — ARM2</div>
-          <div class="form-grid">
-            <label class="field">
-              <span>Open position (µs)</span>
-              <input id="arm2-open-us" name="arm2OpenUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to ARM2 when commanded to open. MG996R: 2000 µs, MG90S: 2500 µs.">
-            </label>
-            <label class="field">
-              <span>Close position (µs)</span>
-              <input id="arm2-close-us" name="arm2CloseUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to ARM2 when commanded to close. MG996R: 1000 µs, MG90S: 500 µs.">
-            </label>
-          </div>
-          <div class="field mt-8">
-            <span>Test position (µs)</span>
-            <div class="button-row mt-4">
-              <input id="arm2-test-us" type="number" min="500" max="2500" step="10" value="1500"
-                title="Move the servo to this pulse width immediately without saving."
-                aria-label="ARM2 test pulse width microseconds" class="input-narrow">
-              <button class="btn" type="button" id="arm2-test-btn" title="Send test position to ARM2">
-                ▶ Test ARM2
-              </button>
-              <button class="btn" type="button" id="arm2-open-test-btn">▶ Test Open</button>
-              <button class="btn" type="button" id="arm2-close-test-btn">▶ Test Close</button>
-            </div>
-          </div>
-          <div class="section-divider"></div>
-        </div>
-
-        <!-- AUX1 calibration (shown only when AUX1 enabled and type is a servo) -->
-        <div class="hidden" id="aux1-calib-section">
-          <div class="section-label">AUX Output 1 — AUX1</div>
-          <div class="form-grid">
-            <label class="field">
-              <span>Open position (µs)</span>
-              <input id="aux1-open-us" name="aux1OpenUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to AUX1 when commanded to open.">
-            </label>
-            <label class="field">
-              <span>Close position (µs)</span>
-              <input id="aux1-close-us" name="aux1CloseUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to AUX1 when commanded to close.">
-            </label>
-          </div>
-          <div class="field mt-8">
-            <span>Test position (µs)</span>
-            <div class="button-row mt-4">
-              <input id="aux1-test-us" type="number" min="500" max="2500" step="10" value="1500"
-                title="Move the servo to this pulse width immediately without saving."
-                aria-label="AUX1 test pulse width microseconds" class="input-narrow">
-              <button class="btn" type="button" id="aux1-test-btn">▶ Test AUX1</button>
-              <button class="btn" type="button" id="aux1-open-test-btn">▶ Test Open</button>
-              <button class="btn" type="button" id="aux1-close-test-btn">▶ Test Close</button>
-            </div>
-          </div>
-          <div class="section-divider"></div>
-        </div>
-
-        <!-- AUX2 calibration (shown only when AUX2 enabled and type is a servo) -->
-        <div class="hidden" id="aux2-calib-section">
-          <div class="section-label">AUX Output 2 — AUX2</div>
-          <div class="form-grid">
-            <label class="field">
-              <span>Open position (µs)</span>
-              <input id="aux2-open-us" name="aux2OpenUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to AUX2 when commanded to open.">
-            </label>
-            <label class="field">
-              <span>Close position (µs)</span>
-              <input id="aux2-close-us" name="aux2CloseUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to AUX2 when commanded to close.">
-            </label>
-          </div>
-          <div class="field mt-8">
-            <span>Test position (µs)</span>
-            <div class="button-row mt-4">
-              <input id="aux2-test-us" type="number" min="500" max="2500" step="10" value="1500"
-                title="Move the servo to this pulse width immediately without saving."
-                aria-label="AUX2 test pulse width microseconds" class="input-narrow">
-              <button class="btn" type="button" id="aux2-test-btn">▶ Test AUX2</button>
-              <button class="btn" type="button" id="aux2-open-test-btn">▶ Test Open</button>
-              <button class="btn" type="button" id="aux2-close-test-btn">▶ Test Close</button>
-            </div>
-          </div>
-          <div class="section-divider"></div>
-        </div>
-
-        <!-- AUX3 calibration (shown only when AUX3 enabled and type is a servo) -->
-        <div class="hidden" id="aux3-calib-section">
-          <div class="section-label">AUX Output 3 — AUX3</div>
-          <div class="form-grid">
-            <label class="field">
-              <span>Open position (µs)</span>
-              <input id="aux3-open-us" name="aux3OpenUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to AUX3 when commanded to open.">
-            </label>
-            <label class="field">
-              <span>Close position (µs)</span>
-              <input id="aux3-close-us" name="aux3CloseUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to AUX3 when commanded to close.">
-            </label>
-          </div>
-          <div class="field mt-8">
-            <span>Test position (µs)</span>
-            <div class="button-row mt-4">
-              <input id="aux3-test-us" type="number" min="500" max="2500" step="10" value="1500"
-                title="Move the servo to this pulse width immediately without saving."
-                aria-label="AUX3 test pulse width microseconds" class="input-narrow">
-              <button class="btn" type="button" id="aux3-test-btn">▶ Test AUX3</button>
-              <button class="btn" type="button" id="aux3-open-test-btn">▶ Test Open</button>
-              <button class="btn" type="button" id="aux3-close-test-btn">▶ Test Close</button>
-            </div>
-          </div>
-          <div class="section-divider"></div>
-        </div>
-
-        <div class="button-row mt-8">
-          <button class="btn" type="button" id="reload-calib-btn">🔄 Reload</button>
-        </div>
-      </form>
-      <div id="calib-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading calibration...</div>
     </div>
 
-    <div id="shell-status"></div>
+    <!-- The Outputs with a Part on them, one row each, named by the Part(s)
+         and by what the board prints beside the pin: the output-first side of
+         the mapping Parts reads from the part's end (GLOSSARY.md "Servos"). An
+         Output with no Part is free and not listed, and with none the table
+         sends the builder to Wiring (operator, 2026-09-29 on #411). Driving an
+         Output, calibrating it and back to centre are all here (operator,
+         2026-09-19 on #412); which servo it carries is picked on Wiring, on
+         the Part's row, where Find by Moving starts too (#411). The rows and
+         the dial are drawn by data/servo.js from the firmware's answer; this
+         page names no Output of its own. -->
+    <div class="card" id="outputs-card">
+      <div class="sect"><h2>Outputs</h2><span class="sub outputs-tiers" id="outputs-tiers" role="status" aria-live="polite"></span></div>
+      <!-- The one act over every row: send them all back to centre, on the
+           right. Find by moving starts from Wiring, where a Part with no
+           Output is listed (#411); every row here has a Part. -->
+      <div class="outputs-tools">
+        <div class="outputs-bulk">
+          <p class="feedback" role="status" aria-live="polite"></p>
+          <button class="btn btn-sm btn-quiet outputs-centre icon-act act-keeps-words" type="button" disabled aria-disabled="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-format-horizontal-align-center"/></svg><span class="act-label">back to centre</span></button>
+        </div>
+      </div>
+      <!-- The one visible explanation at the controls that move something
+           (ADR 0059), and rule 7 of the maker voice: both marks are what the
+           controller told the servo, never where it is. -->
+      <p class="hint outputs-marks">The bar is where it was told to go, the tick where the move ends. Nothing reads a servo back.</p>
+      <div class="parts-table-wrap" id="outputs-table"></div>
+      <!-- The calibration dial opens here, under the rows, for one Output at a time. -->
+      <div id="outputs-dial"></div>
+      <p class="feedback" id="outputs-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
+      <!-- One Setting set on every ticked row in one press (#457). It moves
+           nothing, so it sits apart from the acts that do (rule 17): back to
+           centre is over the rows and the dial opens right under them, and
+           this line comes after both and after the rows' own answer. Its
+           answer is at its own foot (rule 18). data/servo.js fills the
+           choices from the droid's own words and shows the line once there
+           is a row to tick. -->
+      <div class="outputs-apply" hidden>
+        <div class="outputs-apply-line">
+          <span class="outputs-apply-picks">
+            <button class="btn btn-sm btn-quiet outputs-pick-all icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-checkbox-multiple-marked-outline"/></svg><span class="act-label">tick all</span></button>
+            <button class="btn btn-sm btn-quiet outputs-pick-none icon-act" type="button" disabled aria-disabled="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-checkbox-multiple-blank-outline"/></svg><span class="act-label">clear ticks</span></button>
+          </span>
+          <div class="seg outputs-apply-field" role="radiogroup" aria-label="What to set on the ticked outputs"></div>
+          <span class="outputs-apply-value"></span>
+          <button class="btn btn-sm outputs-apply-set icon-act act-keeps-words" type="button" disabled aria-disabled="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-content-save-outline"/></svg><span class="act-label">Set on ticked outputs</span></button>
+          <span class="hint outputs-boot-risk is-risk" hidden>Hold keeps the pulse on, so a blocked part grinds.</span>
+        </div>
+        <p class="feedback" role="status" aria-live="polite"></p>
+      </div>
+    </div>
+
+    <!-- The move question, the same one Wiring asks: every word on it is
+         written by data/parts_mapping.js announcement() (#456). -->
+    <dialog class="question-dialog" id="outputs-move-dialog" role="alertdialog" aria-labelledby="outputs-move-title" aria-describedby="outputs-move-body">
+      <h4 class="move-title" id="outputs-move-title"></h4>
+      <p class="move-body" id="outputs-move-body"></p>
+      <div class="button-row">
+        <button class="btn move-cancel icon-act act-keeps-words" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-close"/></svg><span class="act-label"></span></button>
+        <button class="btn accent move-confirm icon-act act-keeps-words" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-transfer"/></svg><span class="act-label"></span></button>
+      </div>
+    </dialog>
 
     <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
          fetches /page_bootstrap.js itself, with retry, and hands it the script
