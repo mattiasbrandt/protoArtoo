@@ -173,6 +173,8 @@ from the epic's coordination section rather than from memory.
 
 A pin quotes an excerpt you measured. Cite the symbol (`pickedHtml()`). A line number is a hint and will move. When a contract owns the rule, cite the contract (`docs/dome-visual-authoring-contract.md`, `docs/api.md`), not an implementation that nothing calls. Open the cited symbol and confirm a caller reaches it before the pin says it is the reference.
 
+Every pin names the gate run, `python3 tools/slice_verify.py --base <base> --json /tmp/slice-<s>.json`, CI-only and docs slices included. Its self-tests row is what runs `make test-tools`; #480 skipped it on "no gate run needed" and broke `test_release_workflows` unnoticed.
+
 A date-limited caveat names the command whose output retires it. "Comment PATCH returned 403 on 2026-10-01" stays only while `gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id> --input <file>` still fails. When that command succeeds, delete the caveat.
 
 ## Critic protocol (before accepting any slice - no exceptions)
@@ -542,7 +544,11 @@ JSON alone is not that signal: a gate run made mid-slice writes
 watcher fired on exactly that on 2026-10-05. Wait on the comment, adding the
 file when the brief names one - with both, ok needs both:
 `python3 tools/wait_worker.py --issue <n> --marker '<!-- worker-status-<n>-<s> -->' [--file /tmp/slice-<s>.json]`.
-An idle pane is not that signal: the gate runs in a sibling pane.
+Pass `--file` only when a gate runs, or the wait never fires. An idle pane is
+not that signal: the gate runs in a sibling pane. On a rework the old done
+line and gate file are still there, so start the wait before you send the
+rework and ask for a fresh signal:
+`python3 tools/wait_worker.py --issue <n> --marker '<...>' --since "$(date -u +%FT%TZ)" --new-head <worktree> [--file ...]`.
 
 **Record first, escalate second, and escalate only the residue.** A finding is
 written onto the ticket that will act on it (critic protocol step 7) BEFORE
