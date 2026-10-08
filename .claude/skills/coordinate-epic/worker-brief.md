@@ -40,6 +40,7 @@ that a route installed after mount needs `page.reload()` because
 
 SUITES PAUSED THROUGH 2026-10-31 (#464)
 This overrides every later line that tells you to run `make test`, `make test-web`, `pio test`, `node --test`, `tools/mutation_verify.py`, or to add a test or a mutation patch. Do not run them. Do not write them. `make test` and `make test-web` return immediately and that is correct. A slice is accepted when a second agent has read the production diff. One `make build` when something compiles. The existing tests stay in the tree and run in CI when a pull request into main opens. Do not set `PROTOR2_SUITES=1`. On 2026-11-01 the pause ends by itself.
+Two checks still run, and for them this paragraph overrides the lines above. The gate, once, as your last step: its self-tests row runs `make test-tools` and its drift row the action-registry check. And the one suite of a test file your slice edits: `python3 tools/pio_lock.py pio test -e native -f test_native/<suite>` or `node --test --test-timeout=10000 test/test_web/<file>.js`. Paste that suite's summary line in your report.
 
 THE TICKET IS YOUR SOURCE
 You are building a decision somebody already took, so everything it turned on
@@ -104,7 +105,8 @@ and this one is not.
 
 DO NOT ADD A TEST OR A MUTATION PATCH. The suite pause above is the rule
 through 2026-10-31. A test the ticket already names in one sentence may stay
-in the diff; you do not invent one, and you do not run the suite to prove it.
+in the diff; you do not invent one, and the one suite of that file (the
+banner) is its only run.
 Copy, heading words, chip order, timing constants and visual anatomy stay on
 the ticket. The operator looks at the screen and the critic reads the
 production diff.
@@ -280,13 +282,15 @@ VERIFICATION (software-verified cap)
   that disagrees with your brief instead of taking whichever reads better -
   three of this epic's most valuable findings came from exactly that.
 - Per-commit verification during the pause is the build, when you changed
-  something that compiles. Do not run the existing tests "to be sure".
-- Do not run `tools/slice_verify.py` in order to execute the suites. If a
-  pinned comment still names that command, run it once, as
-  `python3 tools/slice_verify.py --base {BASE} --json {GATE_JSON}`: the native,
-  web, and mutation rows skip themselves through 2026-10-31 and that skip is a
-  pass of the gate, not of the suite. The coordinator accepts the slice by
-  checking {GATE_JSON} against your worktree with `tools/accept_slice.py`,
+  something that compiles. Do not run the existing tests "to be sure"; the
+  one suite of a test file you edit is the only exception (the banner).
+- Run the gate once, as your last step, on every slice, docs and CI-only
+  slices included:
+  `python3 tools/slice_verify.py --base {BASE} --json {GATE_JSON}`. Its
+  self-tests row runs `make test-tools`, which nothing else here runs. The
+  native, web, and mutation rows skip themselves through 2026-10-31 and that
+  skip is a pass of the gate, not of the suite. The coordinator accepts the
+  slice by checking {GATE_JSON} against your worktree with `tools/accept_slice.py`,
   so: write the JSON to exactly that path; commit everything before the run
   and nothing after it (a later commit makes the block stale and sends the
   slice back); leave the tree clean but for `data/fs-version.json` and
@@ -300,18 +304,16 @@ VERIFICATION (software-verified cap)
 REPORT
 Final status comment: slices with SHAs, the build result when you built, and
 anything you could not prove with the reason. There is no suite block and no
-red-run block during the pause. Keep the comment to the frontier, under about
+red-run block during the pause, only the one summary line the banner asks for. Keep the comment to the frontier, under about
 20 KB. When it would pass that, post the current text as a new history comment
 and reset the marked one.
 
 Finish in this order: write the final status comment without the done line;
-run the gate, when your brief has one, as the last step; then add the done
-line (editing the status comment is not a commit, so it may follow the
-gate). The done signal is the last line of that comment, `WORKER_DONE: ok` or
+run the gate as the last step; then add the done line (editing the status
+comment is not a commit, so it may follow the gate). The done signal is the last line of that comment, `WORKER_DONE: ok` or
 `WORKER_DONE: blocked`. A trailing `//` signature is not that line, and a
 later line that is not the token means the worker is not done. `{GATE_JSON}`
 alone is not the signal: it is written the moment the gate ends, report or
 not. The coordinator waits with
 `python3 tools/wait_worker.py --issue {ISSUE} --marker '{STATUS_MARKER}'`,
-adding `--file {GATE_JSON}` when your brief has a gate run; with both, ok
-needs both. An idle pane is not the signal.
+adding `--file {GATE_JSON}`; ok needs both. An idle pane is not the signal.
