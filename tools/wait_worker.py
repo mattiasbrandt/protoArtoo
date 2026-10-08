@@ -19,9 +19,20 @@ and a gate run made mid-slice writes it while the worker is still writing its
 report - on 2026-10-05 a --file watcher fired WORKER_DONE: ok on exactly
 that. The comment's token never misfired. Pass both when you have both.
 
+A rework leaves the previous slice's done line and gate file in place, so a
+plain wait fires at once. Two flags ask for a fresh signal, and combine with
+the rule above:
+
+    --since <ISO-8601>   the comment counts only if GitHub's updated_at for it
+                         is after that instant
+    --new-head <path>    ok counts only once that worktree's HEAD has moved
+                         from where it was when this started
+
     python3 tools/wait_worker.py --issue 441 --marker '<!-- worker-status-441-slug -->'
     python3 tools/wait_worker.py --issue 441 --marker '<!-- ... -->' --file /tmp/slice-441.json
     python3 tools/wait_worker.py --file /tmp/slice-441.json
+    python3 tools/wait_worker.py --issue 441 --marker '<!-- ... -->' \
+        --since "$(date -u +%FT%TZ)" --new-head ../wt-441
 
 Exit 0 when the worker says ok, 1 when it says blocked or the wait ends.
 """
@@ -29,31 +40,43 @@ Exit 0 when the worker says ok, 1 when it says blocked or the wait ends.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import re
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 _SIGNATURE = re.compile(r"^//\S")
 
 
-def _comment_bodies(issue: int) -> list[str]:
+def _comment_bodies(issue: int) -> list[tuple[str, str]]:
+    """Each comment's (body, updated_at), updated_at as GitHub writes it."""
     raw = subprocess.run(
         [
             "gh", "api", "--paginate",
             f"repos/{{owner}}/{{repo}}/issues/{issue}/comments",
-            "--jq", ".[] | .body | @base64",
+            "--jq", ".[] | {body, updated_at} | @base64",
         ],
         check=True, capture_output=True, text=True,
     )
-    import base64
-    bodies = []
+    comments = []
     for line in raw.stdout.splitlines():
         if line.strip():
-            bodies.append(base64.b64decode(line.strip()).decode("utf-8"))
-    return bodies
+            c = json.loads(base64.b64decode(line.strip()).decode("utf-8"))
+            comments.append((c["body"], c["updated_at"]))
+    return comments
+
+
+def _instant(text: str) -> datetime | None:
+    """An ISO-8601 instant with an offset (Z included), else None."""
+    try:
+        t = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return t if t.tzinfo is not None else None
 
 
 def _verdict_from_text(body: str) -> str | None:
@@ -74,12 +97,36 @@ def _verdict_from_text(body: str) -> str | None:
     return None
 
 
-def _verdict_from_comment(issue: int, marker: str) -> str | None:
-    for body in _comment_bodies(issue):
+def _verdict_from_comment(issue: int, marker: str, since: datetime | None = None) -> str | None:
+    for body, updated_at in _comment_bodies(issue):
         if not body.startswith(marker):
             continue
+        # Strictly after: GitHub's updated_at has whole seconds, and an edit in
+        # the same second as --since is the edit the waiter was started after.
+        if since is not None:
+            updated = _instant(updated_at)
+            if updated is None:
+                raise ValueError(f"comment updated_at {updated_at!r} is not an ISO-8601 instant")
+            if not updated > since:
+                return None
         return _verdict_from_text(body)
     return None
+
+
+def _head(worktree: Path) -> str:
+    return subprocess.run(
+        ["git", "-C", str(worktree), "rev-parse", "HEAD"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+
+def _verdict_from_head(worktree: Path, start: str) -> str | None:
+    """ok once HEAD has moved; never blocked.
+
+    A worker that blocks often has nothing to commit, so a moved HEAD is a
+    condition for ok only. A blocked comment still ends the wait at once.
+    """
+    return "ok" if _head(worktree) != start else None
 
 
 def _verdict_from_file(path: Path) -> str | None:
@@ -108,6 +155,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--issue", type=int)
     p.add_argument("--marker", help="the status comment's first line")
     p.add_argument("--file", type=Path, help='JSON file with a boolean "ok"')
+    p.add_argument("--since", metavar="ISO-8601",
+                   help="the comment counts only if updated after this instant; "
+                        "needs an offset, e.g. $(date -u +%%FT%%TZ)")
+    p.add_argument("--new-head", type=Path, metavar="WORKTREE",
+                   help="ok counts only once this worktree's HEAD moves from its HEAD at start")
     p.add_argument("--timeout", type=float, default=7200, help="seconds (default 7200)")
     p.add_argument("--interval", type=float, default=15)
     args = p.parse_args(argv)
@@ -116,6 +168,21 @@ def main(argv: list[str] | None = None) -> int:
         p.error("--issue and --marker go together")
     if args.file is None and not use_comment:
         p.error("pass --issue and --marker, --file, or all three")
+    since = None
+    if args.since is not None:
+        if not use_comment:
+            p.error("--since needs --issue and --marker")
+        since = _instant(args.since)
+        if since is None:
+            p.error(f"--since {args.since!r} is not an ISO-8601 instant with an offset")
+    start_head = None
+    if args.new_head is not None:
+        # Sampled now, so start the waiter before the worker can commit: a
+        # commit made before this line is the start, not the move.
+        try:
+            start_head = _head(args.new_head)
+        except subprocess.CalledProcessError as exc:
+            p.error(f"--new-head {args.new_head}: {exc.stderr.strip()}")
     deadline = time.monotonic() + args.timeout
     while True:
         verdicts = []
@@ -125,13 +192,20 @@ def main(argv: list[str] | None = None) -> int:
             # worker to whoever only read the exit of a pipeline. The deadline
             # still bounds an outage that never ends.
             try:
-                verdicts.append(_verdict_from_comment(args.issue, args.marker))
+                verdicts.append(_verdict_from_comment(args.issue, args.marker, since))
             except subprocess.CalledProcessError as exc:
                 print(f"wait_worker: reading #{args.issue} failed ({exc.stderr.strip()[:200]}); retrying",
                       file=sys.stderr)
                 verdicts.append(None)
         if args.file is not None:
             verdicts.append(_verdict_from_file(args.file))
+        if start_head is not None:
+            try:
+                verdicts.append(_verdict_from_head(args.new_head, start_head))
+            except subprocess.CalledProcessError as exc:
+                print(f"wait_worker: reading HEAD of {args.new_head} failed ({exc.stderr.strip()[:200]}); retrying",
+                      file=sys.stderr)
+                verdicts.append(None)
         verdict = _combined(verdicts)
         if verdict == "ok":
             print("WORKER_DONE: ok")

@@ -91,6 +91,33 @@ class WaitWorker(unittest.TestCase):
         self.assertIsNone(self.verdict("WORKER_DONE: ok\n\nGate restarted; still running.\n"))
         self.assertIsNone(self.verdict("WORKER_DONE: ok\nGate restarted; still running.\n//sig\n"))
 
+    def test_since_ignores_a_comment_last_updated_before_the_rework(self):
+        spec = importlib.util.spec_from_file_location("wait_worker", WAIT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        marker = "<!-- worker-status-1-s -->"
+        updated = "2026-10-08T15:00:00Z"
+        mod._comment_bodies = lambda issue: [(f"{marker}\nWORKER_DONE: ok\n", updated)]
+        args = ["--issue", "1", "--marker", marker, "--timeout", "0", "--interval", "0"]
+        self.assertEqual(mod.main([*args, "--since", "2026-10-08T15:00:00Z"]), 1)
+        self.assertEqual(mod.main([*args, "--since", "2026-10-08T14:59:59Z"]), 0)
+        self.assertEqual(mod.main(args), 0)
+
+    def test_new_head_counts_ok_only_after_a_commit_and_never_blocks(self):
+        spec = importlib.util.spec_from_file_location("wait_worker", WAIT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        with tempfile.TemporaryDirectory() as tmp:
+            def commit():
+                subprocess.run(["git", "-C", tmp, "-c", "user.name=t", "-c", "user.email=t@t",
+                                "commit", "-q", "--allow-empty", "-m", "c"], check=True)
+            subprocess.run(["git", "-C", tmp, "init", "-q"], check=True)
+            commit()
+            start = mod._head(Path(tmp))
+            self.assertIsNone(mod._verdict_from_head(Path(tmp), start))
+            commit()
+            self.assertEqual(mod._verdict_from_head(Path(tmp), start), "ok")
+
 
 if __name__ == "__main__":
     unittest.main()
