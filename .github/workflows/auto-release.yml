@@ -32,8 +32,9 @@ name: Auto Release
 #     checks out main, never the run's own tree. main's tip is tagged only
 #     when it is the verified commit or every commit after it is release
 #     machinery (tools/release_plan.py `verified`: a bot commit touching only
-#     the version JSON or CHANGELOG.md); main having moved on with code means
-#     waiting for that commit's own run. A Markdown-only commit gets no
+#     the version JSON, CHANGELOG.md or the README Showcase pictures); main
+#     having moved on with code means waiting for that commit's own run. A
+#     Markdown-only commit gets no
 #     Verification run of its own (verification.yml's path filter), so a minor
 #     held behind one is released by dispatching Verification on main. While
 #     main's Verification is red, no minor or major is cut.
