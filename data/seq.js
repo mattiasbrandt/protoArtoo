@@ -4313,6 +4313,8 @@
         // dropping the same file in a second time takes its tempo (ADR 0058).
         if (held && held.source === "analysed" && held.hash && held.hash !== result.hash && !offeredBefore) {
           tempoFeedback(`Not the track this tempo was measured from. It reads ${result.bpm} BPM; drop it in again to use it.`);
+          // The levels on screen were the other track's; they go with it.
+          paintLevels();
           updateValidationSummary();
           return;
         }
@@ -4332,7 +4334,10 @@
     document.getElementById("seq-editor-levels-seg")?.addEventListener("click", (event) => {
       const level = droppedTrack?.levels?.[Number(event.target?.closest?.("button[data-level]")?.dataset.level)];
       const held = editorState.current.tempo;
-      if (!level || !held || level.bpm === held.bpm) return;
+      // Only the levels of the track the held tempo was measured from: a
+      // different track dropped in once offers nothing until it is dropped
+      // in again (ADR 0058).
+      if (!level || held?.source !== "analysed" || held.hash !== droppedTrack.hash || level.bpm === held.bpm) return;
       setTempo({ ...window.SeqTempo.analyzedTempo(droppedTrack), bpm: level.bpm, phase: held.phase, barLen: held.barLen, barPhase: held.barPhase });
     });
 

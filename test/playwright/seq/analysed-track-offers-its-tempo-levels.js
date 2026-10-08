@@ -17,7 +17,11 @@
 //   2  pressing the half stores 60 BPM, still Analyzed, with the track's
 //      fingerprint and where beat 1 sits unchanged;
 //   3  one Undo puts the heard tempo back;
-//   4  the page sent nothing to the droid.
+//   4  a different track dropped in once leaves the tempo alone and takes
+//      the levels off screen: they were the other track's (Codex review of
+//      #14, 2026-10-08: the stale buttons stored the new track's tempo);
+//   5  a level button pressed then, planted as a decoy, stores nothing;
+//   6  the page sent nothing to the droid.
 //
 // WHY A REAL BROWSER. decodeAudioData and the file input are the browser's,
 // and the row's layout is CSS the DOM stub cannot draw.
@@ -43,13 +47,13 @@ const SEQUENCE = {
   closeSteps: [],
 };
 
-// 16-bit mono WAV: a short decaying burst every 500 ms from 0.25 s, or silence.
-const clickWav = (silent) => {
+// 16-bit mono WAV: a short decaying burst every `gap` s from 0.25 s, or silence.
+const clickWav = (silent, gap = 0.5) => {
   const rate = 22050;
   const n = rate * 12;
   const pcm = Buffer.alloc(n * 2);
   if (!silent) {
-    for (let t = 0.25; t < 12; t += 0.5) {
+    for (let t = 0.25; t < 12; t += gap) {
       const start = Math.round(t * rate);
       for (let i = 0; i < 600 && start + i < n; i += 1) {
         pcm.writeInt16LE(Math.round(20000 * Math.sin(i * 0.3) * Math.exp(-i / 120)), (start + i) * 2);
@@ -116,6 +120,27 @@ lib.runCheck({
     report.add('3', 'One Undo puts the heard tempo back',
       lib.verdict(JSON.stringify(undone.stored) === JSON.stringify(heard.stored)), JSON.stringify(undone));
 
-    report.add('4', 'The page sent nothing to the droid', lib.verdict(writes.length === 0), writes.map(lib.describeWrite).join('; ') || 'no write');
+    await page.locator('#seq-editor-track').setInputFiles({
+      name: 'clicks-150.wav', mimeType: 'audio/wav', buffer: clickWav(false, 0.4),
+    });
+    await page.waitForFunction(() => /Not the track/.test(document.getElementById('seq-editor-tempo-feedback')?.textContent || ''));
+    const other = await tempoShown(page);
+    const otherLevels = await levelsShown(page);
+    report.add('4', 'A different track dropped in once leaves the tempo alone and takes the levels off screen',
+      lib.verdict(JSON.stringify(other.stored) === JSON.stringify(heard.stored) && !otherLevels.visible && otherLevels.buttons.length === 0),
+      `${JSON.stringify(other)} ${JSON.stringify(otherLevels)}`);
+
+    // The decoy: a level button where the row was, pressed while the held
+    // tempo is still the first track's.
+    await page.evaluate(() => {
+      const seg = document.getElementById('seq-editor-levels-seg');
+      seg.innerHTML = '<button type="button" data-level="0" id="decoy-level">decoy</button>';
+      document.getElementById('decoy-level').click();
+    });
+    const decoyed = await tempoShown(page);
+    report.add('5', 'A level pressed then stores nothing: it is not the held tempo\'s track',
+      lib.verdict(JSON.stringify(decoyed.stored) === JSON.stringify(heard.stored)), JSON.stringify(decoyed));
+
+    report.add('6', 'The page sent nothing to the droid', lib.verdict(writes.length === 0), writes.map(lib.describeWrite).join('; ') || 'no write');
   },
 });
