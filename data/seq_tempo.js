@@ -36,6 +36,14 @@
 //          wherever in that frame it falls: 2-8 ms early (mean 5.1) over 32
 //          click tracks. Half a hop more centres it: -2.2 to +3.3 ms.
 //
+// TEMPO LEVELS (#14, operator 2026-10-08). A beat tracker cannot tell a tempo
+// from its half, its double, or a three-against-two feel, and one number hides
+// that it guessed. analyze() returns the tempo it heard with its half, two
+// thirds, three halves and double, each with how strongly the track repeats at
+// that tempo against the one it heard, and the builder picks. Faster than 190
+// BPM is reached that way, not by widening the search: a wider search doubled
+// tracks it reads right today.
+//
 // The ported part carries the reference's notice, as its licence requires:
 //
 //   Copyright (c) 2026 Mike Eddington
@@ -87,6 +95,10 @@
     }
     return out;
   };
+
+  // The tempo levels offered beside the one heard, as num/den of it, slowest
+  // first: half, two thirds, the tempo heard, three halves, double.
+  const LEVELS = [[1, 2], [2, 3], [1, 1], [3, 2], [2, 1]];
 
   // FIX 3, bounded (#14): from `lag`, step to a neighbour while it correlates
   // higher, never more than one lag from where it started.
@@ -231,6 +243,20 @@
       const period = 60 / bpm;
       for (let t = phase; t < buf.duration; t += period) beats.push(Math.round(t * 1000));
     }
+    // The tempo levels: corr() read between whole lags, against the tempo heard.
+    const corrAt = (lag) => {
+      const lo = Math.floor(lag);
+      if (lo < 1 || lo + 1 >= nF) return 0;
+      return corr(lo) + (corr(lo + 1) - corr(lo)) * (lag - lo);
+    };
+    const heard = bpm ? corrAt(lagF) : 0;
+    const levels = heard > 0
+      ? LEVELS.map(([num, den]) => {
+          const at = Math.round(((bpm * num) / den) * 10) / 10;
+          const strength = Math.round((corrAt((60 * fps) / at) / heard) * 100) / 100;
+          return { bpm: at, num, den, strength };
+        })
+      : [];
     return {
       bpm,
       phaseMs: Math.round(phase * 1000),
@@ -238,6 +264,7 @@
       onsetsMs: onsets.map((t) => Math.round(t * 1000)),
       durationMs: Math.round(buf.duration * 1000),
       confidence: bpm ? Math.round(confidence * 1000) / 1000 : 0,
+      levels,
     };
   };
 
@@ -408,6 +435,7 @@
 
   window.SeqTempo = Object.freeze({
     TAPS_MIN,
+    LEVELS,
     climb,
     analyze,
     analyzeFile,
