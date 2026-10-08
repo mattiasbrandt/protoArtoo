@@ -149,3 +149,28 @@ redesign.
   this entirely; anyone who later bumps `format` must deal with it first.
 - ADR 0046's evidence table cites `sequence_catalog.cpp:250-290` for `DM:CANTINA`;
   the entry is `239-280` and `282-290` is `DM:ROCKMARCH`. Corrected with this ADR.
+
+## Correction 2026-10-08: the analyser door is two-way (#14, operator)
+
+The *one-way door* above overstates it. The analyser runs only when a builder
+drops a file in (`SeqTempo.analyzeFile`, from the editor's drop handler), and a
+saved sequence keeps the numbers it produced: BPM, phase and fingerprint.
+Nothing re-analyses a saved sequence, and the firmware never runs the analyser.
+So a later analyser change leaves every saved tempo as it was measured, and
+re-measuring is the builder's own act, which moves their beat-placed steps on
+purpose. What does change is that the same file analysed before and after an
+upgrade reads slightly differently, as with any measuring tool. The operator
+ruled the door two-way: the analyser may improve at any time.
+
+Decided on #14 the same day, by the operator:
+
+- **The onset function stays loudness-based.** A frequency-based candidate is
+  reconsidered only once it beats the shipped analyser on the 13-track
+  comparison at the picked level. A naive version was far more precise on some
+  tracks and worse on others (Stayin' Alive F 0.97 -> 0.33).
+- **No warning in the browser when a constant grid stops holding.** The
+  browser would judge the grid against the same onsets that produced it, which
+  agree with a grid that drifts (Gangnam Style, 0.4 beat over 2 minutes), and no
+  builder has been caught by it yet, which is the Rehearsal's admission rule.
+  The choreographer skill reports how far a grid holds, measured against an
+  independent beat tracker.
