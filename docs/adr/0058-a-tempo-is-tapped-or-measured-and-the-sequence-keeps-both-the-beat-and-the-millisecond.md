@@ -2,7 +2,9 @@
 
 Status: accepted (2026-09-09, issue #335). **Built by #438 (2026-10-01):** the
 tempo block, beat-placed steps, the typed, tapped and analysed routes, and the
-ported analyser with **three** fixes (the third is below).
+ported analyser with **three** fixes (the third is below). **Amended by #14
+(2026-10-08):** the third fix is bounded, a fourth centres the phase, and an
+analysed tempo is offered with its levels; see *Amendment 2026-10-08*.
 
 ## Context
 
@@ -125,6 +127,40 @@ redesign.
   counter where available. Rejected: two mechanisms for about 18 ms, when the
   browser learns whatever clock we pick over HTTP or SSE at some update rate that
   plausibly dwarfs the gain.
+
+## Amendment 2026-10-08 (#14, operator)
+
+Measured on the 13 tracks of the local music folder against a published beat
+tracker (Beat This!, CPJKU) and on click tracks, harness kept locally in
+`tasks/beat-compare-2026-10-08/`. No analysed tempo had been stored yet, so the
+one-way door below was still open (operator, 2026-10-08).
+
+- **FIX 3 is bounded to one lag either side** of where the halving landed. That
+  is all the rounding it exists for can cost. Unbounded, it walked three lags
+  onto a different peak on a real track: 130.8 BPM read 141.4. Bounded, click
+  tracks still read 127.9 / 150.0 / 100.1 / 175.2.
+- **FIX 4 adds half a hop to every onset.** FIX 2 left the grid early by up to
+  one hop, by where in its frame an onset fell: 2-8 ms early (mean 5.1) over 32
+  click cases at 44.1 and 48 kHz. Half a hop centres it at -2.2 to +3.3 ms.
+- **An analysed tempo comes with its levels**: the tempo heard, its half, two
+  thirds, three halves and double, each with how strongly the track repeats at
+  that tempo against the one heard. The builder picks one before the grid is
+  used. The shipped analyser's levels hold the reference tempo on 11 of 13
+  tracks, and all four readings of Cantina (65 / 130 / 194 / 259). The levels are
+  not stored; dropping the track in again offers them again.
+- **The search stays at 60-190 BPM, and faster tempos are reached through the
+  double level.** Widening the search to 260 read 200 BPM clicks right but
+  doubled a track read right today (103.9 -> 212.8), and at 300 it doubled three
+  more.
+
+Considered and rejected: the three strongest autocorrelation peaks as the
+levels (about 9 of 13, and none of Cantina's fast readings); a least-squares
+phase over every onset (-19 to +11 ms, worse than one onset).
+
+Still open on #14: a frequency-based onset function (more precise where it
+picked the right level, but it changes stored grids once the door has closed),
+and whether a warning says when a constant grid stops holding (a live orchestral
+take moves between 101.9 and 104.8 BPM).
 
 ## Consequences
 
