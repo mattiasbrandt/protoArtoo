@@ -25,6 +25,8 @@ the patch releases, whose notes live on their own GitHub Release.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-08
+
 <!-- release-name: The modular release -->
 **The modular release.** The first release as protoR2. The droid's web pages
 are rebuilt around what a builder is doing: say what your droid is made of,
