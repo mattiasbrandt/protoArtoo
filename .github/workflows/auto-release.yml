@@ -32,8 +32,9 @@ name: Auto Release
 #     checks out main, never the run's own tree. main's tip is tagged only
 #     when it is the verified commit or every commit after it is release
 #     machinery (tools/release_plan.py `verified`: a bot commit touching only
-#     the version JSON or CHANGELOG.md); main having moved on with code means
-#     waiting for that commit's own run. A Markdown-only commit gets no
+#     the version JSON, CHANGELOG.md or the README Showcase pictures); main
+#     having moved on with code means waiting for that commit's own run. A
+#     Markdown-only commit gets no
 #     Verification run of its own (verification.yml's path filter), so a minor
 #     held behind one is released by dispatching Verification on main. While
 #     main's Verification is red, no minor or major is cut.
@@ -49,8 +50,9 @@ name: Auto Release
 # Loop safety (the thing that would otherwise be self-sustaining and public):
 #
 #   * A deploy-key push DOES trigger workflows, unlike a GITHUB_TOKEN push.
-#     Both pushes this workflow can make - version-sync.yml's version-JSON
-#     commit and this workflow's own CHANGELOG promotion - are authored by
+#     Every push to main that can follow a release - version-sync.yml's
+#     version-JSON commit, this workflow's own CHANGELOG promotion, and the
+#     `showcase` job's README pictures (#480) - is authored by
 #     github-actions[bot], and the job-level `if` below skips them. That guard
 #     is load-bearing, not belt-and-braces.
 #   * The tag push cannot re-enter here at all: this workflow triggers on a
@@ -59,7 +61,8 @@ name: Auto Release
 #   * Nor through workflow_run: Verification never runs on a tag, and the
 #     CHANGELOG promotion is a Markdown-only bot commit, which Verification's
 #     path filter skips and whose push run, if any, the job-level `if` turns
-#     away. The version-sync commit's push run is turned away the same way.
+#     away. The version-sync commit's push run is turned away the same way,
+#     and so is the Showcase picture commit's.
 #   * Belt to that brace: after a release the range since the last tag is
 #     empty, so even an unguarded re-run decides "none".
 on:
@@ -77,22 +80,26 @@ on:
 permissions:
   contents: read
 
-# One release decision at a time. Never cancel one in flight: a cancelled run
-# between the CHANGELOG push and the tag push is exactly the half-done state
-# the promotion step is written to be re-runnable through. GitHub still
-# replaces a PENDING run in this group when a newer one queues; every run
-# recomputes the whole decision from main and the last tag, so the newer one
-# decides in its place. A Verification signal lost that way returns with the
-# next run on main, or by re-running that Verification run.
-concurrency:
-  group: auto-release-main
-  cancel-in-progress: false
-
 jobs:
   release:
     name: decide and tag
     runs-on: ubuntu-26.04
     timeout-minutes: 10
+    # One release decision at a time. Never cancel one in flight: a cancelled run
+    # between the CHANGELOG push and the tag push is exactly the half-done state
+    # the promotion step is written to be re-runnable through. GitHub still
+    # replaces a PENDING run in this group when a newer one queues; every run
+    # recomputes the whole decision from main and the last tag, so the newer one
+    # decides in its place. A Verification signal lost that way returns with the
+    # next run on main, or by re-running that Verification run.
+    #
+    # On this job, not the workflow: the `showcase` job below runs for many
+    # minutes after a tag, and holding this group through it would leave every
+    # release decision queued behind a capture, where a pending one is replaced
+    # and its Verification signal lost far more often (#480).
+    concurrency:
+      group: auto-release-main
+      cancel-in-progress: false
     # Skip this workflow's own CHANGELOG commit and version-sync.yml's version
     # JSON commit. See the loop-safety note in the header. A workflow_run must
     # be a successful Verification of a push to (or dispatch on) main in this
@@ -115,6 +122,11 @@ jobs:
       contents: read
       # Reading the Verification run's jobs (the gate below).
       actions: read
+    # What the showcase job below needs: which release this run cut, if any.
+    outputs:
+      bump: ${{ steps.plan.outputs.bump }}
+      tag: ${{ steps.plan.outputs.tag }}
+      tagged: ${{ steps.tag.outputs.pushed }}
     steps:
       - name: ⬇️ Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -231,6 +243,7 @@ jobs:
           git push
 
       - name: 🏷️ Tag the release
+        id: tag
         if: steps.gate.outputs.go == 'true' && steps.exists.outputs.published == 'false'
         env:
           TAG: ${{ steps.plan.outputs.tag }}
@@ -251,6 +264,7 @@ jobs:
               "from any CHANGELOG promotion above, which the next run reuses."
             exit 1
           fi
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
           echo "Pushed $TAG - release.yml takes it from here."
 
       - name: 📊 Summary
@@ -288,3 +302,113 @@ jobs:
               fi
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # A minor or major release recaptures the README Showcase from the commit it
+  # tagged, and commits the twenty pictures straight to main (#480, operator
+  # decisions 2026-10-06 and 2026-10-08). Its own job, after the tag, so a
+  # capture that fails cannot stop or undo a release: the tag is already
+  # pushed by the time this starts. A patch, a held minor and a merge that
+  # releases nothing skip it, and so does a re-run that finds its tag already
+  # published (that run's capture was the earlier run's to make).
+  #
+  # The picture commit is authored by github-actions[bot] and touches only
+  # docs/images/readme/, so the `release` job's author guard turns its push
+  # run away, Verification skips it, and tools/release_plan.py counts it as
+  # release machinery, so it never holds the next minor behind a Verification
+  # run it will not get.
+  showcase:
+    name: recapture the README Showcase
+    needs: release
+    if: >-
+      needs.release.outputs.tagged == 'true' &&
+      (needs.release.outputs.bump == 'minor' || needs.release.outputs.bump == 'major')
+    runs-on: ubuntu-26.04
+    # One capture at a time, never cancelled: two pushes to main at once would
+    # race. A newer release's capture that queues replaces a pending older one,
+    # and the newer release is the one the pictures should show.
+    concurrency:
+      group: readme-showcase
+      cancel-in-progress: false
+    # Provisional: one screenshot per frame, about 14,300 frames. Measured on
+    # the first CI run and set from that (#480).
+    timeout-minutes: 90
+    permissions:
+      # The push is the deploy key's, not GITHUB_TOKEN's.
+      contents: read
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # main and every tag: the capture runs on the tag, the commit lands
+          # on main.
+          ref: main
+          fetch-depth: 0
+          ssh-key: ${{ secrets.VERSION_SYNC_DEPLOY_KEY }}
+
+      - name: 🏷️ Check out the released commit
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+        run: git checkout --detach "refs/tags/$TAG"
+
+      # Pinned to the bench's own, as .github/actions/setup does.
+      - name: 🟢 Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: '26.8.1'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: 📦 Install Playwright and ffmpeg
+        # The playwright devDependency and the Chromium build it pins, with its
+        # system libraries and fonts. ffmpeg encodes the master (libx264) and
+        # the published scrolls (libwebp); the script checks both encoders.
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: 🎬 Capture
+        run: node tools/readme_showcase.mjs
+
+      - name: 📤 Commit the pictures to main
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          # The script writes the twenty Showcase paths and nothing else. Any
+          # other change in the tree, or a new file beside them, is a run that
+          # broke that promise, and nothing is committed.
+          stray=$(git status --porcelain --untracked-files=all | grep -Ev '^ M docs/images/readme/[a-z-]+\.(png|webp)$' || true)
+          if [ -n "$stray" ]; then
+            echo "::error::The capture changed paths outside the twenty Showcase files:"
+            echo "$stray"
+            exit 1
+          fi
+          # Keep the capture outside the checkout. Each attempt below builds the
+          # commit afresh on main's current tip from these files and never
+          # rebases a binary edit: another release's picture commit can land on
+          # main while this capture runs and change the same files, and a
+          # rebase of one picture onto another stops on a conflict (#480).
+          keep="$RUNNER_TEMP/readme-showcase"
+          rm -rf "$keep"
+          mkdir -p "$keep"
+          cp docs/images/readme/*.png docs/images/readme/*.webp "$keep/"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git checkout --force --detach origin/main
+            cp "$keep"/* docs/images/readme/
+            if [ -z "$(git status --porcelain --untracked-files=all -- docs/images/readme/)" ]; then
+              echo "The pictures from $TAG match the ones on main - nothing to commit."
+              exit 0
+            fi
+            git add docs/images/readme/
+            git commit -m "docs(plan): recapture the README Showcase from $TAG"
+            if git push origin HEAD:main; then
+              echo "Pushed the Showcase from $TAG to main."
+              exit 0
+            fi
+            echo "Push attempt $attempt was refused; main moved, rebuilding the commit on its new tip."
+          done
+          echo "::error::Could not push the Showcase commit to main after three attempts."
+          exit 1
