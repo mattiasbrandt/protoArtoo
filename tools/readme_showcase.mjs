@@ -512,15 +512,28 @@ const openMaster = (file) => {
   });
   const done = new Promise((resolve, reject) => {
     child.on('error', reject);
-    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`master encoder exited ${code}:\n${stderr}`))));
+    child.on('exit', (code, signal) =>
+      (code === 0 ? resolve() : reject(new Error(`master encoder exited ${signal || code}:\n${stderr}`))));
   });
-  // A broken pipe surfaces through `done` with the encoder's own message.
-  child.stdin.on('error', () => {});
+  // write() and close() await `done` and report its failure; this only keeps
+  // a failure nobody is awaiting yet (the encoder killed in cleanup) from
+  // being an unhandled rejection.
+  done.catch(() => {});
+  // A write after the encoder died: kept, and reported by the next write().
+  let pipeError = null;
+  child.stdin.on('error', (error) => {
+    pipeError = error;
+  });
   let frames = 0;
   const write = async (jpeg, times = 1) => {
     for (let i = 0; i < times; i += 1) {
-      if (child.exitCode !== null) await done;
-      if (!child.stdin.write(jpeg)) await new Promise((resolve) => child.stdin.once('drain', resolve));
+      if (pipeError || child.exitCode !== null || child.signalCode !== null) {
+        await done;
+        fail(`master encoder stopped taking frames${pipeError ? `: ${pipeError.message}` : ''}`);
+      }
+      if (!child.stdin.write(jpeg)) {
+        await Promise.race([new Promise((resolve) => child.stdin.once('drain', resolve)), done]);
+      }
       frames += 1;
     }
   };
@@ -620,14 +633,21 @@ const checkFiles = (files) => {
 };
 
 // Moves the checked files over the published ones: each lands as a temporary
-// name beside its target first, so a copy that fails part-way renames nothing.
+// name beside its target first, so a copy that fails part-way renames nothing
+// and takes its temporaries with it.
 const replacePublished = (files) => {
-  const staged = files.map((file) => {
-    const target = path.join(OUT_DIR, path.basename(file));
-    const temporary = `${target}.showcase-tmp`;
-    fs.copyFileSync(file, temporary);
-    return { temporary, target };
-  });
+  const staged = [];
+  try {
+    for (const file of files) {
+      const target = path.join(OUT_DIR, path.basename(file));
+      const temporary = `${target}.showcase-tmp`;
+      staged.push({ temporary, target });
+      fs.copyFileSync(file, temporary);
+    }
+  } catch (error) {
+    staged.forEach(({ temporary }) => fs.rmSync(temporary, { force: true }));
+    throw error;
+  }
   staged.forEach(({ temporary, target }) => fs.renameSync(temporary, target));
 };
 
