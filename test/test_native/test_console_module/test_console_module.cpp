@@ -960,7 +960,7 @@ void test_system_api_get_components_names_the_radio_member() {
     }
     TEST_ASSERT_NOT_NULL_MESSAGE(row, "no radio_controller category row");
     TEST_ASSERT_EQUAL_STRING(
-        "category:radio_controller name:Radio Controller selectable:5 memberKey:rc_member "
+        "category:radio_controller name:Radio Controller selectable:4 memberKey:rc_member "
         "activeMember:rc_radio",
         row);
 
@@ -980,7 +980,7 @@ void test_system_api_get_components_names_the_radio_member() {
     }
     TEST_ASSERT_NOT_NULL_MESSAGE(row, "no radio_controller category row");
     TEST_ASSERT_EQUAL_STRING(
-        "category:radio_controller name:Radio Controller selectable:5 memberKey:rc_member "
+        "category:radio_controller name:Radio Controller selectable:4 memberKey:rc_member "
         "activeMember:-",
         row);
 }

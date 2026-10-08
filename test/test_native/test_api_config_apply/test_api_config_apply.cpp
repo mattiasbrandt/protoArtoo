@@ -149,16 +149,19 @@ void test_configApply_rcMember_takes_a_radio_and_refuses_anything_else(void) {
 
 // ELRS is roadmap (#477): its mode is refused as a new answer, by the rule a
 // roadmap radio is refused as rcMember. A droid that stored it while it was
-// selectable re-states it and passes, so its backup comes back whole.
+// selectable re-states it and passes, so its backup comes back whole. The
+// refusal is judged after the Settings loop has written the working copy, as
+// the speed-preset rule is; a refused write commits nothing
+// (configWriteWindow()), so the refusal is what is asserted, not the copy.
 void test_configApply_rcInputMode_refuses_elrs_as_a_new_answer(void) {
     std::map<std::string, std::string> m = {{"rcInputMode", "elrs"}};
     ConfigSnapshot snap = makeDefaultSnap();
-    const uint8_t before = snap.system.rc_input_mode;
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
     TEST_ASSERT_EQUAL_STRING("rcInputMode elrs is not read by this firmware yet", result.error.message);
-    TEST_ASSERT_EQUAL_UINT8(before, snap.system.rc_input_mode);
+    TEST_ASSERT_EQUAL(ApplyRefusalReason::OutOfRange, result.error.refusal.reason);
+    TEST_ASSERT_EQUAL_STRING("rcInputMode", result.error.refusal.field);
 
     ConfigSnapshot held = makeDefaultSnap();
     held.system.rc_input_mode = RC_INPUT_ELRS;
