@@ -103,7 +103,7 @@
     wires: {
       standard_pwm: { short: "PWM", modes: ["standard_pwm"] },
       sbus: { short: "SBUS", modes: ["single_sbus", "dual_sbus"] },
-      crsf: { short: "ELRS", modes: ["elrs"], caption: "Not read yet" },
+      crsf: { short: "ELRS", modes: ["elrs"] },
     },
     // Which channel ticks the chosen receiver reads, by mode - the firmware's
     // own rule, rcSourceEnabledForMode() (src/web/rc_diagnostics_snapshot.cpp):
@@ -483,6 +483,15 @@
     card.setAttribute("role", "radio");
     card.setAttribute("aria-checked", on ? "true" : "false");
     if (on) card.classList.add("is-chosen");
+    // A roadmap receiver (ELRS, #477) is drawn the way a roadmap card is: the
+    // settled-no dim and the Roadmap word, at the receiver card's scale, and
+    // not pressable - isSelectable() already says no, as the firmware does.
+    // A droid that stored its mode while it was selectable still shows it lit.
+    const planned = part.status === KIND_ROADMAP;
+    if (planned) {
+      card.classList.add("availability-settled-no");
+      card.title = ROADMAP_SENTENCE;
+    }
     card.disabled = !interactive || !isSelectable(part);
     card.addEventListener("click", () => {
       if (on) return;
@@ -490,8 +499,7 @@
     });
     if (!entry.noPicture.has(part.id)) card.appendChild(artFrame(part.id));
     card.appendChild(element("span", "component-receiver-label", part.name));
-    const caption = RC_RECEIVER.wires[part.protocol].caption;
-    if (caption) card.appendChild(element("span", "component-receiver-caption", caption));
+    if (planned) card.appendChild(element("span", "component-receiver-caption", BADGES.planned));
     if (hasRunOnDroid(part)) card.appendChild(confirmedMark());
     return card;
   };

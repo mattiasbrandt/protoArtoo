@@ -146,10 +146,11 @@ PA_COMPONENT_PART( 2, "firebeetle2", "FireBeetle 2 (ESP32-P4)", COMPONENT_CATEGO
 //
 // The receivers are the chosen radio's sub-selection, and the protocol each
 // declares is the wire the controller reads - which is what picking one
-// writes, as rc_input_mode. ELRS is selectable and the controller reads no
-// input from it yet: with it chosen the RC path behaves exactly as with no
-// receiver fitted (src/tasks/rc_input_step.cpp starts no decoder for a mode it
-// does not read). Its ids still say `transmitter`, which the glossary avoids;
+// writes, as rc_input_mode. ELRS is roadmap: the controller reads no input
+// from it, so it cannot be picked, and a droid that stored the `elrs` mode
+// before that behaves exactly as with no receiver fitted
+// (src/tasks/rc_input_step.cpp starts no decoder for a mode it does not
+// read). Its ids still say `transmitter`, which the glossary avoids;
 // renaming them moves the photographs, their handler and the drawings, and is
 // recorded on #369 rather than done here.
 // -----------------------------------------------------------------------------
@@ -159,7 +160,7 @@ PA_COMPONENT_PART(22, "rc_radio",            "RC Radio",           COMPONENT_CAT
 PA_COMPONENT_PART( 7, "xbox_controller",     "Xbox Controller",    COMPONENT_CATEGORY_RADIO_CONTROLLER, "bluetooth_hid", COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
 PA_COMPONENT_PART( 4, "rc_transmitter_pwm",  "RC Receiver - PWM",  COMPONENT_CATEGORY_RADIO_CONTROLLER, "standard_pwm",  COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 1)
 PA_COMPONENT_PART( 5, "rc_transmitter_sbus", "RC Receiver - SBUS", COMPONENT_CATEGORY_RADIO_CONTROLLER, "sbus",          COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 1)
-PA_COMPONENT_PART( 6, "rc_transmitter_elrs", "RC Receiver - ELRS", COMPONENT_CATEGORY_RADIO_CONTROLLER, "crsf",          COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 1)
+PA_COMPONENT_PART( 6, "rc_transmitter_elrs", "RC Receiver - ELRS", COMPONENT_CATEGORY_RADIO_CONTROLLER, "crsf",          COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
 
 // -----------------------------------------------------------------------------
 // Body servo controller -- what drives the body's servos. The first row is the

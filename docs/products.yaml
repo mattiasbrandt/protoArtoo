@@ -91,10 +91,11 @@ families:
 
       The receivers are the chosen radio's sub-selection, and the protocol each
       declares is the wire the controller reads - which is what picking one
-      writes, as rc_input_mode. ELRS is selectable and the controller reads no
-      input from it yet: with it chosen the RC path behaves exactly as with no
-      receiver fitted (src/tasks/rc_input_step.cpp starts no decoder for a mode it
-      does not read). Its ids still say `transmitter`, which the glossary avoids;
+      writes, as rc_input_mode. ELRS is roadmap: the controller reads no input
+      from it, so it cannot be picked, and a droid that stored the `elrs` mode
+      before that behaves exactly as with no receiver fitted
+      (src/tasks/rc_input_step.cpp starts no decoder for a mode it does not
+      read). Its ids still say `transmitter`, which the glossary avoids;
       renaming them moves the photographs, their handler and the drawings, and is
       recorded on #369 rather than done here.
 
@@ -534,17 +535,16 @@ products:
       source: "1, 2"
     notes: ""
 
-  # ELRS stays supported here until #477 moves it to roadmap.
   - value: 6
     id: rc_transmitter_elrs
     name: RC Receiver - ELRS
     family: radio_controller
     protocol: crsf
-    status: supported
+    status: roadmap
     confirmed_on_droid: false
     capabilities: []
     gate: null
-    included: 1
+    included: 0
     sheet: elrs-crsf-radio.md
     wiring_card:
       supply: "UNKNOWN"
@@ -555,13 +555,13 @@ products:
         - "The droid does not read ELRS yet. With it picked, the sticks do nothing."
       source: "4.1"
     notes: |
-      ELRS is Roadmap in public wording (operator, 2026-10-06); the registry row
-      still says supported and follows in #477. The controller reads no ELRS input
-      yet. Picking it stores the `elrs` RC input mode, and the RC path then behaves
-      exactly as with no receiver fitted: no decoder and no RC task start, and the
-      feet are held by the stale web drive command and the estop. That is the
-      Wiring card's hazard ("the sticks do nothing"), and the only proof of it is
-      the code, not the spec sheet.
+      Roadmap (operator, 2026-10-06, #477). The controller reads no ELRS input
+      yet, so neither the receiver nor its `elrs` RC input mode can be picked. A
+      droid that stored the mode while ELRS was selectable keeps it, and its RC
+      path behaves exactly as with no receiver fitted: no decoder and no RC task
+      start, and the feet are held by the stale web drive command and the estop.
+      The only proof of that is the code, not the spec sheet. The wiring card
+      below waits for the driver: Wiring shows a supported product's card only.
 
       The safety model inverts. The two radio Failsafe Layers are the receiver
       hardware failsafe flag and the SBUS timeout (`SBUS_TIMEOUT_MS`, 200 ms). CRSF

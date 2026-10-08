@@ -197,7 +197,7 @@ rc.api.get-bindable-actions|List Bindable Actions|Every action you can bind to a
 rc.api.get-map|Get RC Map|Which channel does what.|populateRcMapJson|
 rc.action.set-map|Set RC Map|Bind channels to actions. A dome sequence needs its DM: name.|rcMapApply|
 rc.action.test-bindable|Test Bindable Action|Fire a bindable action once, as if its channel moved.|dispatchRcTriggerActionTest|token:string:1
-rc.config.mode|RC Mode|The receiver type: standard_pwm, single_sbus, dual_sbus, elrs, or not_fitted for no radio at all.|configApply|
+rc.config.mode|RC Mode|The receiver type: standard_pwm, single_sbus, dual_sbus, or not_fitted for no radio at all. elrs is refused until the droid reads ELRS.|configApply|
 dome.seq.vader|DM:VADER — Imperial March|Imperial March, 47 s: red holos, march logics and PSI.|sequenceStart|
 dome.seq.hello|DM:HELLO — Hello There|Hello There, 4 s: logic text, then P1 opens and closes.|sequenceStart|
 dome.seq.nod|DM:NOD — Acknowledgment nod|A nod, 3 s: a happy sound, Yes on the logics and a P1 wave.|sequenceStart|

@@ -4066,7 +4066,7 @@ entries:
   executor: dispatchRcTriggerActionTest
 - name: rc.config.mode
   display_name: RC Mode
-  description: 'The receiver type: standard_pwm, single_sbus, dual_sbus, elrs, or not_fitted for no radio at all.'
+  description: 'The receiver type: standard_pwm, single_sbus, dual_sbus, or not_fitted for no radio at all. elrs is refused until the droid reads ELRS.'
   domain: rc
   type: config
   marcduino_cmd: null
