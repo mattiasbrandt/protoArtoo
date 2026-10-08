@@ -29,7 +29,8 @@ notes <tag>       Generated release notes for a patch tag, from the commit
 verified <sha>    May main's tip be tagged on the strength of a green
                   Verification run of <sha>? Only when <sha> is on main and
                   every commit after it is release machinery: a bot commit
-                  touching only the version JSON or CHANGELOG.md (#473).
+                  touching only the version JSON, CHANGELOG.md (#473) or the
+                  README Showcase pictures (#480).
 
 Every subcommand is safe to run standalone against a checkout:
 
@@ -100,16 +101,30 @@ _NOTES_HEADING = {"fix": "Fixed"}
 VERSION_SYNC_BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
 
 # Everything that bot commits to main, and nothing else: version-sync.yml's
-# two version JSON files and auto-release.yml's CHANGELOG promotion. Neither
-# changes the firmware or the tooling Verification checked, so a verified
-# commit followed only by such commits still describes the tip. The exemption
-# is the author AND these files: a bot commit touching anything else, or any
-# human commit, is code Verification has not seen (#473).
+# two version JSON files, auto-release.yml's CHANGELOG promotion, and its
+# README Showcase recapture (#480). None of them changes the firmware or the
+# tooling Verification checked, so a verified commit followed only by such
+# commits still describes the tip. The exemption is the author AND these
+# files: a bot commit touching anything else, or any human commit, is code
+# Verification has not seen (#473).
 RELEASE_MACHINERY_FILES = frozenset({
     "CHANGELOG.md",
     "data/fw-version.json",
     "data/fs-version.json",
 })
+
+# The Showcase recapture lands after a minor or major tag and takes minutes, so
+# a merge in the meantime puts it after a commit Verification is still running
+# on. Without it here, that run's green would not reach the tip and the next
+# minor would wait for a Verification run a bot commit never gets. The
+# directory, not the twenty names: tools/readme_showcase.mjs owns which files
+# it holds, and the showcase job refuses a capture that writes anything else.
+RELEASE_MACHINERY_DIRS = ("docs/images/readme/",)
+
+
+def is_release_machinery_file(path):
+    """Does a bot commit touching `path` leave Verification's verdict standing?"""
+    return path in RELEASE_MACHINERY_FILES or path.startswith(RELEASE_MACHINERY_DIRS)
 
 
 class ReleasePlanError(Exception):
@@ -401,7 +416,7 @@ def unverified_commits(repo, verified, to="HEAD"):
     Returns a list of reasons, empty when it can: `verified` is `to` or an
     ancestor of it, and every commit in `verified..to` is release machinery
     -- authored by VERSION_SYNC_BOT_EMAIL, one parent, and touching only
-    RELEASE_MACHINERY_FILES. Anything else means main moved on with code that
+    release machinery files (is_release_machinery_file). Anything else means main moved on with code that
     run never checked, so the tag waits for that commit's own run.
     """
     try:
@@ -421,7 +436,7 @@ def unverified_commits(repo, verified, to="HEAD"):
             reasons.append(f"{short} is a merge")
             continue
         files = _git(repo, "diff-tree", "--no-commit-id", "--name-only", "-r", sha).splitlines()
-        other = sorted(set(files) - RELEASE_MACHINERY_FILES)
+        other = sorted(path for path in set(files) if not is_release_machinery_file(path))
         if other:
             reasons.append(f"{short} is a bot commit that also changes {', '.join(other)}")
     return reasons
