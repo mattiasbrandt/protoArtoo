@@ -25,616 +25,232 @@ the patch releases, whose notes live on their own GitHub Release.
 
 ## [Unreleased]
 
+The droid's web pages, rebuilt around what a builder is doing: say what your
+droid is made of, wire it, calibrate it, build routines on a timeline, and run
+a show from the Dashboard.
+
 ### Added
-- **The droid knows where its dome points.** Time one full turn on the Dome
-  page, press Front is here, and from then on the droid follows every turn it
-  makes and says where the dome points, marked believed. An arrow on every dome
-  drawing shows it. Go home turns the dome back to front, and a sequence step
-  can turn it to front, or until a dome part faces front. After a restart, an estop
-  or sleep it says Unknown until you turn the dome to front and press Front is
-  here again.
-- **Edit a sequence on its timeline.** Edit opens your sequence on its
-  timeline: drag a block to move it, drag its edge to make it longer or
-  shorter, drag the end line to give the routine more room. A block that
-  comes close to another block's edge lands on it. Every edit, on the
-  timeline or in the step list, is one Undo and one Redo, and Revert still
-  takes the whole sequence back to how it was saved. Leave with edits unsaved
-  and the page asks before it drops them.
-- **Sequences is one list and one workspace.** Every sequence on the droid is
-  a row in one table, yours first, and you can show only yours or only the
-  factory's. Edit opens the workspace in its place: Save, Undo and the test
-  run on a strip across the top, the tempo on the timeline's ruler, the droid
-  beside it at the moment the marker is on, and one drawer underneath for the
-  block you picked, the parts, the sequence's own settings and the Rehearsal.
-  A factory sequence's Timeline opens the same view to look at, with Tune as
-  the way to make it yours.
-- **A test run says it is running, and stops where you started it.** Test a
-  sequence from its row or from the workspace and it reads Running, with a
-  green lamp, until the droid says the run has ended. Stop beside it ends
-  that run and nothing else; the red STOP is still the estop. A run the droid
-  accepts and never starts says so.
-- **Build a sequence on its timeline.** Drag a part from the Parts tab onto
-  the timeline and it lands on a lane of its own, open for a second. Sound,
-  Sound Category, Spin Dome, Random Flutter, Servo Loop and Sequence End drag
-  in the same way; a Servo Loop repeats the steps that start in its first
-  pass. Pick a block and the drawer shows its settings: when it starts, how
-  long it runs, how far it opens, and whether it opens or flutters. A drop,
-  and each change, is one Undo.
-- **Put the dome's lights in a sequence on its timeline.** Drag a logic
-  display or a PSI onto the timeline and it lands on its own lane; Visual
-  Preset and Holo Effect drag in from More steps onto the Dome row. Pick a
-  light block and the drawer has its lights, its mode, its color as swatches
-  and how long it runs. A logic display can show a text instead, and a holo
-  offers only the colors its effect takes.
-- **A body flutter shakes.** A flutter step swings its part between closed and
-  how far you set, for as long as the step says, and ends closed. It needs no
-  close after it, on the dome or on the body. The rest of the routine keeps
-  its timing while the part swings, and two parts fluttering together take
-  turns, one swing each. A flutter is over by the end of the routine. A flutter
-  across a set of body parts does the same for each part.
-- **Flutter on any block that opens.** Pick an open on the timeline and Motion
-  offers Flutter, whether or not a close follows it. Turning an open and its
-  close into a flutter takes the close with it, and turning it back into an
-  open puts a close back. Runs for sets how long a body flutter lasts. Save
-  no longer asks for a close after a flutter, and the Rehearsal notes a
-  flutter the end of the routine cuts short.
-- **Write the half that closes.** A sequence in an interrupt group opens on one
-  press and closes on the next, and the half that closes is now yours to write.
-  Pick Pies, Low or All under Sequence and the page starts it for you: one close
-  for each part the opening half leaves open, one at a time, then the end. Opens
-  and Closes over the timeline switch between the two halves, and Closes takes
-  the same drops, drags, settings and Undo. Back to None drops it; one Undo
-  brings it back. The check and the Rehearsal read both halves and say which
-  one they mean. A factory toggle's Timeline shows both halves too.
-- **The editor refuses a dome command the droid would refuse at Save.** A
-  command such as `@0X1` used to look valid until you saved.
-- **Set the gap between servo starts.** The droid leaves 450 ms between servos
-  it starts itself: back to centre, the power-up pass, a pose, a move across a
-  set, a flutter. That number is now yours to set, 50 to 5000 ms, as
-  `cadenceFloorMs` on `POST /api/config` or `servo.config.cadence-floor` on
-  the Controller Console. Wiring shows the number the droid holds. 450 is the
-  dome's figure; nobody has measured the body's yet. Steps you wrote keep
-  their own timing.
-- **Put a body part in a sequence on its timeline.** Drag a door, an arm or a
-  body light onto the timeline and it lands on its own lane, open for a
-  second. Pick it and the drawer has how long it runs, how far it opens, and
-  whether it opens or flutters; a light reads on and flash. A flutter lasts
-  as long as its block. A part on an output with no recorded ends says its
-  first move is a jump.
-- **Put a move across a set of parts on the timeline.** The Parts tab has
-  Sets: the ring, the pies, the breadpan doors. Drag one onto the timeline
-  and it lands as one block across the lanes of its parts. Pick it and the
-  drawer has its parts, its move, how it travels across them, where it
-  starts and which way round, and how far; pace, repeat and feel are folded
-  under it. Split into steps writes a body set's moves out as steps you can
-  edit one by one. The dome performs its own sets as one move, so those do
-  not split.
-- **Put a sequence inside a sequence on the timeline.** The Parts tab has
-  Sequences: every sequence this one can hold. Drag one onto the timeline
-  and it lands as one linked block across the lanes of the parts it moves,
-  as long as it runs. It stays linked, so a later change to that sequence is
-  in this one too. Pick the block to choose another sequence. Split into
-  steps writes its steps out in its place, to edit one by one, and that copy
-  is no longer linked. A sequence that is not on this droid stays a mark on
-  the Sequence row.
-- **Wiring says how to wire and power what you fitted.** On a FireBeetle 2,
-  Wiring has a card for each product on the droid, opened from the product's
-  own row: its supply, its draw, its logic level, where each wire goes, and
-  what breaks hardware. Fit a sound module and its card appears; answer Not
-  fitted and it goes. The printable wiring sheet ends with the same cards.
-- **Wiring is one table.** Every part on an output, the free outputs, the
-  parts not on an output yet, the serial links, the dome's ESC and the radio
-  are rows of one table, and the list of pins under the drawing is gone. A
-  part's output is a bar of every output on its row; press a part under "add
-  a part" to give it a row. Print the page or save the wiring sheet and you
-  get the same table as plain text, with a box to tick for each wire.
-- **Pick a part's output on Parts too.** The part you pick on the drawing, and
-  every part under Unused, carries the same bar of outputs as its row on
-  Wiring. Where the board suggests an output, one press on "Use" puts the part
-  on it; nothing is picked until you press.
-- **One move across many parts.** A Gesture says "the ring, clockwise, from
-  the front, a wave, one panel per beat" once: the order comes from where the
-  parts sit, and the droid works out the parts when it runs, so a panel fitted
-  later joins in. On the body the droid paces the moves itself, one part at a
-  time; on the dome it becomes one dome command, and a move the dome has no
-  command for still saves. A body Gesture can set its own speed and easing
-  for its moves; each part otherwise moves the way its output is set to.
-- **A sequence can hold your own sequences.** Drop a saved phrase into
-  another sequence as one step; it stays linked, so improving the phrase
-  improves every sequence that uses it. Phrases nest three deep, and a
-  sequence cannot contain itself.
-- **A dome panel can open part way.** Say how far on a panel open or close,
-  and the dome stops it that far along its own travel.
-- **A sequence can have a tempo.** Type the BPM, tap along while the droid
-  plays the track, or drop your own copy of the track in to have its beat
-  read. You set where bar 1 starts. Put a step on a beat by picking it from
-  the bar-numbered list, give a dome turn or a flutter a length in beats, or
-  retime the whole routine to the grid: it says how many steps landed, and
-  Undo puts them back. A step
-  placed on a beat stays on it: change the tempo and every step on a beat moves
-  with it, while steps placed in milliseconds stay put. A tempo that is only a
-  guess is flagged, never refused.
-- **See where your answers and the droid disagree.** Wiring lists every wire
-  it draws and everything the droid reports on - the sound module, the dome
-  link, the RC receiver, the Foot Drive, the dome's panels - with what you
-  said beside what the droid reports, and one word for each: declared,
-  observed, contradicted or not probed. A module that has not answered stays
-  your answer rather than a contradiction, and every row that needs a change
-  links to where you make it. Nothing on the list changes the droid.
-- **Read a sequence as time.** A sequence's timeline (Edit on one of yours,
-  Timeline on a factory one) draws the routine with a lane per part: each move as long as it takes, and whatever the
-  routine leaves open running on to the end. Move the marker to any moment and
-  the droid picture shows that moment. Moving it never moves the droid. Parts
-  the routine names that are not wired are listed once, above the routine.
-- **Send the droid to one moment of a routine.** On the timeline, Move the
-  droid to this moment puts every part where the routine had it then, one at a
-  time, with the lights and the sound that was playing. It will not while the
-  estop is latched or the droid is asleep, and says so.
-- **Your ShadowMD and Padawan360 bindings reach the dome.** A `:` or `#`
-  command the body has nothing for now goes to the Dome Controller instead of
-  vanishing, so 23 commands the dome firmware already runs - `:SE50` to
-  `:SE58`, `:OP06` to `:OP12` and more - work again. `:SE01` to `:SE09` fire
-  the dome's panels, lights and holos as well as the body's half, and `:OF`
-  on a body arm shakes it for two seconds and leaves it closed. Every command now answers what happened: done
-  here, sent to the dome, or no and why. `docs/marcduino_commands.md` lists
-  which commands the body answers.
-- **A servo lets go once it has got there.** On Servos, set how long a
-  calibrated part holds after each move arrives, up to a minute, or never.
-  After that it goes limp, so a jammed or fought part stops grinding instead
-  of pushing until somebody notices. Any new move starts the count again, and
-  the calibration dial keeps holding while you look. A part set to go home
-  and hold at power-up lets go the same way. Nothing changes until you set a
-  time.
-- **Set several servos in one press.** Tick the rows on Servos, or tick all,
-  pick a time to full throw, a time to get up to speed, an ease or what they
-  do at power-up, and one button sets it on every ticked output. Nothing
-  moves. The answer counts how many took it and how many were left out and
-  why: a servo you have not calibrated, a light.
-- **`$803` plays bank 8, sound 3.** ShadowMD's bank-and-sound numbering is read
-  as that, not as track 803. A sound module with no bank 8 says so instead of
-  playing the wrong file.
-- **Your routines are in the backup.** A backup now holds every Sequence you
-  taught the droid, and says which board made it. A restore offers three parts,
-  Sequences, Configuration and RC Map, each saying what it replaces and what
-  it leaves, and replaces the parts you tick rather than merging. Before
-  anything is written you can save a copy of what is about to go; if that copy
-  cannot be made, nothing is replaced. If the droid refuses a Sequence halfway,
-  the ones it had are put back. A droid that stores fewer Sequences keeps the
-  first ones and names the rest, an RC Channel bound to a Sequence the droid
-  will not have is left out and named, and each restored Sequence carries its
-  Rehearsal line. A file from the other board brings its Sequences, RC Map and
-  sound setup and leaves the rest, which names that board's pins.
-- **The Rehearsal says more of what will not happen.** It now flags panel
-  moves close enough to brown the dome out, a group command that moves panels
-  the routine never touched, a raw light code that shows up in the wrong
-  color, steps aimed at hardware that is switched off or a panel the dome says
-  it cannot move, and, as a note, a track that plays on after the show. It
-  times body moves with the droid's own motion model, so it catches a part
-  turned back before it got there. Its figures show warnings, notes, size
-  against the droid's limits, how long the routine runs and its slowest throw.
-- **Know which servos jump before you press Test.** Beside Test on the droid,
-  the editor names every servo the routine moves that nobody has calibrated:
-  its first move is a jump, not a ramp. The button still works.
-- **Point the body at the dome's WiFi from Configuration.** With a Dome
-  Controller fitted, its card now takes the dome's IP address for the WiFi
-  fallback (leave it empty and the dome is found by name), and states what the
-  slip ring runs on: the UART, the two pins, 9600 baud and Marcduino, as the
-  board itself reports them.
-- **Set how each servo moves.** Every row on Servos now takes a time to full
-  throw, a time to get up to speed and an ease: `none` stops dead on the
-  number, `soft` lets a heavy panel ease into motion, and `overshoot` swings a
-  little past and settles back, never beyond the ends you recorded. A servo
-  you have not calibrated still jumps, and its row says so. A backup now
-  carries all three.
-- **Choose what each servo does at power-up.** Every servo row on Servos now
-  says what happens when the droid is switched on: stay limp where it was left
-  (the default), go home to its centre and hold it there, or go home and then
-  let go. Servos going home move one at a time, never all at once, and none
-  move at all if the droid comes up with the emergency stop latched. Servos no
-  longer all jump to their middle position at power-up. A backup carries the
-  choice.
-- **As many lit parts as you have wires for.** Your droid used to get one LED
-  strip: one wire carried it, one length described it, and giving a second wire
-  a strip quietly took it off the first. Now every wire answers for itself. Put
-  a strip on as many wires as your board has, tell each one how long it is, and
-  every part on a lit wire gets its own color, its own brightness and its own
-  on / off / flash. Asking one for red leaves the others where they were. If you
-  already had a strip, it stays exactly where it was and you are not asked about
-  it again.
-- **Lights: every light on the droid, on one page.** The dome's logic displays,
-  PSIs and Magic Panel, and the body's lights, listed by where they sit. A dome
-  light is lit by the dome controller, and from here you can ask it for a mode
-  and a color - the same ones a sequence sends - and the page says what it asked
-  for rather than what the dome then does. A body light says what lights it: put
-  an LED strip on a wire in Wiring and the part on that wire reads on, off or
-  flash, with brightness, and the strip's length beside it. The page lists only
-  the lights on your droid: a body light once it is on an output in Wiring, and
-  the dome's lights while the Dome Controller is fitted. With none, one line
-  sends you to Wiring. The LED strip left
-  Configuration, and an LED strip is now one kind of light protoArtoo can put on
-  a wire rather than a thing of its own.
-- **Your droid, drawn as R2.** The top of Parts is now a line drawing of your
-  droid in one card, with Front, Rear and Dome (Top) you switch between by
-  their names. Every door and panel sits where it really is, and shows what the
-  droid was last told: an open part fills blue, a part whose ends are not
-  measured yet is amber. Pick one, on the drawing or in the list beside it, to
-  see its servo and to open or close it. The arms are off until you add them
-  from that list. The dome on the Dashboard and in Sequences is drawn the same
-  way. Under the drawing, Unused lists the parts no output claims yet, each
-  with its outputs to pick from.
+
+#### Sequences
+- **Build a routine on its timeline.** Edit opens a sequence on a timeline
+  with a lane per part. Drag in a door, an arm, a dome panel, a light, a
+  sound, a dome turn, a loop or another sequence; drag a block to move it, its
+  edge to change its length, and the end line to give the routine more room.
+  Pick a block and the drawer below holds its settings. Every edit is one
+  Undo and one Redo, and leaving with unsaved edits asks first. Factory
+  sequences open in the same view to look at, and Tune makes one yours.
+- **One move across many parts.** A set (the ring, the pies, the breadpan
+  doors) lands as one block across its parts: say the move, the order, where
+  it starts and which way round, and how far. The droid works out the parts
+  when it runs, so a panel fitted later joins in. A body set can be split into
+  steps you edit one by one.
+- **Sequences inside sequences.** Drop one of your sequences into another as
+  one linked block: improve it once and every sequence using it changes.
+  Three deep, never itself. Split it into steps to unlink a copy.
+- **Flutter and part-way opens.** A flutter shakes its part between closed and
+  how far you set, for as long as the block runs, and ends closed. Any open
+  can become a flutter. A dome panel or a body part can open part way.
+- **Write the half that closes.** A sequence in an interrupt group opens on
+  one press and closes on the next, and the closing half is now yours to
+  write, started for you from what the opening half leaves open.
+- **A tempo and a beat grid.** Type the BPM, tap along, or drop in your copy
+  of the track to have its beat read. Steps placed on a beat stay on it when
+  the tempo changes, and the whole routine can be retimed to the grid.
+- **Read a routine as time, and send the droid to one moment.** Move the
+  marker and the droid picture shows that moment; one press puts every part
+  there on the droid, one at a time, with lights and sound. Refused while the
+  estop is latched or the droid sleeps.
+- **The Rehearsal says what will not happen.** Beside the check that decides
+  whether a sequence saves, the Rehearsal lists what will not happen the way
+  you wrote it: dome commands too close together, panel moves close enough to
+  brown the dome out, a part left open, a flutter the end cuts short, steps
+  aimed at hardware that is off, and every servo nobody has calibrated, whose
+  first move is a jump. It never stops a save or a run.
+- **Test runs read Running until they end.** Test a sequence and it reads
+  Running until the droid says the run has ended; Stop beside it ends that run
+  and nothing else. The red STOP is still the estop.
+- **Sequences is one list.** Every sequence on the droid is a row in one
+  table, yours first, filtered to yours or the factory's.
+
+#### Performing
+- **Perform on the sticks and keep it.** On the RC page, give a free RC
+  Channel to a part as a puppet string: the stick moves it between its closed
+  and open ends. Perform over a sequence and keep the take; build a
+  performance up in passes, one take per set of parts, and the buttons you
+  pressed while performing land as ordinary steps. A take sits on the
+  timeline as one block.
+- **Run a show from the Dashboard.** Every sequence on the droid is a chip:
+  press one to play it, the running one offers Stop whoever started it, and
+  up to eight pinned ones come first on every browser. Rest runs your Stand
+  Down Sequence, chosen on Sequences (`DM:RESET` until you pick one). Full
+  screen clears the page to the drawings, the sequences and STOP.
 - **Open a door from the Dashboard.** Your droid's body and dome are drawn
-  side by side under the Dashboard's controls. Click a door, panel or arm to
-  open or close it. With the estop latched nothing moves, and the Dashboard
-  says so.
-- **Sleep from the Dashboard's switch.** The Sleep switch under Controls now
-  puts the droid to sleep, the same as Sleep in the top bar. The Console sits
-  open under Controls, and Build folds away at the foot of the page.
-- **Run a show from the Dashboard.** Under the drawings, every sequence on the
-  droid is a chip on one line, with the rest behind +N. Press a chip to play
-  it. The one running comes first and offers Stop, whoever started it, here or
-  on the RC Radio. Pin the ones you use with the small pin on the chip: they
-  come next, on every browser, and stay pinned after a restart. Up to eight. A
-  sequence on an RC Channel names it, and one the RC Radio fires that is no
-  longer on the droid says it does nothing. Rest runs your Stand Down
-  Sequence, and its chip carries the Rest mark: pick it on Sequences with the
-  Use as Stand Down pin beside each one. Until you do it is `DM:RESET`, which
-  leaves the pies open. Full screen clears the page to the drawings, the
-  sequences and STOP.
-- **Green means the droid heard it.** The Dome ESC, the Foot Drive and the RC
-  receiver light green only on what comes back from them, never on what the
-  droid sent. The Dome ESC has no wire back, so it reads Idle or Spinning in
-  grey. A PWM receiver reads Unmeasured in grey: the droid knows it is on,
-  not whether pulses arrive.
-- **Readouts name the part.** On the Dashboard, a servo output's readout is
-  called by the part on it, with its pin in small print, and says where the
-  part is. An output with no part on it is not listed.
-- **The Status Plate says less.** The note beside the chips is gone, and how
-  long ago the droid was heard shows only when it is not being heard.
-- **STOP releases what it latched.** While the droid reports the estop
-  latched, the red STOP says Press to release beside it, and a press releases
-  it. The ESTOP cell on the Status Plate does the same.
-- **Every answer says when it takes effect.** Each Setup question and each
-  Configuration setting carries one line beside it: used at once, used from the
-  droid's next start, or saved and needing a restart. Once you change something
-  that is still waiting, the line says the droid runs the old setting until
-  then. Only a restart you have to perform reads amber, with the way to
-  Maintenance's Restart. Change it back and the line clears.
-- **Sound switched off says it is off.** On a droid whose sound is off, Sound,
-  the Dashboard and the Console name the module you picked and say sound is
-  off, instead of naming a module nobody is using. Playing a track or sending a
-  sound command is refused with where to switch sound on, instead of answering
-  "queued" to a module that never hears it.
-- **A Wiring screen: where each wire goes on this board.** A new destination
-  beside Parts. It draws your Body Controller, by its own picture and name, and
-  every wire that leaves it: each output and each serial link, in its own
-  color, named first by what is printed on the board (ARM1-ARM5 and S1-S3 on
-  the Artoo PCB, GPIO 49 and the like on the FireBeetle 2), then by its pins.
-  Only the wires you have run get a line: an output with a part on it, and a
-  serial link that is switched on. Each wire's box names the part on the end
-  of it, and under the drawing every output reads what is on it or free, by
-  what the board prints. Below that, one table puts each part on an output
-  and, on the same row, picks its servo or its LED strip. An output with a
-  part on it is wired, with no separate switch, and the page says when that
-  waits for the droid's next start. Nothing else can wire an output: every
-  output is wired from the parts on it each time the droid starts and after
-  every save, and the Console's arm and AUX toggles now refuse a change. A
-  light part is only offered the outputs
-  that can light it, and the usual output for each utility arm is marked
-  suggested. The dome's parts show the command the dome controller answers
-  to instead of an output. Power wiring
-  explains the shared supply rather than drawing it. The outputs are whatever the
-  board reports, so a board with other outputs shows its own. Nothing on the
-  page is kept by hand, so it cannot go stale against the firmware.
-- **A printable wiring sheet.** Wiring saves one file you can print anywhere,
-  no droid needed: the same drawing, with the board's picture and each wire's
-  color, and the Power wiring notes. Each wire has an empty box to tick at the
-  bench, on paper only, and no wire is split across two pages.
-- **Set the droid up in one guided pass.** A freshly flashed controller now
-  walks you through what your droid is made of, one question at a time, starting
-  from the WiFi you already gave it. A rail along the top shows the questions,
-  which one you are on and what each currently answers, and you can jump to any
-  of them. The board you are running on is shown rather than asked, because it
-  is whichever one the firmware was built for.
+  side by side; click a door, panel or arm to open or close it. With the estop
+  latched nothing moves, and the page says so.
+- **Reactions.** On the RC page a binding can take a droid condition instead
+  of an RC Channel, and the droid fires it itself: on drive speed, a hard
+  stop, going stationary or a track starting, and on a Foot Drive that reports
+  them, wheel speed or current. Each Reaction has its own quiet time. While the droid is driving a Reaction may light, sound and turn the
+  dome, but never opens a body part.
+- **Mood sets how lively the whole droid is.** Mid-Awake, Full-Awake and
+  Awake+ now pace the dome's random turns as well as the idle chatter.
+- **The droid knows where its dome points.** Time one full turn on the Dome
+  page and press Front is here; from then on the droid follows every turn and
+  shows where the dome points, as believed. Go home turns it back to front,
+  and a sequence step can too. After a restart, an estop or sleep it reads
+  Unknown until you set front again.
 
-  The run remembers which questions it actually put in front of you. Every
-  component starts switched off, so an untouched question reads "not fitted" —
-  a statement about your droid you never made. A question you have not been
-  asked yet is drawn with a hollow mark rather than a filled one, and what it
-  shows is labelled as the default rather than as your answer.
+#### Sound
+- **Background Track, on the CHIRP Audio Trigger.** A sequence can start
+  music under the routine at its own volume, fire vocals over it without
+  stopping it, and stop it. On a module that cannot mix, the sequence still
+  saves and runs without the music, and the Rehearsal says so.
+- **`$803` plays bank 8, sound 3.** ShadowMD's bank-and-sound numbering is read
+  as that, not as track 803.
 
-  Setup is a one-off. Reaching the last question finishes the run, and so does
-  pressing Stop here at any point: the droid keeps whatever you answered, and
-  Setup does not ask again. The two are kept apart, so a droid you answered and
-  a droid you walked away from are still different afterwards. All of it travels
-  with Backup and Restore like any other setting.
-- **Setup ends by telling you where your droid stands.** When the guided run
-  finishes, or you stop it, a summary at the top of Configuration lists what
-  you set, what is still waiting for a restart (each with the way to
-  Maintenance's Restart), and every question you were never asked, hollow and
-  showing its default, with a button to answer it. It stays until you press
-  Done, and a backup carries that. A change still waiting for a restart now
-  says so after you reload the page too, because the droid reports what it
-  started with.
-- **Another board says how to switch to it.** On the Body Controller cards, the
-  board this firmware was not built for says it needs its own firmware and
-  links to Firmware, instead of sitting greyed with nothing to do about it.
-- **Say which droid you built.** Configuration and the guided run ask your
-  Dome Design and your Body Design, each at its variant, and the two can come
-  from different designs: an MK4.1 dome on an MK4 Basic body is an ordinary
-  droid. Picking a design fits the parts it carries and never takes off one you
-  already fitted, so the gripper arm you printed stays. MK4 Complex is the
-  default and says so. My own build fits nothing and is always there. MK3 is on
-  the card list as coming and cannot be picked yet. Where a design's parts are
-  not written down yet, the step says so instead of fitting nothing quietly. A
-  connected dome that reports different panels from your Dome Design is shown
-  under it; your answer stands until you change it.
+#### Wiring, parts and servos
+- **Wiring is one table.** Every part on an output, the free outputs, the
+  parts on no output yet, the serial links and the fitted products are rows of
+  one table. A part's row picks its output, and on the same row its servo or
+  its light. Moving a part off another output asks first and names what that
+  output keeps. Every wire is named by what your board prints beside it.
+- **A printable wiring sheet.** Wiring saves one file to print, no droid
+  needed: the same table as text, with a box to tick for each wire.
+- **How to wire and power what you fitted (FireBeetle 2).** Each product on
+  the droid has a card on its Wiring row: supply, draw, logic level, where
+  each wire goes, and what breaks hardware.
+- **See where your answers and the droid disagree.** Wiring lists what you
+  said beside what the droid reports, for the sound module, the dome link, the
+  RC receiver, the Foot Drive and the dome's panels, and links each mismatch
+  to where you fix it.
+- **Your droid, drawn as R2.** Parts opens on a line drawing of your droid,
+  front, rear and dome, with every door and panel where it really is. Pick one
+  to see its servo and open or close it. Parts on no output yet are listed
+  under it, each with the outputs to pick from.
+- **Find which output moves a part by making it move.** The droid twitches
+  each free output in turn, inside a cautious range, and names the one moving;
+  press That one when your part moves.
+- **Calibrate by driving the part.** A dial on Servos drives the output while
+  you look and listen; set its ends and centre from wherever the dial stands.
+  The droid keeps holding the part while you work, and lets go on its own
+  when you stop.
+- **Set how each servo moves.** Every output takes a time to full throw, a
+  time to get up to speed and an ease (`none`, `soft`, `overshoot`). A
+  calibrated servo moves at that pace from every source; an uncalibrated one
+  still jumps. Tick several rows to set them in one press.
+- **A servo lets go once it has got there.** Set how long a calibrated part
+  holds after arriving, up to a minute; after that it goes limp, so a jammed
+  part stops grinding. Nothing changes until you set a time.
+- **Choose what each servo does at power-up.** Stay limp (the default), go to
+  centre and hold, or go to centre and let go. Servos no longer all jump to
+  their middle at power-up, and none move if the droid starts with the estop
+  latched.
+- **Back to centre in one press.** Every output goes to its own recorded
+  centre, one at a time, so the whole body moving at once cannot brown out.
+- **Set the gap between servo starts.** The droid leaves 450 ms between the
+  servos it starts itself, and that number is now yours to set.
+- **Sixteen more outputs on a PCA9685.** Fit a PCA9685 servo expander on the
+  I2C header and choose it as a body servo controller: after a restart its
+  sixteen channels are outputs like any other, on Wiring, Servos and Parts,
+  released limp on estop. A lost bus is reported; drive, estop and failsafe
+  are untouched.
+- **As many lit parts as you have wires for.** Put an LED strip on every wire
+  that has one, each with its own length; every part on a lit wire gets its
+  own color, brightness and on / off / flash.
+- **Lights: every light on the droid, on one page.** The dome's logic
+  displays, PSIs and Magic Panel, and the body's lights, listed by where they
+  sit, each with what lights it.
+
+#### Setup and configuration
+- **Set the droid up in one guided pass.** A freshly flashed controller walks
+  you through what your droid is made of, one question at a time, and ends
+  with a summary of what you set, what waits for a restart and what you were
+  never asked. Setup is a one-off; Maintenance runs it again for a rebuilt
+  droid.
+- **Say which droid you built.** Pick a Dome Design and a Body Design, each at
+  its variant, mixed freely: an MK4.1 dome on an MK4 Basic body is an
+  ordinary droid. A design fits the parts it carries and never takes off one
+  you fitted. My own build fits nothing.
 - **Configuration and Maintenance, where Setup was.** Configuration holds what
-  the droid is made of: its components, the LED strip, its name. Maintenance
-  checks the controller over: serial links, memory, backup, restart. A droid
-  that is not set up opens the guided run over Configuration, and Maintenance
-  runs it again for a droid you rebuilt. Nothing you set is cleared. Old links
-  to Setup open Configuration.
+  the droid is made of; Maintenance checks the controller over: serial links,
+  memory, backup, restart. Old links to Setup open Configuration.
+- **Every answer says when it takes effect.** A setting that waits for the
+  next start or a restart says so beside it, and says the droid runs the old
+  value until then. Only a restart you must perform reads amber.
+- **Product cards show the part in your hand.** On the FireBeetle 2 every
+  product card has a photograph, and a card says Run on a droid when the
+  project has seen it work on a real one.
+- **Point the body at the dome's WiFi.** With a Dome Controller fitted, its
+  card takes the dome's IP address for the WiFi fallback.
+- **Your routines are in the backup.** A backup holds every sequence you
+  taught the droid. A restore offers Sequences, Configuration and RC Map, each
+  saying what it replaces, and you can save a copy of what is about to go
+  first. A file from the other board brings its sequences, RC Map and sound
+  setup and leaves its pins.
 
-- **Put the whole droid back to centre with one press.** Servos has a Back to
-  centre button above the outputs. Every output goes to the centre you
-  recorded for it — its own centre, not a fixed middle — and the droid does them
-  one at a time, leaving at least 450 ms between them, so a whole body moving at
-  once cannot brown out the servos. An output that takes longer than that to
-  travel holds the next one off until it has finished. Outputs driving only
-  lights are skipped, and the page says how many: a light has no centre. The
-  estop, sleep mode, a sequence starting and Stop each end it where it has got
-  to, and the estop lets go of every output as it does. It is on the Controller
-  Console too, as `servo.action.centre-all`. That 450 ms is the pace measured on
-  the dome, standing in until the body's own has been measured.
-- **The numbered body buttons do what their names say.** `:SE30` to `:SE36`
-  used to run the same open-and-close on the two utility arms, whichever one
-  you pressed. Each is now its own routine, taken from the body sequences
-  builders already know. The utility arms flick out and back. Every door and
-  arm works in turn. The doors spring open and wiggle shut. The gripper arm
-  snaps its claw, and the interface arm works its tool. The breadpan doors
-  ping-pong, and a BT-1's two claws snap together. They move the parts you
-  have assigned to outputs; a part with nothing wired to it is skipped and the
-  rest of the routine still runs. To change one, save your own sequence under
-  its name, `DM:SE30` to `DM:SE36`.
-- **A calibrated servo moves at its own pace.** Once you have measured an
-  output's ends, every move it makes, from a button, the browser or a
-  sequence, takes the time you set: time to full throw, and time to get up to
-  speed. An output you have not calibrated still jumps straight to position,
-  as it always has. Estop and sleep stop a move where it is.
-- **The sequence editor rehearses what you wrote.** Beside the check that
-  decides whether a sequence can be saved, the editor now counts what will
-  not happen the way you wrote it. Examples: dome commands so close together
-  that the dome drops some, a panel told to open again while it is already
-  opening, a `$s` that silences idle chatter until reboot, a body part left
-  open. Each one says how to fix it. The full list is in the editor's
-  Rehearsal tab, which says when it holds a warning, and a folded summary
-  follows a test run. It also says how many steps it could check and why the rest could not be. It
-  never stops a save or a run.
-- **A part is on one output, and the page asks before it moves it.** Pick
-  another output for a part, on Wiring or on Parts, and the page asks first:
-  it names the part, the output it leaves and what that output keeps. Two
-  parts on one wire, like a pair of doors, are both on it.
-- **See what every output drives, and where it is told to be.** Servos has
-  one row for every output with a part on it, in the order the wires plug in,
-  named by its parts and the pin the board prints, so a wire split to two
-  doors names both. With no part on any output, it sends you to Wiring. Which
-  servo is on an output is picked on Wiring, on the part's row. Above it, a
-  count of how many outputs are moving a part and how many are wired but
-  switched off. A bar shows where the
-  controller is driving each servo right now, and a tick shows where the move
-  ends. Both are what the controller told the servo, not a reading: nothing on
-  the droid can feel where a servo is, so a jammed one looks like a free one.
-  An output with no pulse on it says `— off`. Pick a part in a row to put it on
-  that output, and the page asks first if that takes it off another output.
-  The same rows, with where each output stands, are on the Controller Console
-  as `servo.api.get-outputs`, so a board with no WiFi can read them too.
-- **Find out which output moves a part by making it move.** On Wiring, press
-  `find by moving` on the row of a part that is on no output yet, then watch
-  the droid: the controller takes each free output in turn - no part on it,
-  no light on its wire - puts it at its centre, and twitches it a little, out
-  one way, across, and back, and the page names which one is twitching. Press
-  `That one` when the part moves and it is put on that output, the same way
-  picking it would have. The first move to a free output is a jump to its
-  centre, since nothing has driven it before. The twitch is small on purpose,
-  stays inside the cautious 1000-2000 µs band, and never goes to a recorded
-  end. The controller runs the whole out-and-back itself and lets each free
-  output go limp again a few seconds after the run moves on, so nothing stays
-  driven if your browser goes away mid-run. `Stop` ends a run at any moment
-  and lets go of the output; the estop ends it too, and the act stays refused
-  while the estop is latched. The same twitch is on the Controller Console as
-  `servo.action.nudge`, and `POST /api/servo` takes `action=nudge`.
-- **Calibrate a part by driving it and pressing a button.** Press `calibrate`
-  on an output on Servos and you get a dial: drag it, or nudge it 5 µs
-  at a time, until the part looks right, then press `Set MIN`, `Set CENTER` or
-  `Set MAX`. Whatever the dial is standing at becomes that end. No typing
-  microseconds, and no wondering whether the number you typed is the one the
-  servo is holding. The dial opens at the widest range the controller will
-  actually drive that output — 1000-2000 µs, or the full 500-2500 on a part you
-  have recorded as taking it — and says which range it is and why. `safe range`
-  narrows a wide one, `use these ends` narrows it to what you have measured, and
-  `test sweep` runs the part between your two ends. The last two wait until
-  there are ends to work with, and say so. `reverse` swaps the two ends for a
-  linkage that runs the other way; press it again and you are exactly back where
-  you were. Capture an end that leaves your centre outside the travel and the
-  centre comes with it rather than the capture being refused, and the dial tells
-  you it moved.
-- **The part keeps being driven while you look and listen.** This is what the
-  dial is for: a servo fighting its linkage is only audible while something is
-  driving it, and until now the drive was cut the moment a part arrived —
-  exactly when you had stopped moving it in order to look. So the dial holds the
-  output, and the controller, not the browser, decides when that ends: it lets
-  go a few seconds after the page stops asking, and after ten minutes however
-  long you keep at it. Either way the part goes limp where it is and the row
-  says which of the two it was; one press takes it back and starts both over.
-  `pulses off` on any output row makes it limp at once, wherever it happens to
-  be — including while a `Find by moving` run is nudging it, which stops the run
-  and says so. Both are on the Controller Console too, as `servo.action.hold`
-  and `servo.action.release`.
-- **Estop and sleep now let go of every output instead of closing them.** They
-  used to drive whatever a running sequence had moved to its closed position and
-  keep holding it there. Holding drive is how a fought part grinds itself, and
-  driving many outputs at once is how the board browns out — so a stop now takes
-  the pulse off every output and commands no position at all. Nothing is driven,
-  so nothing can grind and nothing can brown out. What this costs is honest: a
-  released part sits wherever gravity and friction leave it, and the droid no
-  longer tidies itself up on the way to a stop.
-- **The picker cards can show the part in your hand.** Every product in the
-  lineup now has a photograph on the FireBeetle 2 — the same dark ground as
-  the rest of the UI, sized to a card, so matching a card to the hardware on
-  the bench is looking at the thing rather than reading a name. Those
-  photographs ride the default asset set only; the Artoo board does not
-  carry them (ADR 0065).
-- **See which products have run on a droid.** In Configuration, a product
-  card says Run on a droid when the project has seen it work on a real one.
-  A card without it is built, not yet run on a droid. It never changes the
-  order of the cards or what you can pick.
-
-- **STOP is on every screen.** The red STOP sits in the top bar wherever you
-  are, not only on the Dashboard and Foot Drive, and it stays there as you
-  move between screens. The sleep screen no longer covers it.
+#### Every page
+- **STOP is on every screen,** in the top bar, and a press releases a latched
+  estop.
+- **Changing screen keeps the droid in view.** Moving between screens no
+  longer reloads the page; the top bar, the Status Plate and live updates stay
+  up, and a screen you left stops asking the droid for updates.
 - **Find a screen by what you are doing.** The menu is in four groups: Drive,
-  Perform, Configure and Maintain. Sound and Dome are in both Drive and
-  Perform, because you reach for them either way. The Dashboard sits on its
-  own before the groups, and the group holding the screen you are on is
-  marked.
+  Perform, Configure and Maintain.
+- **Action buttons carry an icon.** The same act wears the same icon on every
+  page; hover or focus names it.
 
 ### Changed
-- **One firmware per board, whatever sound module you fitted.** A release now
-  carries one firmware and one filesystem image for each board, not one per
-  sound module, and there is no special build to flash for CHIRP Audio Trigger
-  or MP3 Trigger. Pick the module on Configuration (Hardware components ->
-  Sound); it takes effect at the next start.
-- **The list of parts and their outputs is on Wiring now.** The list of every
-  part with the output it is on moved from Parts to Wiring, under the outputs
-  it chooses between, and moving a part off one output still asks first.
-  Parts picks a part's output too, with the same bar.
-- **A value the droid will not take is said in your words.** Save a setting
-  it refuses - on Foot Drive, Dome, Servos, Sound or a restored backup - and the page
-  says which setting, and what it takes: "Neutral pulse must be 1000 to 2000
-  µs". The pages no longer quietly move a number you typed into a range of
-  their own, so what you typed is what the droid judged. The log level takes
-  `error`, `warning`, `info` or `debug` from any page or tool, and an ELRS
-  receiver set on the droid stays ELRS after a reboot.
-- **A part that will not move, a capture that is not recorded, says why.** Move
-  a part on Wiring to an output that is full, or record an end the droid will
-  not take, and the page names the part and the output: "Rear-left body door
-  did not move: ARM1 no longer has that part". Each component switch and each
-  sound is called one thing on every page - RC channel 1, Dome link, Short
-  Cantina - and a setting that waits for the next start or a restart says so
-  on every page that shows it.
-- **Every "no" tells you what to do about it.** When something on your droid
-  will not run, the screen says which of four things is true and, where there is
-  something to do, takes you there. Switched off names the switch and links to
-  Configuration. Not in this build links to Firmware. Still checking says so and
-  asks nothing. A no with nothing to do about it says that and stops, without a
-  date, a version or a product to go and buy. The droid's own words for a
-  refusal - the ones that read `web_control_disabled` - never reach the screen
-  again.
-- **The screen names your board, not somebody else's.** Serial links, the
-  refusals on Sound and Foot Drive, and `GET /api/serial` no longer say "S1",
-  "S2" or "S3" unless that is what your board actually prints. The Artoo board
-  prints those; a FireBeetle 2 prints GPIO numbers, and now says so. Which wire
-  a signal is on stays Wiring's answer, drawn from the board you are running.
-- **"Controller" is the Body Controller.** Once a droid has a dome controller,
-  a radio receiver and a wheel controller, a bare "controller" named four
-  things. Everywhere the word meant the board this firmware runs on, it says
-  Body Controller.
-- **Sound says Named Tracks and Sound module**, and the switch on Configuration
-  is Sound. Foot Drive's wheel telemetry card is Wheel controller.
-- **Fewer notes.** Seventeen notes that only repeated the heading, the subtitle
-  or the label beside them are gone, and thirty-three more lost the half that
-  did. Nothing was shortened at the cost of something you needed to know.
-- **An output is called what your board prints beside it.** On the Artoo board
-  that is ARM1 to ARM5, and on the FireBeetle 2 it is GPIO 49, GPIO 50, GPIO 4,
-  GPIO 5 and GPIO 51 - on Servos, Parts, Wiring, Configuration, the Dashboard,
-  the RC page and in the Console. There is no more "AUX 1" or "Utility Arm 1".
-  Type the same word in the Console or send it to the API: `arm3` and `ARM 3`
-  both work, and so do `gpio49` and `GPIO 49`. The old words `aux1` to `aux3`
-  are not taken any more; the answer lists the words your board does take.
-  Your saved RC bindings and settings are untouched.
-- **Servos is where you work an output.** Each output has one row: its name,
-  the parts on it, where it is told to be, and on the row you drive it (Open,
-  Close, Stop, or a width you type), calibrate it and take its pulse off. Back
-  to centre and Find by moving sit above the rows. Parts keeps the list of your
-  parts and the picture of your droid. Servo assignment names the part on each
-  output too, like "ARM1 · Left body door". The old Test a servo section is
-  gone: driving an output is how you test it.
-- **A setting that works at once says nothing about when.** Only a setting that
-  waits for the droid's next start or a restart carries a line saying so.
-- **The RC page shows your radio and receiver.** RC input and Receiver type each
-  show the product you picked in Configuration, with its picture.
-- **Drive from the web with no radio at all.** Radio Controller in Configuration
-  has a Not fitted card. Pick it and the droid forgets the radio and switches
-  every RC channel off. After a restart it no longer waits for a radio signal
-  before the feet will move: the web controls and the emergency stop hold them.
-- **MP3 Trigger volume uses the range you can actually hear.** The slider used
-  to be stretched across the module's whole 0–255 register, most of which is
-  silent, and the shipped default sat at the edge of audibility. It now maps
-  onto the vendor's 0–64 useful range, so the default is a real two-thirds and
-  turning the slider down still makes sound.
-- **The Sound page says when an MP3 Trigger clip is missing, and when a range
-  this module cannot play is saved.** Play-state follows the board's finish
-  byte instead of staying unknown. On the Artoo board, listening for that byte
-  no longer takes the dome's serial line. The Sound page also tells you the
-  3.3 V jumper and the 9600 card file, the two things that look like a dead
-  module.
-- **A FireBeetle keeps ten sequences of your own, and an artoo-esp32 keeps
-  five.** Sixteen full-size sequences never fitted on an artoo-esp32: your
-  saved sequences and the web pages share the same flash there, and five
-  leaves the pages room to grow. Sequences shows the number your droid keeps.
-  If an update leaves an artoo-esp32 holding more than five, it keeps and
-  plays every one, and saves a new one once you have deleted down to four. If
-  you have saved more than ten, the controller lists the first ten it finds,
-  so export the ones you want to keep before you update.
-- **An artoo-esp32 no longer runs short of memory while pages load.** Opening
-  pages quickly one after another used to leave its WiFi taking memory faster
-  than it gave it back. It now keeps a limit on what it holds at once, so pages
-  load a little slower, about a tenth of a second each.
-
-- **Changing screen keeps the droid in view.** Moving between screens no
-  longer reloads the page. The top bar, the Status Plate and the live updates
-  stay up while the screen beneath them changes, so the droid's status never
-  goes blank. Each screen keeps its own address, so a link or a bookmark still
-  opens it.
-- **A screen you have left stops asking the droid.** Leave a screen and it
-  stops asking the droid for updates, so the controller spends its time on the
-  screen you are reading. Leaving changes nothing on the droid. Come back and
-  the screen shows what it had, without loading it again.
-- **A no looks like what it is.** Something you can switch on here, something
-  that needs other firmware or another board, something still being checked,
-  and something that will not happen are each drawn their own way. None of
-  them is amber any more, so amber is left for something on the droid that
-  needs you.
-- **Your servo settings come through the update.** The first time the droid
-  starts on this firmware, every output keeps the ends, the part and the
-  servo you set before. An output that only had open and close gets its centre
-  halfway between. If the controller cannot save a setting, it says the save
-  failed and keeps the old one, instead of losing your calibration.
+- **One firmware per board, whatever sound module you fitted.** A release
+  carries one firmware and one filesystem image per board. Pick the sound
+  module on Configuration; it takes effect at the next start.
+- **Your servo settings come through the update.** The first start on this
+  firmware keeps every output's ends, part and servo. An output that only had
+  open and close gets its centre halfway between.
+- **An artoo-esp32 keeps five sequences of your own, a FireBeetle ten.** If an
+  update leaves an artoo-esp32 holding more than five, it keeps and plays them
+  all and saves a new one once you are down to four. Over ten, the controller
+  lists the first ten it finds: export the ones you want to keep before you
+  update.
+- **An output is called what your board prints beside it:** ARM1 to ARM5 on
+  the Artoo board, GPIO numbers on the FireBeetle 2, on every page and in the
+  Console. The old words `aux1` to `aux3` are no longer taken; your saved RC
+  bindings and settings are untouched.
+- **Estop and sleep let go of every output instead of closing them.** A stop
+  takes the pulse off every output, so nothing grinds and nothing browns out.
+  A released part sits wherever it is left.
+- **Drive from the web with no radio at all.** Pick Not fitted for the Radio
+  Controller and the droid stops waiting for a radio signal before the feet
+  move; the web controls and the estop hold them.
+- **Community commands reach the dome.** A ShadowMD or Padawan360 `:` or `#`
+  command the body has nothing for goes to the Dome Controller instead of
+  vanishing. The numbered body buttons `:SE30` to `:SE36` each run their own
+  routine instead of the same arm flick. Every command answers what happened:
+  done, sent to the dome, or no and why.
+- **Every no says what to do about it.** Something switched off names the
+  switch and links to it, something not in this build links to Firmware, and
+  a value the droid will not take says which setting and what it takes.
+- **Green means the droid heard it.** The Dome ESC, the Foot Drive and the RC
+  receiver read green only on what comes back from them, never on what was
+  sent.
+- **Sound switched off says it is off,** and sound commands are refused with
+  where to switch it on.
+- **MP3 Trigger volume uses the range you can hear,** and the Sound page says
+  when a clip is missing.
 
 ### Fixed
+- **A browser drive timeout no longer holds the feet, and the radio with
+  them.** Half a second after the last drive from a browser, the droid held
+  the feet and ignored the RC radio until someone drove from the browser
+  again.
 - **The WiFi module comes back without a restart (ESP32-P4).** The droid
-  now notices a WiFi module that stops answering, restarts the module and
-  rejoins your network, and the controller keeps running. If the module
-  will not come back, the droid says so and stays up. Status and the Console
-  show the link's last check and last recovery.
-- **The Dashboard draws its dome once.** It could draw the dome twice, or
-  not at all if you left the page before it had loaded.
-- **Long log lines arrive whole.** A log line too long for one slot now
-  carries on in the next, on the serial port and in the web log, instead of
-  losing its end.
-- **Clearing the estop resets the holos.** Clearing an estop, or the dome
-  coming back on the link, brought the logics and PSIs back and left the holos
-  running. They reset too now.
-- **Sequences no longer says "Nothing learned yet" while it is still loading.**
-  Right after the droid starts, the page shows the waiting dots until your
-  sequences arrive.
-- **A mode change that was not saved says so.** Pressing Driving or Stationary
-  on the Dashboard used to say Mode updated even when the droid could not save
-  it. It now says the update failed. The droid is in the new mode, but goes
-  back to the old one after a restart.
-- **`#st` and `#sm` are refused instead of answering ok.** They never changed
-  the mode, but the droid answered ok anyway. Now it refuses them and names
-  the request that does change the mode.
+  notices a WiFi module that stops answering, restarts it and rejoins your
+  network.
+- **An artoo-esp32 no longer runs short of memory while pages load.**
+- **A failed save no longer loses your calibration,** and a drive mode change
+  that was not saved says so instead of Mode updated.
+- **`#st` and `#sm` are refused** instead of answering ok without changing the
+  mode.
+- **Clearing the estop resets the holos** with the logics and PSIs.
 
 ## [1.3.0] - 2026-09-11
 
