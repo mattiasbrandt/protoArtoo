@@ -164,7 +164,7 @@ take moves between 101.9 and 104.8 BPM).
 
 ## Consequences
 
-- The analyser defects (two found here, a third by #438) are a **one-way door**. Grids persist and steps carry
+- The analyser defects (two found here, a third by #438, a fourth by #14) are a **one-way door**. Grids persist and steps carry
   beat indices, so correcting the 18 ms bias after shipping would silently
   re-resolve every beat-placed step in every saved sequence. They land before the
   first grid is stored or not at all.
