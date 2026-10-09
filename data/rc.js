@@ -1073,6 +1073,7 @@
     center: 'Not saved: CENTER must read between MIN and MAX.',
     max: 'Not saved: MAX must read above CENTER.',
   };
+  const AXIS_DEADBAND_TEXT = 'Not saved: CENTER sits too close to an end.';
   const rcAxes = document.getElementById('rc-axes');
   const rcAxesSummary = document.getElementById('rc-axes-summary');
   const rcDriveHold = document.getElementById('rc-drive-hold');
@@ -1087,7 +1088,7 @@
   const axisEnds = (axis, binding) => {
     const profile = rcSnapshot?.mappingProfile?.channels?.[axis.profile];
     if (!binding || !profile || profile.source !== binding.source || Number(profile.channel) !== binding.channel) return null;
-    return { min: Number(profile.min), center: Number(profile.center), max: Number(profile.max), reverse: Boolean(profile.reverse) };
+    return { min: Number(profile.min), center: Number(profile.center), max: Number(profile.max), deadband: Number(profile.deadband) || 0, reverse: Boolean(profile.reverse) };
   };
 
   // The stick's live reading, or null with none (a PWM pulse of 0 is none).
@@ -1121,6 +1122,7 @@
     if (/min < center < max/.test(message)) return 'Not saved: MIN, CENTER and MAX must rise in that order.';
     if (/out of range/.test(message)) return 'Not saved: that reading is out of range.';
     if (/does not bind/.test(message)) return 'Not saved: map this axis first.';
+    if (/no travel past the deadband/.test(message)) return AXIS_DEADBAND_TEXT;
     if (DRIVE_SPLIT_REFUSAL.test(message)) return DRIVE_SPLIT_TEXT;
     return `Not saved: ${message}`;
   };
@@ -1246,6 +1248,13 @@
       const next = { ...ends, [key]: raw };
       if (!(next.min < next.center && next.center < next.max)) {
         axisNotes[axis.token] = { kind: 'error', text: AXIS_ORDER_TEXT[key] };
+        renderAxes();
+        return;
+      }
+      // A side shorter than the dead zone would move nothing; the droid
+      // refuses it too (src/web/api_rc_map_apply.cpp).
+      if (next.center - next.min <= next.deadband || next.max - next.center <= next.deadband) {
+        axisNotes[axis.token] = { kind: 'error', text: AXIS_DEADBAND_TEXT };
         renderAxes();
         return;
       }
