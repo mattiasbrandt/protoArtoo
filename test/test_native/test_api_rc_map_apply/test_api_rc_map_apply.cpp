@@ -258,21 +258,24 @@ void test_rcMapApply_calibration_refuses_a_side_inside_the_deadband(void) {
     TEST_ASSERT_EQUAL_UINT16(100, fits.system.rc_sbus_drive_speed.deadband);
 }
 
-// An axis the map keeps on its stored calibration is held to the same dead
-// zone rule as one it calibrates: a stored dead zone that swallows a side
-// would be saved and never read (ADR 0070).
-void test_rcMapApply_refuses_a_kept_calibration_the_rules_do_not_take(void) {
+// A stored calibration the rules refuse (a dead zone that swallows a side) is
+// never carried over: mapping the axis again on the same RC Channel starts it
+// from the defaults, so the save mends it rather than refusing (ADR 0070).
+// One the rules take is carried over as before.
+void test_rcMapApply_remap_drops_a_stored_calibration_the_rules_refuse(void) {
     ConfigSnapshot snap = makeDefaultSnap();
     snap.system.rc_sbus_drive_speed = makeRcBindingConfig(RC_BINDING_SBUS1, 1, 172, 300, 1811, 200, false);
     RcMapApplyResult result = applyBody(std::string("{") + kSbusDriveMap + "}", &snap);
-    TEST_ASSERT_FALSE(result.ok);
-    TEST_ASSERT_EQUAL_STRING("calibration leaves no travel past the deadband", result.errorMessage);
-
-    ConfigSnapshot fixed = makeDefaultSnap();
-    fixed.system.rc_sbus_drive_speed = makeRcBindingConfig(RC_BINDING_SBUS1, 1, 172, 300, 1811, 200, false);
-    result = applyBody(
-        std::string("{") + kSbusDriveMap + ",\"calibration\":{\"drive_speed\":{\"center\":992}}}", &fixed);
     TEST_ASSERT_TRUE_MESSAGE(result.ok, result.errorMessage);
+    TEST_ASSERT_EQUAL_UINT16(RC_SBUS_DEFAULT_CENTER, snap.system.rc_sbus_drive_speed.center);
+    TEST_ASSERT_EQUAL_UINT16(RC_SBUS_DEFAULT_CENTER, snap.system.rc_pwm_drive_speed.center);
+
+    ConfigSnapshot kept = makeDefaultSnap();
+    kept.system.rc_sbus_drive_speed = makeRcBindingConfig(RC_BINDING_SBUS1, 1, 200, 1000, 1800, 40, true);
+    result = applyBody(std::string("{") + kSbusDriveMap + "}", &kept);
+    TEST_ASSERT_TRUE_MESSAGE(result.ok, result.errorMessage);
+    TEST_ASSERT_EQUAL_UINT16(1000, kept.system.rc_sbus_drive_speed.center);
+    TEST_ASSERT_TRUE(kept.system.rc_sbus_drive_speed.reverse);
 }
 
 // The map is judged for the receiver type the droid has saved: one SBUS
@@ -444,7 +447,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_rcMapApply_calibration_keeps_fields_it_leaves_out);
     RUN_TEST(test_rcMapApply_calibration_refuses_what_it_cannot_store);
     RUN_TEST(test_rcMapApply_calibration_refuses_a_side_inside_the_deadband);
-    RUN_TEST(test_rcMapApply_refuses_a_kept_calibration_the_rules_do_not_take);
+    RUN_TEST(test_rcMapApply_remap_drops_a_stored_calibration_the_rules_refuse);
     RUN_TEST(test_rcMapApply_refuses_a_receiver_the_saved_type_does_not_read);
     RUN_TEST(test_rcMapApply_refuses_drive_split_across_receivers);
     RUN_TEST(test_rcMapApply_refusal_carries_field_reason_and_accepts);

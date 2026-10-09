@@ -135,7 +135,7 @@ bool rcMapTryReuseCalibration(const ConfigSnapshot& existing, RcBindingSource so
     return false;
 }
 
-bool rcMapBuildBackboneBinding(RcBindingSource source, uint8_t channel,
+bool rcMapBuildBackboneBinding(RobotActionId axis, RcBindingSource source, uint8_t channel,
                                const ConfigSnapshot& existing, RcBindingConfig* out) {
     if (out == nullptr || !rcBindingChannelIsValid(source, channel)) {
         return false;
@@ -159,7 +159,10 @@ bool rcMapBuildBackboneBinding(RcBindingSource source, uint8_t channel,
                                   &reverse)) {
         RcBindingConfig reused =
             makeRcBindingConfig(source, channel, min, center, max, deadband, reverse);
-        if (rcBindingIsValid(reused)) {
+        // Only a calibration the RC Map's rules take is carried over: one they
+        // refuse would refuse the whole save, so mapping the axis again could
+        // never mend it (ADR 0070). It starts from the defaults instead.
+        if (rcBindingIsValid(reused) && rcRuleAxisCalibration(axis, reused).ok()) {
             binding = reused;
         }
     }
@@ -426,7 +429,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
 
     if (entry.action == DRIVE_ACTION_SPEED || entry.action == DRIVE_ACTION_STEER ||
         entry.action == DOME_ACTION_SPEED) {
-        if (!rcMapBuildBackboneBinding(entry.source, entry.channel, existing, &backbone)) {
+        if (!rcMapBuildBackboneBinding(entry.action, entry.source, entry.channel, existing, &backbone)) {
             snprintf(error, errorSize, "invalid backbone binding");
             applyRefusalSet(said, ApplyRefusalReason::OutOfRange, "map.action");
             return false;
