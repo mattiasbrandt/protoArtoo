@@ -87,13 +87,20 @@ void migrateSchema2To3(Preferences& prefs) {
 // lands only when every slot write did, so a carry cut short runs again next
 // boot rather than leaving half the labels swapped. Out of line, by pointer,
 // so configLoad()'s frame on loopTask's measured chain carries none of it.
+//
+// The labels are carried in RAM first, whatever the store does: this boot runs
+// on the carried labels even when nothing can be written, and the next boot
+// carries them again from the store, untouched. The one window left open is a
+// power cut between the first slot write and the marker (#483): NVS commits
+// each key on its own, so a store cut there holds some slots carried and no
+// marker, and the next boot swaps those back.
 __attribute__((noinline)) void persistSingleSbusLabelCarry(SystemConfig* sys) {
+    const size_t carried = rcCarrySingleSbusCh2TriggerLabels(sys);
     Preferences rw;
     if (!rw.begin(NVS_NAMESPACE, false)) {
         PA_LOG_WARN("config", "single SBUS label carry not saved: namespace did not open");
         return;
     }
-    const size_t carried = rcCarrySingleSbusCh2TriggerLabels(sys);
     const struct {
         const char* key;
         const RcTriggerBinding* slot;
@@ -120,6 +127,7 @@ __attribute__((noinline)) void persistSingleSbusLabelCarry(SystemConfig* sys) {
     if (written) {
         written = rw.putBool(CONFIG_RC_SINGLE_LABELS_KEY, true) > 0;
     }
+    bool restored = true;
     if (!written && carried > 0) {
         for (size_t i = 0; i < landed; ++i) {
             RcTriggerBinding before = *slots[i].slot;
@@ -128,9 +136,8 @@ __attribute__((noinline)) void persistSingleSbusLabelCarry(SystemConfig* sys) {
             }
             before.source = before.source == RC_BINDING_SBUS1 ? RC_BINDING_SBUS2 : RC_BINDING_SBUS1;
             char encoded[64] = {};
-            if (formatRcTriggerBinding(encoded, sizeof(encoded), before)) {
-                rw.putString(slots[i].key, encoded);
-            }
+            restored = formatRcTriggerBinding(encoded, sizeof(encoded), before) &&
+                       rw.putString(slots[i].key, encoded) > 0 && restored;
         }
     }
     rw.end();
@@ -139,7 +146,12 @@ __attribute__((noinline)) void persistSingleSbusLabelCarry(SystemConfig* sys) {
             PA_LOG_INFO("config", "single SBUS on CH2 is SBUS1 now: %u RC trigger labels carried across",
                         (unsigned)carried);
         } else {
-            PA_LOG_WARN("config", "single SBUS label carry not fully saved; it runs again next boot");
+            if (restored) {
+                PA_LOG_WARN("config", "single SBUS label carry not saved; it runs again next boot");
+            } else {
+                PA_LOG_WARN("config", "single SBUS label carry cut short and not taken back: "
+                                      "check the RC triggers on the RC page");
+            }
         }
     }
 }
@@ -1273,8 +1285,10 @@ bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot) {
     bool ok = configSerialize(snapshot, writer);
     if (ok) {
         // Saved by this image: #389's single-SBUS labels already (configLoad()).
-        prefs.putBool(CONFIG_RC_SINGLE_LABELS_KEY, true);
-        ok = removeRetiredServoKeys(prefs);
+        // A marker that does not land fails the save: the next load would
+        // carry this image's labels a second time (#483).
+        ok = prefs.putBool(CONFIG_RC_SINGLE_LABELS_KEY, true) > 0;
+        ok = removeRetiredServoKeys(prefs) && ok;
         ok = removeRetiredLightKeys(prefs) && ok;
     }
     return ok;
@@ -1347,7 +1361,7 @@ bool configSaveSystem(Preferences& prefs, const SystemConfig& config) {
     // What this image saves already carries #389's single-SBUS labels: the
     // next load must not carry them across again.
     if (ok) {
-        prefs.putBool(CONFIG_RC_SINGLE_LABELS_KEY, true);
+        ok = prefs.putBool(CONFIG_RC_SINGLE_LABELS_KEY, true) > 0;
     }
 
     // Mark RC config dirty for RcInputTask rebuild
