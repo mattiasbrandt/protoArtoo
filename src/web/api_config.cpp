@@ -338,10 +338,15 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     // Which RC Receivers this map may bind, and which of them the drive may
     // use: the rules' own answer, so the page offers what a save takes.
     JsonObject receivers = doc["receivers"].to<JsonObject>();
-    for (const bool driveOnly : {false, true}) {
-        JsonArray list = receivers[driveOnly ? "drive" : "read"].to<JsonArray>();
+    const struct {
+        const char* key;
+        RcMapReceiverUse use;
+    } uses[] = {{"read", RcMapReceiverUse::Read}, {"drive", RcMapReceiverUse::Drive},
+                {"cues", RcMapReceiverUse::Cue}};
+    for (const auto& use : uses) {
+        JsonArray list = receivers[use.key].to<JsonArray>();
         RcBindingSource sources[3] = {};
-        const size_t count = rcMapReceivers(type, driveOnly, sources, 3);
+        const size_t count = rcMapReceivers(type, use.use, sources, 3);
         for (size_t i = 0; i < count && i < 3; ++i) {
             list.add(rcBindingSourceToString(sources[i]));
         }

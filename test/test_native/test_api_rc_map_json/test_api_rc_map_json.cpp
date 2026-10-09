@@ -263,6 +263,11 @@ void test_populateRcMapJson_says_which_receivers_a_map_may_bind(void) {
     TEST_ASSERT_EQUAL_STRING("sbus2", dual["receivers"]["read"][1] | "");
     TEST_ASSERT_EQUAL_UINT(1, dual["receivers"]["drive"].size());
     TEST_ASSERT_EQUAL_STRING("sbus1", dual["receivers"]["drive"][0] | "");
+    TEST_ASSERT_EQUAL_UINT(2, dual["receivers"]["cues"].size());
+    JsonDocument pwm;
+    TEST_ASSERT_TRUE(populateRcMapJson(pwm, makeEmptySnapshot(RC_INPUT_STANDARD_PWM)));
+    TEST_ASSERT_EQUAL_STRING("pwm", pwm["receivers"]["drive"][0] | "");
+    TEST_ASSERT_EQUAL_UINT(0, pwm["receivers"]["cues"].size());
     JsonDocument none;
     TEST_ASSERT_TRUE(populateRcMapJson(none, makeEmptySnapshot(RC_INPUT_NOT_FITTED)));
     TEST_ASSERT_TRUE(none["receivers"]["read"].is<JsonArray>());
