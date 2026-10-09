@@ -277,12 +277,13 @@ products:
     sheet: hotrc-ds650-radio.md
     wiring_card:
       supply: "built-in 1S lithium, 1500 mAh, charged over USB-C"
-      draw: "UNKNOWN. The 1200 mAh handset before it ran out inside a field day"
-      logic: "none: it reaches the droid by radio, through its receiver"
+      draw: "UNKNOWN. The 1200 mAh model before it ran out inside a field day"
+      logic: "none: it reaches the droid by radio, through its RC Receiver"
       wires: []
       hazards:
         - "CCS holds the throttle with your thumb off the stick. The droid keeps going and cannot tell."
-        - "The handset will not switch off while its receiver has power. Power the droid down first."
+        - "MIXES turns CH1 and CH2 into left and right motors. The droid cannot tell; leave it off."
+        - "The RC Radio will not switch off while its RC Receiver has power. Power the droid down first."
       source: "4.1, 4.3"
     notes: |
       The DS-650 is the handset every RC bench result in this project was taken
@@ -345,17 +346,22 @@ products:
       while the decoder was unreliable, and the saved controller backup
       tasks/artoo-backup-20260903-203848-config.json still carries
       sbusTimeoutMs: 5000. That is a diagnostic value, not a setting to ship; a
-      controller found with it goes back to 200 ms. Whether the 200 ms default should
-      scale with the frame period is a safety decision still open.
+      controller found with it goes back to 200 ms. Since #389 the setting takes at
+      most 1000 ms, and a backup restore lowers a larger value to 1000 and says so.
+      Whether the 200 ms default should scale with the frame period is a safety
+      decision still open; /api/rc now reports each receiver's framesPerSecond, so
+      the period can be read off a live droid.
 
       Findings against the code the code does not say on its face:
       - rcTriggerDefaultReverse() keys on SBUS channels 3-6, not on the product, so a
         non-HotRC SBUS handset whose CH3-CH6 idle low reads inverted out of the box.
         The named product wins the default, deliberately; an operator re-binding a
         channel can override reverse.
-      - rcMapChannels() hardcodes useCh2 = false. The live task path routes per
-        source and does not use it, but the pure mapper's dual-receiver story is
-        unfinished.
+      - Until #389 the backbone mapper did not route by source: in dual_sbus each
+        receiver's frames drove both the feet and the dome, hidden on the bench
+        because one handset fed both receivers identical values. A frame now reaches
+        only its own receiver's bindings, and a single_sbus receiver is SBUS1 on
+        either header (operator, 2026-10-09).
       - A three-position (3 gears) button buys nothing beyond a different threshold:
         rcAnalogToSwitchState() splits LOW / MID / HIGH, but trigger dispatch is
         boolean. Whether a three-state binding target is worth adding is a design
@@ -365,14 +371,12 @@ products:
         the drive path, not the receiver's numbers. Set the handset to neutral anyway.
       - CCS is not detectable; the estop and the drive speed cap are the only bounds
         on a cruising handset.
-      - tasks/rc_diagnostics_contract.md is stale: it gives the ARM1/ARM2 boot
-        defaults as deadband 50 and reverse 0 where the code uses deadband 0 and
-        reverse 1, and it still names src/tasks/sbus_input.cpp (now rc_input.cpp).
-        It does not change behaviour.
+      - tasks/rc_diagnostics_contract.md (local, untracked) is a stale Phase 3
+        draft; docs/api.md "GET /api/rc" is the contract.
 
       Control grammar: one DS-650 addresses six channels, two of them taken by
       driving, against far more RC-bindable actions than that; this is why dual SBUS
-      exists. The RC page shows six channels per SBUS source, not sixteen. Our
+      exists. The RC page shows all eighteen channels per SBUS source. Our
       grammar is configuration (a binding table edited from a web page) rather than
       a hardcoded button map, because with six inputs, which six must be answerable
       without a rebuild. Neither ShadowMD nor Padawan360 reads a receiver, so their
@@ -383,9 +387,10 @@ products:
       a real difference in feel.
 
       Open decisions (operator, not research):
-      - Should the mapper refuse a binding whose center is at an endpoint? That is
-        the throttle trap expressed as configuration; the simulator guards against
-        it, we do not.
+      - The throttle trap is guarded since #389 (operator, 2026-10-09): RC drive
+        waits at boot until both drive sticks have been at centre, and the RC page
+        warns when a channel rests outside its calibrated range. A binding whose
+        center is at an endpoint is still accepted.
       - Is the throttle's lack of a curve worth compensating in firmware? Scope for
         the drive work, not this product.
       - Should sbusTimeoutMs scale with the frame period (above)?
