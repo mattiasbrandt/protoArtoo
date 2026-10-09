@@ -180,6 +180,61 @@ void test_rcMapApply_drive_speed_mirrors_pwm_and_sbus_slots(void) {
     TEST_ASSERT_EQUAL(3, snap.system.rc_sbus_drive_speed.channel);
 }
 
+// --- axis calibration beside the map (#389) ---
+static const char* kSbusDriveMap =
+    "\"map\":[{\"source\":\"sbus1\",\"channel\":1,\"action\":\"drive_speed\"},"
+    "{\"source\":\"sbus1\",\"channel\":2,\"action\":\"drive_steer\"}]";
+
+static RcMapApplyResult applyBody(const std::string& body, ConfigSnapshot* snap) {
+    std::map<std::string, std::string> m = {{"plain", body}};
+    RcMapApplyResult result;
+    rcMapApply(makeSource(&m), snap, &result);
+    return result;
+}
+
+void test_rcMapApply_calibration_sets_an_axis_in_both_slots(void) {
+    ConfigSnapshot snap = makeDefaultSnap();
+    RcMapApplyResult result = applyBody(
+        std::string("{") + kSbusDriveMap +
+            ",\"calibration\":{\"drive_steer\":{\"min\":255,\"center\":1472,\"max\":1919,\"reverse\":true}}}",
+        &snap);
+    TEST_ASSERT_TRUE_MESSAGE(result.ok, result.errorMessage);
+    TEST_ASSERT_EQUAL_UINT16(255, snap.system.rc_sbus_drive_steer.min);
+    TEST_ASSERT_EQUAL_UINT16(1472, snap.system.rc_sbus_drive_steer.center);
+    TEST_ASSERT_EQUAL_UINT16(1919, snap.system.rc_sbus_drive_steer.max);
+    TEST_ASSERT_TRUE(snap.system.rc_sbus_drive_steer.reverse);
+    TEST_ASSERT_EQUAL_UINT16(1472, snap.system.rc_pwm_drive_steer.center);
+    // The axis the request did not calibrate keeps its defaults.
+    TEST_ASSERT_EQUAL_UINT16(RC_SBUS_DEFAULT_CENTER, snap.system.rc_sbus_drive_speed.center);
+    TEST_ASSERT_FALSE(snap.system.rc_sbus_drive_speed.reverse);
+}
+
+void test_rcMapApply_calibration_keeps_fields_it_leaves_out(void) {
+    ConfigSnapshot snap = makeDefaultSnap();
+    RcMapApplyResult result = applyBody(
+        std::string("{") + kSbusDriveMap + ",\"calibration\":{\"drive_speed\":{\"reverse\":true}}}", &snap);
+    TEST_ASSERT_TRUE_MESSAGE(result.ok, result.errorMessage);
+    TEST_ASSERT_TRUE(snap.system.rc_sbus_drive_speed.reverse);
+    TEST_ASSERT_EQUAL_UINT16(RC_SBUS_DEFAULT_MIN, snap.system.rc_sbus_drive_speed.min);
+    TEST_ASSERT_EQUAL_UINT16(RC_SBUS_DEFAULT_MAX, snap.system.rc_sbus_drive_speed.max);
+}
+
+void test_rcMapApply_calibration_refuses_what_it_cannot_store(void) {
+    const char* const bad[] = {
+        ",\"calibration\":{\"drive_speed\":{\"min\":1500,\"center\":992}}}",   // min > center
+        ",\"calibration\":{\"drive_speed\":{\"max\":4000}}}",                  // out of range
+        ",\"calibration\":{\"drive_speed\":{\"reverse\":1}}}",                 // not a bool
+        ",\"calibration\":{\"dome_speed\":{\"center\":992}}}",                 // axis not in the map
+        ",\"calibration\":{\"arm1_toggle\":{\"center\":992}}}",                // not an axis
+        ",\"calibration\":[]}",                                                // not an object
+    };
+    for (const char* tail : bad) {
+        ConfigSnapshot snap = makeDefaultSnap();
+        RcMapApplyResult result = applyBody(std::string("{") + kSbusDriveMap + tail, &snap);
+        TEST_ASSERT_FALSE_MESSAGE(result.ok, tail);
+    }
+}
+
 // --- success path: named trigger action fills its dedicated slot ---
 void test_rcMapApply_arm1_toggle_fills_dedicated_slot(void) {
     std::map<std::string, std::string> m = {
@@ -219,6 +274,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_rcMapApply_duplicate_source_channel_rejected);
     RUN_TEST(test_rcMapApply_duplicate_drive_speed_rejected);
     RUN_TEST(test_rcMapApply_drive_speed_mirrors_pwm_and_sbus_slots);
+    RUN_TEST(test_rcMapApply_calibration_sets_an_axis_in_both_slots);
+    RUN_TEST(test_rcMapApply_calibration_keeps_fields_it_leaves_out);
+    RUN_TEST(test_rcMapApply_calibration_refuses_what_it_cannot_store);
     RUN_TEST(test_rcMapApply_arm1_toggle_fills_dedicated_slot);
     RUN_TEST(test_rcMapApply_unnamed_trigger_spills_to_first_free_slot);
     return UNITY_END();

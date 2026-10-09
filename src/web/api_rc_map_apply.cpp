@@ -11,6 +11,7 @@
 
 #include "droid_parts.h"      // droidPartIdIsKnown() - a puppet string's Part
 #include "rc_puppet.h"        // rcPuppetChannelCanMove()
+#include "rc_pwm_helpers.h"   // RC_PWM_VALID_MIN_US / MAX_US
 #include "seq_store_index.h"  // Learned Sequence names accepted for RC binding
 
 namespace {
@@ -54,6 +55,88 @@ void setError(RcMapApplyResult* result, const char* message, const RcMapEntry* e
                  robotActionIdToString(entry->action));
         snprintf(result->errorEntry.payload, sizeof(result->errorEntry.payload), "%s", entry->payload);
     }
+}
+
+// The drive and dome axes' calibration, as a request may set it beside the
+// map (#389): {"calibration":{"drive_speed":{"min":..,"center":..,"max":..,
+// "reverse":..}, ...}}. A field left out keeps what the axis already holds
+// (stored or reused, assignRcMapEntryToSnapshot()). An axis the map does not
+// bind cannot be calibrated. Both the PWM and the SBUS slot of an axis hold
+// the same binding, so both take the calibration.
+__attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration, ConfigSnapshot* working,
+                          RcMapApplyResult* result) {
+    if (calibration.isNull()) {
+        return true;
+    }
+    if (!calibration.is<JsonObjectConst>()) {
+        setError(result, "calibration must be object", nullptr);
+        return false;
+    }
+    struct Axis {
+        const char* token;
+        RcBindingConfig* pwm;
+        RcBindingConfig* sbus;
+    };
+    SystemConfig& sys = working->system;
+    const Axis axes[] = {
+        {"drive_speed", &sys.rc_pwm_drive_speed, &sys.rc_sbus_drive_speed},
+        {"drive_steer", &sys.rc_pwm_drive_steer, &sys.rc_sbus_drive_steer},
+        {"dome_speed", &sys.rc_pwm_dome_speed, &sys.rc_sbus_dome_speed},
+    };
+    for (JsonPairConst pair : calibration.as<JsonObjectConst>()) {
+        const Axis* axis = nullptr;
+        for (const Axis& candidate : axes) {
+            if (strcmp(pair.key().c_str(), candidate.token) == 0) {
+                axis = &candidate;
+            }
+        }
+        if (axis == nullptr) {
+            setError(result, "calibration names no drive or dome axis", nullptr);
+            return false;
+        }
+        if (axis->sbus->source == RC_BINDING_NONE) {
+            setError(result, "calibration for an axis the map does not bind", nullptr);
+            return false;
+        }
+        JsonObjectConst fields = pair.value().as<JsonObjectConst>();
+        if (fields.isNull()) {
+            setError(result, "calibration entry must be object", nullptr);
+            return false;
+        }
+        RcBindingConfig binding = *axis->sbus;
+        const bool pwm = binding.source == RC_BINDING_PWM;
+        const uint32_t lo = pwm ? RC_PWM_VALID_MIN_US : 0;
+        const uint32_t hi = pwm ? RC_PWM_VALID_MAX_US : 2047;
+        const char* const keys[] = {"min", "center", "max"};
+        uint16_t* const slots[] = {&binding.min, &binding.center, &binding.max};
+        for (size_t i = 0; i < 3; ++i) {
+            JsonVariantConst value = fields[keys[i]];
+            if (value.isNull()) {
+                continue;
+            }
+            const uint32_t v = value | 0xFFFFFFFFu;
+            if (!value.is<uint32_t>() || v < lo || v > hi) {
+                setError(result, "calibration out of range", nullptr);
+                return false;
+            }
+            *slots[i] = (uint16_t)v;
+        }
+        JsonVariantConst reverse = fields["reverse"];
+        if (!reverse.isNull()) {
+            if (!reverse.is<bool>()) {
+                setError(result, "calibration reverse must be true or false", nullptr);
+                return false;
+            }
+            binding.reverse = reverse.as<bool>();
+        }
+        if (!rcBindingIsValid(binding)) {
+            setError(result, "calibration needs min < center < max", nullptr);
+            return false;
+        }
+        *axis->pwm = binding;
+        *axis->sbus = binding;
+    }
+    return true;
 }
 
 }  // namespace
@@ -228,6 +311,10 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
             setError(result, assignErr, &entries[i]);
             return;
         }
+    }
+
+    if (!applyAxisCalibration(body["calibration"], working, result)) {
+        return;
     }
 
     result->ok = true;

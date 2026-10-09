@@ -2417,6 +2417,13 @@ Replaces entire RC map.
   slot of its own, so a map holds at most five strings
 - a Reaction's `threshold` and `quietS` are optional: one left out keeps what
   the stored Reaction on that condition holds, or takes its default
+- optional `calibration` object beside `map` (#389), keyed by axis
+  (`drive_speed`, `drive_steer`, `dome_speed`), each `{ "min", "center", "max",
+  "reverse" }`, every field optional: one left out keeps what the axis holds.
+  Raw values are 0-2047 on SBUS and 900-2100 on PWM, with `min < center < max`.
+  An axis the same `map` does not bind cannot be calibrated. Without
+  `calibration` an axis keeps its stored calibration, as before:
+  `{"map":[...],"calibration":{"drive_steer":{"min":255,"center":1472,"max":1919,"reverse":true}}}`
 - Success: `200` `{"ok":true}`
 - Errors:
 - `400` with `{"ok":false,"error":"..."}` and optional `entry` object
