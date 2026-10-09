@@ -105,22 +105,65 @@ void test_configLoad_carries_single_sbus_ch2_trigger_labels_once() {
                                                   172, 992, 1811, 0, false);
     // rc_arm1 keeps its factory sbus1:4, inert on the routed path.
 
-    Preferences prefs;
-    prefs.begin("proto", false);
-    TEST_ASSERT_TRUE(configSave(prefs, older));
-    prefs.remove(CONFIG_RC_SINGLE_LABELS_KEY);  // as an image before #389 left it
+    Preferences writer;
+    writer.begin("proto", false);
+    TEST_ASSERT_TRUE(configSave(writer, older));
+    writer.remove(CONFIG_RC_SINGLE_LABELS_KEY);  // as an image before #389 left it
+    writer.end();
 
+    // Loaded read-only, as loadConfigToState() opens the store: the carry
+    // writes back through a handle of its own.
+    Preferences prefs;
+    prefs.begin("proto", true);
     ConfigSnapshot first = {};
     TEST_ASSERT_TRUE(configLoad(prefs, &first));
     TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, first.system.rc_opmode.source);
     TEST_ASSERT_EQUAL(SYSTEM_ACTION_ESTOP, first.system.rc_opmode.target);
     TEST_ASSERT_EQUAL(RC_BINDING_SBUS2, first.system.rc_arm1.source);
+    TEST_ASSERT_TRUE(prefs.isKey(CONFIG_RC_SINGLE_LABELS_KEY));
 
     ConfigSnapshot second = {};
     TEST_ASSERT_TRUE(configLoad(prefs, &second));
     prefs.end();
     TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, second.system.rc_opmode.source);
     TEST_ASSERT_EQUAL(RC_BINDING_SBUS2, second.system.rc_arm1.source);
+}
+
+// A slot write that fails leaves the marker unwritten, so the next boot runs
+// the carry again from the labels still stored, rather than half of them
+// swapped with nothing to say so.
+void test_configLoad_single_sbus_carry_cut_short_runs_again() {
+    ConfigSnapshot older = {};
+    configSnapshotDefaults(&older);
+    older.system.rc_input_mode = RC_INPUT_SINGLE_SBUS;
+    older.system.single_sbus_use_ch2 = true;
+    older.system.rc_opmode = makeRcTriggerBinding(RC_BINDING_SBUS2, 3, SYSTEM_ACTION_ESTOP, nullptr,
+                                                  172, 992, 1811, 0, false);
+    Preferences writer;
+    writer.begin("proto", false);
+    TEST_ASSERT_TRUE(configSave(writer, older));
+    writer.remove(CONFIG_RC_SINGLE_LABELS_KEY);
+    writer.failNextStringWrites(1);  // the carry's first slot write fails
+    writer.end();
+
+    Preferences prefs;
+    prefs.begin("proto", true);
+    ConfigSnapshot first = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &first));
+    TEST_ASSERT_FALSE(prefs.isKey(CONFIG_RC_SINGLE_LABELS_KEY));
+    prefs.end();
+
+    // The store holds the labels as they were: the next boot carries them
+    // from the start and lands every one.
+    Preferences again;
+    again.begin("proto", true);
+    ConfigSnapshot second = {};
+    TEST_ASSERT_TRUE(configLoad(again, &second));
+    TEST_ASSERT_TRUE(again.isKey(CONFIG_RC_SINGLE_LABELS_KEY));
+    again.end();
+    TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, second.system.rc_opmode.source);
+    TEST_ASSERT_EQUAL(RC_BINDING_SBUS2, second.system.rc_arm1.source);
+    TEST_ASSERT_EQUAL(RC_BINDING_SBUS2, second.system.rc_arm2.source);
 }
 
 // A config this image saved already carries the new labels: no swap, and a
@@ -1840,6 +1883,7 @@ int main() {
     RUN_TEST(test_configLoad_empty_nvs_returns_defaults);
     RUN_TEST(test_configLoad_save_roundtrip);
     RUN_TEST(test_configLoad_carries_single_sbus_ch2_trigger_labels_once);
+    RUN_TEST(test_configLoad_single_sbus_carry_cut_short_runs_again);
     RUN_TEST(test_configLoad_leaves_labels_this_image_saved);
     RUN_TEST(test_configLoad_save_identity_accepts_lowercase);
     RUN_TEST(test_configLoad_save_identity_rejects_uppercase_to_default);
