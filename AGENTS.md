@@ -32,8 +32,9 @@ The shell on this bench is zsh. Quote a glob (`--include='*.cpp'`). An unquoted 
   **For what protoR2 should do it outranks the code; for what protoR2 does
   today the code outranks it.** See "Planning Mode".
 - Other internal planning/agent working docs (local only, never commit/push):
-  `tasks/**` — including the RC diagnostics/mapping contract
-  `tasks/rc_diagnostics_contract.md`
+  `tasks/**`
+- RC diagnostics/mapping contract: `docs/api.md` ("GET /api/rc", "GET /api/rc/map",
+  "POST /api/rc/map")
 - Hardware truth: `docs/pin_map.md`, `include/config.h`
 - Shared state truth: `include/robot_state.h`
 - Action registry: `docs/action-registry.yaml`
