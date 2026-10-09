@@ -89,17 +89,19 @@ static RcMappingConfig makeDefaultSbusConfig() {
     return cfg;
 }
 
-static RcChannelSnapshot makeDualSbusSnapshot(int ch1_raw, int ch2_raw, int dome_ch1_raw,
-                                               int dome_ch2_raw) {
+// One frame from one dual_sbus receiver, as production builds it
+// (dispatchSbusBindingsForSource, src/tasks/rc_input.cpp): 18 channels of that
+// receiver alone, tagged with its source. Never a merged 36-channel view.
+static RcChannelSnapshot makeDualSbusFrame(RcBindingSource source, int ch1_raw, int ch2_raw) {
     RcChannelSnapshot snap = {};
     snap.valid = true;
     snap.mode = RC_INPUT_DUAL_SBUS;
-    // SBUS1 (drive): channels 0-15
-    snap.channels[0] = ch1_raw;   // Drive speed
-    snap.channels[1] = ch2_raw;   // Drive steer
-    // SBUS2 (dome): channels 16-17 map to logical 16-17 in the snapshot
-    snap.channels[16] = dome_ch1_raw;
-    snap.channels[17] = dome_ch2_raw;
+    snap.source = source;
+    for (int i = 0; i < 18; ++i) {
+        snap.channels[i] = 992;
+    }
+    snap.channels[0] = ch1_raw;
+    snap.channels[1] = ch2_raw;
     return snap;
 }
 
@@ -486,27 +488,63 @@ void test_partial_input_missing_steer() {
 // =============================================================================
 
 void test_dual_sbus_center_sticks() {
-    RcChannelSnapshot snap = makeDualSbusSnapshot(992, 992, 992, 992);
     RcMappingConfig cfg = makeDefaultDualSbusConfig();
 
-    RcControlIntent intent = rcMapChannels(snap, cfg);
+    RcControlIntent drive = rcMapChannels(makeDualSbusFrame(RC_BINDING_SBUS1, 992, 992), cfg);
+    TEST_ASSERT_TRUE(drive.valid);
+    TEST_ASSERT_TRUE(drive.driveActive);
+    TEST_ASSERT_EQUAL_INT16(0, drive.driveSpeed);
+    TEST_ASSERT_EQUAL_INT16(0, drive.driveSteer);
 
-    TEST_ASSERT_TRUE(intent.valid);
-    TEST_ASSERT_EQUAL_INT16(0, intent.driveSpeed);
-    TEST_ASSERT_EQUAL_INT16(0, intent.driveSteer);
-    TEST_ASSERT_EQUAL_INT16(0, intent.domeSpeed);
+    RcControlIntent dome = rcMapChannels(makeDualSbusFrame(RC_BINDING_SBUS2, 992, 992), cfg);
+    TEST_ASSERT_TRUE(dome.valid);
+    TEST_ASSERT_TRUE(dome.domeActive);
+    TEST_ASSERT_EQUAL_INT16(0, dome.domeSpeed);
 }
 
+// The two receivers carry different sticks, so a cross-feed cannot hide: the
+// drive follows SBUS1 only and the dome SBUS2 only (#389).
 void test_dual_sbus_drive_forward_dome_speed() {
-    RcChannelSnapshot snap = makeDualSbusSnapshot(1811, 992, 1811, 992);
     RcMappingConfig cfg = makeDefaultDualSbusConfig();
 
+    RcControlIntent drive = rcMapChannels(makeDualSbusFrame(RC_BINDING_SBUS1, 1811, 992), cfg);
+    TEST_ASSERT_TRUE(drive.driveActive);
+    TEST_ASSERT_FALSE(drive.domeActive);
+    TEST_ASSERT_EQUAL_INT16(1000, drive.driveSpeed);    // SBUS1 CH1 full forward
+    TEST_ASSERT_EQUAL_INT16(0, drive.driveSteer);       // SBUS1 CH2 centered
+    TEST_ASSERT_EQUAL_INT16(0, drive.domeSpeed);        // not the dome's receiver
+
+    RcControlIntent dome = rcMapChannels(makeDualSbusFrame(RC_BINDING_SBUS2, 172, 1811), cfg);
+    TEST_ASSERT_FALSE(dome.driveActive);
+    TEST_ASSERT_TRUE(dome.domeActive);
+    TEST_ASSERT_EQUAL_INT16(-1000, dome.domeSpeed);     // SBUS2 CH1 full reverse
+    TEST_ASSERT_EQUAL_INT16(0, dome.driveSpeed);        // not the drive's receiver
+    TEST_ASSERT_EQUAL_INT16(0, dome.driveSteer);
+}
+
+// single_sbus: the receiver is SBUS1 whichever header it is wired to
+// (operator, 2026-10-09 on #389). useCh2 swaps the header enable that gates
+// it, and an SBUS2 binding reads nothing.
+void test_single_sbus_receiver_on_ch2_is_sbus1() {
+    RcMappingConfig cfg = makeDefaultSbusConfig();
+    cfg.useCh2 = true;
+    cfg.enableRc[0] = false;  // the CH1 header is unused
+    cfg.enableRc[1] = true;   // the receiver is on the CH2 header
+    cfg.enableDome = true;
+    cfg.domeSpeed = defaultSbusBinding(RC_BINDING_SBUS2, 1);
+
+    RcChannelSnapshot snap = makeSbusSnapshot(1811, 992);
+    snap.source = RC_BINDING_SBUS1;
     RcControlIntent intent = rcMapChannels(snap, cfg);
 
-    TEST_ASSERT_TRUE(intent.valid);
-    TEST_ASSERT_EQUAL_INT16(1000, intent.driveSpeed);    // SBUS1 CH1 full forward
-    TEST_ASSERT_EQUAL_INT16(0, intent.driveSteer);       // SBUS1 CH2 centered
-    TEST_ASSERT_EQUAL_INT16(1000, intent.domeSpeed);     // SBUS2 CH1 full forward
+    TEST_ASSERT_TRUE(intent.driveActive);
+    TEST_ASSERT_EQUAL_INT16(1000, intent.driveSpeed);
+    TEST_ASSERT_FALSE(intent.domeActive);
+    TEST_ASSERT_EQUAL_INT16(0, intent.domeSpeed);
+
+    cfg.enableRc[1] = false;
+    RcControlIntent off = rcMapChannels(snap, cfg);
+    TEST_ASSERT_FALSE(off.driveActive);
 }
 
 void test_dual_sbus_mode_mismatch() {
@@ -530,7 +568,7 @@ void test_stage_drive_controls_center_sticks() {
     RcMappingConfig cfg = makeDefaultPwmConfig();
     RcControlIntent intent = {};
 
-    bool result = rcMapDriveControls(snap, cfg, false, &intent);
+    bool result = rcMapDriveControls(snap, cfg, &intent);
 
     TEST_ASSERT_TRUE(result);
     TEST_ASSERT_EQUAL_INT16(0, intent.driveSpeed);
@@ -543,7 +581,7 @@ void test_stage_drive_controls_disabled() {
     cfg.driveSpeed = disabledRcBinding();  // Disable drive speed binding
     RcControlIntent intent = {};
 
-    bool result = rcMapDriveControls(snap, cfg, false, &intent);
+    bool result = rcMapDriveControls(snap, cfg, &intent);
 
     TEST_ASSERT_FALSE(result);
     TEST_ASSERT_EQUAL_INT16(0, intent.driveSpeed);
@@ -557,7 +595,7 @@ void test_stage_dome_control_center_stick() {
     cfg.domeSpeed = defaultPwmBinding(3);  // Dome on CH3
     RcControlIntent intent = {};
 
-    bool result = rcMapDomeControl(snap, cfg, false, &intent);
+    bool result = rcMapDomeControl(snap, cfg, &intent);
 
     TEST_ASSERT_FALSE(result);  // CH3 not in snapshot
     TEST_ASSERT_EQUAL_INT16(0, intent.domeSpeed);
@@ -570,7 +608,7 @@ void test_stage_servo_controls_arm1() {
     cfg.arm1 = defaultPwmBinding(3);  // Arm1 on CH3
     RcControlIntent intent = {};
 
-    bool result = rcMapServoControls(snap, cfg, false, &intent);
+    bool result = rcMapServoControls(snap, cfg, &intent);
 
     TEST_ASSERT_FALSE(result);  // CH3 not in snapshot (only CH1-CH2)
     TEST_ASSERT_EQUAL_INT(RC_SERVO_NO_CHANGE, intent.arm1Cmd);
@@ -584,7 +622,7 @@ void test_stage_audio_trigger_rising_edge() {
     cfg.prevSoundPressed = false;
     RcControlIntent intent = {};
 
-    bool result = rcMapAudioTrigger(snap, cfg, false, &intent);
+    bool result = rcMapAudioTrigger(snap, cfg, &intent);
 
     TEST_ASSERT_FALSE(result);  // CH4 not in snapshot
     TEST_ASSERT_NULL(intent.audioTrigger);
@@ -706,6 +744,7 @@ int main() {
     // Dual-SBUS mode
     RUN_TEST(test_dual_sbus_center_sticks);
     RUN_TEST(test_dual_sbus_drive_forward_dome_speed);
+    RUN_TEST(test_single_sbus_receiver_on_ch2_is_sbus1);
     RUN_TEST(test_dual_sbus_mode_mismatch);
 
     // Mapper stages (independently testable seams)

@@ -374,8 +374,24 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
             } else if (in.rcInputMode == RC_INPUT_SINGLE_SBUS && !in.singleSbusUseCh2) {
                 ok = appendPeripheralStatus(
                          pos, remaining, "rcCh2", "standby",
-                         "SBUS2 not selected; using SBUS1 (CH1) in single_sbus mode") &&
+                         "Not used: the single SBUS receiver is on CH1") &&
                      ok;
+            } else if (in.rcInputMode == RC_INPUT_SINGLE_SBUS) {
+                // The single receiver wired to CH2 is SBUS1 (operator,
+                // 2026-10-09 on #389): this wire reports the drive receiver.
+                if (in.lastSbus1Ms == 0) {
+                    ok = appendPeripheralStatus(pos, remaining, "rcCh2", "not_seen",
+                                                "Drive SBUS input waiting for first frame") &&
+                         ok;
+                } else {
+                    snprintf(detail, sizeof(detail), "Drive SBUS %s, last %lu ms ago, lost frames %lu",
+                             in.diag.sbusSignalLost ? "lost" : "active", in.uptimeMs - in.lastSbus1Ms,
+                             (unsigned long)in.sbus1LostFrameCount);
+                    ok = appendPeripheralStatus(pos, remaining, "rcCh2",
+                                                in.diag.sbusSignalLost ? "signal_lost" : "active",
+                                                detail) &&
+                         ok;
+                }
             } else if (in.lastSbus2Ms == 0) {
                 ok = appendPeripheralStatus(pos, remaining, "rcCh2", "not_seen",
                                             "SBUS2 input waiting for first frame") &&

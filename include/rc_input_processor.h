@@ -56,6 +56,11 @@ struct RcProcessorOutput {
     // to its Output and records an accepted target with rcPuppetSent().
     RcPuppetAsk puppet[RC_TRIGGER_MAX];
     bool stationaryLockedByTrigger;
+    // Whether this frame sends a drive command. False when the drive bindings
+    // read another receiver that is enabled for the mode: in dual_sbus a dome
+    // receiver frame then leaves the drive alone instead of sending a zero
+    // between the drive receiver's frames (#389).
+    bool submitDrive;
 };
 
 struct RcInputProcessor {

@@ -136,9 +136,9 @@ const char* takeArm(const char* seqName, char* refusal, size_t refusalCap) {
     estop = robotState.estop;
     lastSbus1Ms = robotState.lastSbus1Ms;
     lastSbus2Ms = robotState.lastSbus2Ms;
-    // Every frame stamps its receiver's time, a hardware-failsafe frame too:
-    // a receiver whose transmitter is off keeps sending them. So a fresh
-    // stamp is not enough; the receiver must also not be in failsafe or lost.
+    // Only a clean frame stamps its receiver's time (#389), but the stamp
+    // outlives the watchdog's timeout by up to that timeout, so a fresh stamp
+    // is not enough; the receiver must also not be in failsafe or lost.
     sbus1Failed = robotState.sbusSignalLost || robotState.sbusHwFailsafe;
     sbus2Failed = robotState.sbus2SignalLost || robotState.sbus2HwFailsafe;
     taskEXIT_CRITICAL(&robotStateMux);

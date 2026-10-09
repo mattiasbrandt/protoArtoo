@@ -22,6 +22,20 @@ void rcInputProcessorInit(RcInputProcessor* proc) {
     proc->stationaryLocked = false;
 }
 
+// Whether the drive bindings read a receiver other than this frame's, one the
+// mode enables: the frame then has nothing to say about the drive.
+static bool driveReadsAnotherReceiver(const RcChannelSnapshot& snap, const RcMappingConfig& mapping) {
+    const RcBindingSource driveSource = mapping.driveSpeed.source;
+    if (snap.source == RC_BINDING_NONE || driveSource == snap.source ||
+        mapping.driveSteer.source != driveSource) {
+        return false;
+    }
+    RcChannelSnapshot other = snap;
+    other.source = driveSource;
+    return rcMapBindingReadsSnapshot(mapping.driveSpeed, other, mapping) &&
+           rcMapBindingReadsSnapshot(mapping.driveSteer, other, mapping);
+}
+
 void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
                           RcProcessorOutput* out) {
     *out = {};
@@ -43,13 +57,18 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
     // Update sound state for next iteration
     proc->lastSoundPressed = intent.soundPressed;
 
+    output.submitDrive = intent.driveActive || !driveReadsAnotherReceiver(input.channels, localMapping);
+
     // Copy backbone intent to output
     output.backbone = intent;
     output.stationaryLockedByTrigger = proc->stationaryLocked;
 
-    // Process dome filter on raw SBUS channel value
+    // Process dome filter on raw SBUS channel value, from the dome binding's
+    // own receiver only: on another receiver's frame (or an SBUS2 binding in
+    // single_sbus) the filter keeps its state and nothing is sent (#389).
     RcBindingConfig domeBinding = input.config.mapping.domeSpeed;
-    if (input.config.mapping.enableDome && domeBinding.source != RC_BINDING_NONE) {
+    if (input.config.mapping.enableDome &&
+        rcMapBindingReadsSnapshot(domeBinding, input.channels, localMapping)) {
         int raw = input.channels.channels[domeBinding.channel - 1];
         DomeInputFilterResult filterResult =
             domeInputFilterUpdate(&proc->domeInputFilter, raw, (int)domeBinding.center, 140, 90,

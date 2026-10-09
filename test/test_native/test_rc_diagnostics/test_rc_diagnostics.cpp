@@ -254,13 +254,14 @@ void test_rcSourceEnabledForMode_single_sbus_ch1_selected() {
 }
 
 void test_rcSourceEnabledForMode_single_sbus_ch2_selected() {
-    // useCh2=true, enableRcCh2=true: SBUS2 active, SBUS1 not
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_SINGLE_SBUS, true, true, false, true));
-    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_SINGLE_SBUS, true, true, false, true));
-    // useCh2=true, enableRcCh2=false: SBUS2 disabled — enable flag is respected
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_SINGLE_SBUS, false, false, false, true));
-    // useCh2=true, enableRcCh2=true: SBUS2 active regardless of enableRcCh1
-    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_SINGLE_SBUS, false, true, false, true));
+    // The single receiver on the CH2 header is still SBUS1 (operator,
+    // 2026-10-09 on #389); useCh2 picks the CH2 header's enable instead.
+    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_SINGLE_SBUS, true, true, false, true));
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_SINGLE_SBUS, true, true, false, true));
+    // useCh2=true, enableRcCh2=false: disabled even with CH1 enabled
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_SINGLE_SBUS, true, false, false, true));
+    // useCh2=true, enableRcCh2=true: active regardless of enableRcCh1
+    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_SINGLE_SBUS, false, true, false, true));
 }
 
 void test_rcSourceEnabledForMode_dual_sbus_follows_enable_flags() {
