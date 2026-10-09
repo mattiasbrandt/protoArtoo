@@ -251,10 +251,14 @@
         : !NON_TESTABLE_TOKENS.has(token);
       // What the action needs, as the droid's own rules say (GET /api/actions,
       // ADR 0070): a stick or a switch, and whether a Reaction may fire it.
-      const rcInput = entry.rc_input === 'stick' ? 'stick' : 'switch';
+      // Firmware older than #486 sends no rc_input: the built-in row says.
+      const builtIn = HARDCODED_ACTION_TARGETS.find((row) => row.token === token);
+      const rcInput = entry.rc_input === 'stick' || entry.rc_input === 'switch'
+        ? entry.rc_input
+        : (builtIn?.rcInput ?? null);
       const oneShot = typeof entry.one_shot === 'boolean'
         ? entry.one_shot
-        : rcInput !== 'stick';
+        : rcInput === 'switch';
       const label = entry.display_name || entry.name || token;
       targets.push({
         token,
@@ -734,8 +738,10 @@
     const raw = rawForChannel(source, channel);
     if (raw == null) return { raw: null, mapped: 0, pressed: false, pressedLevel: false };
     // Pressed as the droid reads it, by the binding's own calibration (GET
-    // /api/rc `pressed`, ADR 0070); a channel it says nothing of is released.
-    const pressedLevel = rcSnapshot?.pressed?.[channelKey] === true;
+    // /api/rc `pressed`, ADR 0070). A channel it says nothing of - unbound, on
+    // a lost receiver, or from older firmware - is not known: null.
+    const said = rcSnapshot?.pressed?.[channelKey];
+    const pressedLevel = typeof said === 'boolean' ? said : null;
     return {
       raw,
       mapped: mappedFromRaw(source, raw),
@@ -926,6 +932,9 @@
   };
 
   const triggerStateHtml = (token, channelKey, telemetry) => {
+    if (telemetry && telemetry.pressedLevel === null) {
+      return '<span class="rc-trigger-state"><span class="indicator" aria-hidden="true"></span>—</span>';
+    }
     const pressedLevel = Boolean(telemetry && telemetry.pressedLevel);
     const pressed = isOneShotActionToken(token)
       ? consumeTriggerPulse(channelKey, pressedLevel)
@@ -1325,7 +1334,9 @@
 
     let html = '';
     if (mapReceivers === null) {
-      html = '<p class="hint">The RC Channels appear once the droid has sent its RC Map.</p>';
+      html = channelMapLoaded
+        ? '<p class="hint">This droid does not say which RC Receivers it reads. Update its firmware.</p>'
+        : '<p class="hint">The RC Channels appear once the droid has sent its RC Map.</p>';
     } else if (readReceivers().length === 0) {
       // A receiver the controller reads nothing from (ELRS, #369), or none
       // fitted: no radio channel arrives, so none is offered to map. The

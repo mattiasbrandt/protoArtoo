@@ -244,7 +244,6 @@ entries:
   reaction: false
   sources:
   - sbus
-  - pwm
   safety_critical: false
   requires_web_control: false
   executor: applySpeedPresetRuntime

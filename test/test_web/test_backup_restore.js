@@ -533,7 +533,7 @@ test("the RC Map never goes out with a binding the droid would refuse, and a ref
   const { receipt } = await restoreOn(droid, backup);
 
   assert.deepEqual(droid.rcMap.map, rcMap.map.slice(1), "the map landed without the binding whose Sequence was left out");
-  assert.match(receipt(), /RC Channel 5: DM:SIXTH is not on this droid/);
+  assert.match(receipt(), /SBUS#1 CH 5: DM:SIXTH is not on this droid/);
 
   const refusing = makeDroid();
   const bad = { schema: 2, board: "artoo_esp32", rc_map: { map: [{ source: "sbus1", channel: 4, action: "dome_marcduino", payload: ":SM01" }] } };
@@ -557,7 +557,7 @@ test("a binding the backed-up droid did not read is left out of the restored RC 
 
   assert.deepEqual(droid.rcMap.map, rcMap.map.slice(0, 1));
   assert.match(receipt(), /RC Map: partial — 1 left out/);
-  assert.match(receipt(), /RC Channel 1: not read by the droid it came from/);
+  assert.match(receipt(), /SBUS#2 CH 1: not read by the droid it came from/);
 });
 
 // A backup from a droid of two SBUS receivers onto one of one: the droid
@@ -577,7 +577,7 @@ test("a binding this droid refuses by name is left out of the restored RC Map, a
 
   assert.deepEqual(droid.rcMap.map, [rcMap.map[0], rcMap.map[2]]);
   assert.match(receipt(), /RC Map: partial — 1 left out/);
-  assert.match(receipt(), /RC Channel 6: RC Receiver must be SBUS1/);
+  assert.match(receipt(), /SBUS#2 CH 6: RC Receiver must be SBUS1/);
 });
 
 // A file is offered only in the shape Download backup writes. Any object with

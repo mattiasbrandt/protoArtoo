@@ -335,8 +335,9 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     capacity["total"] = kRcMapMaxEntries;
     capacity["used"] = map.size();
 
-    // Which RC Receivers this map may bind, and which of them the drive may
-    // use: the rules' own answer, so the page offers what a save takes.
+    // Which RC Receivers this map may bind, which of them the drive may use,
+    // and which carry a cue: the rules' own answer, so the page offers what a
+    // save takes.
     JsonObject receivers = doc["receivers"].to<JsonObject>();
     const struct {
         const char* key;
