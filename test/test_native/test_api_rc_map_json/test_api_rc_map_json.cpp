@@ -187,6 +187,31 @@ void test_populateRcMapJson_narrows_a_split_drive_to_the_axis_a_save_refuses(voi
     TEST_ASSERT_TRUE(map[1]["accepts"].isNull());
 }
 
+// Two stored bindings on one RC Channel (a save cut short by a power loss can
+// leave them) are both unread, with the conflict a save would refuse them for;
+// the rest of the map reads on (ADR 0070).
+void test_populateRcMapJson_marks_both_bindings_on_one_channel_unread(void) {
+    ConfigSnapshot snap = makeEmptySnapshot(RC_INPUT_DUAL_SBUS);
+    snap.system.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 4);
+    snap.system.rc_sbus_drive_steer = defaultSbusBinding(RC_BINDING_SBUS1, 2);
+    snap.system.rc_arm1 = makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
+                                               172, 992, 1811, 0, false);
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(populateRcMapJson(doc, snap));
+    JsonArrayConst map = doc["map"].as<JsonArrayConst>();
+    TEST_ASSERT_EQUAL_UINT(3, map.size());
+    for (JsonObjectConst item : map) {
+        const bool onCh4 = (item["channel"] | 0) == 4;
+        TEST_ASSERT_EQUAL_MESSAGE(onCh4, item["read"].is<bool>(), item["action"] | "");
+        if (onCh4) {
+            TEST_ASSERT_FALSE(item["read"].as<bool>());
+            TEST_ASSERT_EQUAL_STRING("map.channel", item["field"] | "");
+            TEST_ASSERT_EQUAL_STRING("conflict", item["reason"] | "");
+            TEST_ASSERT_TRUE(item["accepts"].isNull());
+        }
+    }
+}
+
 namespace {
 
 RcTriggerBinding* const* triggerSlots(ConfigSnapshot* snap) {
@@ -279,6 +304,7 @@ int main(void) {
     RUN_TEST(test_populateRcMapJson_absence_not_sentinel);
     RUN_TEST(test_populateRcMapJson_says_which_receivers_a_map_may_bind);
     RUN_TEST(test_populateRcMapJson_marks_an_entry_the_saved_type_does_not_read);
+    RUN_TEST(test_populateRcMapJson_marks_both_bindings_on_one_channel_unread);
     RUN_TEST(test_populateRcMapJson_narrows_a_split_drive_to_the_axis_a_save_refuses);
     RUN_TEST(test_populateRcMapJson_widest_map_fits_its_body);
     RUN_TEST(test_assignRcMapEntryToSnapshot_rejects_duplicate_named_slot);

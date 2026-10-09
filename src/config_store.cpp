@@ -685,6 +685,19 @@ size_t configCacheReadRcTriggerSlots(RcTriggerBinding* out, size_t cap) {
     return count;
 }
 
+void configCacheReadRcAxes(uint8_t mode, RcBindingConfig* driveSpeed, RcBindingConfig* driveSteer,
+                           RcBindingConfig* domeSpeed) {
+    if (driveSpeed == nullptr || driveSteer == nullptr || domeSpeed == nullptr) {
+        return;
+    }
+    const bool pwm = mode == RC_INPUT_STANDARD_PWM;
+    taskENTER_CRITICAL(&configCacheMux);
+    *driveSpeed = pwm ? configCache.system.rc_pwm_drive_speed : configCache.system.rc_sbus_drive_speed;
+    *driveSteer = pwm ? configCache.system.rc_pwm_drive_steer : configCache.system.rc_sbus_drive_steer;
+    *domeSpeed = pwm ? configCache.system.rc_pwm_dome_speed : configCache.system.rc_sbus_dome_speed;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
 uint32_t configCacheSbusTimeoutMs() {
     taskENTER_CRITICAL(&configCacheMux);
     const uint32_t timeoutMs = configCache.drive.sbusTimeoutMs;

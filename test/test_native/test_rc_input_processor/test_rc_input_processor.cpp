@@ -343,12 +343,12 @@ void test_trigger_no_fire_before_confirm(void) {
     rcInputProcessorInit(&proc);
 
     RcChannelSnapshot snap = buildChannelSnapshot();
-    snap.channels[2] = 1811;  // ch3: trigger, extreme position (one tick)
+    snap.channels[3] = 1811;  // ch4: trigger, extreme position (one tick)
 
     RcProcessorConfig cfg = buildProcessorConfig();
     cfg.triggerCount = 1;
     cfg.triggers[0] = makeRcTriggerBinding(
-        RC_BINDING_SBUS1, 3, SERVO_ACTION_ARM1_TOGGLE, nullptr,
+        RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
         RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0, true);
 
     RcProcessorInput input = {};
@@ -370,12 +370,12 @@ void test_trigger_fires_after_confirm(void) {
     rcInputProcessorInit(&proc);
 
     RcChannelSnapshot snap = buildChannelSnapshot();
-    snap.channels[2] = 1811;  // ch3: trigger, extreme position
+    snap.channels[3] = 1811;  // ch4: trigger, extreme position
 
     RcProcessorConfig cfg = buildProcessorConfig();
     cfg.triggerCount = 1;
     cfg.triggers[0] = makeRcTriggerBinding(
-        RC_BINDING_SBUS1, 3, SERVO_ACTION_ARM1_TOGGLE, nullptr,
+        RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
         RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0, true);
 
     RcProcessorInput input = {};
@@ -384,15 +384,17 @@ void test_trigger_fires_after_confirm(void) {
     input.nowMs = 1000;
     input.randomSeed = 42;
 
-    // Tick enough times to confirm (kSwitchEdgeConfirmFrames = 2)
+    // The first frame takes the switch where it rests (centred); moved to its
+    // end, it fires once the change is confirmed (kSwitchEdgeConfirmFrames = 2).
     RcProcessorOutput output = {};
-    for (int tick = 0; tick < 3; ++tick) {
+    bool fired = false;
+    for (int tick = 0; tick < 4; ++tick) {
+        input.channels.channels[3] = tick == 0 ? RC_SBUS_DEFAULT_CENTER : 1811;
         rcInputProcessorTick(&proc, input, &output);
+        fired = fired || output.triggerResults[0].servoIndex >= 0;
         input.nowMs += 20;
     }
-
-    // After 3 ticks (initialization + 2 confirms), should have fired
-    TEST_ASSERT_GREATER_OR_EQUAL(output.triggerResults[0].servoIndex, 0);
+    TEST_ASSERT_TRUE(fired);
 }
 
 void test_stationary_lock_propagates(void) {
@@ -402,12 +404,12 @@ void test_stationary_lock_propagates(void) {
     // op_mode switch: LOW (172) = driving, HIGH (1811) = stationary
     // To trigger stationary, we need the HIGH position
     RcChannelSnapshot snap = buildChannelSnapshot();
-    snap.channels[2] = 1811;  // ch3: op_mode switch HIGH -> stationary
+    snap.channels[3] = 1811;  // ch4: op_mode switch HIGH -> stationary
 
     RcProcessorConfig cfg = buildProcessorConfig();
     cfg.triggerCount = 1;
     cfg.triggers[0] = makeRcTriggerBinding(
-        RC_BINDING_SBUS1, 3, SYSTEM_ACTION_OP_MODE, nullptr,
+        RC_BINDING_SBUS1, 4, SYSTEM_ACTION_OP_MODE, nullptr,
         RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0, true);
 
     RcProcessorInput input = {};
@@ -502,6 +504,47 @@ void test_a_stored_cue_the_rules_refuse_fires_nothing(void) {
     }
 }
 
+// Two stored bindings on one RC Channel - a save cut short by a power loss
+// can leave the drive and a cue there - are both left still (ADR 0070): the
+// drive sends zero, never the cue's stick, and the cue never fires. A cue on
+// a channel of its own still fires.
+void test_two_stored_bindings_on_one_channel_both_stay_still(void) {
+    RcInputProcessor proc = {};
+    rcInputProcessorInit(&proc);
+    RcProcessorConfig cfg = buildDualDefaultConfig();
+    cfg.triggerCount = 2;
+    cfg.triggers[0] = makeRcTriggerBinding(RC_BINDING_SBUS1, 1, SERVO_ACTION_ARM1_TOGGLE, nullptr,
+                                           RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
+                                           RC_SBUS_DEFAULT_MAX, 0, true);
+    cfg.triggers[1] = makeRcTriggerBinding(RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM2_TOGGLE, nullptr,
+                                           RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
+                                           RC_SBUS_DEFAULT_MAX, 0, true);
+    RcProcessorInput input = {};
+    input.config = cfg;
+    input.channels = buildChannelSnapshot();
+    input.channels.source = RC_BINDING_SBUS1;
+    input.sourceFilter = RC_BINDING_SBUS1;
+    input.nowMs = 1000;
+    bool arm2Fired = false;
+    for (int tick = 0; tick < 4; ++tick) {
+        // Centred once, then the shared stick and the arm2 switch both at full.
+        input.channels.channels[0] = tick == 0 ? 992 : 1811;
+        input.channels.channels[4] = tick == 0 ? 992 : 1811;
+        RcProcessorOutput out = {};
+        rcInputProcessorTick(&proc, input, &out);
+        input.nowMs += 20;
+        TEST_ASSERT_FALSE(out.backbone.driveActive);
+        TEST_ASSERT_EQUAL_INT16(0, out.backbone.driveSpeed);
+        TEST_ASSERT_EQUAL_INT16(0, out.backbone.driveSteer);
+        TEST_ASSERT_TRUE(out.submitDrive);  // the zero is sent: the 50 Hz stream goes on
+        TEST_ASSERT_FALSE(out.driveAwaitingCentre);
+        TEST_ASSERT_EQUAL(-1, out.triggerResults[0].servoIndex);
+        TEST_ASSERT_FALSE(out.triggerPressed[0]);
+        arm2Fired = arm2Fired || out.triggerResults[1].servoIndex >= 0;
+    }
+    TEST_ASSERT_TRUE(arm2Fired);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_init_zeroes_state);
@@ -522,5 +565,6 @@ int main(void) {
     RUN_TEST(test_single_sbus_factory_dome_binding_reads_nothing);
     RUN_TEST(test_a_drive_whose_dead_zone_swallows_a_side_stays_still);
     RUN_TEST(test_a_stored_cue_the_rules_refuse_fires_nothing);
+    RUN_TEST(test_two_stored_bindings_on_one_channel_both_stay_still);
     return UNITY_END();
 }

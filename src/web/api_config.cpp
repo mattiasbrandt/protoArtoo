@@ -303,22 +303,29 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     RcRuleVerdict steerVerdict = {};
     rcMapDriveVerdicts(driveSpeed, driveSteer, type, &speedVerdict, &steerVerdict);
 
-    if (rcMapBindingIsMapped(driveSpeed)) {
-        rcMapMarkUnread(rcMapAppendEntry(map, driveSpeed.source, driveSpeed.channel, DRIVE_ACTION_SPEED, nullptr),
-                        speedVerdict);
-    }
-    if (rcMapBindingIsMapped(driveSteer)) {
-        rcMapMarkUnread(rcMapAppendEntry(map, driveSteer.source, driveSteer.channel, DRIVE_ACTION_STEER, nullptr),
-                        steerVerdict);
-    }
-    if (rcMapBindingIsMapped(domeSpeed)) {
-        rcMapMarkUnread(rcMapAppendEntry(map, domeSpeed.source, domeSpeed.channel, DOME_ACTION_SPEED, nullptr),
-                        rcRuleStoredAxis(DOME_ACTION_SPEED, domeSpeed, type));
-    }
-
     const RcTriggerBinding namedSlots[] = {snap.system.rc_arm1, snap.system.rc_arm2, snap.system.rc_aux1, snap.system.rc_aux2,
                                            snap.system.rc_aux3, snap.system.rc_opmode, snap.system.rc_audio, snap.system.rc_free0,
                                            snap.system.rc_free1, snap.system.rc_free2, snap.system.rc_free3};
+    // A binding that holds its own rules but shares a control with another
+    // is not read either (rcStoredMapConflicts()): both say so.
+    const RcStoredMap stored = {driveSpeed, driveSteer, domeSpeed, namedSlots,
+                                sizeof(namedSlots) / sizeof(namedSlots[0])};
+    const auto orConflict = [&](const RcRuleVerdict& own, uint32_t bit) {
+        return own.ok() ? rcRuleStoredConflict(stored, type, bit) : own;
+    };
+
+    if (rcMapBindingIsMapped(driveSpeed)) {
+        rcMapMarkUnread(rcMapAppendEntry(map, driveSpeed.source, driveSpeed.channel, DRIVE_ACTION_SPEED, nullptr),
+                        orConflict(speedVerdict, kRcStoredDriveSpeedBit));
+    }
+    if (rcMapBindingIsMapped(driveSteer)) {
+        rcMapMarkUnread(rcMapAppendEntry(map, driveSteer.source, driveSteer.channel, DRIVE_ACTION_STEER, nullptr),
+                        orConflict(steerVerdict, kRcStoredDriveSteerBit));
+    }
+    if (rcMapBindingIsMapped(domeSpeed)) {
+        rcMapMarkUnread(rcMapAppendEntry(map, domeSpeed.source, domeSpeed.channel, DOME_ACTION_SPEED, nullptr),
+                        orConflict(rcRuleStoredAxis(DOME_ACTION_SPEED, domeSpeed, type), kRcStoredDomeSpeedBit));
+    }
 
     for (size_t i = 0; i < sizeof(namedSlots) / sizeof(namedSlots[0]); ++i) {
         const RcTriggerBinding& binding = namedSlots[i];
@@ -331,7 +338,7 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
             item["threshold"] = rcReactionThreshold(binding);
             item["quietS"] = rcReactionQuietS(binding);
         }
-        rcMapMarkUnread(item, rcRuleStoredCue(binding, type));
+        rcMapMarkUnread(item, orConflict(rcRuleStoredCue(binding, type), rcStoredCueBit(i)));
     }
 
     JsonObject capacity = doc["capacity"].to<JsonObject>();
