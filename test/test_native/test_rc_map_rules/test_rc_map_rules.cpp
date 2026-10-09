@@ -341,6 +341,69 @@ void test_a_stored_cue_is_judged_as_a_save_would_judge_it(void) {
     TEST_ASSERT_TRUE(rcRuleStoredCue(rest, RC_INPUT_NOT_FITTED).ok());
 }
 
+// --- a stored map, its bindings against each other ---
+
+namespace {
+RcTriggerBinding cueOn(uint8_t channel, RobotActionId action, const char* payload = nullptr) {
+    return makeRcTriggerBinding(RC_BINDING_SBUS1, channel, action, payload, 172, 992, 1811, 0, false);
+}
+RcStoredMap storedOf(const RcTriggerBinding* cues, size_t count) {
+    return {sbusAxis(RC_BINDING_SBUS1, 1), sbusAxis(RC_BINDING_SBUS1, 2), sbusAxis(RC_BINDING_SBUS1, 3),
+            cues, count};
+}
+}  // namespace
+
+// A save cut short by a power loss can leave two bindings on one control:
+// both are left still, and the rest of the map reads on.
+void test_two_stored_bindings_on_one_rc_channel_both_stay_still(void) {
+    const RcTriggerBinding cues[] = {cueOn(4, SERVO_ACTION_ARM1_TOGGLE), cueOn(5, SOUND_ACTION_NEXT)};
+    RcStoredMap map = storedOf(cues, 2);
+    TEST_ASSERT_EQUAL_HEX32(0, rcStoredMapConflicts(map, RC_INPUT_DUAL_SBUS));
+
+    map.driveSpeed = sbusAxis(RC_BINDING_SBUS1, 4);
+    TEST_ASSERT_EQUAL_HEX32(kRcStoredDriveSpeedBit | rcStoredCueBit(0),
+                            rcStoredMapConflicts(map, RC_INPUT_DUAL_SBUS));
+    RcRuleVerdict verdict = rcRuleStoredConflict(map, RC_INPUT_DUAL_SBUS, kRcStoredDriveSpeedBit);
+    TEST_ASSERT_EQUAL_STRING("conflict: source+channel mapped more than once", verdict.sentence);
+    TEST_ASSERT_EQUAL_STRING("map.channel", verdict.field);
+    TEST_ASSERT_TRUE(rcRuleStoredConflict(map, RC_INPUT_DUAL_SBUS, rcStoredCueBit(0)).reason ==
+                     ApplyRefusalReason::Conflict);
+    TEST_ASSERT_TRUE(rcRuleStoredConflict(map, RC_INPUT_DUAL_SBUS, rcStoredCueBit(1)).ok());
+    // The same channel number on the other receiver is another control.
+    map.driveSpeed = sbusAxis(RC_BINDING_SBUS1, 1);
+    map.domeSpeed = sbusAxis(RC_BINDING_SBUS2, 4);
+    TEST_ASSERT_EQUAL_HEX32(0, rcStoredMapConflicts(map, RC_INPUT_DUAL_SBUS));
+}
+
+void test_two_stored_puppet_strings_on_one_part_both_stay_still(void) {
+    const RcTriggerBinding cues[] = {cueOn(7, SERVO_ACTION_PUPPET_PART, "bodyPanel1"),
+                                     cueOn(8, SERVO_ACTION_PUPPET_PART, "bodyPanel1"),
+                                     cueOn(9, SERVO_ACTION_PUPPET_PART, "bodyPanel2")};
+    const RcStoredMap map = storedOf(cues, 3);
+    TEST_ASSERT_EQUAL_HEX32(rcStoredCueBit(0) | rcStoredCueBit(1),
+                            rcStoredMapConflicts(map, RC_INPUT_DUAL_SBUS));
+    TEST_ASSERT_EQUAL_STRING("conflict: a Part on two puppet strings",
+                             rcRuleStoredConflict(map, RC_INPUT_DUAL_SBUS, rcStoredCueBit(1)).sentence);
+}
+
+// A binding the rules refuse on its own is not read, so it takes no control
+// from another: only the read ones are judged against each other.
+void test_an_unread_binding_takes_no_control_from_another(void) {
+    const RcTriggerBinding cues[] = {makeRcTriggerBinding(RC_BINDING_SBUS1, 1, DOME_ACTION_MARCDUINO_CMD,
+                                                          ":SM01", 172, 992, 1811, 0, false)};
+    const RcStoredMap map = storedOf(cues, 1);
+    TEST_ASSERT_EQUAL_HEX32(0, rcStoredMapConflicts(map, RC_INPUT_DUAL_SBUS));
+    TEST_ASSERT_TRUE(rcRuleStoredConflict(map, RC_INPUT_DUAL_SBUS, kRcStoredDriveSpeedBit).ok());
+    // An SBUS2 axis on one SBUS receiver is unread, and so frees its channel.
+    const RcTriggerBinding sbus2[] = {makeRcTriggerBinding(RC_BINDING_SBUS2, 3, SOUND_ACTION_NEXT, nullptr,
+                                                           172, 992, 1811, 0, false)};
+    RcStoredMap single = storedOf(sbus2, 1);
+    single.domeSpeed = sbusAxis(RC_BINDING_SBUS2, 3);
+    TEST_ASSERT_EQUAL_HEX32(0, rcStoredMapConflicts(single, RC_INPUT_SINGLE_SBUS));
+    TEST_ASSERT_EQUAL_HEX32(kRcStoredDomeSpeedBit | rcStoredCueBit(0),
+                            rcStoredMapConflicts(single, RC_INPUT_DUAL_SBUS));
+}
+
 // --- a refusal as data ---
 
 namespace {
@@ -523,6 +586,9 @@ int main(int, char**) {
     RUN_TEST(test_a_stored_axis_is_judged_as_a_save_would_judge_it);
     RUN_TEST(test_a_stored_drive_names_the_axis_a_rule_refuses);
     RUN_TEST(test_a_stored_cue_is_judged_as_a_save_would_judge_it);
+    RUN_TEST(test_two_stored_bindings_on_one_rc_channel_both_stay_still);
+    RUN_TEST(test_two_stored_puppet_strings_on_one_part_both_stay_still);
+    RUN_TEST(test_an_unread_binding_takes_no_control_from_another);
     RUN_TEST(test_a_refusal_names_its_field_reason_and_what_it_accepts);
     RUN_TEST(test_a_conflict_names_its_field_and_accepts_nothing);
     RUN_TEST(test_every_field_a_rule_names_is_declared);

@@ -155,8 +155,9 @@ size_t rcMapReceivers(RcInputMode type, RcMapReceiverUse use, RcBindingSource* o
 // ---------------------------------------------------------------------------
 // The same rules on read (ADR 0070): a stored binding a save would refuse is
 // not read, so it stays still. Each is judged on its own against the receiver
-// type the droid runs. Conflicts between entries are left to the save, since
-// every stored map came through one.
+// type the droid runs, and then against the others (rcStoredMapConflicts()):
+// NVS commits each key on its own, so a save cut short by a power loss can
+// leave two bindings on one control that no save would have taken together.
 // ---------------------------------------------------------------------------
 
 // A stored drive or dome axis (`axis` names which), its calibration included.
@@ -173,3 +174,35 @@ RcRuleVerdict rcRuleStoredCue(const RcTriggerBinding& binding, RcInputMode type)
 // verdict's `axis` says which axis a refusal is about.
 RcRuleVerdict rcRuleStoredDrive(const RcBindingConfig& speed, const RcBindingConfig& steer,
                                 RcInputMode type);
+
+// The stored map as a reader holds it: the three axes, and the trigger slots
+// in whatever order the reader keeps them. An unbound axis is
+// disabledRcBinding().
+struct RcStoredMap {
+    RcBindingConfig driveSpeed;
+    RcBindingConfig driveSteer;
+    RcBindingConfig domeSpeed;
+    const RcTriggerBinding* cues;
+    size_t cueCount;
+};
+
+// Which stored bindings a reader leaves still because they conflict, as a bit
+// each: trigger slot i is bit i (rcStoredCueBit()), the axes the three bits
+// below. Two bindings conflict on one RC Channel (one control, one job) or on
+// one Part (one Part, one puppet string), as a save refuses them; both are
+// left still, since neither is the one the operator meant. Only bindings that
+// hold their own rules are judged: one that is not read already fires nothing,
+// so it takes nothing from another. No allocation, no copy of a slot: the
+// input processor asks once a frame on core 1.
+static constexpr size_t kRcStoredCueBitMax = 29;
+static constexpr uint32_t kRcStoredDriveSpeedBit = 1u << 29;
+static constexpr uint32_t kRcStoredDriveSteerBit = 1u << 30;
+static constexpr uint32_t kRcStoredDomeSpeedBit = 1u << 31;
+inline uint32_t rcStoredCueBit(size_t slot) {
+    return slot < kRcStoredCueBitMax ? (1u << slot) : 0u;
+}
+uint32_t rcStoredMapConflicts(const RcStoredMap& map, RcInputMode type);
+
+// The refusal a conflicting stored binding (`bit`, as above) carries, as a
+// save would word it; holds when it conflicts with nothing. For GET /api/rc/map.
+RcRuleVerdict rcRuleStoredConflict(const RcStoredMap& map, RcInputMode type, uint32_t bit);

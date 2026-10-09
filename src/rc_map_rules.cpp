@@ -389,3 +389,114 @@ size_t rcMapReceivers(RcInputMode type, RcMapReceiverUse use, RcBindingSource* o
     }
     return count;
 }
+
+namespace {
+
+// One stored binding of an RcStoredMap, by index: the trigger slots first,
+// then the three axes. Points into the map; copies no payload.
+struct StoredRef {
+    RcBindingSource source;
+    uint8_t channel;
+    RobotActionId action;
+    const char* payload;
+    uint32_t bit;
+};
+
+size_t storedCount(const RcStoredMap& map) {
+    const size_t cues = map.cueCount < kRcStoredCueBitMax ? map.cueCount : kRcStoredCueBitMax;
+    return cues + 3;
+}
+
+StoredRef storedRef(const RcStoredMap& map, size_t index) {
+    const size_t cues = storedCount(map) - 3;
+    if (index < cues) {
+        const RcTriggerBinding& cue = map.cues[index];
+        return {cue.source, cue.channel, cue.target, cue.marcduinoPayload, rcStoredCueBit(index)};
+    }
+    static constexpr RobotActionId kAxes[] = {DRIVE_ACTION_SPEED, DRIVE_ACTION_STEER, DOME_ACTION_SPEED};
+    static constexpr uint32_t kBits[] = {kRcStoredDriveSpeedBit, kRcStoredDriveSteerBit,
+                                         kRcStoredDomeSpeedBit};
+    const RcBindingConfig* const axes[] = {&map.driveSpeed, &map.driveSteer, &map.domeSpeed};
+    const size_t axis = index - cues;
+    return {axes[axis]->source, axes[axis]->channel, kAxes[axis], "", kBits[axis]};
+}
+
+// Whether a stored binding binds anything and holds its own rules: only such
+// a binding is read, so only it can take a control from another.
+bool storedReads(const RcStoredMap& map, size_t index, RcInputMode type) {
+    const size_t cues = storedCount(map) - 3;
+    if (index < cues) {
+        const RcTriggerBinding& cue = map.cues[index];
+        return cue.source != RC_BINDING_NONE && cue.target != ROBOT_ACTION_NONE &&
+               rcRuleStoredCue(cue, type).ok();
+    }
+    const StoredRef ref = storedRef(map, index);
+    const RcBindingConfig* const axes[] = {&map.driveSpeed, &map.driveSteer, &map.domeSpeed};
+    return ref.source != RC_BINDING_NONE &&
+           rcRuleStoredAxis(ref.action, *axes[index - cues], type).ok();
+}
+
+// The save's conflict between two entries (conflictRule()), on stored ones.
+RcRuleVerdict storedPairConflict(const StoredRef& a, const StoredRef& b) {
+    if (a.action == SERVO_ACTION_PUPPET_PART && b.action == SERVO_ACTION_PUPPET_PART &&
+        strncmp(a.payload, b.payload, sizeof(RcMapEntry::payload)) == 0) {
+        return refusal("conflict: a Part on two puppet strings", true, kFieldPayload,
+                       ApplyRefusalReason::Conflict);
+    }
+    if (a.source == b.source && a.channel == b.channel) {
+        return refusal("conflict: source+channel mapped more than once", true, kFieldChannel,
+                       ApplyRefusalReason::Conflict);
+    }
+    return kHolds;
+}
+
+}  // namespace
+
+uint32_t rcStoredMapConflicts(const RcStoredMap& map, RcInputMode type) {
+    const size_t count = storedCount(map);
+    uint32_t reads = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (storedReads(map, i, type)) {
+            reads |= storedRef(map, i).bit;
+        }
+    }
+    uint32_t conflicts = 0;
+    for (size_t i = 0; i < count; ++i) {
+        const StoredRef a = storedRef(map, i);
+        if ((reads & a.bit) == 0) {
+            continue;
+        }
+        for (size_t j = i + 1; j < count; ++j) {
+            const StoredRef b = storedRef(map, j);
+            if ((reads & b.bit) != 0 && !storedPairConflict(a, b).ok()) {
+                conflicts |= a.bit | b.bit;
+            }
+        }
+    }
+    return conflicts;
+}
+
+RcRuleVerdict rcRuleStoredConflict(const RcStoredMap& map, RcInputMode type, uint32_t bit) {
+    const size_t count = storedCount(map);
+    size_t self = count;
+    for (size_t i = 0; i < count; ++i) {
+        if (storedRef(map, i).bit == bit) {
+            self = i;
+            break;
+        }
+    }
+    if (self == count || !storedReads(map, self, type)) {
+        return kHolds;
+    }
+    const StoredRef a = storedRef(map, self);
+    for (size_t j = 0; j < count; ++j) {
+        if (j == self || !storedReads(map, j, type)) {
+            continue;
+        }
+        const RcRuleVerdict verdict = storedPairConflict(a, storedRef(map, j));
+        if (!verdict.ok()) {
+            return verdict;
+        }
+    }
+    return kHolds;
+}
