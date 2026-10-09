@@ -165,9 +165,10 @@ RcRuleVerdict rcRuleStoredAxis(RobotActionId axis, const RcBindingConfig& bindin
                                RcInputMode type);
 
 // A stored trigger slot: a cue, a puppet string or a Reaction. An empty slot
-// holds. The input processor reads radio cues through it; a Reaction is held
-// to its rules by the stored form already (rcTriggerBindingIsValid()), and is
-// judged here for the RC Map's own answer (populateRcMapJson()).
+// holds. The input processor reads radio cues through it and ReactionTask
+// reads Reactions through rcStoredReactionsKeepRead(): the stored form's own
+// check (rcTriggerBindingIsValid()) does not hold a Reaction's payload to the
+// RC Map's rules, so a Marcduino :SM line passes it.
 RcRuleVerdict rcRuleStoredCue(const RcTriggerBinding& binding, RcInputMode type);
 
 // The stored drive pair: each bound axis, then the pair (rcRuleDrive()). The
@@ -206,3 +207,10 @@ uint32_t rcStoredMapConflicts(const RcStoredMap& map, RcInputMode type);
 // The refusal a conflicting stored binding (`bit`, as above) carries, as a
 // save would word it; holds when it conflicts with nothing. For GET /api/rc/map.
 RcRuleVerdict rcRuleStoredConflict(const RcStoredMap& map, RcInputMode type, uint32_t bit);
+
+// ReactionTask's read of the trigger slots: a Reaction the rules refuse, on
+// its own or in a conflict with another Reaction, is emptied, so the
+// evaluator releases a press it still holds and fires it no more. A radio
+// slot is left as it is: its condition is not ReactionTask's to read, and no
+// radio binding shares an RC Channel with a droid condition.
+void rcStoredReactionsKeepRead(RcTriggerBinding* slots, size_t count, RcInputMode type);

@@ -37,6 +37,7 @@
 #include "marcduino_helpers.h"
 #include "marcduino_ownership.h"  // marcduinoCommandOwner()
 #include "rc_input.h"             // dispatchReactionAction()
+#include "rc_map_rules.h"         // rcStoredReactionsKeepRead()
 #include "reaction_evaluator.h"
 #include "robot_state.h"
 #include "seq_store.h"            // seqStoreMayOpenBodyPart()
@@ -166,6 +167,12 @@ void reactionTask(void* /*pvParameters*/) {
 
     while (true) {
         const size_t count = configCacheReadRcTriggerSlots(bindings, RC_TRIGGER_SLOT_COUNT);
+        // A Reaction the RC Map's rules refuse is not read (ADR 0070): it
+        // leaves its slot, so a press it holds is released and it fires no
+        // more, though the stored form's own check let it load.
+        RcInputActiveConfig active = {};
+        configCacheReadActiveRcInput(&active);
+        rcStoredReactionsKeepRead(bindings, count, static_cast<RcInputMode>(active.mode));
         ReactionInputs in = {};
         readInputs(&in);
 

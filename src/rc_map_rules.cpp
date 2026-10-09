@@ -500,3 +500,21 @@ RcRuleVerdict rcRuleStoredConflict(const RcStoredMap& map, RcInputMode type, uin
     }
     return kHolds;
 }
+
+void rcStoredReactionsKeepRead(RcTriggerBinding* slots, size_t count, RcInputMode type) {
+    if (slots == nullptr) {
+        return;
+    }
+    // No axis reads a droid condition, so the axes are left out.
+    const RcStoredMap map = {disabledRcBinding(), disabledRcBinding(), disabledRcBinding(), slots,
+                             count};
+    const uint32_t conflicts = rcStoredMapConflicts(map, type);
+    for (size_t i = 0; i < count; ++i) {
+        if (!rcBindingSourceIsDroidCondition(slots[i].source)) {
+            continue;
+        }
+        if (!rcRuleStoredCue(slots[i], type).ok() || (conflicts & rcStoredCueBit(i)) != 0) {
+            slots[i] = disabledRcTriggerBinding();
+        }
+    }
+}
