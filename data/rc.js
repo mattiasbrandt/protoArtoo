@@ -1136,19 +1136,39 @@
     ? `MIN ${ends.min} · CENTER ${ends.center} · MAX ${ends.max}`
     : 'Ends not read yet.');
 
+  // An axis the droid keeps but does not read, from GET /api/rc/map.
+  const axisUnread = (axis) => unreadEntries.find((each) => mapEntryAction(each.entry) === axis.token) || null;
+
+  // Unread for its ends alone: posted back without them, the droid starts the
+  // axis from the default ends (ADR 0070), so a reset mends it.
+  const unreadForEnds = (unread) => String(unread?.entry?.field || '').startsWith('calibration');
+
   const axisTileHtml = (axis) => {
     const esc = window.PAUtils.escapeHtml;
     const name = actionLabelFromToken(axis.token);
     const binding = axisBinding(axis);
+    const idle = axisSaveInFlight || mapWriteInFlight || !channelMapLoaded;
+    const note = axisNotes[axis.token];
+    const noteHtml = `<p class="cal-note${note ? ` ${note.kind}` : ''}" role="status" aria-live="polite">${esc(note?.text || '')}</p>`;
     if (!binding) {
       // A binding the droid keeps but does not read (a save would refuse it,
       // ADR 0070): said on its tile, with the droid's reason.
-      const unread = unreadEntries.find((each) => mapEntryAction(each.entry) === axis.token);
+      const unread = axisUnread(axis);
       if (unread) {
+        const why = `Not read${unread.why ? `: ${esc(unread.why)}` : ''}.`;
+        if (unreadForEnds(unread)) {
+          return `<div class="rc-axis" data-axis="${axis.token}">
+        <div class="rc-axis-head"><span class="rc-axis-name">${esc(name)}</span>
+          <span class="rc-axis-ch">${esc(unread.title)}</span></div>
+        <p class="rc-axis-warn" role="status">${why}</p>
+        <div class="seg cal-sets"><button class="cal-set" type="button" data-axis="${axis.token}" data-axis-reset${idle ? ' disabled' : ''}>Reset ends</button></div>
+        ${noteHtml}
+      </div>`;
+        }
         return `<div class="rc-axis" data-axis="${axis.token}">
         <div class="rc-axis-head"><span class="rc-axis-name">${esc(name)}</span>
           <span class="rc-axis-ch">${esc(unread.title)}</span></div>
-        <p class="rc-axis-warn" role="status">Not read${unread.why ? `: ${esc(unread.why)}` : ''}. Map it again.</p>
+        <p class="rc-axis-warn" role="status">${why} Map it again.</p>
       </div>`;
       }
       return `<div class="rc-axis" data-axis="${axis.token}">
@@ -1158,8 +1178,6 @@
     }
     const ends = axisEnds(axis, binding);
     const raw = axisLive(binding);
-    const idle = axisSaveInFlight || mapWriteInFlight || !channelMapLoaded;
-    const note = axisNotes[axis.token];
     const switchId = `rc-axis-rev-${axis.token}`;
     const sets = AXIS_ENDS.map((end) => `<button class="cal-set" type="button" data-axis="${axis.token}" data-axis-set="${end.key}"${idle || raw == null ? ' disabled' : ''}>Set ${end.label}</button>`).join('');
     return `<div class="rc-axis" data-axis="${axis.token}">
@@ -1175,7 +1193,7 @@
         <span id="${switchId}-label">Reversed</span>
       </div>
       <p class="rc-axis-warn" role="status">${esc(axisRestWarning(ends, raw))}</p>
-      <p class="cal-note${note ? ` ${note.kind}` : ''}" role="status" aria-live="polite">${esc(note?.text || '')}</p>
+      ${noteHtml}
     </div>`;
   };
 
@@ -1223,6 +1241,18 @@
       renderAxes();
       return;
     }
+    await postAxis(axis, body, said);
+  };
+
+  // An axis unread for its ends, posted back in the map without them.
+  const resetAxisEnds = async (axis) => {
+    const unread = axisUnread(axis);
+    if (!unread || !unreadForEnds(unread)) return;
+    const { source, channel, action } = unread.entry;
+    await postAxis(axis, { map: [...asMapArray(), { source, channel, action }] }, 'the default ends');
+  };
+
+  const postAxis = async (axis, body, said) => {
     axisSaveInFlight = true;
     axisNotes[axis.token] = { kind: '', text: 'Saving...' };
     renderAxes();
@@ -1237,11 +1267,14 @@
     }
     axisSaveInFlight = false;
     try {
+      // A reset put the axis back in the map: the map is read back too, so
+      // its tile is drawn as one the droid reads.
+      if (!body.calibration) await loadMappings();
       // The ends the droid now holds come back with its diagnostics.
       await loadRcDiagnostics();
     } catch (_error) {
-      // loadRcDiagnostics() has said so in the editor feedback; the tile
-      // keeps its saved note and the ends it last read.
+      // loadMappings() or loadRcDiagnostics() has said so in the editor
+      // feedback; the tile keeps its saved note and the ends it last read.
       renderAxes();
     }
   };
@@ -1273,12 +1306,14 @@
     const target = event.target;
     const set = target?.closest?.('[data-axis-set]');
     const reverse = set ? null : target?.closest?.('[data-axis-reverse]');
-    const control = set || reverse;
+    const reset = set || reverse ? null : target?.closest?.('[data-axis-reset]');
+    const control = set || reverse || reset;
     if (!control || control.disabled || axisSaveInFlight || mapWriteInFlight) return;
     const axis = AXES.find((each) => each.token === control.dataset.axis);
     if (!axis) return;
     if (set) setAxisEnd(axis, control.dataset.axisSet);
-    else setAxisReverse(axis);
+    else if (reverse) setAxisReverse(axis);
+    else resetAxisEnds(axis);
   });
 
   const renderChannelList = () => {
