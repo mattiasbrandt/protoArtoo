@@ -42,9 +42,13 @@ the patch releases, whose notes live on their own GitHub Release.
 
 - **One set of rules for the RC Map.** What a save refuses, the droid no longer
   reads from a map stored before: a cue on a PWM receiver, an axis on CH17 or
-  CH18, a binding on a receiver the receiver type does not read, and an axis
-  whose dead zone leaves no travel on one side. Each stays still and the RC
-  page says why.
+  CH18, a binding on a receiver the receiver type does not read, an axis whose
+  dead zone leaves no travel on one side, and a Marcduino command or body
+  sequence the droid would never send. Each stays still and the RC page says
+  why.
+- **Restoring a backup leaves out what this droid will not take.** A binding
+  the droid refuses, like one from a droid with a different RC Receiver, is
+  left out and named, and the rest of the RC Map lands.
 
 ## [1.4.0] - 2026-10-08
 
