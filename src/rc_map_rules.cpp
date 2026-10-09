@@ -146,6 +146,17 @@ RcRuleVerdict entryRule(const RcMapEntry& entry, RcInputMode type) {
                            entry.source == RC_BINDING_PWM ? RC_PWM_CHANNELS : RC_SBUS_STICK_CHANNELS);
         }
     }
+    // A payload the dispatcher would not send fires nothing, so it is not
+    // stored: a body sequence is SE30-SE36 by its two digits, a Marcduino
+    // command starts :, $ or # (rc_action_dispatcher.cpp checks the same).
+    if (entry.action == DOME_ACTION_MARCDUINO_SEQ && !rcPayloadValidForBodySequence(entry.payload)) {
+        return refusal("invalid body sequence payload (expected 30-36)", true, kFieldPayload,
+                       ApplyRefusalReason::OutOfRange, 30, 36);
+    }
+    if (entry.action == DOME_ACTION_MARCDUINO_CMD && !rcPayloadValidForMarcduinoCommand(entry.payload)) {
+        return refusal("invalid Marcduino command payload (expected :, $ or #)", true, kFieldPayload,
+                       ApplyRefusalReason::OutOfRange);
+    }
     if (entry.action == DOME_ACTION_MARCDUINO_CMD && strncmp(entry.payload, ":SM", 3) == 0) {
         return refusal(":SM is diagnostic only and cannot be saved as an RC binding", true,
                        kFieldPayload, ApplyRefusalReason::OutOfRange);
