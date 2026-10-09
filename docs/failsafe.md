@@ -43,7 +43,7 @@ bit per source in `GET /api/rc` and `event: rc`.
 - Source: body firmware timeout
 - Implementation: `src/tasks/rc_input.cpp`
 - Trigger: no valid drive-receiver frame for more than the `sbusTimeoutMs`
-  Setting (`rc.sbusTimeoutMs`, 50-5000 ms, default `SBUS_TIMEOUT_MS = 200 ms`)
+  Setting (`rc.sbusTimeoutMs`, 50-1000 ms, default `SBUS_TIMEOUT_MS = 200 ms`)
 - Result: `sbusSignalLost=true`, `driveSpeed=0`, `driveSteer=0`,
   `failsafeSource=FS_SBUS_TIMEOUT`
 

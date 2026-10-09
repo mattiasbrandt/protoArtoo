@@ -505,18 +505,29 @@
     return { rows, missing };
   };
 
+  // An older backup can also hold an SBUS timeout above the 1000 ms the droid
+  // now takes (#389): 5000 was a diagnostic value once. The restore lowers it
+  // and says so, rather than the droid refusing the whole body over it.
+  const SBUS_TIMEOUT_MAX_MS = 1000;
+  const lowerSbusTimeout = (config) => {
+    const saved = config?.rc?.sbusTimeoutMs;
+    if (typeof saved !== 'number' || saved <= SBUS_TIMEOUT_MAX_MS) return { config, lowered: false };
+    return { config: { ...config, rc: { ...config.rc, sbusTimeoutMs: SBUS_TIMEOUT_MAX_MS } }, lowered: true };
+  };
+
   // The backup's config with every fitted Part this build does not model taken
   // out, and those ids. Without the catalog nothing is dropped: the droid's
   // refusal then says what is wrong, rather than a guess made here.
-  const configToRestore = (config) => {
+  const configToRestore = (backupConfig) => {
+    const { config, lowered } = lowerSbusTimeout(backupConfig);
     const fitted = config?.droidBuild?.fitted;
     const catalog = window.DroidParts?.parts;
-    if (!Array.isArray(fitted) || !Array.isArray(catalog)) return { config, retired: [] };
+    if (!Array.isArray(fitted) || !Array.isArray(catalog)) return { config, retired: [], lowered };
     const known = new Set(catalog.map((part) => part.id));
     const retired = fitted.filter((id) => !known.has(id));
-    if (retired.length === 0) return { config, retired };
+    if (retired.length === 0) return { config, retired, lowered };
     const droidBuild = { ...config.droidBuild, fitted: fitted.filter((id) => known.has(id)) };
-    return { config: { ...config, droidBuild }, retired };
+    return { config: { ...config, droidBuild }, retired, lowered };
   };
 
   // The Configuration's feedback line: "restored" only when all of it landed.
@@ -524,7 +535,7 @@
   const restoreConfiguration = async (backup) => {
     const { outputs } = await window.PAOutputs.load();
     const { rows, missing } = rowsToRestore(backup, outputs);
-    const { config, retired } = configToRestore(backup.config);
+    const { config, retired, lowered } = configToRestore(backup.config);
     try {
       await window.PAApi.postJson('/api/config', { ...config, outputs: rows }, { timeoutMs: 10000 });
     } catch (error) {
@@ -535,6 +546,7 @@
     }
     const gaps = missing.map((name) => `${name} not on this droid`);
     retired.forEach((id) => gaps.push(`${id} is no longer a Part`));
+    if (lowered) gaps.push(`signal-lost timeout lowered to ${SBUS_TIMEOUT_MAX_MS} ms`);
     // A file from before backups carried the Outputs' rows has no centre,
     // calibration or Part map to give back.
     if (!Array.isArray(backup.servo_outputs?.outputs)) gaps.push('no centre, calibration or Part map in this file');

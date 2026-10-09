@@ -103,8 +103,10 @@ const ConfigSetting kConfigSettings[] = {
     // builder makes. The radio itself drives nothing on the controller.
     PA_WORDS("rcInputMode", "rc.inputMode", "rc_mode", RestartRequired, System, SystemConfig, rc_input_mode,
              kRcInputModeWords, RC_INPUT_DUAL_SBUS),
+    // At most a second (operator, 2026-10-09 on #389): longer lets a droid
+    // run on a dead radio. A stored value above it loads as 1000.
     PA_RANGE("sbusTimeoutMs", "rc.sbusTimeoutMs", "sbus_tmo", Immediate, Drive, DriveConfig, sbusTimeoutMs,
-             50, 5000, SBUS_TIMEOUT_MS),
+             50, 1000, SBUS_TIMEOUT_MS),
     PA_MEMBER("rcMember", "rc.member", "rc_member", Immediate, System, SystemConfig, rc_member,
               COMPONENT_CATEGORY_RADIO_CONTROLLER, "is not a radio this firmware lists"),
     PA_BOOL("sbusRecvCh2", "rc.sbus.recvCh2", "sbus_recv_ch2", RestartRequired, System, SystemConfig,

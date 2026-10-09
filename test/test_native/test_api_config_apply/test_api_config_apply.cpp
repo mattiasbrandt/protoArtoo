@@ -492,9 +492,9 @@ void test_configApply_json_body_is_refused_by_the_form_fields_own_check(void) {
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("sbusTimeoutMs must be 50..5000", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("sbusTimeoutMs must be 50..1000", result.error.message);
     TEST_ASSERT_EQUAL_STRING("sbusTimeoutMs", result.error.refusal.field);
-    TEST_ASSERT_EQUAL_STRING("50..5000", result.error.refusal.accepts);
+    TEST_ASSERT_EQUAL_STRING("50..1000", result.error.refusal.accepts);
     TEST_ASSERT_EQUAL_UINT32(before, snap.drive.sbusTimeoutMs);
 }
 
