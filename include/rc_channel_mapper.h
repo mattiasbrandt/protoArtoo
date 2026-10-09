@@ -31,6 +31,13 @@ struct RcChannelSnapshot {
 
     // Current input mode (determines how channels are interpreted)
     RcInputMode mode;
+
+    // The receiver this frame came from. A binding reads a frame only from its
+    // own receiver, so in dual_sbus the dome receiver's sticks never reach a
+    // drive binding and the drive receiver's never reach the dome (#389).
+    // RC_BINDING_NONE leaves the frame unattributed: every source the mode
+    // enables may read it.
+    RcBindingSource source;
 };
 
 // ============================================================================
@@ -65,6 +72,12 @@ struct RcControlIntent {
     // Sound switch state (valid only if sound binding is active and enabled)
     // Used by dispatch path to update lastSoundPressed for next iteration
     bool soundPressed;
+
+    // Whether the drive (speed AND steer) and dome bindings read this frame.
+    // A frame from a receiver the binding does not read leaves them false, and
+    // the dispatcher then sends nothing for them rather than a zero (#389).
+    bool driveActive;
+    bool domeActive;
 
     // Whether any mapping stage produced an intent from this snapshot: true if
     // at least one configured binding was active and matched the input mode,
@@ -102,6 +115,11 @@ struct RcMappingConfig {
 
     // Edge detection state for audio trigger (caller maintains this across calls)
     bool prevSoundPressed;
+
+    // single_sbus only: the receiver is wired to the CH2 header rather than CH1
+    // (the sbusRecvCh2 Setting). It is still SBUS1 (operator, 2026-10-09 on
+    // #389); the flag only picks which header's enable gates it.
+    bool useCh2;
 };
 
 // ============================================================================
@@ -133,3 +151,11 @@ struct RcMappingConfig {
 //     drive and dome alone
 //
 RcControlIntent rcMapChannels(const RcChannelSnapshot& snap, const RcMappingConfig& cfg);
+
+// rcMapBindingReadsSnapshot()  --  whether a binding reads this snapshot: its
+// source is enabled for the mode, the frame came from that source (when the
+// snapshot names one), and the channel is in range. The same rule every
+// mapping stage applies, for callers that read a binding's raw value
+// themselves (the dome input filter).
+bool rcMapBindingReadsSnapshot(const RcBindingConfig& binding, const RcChannelSnapshot& snap,
+                               const RcMappingConfig& cfg);

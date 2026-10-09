@@ -58,19 +58,24 @@ static bool readChannelRaw(const RcChannelSnapshot& snap, const RcBindingConfig&
 }
 
 // ============================================================================
-// Helper: Check if a binding source is active for the current mode
+// Helper: Check if a binding reads this snapshot
 // ============================================================================
 //
-// NOTE: This function is similar to rcSourceEnabledForMode() in rc_diagnostics_snapshot.cpp,
-// but has a different purpose and signature:
-//   - bindingSourceActiveForMode: determines if a specific RcBindingConfig can be used in a snapshot
-//   - rcSourceEnabledForMode: determines if a source type is enabled in the current input mode
+// The diagnostics twin is rcSourceEnabledForMode() in rc_diagnostics_snapshot.cpp
+// and validation_snapshot.cpp: it answers "is this source enabled in the mode"
+// for reporting, without a frame. This function adds the frame: a binding reads
+// a snapshot only when its source is enabled AND the frame came from that
+// source. For PWM it also validates the channel range (1-6).
 //
-// For PWM, this function also validates channel range (1-6), while rcSourceEnabledForMode
-// checks an external anyPwmEnabled flag. They are not interchangeable.
+// single_sbus has one receiver and it is SBUS1 whichever header it is wired to
+// (operator, 2026-10-09 on #389): useCh2 only picks which header's enable gates
+// it. An SBUS2 binding reads nothing in single_sbus.
 //
 static bool bindingSourceActiveForMode(const RcBindingConfig& binding, const RcChannelSnapshot& snap,
-                                       bool enableRcCh1, bool enableRcCh2, bool useCh2) {
+                                       const RcMappingConfig& cfg) {
+    if (snap.source != RC_BINDING_NONE && binding.source != snap.source) {
+        return false;
+    }
     switch (binding.source) {
         case RC_BINDING_PWM:
             return snap.mode == RC_INPUT_STANDARD_PWM && binding.channel >= 1 &&
@@ -78,20 +83,24 @@ static bool bindingSourceActiveForMode(const RcBindingConfig& binding, const RcC
 
         case RC_BINDING_SBUS1:
             if (snap.mode == RC_INPUT_SINGLE_SBUS) {
-                return !useCh2 && enableRcCh1;
+                return cfg.useCh2 ? cfg.enableRc[1] : cfg.enableRc[0];
             }
-            return snap.mode == RC_INPUT_DUAL_SBUS && enableRcCh1;
+            return snap.mode == RC_INPUT_DUAL_SBUS && cfg.enableRc[0];
 
         case RC_BINDING_SBUS2:
-            if (snap.mode == RC_INPUT_SINGLE_SBUS) {
-                return useCh2 && enableRcCh2;
-            }
-            return snap.mode == RC_INPUT_DUAL_SBUS && enableRcCh2;
+            return snap.mode == RC_INPUT_DUAL_SBUS && cfg.enableRc[1];
 
         case RC_BINDING_NONE:
         default:
             return false;
     }
+}
+
+bool rcMapBindingReadsSnapshot(const RcBindingConfig& binding, const RcChannelSnapshot& snap,
+                               const RcMappingConfig& cfg) {
+    int raw = 0;
+    return snap.valid && rcBindingIsValid(binding) && bindingSourceActiveForMode(binding, snap, cfg) &&
+           readChannelRaw(snap, binding, &raw);
 }
 
 // ============================================================================
@@ -101,7 +110,7 @@ static bool bindingSourceActiveForMode(const RcBindingConfig& binding, const RcC
 // Map drive controls: speed + steer (backbone)
 // Returns: speedActive && steerActive, sets intent.driveSpeed and intent.driveSteer
 bool rcMapDriveControls(const RcChannelSnapshot& snap, const RcMappingConfig& cfg,
-                        bool useCh2, RcControlIntent* intent) {
+                        RcControlIntent* intent) {
     int rawSpeed = 0;
     int rawSteer = 0;
     bool speedActive = false;
@@ -110,15 +119,13 @@ bool rcMapDriveControls(const RcChannelSnapshot& snap, const RcMappingConfig& cf
     // Check if drive mappings are valid
     if (rcBindingIsValid(cfg.driveSpeed) && rcBindingIsValid(cfg.driveSteer)) {
         // Check if speed binding is active for this mode
-        if (bindingSourceActiveForMode(cfg.driveSpeed, snap, cfg.enableRc[0], cfg.enableRc[1],
-                                       useCh2) &&
+        if (bindingSourceActiveForMode(cfg.driveSpeed, snap, cfg) &&
             readChannelRaw(snap, cfg.driveSpeed, &rawSpeed)) {
             speedActive = true;
         }
 
         // Check if steer binding is active for this mode
-        if (bindingSourceActiveForMode(cfg.driveSteer, snap, cfg.enableRc[0], cfg.enableRc[1],
-                                       useCh2) &&
+        if (bindingSourceActiveForMode(cfg.driveSteer, snap, cfg) &&
             readChannelRaw(snap, cfg.driveSteer, &rawSteer)) {
             steerActive = true;
         }
@@ -149,11 +156,10 @@ bool rcMapDriveControls(const RcChannelSnapshot& snap, const RcMappingConfig& cf
 // Map dome control: speed (backbone)
 // Returns: domeActive, sets intent.domeSpeed
 bool rcMapDomeControl(const RcChannelSnapshot& snap, const RcMappingConfig& cfg,
-                      bool useCh2, RcControlIntent* intent) {
+                      RcControlIntent* intent) {
     int rawDome = 0;
     if (cfg.enableDome && rcBindingIsValid(cfg.domeSpeed) &&
-        bindingSourceActiveForMode(cfg.domeSpeed, snap, cfg.enableRc[0], cfg.enableRc[1],
-                                   useCh2) &&
+        bindingSourceActiveForMode(cfg.domeSpeed, snap, cfg) &&
         readChannelRaw(snap, cfg.domeSpeed, &rawDome)) {
         float normalizedDome = applyRcAnalogCalibration(rawDome, cfg.domeSpeed, nullptr);
 
@@ -171,7 +177,7 @@ bool rcMapDomeControl(const RcChannelSnapshot& snap, const RcMappingConfig& cfg,
 // Map servo controls: arm1 and arm2 switch positions
 // Returns: servoActive, sets intent.arm1Cmd and intent.arm2Cmd
 bool rcMapServoControls(const RcChannelSnapshot& snap, const RcMappingConfig& cfg,
-                        bool useCh2, RcControlIntent* intent) {
+                        RcControlIntent* intent) {
     // Convert switch state to servo command: LOW -> close, MID -> neutral, HIGH -> open
     // For v1.0.0: aux1, aux2, aux3 remain unmapped (out of scope).
     int rawArm1 = 0;
@@ -180,7 +186,7 @@ bool rcMapServoControls(const RcChannelSnapshot& snap, const RcMappingConfig& cf
     bool arm2Active = false;
 
     if (cfg.enableArm1 && rcBindingIsValid(cfg.arm1) &&
-        bindingSourceActiveForMode(cfg.arm1, snap, cfg.enableRc[0], cfg.enableRc[1], useCh2) &&
+        bindingSourceActiveForMode(cfg.arm1, snap, cfg) &&
         readChannelRaw(snap, cfg.arm1, &rawArm1)) {
         RcSwitchState arm1State = rcAnalogToSwitchState(rawArm1, cfg.arm1);
         if (arm1State == RC_SWITCH_HIGH) {
@@ -196,7 +202,7 @@ bool rcMapServoControls(const RcChannelSnapshot& snap, const RcMappingConfig& cf
     }
 
     if (cfg.enableArm2 && rcBindingIsValid(cfg.arm2) &&
-        bindingSourceActiveForMode(cfg.arm2, snap, cfg.enableRc[0], cfg.enableRc[1], useCh2) &&
+        bindingSourceActiveForMode(cfg.arm2, snap, cfg) &&
         readChannelRaw(snap, cfg.arm2, &rawArm2)) {
         RcSwitchState arm2State = rcAnalogToSwitchState(rawArm2, cfg.arm2);
         if (arm2State == RC_SWITCH_HIGH) {
@@ -218,7 +224,7 @@ bool rcMapServoControls(const RcChannelSnapshot& snap, const RcMappingConfig& cf
 // Edge detection state is maintained by caller in cfg.prevSoundPressed
 // Returns: soundActive, sets intent.audioTrigger and intent.soundPressed
 bool rcMapAudioTrigger(const RcChannelSnapshot& snap, const RcMappingConfig& cfg,
-                       bool useCh2, RcControlIntent* intent) {
+                       RcControlIntent* intent) {
     // Audio fires on rising edge: transition from LOW/MID to HIGH.
     // Token is a static Marcduino command string ("$87" = random general sound).
     intent->audioTrigger = nullptr;
@@ -226,7 +232,7 @@ bool rcMapAudioTrigger(const RcChannelSnapshot& snap, const RcMappingConfig& cfg
     int rawSound = 0;
 
     if (cfg.enableSound && rcBindingIsValid(cfg.sound) &&
-        bindingSourceActiveForMode(cfg.sound, snap, cfg.enableRc[0], cfg.enableRc[1], useCh2) &&
+        bindingSourceActiveForMode(cfg.sound, snap, cfg) &&
         readChannelRaw(snap, cfg.sound, &rawSound)) {
         RcSwitchState soundState = rcAnalogToSwitchState(rawSound, cfg.sound);
         intent->soundPressed = (soundState == RC_SWITCH_HIGH);
@@ -254,16 +260,14 @@ RcControlIntent rcMapChannels(const RcChannelSnapshot& snap, const RcMappingConf
         return intent;
     }
 
-    // For initial implementation, hardcode useCh2=false (single receiver on SBUS1)
-    // This can be extended in future if dual-receiver mapping becomes needed
-    const bool useCh2 = false;
-
     // Apply mapping stages. Each returns whether it had an active, valid
     // binding for this snapshot and therefore contributed to the intent.
-    bool driveActive = rcMapDriveControls(snap, cfg, useCh2, &intent);
-    bool domeActive = rcMapDomeControl(snap, cfg, useCh2, &intent);
-    bool servoActive = rcMapServoControls(snap, cfg, useCh2, &intent);
-    bool soundActive = rcMapAudioTrigger(snap, cfg, useCh2, &intent);
+    bool driveActive = rcMapDriveControls(snap, cfg, &intent);
+    bool domeActive = rcMapDomeControl(snap, cfg, &intent);
+    bool servoActive = rcMapServoControls(snap, cfg, &intent);
+    bool soundActive = rcMapAudioTrigger(snap, cfg, &intent);
+    intent.driveActive = driveActive;
+    intent.domeActive = domeActive;
 
     // Validity: any stage that produced an intent makes this intent valid.
     //

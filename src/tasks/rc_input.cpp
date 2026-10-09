@@ -152,6 +152,7 @@ static RcMappingConfig rcBuildMappingConfig(const RcInputActiveConfig& active) {
         out.sound = cfg.system.rc_sbus_audio;
     }
     out.prevSoundPressed = false;  // caller sets from static state
+    out.useCh2 = active.useCh2;
     return out;
 }
 
@@ -318,12 +319,15 @@ static void __attribute__((noinline)) seedTakeFromStrings() {
 
 static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMappingConfig& mapping,
                                      const RcTriggerBinding* triggers) {
-    // Backbone: drive
-    if ((output.backbone.driveSpeed != 0 || output.backbone.driveSteer != 0) &&
-        !output.stationaryLockedByTrigger) {
-        commandedSetStationary(false, SRC_SBUS);
+    // Backbone: drive, unless this frame came from a receiver the drive
+    // bindings do not read (#389)
+    if (output.submitDrive) {
+        if ((output.backbone.driveSpeed != 0 || output.backbone.driveSteer != 0) &&
+            !output.stationaryLockedByTrigger) {
+            commandedSetStationary(false, SRC_SBUS);
+        }
+        rcDispatchDrive(output.backbone.driveSpeed, output.backbone.driveSteer, false);
     }
-    rcDispatchDrive(output.backbone.driveSpeed, output.backbone.driveSteer, false);
 
     // Backbone: dome (filtered raw value, re-calibrated)
     rcDispatchDome(output.domeRawFiltered, mapping, output.domeFiltered);
@@ -485,6 +489,7 @@ static void dispatchStandardPwmInputs(const RcInputActiveConfig& active) {
     RcChannelSnapshot snap = {};
     snap.valid = true;
     snap.mode  = RC_INPUT_STANDARD_PWM;
+    snap.source = RC_BINDING_PWM;
     for (int i = 0; i < 6; ++i) snap.channels[i] = (int16_t)pulses[i];
 
     RcProcessorInput& input = s_dispatchInput;
@@ -510,6 +515,7 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
     for (int i = 0; i < 16; ++i) snap.channels[i] = data.ch[i];
     snap.channels[16] = data.ch17 ? 1811 : 172;
     snap.channels[17] = data.ch18 ? 1811 : 172;
+    snap.source = source;
 
     RcProcessorInput& input = s_dispatchInput;
     buildRcProcessorConfig(active, &input.config);
@@ -559,8 +565,7 @@ void rcInputTask(void* pvParameters) {
         bool useDriveSbus2 = (rcInputMode == RC_INPUT_SINGLE_SBUS) && useCh2;
         int sbusRxPin = useDriveSbus2 ? PIN_SBUS2_RX : PIN_SBUS1_RX;
         if (!s_sbusDrive->begin(sbusRxPin)) {
-            PA_LOG_ERROR(TAG, "RMT init failed for SBUS%d GPIO%d", useDriveSbus2 ? 2 : 1,
-                         sbusRxPin);
+            PA_LOG_ERROR(TAG, "RMT init failed for SBUS1 GPIO%d", sbusRxPin);
         } else {
             driveSbusEnabled = true;
         }
@@ -583,10 +588,10 @@ void rcInputTask(void* pvParameters) {
     } else if (rcInputMode == RC_INPUT_SINGLE_SBUS) {
         if (driveSbusEnabled) {
             int sbusRxPin = useCh2 ? PIN_SBUS2_RX : PIN_SBUS1_RX;
-            PA_LOG_INFO(TAG, "started - single_sbus mode, SBUS%d GPIO%d active", useCh2 ? 2 : 1,
-                        sbusRxPin);
+            PA_LOG_INFO(TAG, "started - single_sbus mode, SBUS1 on CH%d header GPIO%d active",
+                        useCh2 ? 2 : 1, sbusRxPin);
         } else {
-            PA_LOG_INFO(TAG, "started - single_sbus mode, SBUS%d disabled",
+            PA_LOG_INFO(TAG, "started - single_sbus mode, SBUS1 on CH%d header disabled",
                         useCh2 ? 2 : 1);
         }
     } else {
@@ -622,123 +627,58 @@ void rcInputTask(void* pvParameters) {
             continue;
         }
 
-        // --- Drive receiver (SBUS #1, or SBUS2 GPIO when single_sbus+useCh2) ---
+        // --- Drive receiver (SBUS1, on the CH2 header when single_sbus+useCh2) ---
         if (driveSbusEnabled && s_sbusDrive->read()) {
             SbusData data = s_sbusDrive->data();
 
-            // single_sbus+useCh2=true: decoder reads GPIO13 (dome GPIO).
-            // Treat as SBUS2  --  store to sbus2 state and dispatch dome/aux bindings only.
-            // Drive bindings (SBUS1) never fire, and SBUS2-only traffic must not feed
-            // the drive SBUS watchdog.
-            bool asSbus2 = (rcInputMode == RC_INPUT_SINGLE_SBUS) && useCh2;
+            taskENTER_CRITICAL(&robotStateMux);
+            for (int i = 0; i < 16; ++i) {
+                robotState.rcSbus1Raw[i] = (uint16_t)data.ch[i];
+            }
+            robotState.rcSbus1Digital[0] = data.ch17;
+            robotState.rcSbus1Digital[1] = data.ch18;
+            bool hwFailsafeWasActive = robotState.sbusHwFailsafe;
+            taskEXIT_CRITICAL(&robotStateMux);
 
-            if (asSbus2) {
-                // Routed receiver (single_sbus + useCh2): read the previous hw failsafe state
-                // for edge detection. Step function uses this to gate one-shot logs.
-                bool routedHwFailsafeWasActive = s_rcStepState.routedHwFailsafeWasActive;
-
-                RcInputStepSbus2FrameInputs frameIn = {
-                    .failsafe = data.failsafe,
-                    .lostFrame = data.lost_frame,
-                    .hwFailsafeWasActive = routedHwFailsafeWasActive,
-                };
-                RcInputStepSbus2FrameActions frameOut = rcInputStepSbus2RoutedFrame(frameIn);
-
-                // Routed receiver: execute drive-level hardware failsafe actions
-                // that mirror SBUS1 behavior (failsafeTrigger, zero submit, clear).
-                if (frameOut.triggerSbusHw) {
-                    failsafeTrigger(FailsafeLayer::SBUS_HW);
-                }
-                if (frameOut.submitDriveZeroFrame) {
-                    driveArbiterSubmit(DriveSource::RC, 0, 0, millis());
-                }
-                if (frameOut.logHwFailsafeAsserted) {
-                    PA_LOG_WARN(TAG, "SBUS2 (routed) hardware failsafe asserted");
-                }
-                if (frameOut.clearSbusHw) {
-                    failsafeClear(FailsafeLayer::SBUS_HW);
-                }
-                if (frameOut.logRoutedHwFailsafeClearedOnFallingEdge) {
-                    PA_LOG_INFO(TAG, "SBUS2 (routed) hardware failsafe cleared");
-                }
-
-                taskENTER_CRITICAL(&robotStateMux);
-                for (int i = 0; i < 16; ++i) {
-                    robotState.rcSbus2Raw[i] = (uint16_t)data.ch[i];
-                }
-                robotState.rcSbus2Digital[0] = data.ch17;
-                robotState.rcSbus2Digital[1] = data.ch18;
-                if (frameOut.setSbus2HwFailsafe) {
-                    robotState.sbus2HwFailsafe = true;
-                }
-                if (frameOut.clearSbus2HwFailsafe) {
-                    robotState.sbus2HwFailsafe = false;
-                }
-                if (frameOut.clearSbus2SignalLost) {
-                    robotState.sbus2SignalLost = false;
-                }
-                if (frameOut.incrementLostFrameCount) {
-                    robotState.sbus2LostFrameCount++;
-                }
-                if (frameOut.updateLastSbus2Ms) {
-                    robotState.lastSbus2Ms = millis();
-                }
-                // Routed receiver: latch the hw-failsafe edge state for next iteration.
-                // Latch latches across lost_frame (do not update), only changes on
-                // non-lost_frame frames (failsafe flag determines next state).
-                if (!data.lost_frame) {
-                    s_rcStepState.routedHwFailsafeWasActive = data.failsafe;
-                }
-                taskEXIT_CRITICAL(&robotStateMux);
-                if (frameOut.dispatchBindings) {
-                    dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, active);
-                }
-            } else {
+            RcInputStepSbus1FrameInputs frameIn = {
+                .failsafe = data.failsafe,
+                .lostFrame = data.lost_frame,
+                .hwFailsafeWasActive = hwFailsafeWasActive,
+            };
+            RcInputStepSbus1FrameActions frameOut = rcInputStepSbus1Frame(frameIn);
+            if (frameOut.updateLastSbus1Ms) {
                 taskENTER_CRITICAL(&robotStateMux);
                 robotState.lastSbus1Ms = millis();
-                for (int i = 0; i < 16; ++i) {
-                    robotState.rcSbus1Raw[i] = (uint16_t)data.ch[i];
-                }
-                robotState.rcSbus1Digital[0] = data.ch17;
-                robotState.rcSbus1Digital[1] = data.ch18;
-                bool hwFailsafeWasActive = robotState.sbusHwFailsafe;
                 taskEXIT_CRITICAL(&robotStateMux);
+            }
 
-                RcInputStepSbus1FrameInputs frameIn = {
-                    .failsafe = data.failsafe,
-                    .lostFrame = data.lost_frame,
-                    .hwFailsafeWasActive = hwFailsafeWasActive,
-                };
-                RcInputStepSbus1FrameActions frameOut = rcInputStepSbus1Frame(frameIn);
-
-                if (frameOut.triggerSbusHw) {
-                    failsafeTrigger(FailsafeLayer::SBUS_HW);
+            if (frameOut.triggerSbusHw) {
+                failsafeTrigger(FailsafeLayer::SBUS_HW);
+            }
+            if (frameOut.logHwFailsafeAsserted) {
+                PA_LOG_WARN(TAG, "SBUS1 hardware failsafe asserted");
+            }
+            if (frameOut.submitDriveZeroFrame) {
+                driveArbiterSubmit(DriveSource::RC, 0, 0, millis());
+            }
+            if (frameOut.incrementLostFrameCount) {
+                taskENTER_CRITICAL(&robotStateMux);
+                robotState.sbus1LostFrameCount++;
+                uint32_t lostCount = robotState.sbus1LostFrameCount;
+                bool rcDebug = robotState.rcDebugMode;
+                taskEXIT_CRITICAL(&robotStateMux);
+                if (rcDebug && (lostCount % 100 == 0)) {
+                    PA_LOG_DEBUG(TAG, "SBUS1 lost_frame count: %lu", (unsigned long)lostCount);
                 }
-                if (frameOut.logHwFailsafeAsserted) {
-                    PA_LOG_WARN(TAG, "SBUS1 hardware failsafe asserted");
-                }
-                if (frameOut.submitDriveZeroFrame) {
-                    driveArbiterSubmit(DriveSource::RC, 0, 0, millis());
-                }
-                if (frameOut.incrementLostFrameCount) {
-                    taskENTER_CRITICAL(&robotStateMux);
-                    robotState.sbus1LostFrameCount++;
-                    uint32_t lostCount = robotState.sbus1LostFrameCount;
-                    bool rcDebug = robotState.rcDebugMode;
-                    taskEXIT_CRITICAL(&robotStateMux);
-                    if (rcDebug && (lostCount % 100 == 0)) {
-                        PA_LOG_DEBUG(TAG, "SBUS1 lost_frame count: %lu", (unsigned long)lostCount);
-                    }
-                }
-                if (frameOut.clearSbusHw) {
-                    failsafeClear(FailsafeLayer::SBUS_HW);
-                }
-                if (frameOut.clearSbusWatchdog) {
-                    failsafeClear(FailsafeLayer::SBUS_WATCHDOG);
-                }
-                if (frameOut.dispatchBindings) {
-                    dispatchSbusBindingsForSource(data, RC_BINDING_SBUS1, active);
-                }
+            }
+            if (frameOut.clearSbusHw) {
+                failsafeClear(FailsafeLayer::SBUS_HW);
+            }
+            if (frameOut.clearSbusWatchdog) {
+                failsafeClear(FailsafeLayer::SBUS_WATCHDOG);
+            }
+            if (frameOut.dispatchBindings) {
+                dispatchSbusBindingsForSource(data, RC_BINDING_SBUS1, active);
             }
         }
 
@@ -749,20 +689,15 @@ void rcInputTask(void* pvParameters) {
         }
 
         uint32_t lastSbus1 = 0;
-        uint32_t lastSbus2ForDrive = 0;  // Used only if source == SBUS2_ROUTED
         if (driveWatchdogEnabled) {
             taskENTER_CRITICAL(&robotStateMux);
             lastSbus1 = robotState.lastSbus1Ms;
-            if (startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS2_ROUTED) {
-                lastSbus2ForDrive = robotState.lastSbus2Ms;
-            }
             taskEXIT_CRITICAL(&robotStateMux);
 
             RcInputStepDriveWatchdogInputs stepDriveIn = {
                 .driveDecoderInitialized = true,
                 .source = startupPlan.driveWatchdogSource,
                 .lastSbus1Ms = lastSbus1,
-                .lastSbus2Ms = lastSbus2ForDrive,
                 .nowMs = nowMs,
                 .timeoutMs = timeoutMs,
             };
@@ -772,11 +707,8 @@ void rcInputTask(void* pvParameters) {
             if (stepDriveOut.triggerSbusWatchdog) {
                 failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
                 driveArbiterSubmit(DriveSource::RC, 0, 0, nowMs);
-                uint32_t lastMs = (startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS2_ROUTED)
-                                      ? lastSbus2ForDrive
-                                      : lastSbus1;
-                PA_LOG_WARN(TAG, "drive watchdog fired - no frame for %lu ms (timeout=%lu ms)",
-                            (unsigned long)(nowMs - lastMs), (unsigned long)timeoutMs);
+                PA_LOG_WARN(TAG, "drive watchdog fired - no clean frame for %lu ms (timeout=%lu ms)",
+                            (unsigned long)(nowMs - lastSbus1), (unsigned long)timeoutMs);
                 if ((uint32_t)(nowMs - lastSbus1WatchdogDiagMs) >= kWatchdogDiagIntervalMs) {
                     lastSbus1WatchdogDiagMs = nowMs;
                     taskENTER_CRITICAL(&robotStateMux);
@@ -810,10 +742,7 @@ void rcInputTask(void* pvParameters) {
                 failsafeClear(FailsafeLayer::SBUS_WATCHDOG);
             }
             if (stepDriveOut.transition == SbusWatchdogTransition::JUST_RESTORED) {
-                const char* sourceStr = (startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS2_ROUTED)
-                                            ? "routed SBUS2"
-                                            : "SBUS1";
-                PA_LOG_INFO(TAG, "drive signal restored (%s)", sourceStr);
+                PA_LOG_INFO(TAG, "drive signal restored (SBUS1)");
             }
         }
 
@@ -930,19 +859,14 @@ void rcInputTask(void* pvParameters) {
         if ((driveSbusEnabled || domeSbusEnabled) &&
             (uint32_t)(nowMs - lastSbusDiagLogMs) >= 2000U) {
             lastSbusDiagLogMs = nowMs;
-            bool waitingDrive = driveWatchdogEnabled &&
-                                ((startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS1 && lastSbus1 == 0) ||
-                                 (startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS2_ROUTED && lastSbus2ForDrive == 0));
+            bool waitingDrive = driveWatchdogEnabled && lastSbus1 == 0;
             bool waitingDome = domeSbusEnabled && (lastSbus2 == 0);
             if (waitingDrive || waitingDome) {
                 taskENTER_CRITICAL(&robotStateMux);
                 bool rcDebug = robotState.rcDebugMode;
                 taskEXIT_CRITICAL(&robotStateMux);
                 if (waitingDrive) {
-                    const char* sourceStr = (startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS2_ROUTED)
-                                                ? "routed SBUS2"
-                                                : "SBUS1";
-                    PA_LOG_INFO(TAG, "drive (%s) waiting for first frame", sourceStr);
+                    PA_LOG_INFO(TAG, "drive (SBUS1) waiting for first frame");
                 }
                 if (waitingDome)
                     PA_LOG_INFO(TAG, "SBUS2 waiting for first frame");

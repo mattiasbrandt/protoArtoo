@@ -29,8 +29,7 @@
 
 enum class DriveWatchdogSource : uint8_t {
     NONE = 0,            // no drive watchdog needed
-    SBUS1 = 1,           // drive heartbeat via lastSbus1Ms (CH1 routes)
-    SBUS2_ROUTED = 2,    // drive heartbeat via lastSbus2Ms (routed CH2 route)
+    SBUS1 = 1,           // drive heartbeat via lastSbus1Ms (every SBUS drive receiver)
 };
 
 struct RcInputStartupPlan {
@@ -49,7 +48,6 @@ RcInputStartupPlan rcInputStepStartupPlan(const RcInputActiveConfig& active);
 struct RcInputStepState {
     SbusWatchdog sbus1Watchdog = {};    // drive receiver watchdog
     SbusWatchdog sbus2Watchdog = {};    // dome receiver watchdog
-    bool routedHwFailsafeWasActive = false;  // routed receiver hw failsafe edge tracking
 };
 
 void rcInputStepInit(RcInputStepState* state);
@@ -85,7 +83,7 @@ RcInputStepSbus2WatchdogActions rcInputStepSbus2Watchdog(
     RcInputStepState* state, const RcInputStepSbus2WatchdogInputs& in);
 
 // ============================================================================
-// Generalized Drive Watchdog Phase (SBUS1 or routed SBUS2)
+// Drive Watchdog Phase (SBUS1)
 // ============================================================================
 
 struct RcInputStepDriveWatchdogInputs {
@@ -95,9 +93,8 @@ struct RcInputStepDriveWatchdogInputs {
     // Watchdog source selector
     DriveWatchdogSource source;
 
-    // Timestamps and config (one is active depending on source)
-    uint32_t lastSbus1Ms;  // used when source == SBUS1
-    uint32_t lastSbus2Ms;  // used when source == SBUS2_ROUTED
+    // Timestamps and config
+    uint32_t lastSbus1Ms;  // last clean drive frame
     uint32_t nowMs;        // current time
     uint32_t timeoutMs;    // configured timeout
 };
@@ -139,12 +136,18 @@ struct RcInputStepSbus1FrameActions {
     bool clearSbusHw = false;            // failsafeClear(SBUS_HW)
     bool clearSbusWatchdog = false;      // failsafeClear(SBUS_WATCHDOG)
     bool dispatchBindings = false;       // dispatch SBUS1 bindings for this frame
+    // Watchdog heartbeat (robotState.lastSbus1Ms): clean frames only, as on
+    // SBUS2. A lost_frame frame carries a held value that looks plausible, and
+    // a failsafe frame the receiver's own positions; neither is the radio
+    // (#389).
+    bool updateLastSbus1Ms = false;
 };
 
 RcInputStepSbus1FrameActions rcInputStepSbus1Frame(const RcInputStepSbus1FrameInputs& in);
 
-// Shared by the two SBUS2 frame sources: the dome decoder (dual_sbus) and the
-// drive decoder routed to GPIO13 (single_sbus + useCh2).
+// The dome decoder's frames (dual_sbus). A single_sbus receiver wired to the
+// CH2 header is SBUS1 and takes the SBUS1 frame phase (operator, 2026-10-09 on
+// #389).
 struct RcInputStepSbus2FrameInputs {
     bool failsafe;             // receiver hardware failsafe flag
     bool lostFrame;            // receiver lost_frame flag
@@ -154,20 +157,11 @@ struct RcInputStepSbus2FrameInputs {
 struct RcInputStepSbus2FrameActions {
     bool setSbus2HwFailsafe = false;     // robotState.sbus2HwFailsafe = true
     bool clearSbus2HwFailsafe = false;   // robotState.sbus2HwFailsafe = false
-    bool clearSbus2SignalLost = false;   // robotState.sbus2SignalLost = false
     bool incrementLostFrameCount = false;
     bool updateLastSbus2Ms = false;      // watchdog heartbeat (clean frames only)
-    bool logHwFailsafeAsserted = false;  // one-shot warn on rising edge (dome path only)
+    bool logHwFailsafeAsserted = false;  // one-shot warn on rising edge
     bool dispatchBindings = false;       // dispatch SBUS2 bindings for this frame
-    // Routed receiver (single_sbus + useCh2) drive-level failsafe actions
-    bool triggerSbusHw = false;          // failsafeTrigger(SBUS_HW) on routed failsafe
-    bool submitDriveZeroFrame = false;   // driveArbiterSubmit(RC, 0, 0, now) on routed failsafe
-    bool clearSbusHw = false;            // failsafeClear(SBUS_HW) on routed recovery
-    bool logRoutedHwFailsafeClearedOnFallingEdge = false;  // INFO log on recovery (falling edge)
 };
 
 // Dome decoder frames (dual_sbus).
 RcInputStepSbus2FrameActions rcInputStepSbus2Frame(const RcInputStepSbus2FrameInputs& in);
-
-// Drive decoder frames routed as SBUS2 (single_sbus + useCh2).
-RcInputStepSbus2FrameActions rcInputStepSbus2RoutedFrame(const RcInputStepSbus2FrameInputs& in);
