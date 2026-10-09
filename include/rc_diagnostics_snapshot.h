@@ -16,8 +16,6 @@
 
 #include "rc_mapping.h"
 
-enum RcInputMode : uint8_t;
-
 static constexpr size_t RC_DIAGNOSTICS_SOURCE_CAPACITY = 3;
 static constexpr size_t RC_DIAGNOSTICS_CHANNEL_CAPACITY = 6;
 static constexpr size_t RC_DIAGNOSTICS_SBUS_RAW_CAPACITY = 16;
@@ -101,7 +99,3 @@ bool appendRcReactionsJson(JsonDocument& doc);
 //   rawDigital.sbus1/2   [CH17, CH18] on/off, beside each raw.sbus1/2 array.
 // False when the document has no room.
 bool appendRcTaskStateJson(JsonDocument& doc);
-
-// Exposed for unit testing  --  determines whether a source is active in a given mode.
-bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enableRcCh1,
-                            bool enableRcCh2, bool anyPwmEnabled, bool useCh2);

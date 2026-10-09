@@ -7,6 +7,7 @@
 // =============================================================================
 
 #include "rc_channel_mapper.h"
+#include "rc_map_rules.h"
 #include "rc_mapping.h"
 #include "rc_pwm_helpers.h"
 
@@ -61,39 +62,26 @@ static bool readChannelRaw(const RcChannelSnapshot& snap, const RcBindingConfig&
 // Helper: Check if a binding reads this snapshot
 // ============================================================================
 //
-// The diagnostics twin is rcSourceEnabledForMode() in rc_diagnostics_snapshot.cpp
-// and validation_snapshot.cpp: it answers "is this source enabled in the mode"
-// for reporting, without a frame. This function adds the frame: a binding reads
-// a snapshot only when its source is enabled AND the frame came from that
-// source. For PWM it also validates the channel range (1-6).
-//
-// single_sbus has one receiver and it is SBUS1 whichever header it is wired to
-// (operator, 2026-10-09 on #389): useCh2 only picks which header's enable gates
-// it. An SBUS2 binding reads nothing in single_sbus.
+// A binding reads a snapshot only when its receiver type reads its source
+// (rcReceiverReads(), the RC Map's rules - the same answer /api/rc and
+// /api/validation report) AND the frame came from that source. For PWM it also
+// validates the channel range (1-6).
 //
 static bool bindingSourceActiveForMode(const RcBindingConfig& binding, const RcChannelSnapshot& snap,
                                        const RcMappingConfig& cfg) {
     if (snap.source != RC_BINDING_NONE && binding.source != snap.source) {
         return false;
     }
-    switch (binding.source) {
-        case RC_BINDING_PWM:
-            return snap.mode == RC_INPUT_STANDARD_PWM && binding.channel >= 1 &&
-                   binding.channel <= 6;
-
-        case RC_BINDING_SBUS1:
-            if (snap.mode == RC_INPUT_SINGLE_SBUS) {
-                return cfg.useCh2 ? cfg.enableRc[1] : cfg.enableRc[0];
-            }
-            return snap.mode == RC_INPUT_DUAL_SBUS && cfg.enableRc[0];
-
-        case RC_BINDING_SBUS2:
-            return snap.mode == RC_INPUT_DUAL_SBUS && cfg.enableRc[1];
-
-        case RC_BINDING_NONE:
-        default:
-            return false;
+    if (binding.source == RC_BINDING_PWM && (binding.channel < 1 || binding.channel > 6)) {
+        return false;
     }
+    RcReceiverSetup setup = {};
+    setup.mode = snap.mode;
+    for (size_t i = 0; i < 6; ++i) {
+        setup.enableRc[i] = cfg.enableRc[i];
+    }
+    setup.useCh2 = cfg.useCh2;
+    return rcReceiverReads(binding.source, setup);
 }
 
 bool rcMapBindingReadsSnapshot(const RcBindingConfig& binding, const RcChannelSnapshot& snap,
@@ -116,13 +104,12 @@ bool rcMapDriveControls(const RcChannelSnapshot& snap, const RcMappingConfig& cf
     bool speedActive = false;
     bool steerActive = false;
 
-    // Check if drive mappings are valid. A drive axis on SBUS2 never reads:
-    // only SBUS1, the drive receiver, carries the drive watchdog and the
-    // hardware-failsafe stop, so a drive a droid stored on SBUS2 before #483
-    // stays still rather than running on that receiver (POST /api/rc/map
-    // refuses one now).
+    // Check if drive mappings are valid. A drive pair the RC Map's rules
+    // refuse never reads: a drive a droid stored on SBUS2 before #483 stays
+    // still rather than running on a receiver without the drive watchdog and
+    // the hardware-failsafe stop (POST /api/rc/map refuses one now).
     if (rcBindingIsValid(cfg.driveSpeed) && rcBindingIsValid(cfg.driveSteer) &&
-        cfg.driveSpeed.source != RC_BINDING_SBUS2 && cfg.driveSteer.source != RC_BINDING_SBUS2) {
+        rcRuleDrive(cfg.driveSpeed, cfg.driveSteer).ok()) {
         // Check if speed binding is active for this mode
         if (bindingSourceActiveForMode(cfg.driveSpeed, snap, cfg) &&
             readChannelRaw(snap, cfg.driveSpeed, &rawSpeed)) {

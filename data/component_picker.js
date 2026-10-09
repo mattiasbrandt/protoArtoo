@@ -106,7 +106,7 @@
       crsf: { short: "ELRS", modes: ["elrs"] },
     },
     // Which channel ticks the chosen receiver reads, by mode - the firmware's
-    // own rule, rcSourceEnabledForMode() (src/web/rc_diagnostics_snapshot.cpp):
+    // own rule, rcReceiverReads() (src/rc_map_rules.cpp):
     // PWM reads CH1-CH6, one SBUS receiver rides on CH1 or on CH2 when the RC
     // page routes it there, two SBUS receivers need CH1 and CH2, and ELRS reads
     // nothing. A tick the mode needs is never hidden: an SBUS receiver with its

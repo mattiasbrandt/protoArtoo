@@ -6,6 +6,8 @@
 
 #include "rc_input_processor.h"
 
+#include "rc_map_rules.h"  // rcRuleDrive()
+
 static constexpr uint32_t kOneShotEdgeDebounceMs = 120;
 static constexpr uint8_t kSwitchEdgeConfirmFrames = 2;
 
@@ -38,8 +40,8 @@ static bool readsAnotherReceiver(const RcBindingConfig& binding, const RcChannel
 // Whether both drive bindings, on one receiver, read some frame this mode
 // takes - this one or the drive receiver's.
 static bool driveCanBeRead(const RcChannelSnapshot& snap, const RcMappingConfig& mapping) {
-    if (mapping.driveSteer.source != mapping.driveSpeed.source ||
-        mapping.driveSpeed.source == RC_BINDING_SBUS2) {
+    if (mapping.driveSpeed.source == RC_BINDING_NONE ||
+        !rcRuleDrive(mapping.driveSpeed, mapping.driveSteer).ok()) {
         return false;
     }
     RcChannelSnapshot probe = snap;
@@ -48,6 +50,9 @@ static bool driveCanBeRead(const RcChannelSnapshot& snap, const RcMappingConfig&
            rcMapBindingReadsSnapshot(mapping.driveSteer, probe, mapping);
 }
 
+// The one-receiver test here is the frame-routing question, not the RC Map's
+// drive rule (rcRuleDrive()): a pair the rule refuses still reads another
+// receiver's frames as "not mine", so this frame leaves the drive alone.
 static bool driveReadsAnotherReceiver(const RcChannelSnapshot& snap, const RcMappingConfig& mapping) {
     return mapping.driveSteer.source == mapping.driveSpeed.source &&
            readsAnotherReceiver(mapping.driveSpeed, snap, mapping) &&
