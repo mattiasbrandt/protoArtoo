@@ -59,17 +59,28 @@ const ACTIONS = [
   { id: 6, name: "servo.action.toggle-aux1", display_name: "GPIO 4 Toggle", domain: "servo", description: "Open or close the part on GPIO 4.", token: "aux1_toggle", testable: true, one_shot: false, safety_critical: false },
 ];
 
+// GET /api/rc/map's `receivers` (ADR 0070), as the droid answers them for
+// each receiver type: the page offers only what these say.
+const RECEIVERS_FOR = {
+  dual_sbus: { read: ["sbus1", "sbus2"], drive: ["sbus1"], cues: ["sbus1", "sbus2"] },
+  single_sbus: { read: ["sbus1"], drive: ["sbus1"], cues: ["sbus1"] },
+  standard_pwm: { read: ["pwm"], drive: ["pwm"], cues: [] },
+};
+const asDroidMap = (map) => (map && !map.receivers
+  ? { ...map, receivers: RECEIVERS_FOR[map.mode] || { read: [], drive: [], cues: [] } }
+  : map);
+
 const respond = (path) => {
   if (path === "/api/config") return { data: { rc: { inputMode: "single_sbus", sbus: { recvCh2: false } }, components: {} } };
   if (path === "/api/rc/map") {
     return {
-      data: {
+      data: asDroidMap({
         mode: "single_sbus",
         map: [
           { source: "sbus1", channel: 1, action: "drive_speed" },
           { source: "sbus1", channel: 6, action: "aux1_toggle" },
         ],
-      },
+      }),
     };
   }
   if (path === "/api/actions") return { data: ACTIONS };
@@ -189,7 +200,7 @@ test("a refused verbose-log toggle does not keep RC saying its reading is old", 
 const rcDroid = ({ config, diag, map } = {}) => (path) => {
   if (path === "/api/config" && config) return { data: config };
   if (path === "/api/rc" && diag) return { data: diag };
-  if (path === "/api/rc/map" && map) return { data: map };
+  if (path === "/api/rc/map" && map) return { data: asDroidMap(map) };
   return respond(path);
 };
 
@@ -315,7 +326,7 @@ test("after a save the page draws the map the droid read back", async () => {
         stored = { ...stored, map: [{ source: "sbus2", channel: 12, action: "sound_next" }] };
         return { data: { ok: true } };
       }
-      if (path === "/api/rc/map") return { data: stored };
+      if (path === "/api/rc/map") return { data: asDroidMap(stored) };
       return respond(path);
     },
   });
@@ -396,7 +407,7 @@ const loadAxes = async ({ diag = axesDiag(), onPost = () => ({ ok: true }), map 
   const env = loadPageModule("rc.js", {
     respond: (path, opts) => {
       if (path === "/api/rc/map" && opts.method === "POST") return { data: onPost(JSON.parse(opts.body.plain)) };
-      if (path === "/api/rc/map") return { data: map };
+      if (path === "/api/rc/map") return { data: asDroidMap(map) };
       if (path === "/api/rc") return { data: diag };
       return respond(path);
     },
@@ -493,16 +504,18 @@ test("an end is not set from a receiver that is unheard or in failsafe", async (
   }
 });
 
-// A drive stored on SBUS2 before #483 does not move the droid: its tile says
-// so instead of offering ends to set.
+// A drive stored on SBUS2 before #483 does not move the droid: GET
+// /api/rc/map marks it not read, with the refusal a save would give it, and
+// its tile says so in words instead of offering ends to set (ADR 0070).
 test("a drive axis stored on SBUS2 says it is not read", async () => {
+  const unread = { read: false, field: "map.source", reason: "out-of-range", accepts: "sbus1" };
   const env = loadPageModule("rc.js", {
     respond: (path, opts) => {
       if (path === "/api/rc/map" && opts.method !== "POST") {
-        return { data: { ...AXES_MAP, map: [
-          { source: "sbus2", channel: 1, action: "drive_speed" },
-          { source: "sbus2", channel: 2, action: "drive_steer" },
-        ] } };
+        return { data: asDroidMap({ ...AXES_MAP, map: [
+          { source: "sbus2", channel: 1, action: "drive_speed", ...unread },
+          { source: "sbus2", channel: 2, action: "drive_steer", ...unread },
+        ] }) };
       }
       if (path === "/api/rc") return { data: axesDiag() };
       return respond(path);
@@ -513,7 +526,7 @@ test("a drive axis stored on SBUS2 says it is not read", async () => {
   await env.runSection("rc-diagnostics");
   await env.settle();
   const tile = tileOf(env.element("rc-axes").innerHTML, "drive_speed");
-  assert.match(tile, /Not read: Speed and Steer read SBUS1\. Map it there\./);
+  assert.match(tile, /Not read: RC Receiver must be SBUS1\. Map it again\./);
   assert.doesNotMatch(tile, /data-axis-set/, "no ends are offered");
 });
 
@@ -531,7 +544,7 @@ test("an end is not set while a map save is still going", async () => {
         if (!body.calibration) return new Promise((resolve) => { release = () => resolve({ data: { ok: true } }); });
         return { data: { ok: true } };
       }
-      if (path === "/api/rc/map") return { data: AXES_MAP };
+      if (path === "/api/rc/map") return { data: asDroidMap(AXES_MAP) };
       if (path === "/api/rc") return { data: axesDiag() };
       return respond(path);
     },
@@ -562,64 +575,68 @@ test("the reverse switch posts the axis's other direction", async () => {
   assert.deepEqual(posted[0]?.calibration, { drive_steer: { reverse: false } }, "steer was reversed, so it goes back");
 });
 
-test("a capture out of order is not sent, and a refusal from the droid is shown on the axis", async () => {
+// The droid rules on the order of the ends, and words its refusal: the page
+// keeps no copy of the rule (ADR 0068, ADR 0070).
+test("a capture out of order goes to the droid, and its refusal is shown on the axis in words", async () => {
   const posted = [];
   const env = await loadAxes({
     onPost: (body) => {
       posted.push(body);
-      throw new ApiError("calibration out of range", {
-        kind: "http", status: 400, field: "calibration.min", reason: "out-of-range", accepts: "0..2047",
-      });
+      throw body.calibration.drive_speed.max !== undefined
+        ? new ApiError("calibration needs min < center < max", {
+          kind: "http", status: 400, field: "calibration.center", reason: "conflict",
+        })
+        : new ApiError("calibration out of range", {
+          kind: "http", status: 400, field: "calibration.min", reason: "out-of-range", accepts: "0..2047",
+        });
     },
   });
-  // CH1 reads 150, below CENTER 992: it cannot be MAX.
+  // CH1 reads 150, below CENTER 992: as MAX the droid refuses it.
   await clickAxis(env, { axis: "drive_speed", axisSet: "max" }, "data-axis-set");
-  assert.equal(posted.length, 0, "the droid is never asked to store MAX below CENTER");
-  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_speed"), /Not saved: MAX must read above CENTER\./);
+  assert.equal(posted.length, 1, "the droid is asked, and rules");
+  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_speed"), /Not saved: CENTER must sit between MIN and MAX\./);
 
   await clickAxis(env, { axis: "drive_speed", axisSet: "min" }, "data-axis-set");
-  assert.equal(posted.length, 1);
+  assert.equal(posted.length, 2);
   assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_speed"), /Not saved: MIN must be 0 to 2047\./);
 });
 
-// POST /api/rc/map refuses Speed and Steer on two receivers. The page keeps
-// the builder from composing one: once a drive axis is bound, the other is
-// offered only on the same source. The rule is the marked pure block in
-// data/rc.js, run here as shipped (the editor's picker is drawn with
-// innerHTML, which this harness cannot click into).
-const loadDriveSplitWith = () => {
+// What the page offers on a radio RC Channel comes from the droid's own
+// answers (ADR 0070): GET /api/rc/map's receivers and GET /api/actions'
+// rc_input. The rule is the marked pure block in data/rc.js, run here as
+// shipped (the editor's picker is drawn with innerHTML, which this harness
+// cannot click into).
+const loadOfferedOnRadio = () => {
   const source = readFileSync(new URL("../../data/rc.js", import.meta.url), "utf8");
-  const begin = source.indexOf("// ==== DRIVE ON ONE RECEIVER (#389) BEGIN ====");
-  const end = source.indexOf("// ==== DRIVE ON ONE RECEIVER (#389) END ====");
-  assert.ok(begin >= 0 && end > begin, "data/rc.js carries the DRIVE ON ONE RECEIVER block");
+  const begin = source.indexOf("// ==== WHAT THE DROID OFFERS (#486) BEGIN ====");
+  const end = source.indexOf("// ==== WHAT THE DROID OFFERS (#486) END ====");
+  assert.ok(begin >= 0 && end > begin, "data/rc.js carries the WHAT THE DROID OFFERS block");
   const context = { module: { exports: null } };
-  vm.runInNewContext(`${source.slice(begin, end)}\nmodule.exports = driveSplitWith;`, context);
+  vm.runInNewContext(`${source.slice(begin, end)}\nmodule.exports = offeredOnRadio;`, context);
   return context.module.exports;
 };
 
-test("the second drive axis is offered only on the receiver the first one reads", () => {
-  const driveSplitWith = loadDriveSplitWith();
-  const map = { "sbus1:1": { source: "sbus1", channel: 1, action: "drive_speed" } };
-  assert.equal(driveSplitWith(map, "drive_steer", "sbus2:2")?.source, "sbus1", "Steer on SBUS2 beside Speed on SBUS1 is a split");
-  assert.equal(driveSplitWith(map, "drive_steer", "sbus1:2"), null, "Steer on SBUS1 beside it is not");
-  assert.equal(driveSplitWith(map, "drive_steer", "sbus1:1"), null, "Steer replacing Speed on its own channel is not");
-  assert.equal(driveSplitWith(map, "dome_speed", "sbus2:4"), null, "the dome may read either receiver");
-  assert.equal(driveSplitWith({}, "drive_speed", "sbus2:1"), null, "the first drive axis goes anywhere");
+test("a drive axis is offered only on a receiver the drive may use, the dome on any it reads", () => {
+  const offeredOnRadio = loadOfferedOnRadio();
+  const dual = RECEIVERS_FOR.dual_sbus;
+  const speed = { token: "drive_speed", rcInput: "stick" };
+  const dome = { token: "dome_speed", rcInput: "stick" };
+  assert.equal(offeredOnRadio(speed, "sbus2", false, dual), false, "the drive reads SBUS1");
+  assert.equal(offeredOnRadio(speed, "sbus1", false, dual), true);
+  assert.equal(offeredOnRadio(dome, "sbus2", false, dual), true, "the dome may read SBUS2");
+  assert.equal(offeredOnRadio(speed, "sbus1", true, dual), false, "a stick never sits on CH17/CH18");
+  assert.equal(offeredOnRadio(speed, "sbus1", false, null), false, "nothing before the droid has answered");
 });
 
-// Only SBUS1 carries the drive watchdog and the failsafe stop, so a drive axis
-// is never offered on SBUS2; the dome is (operator, 2026-10-09 on #389).
-test("a drive axis is not offered on SBUS2, the dome is", () => {
-  const source = readFileSync(new URL("../../data/rc.js", import.meta.url), "utf8");
-  const begin = source.indexOf("// ==== DRIVE ON ONE RECEIVER (#389) BEGIN ====");
-  const end = source.indexOf("// ==== DRIVE ON ONE RECEIVER (#389) END ====");
-  const context = { module: { exports: null } };
-  vm.runInNewContext(`${source.slice(begin, end)}\nmodule.exports = driveOnSbus2;`, context);
-  const driveOnSbus2 = context.module.exports;
-  assert.equal(driveOnSbus2("drive_speed", "sbus2:1"), true);
-  assert.equal(driveOnSbus2("drive_steer", "sbus2:2"), true);
-  assert.equal(driveOnSbus2("drive_speed", "sbus1:1"), false);
-  assert.equal(driveOnSbus2("dome_speed", "sbus2:1"), false);
+test("a cue is offered only on a receiver that carries one: none on PWM", () => {
+  const offeredOnRadio = loadOfferedOnRadio();
+  const sleep = { token: "sleep_toggle", rcInput: "switch" };
+  const puppet = { token: "puppet_part", rcInput: "stick" };
+  assert.equal(offeredOnRadio(sleep, "pwm", false, RECEIVERS_FOR.standard_pwm), false);
+  assert.equal(offeredOnRadio(puppet, "pwm", false, RECEIVERS_FOR.standard_pwm), false);
+  assert.equal(offeredOnRadio({ token: "drive_speed", rcInput: "stick" }, "pwm", false, RECEIVERS_FOR.standard_pwm), true);
+  assert.equal(offeredOnRadio(sleep, "sbus1", true, RECEIVERS_FOR.dual_sbus), true, "a switch may sit on CH17");
+  assert.equal(offeredOnRadio(puppet, "sbus2", true, RECEIVERS_FOR.dual_sbus), false, "a puppet string needs a stick");
 });
 
 test("the droid's refusal of a drive on SBUS2 is shown in the builder's words", async () => {
@@ -648,9 +665,9 @@ test("the droid's refusal of a split drive is shown in the builder's words", asy
 
 // A CENTER that leaves one side shorter than the axis's dead zone would move
 // nothing on that side; POST /api/rc/map refuses it ("calibration leaves no
-// travel past the deadband"), so the page does not send it, and words the
-// droid's refusal the same way when it comes back.
-test("a CENTER too close to an end is not sent, and the droid's refusal of one reads the same", async () => {
+// travel past the deadband") and the page words the refusal from its field.
+// The page keeps no copy of the rule (ADR 0068, ADR 0070).
+test("a CENTER too close to an end goes to the droid, and its refusal reads in words", async () => {
   const diag = axesDiag();
   diag.mappingProfile.channels.driveSteer.deadband = 200;
   const posted = [];
@@ -665,14 +682,8 @@ test("a CENTER too close to an end is not sent, and the droid's refusal of one r
   });
   // CH2 reads 1700: as CENTER it leaves 111 above it, inside a dead zone of 200.
   await clickAxis(env, { axis: "drive_steer", axisSet: "center" }, "data-axis-set");
-  assert.equal(posted.length, 0, "never sent");
-  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /Not saved: CENTER sits too close to an end\./);
-
-  // CH1 reads 150 as MIN: the order holds and the dead zone of Speed is 0, so
-  // it goes, and the droid's own refusal is worded from its field.
-  await clickAxis(env, { axis: "drive_speed", axisSet: "min" }, "data-axis-set");
-  assert.equal(posted.length, 1);
-  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_speed"), /Not saved: Dead zone is wider than CENTER sits from an end\./);
+  assert.equal(posted.length, 1, "the droid is asked, and rules");
+  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /Not saved: Dead zone is wider than CENTER sits from an end\./);
 });
 
 // GET /api/rc rawDigital: [CH17, CH18] per receiver, whatever binds them.
@@ -705,6 +716,37 @@ test("CH17 and CH18 read from rawDigital, in the grid and in the Live column", a
   assert.match(raw("sbus1:18"), /<span class="rc-ch-raw">On<\/span>/, "CH18 bound in no named slot still reads");
   assert.match(env.element("rc-summary-body").innerHTML, /SBUS#1 CH 18<\/td>\s*<td><span class="rc-trigger-state"><span class="indicator ok"[^>]*><\/span>Pressed/,
     "the Live column reads the switch on");
+});
+
+// A bound switch reads pressed when the droid says so (GET /api/rc
+// `pressed`, by that binding's own ends and dead zone, ADR 0070), never by a
+// distance from centre the page picks. The decoys: a stick far from centre the
+// droid reads released, and one near it the droid reads pressed.
+test("the Live column says pressed when the droid reads the switch pressed", async () => {
+  const load = async (raw5, pressed) => {
+    const env = loadPageModule("rc.js", {
+      respond: rcDroid({
+        config: { rc: { inputMode: "dual_sbus", activeInputMode: "dual_sbus" }, components: {} },
+        map: { mode: "dual_sbus", map: [{ source: "sbus1", channel: 5, action: "op_mode" }], capacity: { total: 14, used: 1 } },
+        diag: {
+          mode: "dual_sbus",
+          sources: {},
+          raw: { sbus1: Object.assign(sixteen(1000), { 4: raw5 }) },
+          rawDigital: { sbus1: [false, false] },
+          digital: {},
+          pressed: { "sbus1:5": pressed },
+        },
+      }),
+    });
+    await env.settle();
+    await env.runSection("rc-mode-mapping");
+    await env.runSection("rc-diagnostics");
+    await env.settle();
+    return env.element("rc-summary-body").innerHTML;
+  };
+  const row = /SBUS#1 CH 5<\/td>\s*<td><span class="rc-trigger-state"><span class="indicator( ok)?"[^>]*><\/span>(Pressed|Released)/;
+  assert.equal(row.exec(await load(1700, false))?.[2], "Released", "far from centre, but the droid reads it released");
+  assert.equal(row.exec(await load(1000, true))?.[2], "Pressed", "near centre, but the droid reads it pressed");
 });
 
 test("Detect lands on CH17 when that switch flips", async () => {

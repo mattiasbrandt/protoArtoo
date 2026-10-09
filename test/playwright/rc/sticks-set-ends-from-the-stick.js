@@ -19,8 +19,9 @@
 //   d  Set MAX on Steer posts the map unchanged with {"drive_steer":{"max":
 //      <live reading>}}, and the tile reads the stored MAX back.
 //   e  The Reversed switch posts the other direction and reads back on.
-//   f  A capture that would put MAX below CENTER is not sent, and the tile
-//      says why.
+//   f  A capture that would put MAX below CENTER goes to the droid, which
+//      refuses it, and the tile says why in words (ADR 0070: the page keeps no
+//      copy of the order rule).
 //   g  A droid with Single SBUS saved and Dual SBUS running offers SBUS1 alone
 //      and carries the restart line.
 //   h  With Steer on SBUS1, Speed is offered on an SBUS1 channel and not on an
@@ -40,6 +41,11 @@ const lib = require('../_lib/checks.js');
 
 const ARTIFACTS = 'output/playwright/rc';
 const AXIS_PROFILE_KEY = { drive_speed: 'driveSpeed', drive_steer: 'driveSteer', dome_speed: 'domeSpeed' };
+// GET /api/rc/map's `receivers` as the droid answers them (ADR 0070).
+const RECEIVERS_FOR = {
+  dual_sbus: { read: ['sbus1', 'sbus2'], drive: ['sbus1'], cues: ['sbus1', 'sbus2'] },
+  single_sbus: { read: ['sbus1'], drive: ['sbus1'], cues: ['sbus1'] },
+};
 
 // One droid: the map, the ends it holds, and what each read answers.
 const droid = ({ saved, running }) => {
@@ -89,19 +95,35 @@ const routeDroid = async (page, fixture, state) => {
   await page.route('**/api/rc', (route) => json(route, state.diag()));
   await page.route('**/api/rc/map', (route) => {
     if (route.request().method() !== 'POST') {
-      return json(route, { mode: state.saved, map: state.map, capacity: { total: 14, used: state.map.length } });
+      return json(route, {
+        mode: state.saved, map: state.map, capacity: { total: 14, used: state.map.length },
+        receivers: RECEIVERS_FOR[state.saved],
+      });
     }
     const body = JSON.parse(new URLSearchParams(route.request().postData() || '').get('plain') || '{}');
     state.posts.push(body);
+    // The droid's order rule (rcRuleAxisCalibration()): MIN < CENTER < MAX,
+    // refused as data the page words.
+    const outOfOrder = Object.entries(body.calibration || {}).some(([token, fields]) => {
+      const ends = { ...state.profile[AXIS_PROFILE_KEY[token]], ...fields };
+      return !(ends.min < ends.center && ends.center < ends.max);
+    });
+    if (outOfOrder) {
+      return route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: false, error: 'calibration needs min < center < max', field: 'calibration.center', reason: 'conflict' }),
+      });
+    }
     Object.entries(body.calibration || {}).forEach(([token, fields]) => Object.assign(state.profile[AXIS_PROFILE_KEY[token]], fields));
     return json(route, { ok: true });
   });
   await page.route('**/api/actions', (route) => json(route, [
-    { token: 'drive_speed', display_name: 'Speed', domain: 'drive', description: '' },
-    { token: 'drive_steer', display_name: 'Steer', domain: 'drive', description: '' },
-    { token: 'dome_speed', display_name: 'Dome Speed', domain: 'dome', name: 'dome.action.set-speed', description: '' },
-    { token: 'sleep_toggle', display_name: 'Sleep Toggle', domain: 'system', description: '' },
-    { token: 'sound_next', display_name: 'Next Sound', domain: 'sound', description: '' },
+    { token: 'drive_speed', display_name: 'Speed', domain: 'drive', description: '', rc_input: 'stick', reaction: false },
+    { token: 'drive_steer', display_name: 'Steer', domain: 'drive', description: '', rc_input: 'stick', reaction: false },
+    { token: 'dome_speed', display_name: 'Dome Speed', domain: 'dome', name: 'dome.action.set-speed', description: '', rc_input: 'stick', reaction: false },
+    { token: 'sleep_toggle', display_name: 'Sleep Toggle', domain: 'system', description: '', rc_input: 'switch', reaction: true },
+    { token: 'sound_next', display_name: 'Next Sound', domain: 'sound', description: '', rc_input: 'switch', reaction: true },
   ]));
 };
 
@@ -193,8 +215,8 @@ lib.runCheck({
     await page.click(`${tile('drive_speed')} .cal-set[data-axis-set="max"]`);
     await page.waitForTimeout(300);
     const refused = (await page.locator(`${tile('drive_speed')} .cal-note`).textContent()).trim();
-    report.add('f', 'MAX below CENTER is not sent, and the tile says why',
-      lib.verdict(state.posts.length === 2 && refused === 'Not saved: MAX must read above CENTER.'), `"${refused}", ${state.posts.length} posts`);
+    report.add('f', 'MAX below CENTER goes to the droid, which refuses it, and the tile says why in words',
+      lib.verdict(state.posts.length === 3 && refused === 'Not saved: CENTER must sit between MIN and MAX.'), `"${refused}", ${state.posts.length} posts`);
 
     // Speed reads SBUS1: Steer is not offered on an SBUS2 channel, and is on
     // a free SBUS1 one (POST /api/rc/map refuses a split drive). The map

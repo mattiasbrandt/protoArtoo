@@ -159,6 +159,14 @@ const makeDroid = ({
         if (entry.action === "dome_marcduino" && String(entry.payload).startsWith(":SM")) {
           throw httpError(400, ":SM is diagnostic only and cannot be saved as an RC binding");
         }
+        // A droid of one SBUS receiver reads SBUS1 only, and says which entry
+        // it refused and why, as data (ADR 0070).
+        if (droid.rcMap.mode === "single_sbus" && entry.source === "sbus2") {
+          throw Object.assign(httpError(400, "the RC Receiver type does not read this source"), {
+            field: "map.source", reason: "out-of-range", accepts: "sbus1",
+            entry: { source: entry.source, channel: entry.channel, action: entry.action },
+          });
+        }
       });
       droid.rcMap = { ...droid.rcMap, map: body.map };
       return { data: { ok: true } };
@@ -550,6 +558,26 @@ test("a binding the backed-up droid did not read is left out of the restored RC 
   assert.deepEqual(droid.rcMap.map, rcMap.map.slice(0, 1));
   assert.match(receipt(), /RC Map: partial — 1 left out/);
   assert.match(receipt(), /RC Channel 1: not read by the droid it came from/);
+});
+
+// A backup from a droid of two SBUS receivers onto one of one: the droid
+// refuses the SBUS2 binding by name, so the restore leaves that one out, says
+// why in words, and lands the rest (ADR 0070).
+test("a binding this droid refuses by name is left out of the restored RC Map, and the rest lands", async () => {
+  const rcMap = {
+    mode: "dual_sbus",
+    map: [
+      { source: "sbus1", channel: 1, action: "drive_speed" },
+      { source: "sbus2", channel: 6, action: "sound_next" },
+      { source: "sbus1", channel: 7, action: "sleep_toggle" },
+    ],
+  };
+  const droid = makeDroid({ rcMap: { mode: "single_sbus", map: [] } });
+  const { receipt } = await restoreOn(droid, { schema: 2, board: "artoo_esp32", rc_map: rcMap });
+
+  assert.deepEqual(droid.rcMap.map, [rcMap.map[0], rcMap.map[2]]);
+  assert.match(receipt(), /RC Map: partial — 1 left out/);
+  assert.match(receipt(), /RC Channel 6: RC Receiver must be SBUS1/);
 });
 
 // A file is offered only in the shape Download backup writes. Any object with

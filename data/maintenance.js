@@ -789,10 +789,23 @@
     }
     const learned = new Set(list.map((row) => row.name));
     const { body, leftOut } = rcMapToRestore(rcMap, (name) => learned.has(name) || factory.has(name));
-    try {
-      await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify(body) }, { timeoutMs: 10000 });
-    } catch (err) {
-      return [failedLine('RC Map', err)];
+    // A binding this droid's rules refuse (a backup from a droid of another
+    // receiver type, or saved before a rule existed, ADR 0070): the droid
+    // names the entry it refused, so that one is left out, named with the
+    // droid's reason, and the rest is posted again. Each refusal takes one
+    // entry out, so this ends; a refusal naming none fails the map as before.
+    for (;;) {
+      try {
+        await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify(body) }, { timeoutMs: 10000 });
+        break;
+      } catch (err) {
+        const at = err?.entry ? body.map.findIndex((entry) => entry?.source === err.entry.source
+          && Number(entry?.channel) === Number(err.entry.channel) && entry?.action === err.entry.action) : -1;
+        if (at < 0) return [failedLine('RC Map', err)];
+        const [dropped] = body.map.splice(at, 1);
+        const why = window.PAApi.sayRefusal?.(err) || window.PAApi.messageFor(err);
+        leftOut.push(`RC Channel ${dropped.channel}: ${why}`);
+      }
     }
     if (leftOut.length === 0) return ['RC Map: restored'];
     return [`RC Map: partial — ${leftOut.length} left out`, ...leftOut];
