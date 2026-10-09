@@ -5,15 +5,16 @@
 // The page used to open the picker from a per-slot list (`.rc-slot-item`,
 // the "sound" slot). Sources are now the left-hand list of channels and
 // conditions (`.rc-channel-item[data-chkey]`, data/rc.js), so the script
-// opens the picker from the first radio channel instead. The picker is the
-// same one. With no GET /api/actions answer (the fixture server has none) the
+// opens the picker from the first radio channel instead: SBUS1 CH1, since a
+// droid whose config does not answer is shown as the firmware's default
+// receiver type, Dual SBUS (#389). The picker is the same one. With no GET /api/actions answer (the fixture server has none) the
 // page lists its built-in actions (data/rc.js HARDCODED_ACTION_TARGETS),
 // which carry sound_rand_general.
 const { chromium } = require('playwright');
 
 const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/rc.html';
 const HEADLESS = process.env.HEADLESS !== 'false';
-const SOURCE = '.rc-channel-item[data-chkey="pwm:1"]';
+const SOURCE = '.rc-channel-item[data-chkey="sbus1:1"]';
 
 (async () => {
   const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 40 });
