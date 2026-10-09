@@ -2467,8 +2467,9 @@ Replaces entire RC map.
 - Errors:
 - `400` with `{"ok":false,"error":"..."}`, an optional `entry` object echoing
   the entry the refusal is about, and `field`, `reason` and `accepts` as in
-  "Refusals from a settings write". `field` is the request field: `map` (the
-  map itself: missing, malformed, or no room for one more), `map.source`,
+  "Refusals from a settings write". `field` is the request field: `plain` (a
+  body that is not JSON), `map` (the map itself: missing, not an array of
+  objects, or no room for one more), `map.source`,
   `map.channel`, `map.action`, `map.payload`, `map.threshold`, `map.quietS`,
   `calibration` (the object, or an axis in it the map does not bind), or
   `calibration.<key>` with `<key>` one of `min`, `center`, `max`, `reverse`

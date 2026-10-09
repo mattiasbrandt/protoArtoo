@@ -87,10 +87,10 @@ def _table(text: str, name: str) -> str:
     match = re.search(rf"\b{name}\[\w*\] = \{{", text)
     start = match.start() if match else -1
     if start < 0:
-        raise ValueError(f"{name}[] is not declared in {CONFIG_SETTINGS.name}")
+        raise ValueError(f"{name}[] is not declared where it was looked for")
     end = text.find("\n};", start)
     if end < 0:
-        raise ValueError(f"{name}[] is not closed in {CONFIG_SETTINGS.name}")
+        raise ValueError(f"{name}[] is not closed where it was looked for")
     return text[text.index("{", start) + 1:end]
 
 

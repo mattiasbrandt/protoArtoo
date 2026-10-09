@@ -86,12 +86,6 @@ RcBindingConfig axisOf(const RcMapEntry* entry) {
     return makeRcBindingConfig(entry->source, entry->channel, 0, 0, 0, 0, false);
 }
 
-// The drive and dome axes' calibration, as a request may set it beside the
-// map (#389): {"calibration":{"drive_speed":{"min":..,"center":..,"max":..,
-// "reverse":..}, ...}}. A field left out keeps what the axis already holds
-// (stored or reused, assignRcMapEntryToSnapshot()). An axis the map does not
-// bind cannot be calibrated. Both the PWM and the SBUS slot of an axis hold
-// the same binding, so both take the calibration.
 // The entry that binds an axis, to echo beside a refusal of its calibration.
 const RcMapEntry* entryFor(RobotActionId axis, const RcMapEntry* entries, size_t count) {
     for (size_t i = 0; i < count; ++i) {
@@ -102,6 +96,12 @@ const RcMapEntry* entryFor(RobotActionId axis, const RcMapEntry* entries, size_t
     return nullptr;
 }
 
+// The drive and dome axes' calibration, as a request may set it beside the
+// map (#389): {"calibration":{"drive_speed":{"min":..,"center":..,"max":..,
+// "reverse":..}, ...}}. A field left out keeps what the axis already holds
+// (stored or reused, assignRcMapEntryToSnapshot()). An axis the map does not
+// bind cannot be calibrated. Both the PWM and the SBUS slot of an axis hold
+// the same binding, so both take the calibration.
 __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration, ConfigSnapshot* working,
                           const RcMapEntry* entries, size_t count, RcMapApplyResult* result) {
     if (calibration.isNull()) {

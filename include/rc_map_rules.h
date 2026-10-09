@@ -74,9 +74,9 @@ bool rcReceiverReads(RcBindingSource source, const RcReceiverSetup& setup);
 // A rule's answer, as a refusal names it on the wire (docs/api.md "Refusals
 // from a settings write", include/api_apply_refusal.h): `field` is the request
 // field it is about ("map.channel", "map.source", ...), `reason` why, and what
-// the field would
-// have taken - a range `acceptsLo..acceptsHi` when `acceptsWords` is null and
-// acceptsHi is not 0, or the comma-separated words in `acceptsWords`.
+// the field would have taken - a range `acceptsLo..acceptsHi` when
+// `acceptsWords` is null and acceptsHi is not 0, or the comma-separated words
+// in `acceptsWords`.
 // rcRuleFormatAccepts() writes it. `sentence` is the refusal as POST
 // /api/rc/map has always said it; null when the rule holds. `aboutEntry`: the
 // refusal names the entry it is about (the answer echoes it). `axis`: which
