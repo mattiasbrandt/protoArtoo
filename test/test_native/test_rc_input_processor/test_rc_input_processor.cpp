@@ -195,6 +195,32 @@ void test_boot_hold_not_said_without_a_drive_binding(void) {
     TEST_ASSERT_TRUE(out.driveAwaitingCentre);
 }
 
+// A drive stored on SBUS2 before #483 never moves the feet: only SBUS1 has the
+// drive watchdog and the failsafe stop. The dome on SBUS2 still turns.
+void test_dual_sbus_drive_stored_on_sbus2_stays_still(void) {
+    RcInputProcessor proc = {};
+    rcInputProcessorInit(&proc);
+    RcProcessorConfig cfg = buildDualDefaultConfig();
+    cfg.mapping.driveSpeed = defaultSbusBinding(RC_BINDING_SBUS2, 3);
+    cfg.mapping.driveSteer = defaultSbusBinding(RC_BINDING_SBUS2, 4);
+    for (int i = 0; i < 3; ++i) {
+        RcProcessorInput input = {};
+        input.config = cfg;
+        input.channels = buildChannelSnapshot();
+        input.channels.source = RC_BINDING_SBUS2;
+        input.channels.channels[0] = 1811;  // dome
+        input.channels.channels[2] = (i == 0) ? 992 : 1811;  // speed: centred, then full
+        input.nowMs = 1000;
+        input.sourceFilter = RC_BINDING_SBUS2;
+        RcProcessorOutput out = {};
+        rcInputProcessorTick(&proc, input, &out);
+        TEST_ASSERT_FALSE(out.backbone.driveActive);
+        TEST_ASSERT_EQUAL_INT16(0, out.backbone.driveSpeed);
+        TEST_ASSERT_FALSE(out.driveAwaitingCentre);
+        TEST_ASSERT_TRUE(out.domeFiltered);
+    }
+}
+
 // dual_sbus: a sound switch held on the drive receiver fires once. The dome
 // receiver's frames in between must not read as a release (#389).
 void test_dual_sbus_sound_held_fires_once_across_both_receivers(void) {
@@ -447,6 +473,7 @@ int main(void) {
     RUN_TEST(test_boot_hold_ignores_the_speed_limit_and_the_deadband);
     RUN_TEST(test_dual_sbus_sound_held_fires_once_across_both_receivers);
     RUN_TEST(test_boot_hold_not_said_without_a_drive_binding);
+    RUN_TEST(test_dual_sbus_drive_stored_on_sbus2_stays_still);
     RUN_TEST(test_dual_sbus_dome_receiver_frame_leaves_drive_alone);
     RUN_TEST(test_dual_sbus_drive_receiver_off_keeps_zero_from_dome_frames);
     RUN_TEST(test_single_sbus_factory_dome_binding_reads_nothing);

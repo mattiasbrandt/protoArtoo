@@ -38,7 +38,8 @@ static bool readsAnotherReceiver(const RcBindingConfig& binding, const RcChannel
 // Whether both drive bindings, on one receiver, read some frame this mode
 // takes - this one or the drive receiver's.
 static bool driveCanBeRead(const RcChannelSnapshot& snap, const RcMappingConfig& mapping) {
-    if (mapping.driveSteer.source != mapping.driveSpeed.source) {
+    if (mapping.driveSteer.source != mapping.driveSpeed.source ||
+        mapping.driveSpeed.source == RC_BINDING_SBUS2) {
         return false;
     }
     RcChannelSnapshot probe = snap;
