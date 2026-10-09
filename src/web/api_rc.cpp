@@ -39,6 +39,9 @@ static constexpr size_t RC_DEBUG_BODY_MAX = 128;
 // 1408 more, 4081 on the largest payload the capture path builds. The ceiling
 // is 4608 so that sum keeps a margin (#389 added the RC task's own state); it
 // costs nothing below it, since the body is allocated at its measured size.
+// The rc SSE event is the tighter bound: it is serialised into s_sseBody
+// (STATUS_JSON_BUFFER_BYTES, 4320 B with no hosted link), so 4081 B leaves about
+// 240 B before that event is dropped (and logged once) in web_server.cpp.
 static constexpr size_t RC_PAYLOAD_MAX = 4608;
 
 void handleRcGet(WebRequest& req) {

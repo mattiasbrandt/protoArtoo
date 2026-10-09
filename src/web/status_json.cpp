@@ -352,7 +352,7 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
                 ok = appendPeripheralStatus(pos, remaining, "rcCh1", "ready", kRcPwmDetail) && ok;
             } else if (in.lastSbus1Ms == 0) {
                 ok = appendPeripheralStatus(pos, remaining, "rcCh1", "not_seen",
-                                            "Drive SBUS input waiting for first frame") &&
+                                            "Drive SBUS input: no clean frame yet") &&
                      ok;
             } else if (in.diag.sbusSignalLost) {
                 snprintf(detail, sizeof(detail),
@@ -374,14 +374,14 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
             } else if (in.rcInputMode == RC_INPUT_SINGLE_SBUS && !in.singleSbusUseCh2) {
                 ok = appendPeripheralStatus(
                          pos, remaining, "rcCh2", "standby",
-                         "Not used: the single SBUS receiver is on CH1") &&
+                         "Not used: the single SBUS RC Receiver is on CH1") &&
                      ok;
             } else if (in.rcInputMode == RC_INPUT_SINGLE_SBUS) {
                 // The single receiver wired to CH2 is SBUS1 (operator,
                 // 2026-10-09 on #389): this wire reports the drive receiver.
                 if (in.lastSbus1Ms == 0) {
                     ok = appendPeripheralStatus(pos, remaining, "rcCh2", "not_seen",
-                                                "Drive SBUS input waiting for first frame") &&
+                                                "Drive SBUS input: no clean frame yet") &&
                          ok;
                 } else {
                     snprintf(detail, sizeof(detail), "Drive SBUS %s, last %lu ms ago, lost frames %lu",

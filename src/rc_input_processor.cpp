@@ -35,6 +35,18 @@ static bool readsAnotherReceiver(const RcBindingConfig& binding, const RcChannel
     return rcMapBindingReadsSnapshot(binding, other, mapping);
 }
 
+// Whether both drive bindings, on one receiver, read some frame this mode
+// takes - this one or the drive receiver's.
+static bool driveCanBeRead(const RcChannelSnapshot& snap, const RcMappingConfig& mapping) {
+    if (mapping.driveSteer.source != mapping.driveSpeed.source) {
+        return false;
+    }
+    RcChannelSnapshot probe = snap;
+    probe.source = mapping.driveSpeed.source;
+    return rcMapBindingReadsSnapshot(mapping.driveSpeed, probe, mapping) &&
+           rcMapBindingReadsSnapshot(mapping.driveSteer, probe, mapping);
+}
+
 static bool driveReadsAnotherReceiver(const RcChannelSnapshot& snap, const RcMappingConfig& mapping) {
     return mapping.driveSteer.source == mapping.driveSpeed.source &&
            readsAnotherReceiver(mapping.driveSpeed, snap, mapping) &&
@@ -96,7 +108,9 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
             intent.driveSteer = 0;
         }
     }
-    output.driveAwaitingCentre = !proc->driveCentreSeen;
+    // Said only for a drive the mode can read at all: a droid with no drive
+    // bound (or bound where nothing arrives) has no sticks to centre.
+    output.driveAwaitingCentre = !proc->driveCentreSeen && driveCanBeRead(input.channels, localMapping);
     output.submitDrive = intent.driveActive || !driveReadsAnotherReceiver(input.channels, localMapping);
 
     // Copy backbone intent to output
