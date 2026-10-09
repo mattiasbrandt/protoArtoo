@@ -177,6 +177,24 @@ void test_boot_hold_ignores_the_speed_limit_and_the_deadband(void) {
     TEST_ASSERT_FALSE(out.driveAwaitingCentre);
 }
 
+// A droid with no drive bound has no sticks to centre: the hold is not said
+// (independent review, #389).
+void test_boot_hold_not_said_without_a_drive_binding(void) {
+    RcInputProcessor proc = {};
+    rcInputProcessorInit(&proc);
+    RcProcessorConfig cfg = buildDualDefaultConfig();
+    cfg.mapping.driveSpeed = disabledRcBinding();
+    cfg.mapping.driveSteer = disabledRcBinding();
+    RcProcessorOutput out = tickWith(&proc, cfg, RC_BINDING_SBUS2, 1811, 172);
+    TEST_ASSERT_FALSE(out.driveAwaitingCentre);
+
+    RcProcessorConfig bound = buildDualDefaultConfig();
+    RcInputProcessor held = {};
+    rcInputProcessorInit(&held);
+    out = tickWith(&held, bound, RC_BINDING_SBUS2, 1811, 172);  // a dome frame: drive unread
+    TEST_ASSERT_TRUE(out.driveAwaitingCentre);
+}
+
 // dual_sbus: a sound switch held on the drive receiver fires once. The dome
 // receiver's frames in between must not read as a release (#389).
 void test_dual_sbus_sound_held_fires_once_across_both_receivers(void) {
@@ -428,6 +446,7 @@ int main(void) {
     RUN_TEST(test_boot_hold_never_releases_on_a_trigger_resting_at_an_endpoint);
     RUN_TEST(test_boot_hold_ignores_the_speed_limit_and_the_deadband);
     RUN_TEST(test_dual_sbus_sound_held_fires_once_across_both_receivers);
+    RUN_TEST(test_boot_hold_not_said_without_a_drive_binding);
     RUN_TEST(test_dual_sbus_dome_receiver_frame_leaves_drive_alone);
     RUN_TEST(test_dual_sbus_drive_receiver_off_keeps_zero_from_dome_frames);
     RUN_TEST(test_single_sbus_factory_dome_binding_reads_nothing);
