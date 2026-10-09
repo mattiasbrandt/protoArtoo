@@ -1028,9 +1028,10 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
     uint8_t stored = reader.schemaVersion();
 
     if (stored > CONFIG_SCHEMA_VERSION) {
-        // Future/unknown schema: safe fallback to defaults, stamp current version.
+        // Future/unknown schema (a rollback from a newer image): defaults in
+        // RAM, and the store left exactly as that image wrote it. Stamping it
+        // current would have the next boot read its keys as this schema's.
         configSnapshotDefaults(out);
-        prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION);
         PA_LOG_WARN("config", "unsupported schema version %u (current=%u), resetting to defaults",
                     (unsigned)stored, (unsigned)CONFIG_SCHEMA_VERSION);
         return false;
@@ -1068,19 +1069,33 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
     }
 
     // Apply in-place schema 1->2 migration if needed. The renumber is not
-    // idempotent, so it is stored only alongside a stamp that can follow it:
-    // after a failed rename it stays in RAM and the next boot renumbers the
-    // stored value again.
+    // idempotent and NVS commits each key on its own, so the schema-1 value
+    // is kept under its own key first, and every attempt renumbers from that:
+    // a boot cut off between the renumber and the stamp renumbers the same
+    // value again rather than the renumbered one. After a failed rename it
+    // stays in RAM only.
     if (stored < 2) {
-        if (out->system.logLevel == 2 || out->system.logLevel == 3) {
-            out->system.logLevel += 1;
-            migrated = migrated && prefs.putUChar("log_level", out->system.logLevel) > 0;
+        const uint8_t schema1Level = prefs.isKey(CONFIG_LOG_LEVEL_SCHEMA1_KEY)
+                                         ? prefs.getUChar(CONFIG_LOG_LEVEL_SCHEMA1_KEY, 0)
+                                         : out->system.logLevel;
+        out->system.logLevel =
+            (schema1Level == 2 || schema1Level == 3) ? schema1Level + 1 : schema1Level;
+        if (out->system.logLevel != schema1Level) {
+            migrated = migrated &&
+                       (prefs.isKey(CONFIG_LOG_LEVEL_SCHEMA1_KEY) ||
+                        prefs.putUChar(CONFIG_LOG_LEVEL_SCHEMA1_KEY, schema1Level) > 0) &&
+                       prefs.putUChar("log_level", out->system.logLevel) > 0;
         }
     }
 
     if (stored < CONFIG_SCHEMA_VERSION) {
         // Migration landed: stamp current version so next boot is clean.
         if (migrated && prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION) > 0) {
+            // Read only while the schema is below 2, so a removal that fails
+            // leaves a key nothing reads.
+            if (prefs.isKey(CONFIG_LOG_LEVEL_SCHEMA1_KEY)) {
+                prefs.remove(CONFIG_LOG_LEVEL_SCHEMA1_KEY);
+            }
             PA_LOG_INFO("config", "schema migrated %u -> %u",
                         (unsigned)stored, (unsigned)CONFIG_SCHEMA_VERSION);
         } else {
