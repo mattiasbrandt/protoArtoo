@@ -663,13 +663,48 @@
 
   const rawForChannel = (source, channel) => {
     const sourceRaw = rcSnapshot?.raw?.[source];
-    return Array.isArray(sourceRaw) ? sourceRaw[channel - 1] : null;
+    const raw = Array.isArray(sourceRaw) ? sourceRaw[channel - 1] : null;
+    return raw == null ? null : raw;
+  };
+
+  // An SBUS frame carries 16 stick channels and two on/off ones, CH17 and
+  // CH18 (GLOSSARY.md "RC Channel"). GET /api/rc sends the 16 in `raw` and
+  // says an on/off one only where a binding in `digital` reads it, so an
+  // unbound CH17 is not known, never "off".
+  const SBUS_CHANNELS = 18;
+  const SBUS_ANALOG_CHANNELS = 16;
+  const isOnOffChannel = (source, channel) =>
+    (source === 'sbus1' || source === 'sbus2') && channel > SBUS_ANALOG_CHANNELS;
+
+  const onOffForChannel = (source, channel) => {
+    const found = Object.values(rcSnapshot?.digital || {})
+      .find((entry) => entry?.activeSource === source && Number(entry?.bindingChannel) === channel);
+    return found ? Boolean(found.pressed) : null;
+  };
+
+  // What one RC Channel reads, as the channel list shows it: the number or
+  // the on/off word, and how full its bar is.
+  const channelReading = (source, channel) => {
+    if (isOnOffChannel(source, channel)) {
+      const on = onOffForChannel(source, channel);
+      return { text: on === null ? '—' : (on ? 'On' : 'Off'), pct: on ? 100 : 0 };
+    }
+    const raw = rawForChannel(source, channel);
+    if (raw == null) return { text: '—', pct: 0 };
+    const pct = source === 'pwm'
+      ? Math.round(((raw - 1000) / 1000) * 100)
+      : Math.round(((raw - 172) / (1811 - 172)) * 100);
+    return { text: String(raw), pct: Math.max(0, Math.min(100, pct)) };
   };
 
   const getChannelTelemetry = (channelKey) => {
     if (!rcSnapshot) return null;
     const { source, channel } = parseChannelKey(channelKey);
     if (!source || channel <= 0 || isDroidSource(source)) return null;
+    if (isOnOffChannel(source, channel)) {
+      const on = onOffForChannel(source, channel);
+      return { raw: on === null ? null : (on ? 'On' : 'Off'), mapped: on ? 1 : 0, pressed: Boolean(on), pressedLevel: Boolean(on) };
+    }
     const raw = rawForChannel(source, channel);
     if (raw == null) return { raw: null, mapped: 0, pressed: false, pressedLevel: false };
     const center = source === 'pwm' ? 1500 : 992;
@@ -969,35 +1004,27 @@
   const renderChannelList = () => {
     if (!rcChannelItems) return;
     const mode = getEditorMode();
-    const snap = rcSnapshot;
 
-    const renderGroup = (title, source, rawArray, channelCount) => {
+    const renderGroup = (title, source, channelCount) => {
       const items = [];
       for (let i = 1; i <= channelCount; i++) {
         const channelKey = channelKeyOf(source, i);
-        const raw = rawArray ? rawArray[i - 1] : null;
+        const reading = channelReading(source, i);
         const entry = assignmentForChannel(channelKey);
         const actionLabel = entry ? actionLabelFromToken(mapEntryAction(entry)) : null;
         const isActive = channelKey === selectedChannel;
-        const rawDisplay = raw != null ? raw : '—';
-        const barPct = raw != null
-          ? (source === 'pwm'
-              ? Math.round(((raw - 1000) / 1000) * 100)
-              : Math.round(((raw - 172) / (1811 - 172)) * 100))
-          : 0;
-        const clampedPct = Math.max(0, Math.min(100, barPct));
         items.push(`<div class="rc-channel-item${isActive ? ' active' : ''}" data-chkey="${window.PAUtils.escapeHtml(channelKey)}" role="button" tabindex="0" aria-pressed="${isActive}">
           <div class="rc-channel-item-head">
             <span class="rc-ch-num">CH ${i}</span>
-            <span class="rc-ch-raw">${rawDisplay}</span>
+            <span class="rc-ch-raw">${window.PAUtils.escapeHtml(reading.text)}</span>
           </div>
-          <div class="rc-channel-mini-bar"><div class="rc-channel-mini-fill" style="--pct:${clampedPct}%"></div></div>
+          <div class="rc-channel-mini-bar"><div class="rc-channel-mini-fill" style="--pct:${reading.pct}%"></div></div>
           <div class="rc-ch-action">${actionLabel ? window.PAUtils.escapeHtml(actionLabel) : '<span class="rc-ch-unassigned">not mapped</span>'}</div>
         </div>`);
       }
       return `<div class="rc-channel-group">
         <div class="rc-channel-group-title">${window.PAUtils.escapeHtml(title)}</div>
-        ${items.join('')}
+        <div class="rc-channel-group-items">${items.join('')}</div>
       </div>`;
     };
 
@@ -1020,7 +1047,7 @@
       });
       return `<div class="rc-channel-group">
         <div class="rc-channel-group-title">Droid</div>
-        ${items.join('')}
+        <div class="rc-channel-group-items">${items.join('')}</div>
         <p class="hint">The droid cannot sense the room.</p>
       </div>`;
     };
@@ -1033,7 +1060,7 @@
       html = `<p class="hint">${window.PAUtils.escapeHtml(modeLabel(mode))}: no radio channel arrives.</p>`;
     } else {
       html = SOURCE_OPTIONS[mode]
-        .map((source) => renderGroup(source.toUpperCase(), source, snap?.raw?.[source], 6))
+        .map((source) => renderGroup(source.toUpperCase(), source, source === 'pwm' ? 6 : SBUS_CHANNELS))
         .join('');
     }
     html += renderDroidGroup();
@@ -1073,16 +1100,11 @@
         return;
       }
       const { source, channel } = parseChannelKey(el.dataset.chkey);
-      const raw = rawForChannel(source, channel);
+      const reading = channelReading(source, channel);
       const rawEl = el.querySelector('.rc-ch-raw');
-      if (rawEl) rawEl.textContent = raw != null ? raw : '—';
+      if (rawEl) rawEl.textContent = reading.text;
       const fillEl = el.querySelector('.rc-channel-mini-fill');
-      if (fillEl && raw != null) {
-        const barPct = source === 'pwm'
-          ? Math.round(((raw - 1000) / 1000) * 100)
-          : Math.round(((raw - 172) / (1811 - 172)) * 100);
-        fillEl.style.setProperty('--pct', `${Math.max(0, Math.min(100, barPct))}%`);
-      }
+      if (fillEl) fillEl.style.setProperty('--pct', `${reading.pct}%`);
     });
   };
 
@@ -1796,7 +1818,10 @@
     if (!rcChannelItems) return;
     const channelKey = learnActive && learnHit ? channelKeyOf(learnHit.source, learnHit.channel) : null;
     rcChannelItems.querySelectorAll('.rc-channel-item').forEach((el) => {
-      el.classList.toggle('learn-hot', channelKey !== null && el.dataset.chkey === channelKey);
+      const hot = channelKey !== null && el.dataset.chkey === channelKey;
+      // A hit the builder cannot see is no hit: the list scrolls to it.
+      if (hot && !el.classList.contains('learn-hot')) el.scrollIntoView?.({ block: 'nearest' });
+      el.classList.toggle('learn-hot', hot);
     });
   };
 
