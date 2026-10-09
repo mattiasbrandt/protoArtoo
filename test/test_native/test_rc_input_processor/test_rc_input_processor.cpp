@@ -154,6 +154,54 @@ void test_boot_hold_never_releases_on_a_trigger_resting_at_an_endpoint(void) {
     }
 }
 
+// The hold is judged on where the stick is, not on the output: a speed limit
+// of 0 or 1, or a wide deadband, zeroes the output of a deflected stick and
+// must not count as centred (Codex review, #389).
+void test_boot_hold_ignores_the_speed_limit_and_the_deadband(void) {
+    for (int16_t maxOut : {0, 1}) {
+        RcInputProcessor proc = {};
+        rcInputProcessorInit(&proc);
+        RcProcessorConfig cfg = buildDualDefaultConfig();
+        cfg.mapping.maxOut = maxOut;
+        RcProcessorOutput out = tickWith(&proc, cfg, RC_BINDING_SBUS1, 1811, 992);
+        TEST_ASSERT_TRUE_MESSAGE(out.driveAwaitingCentre, "a full stick at a tiny speed limit is not centre");
+    }
+
+    RcInputProcessor proc = {};
+    rcInputProcessorInit(&proc);
+    RcProcessorConfig cfg = buildDualDefaultConfig();
+    cfg.mapping.driveSpeed.deadband = 500;
+    RcProcessorOutput out = tickWith(&proc, cfg, RC_BINDING_SBUS1, 1492, 992);  // 61 % up
+    TEST_ASSERT_TRUE_MESSAGE(out.driveAwaitingCentre, "a stick inside a wide deadband is not centre");
+    out = tickWith(&proc, cfg, RC_BINDING_SBUS1, 1000, 992);
+    TEST_ASSERT_FALSE(out.driveAwaitingCentre);
+}
+
+// dual_sbus: a sound switch held on the drive receiver fires once. The dome
+// receiver's frames in between must not read as a release (#389).
+void test_dual_sbus_sound_held_fires_once_across_both_receivers(void) {
+    RcInputProcessor proc = {};
+    rcInputProcessorInit(&proc);
+    RcProcessorConfig cfg = buildDualDefaultConfig();
+    cfg.mapping.enableSound = true;
+    cfg.mapping.sound = defaultSbusBinding(RC_BINDING_SBUS1, 6);
+
+    int fired = 0;
+    for (int i = 0; i < 10; ++i) {
+        RcProcessorInput input = {};
+        input.config = cfg;
+        input.channels = buildChannelSnapshot();
+        input.channels.source = (i % 2 == 0) ? RC_BINDING_SBUS1 : RC_BINDING_SBUS2;
+        input.channels.channels[5] = 1811;  // the sound switch, held on
+        input.nowMs = 1000;
+        input.sourceFilter = input.channels.source;
+        RcProcessorOutput out = {};
+        rcInputProcessorTick(&proc, input, &out);
+        if (out.backbone.audioTrigger != nullptr) ++fired;
+    }
+    TEST_ASSERT_EQUAL_INT(1, fired);
+}
+
 // dual_sbus: a frame from the dome receiver says nothing about the drive, and
 // a frame from the drive receiver says nothing about the dome (#389).
 void test_dual_sbus_dome_receiver_frame_leaves_drive_alone(void) {
@@ -378,6 +426,8 @@ int main(void) {
     RUN_TEST(test_dome_filter_accepts_on_initial_tick);
     RUN_TEST(test_boot_hold_zeroes_drive_until_sticks_centre);
     RUN_TEST(test_boot_hold_never_releases_on_a_trigger_resting_at_an_endpoint);
+    RUN_TEST(test_boot_hold_ignores_the_speed_limit_and_the_deadband);
+    RUN_TEST(test_dual_sbus_sound_held_fires_once_across_both_receivers);
     RUN_TEST(test_dual_sbus_dome_receiver_frame_leaves_drive_alone);
     RUN_TEST(test_dual_sbus_drive_receiver_off_keeps_zero_from_dome_frames);
     RUN_TEST(test_single_sbus_factory_dome_binding_reads_nothing);

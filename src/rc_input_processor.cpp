@@ -23,28 +23,40 @@ void rcInputProcessorInit(RcInputProcessor* proc) {
     proc->driveCentreSeen = false;
 }
 
-// Whether the drive bindings read a receiver other than this frame's, one the
-// mode enables: the frame then has nothing to say about the drive.
-static bool driveReadsAnotherReceiver(const RcChannelSnapshot& snap, const RcMappingConfig& mapping) {
-    const RcBindingSource driveSource = mapping.driveSpeed.source;
-    if (snap.source == RC_BINDING_NONE || driveSource == snap.source ||
-        mapping.driveSteer.source != driveSource) {
+// Whether a binding reads a receiver other than this frame's, one the mode
+// enables: the frame then has nothing to say about it.
+static bool readsAnotherReceiver(const RcBindingConfig& binding, const RcChannelSnapshot& snap,
+                                 const RcMappingConfig& mapping) {
+    if (snap.source == RC_BINDING_NONE || binding.source == snap.source) {
         return false;
     }
     RcChannelSnapshot other = snap;
-    other.source = driveSource;
-    return rcMapBindingReadsSnapshot(mapping.driveSpeed, other, mapping) &&
-           rcMapBindingReadsSnapshot(mapping.driveSteer, other, mapping);
+    other.source = binding.source;
+    return rcMapBindingReadsSnapshot(binding, other, mapping);
 }
 
-static bool driveSticksAtCentre(const RcControlIntent& intent, int16_t maxOut) {
-    if (maxOut <= 0) {
-        return true;
+static bool driveReadsAnotherReceiver(const RcChannelSnapshot& snap, const RcMappingConfig& mapping) {
+    return mapping.driveSteer.source == mapping.driveSpeed.source &&
+           readsAnotherReceiver(mapping.driveSpeed, snap, mapping) &&
+           readsAnotherReceiver(mapping.driveSteer, snap, mapping);
+}
+
+// Whether one drive stick sits within the tolerance of its calibrated centre,
+// judged on the raw position against the binding's own travel on that side:
+// before the deadband, the reverse and the speed limit, so none of them can
+// widen the hold or release it on a deflected stick (#389).
+static bool axisAtCentre(const RcBindingConfig& binding, const RcChannelSnapshot& snap) {
+    if (binding.channel < 1 || binding.channel > 18) {
+        return false;
     }
-    const int32_t limit = (int32_t)maxOut * RC_DRIVE_CENTRE_TOLERANCE_PERMILLE / 1000;
-    const int32_t speed = intent.driveSpeed < 0 ? -intent.driveSpeed : intent.driveSpeed;
-    const int32_t steer = intent.driveSteer < 0 ? -intent.driveSteer : intent.driveSteer;
-    return speed <= limit && steer <= limit;
+    const int32_t delta = (int32_t)snap.channels[binding.channel - 1] - (int32_t)binding.center;
+    const int32_t half = delta > 0 ? (int32_t)binding.max - (int32_t)binding.center
+                                   : (int32_t)binding.center - (int32_t)binding.min;
+    if (half <= 0) {
+        return false;
+    }
+    const int32_t distance = delta < 0 ? -delta : delta;
+    return distance * 1000 <= half * RC_DRIVE_CENTRE_TOLERANCE_PERMILLE;
 }
 
 void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
@@ -65,14 +77,19 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
     // Map channel snapshot to control intent (pure function)
     RcControlIntent intent = rcMapChannels(input.channels, localMapping);
 
-    // Update sound state for next iteration
-    proc->lastSoundPressed = intent.soundPressed;
+    // Update sound state for next iteration, from the sound binding's own
+    // receiver only: another receiver's frame would read as a release and the
+    // next own frame as a fresh press, re-firing at the frame rate (#389).
+    if (intent.soundActive || !readsAnotherReceiver(localMapping.sound, input.channels, localMapping)) {
+        proc->lastSoundPressed = intent.soundPressed;
+    }
 
     // The boot hold: until both drive sticks have been at centre once, the
     // drive output is zero. A trigger resting at an endpoint (the HotRC
     // DS-650's CH2 at factory stroke) never releases it.
     if (intent.driveActive && !proc->driveCentreSeen) {
-        if (driveSticksAtCentre(intent, localMapping.maxOut)) {
+        if (axisAtCentre(localMapping.driveSpeed, input.channels) &&
+            axisAtCentre(localMapping.driveSteer, input.channels)) {
             proc->driveCentreSeen = true;
         } else {
             intent.driveSpeed = 0;

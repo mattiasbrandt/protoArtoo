@@ -78,6 +78,8 @@ struct RcControlIntent {
     // the dispatcher then sends nothing for them rather than a zero (#389).
     bool driveActive;
     bool domeActive;
+    // Whether the sound binding read this frame (soundPressed is meaningful).
+    bool soundActive;
 
     // Whether any mapping stage produced an intent from this snapshot: true if
     // at least one configured binding was active and matched the input mode,
