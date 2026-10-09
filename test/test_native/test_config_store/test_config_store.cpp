@@ -92,6 +92,58 @@ void test_configLoad_save_roundtrip() {
     TEST_ASSERT_TRUE(snap2.system.mdns_use_name);
 }
 
+// #389: a single_sbus receiver on CH2 is SBUS1 now. NVS an older image saved
+// held its working triggers as sbus2 and its inert ones as sbus1; the first
+// load swaps them, once, so the same triggers keep firing - an estop switch
+// among them - and the next load leaves them alone.
+void test_configLoad_carries_single_sbus_ch2_trigger_labels_once() {
+    ConfigSnapshot older = {};
+    configSnapshotDefaults(&older);
+    older.system.rc_input_mode = RC_INPUT_SINGLE_SBUS;
+    older.system.single_sbus_use_ch2 = true;
+    older.system.rc_opmode = makeRcTriggerBinding(RC_BINDING_SBUS2, 3, SYSTEM_ACTION_ESTOP, nullptr,
+                                                  172, 992, 1811, 0, false);
+    // rc_arm1 keeps its factory sbus1:4, inert on the routed path.
+
+    Preferences prefs;
+    prefs.begin("proto", false);
+    TEST_ASSERT_TRUE(configSave(prefs, older));
+    prefs.remove(CONFIG_RC_SINGLE_LABELS_KEY);  // as an image before #389 left it
+
+    ConfigSnapshot first = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &first));
+    TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, first.system.rc_opmode.source);
+    TEST_ASSERT_EQUAL(SYSTEM_ACTION_ESTOP, first.system.rc_opmode.target);
+    TEST_ASSERT_EQUAL(RC_BINDING_SBUS2, first.system.rc_arm1.source);
+
+    ConfigSnapshot second = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &second));
+    prefs.end();
+    TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, second.system.rc_opmode.source);
+    TEST_ASSERT_EQUAL(RC_BINDING_SBUS2, second.system.rc_arm1.source);
+}
+
+// A config this image saved already carries the new labels: no swap, and a
+// droid on any other mode never swaps.
+void test_configLoad_leaves_labels_this_image_saved() {
+    ConfigSnapshot saved = {};
+    configSnapshotDefaults(&saved);
+    saved.system.rc_input_mode = RC_INPUT_SINGLE_SBUS;
+    saved.system.single_sbus_use_ch2 = true;
+
+    Preferences prefs;
+    prefs.begin("proto", false);
+    TEST_ASSERT_TRUE(configSave(prefs, saved));
+    ConfigSnapshot loaded = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
+    prefs.end();
+    TEST_ASSERT_EQUAL(saved.system.rc_arm1.source, loaded.system.rc_arm1.source);
+
+    SystemConfig dual = saved.system;
+    dual.rc_input_mode = RC_INPUT_DUAL_SBUS;
+    TEST_ASSERT_EQUAL_UINT(0, rcCarrySingleSbusCh2TriggerLabels(&dual));
+}
+
 void test_configLoad_save_identity_accepts_lowercase() {
     ConfigSnapshot snap1 = {};
     snprintf(snap1.system.droid_name, sizeof(snap1.system.droid_name), "%s", "r2-unit");
@@ -1788,6 +1840,8 @@ int main() {
     UNITY_BEGIN();
     RUN_TEST(test_configLoad_empty_nvs_returns_defaults);
     RUN_TEST(test_configLoad_save_roundtrip);
+    RUN_TEST(test_configLoad_carries_single_sbus_ch2_trigger_labels_once);
+    RUN_TEST(test_configLoad_leaves_labels_this_image_saved);
     RUN_TEST(test_configLoad_save_identity_accepts_lowercase);
     RUN_TEST(test_configLoad_save_identity_rejects_uppercase_to_default);
     RUN_TEST(test_configResolvedMdnsHostname_uses_identity_name);
