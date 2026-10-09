@@ -250,7 +250,7 @@ void test_populateRcMapJson_widest_map_fits_its_body(void) {
     }
     JsonDocument doc;
     populateRcMapJson(doc, unread);
-    TEST_ASSERT_EQUAL_STRING("calibration.drive_speed.deadband", doc["map"][0]["field"] | "");
+    TEST_ASSERT_EQUAL_STRING("calibration.deadband", doc["map"][0]["field"] | "");
     TEST_ASSERT_EQUAL_STRING("drive_speed,drive_steer,dome_speed", doc["map"][13]["accepts"] | "");
 }
 

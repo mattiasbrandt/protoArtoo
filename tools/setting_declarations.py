@@ -159,6 +159,7 @@ def catalog_binding_settings(source: Path | None = None) -> list[str]:
 
 CONFIG_RECORDS = ROOT / "include" / "config_records.inc"
 CONFIG_APPLY = ROOT / "src" / "web" / "api_config_apply.cpp"
+RC_MAP_RULES = ROOT / "include" / "rc_map_rules.h"
 
 # A Record field is `{"form", "path", ApplyTiming::T, "example"}` in its module's kFields[].
 _RECORD_FIELD = re.compile(
@@ -203,3 +204,9 @@ def act_fields(source: Path | None = None) -> list[str]:
     """The form name of every field an act takes, from kActFields[]."""
     body = _table((source or CONFIG_APPLY).read_text(encoding="utf-8"), "kActFields")
     return [m.group("form") for m in _ACT_FIELD.finditer(body)]
+
+
+def rc_map_fields(source: Path | None = None) -> list[str]:
+    """Every field a refusal of POST /api/rc/map names, from kRcMapRefusalFields[]."""
+    body = _table((source or RC_MAP_RULES).read_text(encoding="utf-8"), "kRcMapRefusalFields")
+    return re.findall(r'"([\w.]+)"', body)

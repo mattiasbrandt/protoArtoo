@@ -403,13 +403,63 @@ void test_a_conflict_names_its_field_and_accepts_nothing(void) {
 
     RcBindingConfig steer = sbusAxis(RC_BINDING_SBUS1, 2);
     steer.deadband = 900;
-    TEST_ASSERT_EQUAL_STRING("calibration.drive_steer.deadband",
-                             rcRuleAxisCalibration(DRIVE_ACTION_STEER, steer).field);
+    RcRuleVerdict deadband = rcRuleAxisCalibration(DRIVE_ACTION_STEER, steer);
+    TEST_ASSERT_EQUAL_STRING("calibration.deadband", deadband.field);
+    TEST_ASSERT_EQUAL(DRIVE_ACTION_STEER, deadband.axis);
     steer.deadband = 0;
     steer.center = steer.max;
-    TEST_ASSERT_EQUAL_STRING("calibration.dome_speed.center",
-                             rcRuleAxisCalibration(DOME_ACTION_SPEED, steer).field);
+    RcRuleVerdict order = rcRuleAxisCalibration(DOME_ACTION_SPEED, steer);
+    TEST_ASSERT_EQUAL_STRING("calibration.center", order.field);
+    TEST_ASSERT_EQUAL(DOME_ACTION_SPEED, order.axis);
     TEST_ASSERT_EQUAL_STRING(nullptr, rcRuleReasonToken(RcRuleReason::kHolds));
+}
+
+// Every field a rule names is one the words check holds to the browser's
+// table (kRcMapRefusalFields, tools/check_setting_words.py).
+void test_every_field_a_rule_names_is_declared(void) {
+    auto declared = [](const char* field) {
+        for (const char* name : kRcMapRefusalFields) {
+            if (strcmp(name, field) == 0) return true;
+        }
+        return false;
+    };
+    RcMapEntry reaction = entryOf(RC_BINDING_DROID_SPEED, 1, SOUND_ACTION_NEXT);
+    reaction.threshold = 0;
+    RcMapEntry quiet = entryOf(RC_BINDING_DROID_SPEED, 1, SOUND_ACTION_NEXT);
+    quiet.quietS = 0;
+    RcBindingConfig swallowed = sbusAxis(RC_BINDING_SBUS1, 1);
+    swallowed.deadband = 900;
+    RcBindingConfig crossed = sbusAxis(RC_BINDING_SBUS1, 1);
+    crossed.center = crossed.max;
+    const RcMapEntry prior[] = {entryOf(RC_BINDING_SBUS1, 7, SERVO_ACTION_PUPPET_PART, "bodyPanel1"),
+                                entryOf(RC_BINDING_SBUS1, 1, DRIVE_ACTION_SPEED)};
+    RcMapEntry full[kRcMapMaxEntries] = {};
+    const RcRuleVerdict verdicts[] = {
+        addAlone(entryOf(RC_BINDING_SBUS1, 19, SOUND_ACTION_NEXT)),
+        addAlone(entryOf(RC_BINDING_DROID_SPEED, 1, DRIVE_ACTION_SPEED)),
+        addAlone(entryOf(RC_BINDING_DROID_SPEED, 1, SYSTEM_ACTION_ESTOP)),
+        addAlone(reaction),
+        addAlone(quiet),
+        rcRuleMapAdd(nullptr, 0, entryOf(RC_BINDING_SBUS2, 1, SOUND_ACTION_NEXT), RC_INPUT_SINGLE_SBUS),
+        rcRuleMapAdd(nullptr, 0, entryOf(RC_BINDING_PWM, 4, SOUND_ACTION_NEXT), RC_INPUT_STANDARD_PWM),
+        addAlone(entryOf(RC_BINDING_SBUS1, 17, DRIVE_ACTION_SPEED)),
+        addAlone(entryOf(RC_BINDING_SBUS1, 5, DOME_ACTION_MARCDUINO_CMD, ":SM01")),
+        addAlone(entryOf(RC_BINDING_SBUS1, 17, SERVO_ACTION_PUPPET_PART, "bodyPanel1")),
+        rcRuleMapAdd(prior, 2, entryOf(RC_BINDING_SBUS1, 8, SERVO_ACTION_PUPPET_PART, "bodyPanel1"),
+                     RC_INPUT_DUAL_SBUS),
+        rcRuleMapAdd(prior, 2, entryOf(RC_BINDING_SBUS1, 7, SOUND_ACTION_NEXT), RC_INPUT_DUAL_SBUS),
+        rcRuleMapAdd(prior, 2, entryOf(RC_BINDING_SBUS1, 9, DRIVE_ACTION_SPEED), RC_INPUT_DUAL_SBUS),
+        rcRuleMapAdd(full, kRcMapMaxEntries, entryOf(RC_BINDING_SBUS1, 1, SOUND_ACTION_NEXT), RC_INPUT_DUAL_SBUS),
+        rcRuleDrive(sbusAxis(RC_BINDING_SBUS1, 1), defaultPwmBinding(2)),
+        rcRuleDrive(sbusAxis(RC_BINDING_SBUS2, 1), disabledRcBinding()),
+        rcRuleAxisCalibration(DRIVE_ACTION_SPEED, swallowed),
+        rcRuleAxisCalibration(DRIVE_ACTION_SPEED, crossed),
+    };
+    for (const RcRuleVerdict& verdict : verdicts) {
+        TEST_ASSERT_FALSE_MESSAGE(verdict.ok(), "each case is a refusal");
+        TEST_ASSERT_TRUE_MESSAGE(declared(verdict.field), verdict.field);
+        TEST_ASSERT_NOT_NULL(rcRuleReasonToken(verdict.reason));
+    }
 }
 
 int main(int, char**) {
@@ -441,5 +491,6 @@ int main(int, char**) {
     RUN_TEST(test_a_stored_cue_is_judged_as_a_save_would_judge_it);
     RUN_TEST(test_a_refusal_names_its_field_reason_and_what_it_accepts);
     RUN_TEST(test_a_conflict_names_its_field_and_accepts_nothing);
+    RUN_TEST(test_every_field_a_rule_names_is_declared);
     return UNITY_END();
 }

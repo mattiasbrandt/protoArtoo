@@ -461,10 +461,12 @@ test("a binding the droid does not read is left out of what the page posts, and 
   const posted = [];
   const map = {
     ...AXES_MAP,
-    map: [...AXES_MAP.map, { source: "sbus2", channel: 1, action: "dome_speed", read: false }],
+    map: [...AXES_MAP.map, {
+      source: "sbus2", channel: 1, action: "dome_speed", read: false, field: "map.source", reason: "out-of-range", accepts: "sbus1",
+    }],
   };
   const env = await loadAxes({ map, onPost: (body) => { posted.push(body); return { ok: true }; } });
-  assert.match(env.element("rc-editor-feedback").textContent, /^Not read by the droid: SBUS#2 CH 1\. Apply drops it\.$/);
+  assert.match(env.element("rc-editor-feedback").textContent, /^Not read by the droid: SBUS#2 CH 1 \(RC Receiver must be SBUS1\)\. Apply drops it\.$/);
   await clickAxis(env, { axis: "drive_steer", axisSet: "max" }, "data-axis-set");
 
   assert.equal(posted.length, 1);
@@ -565,7 +567,9 @@ test("a capture out of order is not sent, and a refusal from the droid is shown 
   const env = await loadAxes({
     onPost: (body) => {
       posted.push(body);
-      throw new ApiError("calibration out of range", { kind: "http", status: 400 });
+      throw new ApiError("calibration out of range", {
+        kind: "http", status: 400, field: "calibration.min", reason: "out-of-range", accepts: "0..2047",
+      });
     },
   });
   // CH1 reads 150, below CENTER 992: it cannot be MAX.
@@ -575,7 +579,7 @@ test("a capture out of order is not sent, and a refusal from the droid is shown 
 
   await clickAxis(env, { axis: "drive_speed", axisSet: "min" }, "data-axis-set");
   assert.equal(posted.length, 1);
-  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_speed"), /Not saved: that reading is out of range\./);
+  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_speed"), /Not saved: MIN must be 0 to 2047\./);
 });
 
 // POST /api/rc/map refuses Speed and Steer on two receivers. The page keeps
@@ -620,18 +624,26 @@ test("a drive axis is not offered on SBUS2, the dome is", () => {
 
 test("the droid's refusal of a drive on SBUS2 is shown in the builder's words", async () => {
   const env = await loadAxes({
-    onPost: () => { throw new ApiError("drive reads SBUS1, the drive receiver", { kind: "http", status: 400 }); },
+    onPost: () => {
+      throw new ApiError("drive reads SBUS1, the drive receiver", {
+        kind: "http", status: 400, field: "map.source", reason: "out-of-range", accepts: "sbus1",
+      });
+    },
   });
   await clickAxis(env, { axis: "drive_steer", axisSet: "max" }, "data-axis-set");
-  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /Not saved: Speed and Steer read SBUS1\./);
+  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /Not saved: RC Receiver must be SBUS1\./);
 });
 
 test("the droid's refusal of a split drive is shown in the builder's words", async () => {
   const env = await loadAxes({
-    onPost: () => { throw new ApiError("drive speed and steer must be on the same receiver", { kind: "http", status: 400 }); },
+    onPost: () => {
+      throw new ApiError("drive speed and steer must be on the same receiver", {
+        kind: "http", status: 400, field: "map.source", reason: "conflict",
+      });
+    },
   });
   await clickAxis(env, { axis: "drive_steer", axisSet: "max" }, "data-axis-set");
-  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /Not saved: Speed and Steer share one RC Receiver\./);
+  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /Not saved: RC Receiver must be the one Speed reads\./);
 });
 
 // A CENTER that leaves one side shorter than the axis's dead zone would move
@@ -644,7 +656,12 @@ test("a CENTER too close to an end is not sent, and the droid's refusal of one r
   const posted = [];
   const env = await loadAxes({
     diag,
-    onPost: (body) => { posted.push(body); throw new ApiError("calibration leaves no travel past the deadband", { kind: "http", status: 400 }); },
+    onPost: (body) => {
+      posted.push(body);
+      throw new ApiError("calibration leaves no travel past the deadband", {
+        kind: "http", status: 400, field: "calibration.deadband", reason: "conflict",
+      });
+    },
   });
   // CH2 reads 1700: as CENTER it leaves 111 above it, inside a dead zone of 200.
   await clickAxis(env, { axis: "drive_steer", axisSet: "center" }, "data-axis-set");
@@ -652,10 +669,10 @@ test("a CENTER too close to an end is not sent, and the droid's refusal of one r
   assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /Not saved: CENTER sits too close to an end\./);
 
   // CH1 reads 150 as MIN: the order holds and the dead zone of Speed is 0, so
-  // it goes, and the droid's own refusal is worded the same.
+  // it goes, and the droid's own refusal is worded from its field.
   await clickAxis(env, { axis: "drive_speed", axisSet: "min" }, "data-axis-set");
   assert.equal(posted.length, 1);
-  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_speed"), /Not saved: CENTER sits too close to an end\./);
+  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_speed"), /Not saved: Dead zone is wider than CENTER sits from an end\./);
 });
 
 // GET /api/rc rawDigital: [CH17, CH18] per receiver, whatever binds them.

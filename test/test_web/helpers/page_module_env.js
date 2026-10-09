@@ -145,12 +145,20 @@ export const operatorShellUi = () => {
   return shellWindow.PAUi;
 };
 
+// The shape data/web_api.js's ApiError carries: a refusal's field, reason,
+// accepts and the RC Map entry it echoes are what a page words it from.
 class ApiError extends Error {
-  constructor(message, { kind = "network", status = 0 } = {}) {
+  constructor(message, {
+    kind = "network", status = 0, field = null, reason = null, accepts = null, entry = null,
+  } = {}) {
     super(message);
     this.name = "ApiError";
     this.kind = kind;
     this.status = status;
+    this.field = field;
+    this.reason = reason;
+    this.accepts = accepts;
+    this.entry = entry;
   }
 }
 

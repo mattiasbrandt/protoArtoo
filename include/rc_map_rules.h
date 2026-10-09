@@ -102,6 +102,27 @@ struct RcRuleVerdict {
     bool ok() const { return sentence == nullptr; }
 };
 
+// Every request field a refusal of POST /api/rc/map names, and an entry of
+// GET /api/rc/map the droid does not read. A calibration field is the key
+// alone; the refusal echoes the axis's entry to say which axis.
+// tools/check_setting_words.py fails when one has no words in the browser's
+// words table (data/web_api.js), so none reaches a page as its wire name.
+constexpr const char* kRcMapRefusalFields[] = {
+    "map",
+    "map.source",
+    "map.channel",
+    "map.action",
+    "map.payload",
+    "map.threshold",
+    "map.quietS",
+    "calibration",
+    "calibration.min",
+    "calibration.center",
+    "calibration.max",
+    "calibration.reverse",
+    "calibration.deadband",
+};
+
 // What the refused field accepts, written into `buf` ("1..16", "sbus1,sbus2").
 // False, with `buf` empty, when the verdict states none (every conflict, and
 // a refusal no value would cure).
@@ -122,8 +143,9 @@ RcRuleVerdict rcRuleMapAdd(const RcMapEntry* prior, size_t count, const RcMapEnt
 // (RC_BINDING_NONE) breaks neither rule.
 RcRuleVerdict rcRuleDrive(const RcBindingConfig& speed, const RcBindingConfig& steer);
 
-// An axis's calibration (`axis` names which): end, centre and end in order,
-// and a dead zone that leaves stick travel on both sides of the centre.
+// An axis's calibration (`axis` names which, and the verdict's `axis` says it
+// again): end, centre and end in order, and a dead zone that leaves stick
+// travel on both sides of the centre.
 RcRuleVerdict rcRuleAxisCalibration(RobotActionId axis, const RcBindingConfig& binding);
 
 // ---------------------------------------------------------------------------
