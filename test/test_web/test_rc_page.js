@@ -530,6 +530,50 @@ test("a drive axis stored on SBUS2 says it is not read", async () => {
   assert.doesNotMatch(tile, /data-axis-set/, "no ends are offered");
 });
 
+// An axis unread for its ends alone (a dead zone that swallows a side, stored
+// before the rule) offers a reset: the map goes back with the axis in it and
+// without its ends, the droid starts it from the defaults (ADR 0070), and the
+// tile is drawn as one the droid reads.
+test("an axis unread for its ends is mended by a reset", async () => {
+  const unread = { read: false, field: "calibration.deadband", reason: "conflict" };
+  const posted = [];
+  let mended = false;
+  const env = loadPageModule("rc.js", {
+    respond: (path, opts) => {
+      if (path === "/api/rc/map" && opts.method === "POST") {
+        posted.push(JSON.parse(opts.body.plain));
+        mended = true;
+        return { data: { ok: true } };
+      }
+      if (path === "/api/rc/map") {
+        return { data: asDroidMap({ ...AXES_MAP, map: [
+          { source: "sbus1", channel: 1, action: "drive_speed", ...(mended ? {} : unread) },
+          { source: "sbus1", channel: 2, action: "drive_steer" },
+        ] }) };
+      }
+      if (path === "/api/rc") return { data: axesDiag() };
+      return respond(path);
+    },
+  });
+  await env.settle();
+  await env.runSection("rc-mode-mapping");
+  await env.runSection("rc-diagnostics");
+  await env.settle();
+  let tile = tileOf(env.element("rc-axes").innerHTML, "drive_speed");
+  assert.match(tile, /Not read: Dead zone is wider than CENTER sits from an end\./);
+  assert.doesNotMatch(tile, /Map it again/);
+  assert.match(tile, /data-axis-reset>Reset ends<\/button>/);
+
+  await clickAxis(env, { axis: "drive_speed" }, "data-axis-reset");
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].calibration, undefined, "no ends are posted: the droid takes its defaults");
+  assert.deepEqual(posted[0].map.find((entry) => entry.action === "drive_speed"),
+    { source: "sbus1", channel: 1, action: "drive_speed" });
+  tile = tileOf(env.element("rc-axes").innerHTML, "drive_speed");
+  assert.match(tile, /data-axis-set="min"/, "read again, its ends are offered");
+  assert.match(tile, /Saved the default ends\./);
+});
+
 // A Set posts the whole map beside its calibration: pressed while a map save is
 // still going, it would post the map that save replaces and undo it. It waits
 // for the save and its read-back (#483 review).
