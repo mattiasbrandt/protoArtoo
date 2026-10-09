@@ -933,7 +933,10 @@
       // two dead [data-state] rules in the stylesheet that nothing ever set.
       const state = !enabled ? "disabled" : linked ? "linked" : "waiting";
       const lamp = !enabled ? "off" : linked ? "ok" : "warn";
-      const reading = !enabled ? "not switched on" : `${state} · ${age}ms old`;
+      // An SBUS receiver's frame rate, beside its link: a receiver heard at
+      // 7 frames a second is linked and still too slow to drive on.
+      const frames = typeof src.framesPerSecond === "number" ? ` · ${src.framesPerSecond} frames/s` : "";
+      const reading = !enabled ? "not switched on" : `${state}${frames} · ${age}ms old`;
       return `<div class="health-item">
         <div class="indicator ${lamp}" aria-hidden="true"></div>
         <span>${window.PAUtils.escapeHtml(name.toUpperCase())}</span>
