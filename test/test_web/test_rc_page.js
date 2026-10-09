@@ -333,3 +333,26 @@ test("after a save the page draws the map the droid read back", async () => {
   assert.match(summary, /SBUS#2 CH 12/, "the table shows what the droid stored");
   assert.match(env.element("rc-editor-feedback").textContent, /^Cleared all mappings\.$/);
 });
+
+test("each SBUS receiver's frame rate is shown beside its link, and only where the droid sends one", async () => {
+  const env = loadPageModule("rc.js", {
+    respond: rcDroid({
+      diag: {
+        mode: "dual_sbus",
+        sources: {
+          sbus1: { enabled: true, linked: true, ageMs: 9, framesPerSecond: 71, decodeFails: 3 },
+          sbus2: { enabled: true, linked: false, ageMs: 900 },
+          pwm: { enabled: false },
+        },
+        raw: {},
+        digital: {},
+      },
+    }),
+  });
+  await env.settle();
+  await env.runSection("rc-diagnostics");
+  await env.settle();
+  const html = env.element("rc-preview-source-health").innerHTML;
+  assert.match(html, /<span>SBUS1<\/span>\s*<span class="indicator-text">linked · 71 frames\/s · 9ms old<\/span>/);
+  assert.match(html, /<span>SBUS2<\/span>\s*<span class="indicator-text">waiting · 900ms old<\/span>/, "no rate sent, none made up");
+});
