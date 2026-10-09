@@ -373,7 +373,10 @@ const AXES_MAP = {
 };
 const axesDiag = (overrides = {}) => ({
   mode: "dual_sbus",
-  sources: {},
+  sources: {
+    sbus1: { enabled: true, linked: true, ageMs: 12, lostFrames: 0, failsafe: false },
+    sbus2: { enabled: true, linked: true, ageMs: 12, lostFrames: 0, failsafe: false },
+  },
   driveAwaitingCentre: false,
   // CH1 rests at 150, below its MIN of 172: a HotRC trigger at its end.
   raw: { sbus1: [150, 1700, ...sixteen(1000).slice(2)] },
@@ -448,6 +451,87 @@ test("an end set from the stick posts the map unchanged and that axis's end, the
   const after = env.requests.map((request) => `${request.method} ${request.path}`);
   assert.equal(after.at(-1), "GET /api/rc", "the ends are read back from the droid");
   assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /Saved MAX 1700\./);
+});
+
+// A cached or failsafe number is not where the stick is: with the receiver
+// unheard or in failsafe there is nothing to set an end from (#483 review).
+test("an end is not set from a receiver that is unheard or in failsafe", async () => {
+  for (const sbus1 of [
+    { enabled: true, linked: false, ageMs: 900, lostFrames: 0, failsafe: false },
+    { enabled: true, linked: true, ageMs: 12, lostFrames: 0, failsafe: true },
+  ]) {
+    const posted = [];
+    const diag = axesDiag();
+    diag.sources.sbus1 = sbus1;
+    const env = await loadAxes({ diag, onPost: (body) => { posted.push(body); return { ok: true }; } });
+    const tile = tileOf(env.element("rc-axes").innerHTML, "drive_steer");
+    assert.match(tile, /<span class="rc-axis-raw cal-readout">—<\/span>/, "no live reading is shown");
+    assert.match(tile, /data-axis-set="max" disabled/, "Set is not offered");
+    await clickAxis(env, { axis: "drive_steer", axisSet: "max" }, "data-axis-set");
+    assert.equal(posted.length, 0, "nothing is sent");
+  }
+});
+
+// A drive stored on SBUS2 before #483 does not move the droid: its tile says
+// so instead of offering ends to set.
+test("a drive axis stored on SBUS2 says it is not read", async () => {
+  const env = loadPageModule("rc.js", {
+    respond: (path, opts) => {
+      if (path === "/api/rc/map" && opts.method !== "POST") {
+        return { data: { ...AXES_MAP, map: [
+          { source: "sbus2", channel: 1, action: "drive_speed" },
+          { source: "sbus2", channel: 2, action: "drive_steer" },
+        ] } };
+      }
+      if (path === "/api/rc") return { data: axesDiag() };
+      return respond(path);
+    },
+  });
+  await env.settle();
+  await env.runSection("rc-mode-mapping");
+  await env.runSection("rc-diagnostics");
+  await env.settle();
+  const tile = tileOf(env.element("rc-axes").innerHTML, "drive_speed");
+  assert.match(tile, /Not read: Speed and Steer read SBUS1\. Map it there\./);
+  assert.doesNotMatch(tile, /data-axis-set/, "no ends are offered");
+});
+
+// A Set posts the whole map beside its calibration: pressed while a map save is
+// still going, it would post the map that save replaces and undo it. It waits
+// for the save and its read-back (#483 review).
+test("an end is not set while a map save is still going", async () => {
+  let release;
+  const posted = [];
+  const env = loadPageModule("rc.js", {
+    respond: (path, opts) => {
+      if (path === "/api/rc/map" && opts.method === "POST") {
+        const body = JSON.parse(opts.body.plain);
+        posted.push(body);
+        if (!body.calibration) return new Promise((resolve) => { release = () => resolve({ data: { ok: true } }); });
+        return { data: { ok: true } };
+      }
+      if (path === "/api/rc/map") return { data: AXES_MAP };
+      if (path === "/api/rc") return { data: axesDiag() };
+      return respond(path);
+    },
+  });
+  await env.settle();
+  await env.runSection("rc-mode-mapping");
+  await env.runSection("rc-diagnostics");
+  await env.settle();
+  env.window.PAOverlay.ask = async () => true;
+
+  env.emitOn("rc-reset-defaults", "click");
+  await env.settle(4);
+  assert.equal(posted.length, 1, "the clear is in flight");
+  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /data-axis-set="max" disabled/);
+  await clickAxis(env, { axis: "drive_steer", axisSet: "max" }, "data-axis-set");
+  assert.equal(posted.length, 1, "no calibration is posted while the clear is in flight");
+
+  release();
+  await env.settle(6);
+  await clickAxis(env, { axis: "drive_steer", axisSet: "max" }, "data-axis-set");
+  assert.equal(posted.filter((body) => body.calibration).length, 1, "after the read-back a Set goes");
 });
 
 test("the reverse switch posts the axis's other direction", async () => {
