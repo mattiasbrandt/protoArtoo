@@ -81,13 +81,19 @@ bool migrateSchema2To3(Preferences& prefs) {
 }
 
 // The one-time carry of #389 (rcCarrySingleSbusCh2TriggerLabels()), written
-// back slot by slot. Out of line, by pointer, so configLoad()'s frame on
-// loopTask's measured chain carries none of it.
-__attribute__((noinline)) void persistSingleSbusLabelCarry(Preferences& prefs, SystemConfig* sys) {
-    const size_t carried = rcCarrySingleSbusCh2TriggerLabels(sys);
-    if (carried == 0) {
+// back slot by slot, then the marker. Through a handle of its own opened for
+// writing: configLoad()'s caller opens the store read-only
+// (loadConfigToState()), and a read-only handle drops every write. The marker
+// lands only when every slot write did, so a carry cut short runs again next
+// boot rather than leaving half the labels swapped. Out of line, by pointer,
+// so configLoad()'s frame on loopTask's measured chain carries none of it.
+__attribute__((noinline)) void persistSingleSbusLabelCarry(SystemConfig* sys) {
+    Preferences rw;
+    if (!rw.begin(NVS_NAMESPACE, false)) {
+        PA_LOG_WARN("config", "single SBUS label carry not saved: namespace did not open");
         return;
     }
+    const size_t carried = rcCarrySingleSbusCh2TriggerLabels(sys);
     const struct {
         const char* key;
         const RcTriggerBinding* slot;
@@ -97,17 +103,45 @@ __attribute__((noinline)) void persistSingleSbusLabelCarry(Preferences& prefs, S
         {"rc_opmode", &sys->rc_opmode}, {"rc_free0", &sys->rc_free0}, {"rc_free1", &sys->rc_free1},
         {"rc_free2", &sys->rc_free2}, {"rc_free3", &sys->rc_free3},
     };
-    for (const auto& entry : slots) {
-        if (entry.slot->source != RC_BINDING_SBUS1 && entry.slot->source != RC_BINDING_SBUS2) {
+    // NVS has no transaction across keys: a write that fails part way takes
+    // back the slots already written, so the store holds either every label
+    // carried and the marker, or the labels as they were and no marker.
+    bool written = true;
+    size_t landed = 0;
+    for (; landed < RC_TRIGGER_SLOT_COUNT && written && carried > 0; ++landed) {
+        const RcTriggerBinding& slot = *slots[landed].slot;
+        if (slot.source != RC_BINDING_SBUS1 && slot.source != RC_BINDING_SBUS2) {
             continue;
         }
         char encoded[64] = {};
-        if (formatRcTriggerBinding(encoded, sizeof(encoded), *entry.slot)) {
-            prefs.putString(entry.key, encoded);
+        written = formatRcTriggerBinding(encoded, sizeof(encoded), slot) &&
+                  rw.putString(slots[landed].key, encoded) > 0;
+    }
+    if (written) {
+        written = rw.putBool(CONFIG_RC_SINGLE_LABELS_KEY, true) > 0;
+    }
+    if (!written && carried > 0) {
+        for (size_t i = 0; i < landed; ++i) {
+            RcTriggerBinding before = *slots[i].slot;
+            if (before.source != RC_BINDING_SBUS1 && before.source != RC_BINDING_SBUS2) {
+                continue;
+            }
+            before.source = before.source == RC_BINDING_SBUS1 ? RC_BINDING_SBUS2 : RC_BINDING_SBUS1;
+            char encoded[64] = {};
+            if (formatRcTriggerBinding(encoded, sizeof(encoded), before)) {
+                rw.putString(slots[i].key, encoded);
+            }
         }
     }
-    PA_LOG_INFO("config", "single SBUS on CH2 is SBUS1 now: %u RC trigger labels carried across",
-                (unsigned)carried);
+    rw.end();
+    if (carried > 0) {
+        if (written) {
+            PA_LOG_INFO("config", "single SBUS on CH2 is SBUS1 now: %u RC trigger labels carried across",
+                        (unsigned)carried);
+        } else {
+            PA_LOG_WARN("config", "single SBUS label carry not fully saved; it runs again next boot");
+        }
+    }
 }
 
 }  // namespace
@@ -1121,8 +1155,7 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
     // A marker key rather than a schema bump: an image from before #389 resets
     // to defaults on a schema it does not know, and ignores an unknown key.
     if (ok && !prefs.isKey(CONFIG_RC_SINGLE_LABELS_KEY)) {
-        persistSingleSbusLabelCarry(prefs, &out->system);
-        prefs.putBool(CONFIG_RC_SINGLE_LABELS_KEY, true);
+        persistSingleSbusLabelCarry(&out->system);
     }
 
     if (stored < CONFIG_SCHEMA_VERSION) {
