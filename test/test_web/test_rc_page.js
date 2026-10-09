@@ -356,3 +356,121 @@ test("each SBUS receiver's frame rate is shown beside its link, and only where t
   assert.match(html, /<span>SBUS1<\/span>\s*<span class="indicator-text">linked · 71 frames\/s · 9ms old<\/span>/);
   assert.match(html, /<span>SBUS2<\/span>\s*<span class="indicator-text">waiting · 900ms old<\/span>/, "no rate sent, none made up");
 });
+
+// ---------------------------------------------------------------------------
+// #389: the three axes - the boot hold, a stick resting past an end, and the
+// ends and direction set from the stick (POST /api/rc/map `calibration`).
+// ---------------------------------------------------------------------------
+
+const AXES_MAP = {
+  mode: "dual_sbus",
+  map: [
+    { source: "sbus1", channel: 1, action: "drive_speed" },
+    { source: "sbus1", channel: 2, action: "drive_steer" },
+    { source: "sbus1", channel: 7, action: "sleep_toggle" },
+  ],
+  capacity: { total: 14, used: 3 },
+};
+const axesDiag = (overrides = {}) => ({
+  mode: "dual_sbus",
+  sources: {},
+  driveAwaitingCentre: false,
+  // CH1 rests at 150, below its MIN of 172: a HotRC trigger at its end.
+  raw: { sbus1: [150, 1700, ...sixteen(1000).slice(2)] },
+  digital: {},
+  mappingProfile: {
+    version: 1,
+    channels: {
+      driveSpeed: { source: "sbus1", channel: 1, min: 172, center: 992, max: 1811, deadband: 0, reverse: false },
+      driveSteer: { source: "sbus1", channel: 2, min: 172, center: 992, max: 1811, deadband: 0, reverse: true },
+      domeSpeed: { source: "none", channel: 0, min: 0, center: 0, max: 0, deadband: 0, reverse: false },
+    },
+  },
+  ...overrides,
+});
+
+const loadAxes = async ({ diag = axesDiag(), onPost = () => ({ ok: true }) } = {}) => {
+  const env = loadPageModule("rc.js", {
+    respond: (path, opts) => {
+      if (path === "/api/rc/map" && opts.method === "POST") return { data: onPost(JSON.parse(opts.body.plain)) };
+      if (path === "/api/rc/map") return { data: AXES_MAP };
+      if (path === "/api/rc") return { data: diag };
+      return respond(path);
+    },
+  });
+  await env.settle();
+  await env.runSection("rc-mode-mapping");
+  await env.runSection("rc-diagnostics");
+  await env.settle();
+  return env;
+};
+
+// A click on a tile's control, as the one delegated listener on #rc-axes hears it.
+const clickAxis = async (env, dataset, attribute) => {
+  await env.emitOn("rc-axes", "click", {
+    target: { closest: (selector) => (selector === `[${attribute}]` ? { disabled: false, dataset } : null) },
+  });
+  await env.settle(6);
+};
+
+const tileOf = (html, token) => {
+  const start = html.indexOf(`data-axis="${token}"`);
+  const next = html.indexOf('<div class="rc-axis"', start + 1);
+  return html.slice(start, next < 0 ? undefined : next);
+};
+
+test("the drive cards say the boot hold while the droid holds drive, and not after", async () => {
+  const held = await loadAxes({ diag: axesDiag({ driveAwaitingCentre: true }) });
+  assert.equal(held.element("rc-drive-hold").textContent, "Center both drive sticks to drive.");
+  const free = await loadAxes({ diag: axesDiag({ driveAwaitingCentre: false }) });
+  assert.equal(free.element("rc-drive-hold").textContent, "");
+});
+
+test("a stick read past an end says so on its own axis, and one inside its ends says nothing", async () => {
+  const env = await loadAxes();
+  const html = env.element("rc-axes").innerHTML;
+  assert.match(tileOf(html, "drive_speed"), /<p class="rc-axis-warn" role="status">Past MIN, so it reads as full travel\.<\/p>/);
+  assert.match(tileOf(html, "drive_steer"), /<p class="rc-axis-warn" role="status"><\/p>/, "1700 sits inside 172..1811");
+  assert.match(tileOf(html, "drive_speed"), /MIN 172 · CENTER 992 · MAX 1811/, "the ends the droid holds are shown");
+  assert.match(tileOf(html, "dome_speed"), /Not mapped\./);
+  assert.equal(env.element("rc-axes-summary").textContent, "2 of 3 mapped");
+});
+
+test("an end set from the stick posts the map unchanged and that axis's end, then reads the ends back", async () => {
+  const posted = [];
+  const env = await loadAxes({ onPost: (body) => { posted.push(body); return { ok: true }; } });
+  await clickAxis(env, { axis: "drive_steer", axisSet: "max" }, "data-axis-set");
+
+  assert.equal(posted.length, 1);
+  assert.deepEqual(posted[0].calibration, { drive_steer: { max: 1700 } }, "the live reading of CH2 becomes MAX");
+  assert.deepEqual(posted[0].map.map((entry) => `${entry.source}:${entry.channel}:${entry.action}`),
+    ["sbus1:1:drive_speed", "sbus1:2:drive_steer", "sbus1:7:sleep_toggle"], "the map goes back as the droid holds it");
+  const after = env.requests.map((request) => `${request.method} ${request.path}`);
+  assert.equal(after.at(-1), "GET /api/rc", "the ends are read back from the droid");
+  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /Saved MAX 1700\./);
+});
+
+test("the reverse switch posts the axis's other direction", async () => {
+  const posted = [];
+  const env = await loadAxes({ onPost: (body) => { posted.push(body); return { ok: true }; } });
+  await clickAxis(env, { axis: "drive_steer" }, "data-axis-reverse");
+  assert.deepEqual(posted[0]?.calibration, { drive_steer: { reverse: false } }, "steer was reversed, so it goes back");
+});
+
+test("a capture out of order is not sent, and a refusal from the droid is shown on the axis", async () => {
+  const posted = [];
+  const env = await loadAxes({
+    onPost: (body) => {
+      posted.push(body);
+      throw new ApiError("calibration out of range", { kind: "http", status: 400 });
+    },
+  });
+  // CH1 reads 150, below CENTER 992: it cannot be MAX.
+  await clickAxis(env, { axis: "drive_speed", axisSet: "max" }, "data-axis-set");
+  assert.equal(posted.length, 0, "the droid is never asked to store MAX below CENTER");
+  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_speed"), /Not saved: MAX must read above CENTER\./);
+
+  await clickAxis(env, { axis: "drive_speed", axisSet: "min" }, "data-axis-set");
+  assert.equal(posted.length, 1);
+  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_speed"), /Not saved: that reading is out of range\./);
+});

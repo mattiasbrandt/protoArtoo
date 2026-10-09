@@ -4493,6 +4493,80 @@ body[data-page="maintenance"] .status-item .hint {
   border-left: 3px solid var(--accent-bright);
 }
 
+/* The three axes side by side, each a soft tile rather than a framed box:
+   its name, the RC Channel it reads, the stick's live number loudest, then
+   the three end captures as one joined control (the Servos pattern, .cal-sets)
+   and its direction as a switch. */
+.rc-axes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-sm);
+}
+
+.rc-axis {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--lift) 4%, transparent);
+}
+
+.rc-axis-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.rc-axis-name {
+  font-weight: 700;
+}
+
+.rc-axis-ch {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
+  color: var(--text-dim);
+}
+
+.rc-axis-raw {
+  margin-left: auto;
+}
+
+.rc-axis .cal-sets {
+  align-self: flex-start;
+}
+
+.rc-axis .cal-sets > button {
+  padding: 0 var(--space-md);
+}
+
+.rc-axis-reverse {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--fs-cell);
+  color: var(--text-dim);
+}
+
+.rc-axis-warn {
+  margin: 0;
+  font-size: var(--fs-cell);
+  color: var(--warning);
+}
+
+.rc-axis-warn:empty {
+  display: none;
+}
+
+#rc-drive-hold {
+  margin-top: var(--space-sm);
+}
+
+#rc-drive-hold:empty {
+  display: none;
+}
+
 /* A quiet line, not a framed box: the save's provenance (ADR 0066 "fewer
    frames"). */
 .rc-editor-status-row {

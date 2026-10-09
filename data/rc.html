@@ -105,6 +105,14 @@
       </div>
     </div>
 
+    <!-- The three axes, each with the ends it reads its stick between, set
+         from the stick itself (#389). -->
+    <div class="card">
+      <div class="sect"><h2>Sticks</h2><span class="sub waiting" id="rc-axes-summary"></span></div>
+      <p id="rc-drive-hold" class="note note-act" role="status" aria-live="polite"></p>
+      <div id="rc-axes" class="rc-axes"></div>
+    </div>
+
     <!-- The live column: what the RC Radio is sending right now, and whether
          each RC Receiver input is being heard at all. -->
     <div class="card">
@@ -133,7 +141,7 @@
           </div>
           <div id="rc-learn-banner" class="rc-learn-banner" hidden>
             <div>
-              <div class="rc-learn-banner-title">Centre the sticks, then flip one switch.</div>
+              <div class="rc-learn-banner-title">Center the sticks, then flip one switch.</div>
               <div id="rc-learn-status" class="rc-learn-banner-status" role="status" aria-live="polite" aria-atomic="true">Listening…</div>
             </div>
             <button id="rc-learn-stop" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-stop"/></svg><span class="act-label">Stop</span></button>
