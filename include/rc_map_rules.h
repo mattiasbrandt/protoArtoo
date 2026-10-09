@@ -81,12 +81,14 @@ struct RcRuleVerdict {
     bool ok() const { return sentence == nullptr; }
 };
 
-// Whether `next` may join the `count` entries already in an RC Map: its RC
-// Channel, what a droid condition may fire and the numbers it carries, a
-// puppet string's stick, and the conflicts with the entries before it. A
-// payload that must name something that exists (a Part, a dome sequence) is
-// the caller's to check.
-RcRuleVerdict rcRuleMapAdd(const RcMapEntry* prior, size_t count, const RcMapEntry& next);
+// Whether `next` may join the `count` entries already in an RC Map for the
+// receiver type `type`: its RC Channel, that the type reads its receiver, that
+// a cue is not on PWM and an axis sits on a stick, what a droid condition may
+// fire and the numbers it carries, a puppet string's stick, and the conflicts
+// with the entries before it. A payload that must name something that exists
+// (a Part, a dome sequence) is the caller's to check.
+RcRuleVerdict rcRuleMapAdd(const RcMapEntry* prior, size_t count, const RcMapEntry& next,
+                           RcInputMode type);
 
 // The drive pair. Speed and Steer are read together, from one frame of one
 // receiver, so they sit on one RC Receiver; and that receiver is not SBUS2,
@@ -98,3 +100,25 @@ RcRuleVerdict rcRuleDrive(const RcBindingConfig& speed, const RcBindingConfig& s
 // An axis's calibration: end, centre and end in order, and a dead zone that
 // leaves stick travel on both sides of the centre.
 RcRuleVerdict rcRuleAxisCalibration(const RcBindingConfig& binding);
+
+// ---------------------------------------------------------------------------
+// The same rules on read (ADR 0070): a stored binding a save would refuse is
+// not read, so it stays still. Each is judged on its own against the receiver
+// type the droid runs. Conflicts between entries are left to the save, since
+// every stored map came through one.
+// ---------------------------------------------------------------------------
+
+// A stored drive or dome axis (`axis` names which), its calibration included.
+RcRuleVerdict rcRuleStoredAxis(RobotActionId axis, const RcBindingConfig& binding,
+                               RcInputMode type);
+
+// A stored trigger slot: a cue, a puppet string or a Reaction. An empty slot
+// holds. The input processor reads radio cues through it; a Reaction is held
+// to its rules by the stored form already (rcTriggerBindingIsValid()), and is
+// judged here for the RC Map's own answer (populateRcMapJson()).
+RcRuleVerdict rcRuleStoredCue(const RcTriggerBinding& binding, RcInputMode type);
+
+// The stored drive pair: each bound axis, then the pair (rcRuleDrive()). The
+// verdict's `axis` says which axis a refusal is about.
+RcRuleVerdict rcRuleStoredDrive(const RcBindingConfig& speed, const RcBindingConfig& steer,
+                                RcInputMode type);

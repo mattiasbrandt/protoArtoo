@@ -30,6 +30,7 @@
 #include "api_config_snapshot.h"
 #include "api_json_response.h"
 #include "api_rc_map_apply.h"
+#include "rc_map_rules.h"  // what the droid would read of a stored map
 #include "api_status.h"  // captureServoOutputCommanded(), shared with the Console
 #include "api_wifi_apply.h"
 #include "board_outputs.h"  // BOARD_OUTPUTS, boardComponentLabel() - one label source
@@ -242,6 +243,26 @@ JsonObject rcMapAppendEntry(JsonArray map, RcBindingSource source, uint8_t chann
     return item;
 }
 
+// Which of the stored drive axes a save would keep. A pair the rules refuse
+// is narrowed one axis at a time - the axis the refusal names - so a split
+// pair loses the axis a save would have refused, not both.
+void rcMapDriveReadable(RcBindingConfig speed, RcBindingConfig steer, RcInputMode type,
+                        bool* speedRead, bool* steerRead) {
+    for (int pass = 0; pass < 2; ++pass) {
+        const RcRuleVerdict verdict = rcRuleStoredDrive(speed, steer, type);
+        if (verdict.ok()) {
+            return;
+        }
+        if (verdict.axis == DRIVE_ACTION_SPEED) {
+            *speedRead = false;
+            speed = disabledRcBinding();
+        } else {
+            *steerRead = false;
+            steer = disabledRcBinding();
+        }
+    }
+}
+
 }  // namespace
 bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     doc.clear();
@@ -256,14 +277,25 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     RcBindingConfig domeSpeed =
         rcMapSelectBackboneForMode(snap, snap.system.rc_pwm_dome_speed, snap.system.rc_sbus_dome_speed);
 
+    // An entry the droid would not read - one a save for the receiver type it
+    // has saved would refuse - says so, so a page never posts it back into a
+    // map the droid then refuses whole (ADR 0070).
+    const RcInputMode type = snap.system.rc_input_mode;
+    bool speedRead = true;
+    bool steerRead = true;
+    rcMapDriveReadable(driveSpeed, driveSteer, type, &speedRead, &steerRead);
+
     if (rcMapBindingIsMapped(driveSpeed)) {
-        rcMapAppendEntry(map, driveSpeed.source, driveSpeed.channel, DRIVE_ACTION_SPEED, nullptr);
+        JsonObject item = rcMapAppendEntry(map, driveSpeed.source, driveSpeed.channel, DRIVE_ACTION_SPEED, nullptr);
+        if (!speedRead) item["read"] = false;
     }
     if (rcMapBindingIsMapped(driveSteer)) {
-        rcMapAppendEntry(map, driveSteer.source, driveSteer.channel, DRIVE_ACTION_STEER, nullptr);
+        JsonObject item = rcMapAppendEntry(map, driveSteer.source, driveSteer.channel, DRIVE_ACTION_STEER, nullptr);
+        if (!steerRead) item["read"] = false;
     }
     if (rcMapBindingIsMapped(domeSpeed)) {
-        rcMapAppendEntry(map, domeSpeed.source, domeSpeed.channel, DOME_ACTION_SPEED, nullptr);
+        JsonObject item = rcMapAppendEntry(map, domeSpeed.source, domeSpeed.channel, DOME_ACTION_SPEED, nullptr);
+        if (!rcRuleStoredAxis(DOME_ACTION_SPEED, domeSpeed, type).ok()) item["read"] = false;
     }
 
     const RcTriggerBinding namedSlots[] = {snap.system.rc_arm1, snap.system.rc_arm2, snap.system.rc_aux1, snap.system.rc_aux2,
@@ -281,6 +313,7 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
             item["threshold"] = rcReactionThreshold(binding);
             item["quietS"] = rcReactionQuietS(binding);
         }
+        if (!rcRuleStoredCue(binding, type).ok()) item["read"] = false;
     }
 
     JsonObject capacity = doc["capacity"].to<JsonObject>();

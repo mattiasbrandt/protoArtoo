@@ -459,6 +459,49 @@ void test_dome_filter_accepts_on_initial_tick(void) {
     TEST_ASSERT_EQUAL_INT(1200, output.domeRawFiltered);
 }
 
+// A stored drive axis whose dead zone swallows one side of its stick is one a
+// save refuses, so it is not read: the drive stays still and no boot hold is
+// said for it (ADR 0070).
+void test_a_drive_whose_dead_zone_swallows_a_side_stays_still(void) {
+    RcInputProcessor proc = {};
+    rcInputProcessorInit(&proc);
+    RcProcessorConfig cfg = buildDualDefaultConfig();
+    cfg.mapping.driveSpeed.center = 300;
+    cfg.mapping.driveSpeed.deadband = 200;
+    TEST_ASSERT_TRUE(rcBindingIsValid(cfg.mapping.driveSpeed));
+    for (int i = 0; i < 3; ++i) {
+        RcProcessorOutput out = tickWith(&proc, cfg, RC_BINDING_SBUS1, i == 0 ? 300 : 1811, 992);
+        TEST_ASSERT_FALSE(out.backbone.driveActive);
+        TEST_ASSERT_EQUAL_INT16(0, out.backbone.driveSpeed);
+        TEST_ASSERT_FALSE(out.driveAwaitingCentre);
+    }
+}
+
+// A stored cue on a receiver the receiver type does not read fires nothing,
+// even on a frame nobody attributed to a receiver (ADR 0070).
+void test_a_stored_cue_the_rules_refuse_fires_nothing(void) {
+    RcInputProcessor proc = {};
+    rcInputProcessorInit(&proc);
+    RcProcessorConfig cfg = buildProcessorConfig();
+    cfg.triggerCount = 1;
+    cfg.triggers[0] = makeRcTriggerBinding(RC_BINDING_SBUS2, 3, SERVO_ACTION_ARM1_TOGGLE, nullptr,
+                                           RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
+                                           RC_SBUS_DEFAULT_MAX, 0, true);
+    RcProcessorInput input = {};
+    input.channels = buildChannelSnapshot();
+    input.channels.mode = RC_INPUT_SINGLE_SBUS;
+    input.channels.channels[2] = 1811;
+    input.config = cfg;
+    input.nowMs = 1000;
+    RcProcessorOutput output = {};
+    for (int tick = 0; tick < 3; ++tick) {
+        rcInputProcessorTick(&proc, input, &output);
+        input.nowMs += 20;
+        TEST_ASSERT_EQUAL(-1, output.triggerResults[0].servoIndex);
+        TEST_ASSERT_FALSE(output.triggerPressed[0]);
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_init_zeroes_state);
@@ -477,5 +520,7 @@ int main(void) {
     RUN_TEST(test_dual_sbus_dome_receiver_frame_leaves_drive_alone);
     RUN_TEST(test_dual_sbus_drive_receiver_off_keeps_zero_from_dome_frames);
     RUN_TEST(test_single_sbus_factory_dome_binding_reads_nothing);
+    RUN_TEST(test_a_drive_whose_dead_zone_swallows_a_side_stays_still);
+    RUN_TEST(test_a_stored_cue_the_rules_refuse_fires_nothing);
     return UNITY_END();
 }

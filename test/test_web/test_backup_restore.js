@@ -534,6 +534,24 @@ test("the RC Map never goes out with a binding the droid would refuse, and a ref
   assert.doesNotMatch(refused.receipt(), /RC Map: (restored|partial)/);
 });
 
+// A binding the droid that made the backup did not read ("read": false, ADR
+// 0070) is one a save refuses: sent back, it would refuse the whole map.
+test("a binding the backed-up droid did not read is left out of the restored RC Map, and named", async () => {
+  const rcMap = {
+    mode: "single_sbus",
+    map: [
+      { source: "sbus1", channel: 1, action: "drive_speed" },
+      { source: "sbus2", channel: 1, action: "dome_speed", read: false },
+    ],
+  };
+  const droid = makeDroid();
+  const { receipt } = await restoreOn(droid, { schema: 2, board: "artoo_esp32", rc_map: rcMap });
+
+  assert.deepEqual(droid.rcMap.map, rcMap.map.slice(0, 1));
+  assert.match(receipt(), /RC Map: partial — 1 left out/);
+  assert.match(receipt(), /RC Channel 1: not read by the droid it came from/);
+});
+
 // A file is offered only in the shape Download backup writes. Any object with
 // a schema used to pass: an RC Map alone emptied the droid's, and a schema 2
 // file without its board was taken as this droid's own and wrote the whole

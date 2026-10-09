@@ -31,8 +31,11 @@ ConfigParamSource makeSource(std::map<std::string, std::string>* m) {
     return src;
 }
 
+// A droid saved for two SBUS receivers, the factory receiver type: the map is
+// judged for the type the droid has saved (rcRuleMapAdd()).
 ConfigSnapshot makeDefaultSnap() {
     ConfigSnapshot snap = {};
+    snap.system.rc_input_mode = RC_INPUT_DUAL_SBUS;
     return snap;
 }
 
@@ -128,7 +131,7 @@ void test_rcMapApply_invalid_dome_seq_payload_rejected(void) {
 
 void test_rcMapApply_sm_diagnostic_payload_rejected(void) {
     std::map<std::string, std::string> m = {
-        {"plain", "{\"map\":[{\"source\":\"pwm\",\"channel\":1,\"action\":\"cmd\",\"payload\":\":SM11\"}]}"}};
+        {"plain", "{\"map\":[{\"source\":\"sbus1\",\"channel\":1,\"action\":\"cmd\",\"payload\":\":SM11\"}]}"}};
     ConfigSnapshot snap = makeDefaultSnap();
     RcMapApplyResult result;
     rcMapApply(makeSource(&m), &snap, &result);
@@ -142,8 +145,8 @@ void test_rcMapApply_duplicate_source_channel_rejected(void) {
     std::map<std::string, std::string> m = {
         {"plain",
          "{\"map\":["
-         "{\"source\":\"pwm\",\"channel\":1,\"action\":\"drive_speed\"},"
-         "{\"source\":\"pwm\",\"channel\":1,\"action\":\"arm1_toggle\"}"
+         "{\"source\":\"sbus1\",\"channel\":1,\"action\":\"drive_speed\"},"
+         "{\"source\":\"sbus1\",\"channel\":1,\"action\":\"arm1_toggle\"}"
          "]}"}};
     ConfigSnapshot snap = makeDefaultSnap();
     RcMapApplyResult result;
@@ -156,8 +159,8 @@ void test_rcMapApply_duplicate_drive_speed_rejected(void) {
     std::map<std::string, std::string> m = {
         {"plain",
          "{\"map\":["
-         "{\"source\":\"pwm\",\"channel\":1,\"action\":\"drive_speed\"},"
-         "{\"source\":\"pwm\",\"channel\":2,\"action\":\"drive_speed\"}"
+         "{\"source\":\"sbus1\",\"channel\":1,\"action\":\"drive_speed\"},"
+         "{\"source\":\"sbus1\",\"channel\":2,\"action\":\"drive_speed\"}"
          "]}"}};
     ConfigSnapshot snap = makeDefaultSnap();
     RcMapApplyResult result;
@@ -171,6 +174,7 @@ void test_rcMapApply_drive_speed_mirrors_pwm_and_sbus_slots(void) {
     std::map<std::string, std::string> m = {
         {"plain", "{\"map\":[{\"source\":\"pwm\",\"channel\":3,\"action\":\"drive_speed\"}]}"}};
     ConfigSnapshot snap = makeDefaultSnap();
+    snap.system.rc_input_mode = RC_INPUT_STANDARD_PWM;
     RcMapApplyResult result;
     rcMapApply(makeSource(&m), &snap, &result);
     TEST_ASSERT_TRUE(result.ok);
@@ -253,6 +257,35 @@ void test_rcMapApply_calibration_refuses_a_side_inside_the_deadband(void) {
     TEST_ASSERT_EQUAL_UINT16(100, fits.system.rc_sbus_drive_speed.deadband);
 }
 
+// An axis the map keeps on its stored calibration is held to the same dead
+// zone rule as one it calibrates: a stored dead zone that swallows a side
+// would be saved and never read (ADR 0070).
+void test_rcMapApply_refuses_a_kept_calibration_the_rules_do_not_take(void) {
+    ConfigSnapshot snap = makeDefaultSnap();
+    snap.system.rc_sbus_drive_speed = makeRcBindingConfig(RC_BINDING_SBUS1, 1, 172, 300, 1811, 200, false);
+    RcMapApplyResult result = applyBody(std::string("{") + kSbusDriveMap + "}", &snap);
+    TEST_ASSERT_FALSE(result.ok);
+    TEST_ASSERT_EQUAL_STRING("calibration leaves no travel past the deadband", result.errorMessage);
+
+    ConfigSnapshot fixed = makeDefaultSnap();
+    fixed.system.rc_sbus_drive_speed = makeRcBindingConfig(RC_BINDING_SBUS1, 1, 172, 300, 1811, 200, false);
+    result = applyBody(
+        std::string("{") + kSbusDriveMap + ",\"calibration\":{\"drive_speed\":{\"center\":992}}}", &fixed);
+    TEST_ASSERT_TRUE_MESSAGE(result.ok, result.errorMessage);
+}
+
+// The map is judged for the receiver type the droid has saved: one SBUS
+// receiver reads SBUS1 only, so an SBUS2 entry is refused (ADR 0070).
+void test_rcMapApply_refuses_a_receiver_the_saved_type_does_not_read(void) {
+    ConfigSnapshot snap = makeDefaultSnap();
+    snap.system.rc_input_mode = RC_INPUT_SINGLE_SBUS;
+    RcMapApplyResult result =
+        applyBody("{\"map\":[{\"source\":\"sbus2\",\"channel\":5,\"action\":\"arm1_toggle\"}]}", &snap);
+    TEST_ASSERT_FALSE(result.ok);
+    TEST_ASSERT_EQUAL_STRING("the RC Receiver type does not read this source", result.errorMessage);
+    TEST_ASSERT_TRUE(result.errorEntry.present);
+}
+
 // Drive speed and steer are read from one frame of one receiver: a map that
 // splits them could never drive, so it is refused (Codex review, #389).
 void test_rcMapApply_refuses_drive_split_across_receivers(void) {
@@ -325,6 +358,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_rcMapApply_calibration_keeps_fields_it_leaves_out);
     RUN_TEST(test_rcMapApply_calibration_refuses_what_it_cannot_store);
     RUN_TEST(test_rcMapApply_calibration_refuses_a_side_inside_the_deadband);
+    RUN_TEST(test_rcMapApply_refuses_a_kept_calibration_the_rules_do_not_take);
+    RUN_TEST(test_rcMapApply_refuses_a_receiver_the_saved_type_does_not_read);
     RUN_TEST(test_rcMapApply_refuses_drive_split_across_receivers);
     RUN_TEST(test_rcMapApply_refuses_drive_on_sbus2);
     RUN_TEST(test_rcMapApply_arm1_toggle_fills_dedicated_slot);

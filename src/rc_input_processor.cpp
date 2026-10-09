@@ -6,7 +6,7 @@
 
 #include "rc_input_processor.h"
 
-#include "rc_map_rules.h"  // rcRuleDrive()
+#include "rc_map_rules.h"  // rcRuleStoredDrive(), rcRuleStoredAxis(), rcRuleStoredCue()
 
 static constexpr uint32_t kOneShotEdgeDebounceMs = 120;
 static constexpr uint8_t kSwitchEdgeConfirmFrames = 2;
@@ -41,7 +41,7 @@ static bool readsAnotherReceiver(const RcBindingConfig& binding, const RcChannel
 // takes - this one or the drive receiver's.
 static bool driveCanBeRead(const RcChannelSnapshot& snap, const RcMappingConfig& mapping) {
     if (mapping.driveSpeed.source == RC_BINDING_NONE ||
-        !rcRuleDrive(mapping.driveSpeed, mapping.driveSteer).ok()) {
+        !rcRuleStoredDrive(mapping.driveSpeed, mapping.driveSteer, snap.mode).ok()) {
         return false;
     }
     RcChannelSnapshot probe = snap;
@@ -128,6 +128,7 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
     // single_sbus) the filter keeps its state and nothing is sent (#389).
     RcBindingConfig domeBinding = input.config.mapping.domeSpeed;
     if (input.config.mapping.enableDome &&
+        rcRuleStoredAxis(DOME_ACTION_SPEED, domeBinding, input.channels.mode).ok() &&
         rcMapBindingReadsSnapshot(domeBinding, input.channels, localMapping)) {
         int raw = input.channels.channels[domeBinding.channel - 1];
         DomeInputFilterResult filterResult =
@@ -161,6 +162,12 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
 
         // Filter triggers by source (SBUS1, SBUS2, PWM)
         if (input.sourceFilter != RC_BINDING_NONE && binding.source != input.sourceFilter) {
+            continue;
+        }
+
+        // A stored binding the RC Map's rules refuse is not read (ADR 0070):
+        // a save would not take it, so it fires nothing.
+        if (!rcRuleStoredCue(binding, input.channels.mode).ok()) {
             continue;
         }
 
