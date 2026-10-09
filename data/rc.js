@@ -1096,6 +1096,11 @@
   const rcDriveHold = document.getElementById('rc-drive-hold');
   // One save at a time, and what each axis last said about its own.
   let axisSaveInFlight = false;
+  // A map save or clear is in flight, read-back included. A stick Set posts
+  // the whole map beside its calibration, so it waits for the stored map, and
+  // Apply waits for a Set: neither may post the map the other is replacing
+  // (#483 review).
+  let mapWriteInFlight = false;
   const axisNotes = {};
 
   const axisBinding = (axis) => asMapArray().find((entry) => mapEntryAction(entry) === axis.token) || null;
@@ -1111,6 +1116,10 @@
   // The stick's live reading, or null with none (a PWM pulse of 0 is none).
   const axisLive = (binding) => {
     if (!binding || isOnOffChannel(binding.source, binding.channel)) return null;
+    // Only a receiver that is heard and not in failsafe gives a reading to
+    // set an end from: a cached or held number is not where the stick is.
+    const health = rcSnapshot?.sources?.[binding.source];
+    if (!health?.linked || health?.failsafe) return null;
     const raw = rawForChannel(binding.source, binding.channel);
     if (raw == null || (binding.source === 'pwm' && Number(raw) === 0)) return null;
     return Number(raw);
@@ -1159,9 +1168,17 @@
         <p class="hint">Not mapped.</p>
       </div>`;
     }
+    // A drive stored on SBUS2 before #483: the droid does not read it.
+    if (driveOnSbus2(axis.token, channelKeyOf(binding.source, binding.channel))) {
+      return `<div class="rc-axis" data-axis="${axis.token}">
+        <div class="rc-axis-head"><span class="rc-axis-name">${esc(name)}</span>
+          <span class="rc-axis-ch">${esc(channelTitleFromKey(channelKeyOf(binding.source, binding.channel)))}</span></div>
+        <p class="rc-axis-warn" role="status">Not read: Speed and Steer read SBUS1. Map it there.</p>
+      </div>`;
+    }
     const ends = axisEnds(axis, binding);
     const raw = axisLive(binding);
-    const idle = axisSaveInFlight || !channelMapLoaded;
+    const idle = axisSaveInFlight || mapWriteInFlight || !channelMapLoaded;
     const note = axisNotes[axis.token];
     const switchId = `rc-axis-rev-${axis.token}`;
     const sets = AXIS_ENDS.map((end) => `<button class="cal-set" type="button" data-axis="${axis.token}" data-axis-set="${end.key}"${idle || raw == null ? ' disabled' : ''}>Set ${end.label}</button>`).join('');
@@ -1213,7 +1230,7 @@
       const warnEl = tile.querySelector('.rc-axis-warn');
       if (warnEl) warnEl.textContent = axisRestWarning(axisEnds(axis, binding), raw);
       tile.querySelectorAll('[data-axis-set]').forEach((button) => {
-        button.disabled = axisSaveInFlight || !channelMapLoaded || raw == null;
+        button.disabled = axisSaveInFlight || mapWriteInFlight || !channelMapLoaded || raw == null;
       });
     });
   };
@@ -1293,7 +1310,7 @@
     const set = target?.closest?.('[data-axis-set]');
     const reverse = set ? null : target?.closest?.('[data-axis-reverse]');
     const control = set || reverse;
-    if (!control || control.disabled || axisSaveInFlight) return;
+    if (!control || control.disabled || axisSaveInFlight || mapWriteInFlight) return;
     const axis = AXES.find((each) => each.token === control.dataset.axis);
     if (!axis) return;
     if (set) setAxisEnd(axis, control.dataset.axisSet);
@@ -2311,6 +2328,10 @@
       setEditorFeedback('Not saved: the droid\'s map has not loaded yet.', 'error');
       return;
     }
+    if (axisSaveInFlight || mapWriteInFlight) {
+      setEditorFeedback('Not saved: another save is still going. Try again.', 'error');
+      return;
+    }
 
     const { source, channel } = parseChannelKey(selectedChannel);
     const mode = getEditorMode();
@@ -2423,9 +2444,13 @@
     setEditorDirtyState('saving', 'Saving changes…');
     setEditorFeedback('Saving...');
 
+    mapWriteInFlight = true;
+    renderAxes();
     try {
       await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify({ map: Object.values(nextMap) }) }, { timeoutMs: 5000 });
     } catch (error) {
+      mapWriteInFlight = false;
+      renderAxes();
       setEditorDirtyState('error', 'Save failed — unsaved changes');
       if (rcEditorApply) rcEditorApply.disabled = false;
       if (rcEditorRevert) rcEditorRevert.disabled = false;
@@ -2434,6 +2459,8 @@
     }
     const savedAt = new Date().toLocaleTimeString();
     const shown = await showStoredMap(nextMap);
+    mapWriteInFlight = false;
+    renderAxes();
     setEditorFeedback(`Saved at ${savedAt}.${moved}${shown.note}`, shown.ok ? 'success' : 'warning');
     markEditorClean(savedAt);
   };
@@ -2491,15 +2518,25 @@
       near: rcResetDefaults,
     });
     if (!clear) return;
+    if (axisSaveInFlight || mapWriteInFlight) {
+      setEditorFeedback('Not cleared: another save is still going. Try again.', 'error');
+      return;
+    }
     setEditorFeedback('Clearing mappings...');
+    mapWriteInFlight = true;
+    renderAxes();
     try {
       await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify({ map: [] }) }, { timeoutMs: 5000 });
     } catch (error) {
+      mapWriteInFlight = false;
+      renderAxes();
       setEditorFeedback(`Failed to clear mappings: ${window.PAApi.messageFor(error)}`, 'error');
       return;
     }
     const savedAt = new Date().toLocaleTimeString();
     const shown = await showStoredMap({});
+    mapWriteInFlight = false;
+    renderAxes();
     setEditorFeedback(`Cleared all mappings.${shown.note}`, shown.ok ? 'success' : 'warning');
     markEditorClean(savedAt);
   };
