@@ -70,17 +70,42 @@ struct RcReceiverSetup {
 // condition is no receiver and is never read here.
 bool rcReceiverReads(RcBindingSource source, const RcReceiverSetup& setup);
 
-// A rule's answer. `sentence` is the refusal as POST /api/rc/map says it; null
-// when the rule holds. `aboutEntry`: the refusal names the entry it is about
-// (the answer echoes it), rather than the map or a field of an entry. `axis`:
-// which drive axis a drive-pair refusal is about, ROBOT_ACTION_NONE otherwise.
+// Why a rule refused, in the Controller Console's reason tokens
+// (docs/console-protocol.md 3.3) that every settings refusal carries.
+enum class RcRuleReason : uint8_t {
+    kHolds = 0,
+    kOutOfRange,  // not a value the field takes
+    kConflict,    // fine on its own, clashes with another entry or field
+};
+
+// "out-of-range" / "conflict"; null for kHolds.
+const char* rcRuleReasonToken(RcRuleReason reason);
+
+// A rule's answer, as a refusal names it on the wire (docs/api.md "Refusals
+// from a settings write"): `field` is the request field it is about
+// ("map.channel", "map.source", ...), `reason` why, and what the field would
+// have taken - a range `acceptsLo..acceptsHi` when `acceptsWords` is null and
+// acceptsHi is not 0, or the comma-separated words in `acceptsWords`.
+// rcRuleFormatAccepts() writes it. `sentence` is the refusal as POST
+// /api/rc/map has always said it; null when the rule holds. `aboutEntry`: the
+// refusal names the entry it is about (the answer echoes it). `axis`: which
+// drive axis a drive-pair refusal is about, ROBOT_ACTION_NONE otherwise.
 struct RcRuleVerdict {
     const char* sentence;
-    bool aboutEntry;
+    const char* field;
+    const char* acceptsWords;
+    uint16_t acceptsLo;
+    uint16_t acceptsHi;
     RobotActionId axis;
+    RcRuleReason reason;
+    bool aboutEntry;
     bool ok() const { return sentence == nullptr; }
 };
 
+// What the refused field accepts, written into `buf` ("1..16", "sbus1,sbus2").
+// False, with `buf` empty, when the verdict states none (every conflict, and
+// a refusal no value would cure).
+bool rcRuleFormatAccepts(const RcRuleVerdict& verdict, char* buf, size_t bufSize);
 // Whether `next` may join the `count` entries already in an RC Map for the
 // receiver type `type`: its RC Channel, that the type reads its receiver, that
 // a cue is not on PWM and an axis sits on a stick, what a droid condition may
@@ -97,9 +122,9 @@ RcRuleVerdict rcRuleMapAdd(const RcMapEntry* prior, size_t count, const RcMapEnt
 // (RC_BINDING_NONE) breaks neither rule.
 RcRuleVerdict rcRuleDrive(const RcBindingConfig& speed, const RcBindingConfig& steer);
 
-// An axis's calibration: end, centre and end in order, and a dead zone that
-// leaves stick travel on both sides of the centre.
-RcRuleVerdict rcRuleAxisCalibration(const RcBindingConfig& binding);
+// An axis's calibration (`axis` names which): end, centre and end in order,
+// and a dead zone that leaves stick travel on both sides of the centre.
+RcRuleVerdict rcRuleAxisCalibration(RobotActionId axis, const RcBindingConfig& binding);
 
 // ---------------------------------------------------------------------------
 // The same rules on read (ADR 0070): a stored binding a save would refuse is

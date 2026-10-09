@@ -76,7 +76,8 @@ Example with hint and field:
 
 The settings writes - `POST /api/config`, `POST /api/wifi`,
 `POST /api/audio/tracks`, `POST /api/audio/category-range`,
-`POST /api/audio/mood-map` and `POST /api/audio` `action=volume` - answer a refused value (`400`, or `404` where a
+`POST /api/audio/mood-map`, `POST /api/audio` `action=volume` and
+`POST /api/rc/map` - answer a refused value (`400`, or `404` where a
 route says so) with three more keys beside `error`:
 
 - `"field"`: the request field the refusal is about, by the name it was sent
@@ -2374,6 +2375,9 @@ Returns channel-centric map.
   type the droid has saved would now refuse (ADR 0070). It stays still. A client
   leaves it out of the map it posts back, or the droid refuses that map whole.
   A drive split across receivers is marked on the axis a save would refuse.
+  Beside `read` it carries the refusal a save would give it as data: `field`,
+  `reason` and, where one applies, `accepts`, as `POST /api/rc/map` refuses:
+  `{"source":"sbus2","channel":1,"action":"dome_speed","read":false,"field":"map.source","reason":"out-of-range","accepts":"sbus1"}`
 
 #### Example request
 
@@ -2454,7 +2458,17 @@ Replaces entire RC map.
   `{"map":[...],"calibration":{"drive_steer":{"min":255,"center":1472,"max":1919,"reverse":true}}}`
 - Success: `200` `{"ok":true}`
 - Errors:
-- `400` with `{"ok":false,"error":"..."}` and optional `entry` object
+- `400` with `{"ok":false,"error":"..."}`, an optional `entry` object echoing
+  the entry the refusal is about, and `field`, `reason` and `accepts` as in
+  "Refusals from a settings write". `field` is the request field: `map` (the
+  map itself: missing, malformed, or no room for one more), `map.source`,
+  `map.channel`, `map.action`, `map.payload`, `map.threshold`, `map.quietS`,
+  `calibration`, `calibration.<axis>`, or `calibration.<axis>.<key>` with
+  `<key>` one of `min`, `center`, `max`, `reverse` and `deadband` (a stored
+  dead zone the ends leave no travel past). A rule between two values is a
+  `conflict` and names the second one: a drive split across receivers names
+  the steer's `map.source`, a calibration out of order its `center`:
+  `{"ok":false,"error":"drive reads SBUS1, the drive receiver","field":"map.source","reason":"out-of-range","accepts":"sbus1","entry":{"source":"sbus2","channel":1,"action":"drive_speed"}}`
 - `500` `{"ok":false,"error":"failed to persist config"}`
 - `503` `{"ok":false,"error":"config write busy"}` — another config writer held
   the config write window; nothing was applied

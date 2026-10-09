@@ -33,6 +33,12 @@ struct RcMapApplyResult {
     bool ok = false;
     char errorMessage[96] = {0};
     RcMapApplyErrorEntry errorEntry;
+    // The refusal as data (docs/api.md "Refusals from a settings write"): the
+    // request field it is about ("map.channel", "calibration.drive_speed.min"),
+    // the reason token, and what the field takes. Empty when it states none.
+    char field[40] = {0};
+    char reason[20] = {0};
+    char accepts[48] = {0};
 };
 
 // `working` must already hold the current cached snapshot (shell reads it

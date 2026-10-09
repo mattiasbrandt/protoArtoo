@@ -243,23 +243,38 @@ JsonObject rcMapAppendEntry(JsonArray map, RcBindingSource source, uint8_t chann
     return item;
 }
 
-// Which of the stored drive axes a save would keep. A pair the rules refuse
-// is narrowed one axis at a time - the axis the refusal names - so a split
-// pair loses the axis a save would have refused, not both.
-void rcMapDriveReadable(RcBindingConfig speed, RcBindingConfig steer, RcInputMode type,
-                        bool* speedRead, bool* steerRead) {
+// Which of the stored drive axes a save would keep, and why not. A pair the
+// rules refuse is narrowed one axis at a time - the axis the refusal names -
+// so a split pair loses the axis a save would have refused, not both.
+void rcMapDriveVerdicts(RcBindingConfig speed, RcBindingConfig steer, RcInputMode type,
+                        RcRuleVerdict* speedVerdict, RcRuleVerdict* steerVerdict) {
     for (int pass = 0; pass < 2; ++pass) {
         const RcRuleVerdict verdict = rcRuleStoredDrive(speed, steer, type);
         if (verdict.ok()) {
             return;
         }
         if (verdict.axis == DRIVE_ACTION_SPEED) {
-            *speedRead = false;
+            *speedVerdict = verdict;
             speed = disabledRcBinding();
         } else {
-            *steerRead = false;
+            *steerVerdict = verdict;
             steer = disabledRcBinding();
         }
+    }
+}
+
+// An entry the droid does not read: "read": false, and the refusal a save
+// would give it, as data (the keys of POST /api/rc/map's own refusals).
+void rcMapMarkUnread(JsonObject item, const RcRuleVerdict& verdict) {
+    if (verdict.ok()) {
+        return;
+    }
+    item["read"] = false;
+    item["field"] = verdict.field;
+    item["reason"] = rcRuleReasonToken(verdict.reason);
+    char accepts[48] = {};
+    if (rcRuleFormatAccepts(verdict, accepts, sizeof(accepts))) {
+        item["accepts"] = accepts;
     }
 }
 
@@ -281,21 +296,21 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     // has saved would refuse - says so, so a page never posts it back into a
     // map the droid then refuses whole (ADR 0070).
     const RcInputMode type = snap.system.rc_input_mode;
-    bool speedRead = true;
-    bool steerRead = true;
-    rcMapDriveReadable(driveSpeed, driveSteer, type, &speedRead, &steerRead);
+    RcRuleVerdict speedVerdict = {};
+    RcRuleVerdict steerVerdict = {};
+    rcMapDriveVerdicts(driveSpeed, driveSteer, type, &speedVerdict, &steerVerdict);
 
     if (rcMapBindingIsMapped(driveSpeed)) {
-        JsonObject item = rcMapAppendEntry(map, driveSpeed.source, driveSpeed.channel, DRIVE_ACTION_SPEED, nullptr);
-        if (!speedRead) item["read"] = false;
+        rcMapMarkUnread(rcMapAppendEntry(map, driveSpeed.source, driveSpeed.channel, DRIVE_ACTION_SPEED, nullptr),
+                        speedVerdict);
     }
     if (rcMapBindingIsMapped(driveSteer)) {
-        JsonObject item = rcMapAppendEntry(map, driveSteer.source, driveSteer.channel, DRIVE_ACTION_STEER, nullptr);
-        if (!steerRead) item["read"] = false;
+        rcMapMarkUnread(rcMapAppendEntry(map, driveSteer.source, driveSteer.channel, DRIVE_ACTION_STEER, nullptr),
+                        steerVerdict);
     }
     if (rcMapBindingIsMapped(domeSpeed)) {
-        JsonObject item = rcMapAppendEntry(map, domeSpeed.source, domeSpeed.channel, DOME_ACTION_SPEED, nullptr);
-        if (!rcRuleStoredAxis(DOME_ACTION_SPEED, domeSpeed, type).ok()) item["read"] = false;
+        rcMapMarkUnread(rcMapAppendEntry(map, domeSpeed.source, domeSpeed.channel, DOME_ACTION_SPEED, nullptr),
+                        rcRuleStoredAxis(DOME_ACTION_SPEED, domeSpeed, type));
     }
 
     const RcTriggerBinding namedSlots[] = {snap.system.rc_arm1, snap.system.rc_arm2, snap.system.rc_aux1, snap.system.rc_aux2,
@@ -313,7 +328,7 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
             item["threshold"] = rcReactionThreshold(binding);
             item["quietS"] = rcReactionQuietS(binding);
         }
-        if (!rcRuleStoredCue(binding, type).ok()) item["read"] = false;
+        rcMapMarkUnread(item, rcRuleStoredCue(binding, type));
     }
 
     JsonObject capacity = doc["capacity"].to<JsonObject>();
@@ -1040,7 +1055,7 @@ void handleRcMapPost(WebRequest& req) {
 
     ConfigSnapshot working;
 
-    // RcMapApplyResult is small (163 B on artoo-esp32); it shares the web
+    // RcMapApplyResult is small (271 B on artoo-esp32); it shares the web
     // request scratch rather than holding a static of its own (#428).
     WebRequestScratch<RcMapApplyResult> scratch;
     if (!scratch) {
@@ -1061,6 +1076,11 @@ void handleRcMapPost(WebRequest& req) {
         JsonDocument err;
         err["ok"] = false;
         err["error"] = result.errorMessage;
+        // The refusal as data, the keys every settings refusal carries
+        // (docs/api.md "Refusals from a settings write", ADR 0070).
+        if (result.field[0] != '\0') err["field"] = result.field;
+        if (result.reason[0] != '\0') err["reason"] = result.reason;
+        if (result.accepts[0] != '\0') err["accepts"] = result.accepts;
         if (result.errorEntry.present) {
             JsonObject at = err["entry"].to<JsonObject>();
             at["source"] = result.errorEntry.source;
@@ -1070,7 +1090,7 @@ void handleRcMapPost(WebRequest& req) {
                 at["payload"] = result.errorEntry.payload;
             }
         }
-        webSendJsonDocument(req, err, 320, TAG, 400);
+        webSendJsonDocument(req, err, 448, TAG, 400);
         return;
     }
     if (!persisted) {
