@@ -404,6 +404,29 @@ void test_an_unread_binding_takes_no_control_from_another(void) {
                             rcStoredMapConflicts(single, RC_INPUT_DUAL_SBUS));
 }
 
+// ReactionTask reads only the Reactions a save would take: one the rules
+// refuse leaves its slot, and so do two on one droid condition. Radio slots
+// are left as they are.
+void test_a_reaction_the_rules_refuse_leaves_its_slot(void) {
+    RcTriggerBinding slots[] = {
+        makeRcReactionBinding(RC_BINDING_DROID_TRACK, 1, DOME_ACTION_MARCDUINO_CMD, ":SM0,150,2200", 0, 5),
+        makeRcReactionBinding(RC_BINDING_DROID_REST, 1, SOUND_ACTION_NEXT, nullptr, 20, 5),
+        makeRcReactionBinding(RC_BINDING_DROID_TRACK, 1, DOME_ACTION_MARCDUINO_CMD, "OP01", 0, 5),
+        makeRcTriggerBinding(RC_BINDING_SBUS1, 6, DOME_ACTION_MARCDUINO_CMD, ":SM01", 172, 992, 1811, 0, false),
+        makeRcReactionBinding(RC_BINDING_DROID_SPEED, 1, SOUND_ACTION_NEXT, nullptr, 50, 5),
+        makeRcReactionBinding(RC_BINDING_DROID_SPEED, 1, SOUND_ACTION_RANDOM_HAPPY, nullptr, 50, 5),
+    };
+    // The stored form's own check lets the :SM Reaction load.
+    TEST_ASSERT_TRUE(rcTriggerBindingIsValid(slots[0]));
+    rcStoredReactionsKeepRead(slots, 6, RC_INPUT_DUAL_SBUS);
+    TEST_ASSERT_EQUAL(RC_BINDING_NONE, slots[0].source);   // :SM
+    TEST_ASSERT_EQUAL(RC_BINDING_DROID_REST, slots[1].source);
+    TEST_ASSERT_EQUAL(RC_BINDING_NONE, slots[2].source);   // a command that starts no :, $ or #
+    TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, slots[3].source);  // a radio slot is the processor's
+    TEST_ASSERT_EQUAL(RC_BINDING_NONE, slots[4].source);   // two on one condition
+    TEST_ASSERT_EQUAL(RC_BINDING_NONE, slots[5].source);
+}
+
 // --- a refusal as data ---
 
 namespace {
@@ -589,6 +612,7 @@ int main(int, char**) {
     RUN_TEST(test_two_stored_bindings_on_one_rc_channel_both_stay_still);
     RUN_TEST(test_two_stored_puppet_strings_on_one_part_both_stay_still);
     RUN_TEST(test_an_unread_binding_takes_no_control_from_another);
+    RUN_TEST(test_a_reaction_the_rules_refuse_leaves_its_slot);
     RUN_TEST(test_a_refusal_names_its_field_reason_and_what_it_accepts);
     RUN_TEST(test_a_conflict_names_its_field_and_accepts_nothing);
     RUN_TEST(test_every_field_a_rule_names_is_declared);
