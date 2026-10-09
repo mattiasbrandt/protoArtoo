@@ -124,9 +124,9 @@
             "rcInputTask"
           ],
           "frames": [],
-          "chain_bytes": 5632,
+          "chain_bytes": 5648,
           "stack_bytes": 7168,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: rcInputTask -> dispatchSbusBindingsForSource() -> dispatchProcessorOutput() [clone .constprop.0] -> rcDispatchTriggerResults() -> rcDispatchSingleAction() -> routeMarcduinoLine() -> executeMarcduinoBodyCommand() -> handleSequenceCommand() -> sequenceStart() -> ...; widest frames _svfprintf_r 1152 B, rcInputTask 576 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B. The Marcduino router's frame sits between rcDispatchSingleAction and the body handler since #449 (+64 B); its log line is out of line (marcduinoLogRoute()) because inline it walked 5904 B, past the rule step.",
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: rcInputTask -> dispatchSbusBindingsForSource() -> dispatchProcessorOutput() [clone .constprop.0] -> rcDispatchTriggerResults() -> rcDispatchSingleAction() -> routeMarcduinoLine() -> executeMarcduinoBodyCommand() -> handleSequenceCommand() -> sequenceStart() -> ...; widest frames _svfprintf_r 1152 B, rcInputTask 592 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B. The root frame grew 576 -> 592 B on #486, when the input processor began judging the stored map's conflicts each frame (rcStoredMapConflicts()). The Marcduino router's frame sits between rcDispatchSingleAction and the body handler since #449 (+64 B); its log line is out of line (marcduinoLogRoute()) because inline it walked 5904 B, past the rule step.",
           "created": "only when rcPlan.taskEnabled: an RC input is active for the boot-selected mode and routing"
         }
       }
@@ -524,9 +524,9 @@
             "reactionTask"
           ],
           "frames": [],
-          "chain_bytes": 4320,
+          "chain_bytes": 4336,
           "stack_bytes": 5632,
-          "note": "A Reaction bound to a Marcduino command the body owns goes through the action door: reactionTask (352 B root frame) -> dispatchReactionAction -> processTriggerAction -> rcDispatchSingleAction -> routeMarcduinoLine -> executeMarcduinoBodyCommand -> handleSequenceCommand (320 B) -> audioQueueDollar, whose queue-drop log line (logQueueDrop) runs paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf, 320 B) formats with newlib nano's vsniprintf. It is RCInputTask's route below the door, under a smaller root frame: the evaluator's state and one tick's scratch are static, and the firing's own log line is out of line beside the door (logFiring()).",
+          "note": "A Reaction bound to a Marcduino command the body owns goes through the action door: reactionTask (368 B root frame) -> dispatchReactionAction -> processTriggerAction -> rcDispatchSingleAction -> routeMarcduinoLine -> executeMarcduinoBodyCommand -> handleSequenceCommand (320 B) -> audioQueueDollar, whose queue-drop log line (logQueueDrop) runs paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf, 320 B) formats with newlib nano's vsniprintf. It is RCInputTask's route below the door, under a smaller root frame: the evaluator's state and one tick's scratch are static, and the firing's own log line is out of line beside the door (logFiring()). The root frame grew 352 -> 368 B on #486, when each tick began reading the receiver type to leave out a Reaction the RC Map's rules refuse (rcStoredReactionsKeepRead()); at 4336 B the rule still gives 5632 B.",
           "created": "always"
         },
         "esp32p4": {
@@ -535,9 +535,9 @@
             "reactionTask"
           ],
           "frames": [],
-          "chain_bytes": 5216,
+          "chain_bytes": 5248,
           "stack_bytes": 6656,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: reactionTask (368 B root frame) -> dispatchReactionAction -> processTriggerAction -> rcDispatchSingleAction -> routeMarcduinoLine -> executeMarcduinoBodyCommand -> handleSequenceCommand -> sequenceStart -> domeQueueTx, whose queue-drop log line runs paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> ... -> _svfprintf_r (1152 B) -> _dtoa_r (416 B). It is RCInputTask's route below the action door, under a smaller root frame.",
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: reactionTask (400 B root frame) -> dispatchReactionAction -> processTriggerAction -> rcDispatchSingleAction -> routeMarcduinoLine -> executeMarcduinoBodyCommand -> handleSequenceCommand -> sequenceStart -> domeQueueTx, whose queue-drop log line runs paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> ... -> _svfprintf_r (1152 B) -> _dtoa_r (416 B). It is RCInputTask's route below the action door, under a smaller root frame. The root frame grew 368 -> 400 B on #486, when each tick began reading the receiver type to leave out a Reaction the RC Map's rules refuse (rcStoredReactionsKeepRead()); at 5248 B the rule still gives 6656 B.",
           "created": "always"
         }
       }
