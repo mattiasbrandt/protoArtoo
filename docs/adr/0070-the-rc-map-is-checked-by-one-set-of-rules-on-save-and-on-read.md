@@ -70,3 +70,29 @@ graph, so it cannot bring back the cycle ADR 0001 avoided.
   `/api/rc` poll for channels that fire nothing.
 - **Keep the per-copy tests alongside the matrix.** They pin call sites rather
   than rules, and they fail on every refactor of a caller.
+
+## Amended 2026-10-09: an unread binding says why on the RC Map, and the save refuses PWM cues and dead payloads
+
+Settled while building it (#486). Two points the decision above names are made
+precise, and two rules join it.
+
+- **Why a binding is not read is said on `GET /api/rc/map`, not `GET
+  /api/rc`.** Each entry the droid would not read carries `"read": false` with
+  the refusal a save would give it (`field`, `reason`, `accepts`). The verdict
+  changes only when the map or the receiver type changes, so it rides with the
+  map rather than on the live poll, whose rc SSE event is within about 240 B of
+  its buffer. A page needs the verdict there anyway: the RC Map it posts back
+  has to leave such an entry out, or the droid refuses the whole map over it.
+  `GET /api/rc` carries the live part, `pressed`.
+- **What RC offers comes as three lists.** `GET /api/rc/map` `receivers` says
+  which RC Receivers the saved type reads (`read`), which the drive may use
+  (`drive`), and which carry a cue or a puppet string (`cues`). Each action on
+  `GET /api/actions` says whether it needs a stick (`rc_input`) and whether a
+  Reaction may fire it (`reaction`).
+- **A cue on PWM is refused** (operator, 2026-10-09 on #486). The PWM path never
+  read the RC Map's cue slots, so a PWM receiver carries the drive and dome axes
+  only. The legacy PWM arm and sound slots outside the RC Map are not covered by
+  this ADR.
+- **A payload the dispatcher would never send is refused**: a body sequence
+  other than 30-36, or a Marcduino command that does not start `:`, `$` or `#`.
+  Such a binding was saved and fired nothing.
