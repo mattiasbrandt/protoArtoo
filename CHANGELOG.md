@@ -25,6 +25,27 @@ the patch releases, whose notes live on their own GitHub Release.
 
 ## [Unreleased]
 
+### Added
+
+#### RC
+- **The RC page says why the droid will not save.** A refused map or stick
+  end names the binding and what to change, in words: "SBUS#2 CH 1: RC
+  Receiver must be SBUS1."
+- **A binding the droid does not read says so.** A binding saved before a
+  rule existed, like a dome on SBUS2 after a switch to one receiver, is named
+  with the reason, stays still, and Apply drops it instead of refusing the map.
+- **Pressed means what the droid fires.** The RC page shows a switch as
+  pressed when the droid reads it pressed, by that binding's own ends and dead
+  zone.
+
+### Changed
+
+- **One set of rules for the RC Map.** What a save refuses, the droid no longer
+  reads from a map stored before: a cue on a PWM receiver, an axis on CH17 or
+  CH18, a binding on a receiver the receiver type does not read, and an axis
+  whose dead zone leaves no travel on one side. Each stays still and the RC
+  page says why.
+
 ## [1.4.0] - 2026-10-08
 
 <!-- release-name: The modular release -->

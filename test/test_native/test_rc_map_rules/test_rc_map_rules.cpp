@@ -462,6 +462,22 @@ void test_every_field_a_rule_names_is_declared(void) {
     }
 }
 
+// The receivers a map may bind, and those the drive may use (GET /api/rc/map).
+void test_the_receivers_a_map_may_bind_follow_the_receiver_type(void) {
+    RcBindingSource out[3] = {};
+    TEST_ASSERT_EQUAL_UINT(2, rcMapReceivers(RC_INPUT_DUAL_SBUS, false, out, 3));
+    TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, out[0]);
+    TEST_ASSERT_EQUAL(RC_BINDING_SBUS2, out[1]);
+    TEST_ASSERT_EQUAL_UINT(1, rcMapReceivers(RC_INPUT_DUAL_SBUS, true, out, 3));
+    TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, out[0]);
+    TEST_ASSERT_EQUAL_UINT(1, rcMapReceivers(RC_INPUT_SINGLE_SBUS, false, out, 3));
+    TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, out[0]);
+    TEST_ASSERT_EQUAL_UINT(1, rcMapReceivers(RC_INPUT_STANDARD_PWM, true, out, 3));
+    TEST_ASSERT_EQUAL(RC_BINDING_PWM, out[0]);
+    TEST_ASSERT_EQUAL_UINT(0, rcMapReceivers(RC_INPUT_NOT_FITTED, false, out, 3));
+    TEST_ASSERT_EQUAL_UINT(0, rcMapReceivers(RC_INPUT_ELRS, true, nullptr, 0));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_single_sbus_reads_sbus1_on_the_header_it_is_wired_to);
@@ -492,5 +508,6 @@ int main(int, char**) {
     RUN_TEST(test_a_refusal_names_its_field_reason_and_what_it_accepts);
     RUN_TEST(test_a_conflict_names_its_field_and_accepts_nothing);
     RUN_TEST(test_every_field_a_rule_names_is_declared);
+    RUN_TEST(test_the_receivers_a_map_may_bind_follow_the_receiver_type);
     return UNITY_END();
 }

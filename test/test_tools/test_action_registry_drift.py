@@ -686,3 +686,27 @@ class StaticAssetHandlersAreNotApiRoutes(unittest.TestCase):
                 route.startswith("/api/") or route.startswith("/upload/"),
                 f"{route} is not an API path and should not be in the registry check",
             )
+
+
+class ActionNeedsAreReadFromTheSavesPredicates(unittest.TestCase):
+    """rc_input and reaction (ADR 0070) are derived from the predicates POST
+    /api/rc/map applies, so the YAML and the RC page's fallback are held to
+    the rule itself, not to a list in this tool."""
+
+    def test_the_sticks_are_the_three_axes_and_a_puppet_string(self):
+        stick, _ = check_action_registry_drift.firmware_action_needs()
+        self.assertEqual(
+            {"DRIVE_ACTION_SPEED", "DRIVE_ACTION_STEER", "DOME_ACTION_SPEED", "SERVO_ACTION_PUPPET_PART"},
+            stick,
+        )
+
+    def test_a_reaction_takes_no_stick_and_not_the_three_it_may_not_fire(self):
+        stick, reaction = check_action_registry_drift.firmware_action_needs()
+        self.assertFalse(reaction & stick)
+        for refused in ("SYSTEM_ACTION_ESTOP", "SYSTEM_ACTION_OP_MODE", "DRIVE_ACTION_SPEED_PRESET_CYCLE"):
+            self.assertNotIn(refused, reaction)
+        self.assertIn("SOUND_ACTION_NEXT", reaction)
+
+    def test_a_predicate_that_changed_shape_is_refused_rather_than_misread(self):
+        with self.assertRaises(ValueError):
+            check_action_registry_drift._predicate_body("bool other(int x) {\n}\n", "robotActionIsAnalog")

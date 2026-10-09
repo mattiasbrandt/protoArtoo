@@ -151,6 +151,10 @@ class ExpectedAction:
     group: str
     testable: bool
     output: str | None
+    # What the action needs (ADR 0070): "stick" or "switch", and whether a
+    # Reaction may fire it - as the registry YAML states them.
+    rc_input: str | None = None
+    reaction: bool | None = None
 
 
 def normalize(text: object) -> str:
@@ -170,6 +174,32 @@ def action_group(entry: dict) -> str:
 
 def action_testable(token: str) -> bool:
     return token not in NON_TESTABLE_TOKENS and token not in PAYLOAD_REQUIRED_TOKENS
+
+
+def _predicate_body(text: str, name: str) -> str:
+    """The body of `bool <name>(RobotActionId target) {...}`."""
+    match = re.search(rf"bool\s+{name}\(RobotActionId target\)\s*\{{(?P<body>.*?)\n\}}", text, re.S)
+    if not match:
+        raise ValueError(f"could not find {name}()")
+    return match.group("body")
+
+
+def firmware_action_needs() -> tuple[set[str], set[str]]:
+    """The RobotActionId enums the save takes as a stick (robotActionIsAnalog())
+    and those a Reaction may fire (robotActionValidForReaction()), read from the
+    predicates themselves - the rules POST /api/rc/map and GET /api/actions use.
+    """
+    header = RC_ACTION_TYPES_PATH.read_text(encoding="utf-8")
+    source = RC_ACTION_TYPES_CPP_PATH.read_text(encoding="utf-8")
+    stick = set(re.findall(r"target == (\w+)", _predicate_body(header, "robotActionIsAnalog")))
+    tier2 = set(re.findall(r"target == (\w+)", _predicate_body(source, "robotActionValidForTier2")))
+    body = _predicate_body(source, "robotActionValidForReaction")
+    for call in ("robotActionValidForTier2(target)", "!robotActionIsAnalog(target)"):
+        if call not in body:
+            raise ValueError(f"robotActionValidForReaction() no longer reads {call}; update this check")
+    refused = set(re.findall(r"target != (\w+)", body)) - {"ROBOT_ACTION_NONE"}
+    reaction = tier2 - stick - refused - {"ROBOT_ACTION_NONE"}
+    return stick, reaction
 
 
 def robot_action_enum_order() -> dict[str, int]:
@@ -241,6 +271,8 @@ def load_expected_actions(doc: dict) -> list[ExpectedAction]:
                 group=action_group(entry),
                 testable=action_testable(token),
                 output=entry.get("output"),
+                rc_input=entry.get("rc_input"),
+                reaction=entry.get("reaction"),
             )
         )
 
@@ -366,13 +398,13 @@ def check_output_placeholders(doc: dict, errors: list[str]) -> None:
                 )
 
 
-def parse_js_fallback() -> dict[str, tuple[str, str, str, bool, bool]]:
+def parse_js_fallback() -> dict[str, tuple[str, str, str, bool, bool, str, bool]]:
     text = RC_JS_PATH.read_text(encoding="utf-8")
     match = re.search(r"const HARDCODED_ACTION_TARGETS = \[(?P<body>.*?)\n  \];", text, re.S)
     if not match:
         raise ValueError("could not find HARDCODED_ACTION_TARGETS")
 
-    rows: dict[str, tuple[str, str, str, bool, bool]] = {}
+    rows: dict[str, tuple[str, str, str, bool, bool, str, bool]] = {}
     for row in re.findall(r"{(?P<row>[^{}]+)}", match.group("body")):
         fields = {}
         for key, single_quoted, double_quoted, boolean in re.findall(
@@ -389,6 +421,8 @@ def parse_js_fallback() -> dict[str, tuple[str, str, str, bool, bool]]:
             normalize(fields.get("description", "")),
             fields.get("testable") == "true",
             fields.get("safetyCritical") == "true",
+            fields.get("rcInput", ""),
+            fields.get("reaction") == "true",
         )
     return rows
 
@@ -1047,9 +1081,14 @@ def main() -> int:
     from_string = parse_from_string_tokens()
     registry = parse_action_registry()
     js_fallback = parse_js_fallback()
+    stick, reaction = firmware_action_needs()
 
     for action in expected:
         add_mismatch(errors, f"{action.enum} robotActionIdToString", action.token, to_string.get(action.enum))
+        # What the action needs, as the save's own predicates say (ADR 0070).
+        add_mismatch(errors, f"{action.token} rc_input", "stick" if action.enum in stick else "switch",
+                     action.rc_input)
+        add_mismatch(errors, f"{action.token} reaction", action.enum in reaction, action.reaction)
         add_mismatch(errors, f"{action.token} parseRobotActionId", action.enum, from_string.get(action.token))
 
         row = registry.get(action.enum)
@@ -1085,6 +1124,8 @@ def main() -> int:
             add_mismatch(errors, f"{action.token} JS description", action.description, js[2])
             add_mismatch(errors, f"{action.token} JS testable", action.testable, js[3])
             add_mismatch(errors, f"{action.token} JS safetyCritical", action.safety_critical, js[4])
+            add_mismatch(errors, f"{action.token} JS rcInput", action.rc_input, js[5])
+            add_mismatch(errors, f"{action.token} JS reaction", action.reaction, js[6])
 
     for enum in sorted(set(registry) - set(expected_by_enum)):
         errors.append(f"{enum} appears in ACTION_REGISTRY but not bindable YAML")

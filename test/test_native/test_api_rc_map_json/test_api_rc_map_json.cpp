@@ -254,9 +254,25 @@ void test_populateRcMapJson_widest_map_fits_its_body(void) {
     TEST_ASSERT_EQUAL_STRING("drive_speed,drive_steer,dome_speed", doc["map"][13]["accepts"] | "");
 }
 
+// GET /api/rc/map says which RC Receivers the saved type reads and which the
+// drive may use, so the RC page offers exactly what a save takes (ADR 0070).
+void test_populateRcMapJson_says_which_receivers_a_map_may_bind(void) {
+    JsonDocument dual;
+    TEST_ASSERT_TRUE(populateRcMapJson(dual, makeEmptySnapshot(RC_INPUT_DUAL_SBUS)));
+    TEST_ASSERT_EQUAL_UINT(2, dual["receivers"]["read"].size());
+    TEST_ASSERT_EQUAL_STRING("sbus2", dual["receivers"]["read"][1] | "");
+    TEST_ASSERT_EQUAL_UINT(1, dual["receivers"]["drive"].size());
+    TEST_ASSERT_EQUAL_STRING("sbus1", dual["receivers"]["drive"][0] | "");
+    JsonDocument none;
+    TEST_ASSERT_TRUE(populateRcMapJson(none, makeEmptySnapshot(RC_INPUT_NOT_FITTED)));
+    TEST_ASSERT_TRUE(none["receivers"]["read"].is<JsonArray>());
+    TEST_ASSERT_EQUAL_UINT(0, none["receivers"]["read"].size());
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_populateRcMapJson_absence_not_sentinel);
+    RUN_TEST(test_populateRcMapJson_says_which_receivers_a_map_may_bind);
     RUN_TEST(test_populateRcMapJson_marks_an_entry_the_saved_type_does_not_read);
     RUN_TEST(test_populateRcMapJson_narrows_a_split_drive_to_the_axis_a_save_refuses);
     RUN_TEST(test_populateRcMapJson_widest_map_fits_its_body);
