@@ -177,26 +177,51 @@ inline bool parseRcBindingSource(const char* raw, RcBindingSource* out) {
     return false;
 }
 
-inline bool rcBindingChannelIsValid(RcBindingSource source, uint8_t channel) {
+// The RC Channels a PWM receiver has, and an SBUS frame: 16 sticks and CH17/
+// CH18, which are on/off.
+static constexpr uint8_t RC_PWM_CHANNELS = 6;
+static constexpr uint8_t RC_SBUS_STICK_CHANNELS = 16;
+static constexpr uint8_t RC_SBUS_CHANNELS = 18;
+
+// The channel numbers a source has, lo..hi. False for a source with none
+// (RC_BINDING_NONE, whose only channel is 0).
+inline bool rcBindingChannelRange(RcBindingSource source, uint8_t* lo, uint8_t* hi) {
+    uint8_t first = 1;
+    uint8_t last = 0;
     switch (source) {
-        case RC_BINDING_NONE:
-            return channel == 0;
         case RC_BINDING_PWM:
-            return channel >= 1 && channel <= 6;
+            last = RC_PWM_CHANNELS;
+            break;
         case RC_BINDING_SBUS1:
         case RC_BINDING_SBUS2:
-            return channel >= 1 && channel <= 18;
+            last = RC_SBUS_CHANNELS;
+            break;
         case RC_BINDING_DROID_SPEED:
         case RC_BINDING_DROID_HARD_STOP:
         case RC_BINDING_DROID_REST:
         case RC_BINDING_DROID_TRACK:
-            return channel == RC_REACTION_CHANNEL;
+            first = last = RC_REACTION_CHANNEL;
+            break;
         case RC_BINDING_DROID_WHEEL_SPEED:
         case RC_BINDING_DROID_WHEEL_AMPS:
-            return channel == RC_REACTION_WHEEL_LEFT || channel == RC_REACTION_WHEEL_RIGHT;
+            first = RC_REACTION_WHEEL_LEFT;
+            last = RC_REACTION_WHEEL_RIGHT;
+            break;
         default:
             return false;
     }
+    if (lo != nullptr) *lo = first;
+    if (hi != nullptr) *hi = last;
+    return true;
+}
+
+inline bool rcBindingChannelIsValid(RcBindingSource source, uint8_t channel) {
+    if (source == RC_BINDING_NONE) {
+        return channel == 0;
+    }
+    uint8_t lo = 0;
+    uint8_t hi = 0;
+    return rcBindingChannelRange(source, &lo, &hi) && channel >= lo && channel <= hi;
 }
 
 inline bool rcBindingIsDigital(const RcBindingConfig& binding) {
@@ -206,10 +231,10 @@ inline bool rcBindingIsDigital(const RcBindingConfig& binding) {
 
 inline bool rcBindingSupportsAnalog(const RcBindingConfig& binding) {
     if (binding.source == RC_BINDING_PWM) {
-        return binding.channel >= 1 && binding.channel <= 6;
+        return binding.channel >= 1 && binding.channel <= RC_PWM_CHANNELS;
     }
     if (binding.source == RC_BINDING_SBUS1 || binding.source == RC_BINDING_SBUS2) {
-        return binding.channel >= 1 && binding.channel <= 16;
+        return binding.channel >= 1 && binding.channel <= RC_SBUS_STICK_CHANNELS;
     }
     return false;
 }

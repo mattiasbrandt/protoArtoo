@@ -271,7 +271,7 @@ void rcMapMarkUnread(JsonObject item, const RcRuleVerdict& verdict) {
     }
     item["read"] = false;
     item["field"] = verdict.field;
-    item["reason"] = rcRuleReasonToken(verdict.reason);
+    item["reason"] = applyRefusalReasonToken(verdict.reason);
     char accepts[48] = {};
     if (rcRuleFormatAccepts(verdict, accepts, sizeof(accepts))) {
         item["accepts"] = accepts;
@@ -367,7 +367,12 @@ static bool triggerSlotIsFree(const RcTriggerBinding& binding) {
 }
 
 bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& existing,
-                                ConfigSnapshot* working, char* error, size_t errorSize) {
+                                ConfigSnapshot* working, char* error, size_t errorSize,
+                                ApplyRefusal* refusal) {
+    // Each refusal below states its field and reason here too, so a caller
+    // never reads them back out of the sentence (include/api_apply_refusal.h).
+    ApplyRefusal unused;
+    ApplyRefusal* said = refusal != nullptr ? refusal : &unused;
     if (working == nullptr || error == nullptr || errorSize == 0) {
         return false;
     }
@@ -405,6 +410,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         entry.action == DOME_ACTION_SPEED) {
         if (!rcMapBuildBackboneBinding(entry.source, entry.channel, existing, &backbone)) {
             snprintf(error, errorSize, "invalid backbone binding");
+            applyRefusalSet(said, ApplyRefusalReason::OutOfRange, "map.action");
             return false;
         }
         if (entry.action == DRIVE_ACTION_SPEED) {
@@ -422,6 +428,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
 
     if (!rcMapBuildTriggerBinding(entry, existing, &trigger)) {
         snprintf(error, errorSize, "invalid trigger binding");
+        applyRefusalSet(said, ApplyRefusalReason::OutOfRange, "map.action");
         return false;
     }
 
@@ -430,6 +437,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     if (!reaction && entry.action == SERVO_ACTION_ARM1_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_arm1)) {
             snprintf(error, errorSize, "conflict: arm1_toggle mapped more than once");
+            applyRefusalSet(said, ApplyRefusalReason::Conflict, "map.action");
             return false;
         }
         working->system.rc_arm1 = trigger;
@@ -438,6 +446,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     if (!reaction && entry.action == SERVO_ACTION_ARM2_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_arm2)) {
             snprintf(error, errorSize, "conflict: arm2_toggle mapped more than once");
+            applyRefusalSet(said, ApplyRefusalReason::Conflict, "map.action");
             return false;
         }
         working->system.rc_arm2 = trigger;
@@ -446,6 +455,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     if (!reaction && entry.action == SERVO_ACTION_AUX1_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_aux1)) {
             snprintf(error, errorSize, "conflict: aux1_toggle mapped more than once");
+            applyRefusalSet(said, ApplyRefusalReason::Conflict, "map.action");
             return false;
         }
         working->system.rc_aux1 = trigger;
@@ -454,6 +464,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     if (!reaction && entry.action == SERVO_ACTION_AUX2_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_aux2)) {
             snprintf(error, errorSize, "conflict: aux2_toggle mapped more than once");
+            applyRefusalSet(said, ApplyRefusalReason::Conflict, "map.action");
             return false;
         }
         working->system.rc_aux2 = trigger;
@@ -462,6 +473,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     if (!reaction && entry.action == SERVO_ACTION_AUX3_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_aux3)) {
             snprintf(error, errorSize, "conflict: aux3_toggle mapped more than once");
+            applyRefusalSet(said, ApplyRefusalReason::Conflict, "map.action");
             return false;
         }
         working->system.rc_aux3 = trigger;
@@ -470,6 +482,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     if (entry.action == SYSTEM_ACTION_OP_MODE) {
         if (!triggerSlotIsFree(working->system.rc_opmode)) {
             snprintf(error, errorSize, "conflict: op_mode mapped more than once");
+            applyRefusalSet(said, ApplyRefusalReason::Conflict, "map.action");
             return false;
         }
         working->system.rc_opmode = trigger;
@@ -486,6 +499,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     }
 
     snprintf(error, errorSize, "conflict: no trigger slot available");
+    applyRefusalSet(said, ApplyRefusalReason::Conflict, "map");
     return false;
 }
 
@@ -1055,7 +1069,7 @@ void handleRcMapPost(WebRequest& req) {
 
     ConfigSnapshot working;
 
-    // RcMapApplyResult is small (271 B on artoo-esp32); it shares the web
+    // RcMapApplyResult is small (about 260 B on artoo-esp32); it shares the web
     // request scratch rather than holding a static of its own (#428).
     WebRequestScratch<RcMapApplyResult> scratch;
     if (!scratch) {
@@ -1078,9 +1092,9 @@ void handleRcMapPost(WebRequest& req) {
         err["error"] = result.errorMessage;
         // The refusal as data, the keys every settings refusal carries
         // (docs/api.md "Refusals from a settings write", ADR 0070).
-        if (result.field[0] != '\0') err["field"] = result.field;
-        if (result.reason[0] != '\0') err["reason"] = result.reason;
-        if (result.accepts[0] != '\0') err["accepts"] = result.accepts;
+        if (result.refusal.field[0] != '\0') err["field"] = result.refusal.field;
+        err["reason"] = applyRefusalReasonToken(result.refusal.reason);
+        if (result.refusal.accepts[0] != '\0') err["accepts"] = result.refusal.accepts;
         if (result.errorEntry.present) {
             JsonObject at = err["entry"].to<JsonObject>();
             at["source"] = result.errorEntry.source;

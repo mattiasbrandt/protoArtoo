@@ -17,6 +17,7 @@
 #include <stddef.h>
 #include <ArduinoJson.h>
 
+#include "api_apply_refusal.h"
 #include "config_store.h"
 #include "rc_mapping.h"
 #include "rc_map_rules.h"
@@ -30,8 +31,12 @@
 
 bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap);
 void clearRcMapSlots(ConfigSnapshot* working);
+// `refusal`, when given, states a refusal as data beside `error`: `map` (no
+// slot left) or `map.action` (an action with one slot already in it), or
+// `map.action` out of range for a binding the stored form will not hold.
 bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& existing,
-                                ConfigSnapshot* working, char* error, size_t errorSize);
+                                ConfigSnapshot* working, char* error, size_t errorSize,
+                                ApplyRefusal* refusal = nullptr);
 
 // Populates doc from snap. Pure: no globals, no FreeRTOS.
 // Returns false if any binding string format fails.

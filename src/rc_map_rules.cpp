@@ -15,7 +15,7 @@
 namespace {
 
 constexpr RcRuleVerdict kHolds = {nullptr, nullptr, nullptr, 0, 0, ROBOT_ACTION_NONE,
-                                  RcRuleReason::kHolds, false};
+                                  ApplyRefusalReason::None, false};
 
 // The request fields a refusal names (docs/api.md "POST /api/rc/map").
 constexpr const char* kFieldMap = "map";
@@ -28,7 +28,7 @@ constexpr const char* kFieldQuietS = "map.quietS";
 
 // A refusal. `aboutEntry` echoes the entry; the accepts are a range lo..hi
 // (hi 0 for none) or the words given.
-RcRuleVerdict refusal(const char* sentence, bool aboutEntry, const char* field, RcRuleReason reason,
+RcRuleVerdict refusal(const char* sentence, bool aboutEntry, const char* field, ApplyRefusalReason reason,
                       uint16_t lo = 0, uint16_t hi = 0, const char* words = nullptr) {
     return {sentence, field, words, lo, hi, ROBOT_ACTION_NONE, reason, aboutEntry};
 }
@@ -39,28 +39,13 @@ RcRuleVerdict onAxis(RcRuleVerdict verdict, RobotActionId axis) {
     return verdict;
 }
 
-// The RC Channels a source has, as a range: what a channel refusal accepts.
+// The RC Channels a source has, as a range: what a channel refusal accepts
+// (rcBindingChannelRange(), the one home of the numbers).
 RcRuleVerdict channelOutOfRange(RcBindingSource source) {
-    uint16_t lo = 1;
-    uint16_t hi = 0;
-    switch (source) {
-        case RC_BINDING_PWM:
-            hi = 6;
-            break;
-        case RC_BINDING_SBUS1:
-        case RC_BINDING_SBUS2:
-            hi = 18;
-            break;
-        case RC_BINDING_DROID_WHEEL_SPEED:
-        case RC_BINDING_DROID_WHEEL_AMPS:
-            hi = RC_REACTION_WHEEL_RIGHT;
-            break;
-        default:
-            lo = RC_REACTION_CHANNEL;
-            hi = RC_REACTION_CHANNEL;
-            break;
-    }
-    return refusal("channel out of range", false, kFieldChannel, RcRuleReason::kOutOfRange, lo, hi);
+    uint8_t lo = 0;
+    uint8_t hi = 0;
+    rcBindingChannelRange(source, &lo, &hi);
+    return refusal("channel out of range", false, kFieldChannel, ApplyRefusalReason::OutOfRange, lo, hi);
 }
 
 // What a droid condition may fire, and the numbers it carries (#450). A number
@@ -69,11 +54,11 @@ RcRuleVerdict channelOutOfRange(RcBindingSource source) {
 RcRuleVerdict reactionRule(const RcMapEntry& entry) {
     if (robotActionIsAnalog(entry.action)) {
         return refusal("a droid condition cannot drive an axis", true, kFieldAction,
-                       RcRuleReason::kOutOfRange);
+                       ApplyRefusalReason::OutOfRange);
     }
     if (!robotActionValidForReaction(entry.action)) {
         return refusal("action not allowed on a droid condition", true, kFieldAction,
-                       RcRuleReason::kOutOfRange);
+                       ApplyRefusalReason::OutOfRange);
     }
     if (entry.threshold != kRcMapEntryKeep) {
         const uint16_t thresholdMax = rcReactionThresholdMax(entry.source);
@@ -82,7 +67,7 @@ RcRuleVerdict reactionRule(const RcMapEntry& entry) {
             // A condition with no threshold takes 0 alone: "0..0".
             const uint16_t lo = thresholdMax == 0 ? 0 : 1;
             RcRuleVerdict verdict = refusal("threshold out of range", true, kFieldThreshold,
-                                            RcRuleReason::kOutOfRange, lo, thresholdMax);
+                                            ApplyRefusalReason::OutOfRange, lo, thresholdMax);
             if (thresholdMax == 0) {
                 verdict.acceptsWords = "0";
             }
@@ -91,7 +76,7 @@ RcRuleVerdict reactionRule(const RcMapEntry& entry) {
     }
     if (entry.quietS != kRcMapEntryKeep &&
         (entry.quietS < RC_REACTION_QUIET_MIN_S || entry.quietS > RC_REACTION_QUIET_MAX_S)) {
-        return refusal("quiet period out of range", true, kFieldQuietS, RcRuleReason::kOutOfRange,
+        return refusal("quiet period out of range", true, kFieldQuietS, ApplyRefusalReason::OutOfRange,
                        RC_REACTION_QUIET_MIN_S, RC_REACTION_QUIET_MAX_S);
     }
     return kHolds;
@@ -143,13 +128,13 @@ RcRuleVerdict entryRule(const RcMapEntry& entry, RcInputMode type) {
         // single_sbus reads SBUS1 only, standard_pwm only PWM, ELRS and
         // not-fitted nothing: a binding elsewhere is never read (ADR 0070).
         return refusal("the RC Receiver type does not read this source", true, kFieldSource,
-                       RcRuleReason::kOutOfRange, 0, 0, receiversOfType(type));
+                       ApplyRefusalReason::OutOfRange, 0, 0, receiversOfType(type));
     }
     // A PWM receiver carries the drive and dome axes only: the RC Map's cue
     // slots are not read on PWM (operator, 2026-10-09 on #486).
     if (entry.source == RC_BINDING_PWM && !isAxis(entry.action)) {
         return refusal("PWM carries only the drive and dome axes", true, kFieldAction,
-                       RcRuleReason::kOutOfRange, 0, 0, "drive_speed,drive_steer,dome_speed");
+                       ApplyRefusalReason::OutOfRange, 0, 0, "drive_speed,drive_steer,dome_speed");
     }
     // An axis reads a stick, never CH17/CH18, which are on/off.
     if (isAxis(entry.action) && !rcBindingSourceIsDroidCondition(entry.source)) {
@@ -157,19 +142,20 @@ RcRuleVerdict entryRule(const RcMapEntry& entry, RcInputMode type) {
             makeRcBindingConfig(entry.source, entry.channel, 0, 0, 0, 0, false);
         if (!rcBindingSupportsAnalog(channel)) {
             return refusal("an axis needs a stick channel", true, kFieldChannel,
-                           RcRuleReason::kOutOfRange, 1, 16);
+                           ApplyRefusalReason::OutOfRange, 1,
+                           entry.source == RC_BINDING_PWM ? RC_PWM_CHANNELS : RC_SBUS_STICK_CHANNELS);
         }
     }
     if (entry.action == DOME_ACTION_MARCDUINO_CMD && strncmp(entry.payload, ":SM", 3) == 0) {
         return refusal(":SM is diagnostic only and cannot be saved as an RC binding", true,
-                       kFieldPayload, RcRuleReason::kOutOfRange);
+                       kFieldPayload, ApplyRefusalReason::OutOfRange);
     }
     // A puppet string moves a Part in proportion to a stick (#442): an SBUS
     // stick channel, since CH17/CH18 are on/off.
     if (entry.action == SERVO_ACTION_PUPPET_PART &&
         !rcPuppetChannelCanMove(entry.source, entry.channel)) {
         return refusal("a puppet string needs an SBUS stick channel (CH1-CH16)", true, kFieldChannel,
-                       RcRuleReason::kOutOfRange, 1, 16);
+                       ApplyRefusalReason::OutOfRange, 1, RC_SBUS_STICK_CHANNELS);
     }
     return kHolds;
 }
@@ -194,7 +180,7 @@ RcRuleVerdict conflictRule(const RcMapEntry* prior, size_t count, const RcMapEnt
         if (next.action == SERVO_ACTION_PUPPET_PART && prior[i].action == SERVO_ACTION_PUPPET_PART &&
             strcmp(prior[i].payload, next.payload) == 0) {
             return refusal("conflict: a Part on two puppet strings", true, kFieldPayload,
-                           RcRuleReason::kConflict);
+                           ApplyRefusalReason::Conflict);
         }
     }
     // One control, one job: a channel is a drive axis, a cue or a puppet
@@ -202,13 +188,13 @@ RcRuleVerdict conflictRule(const RcMapEntry* prior, size_t count, const RcMapEnt
     for (size_t i = 0; i < count; ++i) {
         if (prior[i].source == next.source && prior[i].channel == next.channel) {
             return refusal("conflict: source+channel mapped more than once", true, kFieldChannel,
-                           RcRuleReason::kConflict);
+                           ApplyRefusalReason::Conflict);
         }
     }
     if (const char* conflict = axisConflict(next.action)) {
         for (size_t i = 0; i < count; ++i) {
             if (prior[i].action == next.action) {
-                return refusal(conflict, true, kFieldAction, RcRuleReason::kConflict);
+                return refusal(conflict, true, kFieldAction, ApplyRefusalReason::Conflict);
             }
         }
     }
@@ -216,18 +202,6 @@ RcRuleVerdict conflictRule(const RcMapEntry* prior, size_t count, const RcMapEnt
 }
 
 }  // namespace
-
-const char* rcRuleReasonToken(RcRuleReason reason) {
-    switch (reason) {
-        case RcRuleReason::kOutOfRange:
-            return "out-of-range";
-        case RcRuleReason::kConflict:
-            return "conflict";
-        case RcRuleReason::kHolds:
-        default:
-            return nullptr;
-    }
-}
 
 bool rcRuleFormatAccepts(const RcRuleVerdict& verdict, char* buf, size_t bufSize) {
     if (buf == nullptr || bufSize == 0) {
@@ -279,7 +253,7 @@ bool rcReceiverReads(RcBindingSource source, const RcReceiverSetup& setup) {
 RcRuleVerdict rcRuleMapAdd(const RcMapEntry* prior, size_t count, const RcMapEntry& next,
                            RcInputMode type) {
     if (count >= kRcMapMaxEntries) {
-        return refusal("conflict: map exceeds capacity", false, kFieldMap, RcRuleReason::kConflict);
+        return refusal("conflict: map exceeds capacity", false, kFieldMap, ApplyRefusalReason::Conflict);
     }
     const RcRuleVerdict own = entryRule(next, type);
     if (!own.ok()) {
@@ -293,11 +267,11 @@ RcRuleVerdict rcRuleDrive(const RcBindingConfig& speed, const RcBindingConfig& s
     const bool steerBound = steer.source != RC_BINDING_NONE;
     if (speedBound && steerBound && speed.source != steer.source) {
         return onAxis(refusal("drive speed and steer must be on the same receiver", true, kFieldSource,
-                              RcRuleReason::kConflict),
+                              ApplyRefusalReason::Conflict),
                       DRIVE_ACTION_STEER);
     }
     const RcRuleVerdict sbus2 = refusal("drive reads SBUS1, the drive receiver", true, kFieldSource,
-                                        RcRuleReason::kOutOfRange, 0, 0, "sbus1");
+                                        ApplyRefusalReason::OutOfRange, 0, 0, "sbus1");
     if (speedBound && speed.source == RC_BINDING_SBUS2) {
         return onAxis(sbus2, DRIVE_ACTION_SPEED);
     }
@@ -310,7 +284,7 @@ RcRuleVerdict rcRuleDrive(const RcBindingConfig& speed, const RcBindingConfig& s
 RcRuleVerdict rcRuleAxisCalibration(RobotActionId axis, const RcBindingConfig& binding) {
     if (!(binding.min < binding.center && binding.center < binding.max)) {
         return onAxis(refusal("calibration needs min < center < max", true, "calibration.center",
-                              RcRuleReason::kConflict),
+                              ApplyRefusalReason::Conflict),
                       axis);
     }
     // The dead zone must leave travel on both sides of the centre, or that
@@ -318,7 +292,7 @@ RcRuleVerdict rcRuleAxisCalibration(RobotActionId axis, const RcBindingConfig& b
     if (binding.deadband >= (uint16_t)(binding.center - binding.min) ||
         binding.deadband >= (uint16_t)(binding.max - binding.center)) {
         return onAxis(refusal("calibration leaves no travel past the deadband", true,
-                              "calibration.deadband", RcRuleReason::kConflict),
+                              "calibration.deadband", ApplyRefusalReason::Conflict),
                       axis);
     }
     return kHolds;
