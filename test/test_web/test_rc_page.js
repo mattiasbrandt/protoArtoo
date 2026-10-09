@@ -474,3 +474,36 @@ test("a capture out of order is not sent, and a refusal from the droid is shown 
   assert.equal(posted.length, 1);
   assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_speed"), /Not saved: that reading is out of range\./);
 });
+
+// POST /api/rc/map refuses Speed and Steer on two receivers. The page keeps
+// the builder from composing one: once a drive axis is bound, the other is
+// offered only on the same source. The rule is the marked pure block in
+// data/rc.js, run here as shipped (the editor's picker is drawn with
+// innerHTML, which this harness cannot click into).
+const loadDriveSplitWith = () => {
+  const source = readFileSync(new URL("../../data/rc.js", import.meta.url), "utf8");
+  const begin = source.indexOf("// ==== DRIVE ON ONE RECEIVER (#389) BEGIN ====");
+  const end = source.indexOf("// ==== DRIVE ON ONE RECEIVER (#389) END ====");
+  assert.ok(begin >= 0 && end > begin, "data/rc.js carries the DRIVE ON ONE RECEIVER block");
+  const context = { module: { exports: null } };
+  vm.runInNewContext(`${source.slice(begin, end)}\nmodule.exports = driveSplitWith;`, context);
+  return context.module.exports;
+};
+
+test("the second drive axis is offered only on the receiver the first one reads", () => {
+  const driveSplitWith = loadDriveSplitWith();
+  const map = { "sbus1:1": { source: "sbus1", channel: 1, action: "drive_speed" } };
+  assert.equal(driveSplitWith(map, "drive_steer", "sbus2:2")?.source, "sbus1", "Steer on SBUS2 beside Speed on SBUS1 is a split");
+  assert.equal(driveSplitWith(map, "drive_steer", "sbus1:2"), null, "Steer on SBUS1 beside it is not");
+  assert.equal(driveSplitWith(map, "drive_steer", "sbus1:1"), null, "Steer replacing Speed on its own channel is not");
+  assert.equal(driveSplitWith(map, "dome_speed", "sbus2:4"), null, "the dome may read either receiver");
+  assert.equal(driveSplitWith({}, "drive_speed", "sbus2:1"), null, "the first drive axis goes anywhere");
+});
+
+test("the droid's refusal of a split drive is shown in the builder's words", async () => {
+  const env = await loadAxes({
+    onPost: () => { throw new ApiError("drive speed and steer must be on the same receiver", { kind: "http", status: 400 }); },
+  });
+  await clickAxis(env, { axis: "drive_steer", axisSet: "max" }, "data-axis-set");
+  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /Not saved: Speed and Steer share one RC Receiver\./);
+});

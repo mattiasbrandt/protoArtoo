@@ -23,6 +23,8 @@
 //      says why.
 //   g  A droid with Single SBUS saved and Dual SBUS running offers SBUS1 alone
 //      and carries the restart line.
+//   h  With Steer on SBUS1, Speed is offered on an SBUS1 channel and not on an
+//      SBUS2 one: the droid refuses Speed and Steer on two receivers.
 //
 // WHY A REAL BROWSER. Layout, hit testing and the joined control's width are
 // what a DOM stub cannot see.
@@ -191,6 +193,19 @@ lib.runCheck({
     const refused = (await page.locator(`${tile('drive_speed')} .cal-note`).textContent()).trim();
     report.add('f', 'MAX below CENTER is not sent, and the tile says why',
       lib.verdict(state.posts.length === 2 && refused === 'Not saved: MAX must read above CENTER.'), `"${refused}", ${state.posts.length} posts`);
+
+    // Speed reads SBUS1: Steer is not offered on an SBUS2 channel, and is on
+    // a free SBUS1 one (POST /api/rc/map refuses a split drive). The map
+    // binds Steer already, so the check is of Speed against Steer's source.
+    const offered = async (key) => {
+      await page.click(`.rc-channel-item[data-chkey="${key}"]`);
+      await page.waitForSelector('[data-action-search]', { timeout: 8000 });
+      return page.locator('[data-action-select="drive_speed"]').count();
+    };
+    const onSbus2 = await offered('sbus2:3');
+    const onSbus1 = await offered('sbus1:3');
+    report.add('h', 'Speed is offered only on the receiver Steer reads',
+      lib.verdict(onSbus2 === 0 && onSbus1 === 1), `SBUS2 CH3 offers Speed ${onSbus2}x, SBUS1 CH3 ${onSbus1}x`);
 
     const second = await openPage();
     const waiting = droid({ saved: 'single_sbus', running: 'dual_sbus' });

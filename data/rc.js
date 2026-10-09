@@ -134,6 +134,29 @@
   };
   // ==== ACTION TEST OUTCOME (#220) END ====
 
+  // ==== DRIVE ON ONE RECEIVER (#389) BEGIN ====
+  // Speed and Steer read one RC Receiver: POST /api/rc/map refuses a map that
+  // puts them on two sources ("drive speed and steer must be on the same
+  // receiver"). Given the map (channel key -> { source, action }), the drive
+  // axis being bound and the channel key it would go on, this returns the
+  // binding of the OTHER drive axis when it sits on another source, else null.
+  // Pure and DOM-free so test/test_web/test_rc_page.js runs this exact block.
+  const driveSplitWith = (map, token, channelKey) => {
+    const pair = { drive_speed: 'drive_steer', drive_steer: 'drive_speed' };
+    const other = pair[token];
+    if (!other) return null;
+    const source = String(channelKey || '').split(':')[0];
+    const found = Object.entries(map || {})
+      .find(([key, entry]) => key !== channelKey && String(entry?.action || '') === other);
+    return found && found[1].source !== source ? found[1] : null;
+  };
+  // ==== DRIVE ON ONE RECEIVER (#389) END ====
+
+  // The droid's refusal of a drive split across two receivers, in the
+  // builder's words.
+  const DRIVE_SPLIT_REFUSAL = /must be on the same receiver/;
+  const DRIVE_SPLIT_TEXT = 'Not saved: Speed and Steer share one RC Receiver.';
+
   // Live action targets — replaced on load from GET /api/actions.
   // Falls back to HARDCODED_ACTION_TARGETS if the request fails.
   let actionTargets = HARDCODED_ACTION_TARGETS;
@@ -1098,6 +1121,7 @@
     if (/min < center < max/.test(message)) return 'Not saved: MIN, CENTER and MAX must rise in that order.';
     if (/out of range/.test(message)) return 'Not saved: that reading is out of range.';
     if (/does not bind/.test(message)) return 'Not saved: map this axis first.';
+    if (DRIVE_SPLIT_REFUSAL.test(message)) return DRIVE_SPLIT_TEXT;
     return `Not saved: ${message}`;
   };
 
@@ -1423,6 +1447,8 @@
       return getEditorMode() !== 'standard_pwm' && (source === 'sbus1' || source === 'sbus2')
         && channel >= 1 && channel <= 16;
     }
+    // The other drive axis is on another receiver: this one goes beside it.
+    if (driveSplitWith(channelMap, item.token, selectedChannel)) return false;
     if (!droidConditionFor(selectedChannel)) return true;
     return !ANALOG_ACTION_TOKENS.has(item.token) && !REACTION_BLOCKED_TOKENS.has(item.token);
   };
@@ -2293,6 +2319,13 @@
       nextMap[selectedChannel] = normalizeMapEntry({ source, channel, action: target, payload, ...reaction });
     }
 
+    // Speed and Steer on one RC Receiver, as the droid requires.
+    const split = driveSplitWith(nextMap, target, selectedChannel);
+    if (split) {
+      setEditorFeedback(`Not saved: ${actionLabelFromToken(split.action)} is on ${sourceLabel(split.source)}. Speed and Steer share one RC Receiver.`, 'error');
+      return;
+    }
+
     // One Part, one stick (#442): a Part another channel already moves leaves
     // it. Asked first, naming both channels, because the other one goes
     // unmapped.
@@ -2354,9 +2387,9 @@
   // A refused save, in the builder's words where the droid's are about room.
   const mapRefusalText = (error) => {
     const message = window.PAApi.messageFor(error);
-    return /no trigger slot available|exceeds capacity/.test(message)
-      ? 'No room for one more. Unmap another switch or condition first.'
-      : `Failed to save: ${message}`;
+    if (/no trigger slot available|exceeds capacity/.test(message)) return 'No room for one more. Unmap another switch or condition first.';
+    if (DRIVE_SPLIT_REFUSAL.test(message)) return DRIVE_SPLIT_TEXT;
+    return `Failed to save: ${message}`;
   };
 
   // After a save the droid answers only {ok:true}, so what it stored is read
