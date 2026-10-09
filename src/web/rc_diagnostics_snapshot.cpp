@@ -461,3 +461,12 @@ bool appendRcReactionsJson(JsonDocument& doc) {
     }
     return !doc.overflowed();
 }
+
+bool appendRcTaskStateJson(JsonDocument& doc) {
+    taskENTER_CRITICAL(&robotStateMux);
+    const bool driveAwaitingCentre = robotState.rcDriveAwaitingCentre;
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    doc["driveAwaitingCentre"] = driveAwaitingCentre;
+    return !doc.overflowed();
+}

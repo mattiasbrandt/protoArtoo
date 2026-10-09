@@ -328,6 +328,9 @@ static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMap
         }
         rcDispatchDrive(output.backbone.driveSpeed, output.backbone.driveSteer, false);
     }
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.rcDriveAwaitingCentre = output.driveAwaitingCentre;
+    taskEXIT_CRITICAL(&robotStateMux);
 
     // Backbone: dome (filtered raw value, re-calibrated)
     rcDispatchDome(output.domeRawFiltered, mapping, output.domeFiltered);
@@ -550,6 +553,10 @@ void rcInputTask(void* pvParameters) {
 
     rcInputProcessorInit(&s_rcProcessor);
     rcInputStepInit(&s_rcStepState);
+    // The boot hold starts set: no drive stick has been seen at centre yet.
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.rcDriveAwaitingCentre = true;
+    taskEXIT_CRITICAL(&robotStateMux);
 
     RcInputActiveConfig active = {};
     configCacheReadActiveRcInput(&active);

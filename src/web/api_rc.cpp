@@ -29,14 +29,14 @@ static constexpr size_t RC_DEBUG_BODY_MAX = 128;
 
 // Ceiling on the diagnostics payload, above which the response is refused
 // rather than allocated for. Pinned by test_api_rc_routes against snapshots
-// filled to capacity with the widest values: 2488 bytes for the largest payload
+// filled to capacity with the widest values: 2516 bytes for the largest payload
 // the capture path can build, and 2931 for a deliberate over-bound that fills
 // the analog and digital channel buckets both.
 //
 // `reactions` rides on top of that (#450): at most 128 bytes an entry with
 // every field at its widest. POST /api/rc/map puts a Reaction in one of the
 // five spill slots, 640 more; a stored map with one in all eleven slots is
-// 1408 more, 3896 on the largest payload the capture path builds.
+// 1408 more, 3924 on the largest payload the capture path builds.
 static constexpr size_t RC_PAYLOAD_MAX = 4096;
 
 void handleRcGet(WebRequest& req) {
@@ -44,7 +44,8 @@ void handleRcGet(WebRequest& req) {
     captureRcDiagnosticsSnapshot(&snap);
 
     JsonDocument doc;
-    if (!populateRcDiagnosticsJson(doc, snap) || !appendRcReactionsJson(doc)) {
+    if (!populateRcDiagnosticsJson(doc, snap) || !appendRcReactionsJson(doc) ||
+        !appendRcTaskStateJson(doc)) {
         webSendJsonError(req, 500, "rc json build failed");
         return;
     }

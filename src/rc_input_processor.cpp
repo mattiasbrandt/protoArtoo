@@ -20,6 +20,7 @@ void rcInputProcessorInit(RcInputProcessor* proc) {
     proc->domeInputFilter = {};
     proc->lastSoundPressed = false;
     proc->stationaryLocked = false;
+    proc->driveCentreSeen = false;
 }
 
 // Whether the drive bindings read a receiver other than this frame's, one the
@@ -34,6 +35,16 @@ static bool driveReadsAnotherReceiver(const RcChannelSnapshot& snap, const RcMap
     other.source = driveSource;
     return rcMapBindingReadsSnapshot(mapping.driveSpeed, other, mapping) &&
            rcMapBindingReadsSnapshot(mapping.driveSteer, other, mapping);
+}
+
+static bool driveSticksAtCentre(const RcControlIntent& intent, int16_t maxOut) {
+    if (maxOut <= 0) {
+        return true;
+    }
+    const int32_t limit = (int32_t)maxOut * RC_DRIVE_CENTRE_TOLERANCE_PERMILLE / 1000;
+    const int32_t speed = intent.driveSpeed < 0 ? -intent.driveSpeed : intent.driveSpeed;
+    const int32_t steer = intent.driveSteer < 0 ? -intent.driveSteer : intent.driveSteer;
+    return speed <= limit && steer <= limit;
 }
 
 void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
@@ -57,6 +68,18 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
     // Update sound state for next iteration
     proc->lastSoundPressed = intent.soundPressed;
 
+    // The boot hold: until both drive sticks have been at centre once, the
+    // drive output is zero. A trigger resting at an endpoint (the HotRC
+    // DS-650's CH2 at factory stroke) never releases it.
+    if (intent.driveActive && !proc->driveCentreSeen) {
+        if (driveSticksAtCentre(intent, localMapping.maxOut)) {
+            proc->driveCentreSeen = true;
+        } else {
+            intent.driveSpeed = 0;
+            intent.driveSteer = 0;
+        }
+    }
+    output.driveAwaitingCentre = !proc->driveCentreSeen;
     output.submitDrive = intent.driveActive || !driveReadsAnotherReceiver(input.channels, localMapping);
 
     // Copy backbone intent to output

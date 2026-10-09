@@ -61,7 +61,15 @@ struct RcProcessorOutput {
     // receiver frame then leaves the drive alone instead of sending a zero
     // between the drive receiver's frames (#389).
     bool submitDrive;
+    // The boot hold: the drive sticks have not yet been at centre since the
+    // RC task started, so the drive output is zero (operator, 2026-10-09 on
+    // #389). A HotRC trigger resting at an endpoint keeps it set.
+    bool driveAwaitingCentre;
 };
+
+// How far from centre, in permille of full travel, both drive sticks may sit
+// for the boot hold to release.
+static constexpr int16_t RC_DRIVE_CENTRE_TOLERANCE_PERMILLE = 100;
 
 struct RcInputProcessor {
     TriggerDebounceState triggerStates[RC_TRIGGER_MAX];
@@ -69,6 +77,8 @@ struct RcInputProcessor {
     DomeInputFilter domeInputFilter;
     bool lastSoundPressed;
     bool stationaryLocked;
+    // Set once both drive sticks have been at centre since init (the boot hold).
+    bool driveCentreSeen;
 };
 
 void rcInputProcessorInit(RcInputProcessor* proc);
