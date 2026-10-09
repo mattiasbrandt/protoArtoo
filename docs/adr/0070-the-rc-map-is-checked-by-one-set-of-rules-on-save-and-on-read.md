@@ -96,3 +96,27 @@ precise, and two rules join it.
 - **A payload the dispatcher would never send is refused**: a body sequence
   other than 30-36, or a Marcduino command that does not start `:`, `$` or `#`.
   Such a binding was saved and fired nothing.
+
+## Amended 2026-10-10: conflicts are judged on read too, and Reactions are read through the same rules
+
+Settled after the Codex review of #486, with the operator.
+
+- **Two stored bindings on one control both stay still.** "Same rules on read"
+  first judged each stored binding on its own, on the reasoning that every
+  stored RC Map came through a save. That does not hold: NVS commits each key
+  on its own, so a save cut short by a power loss can leave, say, the drive's
+  Speed and an arm switch on one RC Channel. The conflicts a save refuses (one
+  RC Channel, one job; one Part, one puppet string) are now judged on read.
+  Both bindings in a conflict stay still, since neither is known to be the one
+  the operator meant, and `GET /api/rc/map` marks both unread with the
+  conflict. Only bindings that pass their own rules are judged against each
+  other: one that is not read takes no control from another.
+- **A Reaction is read through the RC Map's rules.** ReactionTask read the
+  stored slots through the stored form's own check, which does not hold a
+  Reaction's payload to these rules, so a `:SM` Reaction marked unread still
+  fired. It now leaves out a Reaction the rules refuse, alone or in a conflict
+  with another Reaction, and the evaluator releases a press it still holds.
+- **Mapping an axis again mends a calibration the rules refuse.** A remap on the
+  same RC Channel carries the old calibration over only when the rules take it;
+  otherwise the axis starts from the defaults. Before, the old calibration was
+  carried over and refused the whole save, so "map it again" could not mend it.
