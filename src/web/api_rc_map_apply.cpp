@@ -102,8 +102,18 @@ RcBindingConfig axisOf(const RcMapEntry* entry) {
 // (stored or reused, assignRcMapEntryToSnapshot()). An axis the map does not
 // bind cannot be calibrated. Both the PWM and the SBUS slot of an axis hold
 // the same binding, so both take the calibration.
+// The entry that binds an axis, to echo beside a refusal of its calibration.
+const RcMapEntry* entryFor(RobotActionId axis, const RcMapEntry* entries, size_t count) {
+    for (size_t i = 0; i < count; ++i) {
+        if (entries[i].action == axis) {
+            return &entries[i];
+        }
+    }
+    return nullptr;
+}
+
 __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration, ConfigSnapshot* working,
-                          RcMapApplyResult* result) {
+                          const RcMapEntry* entries, size_t count, RcMapApplyResult* result) {
     if (calibration.isNull()) {
         return true;
     }
@@ -136,14 +146,14 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
                      "drive_speed,drive_steer,dome_speed");
             return false;
         }
-        snprintf(field, sizeof(field), "calibration.%s", axis->token);
         if (axis->sbus->source == RC_BINDING_NONE) {
-            setError(result, "calibration for an axis the map does not bind", nullptr, field, kConflict);
+            setError(result, "calibration for an axis the map does not bind", nullptr, "calibration",
+                     kConflict);
             return false;
         }
         JsonObjectConst fields = pair.value().as<JsonObjectConst>();
         if (fields.isNull()) {
-            setError(result, "calibration entry must be object", nullptr, field, kMalformed);
+            setError(result, "calibration entry must be object", nullptr, "calibration", kMalformed);
             return false;
         }
         RcBindingConfig binding = *axis->sbus;
@@ -161,8 +171,9 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
             if (!value.is<uint32_t>() || v < lo || v > hi) {
                 char accepts[24] = {};
                 snprintf(accepts, sizeof(accepts), "%u..%u", (unsigned)lo, (unsigned)hi);
-                snprintf(field, sizeof(field), "calibration.%s.%s", axis->token, keys[i]);
-                setError(result, "calibration out of range", nullptr, field, kOutOfRange, accepts);
+                snprintf(field, sizeof(field), "calibration.%s", keys[i]);
+                setError(result, "calibration out of range", entryFor(axis->action, entries, count), field,
+                         kOutOfRange, accepts);
                 return false;
             }
             *slots[i] = (uint16_t)v;
@@ -170,8 +181,8 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
         JsonVariantConst reverse = fields["reverse"];
         if (!reverse.isNull()) {
             if (!reverse.is<bool>()) {
-                snprintf(field, sizeof(field), "calibration.%s.reverse", axis->token);
-                setError(result, "calibration reverse must be true or false", nullptr, field, kOutOfRange,
+                setError(result, "calibration reverse must be true or false",
+                         entryFor(axis->action, entries, count), "calibration.reverse", kOutOfRange,
                          "true,false");
                 return false;
             }
@@ -179,7 +190,7 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
         }
         const RcRuleVerdict verdict = rcRuleAxisCalibration(axis->action, binding);
         if (!verdict.ok()) {
-            setRefusal(result, verdict, nullptr);
+            setRefusal(result, verdict, entryFor(axis->action, entries, count));
             return false;
         }
         *axis->pwm = binding;
@@ -190,7 +201,8 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
 
 // Whether each axis the map binds holds a calibration the rules take. Both
 // slots of an axis hold the same binding (assignRcMapEntryToSnapshot()).
-bool boundAxesCalibrated(const ConfigSnapshot& working, RcMapApplyResult* result) {
+bool boundAxesCalibrated(const ConfigSnapshot& working, const RcMapEntry* entries, size_t count,
+                         RcMapApplyResult* result) {
     const RobotActionId actions[] = {DRIVE_ACTION_SPEED, DRIVE_ACTION_STEER, DOME_ACTION_SPEED};
     const RcBindingConfig* const axes[] = {&working.system.rc_sbus_drive_speed,
                                            &working.system.rc_sbus_drive_steer,
@@ -201,7 +213,7 @@ bool boundAxesCalibrated(const ConfigSnapshot& working, RcMapApplyResult* result
         }
         const RcRuleVerdict verdict = rcRuleAxisCalibration(actions[i], *axes[i]);
         if (!verdict.ok()) {
-            setRefusal(result, verdict, nullptr);
+            setRefusal(result, verdict, entryFor(actions[i], entries, count));
             return false;
         }
     }
@@ -326,12 +338,12 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
         }
     }
 
-    if (!applyAxisCalibration(body["calibration"], working, result)) {
+    if (!applyAxisCalibration(body["calibration"], working, entries, count, result)) {
         return;
     }
     // Every bound axis, its calibration kept or set: one the rules refuse would
     // be stored and never read (ADR 0070).
-    if (!boundAxesCalibrated(*working, result)) {
+    if (!boundAxesCalibrated(*working, entries, count, result)) {
         return;
     }
 

@@ -40,6 +40,9 @@ ADR 0059 forbids - so this fails instead:
    what a page may save, because serving the row table was rejected (ADR 0068,
    amended 2026-09-27); this holds that list to the declaration, so a key the
    droid would refuse cannot sit there unnoticed.
+8. every field a refusal of POST /api/rc/map names (kRcMapRefusalFields,
+   include/rc_map_rules.h) has an entry under that name (ADR 0070): the RC
+   page words the droid's refusals of the RC Map from the same table.
 
 And, because the words check is the one place every declaration is read and
 the Preferences double in the native tests enforces neither: no NVS key is
@@ -89,7 +92,7 @@ def _entries(body: str) -> dict[str, str]:
     at = 0
     while at < len(body):
         if depth == 0:
-            key = re.match(r'\s*(?://[^\n]*\n\s*)*"?([\w-]+)"?\s*:\s*\{', body[at:])
+            key = re.match(r'\s*(?://[^\n]*\n\s*)*"?([\w.-]+)"?\s*:\s*\{', body[at:])
             if key:
                 start = at + key.end()
                 depth = 1
@@ -165,7 +168,8 @@ def _labels_named_twice(errors: list[str], droid: dict[str, str], settings: Path
 
 def check(errors: list[str], settings: Path | None = None, web_api: Path | None = None,
           records: list[Path] | None = None, acts: Path | None = None,
-          pages: list[Path] | None = None, outputs: Path | None = None) -> None:
+          pages: list[Path] | None = None, outputs: Path | None = None,
+          rc_map: Path | None = None) -> None:
     droid, row = browser_words(web_api)
     if pages is None:
         pages = [page for page in sorted(WEB_API.parent.glob("*.js")) if page.name != WEB_API.name]
@@ -249,6 +253,12 @@ def check(errors: list[str], settings: Path | None = None, web_api: Path | None 
                 f"{form} is a declared act field with no words in SETTING_WORDS "
                 f"({WEB_API.name}) - a refusal of it would reach the page as its wire name"
             )
+    for field in setting_declarations.rc_map_fields(rc_map):
+        if field not in droid:
+            errors.append(
+                f"{field} is a declared RC Map refusal field with no words in SETTING_WORDS "
+                f"({WEB_API.name}) - a refusal of it would reach the RC page as its wire name"
+            )
 
 
 def main() -> int:
@@ -263,7 +273,8 @@ def main() -> int:
           f"Settings, {len(setting_declarations.audio_settings())} audio Settings, "
           f"{len(setting_declarations.row_settings())} Output row Settings, "
           f"{len(setting_declarations.record_fields())} Record fields, "
-          f"{len(setting_declarations.act_fields())} act fields).")
+          f"{len(setting_declarations.act_fields())} act fields, "
+          f"{len(setting_declarations.rc_map_fields())} RC Map fields).")
     return 0
 
 

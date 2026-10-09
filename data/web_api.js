@@ -13,7 +13,7 @@
   class ApiError extends Error {
     constructor(message, {
       kind = "unknown", status = 0, cause = null, retryAfterMs = null,
-      field = null, reason = null, accepts = null,
+      field = null, reason = null, accepts = null, entry = null,
     } = {}) {
       super(message);
       this.name = "ApiError";
@@ -31,6 +31,9 @@
       this.field = field;
       this.reason = reason;
       this.accepts = accepts;
+      // The RC Map entry a refusal of POST /api/rc/map is about ({source,
+      // channel, action}), so a page names the binding; null otherwise.
+      this.entry = entry;
     }
   }
 
@@ -213,6 +216,7 @@
             field: key("field"),
             reason: key("reason"),
             accepts: key("accepts"),
+            entry: body.entry && typeof body.entry === "object" ? body.entry : null,
           });
         }
 
@@ -596,6 +600,33 @@
     bank: { word: "catalog bank", valueOnly: true },
     page: { word: "catalog page", valueOnly: true },
     index: { word: "catalog index", valueOnly: true },
+    // POST /api/rc/map's fields (kRcMapRefusalFields, include/rc_map_rules.h),
+    // and an entry of GET /api/rc/map the droid does not read. Which binding a
+    // refusal is about is its echoed entry, named by the page; a calibration
+    // field is the key alone, on the axis that entry binds (ADR 0070).
+    "map": { word: "RC Map", clash: "has no room for one more", malformed: "could not be read", missing: "was not sent" },
+    "map.source": {
+      word: "RC Receiver",
+      values: { pwm: "PWM", sbus1: "SBUS1", sbus2: "SBUS2" },
+      clash: "must be the one Speed reads",
+      refused: "is not read by this droid",
+    },
+    "map.channel": { word: "RC Channel", clash: "already does another job" },
+    "map.action": {
+      word: "action",
+      values: { drive_speed: "Speed", drive_steer: "Steer", dome_speed: "Dome" },
+      clash: "is mapped twice",
+      refused: "is not one this RC Channel takes",
+    },
+    "map.payload": { word: "target", clash: "already has a puppet string", refused: "is not one this droid takes" },
+    "map.threshold": { word: "threshold" },
+    "map.quietS": { word: "quiet period", unit: " s" },
+    "calibration": { word: "calibration", clash: "needs its axis mapped first", malformed: "could not be read" },
+    "calibration.min": { word: "MIN" },
+    "calibration.center": { word: "CENTER", clash: "must sit between MIN and MAX" },
+    "calibration.max": { word: "MAX" },
+    "calibration.reverse": { word: "direction", values: { true: "reversed", false: "normal" } },
+    "calibration.deadband": { word: "dead zone", clash: "is wider than CENTER sits from an end" },
   });
 
   // An Output's Settings, by the row key the droid refuses them under

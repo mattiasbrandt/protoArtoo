@@ -53,6 +53,12 @@ constexpr ConfigActField kActFields[ActFieldCount] = {
 };
 """
 
+RC_MAP = """
+constexpr const char* kRcMapRefusalFields[] = {
+    "map.channel",
+};
+"""
+
 RECORD_AND_ACT_WORDS = (
     '    domeDesign: { word: "dome design", path: "droidBuild.domeDesign", applies: "immediate" },\n'
     '    captureUs: { word: "captured width", on: "captureOutput" },\n'
@@ -61,9 +67,14 @@ RECORD_AND_ACT_WORDS = (
 )
 
 
-def web_api(droid: str, row: str, records_and_acts: str = RECORD_AND_ACT_WORDS) -> str:
+RC_MAP_WORDS = '    "map.channel": { word: "RC Channel" },'
+
+
+def web_api(droid: str, row: str, records_and_acts: str = RECORD_AND_ACT_WORDS,
+            rc_map_words: str = RC_MAP_WORDS) -> str:
     return (
-        "  const SETTING_WORDS = Object.freeze({\n" + droid + "\n" + records_and_acts + "\n  });\n"
+        "  const SETTING_WORDS = Object.freeze({\n" + droid + "\n" + records_and_acts + "\n"
+        + rc_map_words + "\n  });\n"
         "  const ROW_SETTING_WORDS = Object.freeze({\n" + row + "\n  });\n"
     )
 
@@ -83,7 +94,9 @@ def fixtures(tmp: str, outputs: str = OUTPUTS) -> dict:
     acts.write_text(ACTS)
     patch = Path(tmp) / "outputs.js"
     patch.write_text(outputs)
-    return {"records": [record], "acts": acts, "pages": [], "outputs": patch}
+    rc_map = Path(tmp) / "rc_map_rules.h"
+    rc_map.write_text(RC_MAP)
+    return {"records": [record], "acts": acts, "pages": [], "outputs": patch, "rc_map": rc_map}
 
 
 class Check(unittest.TestCase):
@@ -218,6 +231,16 @@ class Check(unittest.TestCase):
         ))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("captureUs is a declared act field", errors[0])
+
+    def test_an_rc_map_refusal_field_with_no_words_is_reported(self):
+        errors = self.run_check(web_api(
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax", applies: "immediate" },\n'
+            '    scream: { word: "Scream track", applies: "immediate" },\n    bank: { word: "b" },',
+            '    throwMs: { word: "t", applies: "immediate" },',
+            rc_map_words="",
+        ))
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("map.channel is a declared RC Map refusal field", errors[0])
 
     def test_a_timing_that_is_not_the_firmware_s_is_reported(self):
         errors = self.run_check(web_api(

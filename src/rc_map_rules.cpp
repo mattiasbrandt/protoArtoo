@@ -308,23 +308,18 @@ RcRuleVerdict rcRuleDrive(const RcBindingConfig& speed, const RcBindingConfig& s
 }
 
 RcRuleVerdict rcRuleAxisCalibration(RobotActionId axis, const RcBindingConfig& binding) {
-    // The field within the request's `calibration` object, by axis and key.
-    static const char* const kFields[3][2] = {
-        {"calibration.drive_speed.center", "calibration.drive_speed.deadband"},
-        {"calibration.drive_steer.center", "calibration.drive_steer.deadband"},
-        {"calibration.dome_speed.center", "calibration.dome_speed.deadband"},
-    };
-    const size_t row = axis == DRIVE_ACTION_SPEED ? 0 : axis == DRIVE_ACTION_STEER ? 1 : 2;
     if (!(binding.min < binding.center && binding.center < binding.max)) {
-        return refusal("calibration needs min < center < max", false, kFields[row][0],
-                       RcRuleReason::kConflict);
+        return onAxis(refusal("calibration needs min < center < max", true, "calibration.center",
+                              RcRuleReason::kConflict),
+                      axis);
     }
     // The dead zone must leave travel on both sides of the centre, or that
     // side of the stick maps to nothing (Codex review, #389).
     if (binding.deadband >= (uint16_t)(binding.center - binding.min) ||
         binding.deadband >= (uint16_t)(binding.max - binding.center)) {
-        return refusal("calibration leaves no travel past the deadband", false, kFields[row][1],
-                       RcRuleReason::kConflict);
+        return onAxis(refusal("calibration leaves no travel past the deadband", true,
+                              "calibration.deadband", RcRuleReason::kConflict),
+                      axis);
     }
     return kHolds;
 }

@@ -158,11 +158,6 @@
     && String(channelKey || '').split(':')[0] === 'sbus2';
   // ==== DRIVE ON ONE RECEIVER (#389) END ====
 
-  // The droid's refusal of a drive split across two receivers, in the
-  // builder's words.
-  const DRIVE_SPLIT_REFUSAL = /must be on the same receiver/;
-  const DRIVE_SPLIT_TEXT = 'Not saved: Speed and Steer share one RC Receiver.';
-  const DRIVE_SBUS2_REFUSAL = /drive reads SBUS1/;
   const DRIVE_SBUS2_TEXT = 'Not saved: Speed and Steer read SBUS1.';
 
   // Live action targets — replaced on load from GET /api/actions.
@@ -1142,17 +1137,10 @@
     return { map: mapEntries, calibration: { [token]: fields } };
   };
 
-  // The droid's refusals of a calibration, in the builder's words.
-  const axisRefusalText = (error) => {
-    const message = window.PAApi.messageFor(error);
-    if (/min < center < max/.test(message)) return 'Not saved: MIN, CENTER and MAX must rise in that order.';
-    if (/out of range/.test(message)) return 'Not saved: that reading is out of range.';
-    if (/does not bind/.test(message)) return 'Not saved: map this axis first.';
-    if (/no travel past the deadband/.test(message)) return AXIS_DEADBAND_TEXT;
-    if (DRIVE_SPLIT_REFUSAL.test(message)) return DRIVE_SPLIT_TEXT;
-    if (DRIVE_SBUS2_REFUSAL.test(message)) return DRIVE_SBUS2_TEXT;
-    return `Not saved: ${message}`;
-  };
+  // The droid's refusal of a calibration, worded from its field, reason and
+  // accepts by the one words table (data/web_api.js), never from its sentence.
+  const refusalWords = (error) => window.PAApi.sayRefusal?.(error) || window.PAApi.messageFor(error);
+  const axisRefusalText = (error) => `Not saved: ${refusalWords(error)}.`;
 
   const axisEndsText = (ends) => (ends
     ? `MIN ${ends.min} · CENTER ${ends.center} · MAX ${ends.max}`
@@ -2065,8 +2053,15 @@
       // refuse it, ADR 0070) is left out of the map this page posts, or the
       // droid would refuse the whole map over it.
       const entries = Array.isArray(payload.map) ? payload.map : [];
-      const unread = entries.filter((entry) => entry?.read === false)
-        .map((entry) => channelTitleFromKey(channelKeyOf(entry.source, entry.channel)));
+      // Each named, with why: the refusal a save would give it, worded by the
+      // words table from the field, reason and accepts it carries.
+      const unread = entries.filter((entry) => entry?.read === false).map((entry) => {
+        const title = channelTitleFromKey(channelKeyOf(entry.source, entry.channel));
+        const why = window.PAApi.sayRefusal?.(new window.PAApi.ApiError('', {
+          kind: 'http', field: entry.field ?? null, reason: entry.reason ?? null, accepts: entry.accepts ?? null,
+        }));
+        return why ? `${title} (${why})` : title;
+      });
       channelMap = modeMapFromArray(entries.filter((entry) => entry?.read !== false));
       channelMapLoaded = true;
       mapCapacityTotal = Number(payload.capacity?.total);
@@ -2474,13 +2469,13 @@
     markEditorClean(savedAt);
   };
 
-  // A refused save, in the builder's words where the droid's are about room.
+  // A refused save, worded from the droid's field, reason and accepts, and
+  // the binding it is about named from the entry it echoes.
   const mapRefusalText = (error) => {
-    const message = window.PAApi.messageFor(error);
-    if (/no trigger slot available|exceeds capacity/.test(message)) return 'No room for one more. Unmap another switch or condition first.';
-    if (DRIVE_SPLIT_REFUSAL.test(message)) return DRIVE_SPLIT_TEXT;
-    if (DRIVE_SBUS2_REFUSAL.test(message)) return DRIVE_SBUS2_TEXT;
-    return `Failed to save: ${message}`;
+    const said = refusalWords(error);
+    const entry = error?.entry;
+    if (!entry?.source) return `Not saved: ${said}.`;
+    return `Not saved. ${channelTitleFromKey(channelKeyOf(entry.source, entry.channel))}: ${said}.`;
   };
 
   // After a save the droid answers only {ok:true}, so what it stored is read

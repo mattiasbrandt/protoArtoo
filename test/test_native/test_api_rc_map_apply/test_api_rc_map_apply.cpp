@@ -331,9 +331,12 @@ void test_rcMapApply_refusal_carries_field_reason_and_accepts(void) {
     result = applyBody(std::string("{") + kSbusDriveMap + ",\"calibration\":{\"drive_steer\":{\"max\":4000}}}",
                        &cal);
     TEST_ASSERT_FALSE(result.ok);
-    TEST_ASSERT_EQUAL_STRING("calibration.drive_steer.max", result.field);
+    TEST_ASSERT_EQUAL_STRING("calibration.max", result.field);
     TEST_ASSERT_EQUAL_STRING("out-of-range", result.reason);
     TEST_ASSERT_EQUAL_STRING("0..2047", result.accepts);
+    // The axis is said by the entry echoed beside it.
+    TEST_ASSERT_TRUE(result.errorEntry.present);
+    TEST_ASSERT_EQUAL_STRING("drive_steer", result.errorEntry.action);
 
     ConfigSnapshot dup = makeDefaultSnap();
     result = applyBody(

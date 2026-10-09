@@ -9,6 +9,8 @@
 // home for the words the check exists to keep to one. The RC Channel's words
 // (isRcChannelSource, rcSourceLabel, rcChannelTitle; #451) come along for the
 // same reason: the RC page and the Dashboard both say a channel through them.
+// sayRefusal words a refusal from its field, reason and accepts by that table
+// (ADR 0068, ADR 0070), so a page's refusal reads as it ships.
 // CommonJS, so the suites written either way can load it.
 // =============================================================================
 const vm = require("node:vm");
@@ -19,9 +21,12 @@ const source = readFileSync(join(__dirname, "../../../data/web_api.js"), "utf-8"
 
 const shippedWords = () => {
   const window = {};
-  vm.runInNewContext(source, { window, URLSearchParams });
-  const { labelOf, unsetOf, timingOf, rowTimingOf, isRcChannelSource, rcSourceLabel, rcChannelTitle } = window.PAApi;
-  return { labelOf, unsetOf, timingOf, rowTimingOf, isRcChannelSource, rcSourceLabel, rcChannelTitle };
+  // The caller's Error, so sayRefusal() knows a refusal the harness throws as
+  // one: an Error from this context's own realm would fail its instanceof.
+  vm.runInNewContext(source, { window, URLSearchParams, Error });
+  const { labelOf, unsetOf, timingOf, rowTimingOf, isRcChannelSource, rcSourceLabel, rcChannelTitle, sayRefusal } =
+    window.PAApi;
+  return { labelOf, unsetOf, timingOf, rowTimingOf, isRcChannelSource, rcSourceLabel, rcChannelTitle, sayRefusal };
 };
 
 module.exports = { shippedWords };

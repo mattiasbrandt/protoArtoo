@@ -2463,10 +2463,11 @@ Replaces entire RC map.
   "Refusals from a settings write". `field` is the request field: `map` (the
   map itself: missing, malformed, or no room for one more), `map.source`,
   `map.channel`, `map.action`, `map.payload`, `map.threshold`, `map.quietS`,
-  `calibration`, `calibration.<axis>`, or `calibration.<axis>.<key>` with
-  `<key>` one of `min`, `center`, `max`, `reverse` and `deadband` (a stored
-  dead zone the ends leave no travel past). A rule between two values is a
-  `conflict` and names the second one: a drive split across receivers names
+  `calibration` (the object, or an axis in it the map does not bind), or
+  `calibration.<key>` with `<key>` one of `min`, `center`, `max`, `reverse`
+  and `deadband` (a stored dead zone the ends leave no travel past); the axis
+  is the one whose map entry the refusal echoes. A rule between two values is
+  a `conflict` and names the second one: a drive split across receivers names
   the steer's `map.source`, a calibration out of order its `center`:
   `{"ok":false,"error":"drive reads SBUS1, the drive receiver","field":"map.source","reason":"out-of-range","accepts":"sbus1","entry":{"source":"sbus2","channel":1,"action":"drive_speed"}}`
 - `500` `{"ok":false,"error":"failed to persist config"}`
