@@ -2009,7 +2009,8 @@ Returns current config snapshot.
 
 - Success: `200` JSON including:
 - `drive`: speed limits, presets, web timeout, stationary
-- `rc`: input mode, SBUS timeout, `sbus.recvCh2`, and `activeInputMode`, the
+- `rc`: input mode, `member` (the RC Radio: a Radio Controller registry id, or
+  `""` with none chosen), SBUS timeout, `sbus.recvCh2`, and `activeInputMode`, the
   input mode the droid started with (#371). A saved `inputMode` that differs
   from it is waiting for a restart.
 - `activeToggles`: the ids of the Component Toggles (the `components` keys) the
@@ -2070,7 +2071,7 @@ curl -s http://artoo.local/api/config
 #### Example response (abridged)
 
 ```json
-{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"domeEsc":{"enabled":true,"label":"DOME"},"drive":{"enabled":true,"label":"S1"}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"servo":{"cadenceFloorMs":450,"cadenceFloorSource":"dome"},"system":{"logLevel":2}}
+{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","member":"hotrc_ds650","sbusTimeoutMs":300,"sbus":{"recvCh2":false},"activeInputMode":"dual_sbus"},"components":{"domeEsc":{"enabled":true,"label":"DOME"},"drive":{"enabled":true,"label":"S1"}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"servo":{"cadenceFloorMs":450,"cadenceFloorSource":"dome"},"system":{"logLevel":2}}
 ```
 
 ### POST /api/config
@@ -2402,6 +2403,9 @@ Replaces entire RC map.
 - each entry needs valid `source`, `channel`, `action`
 - no duplicate `source+channel`
 - no duplicate backbone action: `drive_speed`, `drive_steer`, `dome_speed`
+- `drive_speed` and `drive_steer` on the same `source`: the two are read from one
+  frame of one receiver, so a map that splits them is refused
+  (`drive speed and steer must be on the same receiver`)
 - source/channel must match allowed ranges by source
 - `dome.action.sequence` payload must be valid `DM:NAME` format
 - a droid-condition `source` (a Reaction) takes any trigger action except
@@ -2420,7 +2424,8 @@ Replaces entire RC map.
 - optional `calibration` object beside `map` (#389), keyed by axis
   (`drive_speed`, `drive_steer`, `dome_speed`), each `{ "min", "center", "max",
   "reverse" }`, every field optional: one left out keeps what the axis holds.
-  Raw values are 0-2047 on SBUS and 900-2100 on PWM, with `min < center < max`.
+  Raw values are 0-2047 on SBUS and 900-2100 on PWM, with `min < center < max`
+  and the axis's stored deadband narrower than each side of the centre.
   An axis the same `map` does not bind cannot be calibrated. Without
   `calibration` an axis keeps its stored calibration, as before:
   `{"map":[...],"calibration":{"drive_steer":{"min":255,"center":1472,"max":1919,"reverse":true}}}`

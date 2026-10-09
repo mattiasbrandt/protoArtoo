@@ -133,6 +133,13 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
             setError(result, "calibration needs min < center < max", nullptr);
             return false;
         }
+        // The deadband must leave travel on both sides of the centre, or that
+        // side of the stick maps to nothing (Codex review, #389).
+        if (binding.deadband >= (uint16_t)(binding.center - binding.min) ||
+            binding.deadband >= (uint16_t)(binding.max - binding.center)) {
+            setError(result, "calibration leaves no travel past the deadband", nullptr);
+            return false;
+        }
         *axis->pwm = binding;
         *axis->sbus = binding;
     }
@@ -300,6 +307,20 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
         }
 
         entries[count++] = entry;
+    }
+
+    // Drive speed and steer are read together, from one frame of one receiver
+    // (rcMapDriveControls()), so a map that splits them across two receivers
+    // could never drive (Codex review, #389).
+    const RcMapEntry* speed = nullptr;
+    const RcMapEntry* steer = nullptr;
+    for (size_t i = 0; i < count; ++i) {
+        if (entries[i].action == DRIVE_ACTION_SPEED) speed = &entries[i];
+        if (entries[i].action == DRIVE_ACTION_STEER) steer = &entries[i];
+    }
+    if (speed != nullptr && steer != nullptr && speed->source != steer->source) {
+        setError(result, "drive speed and steer must be on the same receiver", steer);
+        return;
     }
 
     ConfigSnapshot existing = *working;

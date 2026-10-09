@@ -235,6 +235,36 @@ void test_rcMapApply_calibration_refuses_what_it_cannot_store(void) {
     }
 }
 
+// A stored deadband the new calibration would leave wider than one side of the
+// stick is refused: that side would map to nothing (Codex review, #389).
+void test_rcMapApply_calibration_refuses_a_side_inside_the_deadband(void) {
+    ConfigSnapshot snap = makeDefaultSnap();
+    snap.system.rc_sbus_drive_speed = makeRcBindingConfig(RC_BINDING_SBUS1, 1, 172, 992, 1811, 100, false);
+    RcMapApplyResult result = applyBody(
+        std::string("{") + kSbusDriveMap + ",\"calibration\":{\"drive_speed\":{\"min\":950}}}", &snap);
+    TEST_ASSERT_FALSE(result.ok);
+    TEST_ASSERT_EQUAL_STRING("calibration leaves no travel past the deadband", result.errorMessage);
+
+    ConfigSnapshot fits = makeDefaultSnap();
+    fits.system.rc_sbus_drive_speed = makeRcBindingConfig(RC_BINDING_SBUS1, 1, 172, 992, 1811, 100, false);
+    result = applyBody(
+        std::string("{") + kSbusDriveMap + ",\"calibration\":{\"drive_speed\":{\"min\":800}}}", &fits);
+    TEST_ASSERT_TRUE_MESSAGE(result.ok, result.errorMessage);
+    TEST_ASSERT_EQUAL_UINT16(100, fits.system.rc_sbus_drive_speed.deadband);
+}
+
+// Drive speed and steer are read from one frame of one receiver: a map that
+// splits them could never drive, so it is refused (Codex review, #389).
+void test_rcMapApply_refuses_drive_split_across_receivers(void) {
+    ConfigSnapshot snap = makeDefaultSnap();
+    RcMapApplyResult result = applyBody(
+        "{\"map\":[{\"source\":\"sbus1\",\"channel\":1,\"action\":\"drive_speed\"},"
+        "{\"source\":\"sbus2\",\"channel\":2,\"action\":\"drive_steer\"}]}",
+        &snap);
+    TEST_ASSERT_FALSE(result.ok);
+    TEST_ASSERT_EQUAL_STRING("drive speed and steer must be on the same receiver", result.errorMessage);
+}
+
 // --- success path: named trigger action fills its dedicated slot ---
 void test_rcMapApply_arm1_toggle_fills_dedicated_slot(void) {
     std::map<std::string, std::string> m = {
@@ -277,6 +307,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_rcMapApply_calibration_sets_an_axis_in_both_slots);
     RUN_TEST(test_rcMapApply_calibration_keeps_fields_it_leaves_out);
     RUN_TEST(test_rcMapApply_calibration_refuses_what_it_cannot_store);
+    RUN_TEST(test_rcMapApply_calibration_refuses_a_side_inside_the_deadband);
+    RUN_TEST(test_rcMapApply_refuses_drive_split_across_receivers);
     RUN_TEST(test_rcMapApply_arm1_toggle_fills_dedicated_slot);
     RUN_TEST(test_rcMapApply_unnamed_trigger_spills_to_first_free_slot);
     return UNITY_END();
