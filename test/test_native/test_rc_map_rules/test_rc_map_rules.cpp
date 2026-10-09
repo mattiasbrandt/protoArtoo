@@ -353,7 +353,7 @@ std::string acceptsOf(const RcRuleVerdict& verdict) {
 void test_a_refusal_names_its_field_reason_and_what_it_accepts(void) {
     RcRuleVerdict channel = addAlone(entryOf(RC_BINDING_SBUS1, 19, SERVO_ACTION_ARM1_TOGGLE));
     TEST_ASSERT_EQUAL_STRING("map.channel", channel.field);
-    TEST_ASSERT_EQUAL_STRING("out-of-range", rcRuleReasonToken(channel.reason));
+    TEST_ASSERT_EQUAL_STRING("out-of-range", applyRefusalReasonToken(channel.reason));
     TEST_ASSERT_EQUAL_STRING("1..18", acceptsOf(channel).c_str());
 
     RcRuleVerdict stick = addAlone(entryOf(RC_BINDING_SBUS1, 17, DRIVE_ACTION_SPEED));
@@ -391,14 +391,14 @@ void test_a_conflict_names_its_field_and_accepts_nothing(void) {
     RcRuleVerdict verdict =
         rcRuleMapAdd(prior, 1, entryOf(RC_BINDING_SBUS1, 5, SOUND_ACTION_NEXT), RC_INPUT_DUAL_SBUS);
     TEST_ASSERT_EQUAL_STRING("map.channel", verdict.field);
-    TEST_ASSERT_EQUAL_STRING("conflict", rcRuleReasonToken(verdict.reason));
+    TEST_ASSERT_EQUAL_STRING("conflict", applyRefusalReasonToken(verdict.reason));
     TEST_ASSERT_EQUAL_STRING("<none>", acceptsOf(verdict).c_str());
 
     RcRuleVerdict split = rcRuleDrive(sbusAxis(RC_BINDING_SBUS1, 1), defaultPwmBinding(2));
     TEST_ASSERT_EQUAL_STRING("map.source", split.field);
-    TEST_ASSERT_EQUAL_STRING("conflict", rcRuleReasonToken(split.reason));
+    TEST_ASSERT_EQUAL_STRING("conflict", applyRefusalReasonToken(split.reason));
     RcRuleVerdict sbus2 = rcRuleDrive(sbusAxis(RC_BINDING_SBUS2, 1), disabledRcBinding());
-    TEST_ASSERT_EQUAL_STRING("out-of-range", rcRuleReasonToken(sbus2.reason));
+    TEST_ASSERT_EQUAL_STRING("out-of-range", applyRefusalReasonToken(sbus2.reason));
     TEST_ASSERT_EQUAL_STRING("sbus1", acceptsOf(sbus2).c_str());
 
     RcBindingConfig steer = sbusAxis(RC_BINDING_SBUS1, 2);
@@ -411,7 +411,7 @@ void test_a_conflict_names_its_field_and_accepts_nothing(void) {
     RcRuleVerdict order = rcRuleAxisCalibration(DOME_ACTION_SPEED, steer);
     TEST_ASSERT_EQUAL_STRING("calibration.center", order.field);
     TEST_ASSERT_EQUAL(DOME_ACTION_SPEED, order.axis);
-    TEST_ASSERT_EQUAL_STRING(nullptr, rcRuleReasonToken(RcRuleReason::kHolds));
+    TEST_ASSERT_EQUAL(ApplyRefusalReason::None, rcRuleDrive(disabledRcBinding(), disabledRcBinding()).reason);
 }
 
 // Every field a rule names is one the words check holds to the browser's
@@ -458,7 +458,7 @@ void test_every_field_a_rule_names_is_declared(void) {
     for (const RcRuleVerdict& verdict : verdicts) {
         TEST_ASSERT_FALSE_MESSAGE(verdict.ok(), "each case is a refusal");
         TEST_ASSERT_TRUE_MESSAGE(declared(verdict.field), verdict.field);
-        TEST_ASSERT_NOT_NULL(rcRuleReasonToken(verdict.reason));
+        TEST_ASSERT_TRUE(verdict.reason != ApplyRefusalReason::None);
     }
 }
 

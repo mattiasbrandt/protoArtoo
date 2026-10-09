@@ -322,18 +322,18 @@ void test_rcMapApply_refusal_carries_field_reason_and_accepts(void) {
     RcMapApplyResult result = applyBody(
         "{\"map\":[{\"source\":\"sbus2\",\"channel\":1,\"action\":\"drive_speed\"}]}", &snap);
     TEST_ASSERT_FALSE(result.ok);
-    TEST_ASSERT_EQUAL_STRING("map.source", result.field);
-    TEST_ASSERT_EQUAL_STRING("out-of-range", result.reason);
-    TEST_ASSERT_EQUAL_STRING("sbus1", result.accepts);
+    TEST_ASSERT_EQUAL_STRING("map.source", result.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("out-of-range", applyRefusalReasonToken(result.refusal.reason));
+    TEST_ASSERT_EQUAL_STRING("sbus1", result.refusal.accepts);
     TEST_ASSERT_EQUAL_STRING("drive_speed", result.errorEntry.action);
 
     ConfigSnapshot cal = makeDefaultSnap();
     result = applyBody(std::string("{") + kSbusDriveMap + ",\"calibration\":{\"drive_steer\":{\"max\":4000}}}",
                        &cal);
     TEST_ASSERT_FALSE(result.ok);
-    TEST_ASSERT_EQUAL_STRING("calibration.max", result.field);
-    TEST_ASSERT_EQUAL_STRING("out-of-range", result.reason);
-    TEST_ASSERT_EQUAL_STRING("0..2047", result.accepts);
+    TEST_ASSERT_EQUAL_STRING("calibration.max", result.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("out-of-range", applyRefusalReasonToken(result.refusal.reason));
+    TEST_ASSERT_EQUAL_STRING("0..2047", result.refusal.accepts);
     // The axis is said by the entry echoed beside it.
     TEST_ASSERT_TRUE(result.errorEntry.present);
     TEST_ASSERT_EQUAL_STRING("drive_steer", result.errorEntry.action);
@@ -344,16 +344,25 @@ void test_rcMapApply_refusal_carries_field_reason_and_accepts(void) {
         "{\"source\":\"sbus1\",\"channel\":6,\"action\":\"arm1_toggle\"}]}",
         &dup);
     TEST_ASSERT_FALSE(result.ok);
-    TEST_ASSERT_EQUAL_STRING("map.action", result.field);
-    TEST_ASSERT_EQUAL_STRING("conflict", result.reason);
-    TEST_ASSERT_EQUAL_STRING("", result.accepts);
+    TEST_ASSERT_EQUAL_STRING("map.action", result.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("conflict", applyRefusalReasonToken(result.refusal.reason));
+    TEST_ASSERT_EQUAL_STRING("", result.refusal.accepts);
 
     ConfigSnapshot none = makeDefaultSnap();
     std::map<std::string, std::string> empty;
     RcMapApplyResult missing;
     rcMapApply(makeSource(&empty), &none, &missing);
-    TEST_ASSERT_EQUAL_STRING("map", missing.field);
-    TEST_ASSERT_EQUAL_STRING("missing-argument", missing.reason);
+    TEST_ASSERT_EQUAL_STRING("map", missing.refusal.field);
+    // A member of the wrong type is a value the field does not take; only a
+    // body that did not parse is malformed, and it names "plain".
+    ConfigSnapshot typed = makeDefaultSnap();
+    result = applyBody("{\"map\":\"nope\"}", &typed);
+    TEST_ASSERT_EQUAL_STRING("out-of-range", applyRefusalReasonToken(result.refusal.reason));
+    ConfigSnapshot broken = makeDefaultSnap();
+    result = applyBody("not json", &broken);
+    TEST_ASSERT_EQUAL_STRING("plain", result.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("malformed-argument", applyRefusalReasonToken(result.refusal.reason));
+    TEST_ASSERT_EQUAL_STRING("missing-argument", applyRefusalReasonToken(missing.refusal.reason));
 }
 
 // --- success path: named trigger action fills its dedicated slot ---

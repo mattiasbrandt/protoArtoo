@@ -26,6 +26,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "api_apply_refusal.h"  // ApplyRefusalReason: the reasons every refusal states
 #include "rc_action_types.h"
 
 enum RcInputMode : uint8_t;  // include/robot_state.h
@@ -70,20 +71,10 @@ struct RcReceiverSetup {
 // condition is no receiver and is never read here.
 bool rcReceiverReads(RcBindingSource source, const RcReceiverSetup& setup);
 
-// Why a rule refused, in the Controller Console's reason tokens
-// (docs/console-protocol.md 3.3) that every settings refusal carries.
-enum class RcRuleReason : uint8_t {
-    kHolds = 0,
-    kOutOfRange,  // not a value the field takes
-    kConflict,    // fine on its own, clashes with another entry or field
-};
-
-// "out-of-range" / "conflict"; null for kHolds.
-const char* rcRuleReasonToken(RcRuleReason reason);
-
 // A rule's answer, as a refusal names it on the wire (docs/api.md "Refusals
-// from a settings write"): `field` is the request field it is about
-// ("map.channel", "map.source", ...), `reason` why, and what the field would
+// from a settings write", include/api_apply_refusal.h): `field` is the request
+// field it is about ("map.channel", "map.source", ...), `reason` why, and what
+// the field would
 // have taken - a range `acceptsLo..acceptsHi` when `acceptsWords` is null and
 // acceptsHi is not 0, or the comma-separated words in `acceptsWords`.
 // rcRuleFormatAccepts() writes it. `sentence` is the refusal as POST
@@ -97,7 +88,7 @@ struct RcRuleVerdict {
     uint16_t acceptsLo;
     uint16_t acceptsHi;
     RobotActionId axis;
-    RcRuleReason reason;
+    ApplyRefusalReason reason;
     bool aboutEntry;
     bool ok() const { return sentence == nullptr; }
 };
