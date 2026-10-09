@@ -275,3 +275,61 @@ test("a saved receiver type the droid does not run yet is said, and one it runs 
   assert.equal(caughtUp.element("rc-mode-summary").textContent, "Single SBUS");
   assert.equal(caughtUp.element("rc-mode-waiting").textContent, "", "nothing waits when the droid runs what is saved");
 });
+
+// GLOSSARY.md "RC Map": 11 trigger bindings. GET /api/rc/map's capacity also
+// counts the three axes, which have places of their own (src/web/api_config.cpp).
+test("the RC Map's trigger count is shown against 11, the axes left out", async () => {
+  const map = {
+    mode: "dual_sbus",
+    map: [
+      { source: "sbus1", channel: 1, action: "drive_speed" },
+      { source: "sbus1", channel: 2, action: "drive_steer" },
+      { source: "sbus1", channel: 7, action: "sleep_toggle" },
+      { source: "sbus1", channel: 17, action: "sound_next" },
+      { source: "rest", channel: 1, action: "sound_rand_happy", threshold: 20, quietS: 5 },
+    ],
+    capacity: { total: 14, used: 5 },
+  };
+  const env = loadPageModule("rc.js", { respond: rcDroid({ map }) });
+  await env.settle();
+  await env.runSection("rc-mode-mapping");
+  await env.settle();
+  assert.equal(env.element("rc-capacity").textContent, "3 of 11 used");
+
+  // A droid that gives no total gets no count, never "of NaN".
+  const silent = loadPageModule("rc.js", { respond: rcDroid({ map: { ...map, capacity: undefined } }) });
+  await silent.settle();
+  await silent.runSection("rc-mode-mapping");
+  await silent.settle();
+  assert.equal(silent.element("rc-capacity").textContent, "");
+});
+
+// POST /api/rc/map answers {"ok":true} and nothing else, so what the droid
+// stored is read back and drawn - not the page's own copy of what it sent.
+test("after a save the page draws the map the droid read back", async () => {
+  let stored = { mode: "dual_sbus", map: [{ source: "sbus1", channel: 7, action: "sleep_toggle" }], capacity: { total: 14, used: 1 } };
+  const env = loadPageModule("rc.js", {
+    respond: (path, opts) => {
+      if (path === "/api/rc/map" && opts.method === "POST") {
+        // The droid keeps its own idea of the map: a binding the page never sent.
+        stored = { ...stored, map: [{ source: "sbus2", channel: 12, action: "sound_next" }] };
+        return { data: { ok: true } };
+      }
+      if (path === "/api/rc/map") return { data: stored };
+      return respond(path);
+    },
+  });
+  await env.settle();
+  await env.runSection("rc-mode-mapping");
+  await env.settle();
+  env.window.PAOverlay.ask = async () => true;
+
+  await env.emitOn("rc-reset-defaults", "click");
+  await env.settle(6);
+
+  const reads = env.requests.filter((request) => request.path === "/api/rc/map").map((request) => request.method);
+  assert.deepEqual(reads, ["GET", "POST", "GET"], "the map is read back after the save");
+  const summary = env.element("rc-summary-body").innerHTML;
+  assert.match(summary, /SBUS#2 CH 12/, "the table shows what the droid stored");
+  assert.match(env.element("rc-editor-feedback").textContent, /^Cleared all mappings\.$/);
+});
