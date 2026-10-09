@@ -23,6 +23,7 @@
 #include "api_rc.h"
 #include "api_validation.h"
 #include "rc_diagnostics_snapshot.h"
+#include "robot_state.h"
 #include "validation_snapshot.h"
 #include "web_request_test_backend.h"
 
@@ -154,6 +155,8 @@ void test_rc_get_returns_parseable_diagnostics() {
     TEST_ASSERT_TRUE(doc["channels"].is<JsonArray>());
     TEST_ASSERT_TRUE(doc["mappingProfile"].is<JsonObject>());
     TEST_ASSERT_TRUE(doc["driveAwaitingCentre"].is<bool>());
+    TEST_ASSERT_TRUE(doc["sources"]["sbus1"]["framesPerSecond"].is<unsigned>());
+    TEST_ASSERT_TRUE(doc["sources"]["sbus2"]["decodeFails"].is<unsigned>());
 }
 
 // The ceiling the port introduced. The async handler streamed and had no size
@@ -166,6 +169,11 @@ void test_worst_case_rc_payload_fits_the_response_buffer() {
     fillWorstCaseRc(capturable, RC_DIAGNOSTICS_CHANNEL_CAPACITY, 0);
     JsonDocument capturableDoc;
     TEST_ASSERT_TRUE(populateRcDiagnosticsJson(capturableDoc, capturable));
+    // The RC task's own counters at their widest (#389).
+    robotState.sbus1FramesPerSecond = 0xFFFFu;
+    robotState.sbus2FramesPerSecond = 0xFFFFu;
+    robotState.sbus1DecodeFails = 0xFFFFFFFFu;
+    robotState.sbus2DecodeFails = 0xFFFFFFFFu;
     TEST_ASSERT_TRUE(appendRcTaskStateJson(capturableDoc));
     reportMeasuredSize("capturable worst-case /api/rc", measureJson(capturableDoc),
                        kRcPayloadMax);

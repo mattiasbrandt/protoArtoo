@@ -25,7 +25,6 @@ struct SbusDecodeAttemptStats {
     uint32_t extractFailCount;
     uint32_t headerMismatchCount;
     uint32_t footerMismatchCount;
-    uint32_t parityFailCount;
     uint8_t lastRejectedFooter;
 };
 
@@ -192,7 +191,6 @@ inline bool decodeFrameFromBits(const bool* bits, int bc, bool invertBits,
         attemptStats->extractFailCount = 0;
         attemptStats->headerMismatchCount = 0;
         attemptStats->footerMismatchCount = 0;
-        attemptStats->parityFailCount = 0;
         attemptStats->lastRejectedFooter = 0;
     }
 

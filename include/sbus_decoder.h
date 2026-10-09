@@ -58,7 +58,9 @@
 //   .data()         --  returns SbusData{ch[16], failsafe, lost_frame, ch17, ch18}
 //   .end()          --  release RMT channel and queue
 //   .isInitialized()  --  true if begin() succeeded and end() has not been called
-//   ch[]            --  0-indexed, range SBUS_MIN(172)..SBUS_MAX(1811), center ~992
+//   ch[]            --  0-indexed, 11-bit raw 0..2047; a standard radio sweeps
+//                       172..1811 around 992, the HotRC DS-650 at factory stroke
+//                       does not (docs/spec-sheets/hotrc-ds650-radio.md)
 // =============================================================================
 #pragma once
 
@@ -92,13 +94,15 @@ struct SbusDecoderDebugStats {
     uint32_t shortDropCount;
     uint32_t parseOkCount;
     uint32_t parseFailCount;
-    uint32_t bitCountLowCount;      // flattenSymbols produced < kTotalBits
+    uint32_t bitCountLowCount;      // flattenSymbols produced < kBitsPerByte bits
     uint32_t extractFailCount;      // extractSbusBytes returned false
     uint32_t headerMismatchCount;   // frame[0] != 0x0F
     uint32_t footerMismatchCount;   // footer not in accepted set
     uint8_t  lastRejectedFooter;    // last footer byte that failed validation
     uint32_t rearmFailCount;
-    uint32_t parityFailCount;     // parity mismatch on a header+footer-passing candidate
+    // No parity count: at the HotRC's 115 kbaud the bit-run expansion shifts
+    // the parity bit's position, so every frame would fail it (#389,
+    // docs/products.yaml). Parity is neither checked nor counted.
     uint32_t lastSymbolCount;
     uint32_t maxSymbolCount;
 };
@@ -188,7 +192,6 @@ private:
     volatile uint32_t     _footerMismatchCount;
     volatile uint8_t      _lastRejectedFooter;
     volatile uint32_t     _rearmFailCount;
-    volatile uint32_t     _parityFailCount;
     volatile uint32_t     _lastSymbolCount;
     volatile uint32_t     _maxSymbolCount;
 

@@ -2445,7 +2445,13 @@ Returns live RC diagnostics snapshot.
 - Success: `200`
 - Response includes:
 - `mode`, `updatedMs`
-- `sources` map (`enabled`, `linked`, `ageMs`, `lostFrames`, `failsafe`)
+- `sources` map (`enabled`, `linked`, `ageMs`, `lostFrames`, `failsafe`); `sbus1` and
+  `sbus2` also carry `framesPerSecond` (frames decoded in the last second) and
+  `decodeFails` (frames the decoder rejected since boot). A single SBUS receiver
+  is `sbus1` on either header (`sbusRecvCh2` picks the header only).
+- `driveAwaitingCentre`: `true` while RC drive is held at zero because the drive
+  sticks have not both been at centre since boot. A trigger resting at an end of
+  its travel keeps it `true`.
 - `channels` analog array (with normalized/mapped/deadband/reverse)
 - `digital` action map (`activeSource`, `bindingChannel`, `pressed`)
 - `mappingProfile.channels` calibration values (`min`, `center`, `max`, `deadband`, `reverse`)
@@ -2472,7 +2478,7 @@ curl -s http://artoo.local/api/rc
 #### Example response (abridged)
 
 ```json
-{"mode":"dual_sbus","updatedMs":123456,"sources":{"sbus1":{"enabled":true,"linked":true,"ageMs":12,"lostFrames":0,"failsafe":false}},"channels":[{"id":1,"name":"driveSpeed","type":"analog","activeSource":"sbus1","bindingChannel":1,"raw":1010,"rawUs":1512,"normalized":0.021,"mapped":0.021,"inDeadband":false,"reverse":false}],"digital":{"arm1":{"activeSource":"sbus2","bindingChannel":17,"pressed":true}},"mappingProfile":{"version":1,"channels":{"driveSpeed":{"source":"sbus1","channel":1,"min":172,"center":992,"max":1811,"deadband":0,"reverse":false}}}}
+{"mode":"dual_sbus","updatedMs":123456,"sources":{"sbus1":{"enabled":true,"linked":true,"ageMs":12,"lostFrames":0,"failsafe":false,"framesPerSecond":71,"decodeFails":3}},"driveAwaitingCentre":false,"channels":[{"id":1,"name":"driveSpeed","type":"analog","activeSource":"sbus1","bindingChannel":1,"raw":1010,"rawUs":1512,"normalized":0.021,"mapped":0.021,"inDeadband":false,"reverse":false}],"digital":{"arm1":{"activeSource":"sbus2","bindingChannel":17,"pressed":true}},"mappingProfile":{"version":1,"channels":{"driveSpeed":{"source":"sbus1","channel":1,"min":172,"center":992,"max":1811,"deadband":0,"reverse":false}}}}
 ```
 
 ### POST /api/rc/debug

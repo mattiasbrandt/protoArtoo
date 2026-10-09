@@ -400,6 +400,12 @@ struct RobotState {
     // The boot hold: RC drive is zero until both drive sticks have been at
     // centre once since the RC task started (#389). Reported on /api/rc.
     bool rcDriveAwaitingCentre;
+    // Each SBUS receiver's decoded frames in the last second, and its decode
+    // failures since boot (#389). Published once a second by RcInputTask.
+    uint16_t sbus1FramesPerSecond;
+    uint16_t sbus2FramesPerSecond;
+    uint32_t sbus1DecodeFails;
+    uint32_t sbus2DecodeFails;
     bool sbus2SignalLost;
     bool sbus2HwFailsafe;
 

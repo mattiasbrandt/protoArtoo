@@ -96,6 +96,8 @@ bool appendRcReactionsJson(JsonDocument& doc);
 // read in its own frame for the same reason as appendRcReactionsJson():
 //   driveAwaitingCentre  the boot hold (#389): RC drive is zero until both
 //                        drive sticks have been at centre once since boot.
+//   sources.sbus1/sbus2  framesPerSecond (decoded in the last second) and
+//                        decodeFails (since boot), beside the link fields.
 // False when the document has no room.
 bool appendRcTaskStateJson(JsonDocument& doc);
 
