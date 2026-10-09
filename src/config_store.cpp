@@ -80,6 +80,36 @@ void migrateSchema2To3(Preferences& prefs) {
     }
 }
 
+// The one-time carry of #389 (rcCarrySingleSbusCh2TriggerLabels()), written
+// back slot by slot. Out of line, by pointer, so configLoad()'s frame on
+// loopTask's measured chain carries none of it.
+__attribute__((noinline)) void persistSingleSbusLabelCarry(Preferences& prefs, SystemConfig* sys) {
+    const size_t carried = rcCarrySingleSbusCh2TriggerLabels(sys);
+    if (carried == 0) {
+        return;
+    }
+    const struct {
+        const char* key;
+        const RcTriggerBinding* slot;
+    } slots[RC_TRIGGER_SLOT_COUNT] = {
+        {"rc_arm1", &sys->rc_arm1},   {"rc_arm2", &sys->rc_arm2},   {"rc_aux1", &sys->rc_aux1},
+        {"rc_aux2", &sys->rc_aux2},   {"rc_aux3", &sys->rc_aux3},   {"rc_aud", &sys->rc_audio},
+        {"rc_opmode", &sys->rc_opmode}, {"rc_free0", &sys->rc_free0}, {"rc_free1", &sys->rc_free1},
+        {"rc_free2", &sys->rc_free2}, {"rc_free3", &sys->rc_free3},
+    };
+    for (const auto& entry : slots) {
+        if (entry.slot->source != RC_BINDING_SBUS1 && entry.slot->source != RC_BINDING_SBUS2) {
+            continue;
+        }
+        char encoded[64] = {};
+        if (formatRcTriggerBinding(encoded, sizeof(encoded), *entry.slot)) {
+            prefs.putString(entry.key, encoded);
+        }
+    }
+    PA_LOG_INFO("config", "single SBUS on CH2 is SBUS1 now: %u RC trigger labels carried across",
+                (unsigned)carried);
+}
+
 }  // namespace
 
 // Helper: Populate ConfigSnapshot with defaults. Every Setting's default is its
@@ -1066,6 +1096,13 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
         }
     }
 
+    // A marker key rather than a schema bump: an image from before #389 resets
+    // to defaults on a schema it does not know, and ignores an unknown key.
+    if (ok && !prefs.isKey(CONFIG_RC_SINGLE_LABELS_KEY)) {
+        persistSingleSbusLabelCarry(prefs, &out->system);
+        prefs.putBool(CONFIG_RC_SINGLE_LABELS_KEY, true);
+    }
+
     if (stored < CONFIG_SCHEMA_VERSION) {
         // Migration succeeded: stamp current version so next boot is clean.
         prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION);
@@ -1202,6 +1239,8 @@ bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot) {
     PrefsWriter writer(prefs);
     bool ok = configSerialize(snapshot, writer);
     if (ok) {
+        // Saved by this image: #389's single-SBUS labels already (configLoad()).
+        prefs.putBool(CONFIG_RC_SINGLE_LABELS_KEY, true);
         ok = removeRetiredServoKeys(prefs);
         ok = removeRetiredLightKeys(prefs) && ok;
     }
@@ -1271,6 +1310,12 @@ bool configSaveSystem(Preferences& prefs, const SystemConfig& config) {
     configWriteWindowExpectHeld("configSaveSystem");
     PrefsWriter writer(prefs);
     bool ok = configSerializeSystem(config, writer);
+
+    // What this image saves already carries #389's single-SBUS labels: the
+    // next load must not carry them across again.
+    if (ok) {
+        prefs.putBool(CONFIG_RC_SINGLE_LABELS_KEY, true);
+    }
 
     // Mark RC config dirty for RcInputTask rebuild
     if (ok) {

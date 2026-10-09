@@ -316,6 +316,37 @@ inline size_t rcTriggerSlotsCopy(const SystemConfig& sys, RcTriggerBinding* out,
     return n;
 }
 
+// The NVS key that marks the single-SBUS trigger labels as already carried
+// across #389, and the carry itself. Before #389 a single_sbus receiver on the
+// CH2 header was read as SBUS2 by the trigger path, so its working triggers
+// were stored `sbus2` and its `sbus1` ones were inert; since #389 that receiver
+// is SBUS1. Swapping the two labels on every trigger slot keeps exactly the
+// triggers that fired firing (an estop switch among them) and the inert ones
+// inert. Drive and dome bindings already read the receiver as SBUS1 and are
+// left alone. Returns how many slots changed. Only for single_sbus on CH2.
+constexpr char CONFIG_RC_SINGLE_LABELS_KEY[] = "rc_single_lbl";
+inline size_t rcCarrySingleSbusCh2TriggerLabels(SystemConfig* sys) {
+    if (sys == nullptr || sys->rc_input_mode != RC_INPUT_SINGLE_SBUS || !sys->single_sbus_use_ch2) {
+        return 0;
+    }
+    RcTriggerBinding* slots[RC_TRIGGER_SLOT_COUNT] = {
+        &sys->rc_arm1,  &sys->rc_arm2,  &sys->rc_aux1,  &sys->rc_aux2,
+        &sys->rc_aux3,  &sys->rc_audio, &sys->rc_opmode, &sys->rc_free0,
+        &sys->rc_free1, &sys->rc_free2, &sys->rc_free3,
+    };
+    size_t changed = 0;
+    for (RcTriggerBinding* slot : slots) {
+        if (slot->source == RC_BINDING_SBUS1) {
+            slot->source = RC_BINDING_SBUS2;
+            ++changed;
+        } else if (slot->source == RC_BINDING_SBUS2) {
+            slot->source = RC_BINDING_SBUS1;
+            ++changed;
+        }
+    }
+    return changed;
+}
+
 // ConfigSnapshot  --  in-flight snapshot of all cfg_* fields, used only at
 // load/save boundaries. NOT persisted or shared with tasks at runtime.
 struct ConfigSnapshot {
