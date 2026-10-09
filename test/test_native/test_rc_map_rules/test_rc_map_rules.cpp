@@ -481,6 +481,21 @@ void test_the_receivers_a_map_may_bind_follow_the_receiver_type(void) {
     TEST_ASSERT_EQUAL_UINT(0, rcMapReceivers(RC_INPUT_ELRS, RcMapReceiverUse::Drive, nullptr, 0));
 }
 
+// A payload the dispatcher would not send is not stored: it would fire nothing.
+void test_a_payload_that_fires_nothing_is_refused(void) {
+    RcRuleVerdict seq = addAlone(entryOf(RC_BINDING_SBUS1, 5, DOME_ACTION_MARCDUINO_SEQ, "37"));
+    TEST_ASSERT_EQUAL_STRING("map.payload", seq.field);
+    TEST_ASSERT_EQUAL_STRING("30..36", acceptsOf(seq).c_str());
+    TEST_ASSERT_TRUE(addAlone(entryOf(RC_BINDING_SBUS1, 5, DOME_ACTION_MARCDUINO_SEQ, "31")).ok());
+    RcRuleVerdict cmd = addAlone(entryOf(RC_BINDING_SBUS1, 5, DOME_ACTION_MARCDUINO_CMD, "OP01"));
+    TEST_ASSERT_EQUAL_STRING("map.payload", cmd.field);
+    TEST_ASSERT_TRUE(addAlone(entryOf(RC_BINDING_SBUS1, 5, DOME_ACTION_MARCDUINO_CMD, "$87")).ok());
+    // A stored one is judged the same: not read.
+    RcTriggerBinding stored = makeRcTriggerBinding(RC_BINDING_SBUS1, 5, DOME_ACTION_MARCDUINO_CMD, "OP01",
+                                                   172, 992, 1811, 0, false);
+    TEST_ASSERT_FALSE(rcRuleStoredCue(stored, RC_INPUT_DUAL_SBUS).ok());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_single_sbus_reads_sbus1_on_the_header_it_is_wired_to);
@@ -512,5 +527,6 @@ int main(int, char**) {
     RUN_TEST(test_a_conflict_names_its_field_and_accepts_nothing);
     RUN_TEST(test_every_field_a_rule_names_is_declared);
     RUN_TEST(test_the_receivers_a_map_may_bind_follow_the_receiver_type);
+    RUN_TEST(test_a_payload_that_fires_nothing_is_refused);
     return UNITY_END();
 }

@@ -2442,6 +2442,9 @@ Replaces entire RC map.
 - these are the rules the droid reads a stored map by too (ADR 0070): a binding
   stored before a rule existed that breaks one is not read, and stays still
 - `dome.action.sequence` payload must be valid `DM:NAME` format
+- a `seq` payload is a body sequence by its two digits, `30`-`36`, and a `cmd`
+  payload starts with `:`, `$` or `#`: the dispatcher sends nothing else, so a
+  binding with another payload would fire nothing (`field` `map.payload`)
 - a droid-condition `source` (a Reaction) takes any trigger action except
   `estop`, `op_mode` and `speed_preset_cycle`, and never an axis action
   (`drive_speed`, `drive_steer`, `dome_speed`, `puppet_part`)
