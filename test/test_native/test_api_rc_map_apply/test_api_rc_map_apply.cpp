@@ -8,6 +8,7 @@
 // =============================================================================
 #include <unity.h>
 
+#include <cstring>
 #include <map>
 #include <string>
 
@@ -365,6 +366,41 @@ void test_rcMapApply_refusal_carries_field_reason_and_accepts(void) {
     TEST_ASSERT_EQUAL_STRING("missing-argument", applyRefusalReasonToken(missing.refusal.reason));
 }
 
+// Every field the save names is one the words check holds to the browser's
+// table (kRcMapRefusalFields), or the body itself ("plain"), so no refusal
+// reaches the RC page as its wire name.
+void test_rcMapApply_every_refusal_names_a_declared_field(void) {
+    const char* const bodies[] = {
+        "not json",
+        "{\"map\":\"nope\"}",
+        "{\"map\":[1]}",
+        "{\"map\":[{\"source\":\"bogus\",\"channel\":1,\"action\":\"sound_next\"}]}",
+        "{\"map\":[{\"source\":\"sbus1\",\"channel\":300,\"action\":\"sound_next\"}]}",
+        "{\"map\":[{\"source\":\"sbus1\",\"channel\":1,\"action\":\"bogus\"}]}",
+        "{\"map\":[{\"source\":\"sbus1\",\"channel\":1,\"action\":\"dome_seq\",\"payload\":\"DM:NOPE\"}]}",
+        "{\"map\":[{\"source\":\"sbus1\",\"channel\":1,\"action\":\"puppet_part\",\"payload\":\"nope\"}]}",
+        "{\"map\":[],\"calibration\":5}",
+        "{\"map\":[],\"calibration\":{\"bogus\":{}}}",
+        "{\"map\":[],\"calibration\":{\"drive_speed\":{}}}",
+        "{\"map\":[{\"source\":\"sbus1\",\"channel\":1,\"action\":\"drive_speed\"}],\"calibration\":{\"drive_speed\":5}}",
+        "{\"map\":[{\"source\":\"sbus1\",\"channel\":1,\"action\":\"drive_speed\"}],\"calibration\":{\"drive_speed\":{\"min\":9999}}}",
+        "{\"map\":[{\"source\":\"sbus1\",\"channel\":1,\"action\":\"drive_speed\"}],\"calibration\":{\"drive_speed\":{\"reverse\":3}}}",
+        "{\"map\":[{\"source\":\"sbus1\",\"channel\":5,\"action\":\"arm1_toggle\"},"
+        "{\"source\":\"sbus1\",\"channel\":6,\"action\":\"arm1_toggle\"}]}",
+    };
+    for (const char* body : bodies) {
+        ConfigSnapshot snap = makeDefaultSnap();
+        RcMapApplyResult result = applyBody(body, &snap);
+        TEST_ASSERT_FALSE_MESSAGE(result.ok, body);
+        bool declared = strcmp(result.refusal.field, "plain") == 0;
+        for (const char* field : kRcMapRefusalFields) {
+            declared = declared || strcmp(field, result.refusal.field) == 0;
+        }
+        TEST_ASSERT_TRUE_MESSAGE(declared, result.refusal.field);
+        TEST_ASSERT_TRUE_MESSAGE(result.refusal.reason != ApplyRefusalReason::None, body);
+    }
+}
+
 // --- success path: named trigger action fills its dedicated slot ---
 void test_rcMapApply_arm1_toggle_fills_dedicated_slot(void) {
     std::map<std::string, std::string> m = {
@@ -412,6 +448,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_rcMapApply_refuses_a_receiver_the_saved_type_does_not_read);
     RUN_TEST(test_rcMapApply_refuses_drive_split_across_receivers);
     RUN_TEST(test_rcMapApply_refusal_carries_field_reason_and_accepts);
+    RUN_TEST(test_rcMapApply_every_refusal_names_a_declared_field);
     RUN_TEST(test_rcMapApply_refuses_drive_on_sbus2);
     RUN_TEST(test_rcMapApply_arm1_toggle_fills_dedicated_slot);
     RUN_TEST(test_rcMapApply_unnamed_trigger_spills_to_first_free_slot);

@@ -473,7 +473,8 @@ bool appendRcTaskStateJson(JsonDocument& doc) {
 // Whether the droid reads each RC Channel a cue is bound to as pressed (ADR
 // 0070): judged as the input processor judges it - CH17/CH18 by their on/off
 // bit, any other channel by its binding's own calibration - so the RC page
-// never decides it from a threshold of its own. Only a cue the droid reads
+// need not decide it from a threshold of its own. A level, not a firing: a
+// one-shot cue fires on each confirmed change of it. Only a cue the droid reads
 // (rcRuleStoredCue() on the receiver type it runs) on a receiver it has heard
 // is said; a puppet string is a stick, not a press, and a Reaction has no RC
 // Channel. Its own frame, like appendRcReactionsJson(): the eleven slots are a
@@ -497,8 +498,10 @@ bool appendRcCuePressedJson(JsonDocument& doc) {
     digital[0][1] = robotState.rcSbus1Digital[1];
     digital[1][0] = robotState.rcSbus2Digital[0];
     digital[1][1] = robotState.rcSbus2Digital[1];
-    heard[0] = robotState.lastSbus1Ms > 0;
-    heard[1] = robotState.lastSbus2Ms > 0;
+    // Heard and not lost: a receiver the watchdog has given up on holds its
+    // last frame, which is not where the switch is now.
+    heard[0] = robotState.lastSbus1Ms > 0 && !robotState.sbusSignalLost;
+    heard[1] = robotState.lastSbus2Ms > 0 && !robotState.sbus2SignalLost;
     taskEXIT_CRITICAL(&robotStateMux);
 
     JsonObject pressed = doc["pressed"].to<JsonObject>();

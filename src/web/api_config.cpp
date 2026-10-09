@@ -272,7 +272,7 @@ void rcMapMarkUnread(JsonObject item, const RcRuleVerdict& verdict) {
     item["read"] = false;
     item["field"] = verdict.field;
     item["reason"] = applyRefusalReasonToken(verdict.reason);
-    char accepts[48] = {};
+    char accepts[APPLY_REFUSAL_ACCEPTS_MAX] = {};
     if (rcRuleFormatAccepts(verdict, accepts, sizeof(accepts))) {
         item["accepts"] = accepts;
     }
