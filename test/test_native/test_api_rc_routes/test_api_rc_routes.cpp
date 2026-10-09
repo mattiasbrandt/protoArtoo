@@ -22,6 +22,7 @@
 
 #include "api_rc.h"
 #include "api_validation.h"
+#include "config_cache.h"
 #include "rc_diagnostics_snapshot.h"
 #include "robot_state.h"
 #include "validation_snapshot.h"
@@ -193,6 +194,55 @@ void test_worst_case_rc_payload_fits_the_response_buffer() {
     TEST_ASSERT_LESS_THAN_UINT(kRcPayloadMax, measureJson(overBoundDoc));
 }
 
+// For each RC Channel an SBUS cue is bound to, /api/rc says whether the droid
+// reads it as pressed, judged by that binding's own calibration (or CH17's
+// on/off bit) - not by a threshold of the page's (ADR 0070). A cue the droid
+// does not read, and one on a receiver it has not heard, are not said.
+void test_rc_get_says_which_bound_cues_the_droid_reads_as_pressed() {
+    robotState = RobotState{};
+    ConfigSnapshot snap = {};
+    snap.system.rc_input_mode = RC_INPUT_DUAL_SBUS;
+    // Pressed low: reversed, as a HotRC button idles high.
+    snap.system.rc_arm1 = makeRcTriggerBinding(RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM1_TOGGLE, nullptr,
+                                               172, 992, 1811, 0, true);
+    // A wide dead zone: 1200 is past the page's old 300-from-centre guess and
+    // still inside this binding's switch point.
+    snap.system.rc_arm2 = makeRcTriggerBinding(RC_BINDING_SBUS1, 6, SERVO_ACTION_ARM2_TOGGLE, nullptr,
+                                               172, 992, 1811, 400, false);
+    snap.system.rc_aux1 = makeRcTriggerBinding(RC_BINDING_SBUS1, 17, SERVO_ACTION_AUX1_TOGGLE, nullptr,
+                                               172, 992, 1811, 0, false);
+    snap.system.rc_aux2 = makeRcTriggerBinding(RC_BINDING_SBUS2, 5, SERVO_ACTION_AUX2_TOGGLE, nullptr,
+                                               172, 992, 1811, 0, false);
+    configCacheReplace(snap);
+    RcInputActiveConfig active = {};
+    active.mode = RC_INPUT_DUAL_SBUS;
+    active.enableRc[0] = active.enableRc[1] = true;
+    configCacheSetActiveRcInput(active);
+    robotState.lastSbus1Ms = 100;  // SBUS2 never heard
+    robotState.rcSbus1Raw[4] = 172;
+    robotState.rcSbus1Raw[5] = 1300;
+    robotState.rcSbus1Digital[0] = true;
+
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(appendRcCuePressedJson(doc));
+    JsonObjectConst pressed = doc["pressed"].as<JsonObjectConst>();
+    TEST_ASSERT_TRUE(pressed["sbus1:5"] | false);
+    TEST_ASSERT_FALSE(pressed["sbus1:6"] | true);
+    TEST_ASSERT_TRUE(pressed["sbus1:17"] | false);
+    TEST_ASSERT_TRUE_MESSAGE(pressed["sbus2:5"].isNull(), "an unheard receiver says nothing");
+    TEST_ASSERT_EQUAL_UINT(3, pressed.size());
+
+    // Running one SBUS receiver, a cue stored on SBUS2 is not read: unsaid.
+    active.mode = RC_INPUT_SINGLE_SBUS;
+    configCacheSetActiveRcInput(active);
+    robotState.lastSbus2Ms = 100;
+    JsonDocument single;
+    TEST_ASSERT_TRUE(appendRcCuePressedJson(single));
+    TEST_ASSERT_TRUE(single["pressed"]["sbus2:5"].isNull());
+    robotState = RobotState{};
+    configCacheReplace(ConfigSnapshot{});
+}
+
 void test_rc_get_rejects_an_unbuildable_snapshot() {
     // A null mode is populateRcDiagnosticsJson()'s own failure condition, and
     // the only one reachable without a broken allocator.
@@ -344,6 +394,7 @@ int main(int, char**) {
     RUN_TEST(test_rc_get_returns_parseable_diagnostics);
     RUN_TEST(test_worst_case_rc_payload_fits_the_response_buffer);
     RUN_TEST(test_rc_get_rejects_an_unbuildable_snapshot);
+    RUN_TEST(test_rc_get_says_which_bound_cues_the_droid_reads_as_pressed);
 
     RUN_TEST(test_rc_debug_enables_and_reports_ok);
     RUN_TEST(test_rc_debug_disables);

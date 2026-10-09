@@ -2506,6 +2506,11 @@ Returns live RC diagnostics snapshot.
   its travel keeps it `true`.
 - `channels` analog array (with normalized/mapped/deadband/reverse)
 - `digital` action map (`activeSource`, `bindingChannel`, `pressed`)
+- `pressed`: for each RC Channel an SBUS cue is bound to, keyed `sbus1:5`,
+  whether the droid reads it as pressed - by that binding's own calibration, or
+  CH17/CH18's on/off bit (ADR 0070). Only a cue the droid reads, on a receiver
+  it has heard, is there; a puppet string is a stick, not a press:
+  `"pressed":{"sbus1:5":true,"sbus1:17":false}`
 - `mappingProfile.channels` calibration values (`min`, `center`, `max`, `deadband`, `reverse`)
 - `raw` arrays (`sbus1`, `sbus2`, `pwm`) when available
 - `reactions` array, one entry per Reaction (a map entry whose `source` is a
