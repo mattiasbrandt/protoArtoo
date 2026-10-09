@@ -1000,6 +1000,9 @@
   let mapCapacityTotal = null;
   const paintCapacity = () => {
     if (!rcCapacity) return;
+    // Called once the map has answered: a droid that gives no total leaves
+    // the head empty, never waiting dots that do not resolve.
+    rcCapacity.classList.remove('waiting');
     if (!Number.isFinite(mapCapacityTotal) || mapCapacityTotal <= ANALOG_AXIS_TOKENS.size) {
       rcCapacity.textContent = '';
       return;
