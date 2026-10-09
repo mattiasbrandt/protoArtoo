@@ -58,6 +58,8 @@ void test_init_zeroes_state(void) {
     // Stationary lock should be false
     TEST_ASSERT_FALSE(proc.stationaryLocked);
 
+    // The boot hold starts set: no drive stick seen at centre yet
+    TEST_ASSERT_FALSE(proc.driveCentreSeen);
 }
 
 void test_backbone_drive_passthrough(void) {
@@ -79,7 +81,11 @@ void test_backbone_drive_passthrough(void) {
     input.nowMs = millis();
     input.randomSeed = 42;
 
+    // The boot hold releases on a centred frame first (#389).
     RcProcessorOutput output = {};
+    input.channels = buildChannelSnapshot();
+    rcInputProcessorTick(&proc, input, &output);
+
     input.channels = snap;
     rcInputProcessorTick(&proc, input, &output);
 
@@ -115,12 +121,46 @@ static RcProcessorOutput tickWith(RcInputProcessor* proc, const RcProcessorConfi
     return output;
 }
 
+void test_boot_hold_zeroes_drive_until_sticks_centre(void) {
+    RcInputProcessor proc = {};
+    rcInputProcessorInit(&proc);
+    const RcProcessorConfig cfg = buildDualDefaultConfig();
+
+    RcProcessorOutput held = tickWith(&proc, cfg, RC_BINDING_SBUS1, 1811, 992);
+    TEST_ASSERT_TRUE(held.driveAwaitingCentre);
+    TEST_ASSERT_EQUAL_INT16(0, held.backbone.driveSpeed);
+    TEST_ASSERT_EQUAL_INT16(0, held.backbone.driveSteer);
+    TEST_ASSERT_TRUE(held.submitDrive);  // a zero is sent, the hold is not silence
+
+    RcProcessorOutput centred = tickWith(&proc, cfg, RC_BINDING_SBUS1, 1000, 985);
+    TEST_ASSERT_FALSE(centred.driveAwaitingCentre);
+
+    RcProcessorOutput driving = tickWith(&proc, cfg, RC_BINDING_SBUS1, 1811, 992);
+    TEST_ASSERT_FALSE(driving.driveAwaitingCentre);
+    TEST_ASSERT_EQUAL_INT16(1000, driving.backbone.driveSpeed);
+}
+
+// The HotRC DS-650's CH2 trigger rests at an endpoint at factory stroke: the
+// hold never releases, so the trigger cannot drive the droid at boot.
+void test_boot_hold_never_releases_on_a_trigger_resting_at_an_endpoint(void) {
+    RcInputProcessor proc = {};
+    rcInputProcessorInit(&proc);
+    const RcProcessorConfig cfg = buildDualDefaultConfig();
+
+    for (int i = 0; i < 50; ++i) {
+        RcProcessorOutput out = tickWith(&proc, cfg, RC_BINDING_SBUS1, 992, 2028);
+        TEST_ASSERT_TRUE(out.driveAwaitingCentre);
+        TEST_ASSERT_EQUAL_INT16(0, out.backbone.driveSteer);
+    }
+}
+
 // dual_sbus: a frame from the dome receiver says nothing about the drive, and
 // a frame from the drive receiver says nothing about the dome (#389).
 void test_dual_sbus_dome_receiver_frame_leaves_drive_alone(void) {
     RcInputProcessor proc = {};
     rcInputProcessorInit(&proc);
     const RcProcessorConfig cfg = buildDualDefaultConfig();
+    (void)tickWith(&proc, cfg, RC_BINDING_SBUS1, 992, 992);  // release the boot hold
 
     RcProcessorOutput dome = tickWith(&proc, cfg, RC_BINDING_SBUS2, 1811, 172);
     TEST_ASSERT_FALSE(dome.submitDrive);
@@ -336,6 +376,8 @@ int main(void) {
     RUN_TEST(test_trigger_fires_after_confirm);
     RUN_TEST(test_stationary_lock_propagates);
     RUN_TEST(test_dome_filter_accepts_on_initial_tick);
+    RUN_TEST(test_boot_hold_zeroes_drive_until_sticks_centre);
+    RUN_TEST(test_boot_hold_never_releases_on_a_trigger_resting_at_an_endpoint);
     RUN_TEST(test_dual_sbus_dome_receiver_frame_leaves_drive_alone);
     RUN_TEST(test_dual_sbus_drive_receiver_off_keeps_zero_from_dome_frames);
     RUN_TEST(test_single_sbus_factory_dome_binding_reads_nothing);

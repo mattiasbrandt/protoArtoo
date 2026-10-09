@@ -92,6 +92,13 @@ bool populateRcDiagnosticsJson(JsonDocument& doc, const RcDiagnosticsSnapshot& s
 // recorded one. False when the document has no room.
 bool appendRcReactionsJson(JsonDocument& doc);
 
+// Adds the RC task's own state to a document populateRcDiagnosticsJson() built,
+// read in its own frame for the same reason as appendRcReactionsJson():
+//   driveAwaitingCentre  the boot hold (#389): RC drive is zero until both
+//                        drive sticks have been at centre once since boot.
+// False when the document has no room.
+bool appendRcTaskStateJson(JsonDocument& doc);
+
 // Exposed for unit testing  --  determines whether a source is active in a given mode.
 bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enableRcCh1,
                             bool enableRcCh2, bool anyPwmEnabled, bool useCh2);

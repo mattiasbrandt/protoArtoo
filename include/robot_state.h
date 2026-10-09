@@ -397,6 +397,9 @@ struct RobotState {
     uint32_t lastSbus2Ms;
     uint32_t sbus1LostFrameCount;  // cumulative lost_frame events (not failsafe)
     uint32_t sbus2LostFrameCount;  // cumulative lost_frame events (not failsafe)
+    // The boot hold: RC drive is zero until both drive sticks have been at
+    // centre once since the RC task started (#389). Reported on /api/rc.
+    bool rcDriveAwaitingCentre;
     bool sbus2SignalLost;
     bool sbus2HwFailsafe;
 

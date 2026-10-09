@@ -153,6 +153,7 @@ void test_rc_get_returns_parseable_diagnostics() {
     TEST_ASSERT_TRUE(doc["sources"].is<JsonObject>());
     TEST_ASSERT_TRUE(doc["channels"].is<JsonArray>());
     TEST_ASSERT_TRUE(doc["mappingProfile"].is<JsonObject>());
+    TEST_ASSERT_TRUE(doc["driveAwaitingCentre"].is<bool>());
 }
 
 // The ceiling the port introduced. The async handler streamed and had no size
@@ -165,6 +166,7 @@ void test_worst_case_rc_payload_fits_the_response_buffer() {
     fillWorstCaseRc(capturable, RC_DIAGNOSTICS_CHANNEL_CAPACITY, 0);
     JsonDocument capturableDoc;
     TEST_ASSERT_TRUE(populateRcDiagnosticsJson(capturableDoc, capturable));
+    TEST_ASSERT_TRUE(appendRcTaskStateJson(capturableDoc));
     reportMeasuredSize("capturable worst-case /api/rc", measureJson(capturableDoc),
                        kRcPayloadMax);
     TEST_ASSERT_LESS_THAN_UINT(kRcPayloadMax, measureJson(capturableDoc));
