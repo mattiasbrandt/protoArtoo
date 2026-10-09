@@ -1027,6 +1027,228 @@
     }).join('');
   };
 
+  // ── The three axes: their ends, their direction, and the boot hold ──────
+  //
+  // Drive speed, drive steer and dome speed each read one stick between a MIN,
+  // a CENTER and a MAX, optionally reversed. GET /api/rc carries them in
+  // mappingProfile.channels; POST /api/rc/map takes them in `calibration`
+  // beside the map, keyed by the action token, for an axis the same map binds
+  // (#389, src/web/api_rc_map_apply.cpp). An end is set from the stick: the
+  // live reading the page already shows, never a typed number.
+  const AXES = [
+    { token: 'drive_speed', profile: 'driveSpeed' },
+    { token: 'drive_steer', profile: 'driveSteer' },
+    { token: 'dome_speed', profile: 'domeSpeed' },
+  ];
+  const AXIS_ENDS = [
+    { key: 'min', label: 'MIN' },
+    { key: 'center', label: 'CENTER' },
+    { key: 'max', label: 'MAX' },
+  ];
+  const AXIS_ORDER_TEXT = {
+    min: 'Not saved: MIN must read below CENTER.',
+    center: 'Not saved: CENTER must read between MIN and MAX.',
+    max: 'Not saved: MAX must read above CENTER.',
+  };
+  const rcAxes = document.getElementById('rc-axes');
+  const rcAxesSummary = document.getElementById('rc-axes-summary');
+  const rcDriveHold = document.getElementById('rc-drive-hold');
+  // One save at a time, and what each axis last said about its own.
+  let axisSaveInFlight = false;
+  const axisNotes = {};
+
+  const axisBinding = (axis) => asMapArray().find((entry) => mapEntryAction(entry) === axis.token) || null;
+
+  // The ends the droid holds for this axis, or null when its profile is for
+  // another channel than the map binds (not read back yet).
+  const axisEnds = (axis, binding) => {
+    const profile = rcSnapshot?.mappingProfile?.channels?.[axis.profile];
+    if (!binding || !profile || profile.source !== binding.source || Number(profile.channel) !== binding.channel) return null;
+    return { min: Number(profile.min), center: Number(profile.center), max: Number(profile.max), reverse: Boolean(profile.reverse) };
+  };
+
+  // The stick's live reading, or null with none (a PWM pulse of 0 is none).
+  const axisLive = (binding) => {
+    if (!binding || isOnOffChannel(binding.source, binding.channel)) return null;
+    const raw = rawForChannel(binding.source, binding.channel);
+    if (raw == null || (binding.source === 'pwm' && Number(raw) === 0)) return null;
+    return Number(raw);
+  };
+
+  // A stick read past an end maps to full travel there - a HotRC trigger
+  // resting at its end reads as full throttle and keeps the boot hold on.
+  const axisRestWarning = (ends, raw) => {
+    if (!ends || raw == null) return '';
+    if (raw < ends.min) return 'Past MIN, so it reads as full travel.';
+    if (raw > ends.max) return 'Past MAX, so it reads as full travel.';
+    return '';
+  };
+
+  // The body POST /api/rc/map takes to change one axis: the map the droid
+  // holds, unchanged, and the axis's new fields. null when that map does not
+  // bind the axis, which the droid would refuse.
+  const axisCalibrationBody = (mapEntries, token, fields) => {
+    if (!mapEntries.some((entry) => mapEntryAction(entry) === token)) return null;
+    return { map: mapEntries, calibration: { [token]: fields } };
+  };
+
+  // The droid's refusals of a calibration, in the builder's words.
+  const axisRefusalText = (error) => {
+    const message = window.PAApi.messageFor(error);
+    if (/min < center < max/.test(message)) return 'Not saved: MIN, CENTER and MAX must rise in that order.';
+    if (/out of range/.test(message)) return 'Not saved: that reading is out of range.';
+    if (/does not bind/.test(message)) return 'Not saved: map this axis first.';
+    return `Not saved: ${message}`;
+  };
+
+  const axisEndsText = (ends) => (ends
+    ? `MIN ${ends.min} · CENTER ${ends.center} · MAX ${ends.max}`
+    : 'Ends not read yet.');
+
+  const axisTileHtml = (axis) => {
+    const esc = window.PAUtils.escapeHtml;
+    const name = actionLabelFromToken(axis.token);
+    const binding = axisBinding(axis);
+    if (!binding) {
+      return `<div class="rc-axis" data-axis="${axis.token}">
+        <div class="rc-axis-head"><span class="rc-axis-name">${esc(name)}</span></div>
+        <p class="hint">Not mapped.</p>
+      </div>`;
+    }
+    const ends = axisEnds(axis, binding);
+    const raw = axisLive(binding);
+    const idle = axisSaveInFlight || !channelMapLoaded;
+    const note = axisNotes[axis.token];
+    const switchId = `rc-axis-rev-${axis.token}`;
+    const sets = AXIS_ENDS.map((end) => `<button class="cal-set" type="button" data-axis="${axis.token}" data-axis-set="${end.key}"${idle || raw == null ? ' disabled' : ''}>Set ${end.label}</button>`).join('');
+    return `<div class="rc-axis" data-axis="${axis.token}">
+      <div class="rc-axis-head">
+        <span class="rc-axis-name">${esc(name)}</span>
+        <span class="rc-axis-ch">${esc(channelTitleFromKey(channelKeyOf(binding.source, binding.channel)))}</span>
+        <span class="rc-axis-raw cal-readout">${raw == null ? '—' : raw}</span>
+      </div>
+      <div class="seg cal-sets" role="group" aria-label="Set an end of ${esc(name)} from the stick">${sets}</div>
+      <p class="cal-ends">${esc(axisEndsText(ends))}</p>
+      <div class="rc-axis-reverse">
+        <button class="sleep-switch" id="${switchId}" type="button" role="switch" aria-checked="${ends?.reverse ? 'true' : 'false'}" aria-labelledby="${switchId}-label" data-axis="${axis.token}" data-axis-reverse${idle || !ends ? ' disabled' : ''}><span class="sleep-switch-knob"></span></button>
+        <span id="${switchId}-label">Reversed</span>
+      </div>
+      <p class="rc-axis-warn" role="status">${esc(axisRestWarning(ends, raw))}</p>
+      <p class="cal-note${note ? ` ${note.kind}` : ''}" role="status" aria-live="polite">${esc(note?.text || '')}</p>
+    </div>`;
+  };
+
+  // RC drive holds at zero from boot until both drive sticks have been at
+  // center once (GET /api/rc driveAwaitingCentre). Empty, the line is not drawn.
+  const paintDriveHold = () => {
+    if (!rcDriveHold) return;
+    rcDriveHold.textContent = rcSnapshot?.driveAwaitingCentre === true ? 'Center both drive sticks to drive.' : '';
+  };
+
+  const renderAxes = () => {
+    paintDriveHold();
+    if (rcAxesSummary) {
+      const bound = AXES.filter((axis) => axisBinding(axis)).length;
+      rcAxesSummary.textContent = channelMapLoaded ? `${bound} of ${AXES.length} mapped` : '';
+    }
+    if (rcAxes) rcAxes.innerHTML = AXES.map(axisTileHtml).join('');
+  };
+
+  // A stream frame: the readings and the warnings, without drawing the tiles
+  // again under a builder's pointer or focus.
+  const updateAxesLive = () => {
+    paintDriveHold();
+    if (!rcAxes) return;
+    AXES.forEach((axis) => {
+      const tile = rcAxes.querySelector(`.rc-axis[data-axis="${axis.token}"]`);
+      const binding = axisBinding(axis);
+      if (!tile || !binding) return;
+      const raw = axisLive(binding);
+      const rawEl = tile.querySelector('.rc-axis-raw');
+      if (rawEl) rawEl.textContent = raw == null ? '—' : String(raw);
+      const warnEl = tile.querySelector('.rc-axis-warn');
+      if (warnEl) warnEl.textContent = axisRestWarning(axisEnds(axis, binding), raw);
+      tile.querySelectorAll('[data-axis-set]').forEach((button) => {
+        button.disabled = axisSaveInFlight || !channelMapLoaded || raw == null;
+      });
+    });
+  };
+
+  // One change to one axis, saved at once and read back.
+  const saveAxis = async (axis, fields, said) => {
+    const body = axisCalibrationBody(asMapArray(), axis.token, fields);
+    if (!body) {
+      axisNotes[axis.token] = { kind: 'error', text: 'Not saved: map this axis first.' };
+      renderAxes();
+      return;
+    }
+    axisSaveInFlight = true;
+    axisNotes[axis.token] = { kind: '', text: 'Saving...' };
+    renderAxes();
+    try {
+      await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify(body) }, { timeoutMs: 5000 });
+      axisNotes[axis.token] = { kind: 'success', text: `Saved ${said}.` };
+    } catch (error) {
+      axisNotes[axis.token] = { kind: 'error', text: axisRefusalText(error) };
+      axisSaveInFlight = false;
+      renderAxes();
+      return;
+    }
+    axisSaveInFlight = false;
+    try {
+      // The ends the droid now holds come back with its diagnostics.
+      await loadRcDiagnostics();
+    } catch (_error) {
+      // loadRcDiagnostics() has said so in the editor feedback; the tile
+      // keeps its saved note and the ends it last read.
+      renderAxes();
+    }
+  };
+
+  const setAxisEnd = (axis, key) => {
+    const binding = axisBinding(axis);
+    const raw = axisLive(binding);
+    const end = AXIS_ENDS.find((each) => each.key === key);
+    if (!end) return;
+    if (raw == null) {
+      axisNotes[axis.token] = { kind: 'error', text: 'No reading from this stick.' };
+      renderAxes();
+      return;
+    }
+    // The order the droid keeps, checked here so a capture the droid would
+    // refuse is never sent.
+    const ends = axisEnds(axis, binding);
+    if (ends) {
+      const next = { ...ends, [key]: raw };
+      if (!(next.min < next.center && next.center < next.max)) {
+        axisNotes[axis.token] = { kind: 'error', text: AXIS_ORDER_TEXT[key] };
+        renderAxes();
+        return;
+      }
+    }
+    saveAxis(axis, { [key]: raw }, `${end.label} ${raw}`);
+  };
+
+  const setAxisReverse = (axis) => {
+    const ends = axisEnds(axis, axisBinding(axis));
+    if (!ends) return;
+    const reverse = !ends.reverse;
+    saveAxis(axis, { reverse }, reverse ? 'reversed' : 'not reversed');
+  };
+
+  // One listener for every tile: the tiles are drawn again whole.
+  rcAxes?.addEventListener('click', (event) => {
+    const target = event.target;
+    const set = target?.closest?.('[data-axis-set]');
+    const reverse = set ? null : target?.closest?.('[data-axis-reverse]');
+    const control = set || reverse;
+    if (!control || control.disabled || axisSaveInFlight) return;
+    const axis = AXES.find((each) => each.token === control.dataset.axis);
+    if (!axis) return;
+    if (set) setAxisEnd(axis, control.dataset.axisSet);
+    else setAxisReverse(axis);
+  });
+
   const renderChannelList = () => {
     if (!rcChannelItems) return;
     const mode = getEditorMode();
@@ -1111,6 +1333,7 @@
     });
 
     applyLearnHighlight();
+    renderAxes();
   };
 
   // Cheap live update: refresh raw values and bars without full re-render.
@@ -1996,6 +2219,7 @@
         renderSourceHealth();
         updateSummaryMiniBar();
         updateChannelListRaw();
+        updateAxesLive();
         if (selectedChannel) renderLivePreview();
       } catch (_error) {
         setEditorFeedback('Received malformed RC event payload.', 'error');
