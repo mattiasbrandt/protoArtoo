@@ -37,7 +37,7 @@ namespace {
 // literals rather than exported from the handlers: a test that read the real
 // ceiling could not fail when the ceiling dropped below what the payload needs,
 // which is the one regression these bound tests exist to catch.
-constexpr size_t kRcPayloadMax = 4096;
+constexpr size_t kRcPayloadMax = 4608;
 constexpr size_t kValidationPayloadMax = 2048;
 
 // A snapshot filled to capacity: all three raw blocks present, the widest
@@ -174,7 +174,11 @@ void test_worst_case_rc_payload_fits_the_response_buffer() {
     robotState.sbus2FramesPerSecond = 0xFFFFu;
     robotState.sbus1DecodeFails = 0xFFFFFFFFu;
     robotState.sbus2DecodeFails = 0xFFFFFFFFu;
+    robotState.rcSbus1Digital[0] = robotState.rcSbus1Digital[1] = false;  // "false" is wider
+    robotState.rcSbus2Digital[0] = robotState.rcSbus2Digital[1] = false;
     TEST_ASSERT_TRUE(appendRcTaskStateJson(capturableDoc));
+    TEST_ASSERT_TRUE(capturableDoc["rawDigital"]["sbus1"].is<JsonArray>());
+    TEST_ASSERT_TRUE(capturableDoc["rawDigital"]["sbus2"].is<JsonArray>());
     reportMeasuredSize("capturable worst-case /api/rc", measureJson(capturableDoc),
                        kRcPayloadMax);
     TEST_ASSERT_LESS_THAN_UINT(kRcPayloadMax, measureJson(capturableDoc));

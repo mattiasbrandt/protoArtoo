@@ -2461,6 +2461,8 @@ Returns live RC diagnostics snapshot.
   `sbus2` also carry `framesPerSecond` (frames decoded in the last second) and
   `decodeFails` (frames the decoder rejected since boot). A single SBUS receiver
   is `sbus1` on either header (`sbusRecvCh2` picks the header only).
+- `rawDigital` (`sbus1`, `sbus2`): `[CH17, CH18]` on/off for each receiver whose
+  `raw` array is reported, whatever binds them
 - `driveAwaitingCentre`: `true` while RC drive is held at zero because the drive
   sticks have not both been at centre since boot. A trigger resting at an end of
   its travel keeps it `true`.
