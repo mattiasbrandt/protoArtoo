@@ -179,3 +179,68 @@ test("a refused verbose-log toggle does not keep RC saying its reading is old", 
     "the diagnostics answered, and a refused verbose-log toggle is no reason to call them old",
   );
 });
+
+// ---------------------------------------------------------------------------
+// #389: the RC Channels an SBUS frame carries, and which receiver they are on.
+// ---------------------------------------------------------------------------
+
+// A droid answering every RC read. `config`, `diag` and `map` replace the
+// answer of that route; anything else answers as respond() above.
+const rcDroid = ({ config, diag, map } = {}) => (path) => {
+  if (path === "/api/config" && config) return { data: config };
+  if (path === "/api/rc" && diag) return { data: diag };
+  if (path === "/api/rc/map" && map) return { data: map };
+  return respond(path);
+};
+
+const sixteen = (base) => Array.from({ length: 16 }, (_, i) => base + i);
+
+test("an SBUS receiver offers all 18 RC Channels, CH17 and CH18 as on/off", async () => {
+  const env = loadPageModule("rc.js", {
+    respond: rcDroid({
+      config: { rc: { inputMode: "dual_sbus", activeInputMode: "dual_sbus" }, components: {} },
+      map: { mode: "dual_sbus", map: [{ source: "sbus1", channel: 9, action: "sleep_toggle" }], capacity: { total: 14, used: 1 } },
+      diag: {
+        mode: "dual_sbus",
+        sources: {},
+        raw: { sbus1: sixteen(1000), sbus2: sixteen(1100) },
+        digital: { arm1: { activeSource: "sbus1", bindingChannel: 17, pressed: true } },
+      },
+    }),
+  });
+  await env.settle();
+  await env.runSection("rc-mode-mapping");
+  await env.runSection("rc-diagnostics");
+  await env.settle();
+
+  const list = env.element("rc-channel-items").innerHTML;
+  for (const source of ["sbus1", "sbus2"]) {
+    for (let channel = 1; channel <= 18; channel += 1) {
+      assert.match(list, new RegExp(`data-chkey="${source}:${channel}"`), `${source} CH ${channel} is offered`);
+    }
+  }
+  const item = (key) => list.slice(list.indexOf(`data-chkey="${key}"`), list.indexOf("</div>\n        </div>", list.indexOf(`data-chkey="${key}"`)));
+  assert.match(item("sbus1:9"), /<span class="rc-ch-raw">1008<\/span>/, "CH9 shows its raw number");
+  assert.match(item("sbus1:9"), /Sleep Toggle/, "a CH7+ binding is shown on its own item");
+  assert.match(item("sbus1:17"), /<span class="rc-ch-raw">On<\/span>/, "CH17 says on, from the binding that reads it");
+  assert.match(item("sbus1:18"), /<span class="rc-ch-raw">—<\/span>/, "CH18 with nothing reading it is not known, never off");
+});
+
+test("a single SBUS droid offers SBUS1 alone, even with an SBUS2 reading on hand", async () => {
+  const env = loadPageModule("rc.js", {
+    respond: rcDroid({
+      config: { rc: { inputMode: "single_sbus", activeInputMode: "single_sbus", sbus: { recvCh2: true } }, components: {} },
+      map: { mode: "single_sbus", map: [], capacity: { total: 14, used: 0 } },
+      // The decoy: an sbus2 array the old list drew as a second receiver.
+      diag: { mode: "single_sbus", sources: {}, raw: { sbus1: sixteen(1000), sbus2: sixteen(1100) }, digital: {} },
+    }),
+  });
+  await env.settle();
+  await env.runSection("rc-mode-mapping");
+  await env.runSection("rc-diagnostics");
+  await env.settle();
+
+  const list = env.element("rc-channel-items").innerHTML;
+  assert.match(list, /data-chkey="sbus1:18"/, "SBUS1 is offered, all 18");
+  assert.doesNotMatch(list, /data-chkey="sbus2:/, "SBUS2 reads nothing on a single SBUS droid");
+});

@@ -4349,6 +4349,14 @@ body[data-page="maintenance"] .status-item .hint {
   margin-bottom: 4px;
 }
 
+/* A receiver's RC Channels side by side, so all 18 of an SBUS frame sit in
+   one glance rather than a column the builder scrolls down. */
+.rc-channel-group-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 6px;
+}
+
 .rc-channel-item {
   padding: 8px 10px;
   border: 1px solid var(--border);
