@@ -309,7 +309,9 @@ bool copyLogLineAt(size_t idx, char* out, size_t outSize) {
 // -----------------------------------------------------------------------------
 void loadConfigToState() {
     Preferences prefs;
-    prefs.begin(NVS_NAMESPACE, true);
+    if (!configOpenForLoad(prefs)) {
+        PA_LOG_ERROR("config", "NVS namespace did not open; loading safe defaults");
+    }
     ConfigSnapshot snap;
     bool configOk = configLoad(prefs, &snap);
     // Addressed Servo Output rows load on their own keys, beside the snapshot

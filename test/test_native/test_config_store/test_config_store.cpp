@@ -738,11 +738,12 @@ void test_configLoad_schema_mismatch() {
     TEST_ASSERT_FALSE(result);
     TEST_ASSERT_EQUAL_INT16(SPEED_LIMIT_MAX, snap.drive.speedLimitMax);
 
-    // Verify schema version was updated
+    // The newer schema stays as it was: stamping it current would have the
+    // next boot read the newer image's keys as this schema's (#484).
     prefs.begin("proto", true);
     uint8_t storedVersion = prefs.getUChar(CONFIG_SCHEMA_VERSION_KEY, 0);
     prefs.end();
-    TEST_ASSERT_EQUAL_UINT8(CONFIG_SCHEMA_VERSION, storedVersion);
+    TEST_ASSERT_EQUAL_UINT8(badVersion, storedVersion);
 }
 
 // Test: Save all audio track fields

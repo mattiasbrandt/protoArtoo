@@ -34,9 +34,11 @@
 namespace {
 
 // Schema 2 -> 3 migration: component toggle identity rename (ADR 0033)
-// Migrates old NVS keys to new keys, then deletes the old keys.
-// Logs once per migration.
-void migrateSchema2To3(Preferences& prefs) {
+// Migrates old NVS keys to new keys, then deletes the old keys. An old key
+// stays when its new key did not land. Returns false when any write or
+// removal failed, so the caller leaves the schema stamp for the next boot.
+bool migrateSchema2To3(Preferences& prefs) {
+    bool ok = true;
     struct KeyMap {
         const char* oldKey;
         const char* newKey;
@@ -61,8 +63,7 @@ void migrateSchema2To3(Preferences& prefs) {
         const char* newKey = componentToggleMigrations[i].newKey;
         if (prefs.isKey(oldKey)) {
             bool value = prefs.getBool(oldKey, false);
-            prefs.putBool(newKey, value);
-            prefs.remove(oldKey);
+            ok = prefs.putBool(newKey, value) > 0 && prefs.remove(oldKey) && ok;
         }
     }
 
@@ -72,12 +73,11 @@ void migrateSchema2To3(Preferences& prefs) {
         const char* newKey = rcAudioMigrations[i].newKey;
         if (prefs.isKey(oldKey)) {
             String value = prefs.getString(oldKey, "");
-            if (value.length() > 0) {
-                prefs.putString(newKey, value.c_str());
-            }
-            prefs.remove(oldKey);
+            bool written = value.length() == 0 || prefs.putString(newKey, value.c_str()) > 0;
+            ok = written && prefs.remove(oldKey) && ok;
         }
     }
+    return ok;
 }
 
 // The one-time carry of #389 (rcCarrySingleSbusCh2TriggerLabels()), written
@@ -1091,6 +1091,10 @@ bool configUpdateAudioMoodMasks(Preferences& prefs, uint16_t quiet, uint16_t mid
     return true;
 }
 
+bool configOpenForLoad(Preferences& prefs) {
+    return prefs.begin(NVS_NAMESPACE, false);
+}
+
 bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
     if (out == nullptr) {
         return false;
@@ -1100,9 +1104,10 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
     uint8_t stored = reader.schemaVersion();
 
     if (stored > CONFIG_SCHEMA_VERSION) {
-        // Future/unknown schema: safe fallback to defaults, stamp current version.
+        // Future/unknown schema (a rollback from a newer image): defaults in
+        // RAM, and the store left exactly as that image wrote it. Stamping it
+        // current would have the next boot read its keys as this schema's.
         configSnapshotDefaults(out);
-        prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION);
         PA_LOG_WARN("config", "unsupported schema version %u (current=%u), resetting to defaults",
                     (unsigned)stored, (unsigned)CONFIG_SCHEMA_VERSION);
         return false;
@@ -1116,9 +1121,14 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
         // (log_level migration happens in-place; no key rename needed)
     }
 
+    // Every migration write below must land before the stamp does: a stamp
+    // over a migration that did not land would load those keys as defaults
+    // from then on. The caller opens the store read-write for this
+    // (configOpenForLoad()); a read-only handle drops every write.
+    bool migrated = true;
     if (stored < 3) {
         // Schema 2 -> 3: component toggle identity rename (ADR 0033)
-        migrateSchema2To3(prefs);
+        migrated = migrateSchema2To3(prefs);
     }
 
     // Now that migrations are done, deserialize from the migrated NVS
@@ -1134,11 +1144,23 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
                     (unsigned)out->dome.dome_max_pulse_us);
     }
 
-    // Apply in-place schema 1->2 migration if needed
+    // Apply in-place schema 1->2 migration if needed. The renumber is not
+    // idempotent and NVS commits each key on its own, so the schema-1 value
+    // is kept under its own key first, and every attempt renumbers from that:
+    // a boot cut off between the renumber and the stamp renumbers the same
+    // value again rather than the renumbered one. After a failed rename it
+    // stays in RAM only.
     if (stored < 2) {
-        if (out->system.logLevel == 2 || out->system.logLevel == 3) {
-            out->system.logLevel += 1;
-            prefs.putUChar("log_level", out->system.logLevel);
+        const uint8_t schema1Level = prefs.isKey(CONFIG_LOG_LEVEL_SCHEMA1_KEY)
+                                         ? prefs.getUChar(CONFIG_LOG_LEVEL_SCHEMA1_KEY, 0)
+                                         : out->system.logLevel;
+        out->system.logLevel =
+            (schema1Level == 2 || schema1Level == 3) ? schema1Level + 1 : schema1Level;
+        if (out->system.logLevel != schema1Level) {
+            migrated = migrated &&
+                       (prefs.isKey(CONFIG_LOG_LEVEL_SCHEMA1_KEY) ||
+                        prefs.putUChar(CONFIG_LOG_LEVEL_SCHEMA1_KEY, schema1Level) > 0) &&
+                       prefs.putUChar("log_level", out->system.logLevel) > 0;
         }
     }
 
@@ -1149,10 +1171,19 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
     }
 
     if (stored < CONFIG_SCHEMA_VERSION) {
-        // Migration succeeded: stamp current version so next boot is clean.
-        prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION);
-        PA_LOG_INFO("config", "schema migrated %u -> %u",
-                    (unsigned)stored, (unsigned)CONFIG_SCHEMA_VERSION);
+        // Migration landed: stamp current version so next boot is clean.
+        if (migrated && prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION) > 0) {
+            // Read only while the schema is below 2, so a removal that fails
+            // leaves a key nothing reads.
+            if (prefs.isKey(CONFIG_LOG_LEVEL_SCHEMA1_KEY)) {
+                prefs.remove(CONFIG_LOG_LEVEL_SCHEMA1_KEY);
+            }
+            PA_LOG_INFO("config", "schema migrated %u -> %u",
+                        (unsigned)stored, (unsigned)CONFIG_SCHEMA_VERSION);
+        } else {
+            PA_LOG_WARN("config", "schema migration %u -> %u not saved; it runs again next boot",
+                        (unsigned)stored, (unsigned)CONFIG_SCHEMA_VERSION);
+        }
     }
 
     return ok;

@@ -165,8 +165,145 @@ void test_schema2_to_3_migration_handles_missing_old_keys(void) {
     prefs.end();
 }
 
+// #484: the boot load opened the store read-only, so on a device every
+// migration write and the schema stamp were dropped. These load through
+// configOpenForLoad(), the boot's own open, and read the store back through a
+// handle of their own.
+static void seedConfigNamespace(uint8_t schema, uint8_t logLevel) {
+    Preferences seed;
+    seed.begin(NVS_NAMESPACE, false);
+    seed.clear();
+    setupSchema2Data(seed);
+    seed.putUChar("schema_ver", schema);
+    seed.putUChar("log_level", logLevel);
+    seed.end();
+}
+
+void test_boot_open_lands_schema2_migration_and_stamp(void) {
+    seedConfigNamespace(2, 3);
+
+    Preferences prefs;
+    TEST_ASSERT_TRUE(configOpenForLoad(prefs));
+    ConfigSnapshot snap = {};
+    configLoad(prefs, &snap);
+    prefs.end();
+
+    Preferences check;
+    check.begin(NVS_NAMESPACE, true);
+    TEST_ASSERT_EQUAL_UINT8(CONFIG_SCHEMA_VERSION, check.getUChar("schema_ver", 0));
+    TEST_ASSERT_TRUE(check.getBool("en_drive", false));
+    TEST_ASSERT_TRUE(check.getBool("en_audio", false));
+    TEST_ASSERT_EQUAL_STRING("sw:0:1", check.getString("rc_aud", "").c_str());
+    TEST_ASSERT_FALSE(check.isKey("en_s1"));
+    TEST_ASSERT_FALSE(check.isKey("rc_sound"));
+    // Schema 2 is past the log level renumber: stored as it was.
+    TEST_ASSERT_EQUAL_UINT8(3, check.getUChar("log_level", 0));
+    check.end();
+}
+
+void test_boot_open_lands_log_level_renumber_once(void) {
+    // Schema 1's Info (2) is Warn's slot now: renumbered to 3, stored once.
+    seedConfigNamespace(1, 2);
+
+    for (int boot = 0; boot < 2; ++boot) {
+        Preferences prefs;
+        TEST_ASSERT_TRUE(configOpenForLoad(prefs));
+        ConfigSnapshot snap = {};
+        configLoad(prefs, &snap);
+        prefs.end();
+        TEST_ASSERT_EQUAL_UINT8(3, snap.system.logLevel);
+    }
+
+    Preferences check;
+    check.begin(NVS_NAMESPACE, true);
+    TEST_ASSERT_EQUAL_UINT8(3, check.getUChar("log_level", 0));
+    TEST_ASSERT_EQUAL_UINT8(CONFIG_SCHEMA_VERSION, check.getUChar("schema_ver", 0));
+    TEST_ASSERT_FALSE(check.isKey(CONFIG_LOG_LEVEL_SCHEMA1_KEY));
+    check.end();
+}
+
+void test_renumber_cut_off_before_the_stamp_is_not_renumbered_twice(void) {
+    // What a boot cut off between the log level write and the stamp leaves:
+    // schema 1, the renumbered Info (3), and the schema-1 Info (2) kept.
+    seedConfigNamespace(1, 3);
+    {
+        Preferences seed;
+        seed.begin(NVS_NAMESPACE, false);
+        seed.putUChar(CONFIG_LOG_LEVEL_SCHEMA1_KEY, 2);
+        seed.end();
+    }
+
+    Preferences prefs;
+    TEST_ASSERT_TRUE(configOpenForLoad(prefs));
+    ConfigSnapshot snap = {};
+    configLoad(prefs, &snap);
+    prefs.end();
+    TEST_ASSERT_EQUAL_UINT8(3, snap.system.logLevel);
+
+    Preferences check;
+    check.begin(NVS_NAMESPACE, true);
+    TEST_ASSERT_EQUAL_UINT8(3, check.getUChar("log_level", 0));
+    TEST_ASSERT_EQUAL_UINT8(CONFIG_SCHEMA_VERSION, check.getUChar("schema_ver", 0));
+    TEST_ASSERT_FALSE(check.isKey(CONFIG_LOG_LEVEL_SCHEMA1_KEY));
+    check.end();
+}
+
+void test_future_schema_loads_defaults_and_keeps_the_store(void) {
+    // A rollback from a newer image: defaults in RAM, and the newer store
+    // left as it was, schema included, so no later boot reads it as current.
+    seedConfigNamespace(CONFIG_SCHEMA_VERSION + 1, 4);
+    {
+        Preferences seed;
+        seed.begin(NVS_NAMESPACE, false);
+        seed.putBool("en_drive", true);
+        seed.end();
+    }
+
+    for (int boot = 0; boot < 2; ++boot) {
+        Preferences prefs;
+        TEST_ASSERT_TRUE(configOpenForLoad(prefs));
+        ConfigSnapshot snap = {};
+        TEST_ASSERT_FALSE(configLoad(prefs, &snap));
+        prefs.end();
+        TEST_ASSERT_FALSE(snap.system.enable_drive);
+    }
+
+    Preferences check;
+    check.begin(NVS_NAMESPACE, true);
+    TEST_ASSERT_EQUAL_UINT8(CONFIG_SCHEMA_VERSION + 1, check.getUChar("schema_ver", 0));
+    TEST_ASSERT_TRUE(check.getBool("en_drive", false));
+    check.end();
+}
+
+void test_failed_rename_leaves_old_key_and_no_stamp(void) {
+    // A rename that does not land keeps its old key and the old schema, so
+    // the next boot migrates again instead of loading the toggle as a default.
+    Preferences prefs;
+    prefs.begin("test_config5", false);
+    prefs.clear();
+    setupSchema2Data(prefs);
+    prefs.failNextIntegerWrites(1);  // the first putBool: en_s1 -> en_drive
+
+    ConfigSnapshot first = {};
+    configLoad(prefs, &first);
+    TEST_ASSERT_EQUAL_UINT8(2, prefs.getUChar("schema_ver", 0));
+    TEST_ASSERT_TRUE(prefs.isKey("en_s1"));
+
+    ConfigSnapshot second = {};
+    configLoad(prefs, &second);
+    TEST_ASSERT_TRUE(second.system.enable_drive);
+    TEST_ASSERT_FALSE(prefs.isKey("en_s1"));
+    TEST_ASSERT_EQUAL_UINT8(CONFIG_SCHEMA_VERSION, prefs.getUChar("schema_ver", 0));
+    prefs.end();
+}
+
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_boot_open_lands_schema2_migration_and_stamp);
+    RUN_TEST(test_boot_open_lands_log_level_renumber_once);
+    RUN_TEST(test_failed_rename_leaves_old_key_and_no_stamp);
+    RUN_TEST(test_renumber_cut_off_before_the_stamp_is_not_renumbered_twice);
+    RUN_TEST(test_future_schema_loads_defaults_and_keeps_the_store);
     RUN_TEST(test_schema2_to_3_migration_renames_component_toggles);
     RUN_TEST(test_schema2_to_3_migration_renames_rc_audio_bindings);
     RUN_TEST(test_schema2_to_3_migration_does_not_repeat);
