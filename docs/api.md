@@ -2370,6 +2370,11 @@ Returns channel-centric map.
 
 - A Reaction entry also carries `threshold` and `quietS`, the seconds it stays
   quiet after firing (`1..3600`).
+- `receivers`: which RC Receivers a map for the receiver type the droid has
+  saved may bind (`read`), and which of those the drive may use (`drive`), by
+  the rules `POST /api/rc/map` applies (ADR 0070): `{"read":["sbus1","sbus2"],
+  "drive":["sbus1"]}` for two SBUS receivers, `{"read":[],"drive":[]}` with
+  no radio fitted. A Reaction is the droid's own and needs no receiver.
 - An entry the droid does not read carries `"read": false`: a binding stored
   before a rule of `POST /api/rc/map` existed, which a save for the receiver
   type the droid has saved would now refuse (ADR 0070). It stays still. A client
@@ -2576,6 +2581,11 @@ Returns all bindable actions.
   `"display_name":"ARM3 Toggle"` on the Artoo PCB and `"GPIO 4 Toggle"` on the
   FireBeetle 2. The `token` (`aux1_toggle`) is an id and is the same on both.
 - `safety_critical`, `testable`, `one_shot`, `token`
+- `rc_input`: `stick` for an action that reads a stick in proportion (the three
+  axes and `puppet_part`), `switch` for one fired by a press; `reaction`: whether
+  a Reaction may fire it. These are the rules `POST /api/rc/map` applies (ADR
+  0070): a stick action takes a stick channel, and a Reaction takes only an
+  action whose `reaction` is true
 - `board_capability`, `build_flag`: nullable compile-time requirements; `null`
   means the action is universal for that tier
 - Error: `500` response stream allocation failure
@@ -2589,7 +2599,7 @@ curl -s http://artoo.local/api/actions
 #### Example response (abridged)
 
 ```json
-[{"id":1,"name":"drive.action.speed","display_name":"Speed","domain":"drive","description":"Forward/reverse drive speed (analog axis)","safety_critical":false,"board_capability":null,"build_flag":null,"testable":false,"one_shot":false,"token":"drive_speed"}]
+[{"id":1,"name":"drive.action.speed","display_name":"Speed","domain":"drive","description":"Forward/reverse drive speed (analog axis)","safety_critical":false,"board_capability":null,"build_flag":null,"testable":false,"one_shot":false,"rc_input":"stick","reaction":false,"token":"drive_speed"}]
 ```
 
 ### POST /api/actions/test

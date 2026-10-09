@@ -120,6 +120,25 @@ void test_an_output_action_is_named_by_the_board() {
     TEST_ASSERT_NULL(strstr(backend.sentBody, "{output}"));
 }
 
+// Every action says what it needs, by the save's own rules (ADR 0070): a
+// stick for the axes and a puppet string, and whether a Reaction may fire it.
+void test_every_action_says_what_it_needs() {
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleActionsGet(req);
+
+    size_t inputs = 0;
+    for (const char* p = backend.sentBody; (p = strstr(p, "\"rc_input\":\"")) != nullptr; ++p) {
+        inputs++;
+    }
+    TEST_ASSERT_EQUAL_UINT(ACTION_REGISTRY_SIZE, inputs);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"rc_input\":\"stick\",\"reaction\":false,\"token\":\"drive_speed\""));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"rc_input\":\"stick\",\"reaction\":false,\"token\":\"puppet_part\""));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"rc_input\":\"switch\",\"reaction\":false,\"token\":\"estop\""));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"rc_input\":\"switch\",\"reaction\":true,\"token\":\"sound_next\""));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_get_sends_chunked_json_array);
@@ -127,5 +146,6 @@ int main() {
     RUN_TEST(test_body_has_no_gap_or_overlap_at_chunk_boundaries);
     RUN_TEST(test_body_carries_nullable_feature_requirements_for_every_entry);
     RUN_TEST(test_an_output_action_is_named_by_the_board);
+    RUN_TEST(test_every_action_says_what_it_needs);
     return UNITY_END();
 }

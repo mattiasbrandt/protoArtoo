@@ -348,3 +348,23 @@ RcRuleVerdict rcRuleStoredDrive(const RcBindingConfig& speed, const RcBindingCon
     }
     return rcRuleDrive(speed, steer);
 }
+
+size_t rcMapReceivers(RcInputMode type, bool driveOnly, RcBindingSource* out, size_t cap) {
+    static constexpr RcBindingSource kReceivers[] = {RC_BINDING_PWM, RC_BINDING_SBUS1, RC_BINDING_SBUS2};
+    size_t count = 0;
+    for (RcBindingSource source : kReceivers) {
+        if (!receiverTypeReads(source, type)) {
+            continue;
+        }
+        // The drive rule judged on one axis there: the receiver it would read.
+        if (driveOnly &&
+            !rcRuleDrive(makeRcBindingConfig(source, 1, 0, 0, 0, 0, false), disabledRcBinding()).ok()) {
+            continue;
+        }
+        if (out != nullptr && count < cap) {
+            out[count] = source;
+        }
+        ++count;
+    }
+    return count;
+}

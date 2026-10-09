@@ -72,6 +72,12 @@
 ## - `token` maps to robotActionIdToString() and is accepted by POST /api/actions/test.
 ## - `rc_token` is required for entries with cpp_file: include/rc_mapping.h.
 ## - `testable` is false for analog actions, payload-required actions, and system.action.estop.
+## - `rc_input` (bindable entries): `stick` for an action that reads a stick in proportion
+##   (the three axes and a puppet string), `switch` for one fired by a press. `reaction`:
+##   whether a Reaction - a binding on a droid condition - may fire it. Both are the rules
+##   POST /api/rc/map applies (robotActionIsAnalog(), robotActionValidForReaction()), and
+##   GET /api/actions answers them; the drift check holds this file to those predicates
+##   and the RC page's fallback list to this file (ADR 0070).
 ## - POST /api/rc/map accepts the same token set except `none`. `dome_seq` requires a valid DM:<NAME> payload.
 entries:
 - name: drive.action.move
@@ -116,6 +122,8 @@ entries:
   cpp_enum: DRIVE_ACTION_SPEED
   cpp_file: include/rc_mapping.h
   rc_token: drive_speed
+  rc_input: stick
+  reaction: false
   sources:
   - sbus
   safety_critical: false
@@ -140,6 +148,8 @@ entries:
   cpp_enum: DRIVE_ACTION_STEER
   cpp_file: include/rc_mapping.h
   rc_token: drive_steer
+  rc_input: stick
+  reaction: false
   sources:
   - sbus
   safety_critical: false
@@ -230,6 +240,8 @@ entries:
   cpp_enum: DRIVE_ACTION_SPEED_PRESET_CYCLE
   cpp_file: include/rc_mapping.h
   rc_token: speed_preset_cycle
+  rc_input: switch
+  reaction: false
   sources:
   - sbus
   - pwm
@@ -293,6 +305,8 @@ entries:
   cpp_enum: DOME_ACTION_SPEED
   cpp_file: include/rc_mapping.h
   rc_token: dome_speed
+  rc_input: stick
+  reaction: false
   sources:
   - sbus
   - pwm
@@ -325,6 +339,8 @@ entries:
   cpp_enum: DOME_ACTION_MARCDUINO_SEQ
   cpp_file: include/rc_mapping.h
   rc_token: seq
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -341,6 +357,8 @@ entries:
   cpp_enum: DOME_ACTION_MARCDUINO_CMD
   cpp_file: include/rc_mapping.h
   rc_token: cmd
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -357,6 +375,8 @@ entries:
   cpp_enum: DOME_ACTION_SEQ
   cpp_file: include/rc_mapping.h
   rc_token: dome_seq
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -373,6 +393,8 @@ entries:
   cpp_enum: DROID_SEQ_SCREAM
   cpp_file: include/rc_mapping.h
   rc_token: droid_seq_scream
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   - dome_rx
@@ -390,6 +412,8 @@ entries:
   cpp_enum: DROID_SEQ_WAVE
   cpp_file: include/rc_mapping.h
   rc_token: droid_seq_wave
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   - dome_rx
@@ -407,6 +431,8 @@ entries:
   cpp_enum: DROID_SEQ_FAST_WAVE
   cpp_file: include/rc_mapping.h
   rc_token: droid_seq_fast_wave
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   - dome_rx
@@ -424,6 +450,8 @@ entries:
   cpp_enum: DROID_SEQ_OPEN_WAVE
   cpp_file: include/rc_mapping.h
   rc_token: droid_seq_open_wave
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   - dome_rx
@@ -441,6 +469,8 @@ entries:
   cpp_enum: DROID_SEQ_BEEP_CANTINA
   cpp_file: include/rc_mapping.h
   rc_token: droid_seq_beep_cantina
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   - dome_rx
@@ -458,6 +488,8 @@ entries:
   cpp_enum: DROID_SEQ_FAINT
   cpp_file: include/rc_mapping.h
   rc_token: droid_seq_faint
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   - dome_rx
@@ -475,6 +507,8 @@ entries:
   cpp_enum: DROID_SEQ_CANTINA
   cpp_file: include/rc_mapping.h
   rc_token: droid_seq_cantina
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   - dome_rx
@@ -492,6 +526,8 @@ entries:
   cpp_enum: DROID_SEQ_LEIA
   cpp_file: include/rc_mapping.h
   rc_token: droid_seq_leia
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   - dome_rx
@@ -509,6 +545,8 @@ entries:
   cpp_enum: DROID_SEQ_DISCO
   cpp_file: include/rc_mapping.h
   rc_token: droid_seq_disco
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   - dome_rx
@@ -526,6 +564,8 @@ entries:
   cpp_enum: DROID_SEQ_SCREAMS
   cpp_file: include/rc_mapping.h
   rc_token: droid_seq_screams
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   - dome_rx
@@ -543,6 +583,8 @@ entries:
   cpp_enum: DROID_SEQ_WIGGLE
   cpp_file: include/rc_mapping.h
   rc_token: droid_seq_wiggle
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   - dome_rx
@@ -1795,6 +1837,8 @@ entries:
   cpp_enum: SOUND_ACTION_RANDOM_GENERAL
   cpp_file: include/rc_mapping.h
   rc_token: sound_rand_general
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -1811,6 +1855,8 @@ entries:
   cpp_enum: SOUND_ACTION_RANDOM_CHATTY
   cpp_file: include/rc_mapping.h
   rc_token: sound_rand_chatty
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -1827,6 +1873,8 @@ entries:
   cpp_enum: SOUND_ACTION_RANDOM_HAPPY
   cpp_file: include/rc_mapping.h
   rc_token: sound_rand_happy
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -1843,6 +1891,8 @@ entries:
   cpp_enum: SOUND_ACTION_RANDOM_PROCESSING
   cpp_file: include/rc_mapping.h
   rc_token: sound_rand_processing
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -1859,6 +1909,8 @@ entries:
   cpp_enum: SOUND_ACTION_RANDOM_SAD
   cpp_file: include/rc_mapping.h
   rc_token: sound_rand_sad
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -1875,6 +1927,8 @@ entries:
   cpp_enum: SOUND_ACTION_RANDOM_SENTIMENTAL
   cpp_file: include/rc_mapping.h
   rc_token: sound_rand_sentimental
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -1891,6 +1945,8 @@ entries:
   cpp_enum: SOUND_ACTION_RANDOM_HUMMING
   cpp_file: include/rc_mapping.h
   rc_token: sound_rand_humming
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -1907,6 +1963,8 @@ entries:
   cpp_enum: SOUND_ACTION_RANDOM_SCREAM
   cpp_file: include/rc_mapping.h
   rc_token: sound_rand_scream
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -1923,6 +1981,8 @@ entries:
   cpp_enum: SOUND_ACTION_RANDOM_SURPRISED
   cpp_file: include/rc_mapping.h
   rc_token: sound_rand_surprised
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -1939,6 +1999,8 @@ entries:
   cpp_enum: SOUND_ACTION_RANDOM_ALERT
   cpp_file: include/rc_mapping.h
   rc_token: sound_rand_alert
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -1955,6 +2017,8 @@ entries:
   cpp_enum: SOUND_ACTION_RANDOM_SNARKY
   cpp_file: include/rc_mapping.h
   rc_token: sound_rand_snarky
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -1971,6 +2035,8 @@ entries:
   cpp_enum: SOUND_ACTION_RANDOM_WHISTLE
   cpp_file: include/rc_mapping.h
   rc_token: sound_rand_whistle
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -1987,6 +2053,8 @@ entries:
   cpp_enum: SOUND_ACTION_NEXT
   cpp_file: include/rc_mapping.h
   rc_token: sound_next
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -2003,6 +2071,8 @@ entries:
   cpp_enum: SOUND_ACTION_PREVIOUS
   cpp_file: include/rc_mapping.h
   rc_token: sound_previous
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -2605,6 +2675,8 @@ entries:
   cpp_enum: SERVO_ACTION_ARM1_TOGGLE
   cpp_file: include/rc_mapping.h
   rc_token: arm1_toggle
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -2622,6 +2694,8 @@ entries:
   cpp_enum: SERVO_ACTION_ARM2_TOGGLE
   cpp_file: include/rc_mapping.h
   rc_token: arm2_toggle
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -2639,6 +2713,8 @@ entries:
   cpp_enum: SERVO_ACTION_AUX1_TOGGLE
   cpp_file: include/rc_mapping.h
   rc_token: aux1_toggle
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -2656,6 +2732,8 @@ entries:
   cpp_enum: SERVO_ACTION_AUX2_TOGGLE
   cpp_file: include/rc_mapping.h
   rc_token: aux2_toggle
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -2673,6 +2751,8 @@ entries:
   cpp_enum: SERVO_ACTION_AUX3_TOGGLE
   cpp_file: include/rc_mapping.h
   rc_token: aux3_toggle
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false
@@ -2689,6 +2769,8 @@ entries:
   cpp_enum: SERVO_ACTION_PUPPET_PART
   cpp_file: include/rc_mapping.h
   rc_token: puppet_part
+  rc_input: stick
+  reaction: false
   sources:
   - sbus
   safety_critical: false
@@ -2858,6 +2940,8 @@ entries:
   cpp_enum: SYSTEM_ACTION_OP_MODE
   cpp_file: include/rc_mapping.h
   rc_token: op_mode
+  rc_input: switch
+  reaction: false
   sources:
   - web_api
   - sbus
@@ -2875,6 +2959,8 @@ entries:
   cpp_enum: SYSTEM_ACTION_ESTOP
   cpp_file: include/rc_mapping.h
   rc_token: estop
+  rc_input: switch
+  reaction: false
   sources:
   - web_api
   - sbus
@@ -3043,6 +3129,8 @@ entries:
   cpp_enum: SYSTEM_ACTION_SLEEP_TOGGLE
   cpp_file: include/rc_mapping.h
   rc_token: sleep_toggle
+  rc_input: switch
+  reaction: true
   sources:
   - sbus
   safety_critical: false

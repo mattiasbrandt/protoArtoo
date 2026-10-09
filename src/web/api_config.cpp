@@ -334,6 +334,18 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     JsonObject capacity = doc["capacity"].to<JsonObject>();
     capacity["total"] = kRcMapMaxEntries;
     capacity["used"] = map.size();
+
+    // Which RC Receivers this map may bind, and which of them the drive may
+    // use: the rules' own answer, so the page offers what a save takes.
+    JsonObject receivers = doc["receivers"].to<JsonObject>();
+    for (const bool driveOnly : {false, true}) {
+        JsonArray list = receivers[driveOnly ? "drive" : "read"].to<JsonArray>();
+        RcBindingSource sources[3] = {};
+        const size_t count = rcMapReceivers(type, driveOnly, sources, 3);
+        for (size_t i = 0; i < count && i < 3; ++i) {
+            list.add(rcBindingSourceToString(sources[i]));
+        }
+    }
     return !doc.overflowed();
 }
 

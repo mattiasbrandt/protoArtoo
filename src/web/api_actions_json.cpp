@@ -78,6 +78,13 @@ void appendActionJson(JsonSliceWriter& writer, const ActionEntry& entry) {
     writer.append(robotActionIsWebTestable(entry.id) ? "true" : "false");
     writer.append(",\"one_shot\":");
     writer.append(robotActionIsOneShotButton(entry.id) ? "true" : "false");
+    // What the action needs, by the rules POST /api/rc/map applies (ADR 0070):
+    // a stick or a switch, and whether a Reaction may fire it. The RC page
+    // offers an action only where these say it fits.
+    writer.append(",\"rc_input\":");
+    writer.append(robotActionIsAnalog(entry.id) ? "\"stick\"" : "\"switch\"");
+    writer.append(",\"reaction\":");
+    writer.append(robotActionValidForReaction(entry.id) ? "true" : "false");
     writer.append(",\"token\":");
     writer.appendJsonString(robotActionIdToString(entry.id));
     writer.append('}');

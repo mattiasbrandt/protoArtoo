@@ -139,6 +139,12 @@ RcRuleVerdict rcRuleDrive(const RcBindingConfig& speed, const RcBindingConfig& s
 // travel on both sides of the centre.
 RcRuleVerdict rcRuleAxisCalibration(RobotActionId axis, const RcBindingConfig& binding);
 
+// The RC Receivers a map for the receiver type `type` may bind (ADR 0070): the
+// ones the type reads, or with `driveOnly` the ones of those the drive may sit
+// on. Written to `out` in the order pwm, sbus1, sbus2; returns how many. GET
+// /api/rc/map answers them, so the RC page offers exactly what a save takes.
+size_t rcMapReceivers(RcInputMode type, bool driveOnly, RcBindingSource* out, size_t cap);
+
 // ---------------------------------------------------------------------------
 // The same rules on read (ADR 0070): a stored binding a save would refuse is
 // not read, so it stays still. Each is judged on its own against the receiver
