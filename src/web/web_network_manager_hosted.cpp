@@ -493,19 +493,19 @@ static bool hostedLivenessTick() {
 // hold the re-init; an attempt that cannot is counted failed and the ladder's
 // bound decides. Boot is not checked: the heap is fresh there.
 //
-// What the re-init allocates, in order (ESP-Hosted 2.12.13):
+// What the re-init allocates, in order (ESP-Hosted 2.13.0):
 //   1. The channel mempool: add_esp_wifi_remote_channels() ->
 //      transport_drv_add_channel() -> transport_drv_common_mempool_create()
-//      (transport_drv.c:283-302, assert(mempool_common)).
-//   2. bus_init_internal() (sdio_drv.c:1466-1556): two counting semaphores
+//      (transport_drv.c:298-313, assert(mempool_common)).
+//   2. bus_init_internal() (sdio_drv.c:1469-1561): two counting semaphores
 //      and six priority queues, each asserted, then the SDIO mempool
-//      (sdio_mempool_create(), sdio_drv.c:242-260, assert(buf_mp_g)).
+//      (sdio_mempool_create(), sdio_drv.c:246-262, assert(buf_mp_g)).
 //   3. After it: the SDMMC card and bus mutex, a semaphore, the four SDIO
 //      tasks, then rpc_init() under ESP_ERROR_CHECK (mutexes, semaphores,
 //      the serial interface, two queues and the two RPC tasks).
 // Both pools are one contiguous block each, allocated through
 // transport_util_malloc() with HOSTED_MEM_CAP_DMA -> hosted_malloc_align(),
-// which asks internal DMA-capable RAM (port_esp_hosted_host_os.c:128-143)
+// which asks internal DMA-capable RAM (port_esp_hosted_host_os.c:130-148)
 // because CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM is off.
 //
 // The check is a probe, not arithmetic: heap_caps_get_largest_free_block()
@@ -534,9 +534,10 @@ static bool hostedLivenessTick() {
 // is intended: re-derive the sizes then.
 static_assert(ESP_HOSTED_VERSION_VAL(ESP_HOSTED_VERSION_MAJOR_1, ESP_HOSTED_VERSION_MINOR_1,
                                      ESP_HOSTED_VERSION_PATCH_1) ==
-                  ESP_HOSTED_VERSION_VAL(2, 12, 13),
-              "ESP-Hosted changed: re-read the pool sizes in sdio_drv.c, transport_drv.c and "
-              "mempool_ll.h, then the re-init fit check below");
+                  ESP_HOSTED_VERSION_VAL(2, 13, 0),
+              "ESP-Hosted changed: re-read the pool sizes and alignment in sdio_drv.c, "
+              "transport_drv.c, mempool_ll.h and port_esp_hosted_host_os.h, then the re-init "
+              "fit check below");
 // The pools exist only with the mempool on, and the check reads internal
 // DMA RAM because that is where hosted_malloc_align() puts them without the
 // PSRAM preference. Either setting changing needs the check re-derived.
@@ -549,30 +550,45 @@ static_assert(ESP_HOSTED_VERSION_VAL(ESP_HOSTED_VERSION_MAJOR_1, ESP_HOSTED_VERS
 static constexpr uint32_t kHostedReinitHeapCaps =
     MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT;
 
-// Bytes hosted_mempool_create() asks for (mempool.c:76-80):
-// MEMPOOL_ALIGNED(OS_MEMPOOL_BYTES(blocks, blockSize), 64). OS_MEMPOOL_BYTES
-// rounds each block up to 4-byte words (mempool_ll.h:198-202, no
-// OS_MEMPOOL_GUARD defined), and MEMPOOL_ALIGNED adds a full 64 bytes even to
-// a size that is already aligned (mempool.c:17) -- that is the vendor's
-// arithmetic, mirrored as it is, not a slip here.
+// The alignment both pools are created and allocated with:
+// HOSTED_MEM_ALIGNMENT, the L2 cache line (port_esp_hosted_host_os.h:97-103,
+// port_esp_hosted_host_config.h:47-51). 128 B on firebeetle2.
+#if CONFIG_CACHE_L2_CACHE_LINE_128B
+static constexpr size_t kHostedPoolAlignment = 128;
+#else
+static constexpr size_t kHostedPoolAlignment = 64;
+#endif
+
+// Bytes hosted_mempool_create() asks for (mempool.c:77-80):
+// MEMPOOL_ALIGNED(OS_MEMPOOL_BYTES(blocks, blockSize), kHostedPoolAlignment).
+// OS_MEMPOOL_BYTES rounds each block up to 4-byte words (mempool_ll.h:198-202, no
+// OS_MEMPOOL_GUARD defined), and MEMPOOL_ALIGNED adds a full alignment's
+// bytes even to a size that is already aligned (mempool.c:17) -- that is the
+// vendor's arithmetic, mirrored as it is, not a slip here. The result is a
+// multiple of the alignment, so hosted_malloc_align()'s own round-up
+// (port_esp_hosted_host_os.c:135) leaves it as it is.
 static constexpr size_t hostedMempoolWordBytes(size_t blocks, size_t blockSize) {
     return sizeof(uint32_t) * (((blockSize + 3) / 4) * blocks);
 }
 static constexpr size_t hostedMempoolBytes(size_t blocks, size_t blockSize) {
-    return hostedMempoolWordBytes(blocks, blockSize) + 64 -
-           (hostedMempoolWordBytes(blocks, blockSize) & 63);
+    return hostedMempoolWordBytes(blocks, blockSize) + kHostedPoolAlignment -
+           (hostedMempoolWordBytes(blocks, blockSize) & (kHostedPoolAlignment - 1));
 }
 
-// Step 1: (TX queue + MEMPOOL_PADDING 5, transport_drv.c:44) blocks of
-// ESP_TRANSPORT_MAX_BUF_SIZE 1600 (esp_hosted_transport.h:50); 40,064 B at
-// the TX queue depth of 20.
+// Step 1: (TX queue + MEMPOOL_PADDING 5, transport_drv.c:43) blocks of
+// TRANSPORT_BLOCK_SIZE, ESP_TRANSPORT_MAX_BUF_SIZE 1536 (transport_drv.c:51,
+// esp_hosted_transport.h:57); 38,528 B at the TX queue depth of 20.
 static constexpr size_t kHostedChannelPoolBytes =
-    hostedMempoolBytes(CONFIG_ESP_HOSTED_SDIO_TX_Q_SIZE + 5, 1600);
+    hostedMempoolBytes(CONFIG_ESP_HOSTED_SDIO_TX_Q_SIZE + 5, 1536);
 // Step 2's pool: (RX queue + MIN_MEMPOOL_REQ 11, sdio_drv.c:120-124) blocks
-// of MAX_SDIO_BUFFER_SIZE 1536 (esp_hosted_transport.h:44); 47,680 B at the
-// RX queue depth of 20.
+// of SDIO_BLOCK_SIZE, MAX_SDIO_BUFFER_SIZE 1536 (sdio_drv.c:165,
+// transport_drv.h:52, esp_hosted_transport.h:46); 47,744 B at the RX queue
+// depth of 20.
 static constexpr size_t kHostedSdioPoolBytes =
     hostedMempoolBytes(CONFIG_ESP_HOSTED_SDIO_RX_Q_SIZE + 11, 1536);
+static_assert(kHostedChannelPoolBytes % kHostedPoolAlignment == 0 &&
+                  kHostedSdioPoolBytes % kHostedPoolAlignment == 0,
+              "hosted_malloc_align() would round the pool sizes up; mirror it");
 
 // Step 2's small allocations, made between the two pools: six priority
 // queues of the queue depth x 24 B interface_buffer_handle_t (3 x 40 x 24 =
@@ -583,8 +599,8 @@ static constexpr size_t kHostedReinitBeforeSdioPoolBytes = 4096;
 
 // Step 3: the four SDIO tasks (sdio_rx_buf at CONFIG_ESP_HOSTED_DFLT_TASK_STACK,
 // the other three at the port's DFLT_TASK_STACK_SIZE 5 KB,
-// port_esp_hosted_host_os.h:65), the two RPC tasks (RPC_TASK_STACK_SIZE 5 KB,
-// port_esp_hosted_host_os.h:63), 512 B per task for its TCB and handle, and
+// port_esp_hosted_host_os.h:66), the two RPC tasks (RPC_TASK_STACK_SIZE 5 KB,
+// port_esp_hosted_host_os.h:64), 512 B per task for its TCB and handle, and
 // 2 KB for the card, mutexes, semaphores, serial handles and RPC queues.
 static constexpr size_t kHostedReinitAfterSdioPoolBytes =
     CONFIG_ESP_HOSTED_DFLT_TASK_STACK + 3 * 5120 + 2 * 5120 + 6 * 512 + 2048;
@@ -606,14 +622,16 @@ struct HostedReinitFit {
 };
 
 // The probe: the vendor's allocation sequence up to the SDIO pool, made with
-// hosted_malloc_align()'s own call (heap_caps_aligned_alloc(64, size, caps)),
+// hosted_malloc_align()'s own call (heap_caps_aligned_alloc(alignment, size,
+// caps)),
 // then freed in reverse order. A failure returns NULL rather than aborting:
 // CONFIG_HEAP_ABORT_WHEN_ALLOCATION_FAILS is unset on firebeetle2
 // (sdkconfig.firebeetle2). These are transient allocations on the Core 0
 // recovery task, freed before the vendor init they guard, which itself
 // allocates far more.
 static const char* hostedProbeReinitPools() {
-    void* channelPool = heap_caps_aligned_alloc(64, kHostedChannelPoolBytes, kHostedReinitHeapCaps);
+    void* channelPool = heap_caps_aligned_alloc(kHostedPoolAlignment, kHostedChannelPoolBytes,
+                                                kHostedReinitHeapCaps);
     if (channelPool == nullptr) {
         return "channel pool";
     }
@@ -623,7 +641,8 @@ static const char* hostedProbeReinitPools() {
         heap_caps_free(channelPool);
         return "small allocations";
     }
-    void* sdioPool = heap_caps_aligned_alloc(64, kHostedSdioPoolBytes, kHostedReinitHeapCaps);
+    void* sdioPool =
+        heap_caps_aligned_alloc(kHostedPoolAlignment, kHostedSdioPoolBytes, kHostedReinitHeapCaps);
     const char* failed = sdioPool == nullptr ? "SDIO pool" : nullptr;
     if (sdioPool != nullptr) {
         heap_caps_free(sdioPool);

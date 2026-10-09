@@ -46,8 +46,10 @@ private:
 
     // The namespace this handle has open, or null between end() and begin().
     Namespace* ns = nullptr;
+    bool readOnly_ = false;
 
     bool isOpen() const { return ns != nullptr; }
+    bool isWritable() const { return ns != nullptr && !readOnly_; }
 
     // One scheduled failure, consumed. Nothing is stored when it fires: an
     // nvs_set_str that returned an error wrote nothing either.
@@ -84,9 +86,13 @@ public:
     Preferences() = default;
     ~Preferences() = default;
 
+    // A read-only handle drops every write and removal, as the vendor's does
+    // (framework-arduinoespressif32 libraries/Preferences/src/Preferences.cpp:
+    // every put/remove/clear returns 0/false when _readOnly). Ignoring it hid a
+    // write-back through loadConfigToState()'s read-only handle (#389).
     bool begin(const char* name, bool readOnly = true) {
-        (void)readOnly;
         ns = &flash()[name];
+        readOnly_ = readOnly;
         return true;
     }
 
@@ -180,49 +186,49 @@ public:
 
     // Setters — return size written (or 0 for failure for API compatibility)
     size_t putBool(const char* key, bool value) {
-        if (!isOpen()) return 0;
+        if (!isWritable()) return 0;
         if (consumeIntegerWriteFailure()) return 0;
         ns->data[key] = value ? "1" : "0";
         return 1;
     }
 
     size_t putChar(const char* key, int8_t value) {
-        if (!isOpen()) return 0;
+        if (!isWritable()) return 0;
         if (consumeIntegerWriteFailure()) return 0;
         ns->data[key] = std::to_string(value);
         return 1;
     }
 
     size_t putUChar(const char* key, uint8_t value) {
-        if (!isOpen()) return 0;
+        if (!isWritable()) return 0;
         if (consumeIntegerWriteFailure()) return 0;
         ns->data[key] = std::to_string(value);
         return 1;
     }
 
     size_t putShort(const char* key, int16_t value) {
-        if (!isOpen()) return 0;
+        if (!isWritable()) return 0;
         if (consumeIntegerWriteFailure()) return 0;
         ns->data[key] = std::to_string(value);
         return 2;
     }
 
     size_t putUShort(const char* key, uint16_t value) {
-        if (!isOpen()) return 0;
+        if (!isWritable()) return 0;
         if (consumeIntegerWriteFailure()) return 0;
         ns->data[key] = std::to_string(value);
         return 2;
     }
 
     size_t putInt(const char* key, int32_t value) {
-        if (!isOpen()) return 0;
+        if (!isWritable()) return 0;
         if (consumeIntegerWriteFailure()) return 0;
         ns->data[key] = std::to_string(value);
         return 4;
     }
 
     size_t putUInt(const char* key, uint32_t value) {
-        if (!isOpen()) return 0;
+        if (!isWritable()) return 0;
         if (consumeIntegerWriteFailure()) return 0;
         ns->data[key] = std::to_string(value);
         return 4;
@@ -237,26 +243,26 @@ public:
     }
 
     size_t putFloat(const char* key, float value) {
-        if (!isOpen()) return 0;
+        if (!isWritable()) return 0;
         ns->data[key] = std::to_string(value);
         return 4;
     }
 
     size_t putDouble(const char* key, double value) {
-        if (!isOpen()) return 0;
+        if (!isWritable()) return 0;
         ns->data[key] = std::to_string(value);
         return 8;
     }
 
     size_t putString(const char* key, const char* value) {
-        if (!isOpen()) return 0;
+        if (!isWritable()) return 0;
         if (consumeStringWriteFailure()) return 0;
         ns->data[key] = value ? value : "";
         return ns->data[key].length();
     }
 
     size_t putString(const char* key, const String& value) {
-        if (!isOpen()) return 0;
+        if (!isWritable()) return 0;
         if (consumeStringWriteFailure()) return 0;
         ns->data[key] = std::string(value.c_str());
         return ns->data[key].length();
@@ -269,12 +275,12 @@ public:
     }
 
     bool remove(const char* key) {
-        if (!isOpen()) return false;
+        if (!isWritable()) return false;
         return ns->data.erase(key) > 0;
     }
 
     void clear() {
-        if (!isOpen()) return;
+        if (!isWritable()) return;
         ns->data.clear();
     }
 
