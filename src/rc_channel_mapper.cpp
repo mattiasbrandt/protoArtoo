@@ -268,6 +268,7 @@ RcControlIntent rcMapChannels(const RcChannelSnapshot& snap, const RcMappingConf
     bool soundActive = rcMapAudioTrigger(snap, cfg, &intent);
     intent.driveActive = driveActive;
     intent.domeActive = domeActive;
+    intent.soundActive = soundActive;
 
     // Validity: any stage that produced an intent makes this intent valid.
     //
