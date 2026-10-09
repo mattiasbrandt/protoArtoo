@@ -51,6 +51,18 @@ void test_apply_calibration_reports_deadband() {
     TEST_ASSERT_TRUE(inDeadband);
 }
 
+// Outside the deadband the travel starts from zero at its edge and still
+// reaches full at the endpoint: no step the moment the stick leaves it (#389).
+void test_apply_calibration_rescales_past_the_deadband() {
+    RcBindingConfig binding = defaultPwmBinding(1);  // 1000 / 1500 / 2000
+    binding.deadband = 40;
+    TEST_ASSERT_FLOAT_WITHIN(0.003f, 0.0f, applyRcAnalogCalibration(1541, binding, nullptr));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.5f, applyRcAnalogCalibration(1770, binding, nullptr));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, applyRcAnalogCalibration(2000, binding, nullptr));
+    TEST_ASSERT_FLOAT_WITHIN(0.003f, 0.0f, applyRcAnalogCalibration(1459, binding, nullptr));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, -1.0f, applyRcAnalogCalibration(1000, binding, nullptr));
+}
+
 void test_sbus_digital_channels_are_flagged_digital() {
     TEST_ASSERT_TRUE(rcBindingIsDigital(defaultSbusBinding(RC_BINDING_SBUS1, 17)));
     TEST_ASSERT_TRUE(rcBindingIsDigital(defaultSbusBinding(RC_BINDING_SBUS2, 18)));
@@ -159,8 +171,9 @@ void test_deadband_one_past_threshold() {
     binding.deadband = 50;
     bool inDeadband = false;
     // center + deadband + 1 = 1551
-    // delta = 1551 - 1500 = 51, span = 500, mapped = 51/500 = 0.102
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.102f, applyRcAnalogCalibration(1551, binding, &inDeadband));
+    // rescaled past the deadband (#389): (51 - 50) / (500 - 50) = 0.00222, no
+    // longer the 51/500 = 0.102 step the edge used to jump to
+    TEST_ASSERT_FLOAT_WITHIN(0.0005f, 0.00222f, applyRcAnalogCalibration(1551, binding, &inDeadband));
     TEST_ASSERT_FALSE(inDeadband);
 }
 
@@ -178,8 +191,8 @@ void test_deadband_negative_side_one_past() {
     binding.deadband = 50;
     bool inDeadband = false;
     // center - deadband - 1 = 1449
-    // delta = 1449 - 1500 = -51, span = 500, mapped = -51/500 = -0.102
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, -0.102f, applyRcAnalogCalibration(1449, binding, &inDeadband));
+    // rescaled past the deadband (#389): (-51 + 50) / (500 - 50) = -0.00222
+    TEST_ASSERT_FLOAT_WITHIN(0.0005f, -0.00222f, applyRcAnalogCalibration(1449, binding, &inDeadband));
     TEST_ASSERT_FALSE(inDeadband);
 }
 
@@ -406,6 +419,7 @@ int main() {
     RUN_TEST(test_apply_calibration_maps_center_to_zero);
     RUN_TEST(test_apply_calibration_respects_reverse);
     RUN_TEST(test_apply_calibration_reports_deadband);
+    RUN_TEST(test_apply_calibration_rescales_past_the_deadband);
     RUN_TEST(test_sbus_digital_channels_are_flagged_digital);
     RUN_TEST(test_switch_state_uses_thresholds);
     RUN_TEST(test_rc_trigger_default_reverse_applies_to_sbus_buttons);
