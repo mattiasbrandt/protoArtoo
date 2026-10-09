@@ -45,7 +45,11 @@ the patch releases, whose notes live on their own GitHub Release.
   CH18, a binding on a receiver the receiver type does not read, an axis whose
   dead zone leaves no travel on one side, and a Marcduino command or body
   sequence the droid would never send. Each stays still and the RC page says
-  why.
+  why. So do two bindings left on one control, which a save cut short by a
+  power loss can leave, and so does a Reaction the rules refuse.
+- **An axis the droid does not read for its ends can be mended.** Its RC tile
+  offers Reset ends, and mapping it again on the same channel starts it from
+  the default ends.
 - **Restoring a backup leaves out what this droid will not take.** A binding
   the droid refuses, like one from a droid with a different RC Receiver, is
   left out and named, and the rest of the RC Map lands.

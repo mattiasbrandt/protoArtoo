@@ -2382,6 +2382,11 @@ Returns channel-centric map.
   type the droid has saved would now refuse (ADR 0070). It stays still. A client
   leaves it out of the map it posts back, or the droid refuses that map whole.
   A drive split across receivers is marked on the axis a save would refuse.
+  Two entries on one control (one RC Channel, or one Part on two puppet
+  strings), which a save cut short by a power loss can leave, are both marked,
+  with the conflict a save would refuse them for. An axis marked for its ends
+  alone (`field` `calibration.*`) is mended by posting it back without them:
+  the droid then starts it from the default ends.
   Beside `read` it carries the refusal a save would give it as data: `field`,
   `reason` and, where one applies, `accepts`, as `POST /api/rc/map` refuses:
   `{"source":"sbus2","channel":1,"action":"dome_speed","read":false,"field":"map.source","reason":"out-of-range","accepts":"sbus1"}`
