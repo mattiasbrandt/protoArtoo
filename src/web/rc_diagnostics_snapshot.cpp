@@ -12,7 +12,7 @@
 
 #include "../../include/config_cache.h"
 #include "../../include/rc_diagnostics.h"
-#include "../../include/rc_map_rules.h"  // rcReceiverReads()
+#include "../../include/rc_map_rules.h"  // rcReceiverReads(), rcRuleStoredCue()
 #include "../../include/reaction_evaluator.h"  // ReactionAvailability and its two spellings
 #include "../../include/robot_state.h"
 
@@ -466,6 +466,66 @@ bool appendRcTaskStateJson(JsonDocument& doc) {
         JsonArray pair = doc["rawDigital"][kKeys[i]].to<JsonArray>();
         pair.add(digital[i][0]);
         pair.add(digital[i][1]);
+    }
+    return !doc.overflowed();
+}
+
+// Whether the droid reads each RC Channel a cue is bound to as pressed (ADR
+// 0070): judged as the input processor judges it - CH17/CH18 by their on/off
+// bit, any other channel by its binding's own calibration - so the RC page
+// never decides it from a threshold of its own. Only a cue the droid reads
+// (rcRuleStoredCue() on the receiver type it runs) on a receiver it has heard
+// is said; a puppet string is a stick, not a press, and a Reaction has no RC
+// Channel. Its own frame, like appendRcReactionsJson(): the eleven slots are a
+// local here, never on the SSE task's root frame.
+bool appendRcCuePressedJson(JsonDocument& doc) {
+    RcTriggerBinding slots[RC_TRIGGER_SLOT_COUNT];
+    const size_t count = configCacheReadRcTriggerSlots(slots, RC_TRIGGER_SLOT_COUNT);
+    RcInputActiveConfig active = {};
+    configCacheReadActiveRcInput(&active);
+    const RcInputMode mode = static_cast<RcInputMode>(active.mode);
+
+    uint16_t raw[2][RC_DIAGNOSTICS_SBUS_RAW_CAPACITY];
+    bool digital[2][2];
+    bool heard[2];
+    taskENTER_CRITICAL(&robotStateMux);
+    for (size_t i = 0; i < RC_DIAGNOSTICS_SBUS_RAW_CAPACITY; ++i) {
+        raw[0][i] = robotState.rcSbus1Raw[i];
+        raw[1][i] = robotState.rcSbus2Raw[i];
+    }
+    digital[0][0] = robotState.rcSbus1Digital[0];
+    digital[0][1] = robotState.rcSbus1Digital[1];
+    digital[1][0] = robotState.rcSbus2Digital[0];
+    digital[1][1] = robotState.rcSbus2Digital[1];
+    heard[0] = robotState.lastSbus1Ms > 0;
+    heard[1] = robotState.lastSbus2Ms > 0;
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    JsonObject pressed = doc["pressed"].to<JsonObject>();
+    if (pressed.isNull()) {
+        return false;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        const RcTriggerBinding& binding = slots[i];
+        const bool sbus1 = binding.source == RC_BINDING_SBUS1;
+        if ((!sbus1 && binding.source != RC_BINDING_SBUS2) || binding.target == SERVO_ACTION_PUPPET_PART ||
+            !rcRuleStoredCue(binding, mode).ok()) {
+            continue;
+        }
+        const size_t receiver = sbus1 ? 0 : 1;
+        if (!heard[receiver]) {
+            continue;
+        }
+        bool on = false;
+        if (binding.channel > RC_DIAGNOSTICS_SBUS_RAW_CAPACITY) {
+            on = digital[receiver][binding.channel == 18 ? 1 : 0];
+        } else {
+            on = rcTriggerToSwitchState(raw[receiver][binding.channel - 1], binding) == RC_SWITCH_HIGH;
+        }
+        char key[12];
+        snprintf(key, sizeof(key), "%s:%u", rcBindingSourceToString(binding.source),
+                 (unsigned)binding.channel);
+        pressed[key] = on;
     }
     return !doc.overflowed();
 }

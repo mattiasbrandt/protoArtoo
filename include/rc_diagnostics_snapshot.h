@@ -99,3 +99,11 @@ bool appendRcReactionsJson(JsonDocument& doc);
 //   rawDigital.sbus1/2   [CH17, CH18] on/off, beside each raw.sbus1/2 array.
 // False when the document has no room.
 bool appendRcTaskStateJson(JsonDocument& doc);
+
+// Adds `pressed` to a document populateRcDiagnosticsJson() built: for each RC
+// Channel an SBUS cue is bound to, keyed "sbus1:5", whether the droid reads it
+// as pressed - by that binding's own calibration, or CH17/CH18's on/off bit
+// (ADR 0070). Only a cue the droid reads on a receiver it has heard is said.
+// Its own frame, for the reason appendRcReactionsJson() gives. False when the
+// document has no room.
+bool appendRcCuePressedJson(JsonDocument& doc);

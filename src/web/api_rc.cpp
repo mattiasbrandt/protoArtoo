@@ -50,7 +50,7 @@ void handleRcGet(WebRequest& req) {
 
     JsonDocument doc;
     if (!populateRcDiagnosticsJson(doc, snap) || !appendRcReactionsJson(doc) ||
-        !appendRcTaskStateJson(doc)) {
+        !appendRcTaskStateJson(doc) || !appendRcCuePressedJson(doc)) {
         webSendJsonError(req, 500, "rc json build failed");
         return;
     }
