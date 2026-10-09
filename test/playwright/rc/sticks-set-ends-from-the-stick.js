@@ -67,8 +67,10 @@ const droid = ({ saved, running }) => {
       pwm: { enabled: false, linked: false, ageMs: 0, lostFrames: 0, failsafe: false },
     },
     channels: [],
-    // CH17 is read by the binding on the sound slot (src/web/rc_diagnostics_snapshot.cpp).
-    digital: { sound: { activeSource: 'sbus1', bindingChannel: 17, pressed: true } },
+    // CH17/CH18 of each receiver, whatever binds them (docs/api.md "GET /api/rc").
+    // `digital` says CH17 is off: the page must read rawDigital, not it.
+    rawDigital: { sbus1: [true, false], sbus2: [false, false] },
+    digital: { sound: { activeSource: 'sbus1', bindingChannel: 17, pressed: false } },
     mappingProfile: { version: 1, channels: profile },
     // CH1 rests at 150, below MIN: a HotRC trigger at its end. CH2 reads 1700.
     raw: { sbus1: [150, 1700, 992, 1000, ...spread(980).slice(4)], sbus2: spread(1100) },
