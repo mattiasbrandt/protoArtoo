@@ -467,6 +467,8 @@ bool appendRcTaskStateJson(JsonDocument& doc) {
     const bool driveAwaitingCentre = robotState.rcDriveAwaitingCentre;
     const uint16_t rate[2] = {robotState.sbus1FramesPerSecond, robotState.sbus2FramesPerSecond};
     const uint32_t fails[2] = {robotState.sbus1DecodeFails, robotState.sbus2DecodeFails};
+    const bool digital[2][2] = {{robotState.rcSbus1Digital[0], robotState.rcSbus1Digital[1]},
+                                {robotState.rcSbus2Digital[0], robotState.rcSbus2Digital[1]}};
     taskEXIT_CRITICAL(&robotStateMux);
 
     doc["driveAwaitingCentre"] = driveAwaitingCentre;
@@ -479,6 +481,18 @@ bool appendRcTaskStateJson(JsonDocument& doc) {
         }
         source["framesPerSecond"] = rate[i];
         source["decodeFails"] = fails[i];
+    }
+    // CH17 and CH18 of each SBUS receiver whose raw channels are reported, on
+    // or off, whatever binds them: the RC page's grid and Detect read them
+    // here, since `digital` covers only the six named bindings (#389).
+    JsonObject raw = doc["raw"];
+    for (size_t i = 0; i < 2; ++i) {
+        if (raw.isNull() || raw[kKeys[i]].isNull()) {
+            continue;
+        }
+        JsonArray pair = doc["rawDigital"][kKeys[i]].to<JsonArray>();
+        pair.add(digital[i][0]);
+        pair.add(digital[i][1]);
     }
     return !doc.overflowed();
 }

@@ -98,6 +98,7 @@ bool appendRcReactionsJson(JsonDocument& doc);
 //                        drive sticks have been at centre once since boot.
 //   sources.sbus1/sbus2  framesPerSecond (decoded in the last second) and
 //                        decodeFails (since boot), beside the link fields.
+//   rawDigital.sbus1/2   [CH17, CH18] on/off, beside each raw.sbus1/2 array.
 // False when the document has no room.
 bool appendRcTaskStateJson(JsonDocument& doc);
 
