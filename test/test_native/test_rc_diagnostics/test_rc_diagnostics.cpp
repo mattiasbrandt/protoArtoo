@@ -244,49 +244,6 @@ void test_rc_diagnostics_source_name_returns_correct_names() {
     TEST_ASSERT_EQUAL_STRING("none", rcDiagnosticsSourceName(RC_BINDING_NONE));
 }
 
-void test_rcSourceEnabledForMode_single_sbus_ch1_selected() {
-    // useCh2=false, enableRcCh1=true: SBUS1 active, SBUS2 not
-    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_SINGLE_SBUS, true, true, false, false));
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_SINGLE_SBUS, true, true, false, false));
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_PWM, RC_INPUT_SINGLE_SBUS, true, true, true, false));
-    // useCh2=false, enableRcCh1=false: SBUS1 disabled even though it is selected
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_SINGLE_SBUS, false, true, false, false));
-}
-
-void test_rcSourceEnabledForMode_single_sbus_ch2_selected() {
-    // The single receiver on the CH2 header is still SBUS1 (operator,
-    // 2026-10-09 on #389); useCh2 picks the CH2 header's enable instead.
-    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_SINGLE_SBUS, true, true, false, true));
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_SINGLE_SBUS, true, true, false, true));
-    // useCh2=true, enableRcCh2=false: disabled even with CH1 enabled
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_SINGLE_SBUS, true, false, false, true));
-    // useCh2=true, enableRcCh2=true: active regardless of enableRcCh1
-    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_SINGLE_SBUS, false, true, false, true));
-}
-
-void test_rcSourceEnabledForMode_dual_sbus_follows_enable_flags() {
-    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_DUAL_SBUS, true, false, false, false));
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_DUAL_SBUS, false, true, false, false));
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_DUAL_SBUS, true, false, false, false));
-    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_DUAL_SBUS, false, true, false, false));
-    // useCh2 has no effect in dual_sbus
-    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_DUAL_SBUS, true, false, false, true));
-}
-
-void test_rcSourceEnabledForMode_pwm_follows_anyPwmEnabled() {
-    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_PWM, RC_INPUT_STANDARD_PWM, false, false, true, false));
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_PWM, RC_INPUT_STANDARD_PWM, false, false, false, false));
-    // PWM disabled in non-PWM modes
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_PWM, RC_INPUT_DUAL_SBUS, false, false, true, false));
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_PWM, RC_INPUT_SINGLE_SBUS, false, false, true, false));
-}
-
-void test_rcSourceEnabledForMode_none_always_false() {
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_NONE, RC_INPUT_STANDARD_PWM, true, true, true, true));
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_NONE, RC_INPUT_DUAL_SBUS, true, true, true, true));
-    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_NONE, RC_INPUT_SINGLE_SBUS, true, true, true, true));
-}
-
 void test_captureRcDiagnosticsSnapshot_reports_boot_active_rc_and_live_bindings() {
     memset(&robotState, 0, sizeof(robotState));
 
@@ -331,11 +288,6 @@ int main() {
     RUN_TEST(test_raw_to_pulse_us_clamps_above_max);
     RUN_TEST(test_rc_diagnostics_source_name_returns_correct_names);
 
-    RUN_TEST(test_rcSourceEnabledForMode_single_sbus_ch1_selected);
-    RUN_TEST(test_rcSourceEnabledForMode_single_sbus_ch2_selected);
-    RUN_TEST(test_rcSourceEnabledForMode_dual_sbus_follows_enable_flags);
-    RUN_TEST(test_rcSourceEnabledForMode_pwm_follows_anyPwmEnabled);
-    RUN_TEST(test_rcSourceEnabledForMode_none_always_false);
     RUN_TEST(test_captureRcDiagnosticsSnapshot_reports_boot_active_rc_and_live_bindings);
 
     return UNITY_END();

@@ -673,7 +673,7 @@ void test_rc_snapshot_mode_and_sources_are_real_keys() {
 }
 
 void test_rc_snapshot_carries_real_source_state() {
-    // rcSourceEnabledForMode requires the active mode + enable flags to line
+    // rcReceiverReads requires the active mode + enable flags to line
     // up before a source counts as enabled; default dual_sbus mode enables
     // sbus1 without further config, which is enough to prove the pipeline
     // carries real, non-stub source state through to the record.

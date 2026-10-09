@@ -9,27 +9,10 @@
 #include <Arduino.h>
 
 #include "../../include/config_cache.h"
+#include "../../include/rc_map_rules.h"  // rcReceiverReads()
 #include "../../include/robot_state.h"
 
 namespace {
-
-bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enableRcCh1, bool enableRcCh2,
-                            bool anyPwmEnabled, bool useCh2) {
-    switch (source) {
-        case RC_BINDING_PWM:
-            return mode == RC_INPUT_STANDARD_PWM && anyPwmEnabled;
-        case RC_BINDING_SBUS1:
-            // single_sbus: one receiver, SBUS1 whichever header it is on
-            // (operator, 2026-10-09 on #389); useCh2 picks the header's enable.
-            if (mode == RC_INPUT_SINGLE_SBUS) return useCh2 ? enableRcCh2 : enableRcCh1;
-            return mode == RC_INPUT_DUAL_SBUS && enableRcCh1;
-        case RC_BINDING_SBUS2:
-            return mode == RC_INPUT_DUAL_SBUS && enableRcCh2;
-        case RC_BINDING_NONE:
-        default:
-            return false;
-    }
-}
 
 uint32_t currentMillis() {
 #ifdef ARDUINO
@@ -77,13 +60,7 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
 
     RcInputMode rcMode;
     uint32_t timeoutMs;
-    bool enableRcCh1;
-    bool enableRcCh2;
-    bool enableRcCh3;
-    bool enableRcCh4;
-    bool enableRcCh5;
-    bool enableRcCh6;
-    bool sbusUseCh2;
+    RcReceiverSetup receivers = {};
     uint32_t lastPwmMs;
     uint32_t lastSbus1Ms;
     uint32_t lastSbus2Ms;
@@ -115,13 +92,11 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
 
     rcMode = static_cast<RcInputMode>(activeRc.mode);
     timeoutMs = cfg.drive.sbusTimeoutMs;
-    enableRcCh1 = activeRc.enableRc[0];
-    enableRcCh2 = activeRc.enableRc[1];
-    enableRcCh3 = activeRc.enableRc[2];
-    enableRcCh4 = activeRc.enableRc[3];
-    enableRcCh5 = activeRc.enableRc[4];
-    enableRcCh6 = activeRc.enableRc[5];
-    sbusUseCh2 = activeRc.useCh2;
+    receivers.mode = rcMode;
+    for (size_t i = 0; i < 6; ++i) {
+        receivers.enableRc[i] = activeRc.enableRc[i];
+    }
+    receivers.useCh2 = activeRc.useCh2;
     lastPwmMs = robotState.lastPwmMs;
     lastSbus1Ms = robotState.lastSbus1Ms;
     lastSbus2Ms = robotState.lastSbus2Ms;
@@ -165,9 +140,6 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
     snap.audio.intervalFullS = intFull;
     snap.audio.intervalAwakeS = intAwake;
 
-    const bool anyPwmEnabled =
-        enableRcCh1 || enableRcCh2 || enableRcCh3 || enableRcCh4 || enableRcCh5 || enableRcCh6;
-
     const uint32_t sbus1Age = sourceAgeMs(nowMs, lastSbus1Ms);
     const uint32_t sbus2Age = sourceAgeMs(nowMs, lastSbus2Ms);
     const uint32_t pwmAge = sourceAgeMs(nowMs, lastPwmMs);
@@ -178,7 +150,7 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
 
     ValidationRcSourceSnapshot& sbus1 = snap.rc.sources[0];
     sbus1.key = "sbus1";
-    sbus1.enabled = rcSourceEnabledForMode(RC_BINDING_SBUS1, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled, sbusUseCh2);
+    sbus1.enabled = rcReceiverReads(RC_BINDING_SBUS1, receivers);
     sbus1.linked = sbus1.enabled && lastSbus1Ms > 0 && !diag.sbusSignalLost && sbus1Age <= timeoutMs;
     sbus1.signalLost = sbus1.enabled ? diag.sbusSignalLost : false;
     sbus1.failsafe = sbus1.enabled ? diag.sbusHwFailsafe : false;
@@ -186,7 +158,7 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
 
     ValidationRcSourceSnapshot& sbus2 = snap.rc.sources[1];
     sbus2.key = "sbus2";
-    sbus2.enabled = rcSourceEnabledForMode(RC_BINDING_SBUS2, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled, sbusUseCh2);
+    sbus2.enabled = rcReceiverReads(RC_BINDING_SBUS2, receivers);
     sbus2.linked = sbus2.enabled && lastSbus2Ms > 0 && !sbus2SignalLost && sbus2Age <= timeoutMs;
     sbus2.signalLost = sbus2.enabled ? sbus2SignalLost : false;
     sbus2.failsafe = sbus2.enabled ? sbus2HwFailsafe : false;
@@ -194,7 +166,7 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
 
     ValidationRcSourceSnapshot& pwm = snap.rc.sources[2];
     pwm.key = "pwm";
-    pwm.enabled = rcSourceEnabledForMode(RC_BINDING_PWM, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled, sbusUseCh2);
+    pwm.enabled = rcReceiverReads(RC_BINDING_PWM, receivers);
     pwm.linked = pwm.enabled && lastPwmMs > 0 && pwmAge <= timeoutMs;
     pwm.signalLost = pwm.enabled && lastPwmMs > 0 && pwmAge > timeoutMs;
     pwm.failsafe = false;

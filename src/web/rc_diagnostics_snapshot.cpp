@@ -12,26 +12,9 @@
 
 #include "../../include/config_cache.h"
 #include "../../include/rc_diagnostics.h"
+#include "../../include/rc_map_rules.h"  // rcReceiverReads()
 #include "../../include/reaction_evaluator.h"  // ReactionAvailability and its two spellings
 #include "../../include/robot_state.h"
-
-bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enableRcCh1,
-                            bool enableRcCh2, bool anyPwmEnabled, bool useCh2) {
-    switch (source) {
-        case RC_BINDING_PWM:
-            return mode == RC_INPUT_STANDARD_PWM && anyPwmEnabled;
-        case RC_BINDING_SBUS1:
-            // single_sbus: one receiver, SBUS1 whichever header it is on
-            // (operator, 2026-10-09 on #389); useCh2 picks the header's enable.
-            if (mode == RC_INPUT_SINGLE_SBUS) return useCh2 ? enableRcCh2 : enableRcCh1;
-            return mode == RC_INPUT_DUAL_SBUS && enableRcCh1;
-        case RC_BINDING_SBUS2:
-            return mode == RC_INPUT_DUAL_SBUS && enableRcCh2;
-        case RC_BINDING_NONE:
-        default:
-            return false;
-    }
-}
 
 namespace {
 
@@ -98,8 +81,7 @@ void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out) {
 
     RcInputMode rcInputMode;
     uint32_t timeoutMs;
-    bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
-    bool sbusUseCh2;
+    RcReceiverSetup receivers = {};
     bool sbusSignalLost, sbus2SignalLost, sbusHwFailsafe, sbus2HwFailsafe;
     uint32_t lastPwmMs, lastSbus1Ms, lastSbus2Ms;
     uint32_t sbus1LostFrameCount, sbus2LostFrameCount;
@@ -116,13 +98,11 @@ void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out) {
     configCacheReadActiveRcInput(&activeRc);
     rcInputMode = static_cast<RcInputMode>(activeRc.mode);
     timeoutMs = cfg.drive.sbusTimeoutMs;
-    sbusUseCh2 = activeRc.useCh2;
-    enableRcCh1 = activeRc.enableRc[0];
-    enableRcCh2 = activeRc.enableRc[1];
-    enableRcCh3 = activeRc.enableRc[2];
-    enableRcCh4 = activeRc.enableRc[3];
-    enableRcCh5 = activeRc.enableRc[4];
-    enableRcCh6 = activeRc.enableRc[5];
+    receivers.mode = rcInputMode;
+    for (size_t i = 0; i < 6; ++i) {
+        receivers.enableRc[i] = activeRc.enableRc[i];
+    }
+    receivers.useCh2 = activeRc.useCh2;
     taskENTER_CRITICAL(&robotStateMux);
     sbusSignalLost = robotState.sbusSignalLost;
     sbus2SignalLost = robotState.sbus2SignalLost;
@@ -147,9 +127,6 @@ void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out) {
     sbus2Digital[1] = robotState.rcSbus2Digital[1];
     taskEXIT_CRITICAL(&robotStateMux);
 
-    bool anyPwmEnabled =
-        enableRcCh1 || enableRcCh2 || enableRcCh3 || enableRcCh4 || enableRcCh5 || enableRcCh6;
-
     snap.mode = rcInputModeToString(rcInputMode);
     snap.updatedMs = lastPwmMs;
     if (lastSbus1Ms > snap.updatedMs) {
@@ -160,23 +137,20 @@ void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out) {
     }
 
     snap.sources[0] = {"sbus1",
-                       rcSourceEnabledForMode(RC_BINDING_SBUS1, rcInputMode, enableRcCh1,
-                                              enableRcCh2, anyPwmEnabled, sbusUseCh2),
+                       rcReceiverReads(RC_BINDING_SBUS1, receivers),
                        false,
                        rcSourceAgeMs(nowMs, lastSbus1Ms),
                        sbus1LostFrameCount,
                        sbusHwFailsafe};
     snap.sources[1] = {"sbus2",
-                       rcSourceEnabledForMode(RC_BINDING_SBUS2, rcInputMode, enableRcCh1,
-                                              enableRcCh2, anyPwmEnabled, sbusUseCh2),
+                       rcReceiverReads(RC_BINDING_SBUS2, receivers),
                        false,
                        rcSourceAgeMs(nowMs, lastSbus2Ms),
                        sbus2LostFrameCount,
                        sbus2HwFailsafe};
     snap.sources[2] = {
         "pwm",
-        rcSourceEnabledForMode(RC_BINDING_PWM, rcInputMode, enableRcCh1, enableRcCh2, anyPwmEnabled,
-                               sbusUseCh2),
+        rcReceiverReads(RC_BINDING_PWM, receivers),
         false,
         rcSourceAgeMs(nowMs, lastPwmMs),
         0,
@@ -200,8 +174,7 @@ void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out) {
 
         const RcBindingConfig& binding = specs[i].binding;
         const char* sourceName = rcDiagnosticsSourceName(binding.source);
-        bool sourceEnabled = rcSourceEnabledForMode(binding.source, rcInputMode, enableRcCh1,
-                                                    enableRcCh2, anyPwmEnabled, sbusUseCh2);
+        bool sourceEnabled = rcReceiverReads(binding.source, receivers);
 
         if (rcBindingSupportsAnalog(binding)) {
             int raw = 0;

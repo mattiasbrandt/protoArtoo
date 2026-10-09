@@ -10,7 +10,7 @@
 #include <string.h>
 
 #include "droid_parts.h"      // droidPartIdIsKnown() - a puppet string's Part
-#include "rc_puppet.h"        // rcPuppetChannelCanMove()
+#include "rc_map_rules.h"     // rcRuleMapAdd(), rcRuleDrive(), rcRuleAxisCalibration()
 #include "rc_pwm_helpers.h"   // RC_PWM_VALID_MIN_US / MAX_US
 #include "seq_store_index.h"  // Learned Sequence names accepted for RC binding
 
@@ -55,6 +55,26 @@ void setError(RcMapApplyResult* result, const char* message, const RcMapEntry* e
                  robotActionIdToString(entry->action));
         snprintf(result->errorEntry.payload, sizeof(result->errorEntry.payload), "%s", entry->payload);
     }
+}
+
+// A Reaction's threshold or quiet period as the request sent it: absent is
+// kRcMapEntryKeep, and anything no Reaction takes is held at the largest value
+// below it, which rcRuleMapAdd() refuses.
+uint16_t reactionNumber(JsonVariantConst value) {
+    if (value.isNull()) {
+        return kRcMapEntryKeep;
+    }
+    const uint32_t number = value | 0xFFFFFFFFu;
+    return number >= kRcMapEntryKeep ? (uint16_t)(kRcMapEntryKeep - 1) : (uint16_t)number;
+}
+
+// A map entry as the drive-pair rule reads a binding: only its receiver and
+// RC Channel matter there.
+RcBindingConfig axisOf(const RcMapEntry* entry) {
+    if (entry == nullptr) {
+        return disabledRcBinding();
+    }
+    return makeRcBindingConfig(entry->source, entry->channel, 0, 0, 0, 0, false);
 }
 
 // The drive and dome axes' calibration, as a request may set it beside the
@@ -129,15 +149,9 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
             }
             binding.reverse = reverse.as<bool>();
         }
-        if (!rcBindingIsValid(binding)) {
-            setError(result, "calibration needs min < center < max", nullptr);
-            return false;
-        }
-        // The deadband must leave travel on both sides of the centre, or that
-        // side of the stick maps to nothing (Codex review, #389).
-        if (binding.deadband >= (uint16_t)(binding.center - binding.min) ||
-            binding.deadband >= (uint16_t)(binding.max - binding.center)) {
-            setError(result, "calibration leaves no travel past the deadband", nullptr);
+        const RcRuleVerdict verdict = rcRuleAxisCalibration(binding);
+        if (!verdict.ok()) {
+            setError(result, verdict.sentence, nullptr);
             return false;
         }
         *axis->pwm = binding;
@@ -171,9 +185,6 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
 
     RcMapEntry entries[kRcMapMaxEntries] = {};
     size_t count = 0;
-    bool seenDriveSpeed = false;
-    bool seenDriveSteer = false;
-    bool seenDomeSpeed = false;
 
     JsonArrayConst map = mapVar.as<JsonArrayConst>();
     for (JsonVariantConst itemVar : map) {
@@ -181,11 +192,6 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
             setError(result, "map entry must be object", nullptr);
             return;
         }
-        if (count >= kRcMapMaxEntries) {
-            setError(result, "conflict: map exceeds capacity", nullptr);
-            return;
-        }
-
         JsonObjectConst item = itemVar.as<JsonObjectConst>();
         const char* sourceRaw = item["source"] | "";
         const char* actionRaw = item["action"] | "";
@@ -204,133 +210,51 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
             return;
         }
         entry.channel = (uint8_t)channelValue;
-        if (!rcBindingChannelIsValid(entry.source, entry.channel)) {
-            setError(result, "channel out of range", nullptr);
-            return;
-        }
         if (!parseRobotActionId(actionRaw, &entry.action) || entry.action == ROBOT_ACTION_NONE) {
             setError(result, "invalid action token", nullptr);
             return;
         }
         snprintf(entry.payload, sizeof(entry.payload), "%s", payloadRaw);
-
-        // A Reaction (#450). What it may do is refused here by name, so the
-        // builder is told which rule it broke; rcTriggerBindingIsValid() holds
-        // the same rules for the stored form.
+        // A Reaction's numbers, judged by rcRuleMapAdd(). A value no Reaction
+        // takes (not a whole number, or past 16 bits) is held just below
+        // kRcMapEntryKeep, which every rule refuses, so it cannot wrap into range.
         if (rcBindingSourceIsDroidCondition(entry.source)) {
-            if (robotActionIsAnalog(entry.action)) {
-                setError(result, "a droid condition cannot drive an axis", &entry);
-                return;
-            }
-            if (!robotActionValidForReaction(entry.action)) {
-                setError(result, "action not allowed on a droid condition", &entry);
-                return;
-            }
-            JsonVariantConst thresholdVar = item["threshold"];
-            if (!thresholdVar.isNull()) {
-                const uint16_t thresholdMax = rcReactionThresholdMax(entry.source);
-                const uint32_t threshold = thresholdVar | 0xFFFFFFFFu;
-                if (thresholdMax == 0 ? threshold != 0
-                                      : (threshold < 1 || threshold > thresholdMax)) {
-                    setError(result, "threshold out of range", &entry);
-                    return;
-                }
-                entry.threshold = (uint16_t)threshold;
-            }
-            JsonVariantConst quietVar = item["quietS"];
-            if (!quietVar.isNull()) {
-                const uint32_t quietS = quietVar | 0xFFFFFFFFu;
-                if (quietS < RC_REACTION_QUIET_MIN_S || quietS > RC_REACTION_QUIET_MAX_S) {
-                    setError(result, "quiet period out of range", &entry);
-                    return;
-                }
-                entry.quietS = (uint16_t)quietS;
-            }
+            entry.threshold = reactionNumber(item["threshold"]);
+            entry.quietS = reactionNumber(item["quietS"]);
         }
 
+        // What must name something that exists is checked here, where the
+        // live state is: the RC Map's rules hold none of it (rc_map_rules.h).
         if (entry.action == DOME_ACTION_SEQ && !isValidDomeSeqPayload(entry.payload)) {
             setError(result, "invalid dome sequence payload (expected DM:NAME)", &entry);
             return;
         }
-        if (entry.action == DOME_ACTION_MARCDUINO_CMD && strncmp(entry.payload, ":SM", 3) == 0) {
-            setError(result, ":SM is diagnostic only and cannot be saved as an RC binding", &entry);
+        // A puppet string names a Part by catalog id (#442, ADR 0061).
+        if (entry.action == SERVO_ACTION_PUPPET_PART && !droidPartIdIsKnown(entry.payload)) {
+            setError(result, "a puppet string needs a Part", &entry);
             return;
         }
 
-        // A puppet string names a Part by catalog id (#442, ADR 0061). One
-        // Part has one string: two sticks on one Part would fight over it.
-        if (entry.action == SERVO_ACTION_PUPPET_PART) {
-            if (!droidPartIdIsKnown(entry.payload)) {
-                setError(result, "a puppet string needs a Part", &entry);
-                return;
-            }
-            if (!rcPuppetChannelCanMove(entry.source, entry.channel)) {
-                setError(result, "a puppet string needs an SBUS stick channel (CH1-CH16)", &entry);
-                return;
-            }
-            for (size_t i = 0; i < count; ++i) {
-                if (entries[i].action == SERVO_ACTION_PUPPET_PART &&
-                    strcmp(entries[i].payload, entry.payload) == 0) {
-                    setError(result, "conflict: a Part on two puppet strings", &entry);
-                    return;
-                }
-            }
-        }
-
-        // One control, one job: a channel is a drive axis, a cue or a puppet
-        // string, never two of them (#442).
-        for (size_t i = 0; i < count; ++i) {
-            if (entries[i].source == entry.source && entries[i].channel == entry.channel) {
-                setError(result, "conflict: source+channel mapped more than once", &entry);
-                return;
-            }
-        }
-
-        if (entry.action == DRIVE_ACTION_SPEED) {
-            if (seenDriveSpeed) {
-                setError(result, "conflict: drive_speed mapped more than once", &entry);
-                return;
-            }
-            seenDriveSpeed = true;
-        } else if (entry.action == DRIVE_ACTION_STEER) {
-            if (seenDriveSteer) {
-                setError(result, "conflict: drive_steer mapped more than once", &entry);
-                return;
-            }
-            seenDriveSteer = true;
-        } else if (entry.action == DOME_ACTION_SPEED) {
-            if (seenDomeSpeed) {
-                setError(result, "conflict: dome_speed mapped more than once", &entry);
-                return;
-            }
-            seenDomeSpeed = true;
+        const RcRuleVerdict verdict = rcRuleMapAdd(entries, count, entry);
+        if (!verdict.ok()) {
+            setError(result, verdict.sentence, verdict.aboutEntry ? &entry : nullptr);
+            return;
         }
 
         entries[count++] = entry;
     }
 
-    // Drive speed and steer are read together, from one frame of one receiver
-    // (rcMapDriveControls()), so a map that splits them across two receivers
-    // could never drive (Codex review, #389).
+    // The drive pair, judged on what the map binds each axis to.
     const RcMapEntry* speed = nullptr;
     const RcMapEntry* steer = nullptr;
     for (size_t i = 0; i < count; ++i) {
         if (entries[i].action == DRIVE_ACTION_SPEED) speed = &entries[i];
         if (entries[i].action == DRIVE_ACTION_STEER) steer = &entries[i];
     }
-    if (speed != nullptr && steer != nullptr && speed->source != steer->source) {
-        setError(result, "drive speed and steer must be on the same receiver", steer);
+    const RcRuleVerdict drive = rcRuleDrive(axisOf(speed), axisOf(steer));
+    if (!drive.ok()) {
+        setError(result, drive.sentence, drive.axis == DRIVE_ACTION_SPEED ? speed : steer);
         return;
-    }
-    // The drive reads SBUS1: only the drive receiver carries the drive
-    // watchdog and the hardware-failsafe stop, so a drive on SBUS2 would run
-    // on its last command until the RC staleness timeout (operator,
-    // 2026-10-09 on #389).
-    for (const RcMapEntry* axis : {speed, steer}) {
-        if (axis != nullptr && axis->source == RC_BINDING_SBUS2) {
-            setError(result, "drive reads SBUS1, the drive receiver", axis);
-            return;
-        }
     }
 
     ConfigSnapshot existing = *working;
