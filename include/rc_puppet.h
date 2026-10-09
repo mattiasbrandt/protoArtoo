@@ -147,7 +147,7 @@ inline uint16_t rcPuppetTargetUs(uint16_t openUs, uint16_t closeUs, uint16_t per
 //
 // `gapMs` is how long a string may see no frame before it lets go and picks
 // its Part up again from a fresh baseline: the SBUS watchdog's timeout as the
-// builder set it (drive.sbusTimeoutMs, 50-5000 ms), passed in by the caller,
+// builder set it (drive.sbusTimeoutMs, 50-1000 ms), passed in by the caller,
 // so the string lets go when the watchdog trips and never stays engaged
 // through a failsafe the drive has already declared. Frames stop for a lost
 // signal, a failsafe frame (never dispatched) or a receiver unplugged; the

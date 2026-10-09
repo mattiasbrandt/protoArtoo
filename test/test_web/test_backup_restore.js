@@ -349,6 +349,27 @@ test("a backup naming a retired Part, restored with Sound off, lands the rest an
   assert.match(receipt(), /Audio tracks: restored[^\n]*volume/, `the skipped volume is not said: ${receipt()}`);
 });
 
+// An older backup can carry the 5000 ms SBUS timeout a diagnostic once used.
+// The droid now takes at most 1000 ms (#389) and would refuse the whole body,
+// so the restore lowers it and the receipt says so.
+test("a backup with an SBUS timeout above 1000 ms restores at 1000 and says so", async () => {
+  const backup = structuredClone(OLDER_BACKUP);
+  backup.config.rc = { ...(backup.config.rc || {}), sbusTimeoutMs: 5000 };
+  const { posts, receipt } = await restoreOn(makeDroid(), backup);
+
+  assert.equal(posts("/api/config")[0].rc.sbusTimeoutMs, 1000);
+  assert.match(receipt(), /Configuration: partial — [^\n]*signal-lost timeout lowered to 1000 ms/);
+});
+
+test("a backup with an SBUS timeout within range sends it as it is", async () => {
+  const backup = structuredClone(OLDER_BACKUP);
+  backup.config.rc = { ...(backup.config.rc || {}), sbusTimeoutMs: 300 };
+  const { posts, receipt } = await restoreOn(makeDroid(), backup);
+
+  assert.equal(posts("/api/config")[0].rc.sbusTimeoutMs, 300);
+  assert.doesNotMatch(receipt(), /signal-lost timeout/);
+});
+
 // A backup that puts one Part on two Outputs is refused by the droid as a
 // conflict, and the refusal names only the row (`ledc:3.parts`). The builder
 // is told which Part, by the name the catalog gives it - never its id, and
