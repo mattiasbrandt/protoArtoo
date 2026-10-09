@@ -465,8 +465,20 @@ bool appendRcReactionsJson(JsonDocument& doc) {
 bool appendRcTaskStateJson(JsonDocument& doc) {
     taskENTER_CRITICAL(&robotStateMux);
     const bool driveAwaitingCentre = robotState.rcDriveAwaitingCentre;
+    const uint16_t rate[2] = {robotState.sbus1FramesPerSecond, robotState.sbus2FramesPerSecond};
+    const uint32_t fails[2] = {robotState.sbus1DecodeFails, robotState.sbus2DecodeFails};
     taskEXIT_CRITICAL(&robotStateMux);
 
     doc["driveAwaitingCentre"] = driveAwaitingCentre;
+    // Beside each SBUS source's own entry in `sources`, which carries its link.
+    static const char* const kKeys[2] = {"sbus1", "sbus2"};
+    for (size_t i = 0; i < 2; ++i) {
+        JsonObject source = doc["sources"][kKeys[i]];
+        if (source.isNull()) {
+            continue;
+        }
+        source["framesPerSecond"] = rate[i];
+        source["decodeFails"] = fails[i];
+    }
     return !doc.overflowed();
 }

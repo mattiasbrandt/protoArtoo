@@ -310,8 +310,8 @@ products:
         decode fix is commits 6f5a9d42, d9f4a50e, c4ccfdbd, b86a1bf5 and a26aaae2.
       - Parity gating was tried and rejected: at 115 kbaud the bit-run expansion
         shifts parity positions and every frame fails. It is on the no-backtracking
-        list; do not re-attempt it without new telemetry. parityFailCount and its
-        log plumbing exist, but nothing increments the counter.
+        list; do not re-attempt it without new telemetry. The never-incremented
+        parityFailCount and its log plumbing were removed in #389.
       - Factory-stroke sweep: CH1 ~255 / rest ~1472 / ~1919, CH2 ~97 to ~2028 with
         rest ~1889-2028. Against the 172 / 992 / 1811 binding CH1 read +59 % (a dome
         spinning at 59 % with the stick untouched) and CH2's rest clamped to 1811 and

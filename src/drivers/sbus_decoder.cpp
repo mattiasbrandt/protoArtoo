@@ -116,19 +116,11 @@ static constexpr size_t kMinSymsForFrame = 10;
 // Bit extraction constants
 // ---------------------------------------------------------------------------
 
-// SBUS bit period in RMT ticks (1 us/tick):
-// - Standard SBUS 100 kbaud: 10 ticks/bit
-// - Fast SBUS 200 kbaud: 5 ticks/bit
-static constexpr uint32_t kBitPeriodTicksStd = 10;
-static constexpr uint32_t kBitPeriodTicksFast = 5;
-
-// SBUS frame constants
-static constexpr uint8_t kSbusHeader = 0x0F;
-[[maybe_unused]] static constexpr uint8_t kSbusFooter = 0x00;
-
-// Total bits in one complete SBUS frame (25 bytes x 12 bits/byte).
-// 12 bits/byte = start(1) + data(8) + parity(1) + stop(2).
-static constexpr int kTotalBits    = SbusDecoder::kFrameLen * SbusDecoder::kBitsPerByte;  // 300
+// SBUS bit period in RMT ticks (1 us/tick): standard SBUS 100 kbaud is 10
+// ticks/bit; the HotRC DS-650 runs at ~115 kbaud, ~8.7 ticks/bit. The decoder
+// estimates the period per frame (sbusEstimateBitPeriod()), the header and the
+// accepted footers are decodeFrameFromBits()'s (include/sbus_decode_helpers.h),
+// and one frame is 25 bytes x 12 bits = 300 bits.
 
 // Bit array capacity: one frame plus headroom for leading idle and occasional
 // extra symbols. Sized to tolerate both standard and fast SBUS timing variants.
@@ -144,7 +136,7 @@ SbusDecoder::SbusDecoder()
       _shortDropCount(0), _parseOkCount(0), _parseFailCount(0),
       _bitCountLowCount(0), _extractFailCount(0), _headerMismatchCount(0),
       _footerMismatchCount(0), _lastRejectedFooter(0), _rearmFailCount(0),
-      _parityFailCount(0), _lastSymbolCount(0), _maxSymbolCount(0), _data{} {}
+      _lastSymbolCount(0), _maxSymbolCount(0), _data{} {}
 
 bool SbusDecoder::begin(int rxPin) {
     if (_channel) end();
@@ -234,7 +226,6 @@ SbusDecoderDebugStats SbusDecoder::debugStats() const {
     stats.footerMismatchCount = _footerMismatchCount;
     stats.lastRejectedFooter = _lastRejectedFooter;
     stats.rearmFailCount = _rearmFailCount;
-    stats.parityFailCount = _parityFailCount;
     stats.lastSymbolCount = _lastSymbolCount;
     stats.maxSymbolCount = _maxSymbolCount;
     return stats;
@@ -349,7 +340,7 @@ static void storeDecodedFrame(const uint8_t* frame, SbusData* out) {
 // -----------------------------------------------------------------------------
 // _parseSymbols
 // Orchestrates flatten -> locate -> extract -> validate -> decode.
-// Tries standard and fast SBUS timing, then polarity fallback.
+// One attempt: the adaptive bit period, non-inverted polarity.
 // Runs in task context (never in ISR).
 // -----------------------------------------------------------------------------
 bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
@@ -364,8 +355,8 @@ bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
     uint32_t adaptivePeriod = sbusEstimateBitPeriod(buf.symbols, buf.count);
 
     // Only try the adaptive period with correct (non-inverted) polarity.
-    // kBitPeriodTicksFast (200 kbaud) and invertBits=true are wrong for the
-    // HOTRC DS-650 at 100 kbaud with RMT invert_in=1. Trying them wastes three
+    // A fixed 200 kbaud period and invertBits=true are wrong for the HotRC
+    // DS-650 at ~115 kbaud with RMT invert_in=1 (both removed in d9f4a50e). Trying them wastes three
     // of the four attempts per frame, triples the header-mismatch counter noise,
     // and opens a path for false positives via coincidental header+footer match.
     const uint32_t bitPeriods[]  = {adaptivePeriod};
@@ -390,7 +381,6 @@ bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
             if (attemptStats.footerMismatchCount > 0) {
                 _lastRejectedFooter = attemptStats.lastRejectedFooter;
             }
-            _parityFailCount = _parityFailCount + attemptStats.parityFailCount;
 
             if (!decoded) {
                 continue;

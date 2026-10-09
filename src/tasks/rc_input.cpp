@@ -11,7 +11,8 @@
 //   .begin(pin)    --  initialize RMT channel on pin; returns false if no channel free
 //   .read()        --  returns true when a new 25-byte frame is decoded
 //   .data()        --  returns SbusData{ch[16], failsafe, lost_frame}
-//   ch[]           --  0-indexed, range SBUS_MIN(172)..SBUS_MAX(1811), center ~992
+//   ch[]           --  0-indexed, 11-bit raw 0..2047 (172..1811 around 992 on a
+//                      standard radio)
 //
 // Safety layers implemented here:
 //   Layer 1: SBUS receiver hardware failsafe flag (data.failsafe)
@@ -305,6 +306,39 @@ static void __attribute__((noinline)) dispatchPuppetStrings(const RcProcessorOut
     }
 }
 
+// Each receiver's decoded frames in the last second and its decode failures so
+// far, for /api/rc: the frame period the HotRC spec sheet never measured (Open
+// Item 2) and the decoder's health without the debug log. Once a second, out
+// of line so the decoder stats it copies stay off the task loop's frame.
+static void __attribute__((noinline)) publishReceiverRates(SbusDecoder* drive, SbusDecoder* dome,
+                                                           uint32_t* lastDriveOk,
+                                                           uint32_t* lastDomeOk) {
+    uint16_t driveRate = 0;
+    uint16_t domeRate = 0;
+    uint32_t driveFails = 0;
+    uint32_t domeFails = 0;
+    if (drive != nullptr) {
+        const SbusDecoderDebugStats stats = drive->debugStats();
+        const uint32_t delta = stats.parseOkCount - *lastDriveOk;
+        driveRate = delta > 0xFFFFu ? 0xFFFFu : (uint16_t)delta;
+        *lastDriveOk = stats.parseOkCount;
+        driveFails = stats.parseFailCount;
+    }
+    if (dome != nullptr) {
+        const SbusDecoderDebugStats stats = dome->debugStats();
+        const uint32_t delta = stats.parseOkCount - *lastDomeOk;
+        domeRate = delta > 0xFFFFu ? 0xFFFFu : (uint16_t)delta;
+        *lastDomeOk = stats.parseOkCount;
+        domeFails = stats.parseFailCount;
+    }
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.sbus1FramesPerSecond = driveRate;
+    robotState.sbus2FramesPerSecond = domeRate;
+    robotState.sbus1DecodeFails = driveFails;
+    robotState.sbus2DecodeFails = domeFails;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
 // A take was just armed: each string already holding its Part reports that
 // target, so the take starts from where the Parts are (include/take.h). Out of
 // line, off the measured chain, like dispatchPuppetStrings().
@@ -538,7 +572,8 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
 // -----------------------------------------------------------------------------
 // rcInputTask()
 // Handles all RC input modes: standard_pwm, single_sbus, dual_sbus.
-// Polls receivers at ~200 Hz (5 ms delay) to catch every 100 Hz SBUS frame.
+// Polls receivers at ~200 Hz (5 ms delay); /api/rc reports each receiver's
+// measured frame rate (the HotRC's is unmeasured, spec sheet Open Item 2).
 // Implements Layer 1 (HW failsafe flag) and Layer 2 (SW watchdog) safety.
 // Thread safety: all RobotState writes use taskENTER/EXIT_CRITICAL.
 // -----------------------------------------------------------------------------
@@ -616,6 +651,9 @@ void rcInputTask(void* pvParameters) {
     bool hwmLogged = false;
 
     uint32_t lastSbusDiagLogMs = 0;
+    uint32_t lastRatePublishMs = 0;
+    uint32_t lastDriveParseOk = 0;
+    uint32_t lastDomeParseOk = 0;
     constexpr uint32_t kWatchdogDiagIntervalMs = 5000U;
     uint32_t lastSbus1WatchdogDiagMs = 0;
     uint32_t lastSbus2WatchdogDiagMs = 0;
@@ -727,7 +765,7 @@ void rcInputTask(void* pvParameters) {
                             TAG,
                             "drive watchdog decode stats: rx_done=%lu queued=%lu short=%lu "
                             "ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
-                            "last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
+                            "last_ftr=0x%02x rearm=%lu syms(last=%lu max=%lu)",
                             (unsigned long)driveStats.rxDoneCount,
                             (unsigned long)driveStats.queuedCount,
                             (unsigned long)driveStats.shortDropCount,
@@ -739,7 +777,6 @@ void rcInputTask(void* pvParameters) {
                             (unsigned long)driveStats.footerMismatchCount,
                             (unsigned int)driveStats.lastRejectedFooter,
                             (unsigned long)driveStats.rearmFailCount,
-                            (unsigned long)driveStats.parityFailCount,
                             (unsigned long)driveStats.lastSymbolCount,
                             (unsigned long)driveStats.maxSymbolCount);
                     }
@@ -828,7 +865,7 @@ void rcInputTask(void* pvParameters) {
                             TAG,
                             "SBUS2 watchdog decode stats: rx_done=%lu queued=%lu short=%lu "
                             "ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
-                            "last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
+                            "last_ftr=0x%02x rearm=%lu syms(last=%lu max=%lu)",
                             (unsigned long)domeStats.rxDoneCount,
                             (unsigned long)domeStats.queuedCount,
                             (unsigned long)domeStats.shortDropCount,
@@ -840,7 +877,6 @@ void rcInputTask(void* pvParameters) {
                             (unsigned long)domeStats.footerMismatchCount,
                             (unsigned int)domeStats.lastRejectedFooter,
                             (unsigned long)domeStats.rearmFailCount,
-                            (unsigned long)domeStats.parityFailCount,
                             (unsigned long)domeStats.lastSymbolCount,
                             (unsigned long)domeStats.maxSymbolCount);
                     }
@@ -861,6 +897,14 @@ void rcInputTask(void* pvParameters) {
             if (stepSbus2Out.transition == SbusWatchdogTransition::JUST_RESTORED) {
                 PA_LOG_INFO(TAG, "SBUS2 signal restored");
             }
+        }
+
+        if ((driveSbusEnabled || domeSbusEnabled) &&
+            (uint32_t)(nowMs - lastRatePublishMs) >= 1000U) {
+            lastRatePublishMs = nowMs;
+            publishReceiverRates(driveSbusEnabled ? s_sbusDrive : nullptr,
+                                 domeSbusEnabled ? s_sbusDome : nullptr, &lastDriveParseOk,
+                                 &lastDomeParseOk);
         }
 
         if ((driveSbusEnabled || domeSbusEnabled) &&
@@ -885,7 +929,7 @@ void rcInputTask(void* pvParameters) {
                         PA_LOG_DEBUG(TAG,
                                      "SBUS1 decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu "
                                      "fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
-                                     "last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
+                                     "last_ftr=0x%02x rearm=%lu syms(last=%lu max=%lu)",
                                      (unsigned long)driveStats.rxDoneCount,
                                      (unsigned long)driveStats.queuedCount,
                                      (unsigned long)driveStats.shortDropCount,
@@ -897,7 +941,6 @@ void rcInputTask(void* pvParameters) {
                                      (unsigned long)driveStats.footerMismatchCount,
                                      (unsigned int)driveStats.lastRejectedFooter,
                                      (unsigned long)driveStats.rearmFailCount,
-                                     (unsigned long)driveStats.parityFailCount,
                                      (unsigned long)driveStats.lastSymbolCount,
                                      (unsigned long)driveStats.maxSymbolCount);
                     }
@@ -906,7 +949,7 @@ void rcInputTask(void* pvParameters) {
                         PA_LOG_DEBUG(TAG,
                                      "SBUS2 decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu "
                                      "fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
-                                     "last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
+                                     "last_ftr=0x%02x rearm=%lu syms(last=%lu max=%lu)",
                                      (unsigned long)domeStats.rxDoneCount,
                                      (unsigned long)domeStats.queuedCount,
                                      (unsigned long)domeStats.shortDropCount,
@@ -918,7 +961,6 @@ void rcInputTask(void* pvParameters) {
                                      (unsigned long)domeStats.footerMismatchCount,
                                      (unsigned int)domeStats.lastRejectedFooter,
                                      (unsigned long)domeStats.rearmFailCount,
-                                     (unsigned long)domeStats.parityFailCount,
                                      (unsigned long)domeStats.lastSymbolCount,
                                      (unsigned long)domeStats.maxSymbolCount);
                     }
@@ -936,7 +978,8 @@ void rcInputTask(void* pvParameters) {
         // Feed Task Watchdog Timer
         esp_task_wdt_reset();
 
-        // ~200 Hz poll rate  --  SBUS frames arrive at 100 Hz; poll twice per frame
+        // ~200 Hz poll rate: at least twice per frame for any SBUS frame period
+        // of 10 ms or more
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
