@@ -2405,7 +2405,9 @@ Replaces entire RC map.
 - no duplicate backbone action: `drive_speed`, `drive_steer`, `dome_speed`
 - `drive_speed` and `drive_steer` on the same `source`: the two are read from one
   frame of one receiver, so a map that splits them is refused
-  (`drive speed and steer must be on the same receiver`)
+  (`drive speed and steer must be on the same receiver`), and that `source` is
+  not `sbus2`: only SBUS1, the drive receiver, carries the drive watchdog and the
+  hardware-failsafe stop (`drive reads SBUS1, the drive receiver`)
 - source/channel must match allowed ranges by source
 - `dome.action.sequence` payload must be valid `DM:NAME` format
 - a droid-condition `source` (a Reaction) takes any trigger action except

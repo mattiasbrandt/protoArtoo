@@ -150,12 +150,20 @@
       .find(([key, entry]) => key !== channelKey && String(entry?.action || '') === other);
     return found && found[1].source !== source ? found[1] : null;
   };
+  // The drive reads SBUS1: only the drive receiver carries the drive
+  // watchdog and the failsafe stop, so the droid refuses a drive axis on SBUS2
+  // (operator, 2026-10-09 on #389).
+  const DRIVE_TOKENS = new Set(['drive_speed', 'drive_steer']);
+  const driveOnSbus2 = (token, channelKey) => DRIVE_TOKENS.has(token)
+    && String(channelKey || '').split(':')[0] === 'sbus2';
   // ==== DRIVE ON ONE RECEIVER (#389) END ====
 
   // The droid's refusal of a drive split across two receivers, in the
   // builder's words.
   const DRIVE_SPLIT_REFUSAL = /must be on the same receiver/;
   const DRIVE_SPLIT_TEXT = 'Not saved: Speed and Steer share one RC Receiver.';
+  const DRIVE_SBUS2_REFUSAL = /drive reads SBUS1/;
+  const DRIVE_SBUS2_TEXT = 'Not saved: Speed and Steer read SBUS1.';
 
   // Live action targets — replaced on load from GET /api/actions.
   // Falls back to HARDCODED_ACTION_TARGETS if the request fails.
@@ -1133,6 +1141,7 @@
     if (/does not bind/.test(message)) return 'Not saved: map this axis first.';
     if (/no travel past the deadband/.test(message)) return AXIS_DEADBAND_TEXT;
     if (DRIVE_SPLIT_REFUSAL.test(message)) return DRIVE_SPLIT_TEXT;
+    if (DRIVE_SBUS2_REFUSAL.test(message)) return DRIVE_SBUS2_TEXT;
     return `Not saved: ${message}`;
   };
 
@@ -1467,6 +1476,7 @@
     }
     // The other drive axis is on another receiver: this one goes beside it.
     if (driveSplitWith(channelMap, item.token, selectedChannel)) return false;
+    if (driveOnSbus2(item.token, selectedChannel)) return false;
     if (!droidConditionFor(selectedChannel)) return true;
     return !ANALOG_ACTION_TOKENS.has(item.token) && !REACTION_BLOCKED_TOKENS.has(item.token);
   };
@@ -2359,7 +2369,11 @@
       nextMap[selectedChannel] = normalizeMapEntry({ source, channel, action: target, payload, ...reaction });
     }
 
-    // Speed and Steer on one RC Receiver, as the droid requires.
+    // Speed and Steer on SBUS1, and on one RC Receiver, as the droid requires.
+    if (driveOnSbus2(target, selectedChannel)) {
+      setEditorFeedback(DRIVE_SBUS2_TEXT, 'error');
+      return;
+    }
     const split = driveSplitWith(nextMap, target, selectedChannel);
     if (split) {
       setEditorFeedback(`Not saved: ${actionLabelFromToken(split.action)} is on ${sourceLabel(split.source)}. Speed and Steer share one RC Receiver.`, 'error');
@@ -2429,6 +2443,7 @@
     const message = window.PAApi.messageFor(error);
     if (/no trigger slot available|exceeds capacity/.test(message)) return 'No room for one more. Unmap another switch or condition first.';
     if (DRIVE_SPLIT_REFUSAL.test(message)) return DRIVE_SPLIT_TEXT;
+    if (DRIVE_SBUS2_REFUSAL.test(message)) return DRIVE_SBUS2_TEXT;
     return `Failed to save: ${message}`;
   };
 
