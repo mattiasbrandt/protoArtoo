@@ -2369,6 +2369,11 @@ Returns channel-centric map.
 
 - A Reaction entry also carries `threshold` and `quietS`, the seconds it stays
   quiet after firing (`1..3600`).
+- An entry the droid does not read carries `"read": false`: a binding stored
+  before a rule of `POST /api/rc/map` existed, which a save for the receiver
+  type the droid has saved would now refuse (ADR 0070). It stays still. A client
+  leaves it out of the map it posts back, or the droid refuses that map whole.
+  A drive split across receivers is marked on the axis a save would refuse.
 
 #### Example request
 
@@ -2409,14 +2414,30 @@ Replaces entire RC map.
   not `sbus2`: only SBUS1, the drive receiver, carries the drive watchdog and the
   hardware-failsafe stop (`drive reads SBUS1, the drive receiver`)
 - source/channel must match allowed ranges by source
+- the map is for the receiver type the droid has saved (`rc.inputMode`, which
+  may differ from the one it runs until a restart): `standard_pwm` reads `pwm`,
+  `single_sbus` reads `sbus1` on whichever header it is wired to, `dual_sbus`
+  reads `sbus1` and `sbus2`, and `elrs` and `not_fitted` read none. An entry on
+  a source the type does not read is refused (`the RC Receiver type does not
+  read this source`). A Reaction is the droid's own and is taken under any type
+- `pwm` carries only `drive_speed`, `drive_steer` and `dome_speed`: the RC Map's
+  cue slots are not read on PWM (`PWM carries only the drive and dome axes`)
+- an axis (`drive_speed`, `drive_steer`, `dome_speed`) sits on a stick channel,
+  `pwm` 1-6 or `sbus1`/`sbus2` 1-16, never CH17/CH18, which are on/off (`an
+  axis needs a stick channel`)
+- every axis the map binds, on the calibration it keeps or the one `calibration`
+  sends, has `min < center < max` and a deadband narrower than each side of the
+  centre (`calibration leaves no travel past the deadband`)
+- these are the rules the droid reads a stored map by too (ADR 0070): a binding
+  stored before a rule existed that breaks one is not read, and stays still
 - `dome.action.sequence` payload must be valid `DM:NAME` format
 - a droid-condition `source` (a Reaction) takes any trigger action except
   `estop`, `op_mode` and `speed_preset_cycle`, and never an axis action
   (`drive_speed`, `drive_steer`, `dome_speed`, `puppet_part`)
 - `puppet_part` (a puppet string, #442) takes a `payload` that is a Droid
   Parts Catalog Part id (`bodyPanel1`), never an Output Address, and only an
-  SBUS stick channel (`sbus1`/`sbus2`, channel 1-16): PWM input runs no
-  string, and CH17/CH18 are on/off
+  SBUS stick channel (`sbus1`/`sbus2`, channel 1-16): CH17/CH18 are on/off,
+  and on `pwm` a string is a cue PWM does not carry
 - one Part has one string: a map naming one Part on two `puppet_part` entries
   is refused
 - strings share the five general trigger slots with every action that has no

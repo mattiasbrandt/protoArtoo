@@ -4,6 +4,7 @@
 
 #include "api_config_snapshot.h"
 #include "rc_mapping.h"
+#include "web_request_scratch.h"  // RC_MAP_JSON_BODY_BYTES
 
 namespace {
 
@@ -139,9 +140,88 @@ void test_assignRcMapEntryToSnapshot_reuses_existing_dome_calibration(void) {
     TEST_ASSERT_EQUAL_UINT16(35, working.system.rc_pwm_dome_speed.deadband);
 }
 
+// An entry the droid would not read says so: a single SBUS droid still holds
+// the factory dome on SBUS2, which a save for its receiver type refuses, so a
+// page must not post it back (ADR 0070, #486 review).
+void test_populateRcMapJson_marks_an_entry_the_saved_type_does_not_read(void) {
+    ConfigSnapshot snap = makeEmptySnapshot(RC_INPUT_SINGLE_SBUS);
+    snap.system.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 1);
+    snap.system.rc_sbus_drive_steer = defaultSbusBinding(RC_BINDING_SBUS1, 2);
+    snap.system.rc_sbus_dome_speed = defaultSbusBinding(RC_BINDING_SBUS2, 1);
+    snap.system.rc_arm1 = makeRcTriggerBinding(RC_BINDING_SBUS2, 5, SERVO_ACTION_ARM1_TOGGLE, nullptr,
+                                               172, 992, 1811, 0, false);
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(populateRcMapJson(doc, snap));
+    JsonArrayConst map = doc["map"].as<JsonArrayConst>();
+    TEST_ASSERT_EQUAL_UINT(4, map.size());
+    for (JsonObjectConst item : map) {
+        const bool sbus2 = strcmp(item["source"] | "", "sbus2") == 0;
+        TEST_ASSERT_EQUAL_MESSAGE(sbus2, item["read"].is<bool>(), item["action"] | "");
+        if (sbus2) {
+            TEST_ASSERT_FALSE(item["read"].as<bool>());
+        }
+    }
+}
+
+// A drive split across receivers loses only the axis a save would refuse
+// (steer), so posting the rest back saves.
+void test_populateRcMapJson_narrows_a_split_drive_to_the_axis_a_save_refuses(void) {
+    ConfigSnapshot snap = makeEmptySnapshot(RC_INPUT_DUAL_SBUS);
+    snap.system.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 1);
+    snap.system.rc_sbus_drive_steer = defaultSbusBinding(RC_BINDING_SBUS2, 2);
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(populateRcMapJson(doc, snap));
+    JsonArrayConst map = doc["map"].as<JsonArrayConst>();
+    TEST_ASSERT_EQUAL_UINT(2, map.size());
+    TEST_ASSERT_EQUAL_STRING("drive_speed", map[0]["action"] | "");
+    TEST_ASSERT_TRUE(map[0]["read"].isNull());
+    TEST_ASSERT_EQUAL_STRING("drive_steer", map[1]["action"] | "");
+    TEST_ASSERT_FALSE(map[1]["read"] | true);
+}
+
+// The widest answer GET /api/rc/map can give still fits the body it is sent
+// in: every slot on the longest action and payload, the eight Reactions there
+// can be (each carrying its two numbers), and every other slot not read.
+void test_populateRcMapJson_widest_map_fits_its_body(void) {
+    ConfigSnapshot snap = makeEmptySnapshot(RC_INPUT_NOT_FITTED);
+    snap.system.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 16);
+    snap.system.rc_sbus_drive_steer = defaultSbusBinding(RC_BINDING_SBUS1, 15);
+    snap.system.rc_sbus_dome_speed = defaultSbusBinding(RC_BINDING_SBUS2, 14);
+    RcTriggerBinding* const slots[] = {&snap.system.rc_arm1,  &snap.system.rc_arm2,  &snap.system.rc_aux1,
+                                       &snap.system.rc_aux2,  &snap.system.rc_aux3,  &snap.system.rc_audio,
+                                       &snap.system.rc_opmode, &snap.system.rc_free0, &snap.system.rc_free1,
+                                       &snap.system.rc_free2, &snap.system.rc_free3};
+    const struct {
+        RcBindingSource source;
+        uint8_t channel;
+    } reactions[] = {{RC_BINDING_DROID_WHEEL_SPEED, 1}, {RC_BINDING_DROID_WHEEL_SPEED, 2},
+                     {RC_BINDING_DROID_WHEEL_AMPS, 1},  {RC_BINDING_DROID_WHEEL_AMPS, 2},
+                     {RC_BINDING_DROID_HARD_STOP, 1},   {RC_BINDING_DROID_SPEED, 1},
+                     {RC_BINDING_DROID_TRACK, 1},       {RC_BINDING_DROID_REST, 1}};
+    const char* const payload = ":OP01ABCDEFGHIJ";
+    size_t i = 0;
+    for (const auto& reaction : reactions) {
+        *slots[i++] = makeRcReactionBinding(reaction.source, reaction.channel, DROID_SEQ_BEEP_CANTINA,
+                                            payload, 5000, 3600);
+    }
+    for (uint8_t channel = 16; i < sizeof(slots) / sizeof(slots[0]); ++i, --channel) {
+        *slots[i] = makeRcTriggerBinding(RC_BINDING_SBUS2, channel, DROID_SEQ_BEEP_CANTINA, payload,
+                                         172, 992, 1811, 0, false);
+    }
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(populateRcMapJson(doc, snap));
+    TEST_ASSERT_EQUAL_UINT(14, doc["map"].as<JsonArrayConst>().size());
+    TEST_ASSERT_FALSE(doc["map"][13]["read"] | true);
+    TEST_ASSERT_EQUAL_UINT(3600, doc["map"][3]["quietS"].as<unsigned>());
+    TEST_ASSERT_LESS_THAN_UINT(RC_MAP_JSON_BODY_BYTES, measureJson(doc));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_populateRcMapJson_absence_not_sentinel);
+    RUN_TEST(test_populateRcMapJson_marks_an_entry_the_saved_type_does_not_read);
+    RUN_TEST(test_populateRcMapJson_narrows_a_split_drive_to_the_axis_a_save_refuses);
+    RUN_TEST(test_populateRcMapJson_widest_map_fits_its_body);
     RUN_TEST(test_assignRcMapEntryToSnapshot_rejects_duplicate_named_slot);
     RUN_TEST(test_assignRcMapEntryToSnapshot_spill_slots_fill_in_order);
     RUN_TEST(test_assignRcMapEntryToSnapshot_applies_sbus_button_reverse_default);

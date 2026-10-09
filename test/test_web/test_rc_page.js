@@ -392,11 +392,11 @@ const axesDiag = (overrides = {}) => ({
   ...overrides,
 });
 
-const loadAxes = async ({ diag = axesDiag(), onPost = () => ({ ok: true }) } = {}) => {
+const loadAxes = async ({ diag = axesDiag(), onPost = () => ({ ok: true }), map = AXES_MAP } = {}) => {
   const env = loadPageModule("rc.js", {
     respond: (path, opts) => {
       if (path === "/api/rc/map" && opts.method === "POST") return { data: onPost(JSON.parse(opts.body.plain)) };
-      if (path === "/api/rc/map") return { data: AXES_MAP };
+      if (path === "/api/rc/map") return { data: map };
       if (path === "/api/rc") return { data: diag };
       return respond(path);
     },
@@ -451,6 +451,25 @@ test("an end set from the stick posts the map unchanged and that axis's end, the
   const after = env.requests.map((request) => `${request.method} ${request.path}`);
   assert.equal(after.at(-1), "GET /api/rc", "the ends are read back from the droid");
   assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /Saved MAX 1700\./);
+});
+
+// A binding the droid says it does not read (a save would refuse it, ADR 0070)
+// is left out of the map the page posts, or the droid refuses the whole map
+// over it - a single SBUS droid still holding the factory dome on SBUS2 could
+// otherwise never save (#486 review).
+test("a binding the droid does not read is left out of what the page posts, and said", async () => {
+  const posted = [];
+  const map = {
+    ...AXES_MAP,
+    map: [...AXES_MAP.map, { source: "sbus2", channel: 1, action: "dome_speed", read: false }],
+  };
+  const env = await loadAxes({ map, onPost: (body) => { posted.push(body); return { ok: true }; } });
+  assert.match(env.element("rc-editor-feedback").textContent, /^Not read by the droid: SBUS#2 CH 1\. Apply drops it\.$/);
+  await clickAxis(env, { axis: "drive_steer", axisSet: "max" }, "data-axis-set");
+
+  assert.equal(posted.length, 1);
+  assert.deepEqual(posted[0].map.map((entry) => `${entry.source}:${entry.channel}:${entry.action}`),
+    ["sbus1:1:drive_speed", "sbus1:2:drive_steer", "sbus1:7:sleep_toggle"]);
 });
 
 // A cached or failsafe number is not where the stick is: with the receiver

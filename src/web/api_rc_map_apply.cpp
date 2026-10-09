@@ -160,6 +160,25 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
     return true;
 }
 
+// Whether each axis the map binds holds a calibration the rules take. Both
+// slots of an axis hold the same binding (assignRcMapEntryToSnapshot()).
+bool boundAxesCalibrated(const ConfigSnapshot& working, RcMapApplyResult* result) {
+    const RcBindingConfig* const axes[] = {&working.system.rc_sbus_drive_speed,
+                                           &working.system.rc_sbus_drive_steer,
+                                           &working.system.rc_sbus_dome_speed};
+    for (const RcBindingConfig* axis : axes) {
+        if (axis->source == RC_BINDING_NONE) {
+            continue;
+        }
+        const RcRuleVerdict verdict = rcRuleAxisCalibration(*axis);
+        if (!verdict.ok()) {
+            setError(result, verdict.sentence, nullptr);
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapApplyResult* result) {
@@ -235,7 +254,10 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
             return;
         }
 
-        const RcRuleVerdict verdict = rcRuleMapAdd(entries, count, entry);
+        // Judged for the receiver type the droid has saved, which is the one
+        // the RC page maps for (it may still run another until a restart).
+        const RcRuleVerdict verdict =
+            rcRuleMapAdd(entries, count, entry, working->system.rc_input_mode);
         if (!verdict.ok()) {
             setError(result, verdict.sentence, verdict.aboutEntry ? &entry : nullptr);
             return;
@@ -269,6 +291,11 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
     }
 
     if (!applyAxisCalibration(body["calibration"], working, result)) {
+        return;
+    }
+    // Every bound axis, its calibration kept or set: one the rules refuse would
+    // be stored and never read (ADR 0070).
+    if (!boundAxesCalibrated(*working, result)) {
         return;
     }
 

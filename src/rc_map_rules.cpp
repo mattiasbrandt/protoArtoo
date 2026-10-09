@@ -51,8 +51,26 @@ RcRuleVerdict reactionRule(const RcMapEntry& entry) {
     return kHolds;
 }
 
-// The rules one entry holds to on its own.
-RcRuleVerdict entryRule(const RcMapEntry& entry) {
+bool isAxis(RobotActionId action) {
+    return action == DRIVE_ACTION_SPEED || action == DRIVE_ACTION_STEER ||
+           action == DOME_ACTION_SPEED;
+}
+
+// Whether the receiver type reads a source at all, whatever its RC channel
+// enables say: an enable is a wire, and a map is not refused for one that is
+// off today.
+bool receiverTypeReads(RcBindingSource source, RcInputMode type) {
+    RcReceiverSetup setup = {};
+    setup.mode = type;
+    for (bool& enabled : setup.enableRc) {
+        enabled = true;
+    }
+    return rcReceiverReads(source, setup);
+}
+
+// The rules one entry holds to on its own, against the receiver type the map
+// is for.
+RcRuleVerdict entryRule(const RcMapEntry& entry, RcInputMode type) {
     if (!rcBindingChannelIsValid(entry.source, entry.channel)) {
         return refuse("channel out of range");
     }
@@ -61,12 +79,29 @@ RcRuleVerdict entryRule(const RcMapEntry& entry) {
         if (!reaction.ok()) {
             return reaction;
         }
+    } else if (!receiverTypeReads(entry.source, type)) {
+        // single_sbus reads SBUS1 only, standard_pwm only PWM, ELRS and
+        // not-fitted nothing: a binding elsewhere is never read (ADR 0070).
+        return refuseEntry("the RC Receiver type does not read this source");
+    }
+    // A PWM receiver carries the drive and dome axes only: the RC Map's cue
+    // slots are not read on PWM (operator, 2026-10-09 on #486).
+    if (entry.source == RC_BINDING_PWM && !isAxis(entry.action)) {
+        return refuseEntry("PWM carries only the drive and dome axes");
+    }
+    // An axis reads a stick, never CH17/CH18, which are on/off.
+    if (isAxis(entry.action) && !rcBindingSourceIsDroidCondition(entry.source)) {
+        const RcBindingConfig channel =
+            makeRcBindingConfig(entry.source, entry.channel, 0, 0, 0, 0, false);
+        if (!rcBindingSupportsAnalog(channel)) {
+            return refuseEntry("an axis needs a stick channel");
+        }
     }
     if (entry.action == DOME_ACTION_MARCDUINO_CMD && strncmp(entry.payload, ":SM", 3) == 0) {
         return refuseEntry(":SM is diagnostic only and cannot be saved as an RC binding");
     }
     // A puppet string moves a Part in proportion to a stick (#442): an SBUS
-    // stick channel, since PWM input runs no string and CH17/CH18 are on/off.
+    // stick channel, since CH17/CH18 are on/off.
     if (entry.action == SERVO_ACTION_PUPPET_PART &&
         !rcPuppetChannelCanMove(entry.source, entry.channel)) {
         return refuseEntry("a puppet string needs an SBUS stick channel (CH1-CH16)");
@@ -141,11 +176,12 @@ bool rcReceiverReads(RcBindingSource source, const RcReceiverSetup& setup) {
     }
 }
 
-RcRuleVerdict rcRuleMapAdd(const RcMapEntry* prior, size_t count, const RcMapEntry& next) {
+RcRuleVerdict rcRuleMapAdd(const RcMapEntry* prior, size_t count, const RcMapEntry& next,
+                           RcInputMode type) {
     if (count >= kRcMapMaxEntries) {
         return refuse("conflict: map exceeds capacity");
     }
-    const RcRuleVerdict own = entryRule(next);
+    const RcRuleVerdict own = entryRule(next, type);
     if (!own.ok()) {
         return own;
     }
@@ -179,4 +215,57 @@ RcRuleVerdict rcRuleAxisCalibration(const RcBindingConfig& binding) {
         return refuse("calibration leaves no travel past the deadband");
     }
     return kHolds;
+}
+
+RcRuleVerdict rcRuleStoredAxis(RobotActionId axis, const RcBindingConfig& binding,
+                               RcInputMode type) {
+    RcMapEntry entry = {};
+    entry.source = binding.source;
+    entry.channel = binding.channel;
+    entry.action = axis;
+    entry.threshold = kRcMapEntryKeep;
+    entry.quietS = kRcMapEntryKeep;
+    const RcRuleVerdict own = entryRule(entry, type);
+    if (!own.ok()) {
+        return own;
+    }
+    return rcRuleAxisCalibration(binding);
+}
+
+RcRuleVerdict rcRuleStoredCue(const RcTriggerBinding& binding, RcInputMode type) {
+    if (binding.source == RC_BINDING_NONE || binding.target == ROBOT_ACTION_NONE) {
+        return kHolds;  // an empty slot binds nothing to judge
+    }
+    RcMapEntry entry = {};
+    entry.source = binding.source;
+    entry.channel = binding.channel;
+    entry.action = binding.target;
+    static_assert(sizeof(entry.payload) == sizeof(binding.marcduinoPayload),
+                  "a stored payload is an entry's payload");
+    memcpy(entry.payload, binding.marcduinoPayload, sizeof(entry.payload));
+    entry.payload[sizeof(entry.payload) - 1] = '\0';
+    // A stored Reaction carries its numbers in the calibration fields
+    // (include/rc_action_types.h); a radio cue carries none.
+    const bool reaction = rcBindingSourceIsDroidCondition(binding.source);
+    entry.threshold = reaction ? rcReactionThreshold(binding) : kRcMapEntryKeep;
+    entry.quietS = reaction ? rcReactionQuietS(binding) : kRcMapEntryKeep;
+    return entryRule(entry, type);
+}
+
+RcRuleVerdict rcRuleStoredDrive(const RcBindingConfig& speed, const RcBindingConfig& steer,
+                                RcInputMode type) {
+    const struct {
+        RobotActionId axis;
+        const RcBindingConfig& binding;
+    } axes[] = {{DRIVE_ACTION_SPEED, speed}, {DRIVE_ACTION_STEER, steer}};
+    for (const auto& axis : axes) {
+        if (axis.binding.source == RC_BINDING_NONE) {
+            continue;
+        }
+        const RcRuleVerdict own = rcRuleStoredAxis(axis.axis, axis.binding, type);
+        if (!own.ok()) {
+            return refuseAxis(own.sentence, axis.axis);
+        }
+    }
+    return rcRuleDrive(speed, steer);
 }

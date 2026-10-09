@@ -1910,7 +1910,9 @@
     const answer = await (handle ?? window.PAApi).get("/api/rc/map");
     const map = Array.isArray(answer?.data?.map) ? answer.data.map : [];
     showMapped = map
-      .filter((entry) => entry.action === "dome_seq" && entry.payload && window.PAApi.isRcChannelSource(entry.source))
+      // An entry the droid does not read ("read": false, ADR 0070) runs nothing.
+      .filter((entry) => entry.action === "dome_seq" && entry.payload && entry.read !== false
+        && window.PAApi.isRcChannelSource(entry.source))
       .map((entry) => ({ name: entry.payload, channel: window.PAApi.rcChannelTitle(entry.source, entry.channel) }));
     renderShowList();
   };

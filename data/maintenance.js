@@ -762,7 +762,11 @@
     const send = [];
     const leftOut = [];
     map.forEach((entry) => {
-      if (entry?.action === 'dome_seq' && typeof entry.payload === 'string' && !holds(entry.payload)) {
+      // A binding the droid that made the backup did not read ("read": false,
+      // ADR 0070) is one a save refuses: sent back, it would refuse the map.
+      if (entry?.read === false) {
+        leftOut.push(`RC Channel ${entry.channel}: not read by the droid it came from`);
+      } else if (entry?.action === 'dome_seq' && typeof entry.payload === 'string' && !holds(entry.payload)) {
         leftOut.push(`RC Channel ${entry.channel}: ${entry.payload} is not on this droid`);
       } else {
         send.push(entry);

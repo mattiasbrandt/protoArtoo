@@ -2061,7 +2061,13 @@
       const result = await api.get('/api/rc/map');
       const payload = result.data || {};
       const mode = typeof payload.mode === 'string' ? payload.mode : getEditorMode();
-      channelMap = modeMapFromArray(payload.map);
+      // An entry the droid says it does not read ("read": false - a save would
+      // refuse it, ADR 0070) is left out of the map this page posts, or the
+      // droid would refuse the whole map over it.
+      const entries = Array.isArray(payload.map) ? payload.map : [];
+      const unread = entries.filter((entry) => entry?.read === false)
+        .map((entry) => channelTitleFromKey(channelKeyOf(entry.source, entry.channel)));
+      channelMap = modeMapFromArray(entries.filter((entry) => entry?.read !== false));
       channelMapLoaded = true;
       mapCapacityTotal = Number(payload.capacity?.total);
       paintCapacity();
@@ -2074,6 +2080,9 @@
       renderChannelList();
       renderLivePreview();
       renderEditor();
+      if (unread.length > 0) {
+        setEditorFeedback(`Not read by the droid: ${unread.join(', ')}. Apply drops ${unread.length === 1 ? 'it' : 'them'}.`, 'warning');
+      }
     } catch (error) {
       // The last map the droid answered with is kept: an empty one here was
       // what the next Apply posted as the whole map (#355).
