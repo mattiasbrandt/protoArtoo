@@ -244,3 +244,34 @@ test("a single SBUS droid offers SBUS1 alone, even with an SBUS2 reading on hand
   assert.match(list, /data-chkey="sbus1:18"/, "SBUS1 is offered, all 18");
   assert.doesNotMatch(list, /data-chkey="sbus2:/, "SBUS2 reads nothing on a single SBUS droid");
 });
+
+// The RC Map is kept for the saved receiver type; the droid runs the one it
+// started with until a restart. The page maps for the saved one and, while the
+// two differ, says so in Configuration's words (data/apply_timing.js).
+test("a saved receiver type the droid does not run yet is said, and one it runs is not", async () => {
+  const load = async (active) => {
+    const env = loadPageModule("rc.js", {
+      chain: ["apply_timing.js"],
+      respond: rcDroid({
+        config: { rc: { inputMode: "single_sbus", activeInputMode: active, sbus: { recvCh2: false } }, components: {} },
+        map: { mode: "single_sbus", map: [], capacity: { total: 14, used: 0 } },
+        diag: { mode: active, sources: {}, raw: { sbus1: sixteen(1000), sbus2: sixteen(1100) }, digital: {} },
+      }),
+    });
+    await env.settle();
+    await env.runSection("rc-mode-mapping");
+    await env.runSection("rc-diagnostics");
+    await env.settle();
+    return env;
+  };
+
+  const waiting = await load("dual_sbus");
+  assert.equal(waiting.element("rc-mode-summary").textContent, "Single SBUS saved · Dual SBUS running");
+  assert.match(waiting.element("rc-mode-waiting").textContent, /^Saved\. The droid runs the old setting until you restart it\./);
+  assert.doesNotMatch(waiting.element("rc-channel-items").innerHTML, /data-chkey="sbus2:/,
+    "the page maps for the saved type, not the running one");
+
+  const caughtUp = await load("single_sbus");
+  assert.equal(caughtUp.element("rc-mode-summary").textContent, "Single SBUS");
+  assert.equal(caughtUp.element("rc-mode-waiting").textContent, "", "nothing waits when the droid runs what is saved");
+});
