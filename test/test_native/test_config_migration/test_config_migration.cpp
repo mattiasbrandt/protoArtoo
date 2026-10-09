@@ -218,6 +218,60 @@ void test_boot_open_lands_log_level_renumber_once(void) {
     check.begin(NVS_NAMESPACE, true);
     TEST_ASSERT_EQUAL_UINT8(3, check.getUChar("log_level", 0));
     TEST_ASSERT_EQUAL_UINT8(CONFIG_SCHEMA_VERSION, check.getUChar("schema_ver", 0));
+    TEST_ASSERT_FALSE(check.isKey(CONFIG_LOG_LEVEL_SCHEMA1_KEY));
+    check.end();
+}
+
+void test_renumber_cut_off_before_the_stamp_is_not_renumbered_twice(void) {
+    // What a boot cut off between the log level write and the stamp leaves:
+    // schema 1, the renumbered Info (3), and the schema-1 Info (2) kept.
+    seedConfigNamespace(1, 3);
+    {
+        Preferences seed;
+        seed.begin(NVS_NAMESPACE, false);
+        seed.putUChar(CONFIG_LOG_LEVEL_SCHEMA1_KEY, 2);
+        seed.end();
+    }
+
+    Preferences prefs;
+    TEST_ASSERT_TRUE(configOpenForLoad(prefs));
+    ConfigSnapshot snap = {};
+    configLoad(prefs, &snap);
+    prefs.end();
+    TEST_ASSERT_EQUAL_UINT8(3, snap.system.logLevel);
+
+    Preferences check;
+    check.begin(NVS_NAMESPACE, true);
+    TEST_ASSERT_EQUAL_UINT8(3, check.getUChar("log_level", 0));
+    TEST_ASSERT_EQUAL_UINT8(CONFIG_SCHEMA_VERSION, check.getUChar("schema_ver", 0));
+    TEST_ASSERT_FALSE(check.isKey(CONFIG_LOG_LEVEL_SCHEMA1_KEY));
+    check.end();
+}
+
+void test_future_schema_loads_defaults_and_keeps_the_store(void) {
+    // A rollback from a newer image: defaults in RAM, and the newer store
+    // left as it was, schema included, so no later boot reads it as current.
+    seedConfigNamespace(CONFIG_SCHEMA_VERSION + 1, 4);
+    {
+        Preferences seed;
+        seed.begin(NVS_NAMESPACE, false);
+        seed.putBool("en_drive", true);
+        seed.end();
+    }
+
+    for (int boot = 0; boot < 2; ++boot) {
+        Preferences prefs;
+        TEST_ASSERT_TRUE(configOpenForLoad(prefs));
+        ConfigSnapshot snap = {};
+        TEST_ASSERT_FALSE(configLoad(prefs, &snap));
+        prefs.end();
+        TEST_ASSERT_FALSE(snap.system.enable_drive);
+    }
+
+    Preferences check;
+    check.begin(NVS_NAMESPACE, true);
+    TEST_ASSERT_EQUAL_UINT8(CONFIG_SCHEMA_VERSION + 1, check.getUChar("schema_ver", 0));
+    TEST_ASSERT_TRUE(check.getBool("en_drive", false));
     check.end();
 }
 
@@ -248,6 +302,8 @@ int main(void) {
     RUN_TEST(test_boot_open_lands_schema2_migration_and_stamp);
     RUN_TEST(test_boot_open_lands_log_level_renumber_once);
     RUN_TEST(test_failed_rename_leaves_old_key_and_no_stamp);
+    RUN_TEST(test_renumber_cut_off_before_the_stamp_is_not_renumbered_twice);
+    RUN_TEST(test_future_schema_loads_defaults_and_keeps_the_store);
     RUN_TEST(test_schema2_to_3_migration_renames_component_toggles);
     RUN_TEST(test_schema2_to_3_migration_renames_rc_audio_bindings);
     RUN_TEST(test_schema2_to_3_migration_does_not_repeat);
