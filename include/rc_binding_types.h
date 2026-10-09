@@ -303,13 +303,18 @@ inline float applyRcAnalogCalibration(int raw, const RcBindingConfig& binding, b
         return 0.0f;
     }
 
+    // Outside the deadband the travel is rescaled to start from zero at its
+    // edge, so the output rises smoothly from 0 rather than jumping to
+    // deadband/span the moment the stick leaves it (#389). A deadband of 0, the
+    // default, maps exactly as before.
+    const int deadband = (int)binding.deadband;
     float mapped = 0.0f;
     if (delta > 0) {
-        int span = (int)binding.max - (int)binding.center;
-        mapped = span > 0 ? (float)delta / (float)span : 0.0f;
+        int span = (int)binding.max - (int)binding.center - deadband;
+        mapped = span > 0 ? (float)(delta - deadband) / (float)span : 0.0f;
     } else {
-        int span = (int)binding.center - (int)binding.min;
-        mapped = span > 0 ? (float)delta / (float)span : 0.0f;
+        int span = (int)binding.center - (int)binding.min - deadband;
+        mapped = span > 0 ? (float)(delta + deadband) / (float)span : 0.0f;
     }
 
     if (mapped < -1.0f) {
