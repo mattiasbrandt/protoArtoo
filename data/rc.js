@@ -28,6 +28,7 @@
   const rcInputModeHidden = document.getElementById("rc-input-mode");
   const rcModeFeedback = document.getElementById("rc-mode-feedback");
   const rcModeSummary = document.getElementById("rc-mode-summary");
+  const rcModeWaiting = document.getElementById("rc-mode-waiting");
   const rcResetDefaults = document.getElementById("rc-reset-defaults");
   const rcDisabledCard = document.getElementById("rc-disabled-card");
   const rcInputSummary = document.getElementById("rc-input-summary");
@@ -615,9 +616,11 @@
     }
   };
 
-  const getEditorMode = () => {
-    return rcSnapshot?.mode || rcInputModeHidden?.value || DEFAULT_RC_MODE;
-  };
+  // The receiver type this page maps for is the SAVED one (GET /api/config
+  // rc.inputMode, and GET /api/rc/map's own mode): it is the one the map is
+  // kept for. The droid may still run another until it restarts - GET /api/rc
+  // `mode` and rc.activeInputMode say which - and the RC Receiver card says so.
+  const getEditorMode = () => rcInputModeHidden?.value || DEFAULT_RC_MODE;
 
   const normalizeMapEntry = (entry) => {
     const source = typeof entry?.source === 'string' ? entry.source : '';
@@ -1646,8 +1649,28 @@
   // Which receiver this page is about, painted in one place: the section head
   // that names it. The receiver is chosen on Configuration's Radio Controller
   // cards (#369); this page reads it and never writes it.
+  // The receiver type the droid started with, from rc.activeInputMode, else
+  // from GET /api/rc's own `mode`. null until one of them has answered: a
+  // firmware that says neither leaves nothing read as waiting.
+  let configRunningMode = null;
+  const runningMode = () => configRunningMode || (typeof rcSnapshot?.mode === 'string' ? rcSnapshot.mode : null);
+
   const paintModeSelection = (mode) => {
-    if (rcModeSummary) rcModeSummary.textContent = modeLabel(mode);
+    const running = runningMode();
+    const waiting = Boolean(running) && running !== mode;
+    if (rcModeSummary) {
+      rcModeSummary.textContent = waiting ? `${modeLabel(mode)} saved · ${modeLabel(running)} running` : modeLabel(mode);
+    }
+    // Configuration's own words for a restart-required change still waiting
+    // (data/apply_timing.js), with its route to Maintenance.
+    if (rcModeWaiting) {
+      if (waiting && window.PAApplyTiming) {
+        window.PAApplyTiming.paint(rcModeWaiting, window.PAApplyTiming.RESTART_REQUIRED, { pending: true });
+      } else {
+        rcModeWaiting.textContent = '';
+        rcModeWaiting.classList.add('hidden');
+      }
+    }
   };
 
   const switchRcMode = (mode) => {
@@ -1697,6 +1720,7 @@
       const result = await api.get('/api/config');
       const data = result.data;
       const mode = getRcModeFromConfig(data);
+      if (typeof data?.rc?.activeInputMode === 'string') configRunningMode = data.rc.activeInputMode;
       if (rcInputModeHidden) rcInputModeHidden.value = mode;
       paintModeSelection(mode);
       confirmedSbusRecvCh2 = getSingleSbusRecvCh2(data);
@@ -1902,6 +1926,7 @@
 
   const renderRcDiagnostics = (payload) => {
     rcSnapshot = payload;
+    paintModeSelection(getEditorMode());
     setRcInputsEnabled(rcSourcesEnabled(payload));
     renderSourceHealth();
     renderSummaryTable();
