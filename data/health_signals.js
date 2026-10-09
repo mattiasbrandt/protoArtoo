@@ -313,7 +313,7 @@
   //
   // Every receiver input is read, rcCh1..rcCh6. rcCh1 is the drive receiver
   // except in single_sbus + useCh2, where the firmware routes it to rcCh2 and
-  // omits rcCh1 entirely (src/web/web_server.cpp, the enableRcCh1 guard), so
+  // omits rcCh1 entirely (src/web/status_json.cpp, the enableRcCh1 guard), so
   // reading rcCh1 alone would say "no RC" on a working droid. rcCh3..rcCh6
   // only ever report `ready` or `standby`, so they never outrank a link state;
   // with no rcCh1/rcCh2 on they say a spare wire is on, not that nothing is.

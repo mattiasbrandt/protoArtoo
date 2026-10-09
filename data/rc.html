@@ -46,7 +46,7 @@
       <div class="sect"><h2>RC input</h2><span class="sub waiting" id="rc-input-summary"></span></div>
       <div class="component-shown" id="rc-radio-card"><p class="hint waiting"></p></div>
       <div id="rc-disabled-card" class="disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
-        <p class="note"><b>No RC source live.</b> Switch the input on, or pick the right receiver, in <a class="setup-link" href="#configuration">Configuration</a>, then restart.</p>
+        <p class="note"><b>No RC source live.</b> Switch the input on, or pick the right RC Receiver, in <a class="setup-link" href="#configuration">Configuration</a>, then restart.</p>
       </div>
     </div>
 
@@ -56,30 +56,30 @@
          so there is one control for it rather than two that can disagree
          (operator, 2026-09-18 on #369). -->
     <div class="card">
-      <div class="sect"><h2>Receiver type</h2><span class="sub waiting" id="rc-mode-summary"></span></div>
+      <div class="sect"><h2>RC Receiver</h2><span class="sub waiting" id="rc-mode-summary"></span></div>
       <div class="component-shown" id="rc-receiver-card"><p class="hint waiting"></p></div>
       <!-- Two save moments on one page, told apart where the builder picks
            (docs/ui-copy-voice.md rule 9). -->
       <div class="note note-info" role="note">
-        The SBUS input saves at once and takes effect after a restart. Mappings take effect when saved.
+        A header change waits for a restart. Mappings take effect when saved.
       </div>
       <div class="button-row button-row-compact">
-        <a class="btn btn-sm link-btn" href="#configuration">Change the receiver in Configuration</a>
+        <a class="btn btn-sm link-btn" href="#configuration">Change the RC Receiver in Configuration</a>
       </div>
 
-      <input type="hidden" id="rc-input-mode" value="standard_pwm">
+      <input type="hidden" id="rc-input-mode" value="dual_sbus">
       <div id="single-sbus-recv-section" class="hidden" aria-hidden="true">
         <div class="rc-recv-row">
-          <span id="sbus-recv-label">Receiver input</span>
+          <span id="sbus-recv-label">Wired to</span>
           <div class="seg" id="sbus-recv-seg" role="radiogroup" aria-labelledby="sbus-recv-label" aria-describedby="sbus-recv-feedback">
-            <button type="button" role="radio" aria-checked="false" data-value="false">SBUS1 / CH1</button>
-            <button type="button" role="radio" aria-checked="false" data-value="true">SBUS2 / CH2</button>
+            <button type="button" role="radio" aria-checked="false" data-value="false">CH1 header</button>
+            <button type="button" role="radio" aria-checked="false" data-value="true">CH2 header</button>
           </div>
         </div>
         <div id="sbus-recv-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
       </div>
 
-      <div id="rc-mode-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading receiver type...</div>
+      <div id="rc-mode-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Reading the RC Receiver...</div>
     </div>
 
     <!-- What is bound to what, in one table -->
@@ -102,8 +102,8 @@
       </div>
     </div>
 
-    <!-- The live column: what the transmitter is sending right now, and whether
-         each receiver is being heard at all. -->
+    <!-- The live column: what the RC Radio is sending right now, and whether
+         each RC Receiver input is being heard at all. -->
     <div class="card">
       <div class="rc-live-monitor-layout">
         <div>
@@ -126,11 +126,11 @@
         <div class="rc-channel-list">
           <div class="sect"><h3>Sources</h3><span class="sub">pick one to map it</span></div>
           <div class="rc-learn-bar">
-            <button id="rc-learn-btn" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-magnify"/></svg><span class="act-label">Detect channel</span></button>
+            <button id="rc-learn-btn" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-magnify"/></svg><span class="act-label">Detect RC Channel</span></button>
           </div>
           <div id="rc-learn-banner" class="rc-learn-banner" hidden>
             <div>
-              <div class="rc-learn-banner-title">Keep all controls neutral, then press a switch or button</div>
+              <div class="rc-learn-banner-title">Centre the sticks, then flip one switch.</div>
               <div id="rc-learn-status" class="rc-learn-banner-status" role="status" aria-live="polite" aria-atomic="true">Listening…</div>
             </div>
             <button id="rc-learn-stop" class="btn btn-sm icon-act" type="button"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-stop"/></svg><span class="act-label">Stop</span></button>

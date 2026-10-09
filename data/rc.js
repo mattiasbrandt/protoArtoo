@@ -469,6 +469,11 @@
     }
   };
 
+  // The firmware's own default receiver type (src/config_settings.cpp): the
+  // mode this page shows until the droid has said which one it holds.
+  const DEFAULT_RC_MODE = "dual_sbus";
+  const DETECT_ACT = "Detect RC Channel";
+
   const SOURCE_OPTIONS = {
     standard_pwm: ["pwm"],
     single_sbus: ["sbus1", "sbus2"],
@@ -516,7 +521,7 @@
 
   // Whether a source can be bound in this receiver mode.
   const sourceAllowedInMode = (source, mode) =>
-    isDroidSource(source) || (SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm).includes(source);
+    isDroidSource(source) || (SOURCE_OPTIONS[mode] || SOURCE_OPTIONS[DEFAULT_RC_MODE]).includes(source);
 
   const parseChannelKey = (channelKey) => {
     const [source = "", channelValue = "0"] = String(channelKey || "").split(":");
@@ -526,7 +531,7 @@
 
   const getRcModeFromConfig = (cfg) => {
     const mode = cfg?.rc?.inputMode;
-    return typeof mode === "string" ? mode : "standard_pwm";
+    return typeof mode === "string" ? mode : DEFAULT_RC_MODE;
   };
 
   const rcComponentsEnabled = (cfg) => {
@@ -595,7 +600,7 @@
     if (rcLearnBtn) {
       rcLearnBtn.disabled = !enabled;
       rcLearnBtn.setAttribute("aria-disabled", enabled ? "false" : "true");
-      if (!enabled) window.PAUi.setAct(rcLearnBtn, "Detect channel");
+      if (!enabled) window.PAUi.setAct(rcLearnBtn, DETECT_ACT);
     }
     if (rcLearnStop) {
       rcLearnStop.disabled = !enabled;
@@ -608,7 +613,7 @@
   };
 
   const getEditorMode = () => {
-    return rcSnapshot?.mode || rcInputModeHidden?.value || "standard_pwm";
+    return rcSnapshot?.mode || rcInputModeHidden?.value || DEFAULT_RC_MODE;
   };
 
   const normalizeMapEntry = (entry) => {
@@ -1658,7 +1663,7 @@
       }
     };
     show(rcRadioCard, picker.chosenPart("radio_controller"), "No radio picked yet.");
-    show(rcReceiverCard, picker.chosenReceiverPart(), "No receiver picked yet.");
+    show(rcReceiverCard, picker.chosenReceiverPart(), "No RC Receiver picked yet.");
   };
   window.ComponentPicker?.onChange(paintProductCards);
 
@@ -1673,14 +1678,14 @@
       confirmedSbusRecvCh2 = getSingleSbusRecvCh2(data);
       paintSbusRecv(confirmedSbusRecvCh2);
       updateRecvSel(mode);
-      setModeFeedback(`Receiver type: ${modeLabel(mode)}`, 'success');
+      setModeFeedback(`RC Receiver: ${modeLabel(mode)}`, 'success');
       setRcInputsEnabled(rcComponentsEnabled(data));
       // The radio and receiver cards read the same config (data/component_picker.js).
       window.ComponentPicker?.adopt(data);
     } catch (error) {
-      const fallbackMode = rcInputModeHidden?.value || 'standard_pwm';
+      const fallbackMode = rcInputModeHidden?.value || DEFAULT_RC_MODE;
       switchRcMode(fallbackMode);
-      setModeFeedback(`Receiver config unavailable: ${window.PAApi.messageFor(error)}. Showing ${modeLabel(fallbackMode)} draft controls.`, 'warning');
+      setModeFeedback(`RC Receiver not read: ${window.PAApi.messageFor(error)}. Showing ${modeLabel(fallbackMode)}.`, 'warning');
       throw error;
     }
   };
@@ -1802,16 +1807,16 @@
     if (!learnHit) {
       const hasRaw = rcSnapshot?.raw && Object.keys(rcSnapshot.raw).length > 0;
       rcLearnStatus.textContent = hasRaw
-        ? 'Listening… press a switch or button on your transmitter'
-        : 'No RC signal — connect your receiver first';
+        ? 'Listening. Flip a switch on the RC Radio.'
+        : 'No RC signal. Wire the RC Receiver first.';
       return;
     }
     const label = detectHitLabel(learnHit);
     const mappedActions = mappedActionsForDetectHit(learnHit);
     if (mappedActions.length > 0) {
-      rcLearnStatus.textContent = `Detected: ${label} → already assigned to ${mappedActions.join(', ')}`;
+      rcLearnStatus.textContent = `Detected ${label}: ${mappedActions.join(', ')}.`;
     } else {
-      rcLearnStatus.textContent = `Detected: ${label} — unassigned. Select this channel to configure it.`;
+      rcLearnStatus.textContent = `Detected ${label}: not mapped yet.`;
     }
   };
 
@@ -1831,7 +1836,7 @@
 
   const enterLearnMode = () => {
     if (!rcInputsEnabled) {
-      setEditorFeedback('Detect mode unavailable: enable an RC channel in Configuration.', 'warning');
+      setEditorFeedback('Nothing to detect: switch an RC Channel on in Configuration.', 'warning');
       return;
     }
     learnActive = true;
@@ -1848,7 +1853,7 @@
     learnActive = false;
     learnBaseline = null;
     learnHit = null;
-    if (rcLearnBtn) window.PAUi.setAct(rcLearnBtn, 'Detect channel');
+    if (rcLearnBtn) window.PAUi.setAct(rcLearnBtn, DETECT_ACT);
     if (rcLearnBanner) rcLearnBanner.hidden = true;
     applyLearnHighlight();
   };
@@ -1953,7 +1958,7 @@
     }
 
     if (!sourceAllowedInMode(source, mode)) {
-      setEditorFeedback(`Channel source ${sourceLabel(source)} is not valid in ${modeLabel(mode)} mode.`, 'error');
+      setEditorFeedback(`${sourceLabel(source)} reads nothing on ${modeLabel(mode)}.`, 'error');
       return;
     }
 
@@ -2218,14 +2223,14 @@
   };
 
   const SECTIONS = [
-    ["rc-mode-mapping", loadRcModeAndMappings, "RC receiver type and mapping"],
+    ["rc-mode-mapping", loadRcModeAndMappings, "RC Receiver and RC Map"],
     ["rc-diagnostics", loadRcDiagnosticsWithFallback, "RC channel diagnostics"],
     ["rc-action-targets", loadActionTargetsWithFallback, "RC action registry"],
   ];
 
   const startPageLoad = () => {
     loadRecentActionTokens();
-    switchRcMode(rcInputModeHidden?.value || "standard_pwm");
+    switchRcMode(rcInputModeHidden?.value || DEFAULT_RC_MODE);
 
     if (!window.PABootstrap) {
       loadRcMode().finally(() => {

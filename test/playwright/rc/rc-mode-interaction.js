@@ -8,7 +8,8 @@
 // RC now SHOWS the type and links there. So instead of clicking the
 // single_sbus card, the script answers GET /api/config as a Single SBUS droid
 // and checks the page says so, and drives what Single SBUS still draws here:
-// the SBUS1 / SBUS2 input, which saves one key at once (data/rc.js).
+// which header the one RC Receiver is wired to, a key that saves at once
+// (data/rc.js).
 //
 // Writes nothing past the browser: the one POST /api/config is answered here.
 const { chromium } = require('playwright');
@@ -69,7 +70,7 @@ const CONFIG = { rc: { inputMode: 'single_sbus', sbus: { recvCh2: false } }, com
     await page
       .waitForFunction(() => /Saved at/.test(document.getElementById('sbus-recv-feedback')?.textContent || ''), null, { timeout: 8000 })
       .then(() => true, (error) => {
-        check(false, `the SBUS2 pick never said "Saved at": ${String(error.message).split('\n')[0]}`);
+        check(false, `the CH2 header pick never said "Saved at": ${String(error.message).split('\n')[0]}`);
         return false;
       });
     const afterPick = await readState();
@@ -79,18 +80,18 @@ const CONFIG = { rc: { inputMode: 'single_sbus', sbus: { recvCh2: false } }, com
     console.log('RC_MODE_INTERACTION_END');
     await page.screenshot({ path: '/tmp/rc-mode-interaction.png', fullPage: true });
 
-    check(shown.modeSummary === 'Single SBUS', `the Receiver type card reads "${shown.modeSummary}", expected "Single SBUS"`);
+    check(shown.modeSummary === 'Single SBUS', `the RC Receiver card reads "${shown.modeSummary}", expected "Single SBUS"`);
     check(shown.inputMode === 'single_sbus', `the page holds mode "${shown.inputMode}", expected single_sbus`);
-    check(shown.feedbackText === 'Receiver type: Single SBUS', `the receiver feedback reads "${shown.feedbackText}"`);
-    check(shown.changeLink !== '', 'the Receiver type card has no link to Configuration, where the type is now chosen');
-    check(shown.sbusInputShown, 'Single SBUS does not show the SBUS1 / SBUS2 input');
-    check(shown.sbusInputChecked.length === 1 && /^SBUS1/.test(shown.sbusInputChecked[0]),
-      `the SBUS input reads ${JSON.stringify(shown.sbusInputChecked)}, expected SBUS1 from the config`);
+    check(shown.feedbackText === 'RC Receiver: Single SBUS', `the RC Receiver feedback reads "${shown.feedbackText}"`);
+    check(shown.changeLink !== '', 'the RC Receiver card has no link to Configuration, where the type is now chosen');
+    check(shown.sbusInputShown, 'Single SBUS does not show the CH1 / CH2 header pick');
+    check(shown.sbusInputChecked.length === 1 && /^CH1 header/.test(shown.sbusInputChecked[0]),
+      `the header pick reads ${JSON.stringify(shown.sbusInputChecked)}, expected CH1 header from the config`);
     check(Object.values(shown.actionButtons).every(Boolean), `an editor action has no words: ${JSON.stringify(shown.actionButtons)}`);
     check(posts.length === 1 && JSON.stringify(JSON.parse(posts[0] || 'null')) === '{"rc":{"sbus":{"recvCh2":true}}}',
-      `picking SBUS2 sent ${JSON.stringify(posts)}, expected one {"rc":{"sbus":{"recvCh2":true}}}`);
-    check(afterPick.sbusInputChecked.length === 1 && /^SBUS2/.test(afterPick.sbusInputChecked[0]) && /^Saved at /.test(afterPick.sbusFeedback),
-      `after picking SBUS2 the input reads ${JSON.stringify(afterPick.sbusInputChecked)} and says "${afterPick.sbusFeedback}"`);
+      `picking the CH2 header sent ${JSON.stringify(posts)}, expected one {"rc":{"sbus":{"recvCh2":true}}}`);
+    check(afterPick.sbusInputChecked.length === 1 && /^CH2 header/.test(afterPick.sbusInputChecked[0]) && /^Saved at /.test(afterPick.sbusFeedback),
+      `after picking the CH2 header the pick reads ${JSON.stringify(afterPick.sbusInputChecked)} and says "${afterPick.sbusFeedback}"`);
   } finally {
     await browser.close();
   }
