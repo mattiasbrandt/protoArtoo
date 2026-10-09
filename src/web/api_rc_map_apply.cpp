@@ -44,8 +44,20 @@ bool isValidDomeSeqPayload(const char* payload) {
     return false;
 }
 
-void setError(RcMapApplyResult* result, const char* message, const RcMapEntry* entry) {
+// The Controller Console's reason tokens (docs/console-protocol.md 3.3) that
+// only the parse below states; the rules state theirs (rcRuleReasonToken()).
+constexpr const char* kMissing = "missing-argument";
+constexpr const char* kMalformed = "malformed-argument";
+constexpr const char* kOutOfRange = "out-of-range";
+constexpr const char* kConflict = "conflict";
+
+void setError(RcMapApplyResult* result, const char* message, const RcMapEntry* entry,
+              const char* field = nullptr, const char* reason = nullptr,
+              const char* accepts = nullptr) {
     snprintf(result->errorMessage, sizeof(result->errorMessage), "%s", message);
+    snprintf(result->field, sizeof(result->field), "%s", field != nullptr ? field : "");
+    snprintf(result->reason, sizeof(result->reason), "%s", reason != nullptr ? reason : "");
+    snprintf(result->accepts, sizeof(result->accepts), "%s", accepts != nullptr ? accepts : "");
     if (entry != nullptr) {
         result->errorEntry.present = true;
         snprintf(result->errorEntry.source, sizeof(result->errorEntry.source), "%s",
@@ -55,6 +67,13 @@ void setError(RcMapApplyResult* result, const char* message, const RcMapEntry* e
                  robotActionIdToString(entry->action));
         snprintf(result->errorEntry.payload, sizeof(result->errorEntry.payload), "%s", entry->payload);
     }
+}
+
+// A refusal by the RC Map's rules, with the field, reason and accepts it names.
+void setRefusal(RcMapApplyResult* result, const RcRuleVerdict& verdict, const RcMapEntry* entry) {
+    char accepts[sizeof(result->accepts)] = {};
+    rcRuleFormatAccepts(verdict, accepts, sizeof(accepts));
+    setError(result, verdict.sentence, entry, verdict.field, rcRuleReasonToken(verdict.reason), accepts);
 }
 
 // A Reaction's threshold or quiet period as the request sent it: absent is
@@ -89,20 +108,22 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
         return true;
     }
     if (!calibration.is<JsonObjectConst>()) {
-        setError(result, "calibration must be object", nullptr);
+        setError(result, "calibration must be object", nullptr, "calibration", kMalformed);
         return false;
     }
     struct Axis {
         const char* token;
+        RobotActionId action;
         RcBindingConfig* pwm;
         RcBindingConfig* sbus;
     };
     SystemConfig& sys = working->system;
     const Axis axes[] = {
-        {"drive_speed", &sys.rc_pwm_drive_speed, &sys.rc_sbus_drive_speed},
-        {"drive_steer", &sys.rc_pwm_drive_steer, &sys.rc_sbus_drive_steer},
-        {"dome_speed", &sys.rc_pwm_dome_speed, &sys.rc_sbus_dome_speed},
+        {"drive_speed", DRIVE_ACTION_SPEED, &sys.rc_pwm_drive_speed, &sys.rc_sbus_drive_speed},
+        {"drive_steer", DRIVE_ACTION_STEER, &sys.rc_pwm_drive_steer, &sys.rc_sbus_drive_steer},
+        {"dome_speed", DOME_ACTION_SPEED, &sys.rc_pwm_dome_speed, &sys.rc_sbus_dome_speed},
     };
+    char field[sizeof(result->field)] = {};
     for (JsonPairConst pair : calibration.as<JsonObjectConst>()) {
         const Axis* axis = nullptr;
         for (const Axis& candidate : axes) {
@@ -111,16 +132,18 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
             }
         }
         if (axis == nullptr) {
-            setError(result, "calibration names no drive or dome axis", nullptr);
+            setError(result, "calibration names no drive or dome axis", nullptr, "calibration", kOutOfRange,
+                     "drive_speed,drive_steer,dome_speed");
             return false;
         }
+        snprintf(field, sizeof(field), "calibration.%s", axis->token);
         if (axis->sbus->source == RC_BINDING_NONE) {
-            setError(result, "calibration for an axis the map does not bind", nullptr);
+            setError(result, "calibration for an axis the map does not bind", nullptr, field, kConflict);
             return false;
         }
         JsonObjectConst fields = pair.value().as<JsonObjectConst>();
         if (fields.isNull()) {
-            setError(result, "calibration entry must be object", nullptr);
+            setError(result, "calibration entry must be object", nullptr, field, kMalformed);
             return false;
         }
         RcBindingConfig binding = *axis->sbus;
@@ -136,7 +159,10 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
             }
             const uint32_t v = value | 0xFFFFFFFFu;
             if (!value.is<uint32_t>() || v < lo || v > hi) {
-                setError(result, "calibration out of range", nullptr);
+                char accepts[24] = {};
+                snprintf(accepts, sizeof(accepts), "%u..%u", (unsigned)lo, (unsigned)hi);
+                snprintf(field, sizeof(field), "calibration.%s.%s", axis->token, keys[i]);
+                setError(result, "calibration out of range", nullptr, field, kOutOfRange, accepts);
                 return false;
             }
             *slots[i] = (uint16_t)v;
@@ -144,14 +170,16 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
         JsonVariantConst reverse = fields["reverse"];
         if (!reverse.isNull()) {
             if (!reverse.is<bool>()) {
-                setError(result, "calibration reverse must be true or false", nullptr);
+                snprintf(field, sizeof(field), "calibration.%s.reverse", axis->token);
+                setError(result, "calibration reverse must be true or false", nullptr, field, kOutOfRange,
+                         "true,false");
                 return false;
             }
             binding.reverse = reverse.as<bool>();
         }
-        const RcRuleVerdict verdict = rcRuleAxisCalibration(binding);
+        const RcRuleVerdict verdict = rcRuleAxisCalibration(axis->action, binding);
         if (!verdict.ok()) {
-            setError(result, verdict.sentence, nullptr);
+            setRefusal(result, verdict, nullptr);
             return false;
         }
         *axis->pwm = binding;
@@ -163,16 +191,17 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
 // Whether each axis the map binds holds a calibration the rules take. Both
 // slots of an axis hold the same binding (assignRcMapEntryToSnapshot()).
 bool boundAxesCalibrated(const ConfigSnapshot& working, RcMapApplyResult* result) {
+    const RobotActionId actions[] = {DRIVE_ACTION_SPEED, DRIVE_ACTION_STEER, DOME_ACTION_SPEED};
     const RcBindingConfig* const axes[] = {&working.system.rc_sbus_drive_speed,
                                            &working.system.rc_sbus_drive_steer,
                                            &working.system.rc_sbus_dome_speed};
-    for (const RcBindingConfig* axis : axes) {
-        if (axis->source == RC_BINDING_NONE) {
+    for (size_t i = 0; i < 3; ++i) {
+        if (axes[i]->source == RC_BINDING_NONE) {
             continue;
         }
-        const RcRuleVerdict verdict = rcRuleAxisCalibration(*axis);
+        const RcRuleVerdict verdict = rcRuleAxisCalibration(actions[i], *axes[i]);
         if (!verdict.ok()) {
-            setError(result, verdict.sentence, nullptr);
+            setRefusal(result, verdict, nullptr);
             return false;
         }
     }
@@ -186,19 +215,19 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
 
     const char* rawBody = configParamGet(params, "plain");
     if (rawBody == nullptr) {
-        setError(result, "map body required", nullptr);
+        setError(result, "map body required", nullptr, "map", kMissing);
         return;
     }
 
     JsonDocument body;
     if (deserializeJson(body, rawBody)) {
-        setError(result, "invalid json body", nullptr);
+        setError(result, "invalid json body", nullptr, nullptr, kMalformed);
         return;
     }
 
     JsonVariantConst mapVar = body["map"];
     if (!mapVar.is<JsonArrayConst>()) {
-        setError(result, "map must be array", nullptr);
+        setError(result, "map must be array", nullptr, "map", kMalformed);
         return;
     }
 
@@ -208,7 +237,7 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
     JsonArrayConst map = mapVar.as<JsonArrayConst>();
     for (JsonVariantConst itemVar : map) {
         if (!itemVar.is<JsonObjectConst>()) {
-            setError(result, "map entry must be object", nullptr);
+            setError(result, "map entry must be object", nullptr, "map", kMalformed);
             return;
         }
         JsonObjectConst item = itemVar.as<JsonObjectConst>();
@@ -221,16 +250,16 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
         entry.threshold = kRcMapEntryKeep;
         entry.quietS = kRcMapEntryKeep;
         if (!rcMapSourceFromString(sourceRaw, &entry.source)) {
-            setError(result, "invalid source", nullptr);
+            setError(result, "invalid source", nullptr, "map.source", kOutOfRange);
             return;
         }
         if (channelValue > 255) {
-            setError(result, "invalid channel", nullptr);
+            setError(result, "invalid channel", nullptr, "map.channel", kOutOfRange);
             return;
         }
         entry.channel = (uint8_t)channelValue;
         if (!parseRobotActionId(actionRaw, &entry.action) || entry.action == ROBOT_ACTION_NONE) {
-            setError(result, "invalid action token", nullptr);
+            setError(result, "invalid action token", nullptr, "map.action", kOutOfRange);
             return;
         }
         snprintf(entry.payload, sizeof(entry.payload), "%s", payloadRaw);
@@ -245,12 +274,13 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
         // What must name something that exists is checked here, where the
         // live state is: the RC Map's rules hold none of it (rc_map_rules.h).
         if (entry.action == DOME_ACTION_SEQ && !isValidDomeSeqPayload(entry.payload)) {
-            setError(result, "invalid dome sequence payload (expected DM:NAME)", &entry);
+            setError(result, "invalid dome sequence payload (expected DM:NAME)", &entry, "map.payload",
+                     kOutOfRange);
             return;
         }
         // A puppet string names a Part by catalog id (#442, ADR 0061).
         if (entry.action == SERVO_ACTION_PUPPET_PART && !droidPartIdIsKnown(entry.payload)) {
-            setError(result, "a puppet string needs a Part", &entry);
+            setError(result, "a puppet string needs a Part", &entry, "map.payload", kOutOfRange);
             return;
         }
 
@@ -259,7 +289,7 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
         const RcRuleVerdict verdict =
             rcRuleMapAdd(entries, count, entry, working->system.rc_input_mode);
         if (!verdict.ok()) {
-            setError(result, verdict.sentence, verdict.aboutEntry ? &entry : nullptr);
+            setRefusal(result, verdict, verdict.aboutEntry ? &entry : nullptr);
             return;
         }
 
@@ -275,7 +305,7 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
     }
     const RcRuleVerdict drive = rcRuleDrive(axisOf(speed), axisOf(steer));
     if (!drive.ok()) {
-        setError(result, drive.sentence, drive.axis == DRIVE_ACTION_SPEED ? speed : steer);
+        setRefusal(result, drive, drive.axis == DRIVE_ACTION_SPEED ? speed : steer);
         return;
     }
 
@@ -285,7 +315,13 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
     for (size_t i = 0; i < count; ++i) {
         char assignErr[96] = {};
         if (!assignRcMapEntryToSnapshot(entries[i], existing, working, assignErr, sizeof(assignErr))) {
-            setError(result, assignErr, &entries[i]);
+            // The stored slots' own refusals (assignRcMapEntryToSnapshot()):
+            // no slot left, an action with one slot already in it, or a
+            // binding the stored form will not hold.
+            const bool noSlot = strcmp(assignErr, "conflict: no trigger slot available") == 0;
+            const bool conflict = strncmp(assignErr, "conflict:", 9) == 0;
+            setError(result, assignErr, &entries[i], noSlot ? "map" : "map.action",
+                     conflict ? kConflict : kOutOfRange);
             return;
         }
     }

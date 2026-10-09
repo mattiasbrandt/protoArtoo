@@ -66,9 +66,10 @@ struct WebScratchText {
 };
 
 // GET /api/rc/map's body. The map holds at most kRcMapMaxEntries entries of
-// source/channel/action plus an optional Marcduino payload; 2 KB clears a full
-// map with headroom.
-constexpr size_t RC_MAP_JSON_BODY_BYTES = 2048;
+// source/channel/action plus an optional Marcduino payload, a Reaction's two
+// numbers, and for an entry the droid does not read its refusal as data (ADR
+// 0070). The widest is measured by test_api_rc_map_json; 3 KB clears it.
+constexpr size_t RC_MAP_JSON_BODY_BYTES = 3072;
 
 // Every type a handler keeps in the scratch. The store is as large as the
 // largest of them on the chip being built, so a type that grows past the

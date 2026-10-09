@@ -11,6 +11,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <string>
+
 #include "rc_map_rules.h"
 #include "robot_state.h"
 
@@ -231,24 +233,24 @@ void test_an_unbound_drive_axis_breaks_no_drive_rule(void) {
 
 void test_calibration_runs_end_centre_end(void) {
     RcBindingConfig binding = sbusAxis(RC_BINDING_SBUS1, 1);
-    TEST_ASSERT_TRUE(rcRuleAxisCalibration(binding).ok());
+    TEST_ASSERT_TRUE(rcRuleAxisCalibration(DRIVE_ACTION_SPEED, binding).ok());
     binding.center = binding.max;
-    TEST_ASSERT_EQUAL_STRING("calibration needs min < center < max", rcRuleAxisCalibration(binding).sentence);
+    TEST_ASSERT_EQUAL_STRING("calibration needs min < center < max", rcRuleAxisCalibration(DRIVE_ACTION_SPEED, binding).sentence);
 }
 
 void test_the_dead_zone_leaves_travel_on_both_sides(void) {
     // 172..992..1811: 820 below the centre, 819 above.
     RcBindingConfig binding = sbusAxis(RC_BINDING_SBUS1, 1);
     binding.deadband = 818;
-    TEST_ASSERT_TRUE(rcRuleAxisCalibration(binding).ok());
+    TEST_ASSERT_TRUE(rcRuleAxisCalibration(DRIVE_ACTION_SPEED, binding).ok());
     binding.deadband = 819;
     TEST_ASSERT_EQUAL_STRING("calibration leaves no travel past the deadband",
-                             rcRuleAxisCalibration(binding).sentence);
+                             rcRuleAxisCalibration(DRIVE_ACTION_SPEED, binding).sentence);
     // Narrower than the whole stick, as the stored form asks, is not enough.
     binding.center = 300;
     binding.deadband = 200;
     TEST_ASSERT_TRUE(rcBindingIsValid(binding));
-    TEST_ASSERT_FALSE(rcRuleAxisCalibration(binding).ok());
+    TEST_ASSERT_FALSE(rcRuleAxisCalibration(DRIVE_ACTION_SPEED, binding).ok());
 }
 
 // --- the receiver type the map is for ---
@@ -339,6 +341,77 @@ void test_a_stored_cue_is_judged_as_a_save_would_judge_it(void) {
     TEST_ASSERT_TRUE(rcRuleStoredCue(rest, RC_INPUT_NOT_FITTED).ok());
 }
 
+// --- a refusal as data ---
+
+namespace {
+std::string acceptsOf(const RcRuleVerdict& verdict) {
+    char buf[48] = {};
+    return rcRuleFormatAccepts(verdict, buf, sizeof(buf)) ? std::string(buf) : std::string("<none>");
+}
+}  // namespace
+
+void test_a_refusal_names_its_field_reason_and_what_it_accepts(void) {
+    RcRuleVerdict channel = addAlone(entryOf(RC_BINDING_SBUS1, 19, SERVO_ACTION_ARM1_TOGGLE));
+    TEST_ASSERT_EQUAL_STRING("map.channel", channel.field);
+    TEST_ASSERT_EQUAL_STRING("out-of-range", rcRuleReasonToken(channel.reason));
+    TEST_ASSERT_EQUAL_STRING("1..18", acceptsOf(channel).c_str());
+
+    RcRuleVerdict stick = addAlone(entryOf(RC_BINDING_SBUS1, 17, DRIVE_ACTION_SPEED));
+    TEST_ASSERT_EQUAL_STRING("map.channel", stick.field);
+    TEST_ASSERT_EQUAL_STRING("1..16", acceptsOf(stick).c_str());
+
+    RcRuleVerdict type = rcRuleMapAdd(nullptr, 0, entryOf(RC_BINDING_SBUS2, 5, SOUND_ACTION_NEXT),
+                                      RC_INPUT_SINGLE_SBUS);
+    TEST_ASSERT_EQUAL_STRING("map.source", type.field);
+    TEST_ASSERT_EQUAL_STRING("sbus1", acceptsOf(type).c_str());
+    RcRuleVerdict none = rcRuleMapAdd(nullptr, 0, entryOf(RC_BINDING_SBUS1, 5, SOUND_ACTION_NEXT),
+                                      RC_INPUT_NOT_FITTED);
+    TEST_ASSERT_EQUAL_STRING("<none>", acceptsOf(none).c_str());
+
+    RcRuleVerdict cue = rcRuleMapAdd(nullptr, 0, entryOf(RC_BINDING_PWM, 4, SERVO_ACTION_ARM1_TOGGLE),
+                                     RC_INPUT_STANDARD_PWM);
+    TEST_ASSERT_EQUAL_STRING("map.action", cue.field);
+    TEST_ASSERT_EQUAL_STRING("drive_speed,drive_steer,dome_speed", acceptsOf(cue).c_str());
+
+    RcMapEntry track = entryOf(RC_BINDING_DROID_TRACK, 1, SOUND_ACTION_NEXT);
+    track.threshold = 3;
+    TEST_ASSERT_EQUAL_STRING("map.threshold", addAlone(track).field);
+    TEST_ASSERT_EQUAL_STRING("0", acceptsOf(addAlone(track)).c_str());
+    RcMapEntry amps = entryOf(RC_BINDING_DROID_WHEEL_AMPS, 2, SOUND_ACTION_NEXT);
+    amps.threshold = 0;
+    TEST_ASSERT_EQUAL_STRING("1..5000", acceptsOf(addAlone(amps)).c_str());
+    amps.threshold = kRcMapEntryKeep;
+    amps.quietS = 0;
+    TEST_ASSERT_EQUAL_STRING("map.quietS", addAlone(amps).field);
+    TEST_ASSERT_EQUAL_STRING("1..3600", acceptsOf(addAlone(amps)).c_str());
+}
+
+void test_a_conflict_names_its_field_and_accepts_nothing(void) {
+    const RcMapEntry prior[] = {entryOf(RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM1_TOGGLE)};
+    RcRuleVerdict verdict =
+        rcRuleMapAdd(prior, 1, entryOf(RC_BINDING_SBUS1, 5, SOUND_ACTION_NEXT), RC_INPUT_DUAL_SBUS);
+    TEST_ASSERT_EQUAL_STRING("map.channel", verdict.field);
+    TEST_ASSERT_EQUAL_STRING("conflict", rcRuleReasonToken(verdict.reason));
+    TEST_ASSERT_EQUAL_STRING("<none>", acceptsOf(verdict).c_str());
+
+    RcRuleVerdict split = rcRuleDrive(sbusAxis(RC_BINDING_SBUS1, 1), defaultPwmBinding(2));
+    TEST_ASSERT_EQUAL_STRING("map.source", split.field);
+    TEST_ASSERT_EQUAL_STRING("conflict", rcRuleReasonToken(split.reason));
+    RcRuleVerdict sbus2 = rcRuleDrive(sbusAxis(RC_BINDING_SBUS2, 1), disabledRcBinding());
+    TEST_ASSERT_EQUAL_STRING("out-of-range", rcRuleReasonToken(sbus2.reason));
+    TEST_ASSERT_EQUAL_STRING("sbus1", acceptsOf(sbus2).c_str());
+
+    RcBindingConfig steer = sbusAxis(RC_BINDING_SBUS1, 2);
+    steer.deadband = 900;
+    TEST_ASSERT_EQUAL_STRING("calibration.drive_steer.deadband",
+                             rcRuleAxisCalibration(DRIVE_ACTION_STEER, steer).field);
+    steer.deadband = 0;
+    steer.center = steer.max;
+    TEST_ASSERT_EQUAL_STRING("calibration.dome_speed.center",
+                             rcRuleAxisCalibration(DOME_ACTION_SPEED, steer).field);
+    TEST_ASSERT_EQUAL_STRING(nullptr, rcRuleReasonToken(RcRuleReason::kHolds));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_single_sbus_reads_sbus1_on_the_header_it_is_wired_to);
@@ -366,5 +439,7 @@ int main(int, char**) {
     RUN_TEST(test_a_stored_axis_is_judged_as_a_save_would_judge_it);
     RUN_TEST(test_a_stored_drive_names_the_axis_a_rule_refuses);
     RUN_TEST(test_a_stored_cue_is_judged_as_a_save_would_judge_it);
+    RUN_TEST(test_a_refusal_names_its_field_reason_and_what_it_accepts);
+    RUN_TEST(test_a_conflict_names_its_field_and_accepts_nothing);
     return UNITY_END();
 }

@@ -315,6 +315,44 @@ void test_rcMapApply_refuses_drive_on_sbus2(void) {
     TEST_ASSERT_TRUE_MESSAGE(result.ok, result.errorMessage);
 }
 
+// A refusal carries its field, reason and accepts beside the sentence, the
+// keys every settings refusal carries (ADR 0070, docs/api.md).
+void test_rcMapApply_refusal_carries_field_reason_and_accepts(void) {
+    ConfigSnapshot snap = makeDefaultSnap();
+    RcMapApplyResult result = applyBody(
+        "{\"map\":[{\"source\":\"sbus2\",\"channel\":1,\"action\":\"drive_speed\"}]}", &snap);
+    TEST_ASSERT_FALSE(result.ok);
+    TEST_ASSERT_EQUAL_STRING("map.source", result.field);
+    TEST_ASSERT_EQUAL_STRING("out-of-range", result.reason);
+    TEST_ASSERT_EQUAL_STRING("sbus1", result.accepts);
+    TEST_ASSERT_EQUAL_STRING("drive_speed", result.errorEntry.action);
+
+    ConfigSnapshot cal = makeDefaultSnap();
+    result = applyBody(std::string("{") + kSbusDriveMap + ",\"calibration\":{\"drive_steer\":{\"max\":4000}}}",
+                       &cal);
+    TEST_ASSERT_FALSE(result.ok);
+    TEST_ASSERT_EQUAL_STRING("calibration.drive_steer.max", result.field);
+    TEST_ASSERT_EQUAL_STRING("out-of-range", result.reason);
+    TEST_ASSERT_EQUAL_STRING("0..2047", result.accepts);
+
+    ConfigSnapshot dup = makeDefaultSnap();
+    result = applyBody(
+        "{\"map\":[{\"source\":\"sbus1\",\"channel\":5,\"action\":\"arm1_toggle\"},"
+        "{\"source\":\"sbus1\",\"channel\":6,\"action\":\"arm1_toggle\"}]}",
+        &dup);
+    TEST_ASSERT_FALSE(result.ok);
+    TEST_ASSERT_EQUAL_STRING("map.action", result.field);
+    TEST_ASSERT_EQUAL_STRING("conflict", result.reason);
+    TEST_ASSERT_EQUAL_STRING("", result.accepts);
+
+    ConfigSnapshot none = makeDefaultSnap();
+    std::map<std::string, std::string> empty;
+    RcMapApplyResult missing;
+    rcMapApply(makeSource(&empty), &none, &missing);
+    TEST_ASSERT_EQUAL_STRING("map", missing.field);
+    TEST_ASSERT_EQUAL_STRING("missing-argument", missing.reason);
+}
+
 // --- success path: named trigger action fills its dedicated slot ---
 void test_rcMapApply_arm1_toggle_fills_dedicated_slot(void) {
     std::map<std::string, std::string> m = {
@@ -361,6 +399,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_rcMapApply_refuses_a_kept_calibration_the_rules_do_not_take);
     RUN_TEST(test_rcMapApply_refuses_a_receiver_the_saved_type_does_not_read);
     RUN_TEST(test_rcMapApply_refuses_drive_split_across_receivers);
+    RUN_TEST(test_rcMapApply_refusal_carries_field_reason_and_accepts);
     RUN_TEST(test_rcMapApply_refuses_drive_on_sbus2);
     RUN_TEST(test_rcMapApply_arm1_toggle_fills_dedicated_slot);
     RUN_TEST(test_rcMapApply_unnamed_trigger_spills_to_first_free_slot);
