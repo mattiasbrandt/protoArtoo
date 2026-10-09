@@ -116,8 +116,13 @@ bool rcMapDriveControls(const RcChannelSnapshot& snap, const RcMappingConfig& cf
     bool speedActive = false;
     bool steerActive = false;
 
-    // Check if drive mappings are valid
-    if (rcBindingIsValid(cfg.driveSpeed) && rcBindingIsValid(cfg.driveSteer)) {
+    // Check if drive mappings are valid. A drive axis on SBUS2 never reads:
+    // only SBUS1, the drive receiver, carries the drive watchdog and the
+    // hardware-failsafe stop, so a drive a droid stored on SBUS2 before #483
+    // stays still rather than running on that receiver (POST /api/rc/map
+    // refuses one now).
+    if (rcBindingIsValid(cfg.driveSpeed) && rcBindingIsValid(cfg.driveSteer) &&
+        cfg.driveSpeed.source != RC_BINDING_SBUS2 && cfg.driveSteer.source != RC_BINDING_SBUS2) {
         // Check if speed binding is active for this mode
         if (bindingSourceActiveForMode(cfg.driveSpeed, snap, cfg) &&
             readChannelRaw(snap, cfg.driveSpeed, &rawSpeed)) {
