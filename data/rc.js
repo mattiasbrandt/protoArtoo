@@ -1244,12 +1244,14 @@
     await postAxis(axis, body, said);
   };
 
-  // An axis unread for its ends, posted back in the map without them.
+  // An axis unread for its ends, posted back in the map without them. Every
+  // axis unread for its ends goes back with it: one left out of the map would
+  // be dropped by this save.
   const resetAxisEnds = async (axis) => {
-    const unread = axisUnread(axis);
-    if (!unread || !unreadForEnds(unread)) return;
-    const { source, channel, action } = unread.entry;
-    await postAxis(axis, { map: [...asMapArray(), { source, channel, action }] }, 'the default ends');
+    if (!unreadForEnds(axisUnread(axis))) return;
+    const mended = unreadEntries.filter(unreadForEnds)
+      .map(({ entry }) => ({ source: entry.source, channel: entry.channel, action: entry.action }));
+    await postAxis(axis, { map: [...asMapArray(), ...mended] }, 'the default ends');
   };
 
   const postAxis = async (axis, body, said) => {

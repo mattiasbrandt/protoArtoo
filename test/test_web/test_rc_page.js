@@ -531,9 +531,9 @@ test("a drive axis stored on SBUS2 says it is not read", async () => {
 });
 
 // An axis unread for its ends alone (a dead zone that swallows a side, stored
-// before the rule) offers a reset: the map goes back with the axis in it and
-// without its ends, the droid starts it from the defaults (ADR 0070), and the
-// tile is drawn as one the droid reads.
+// before the rule) offers a reset: the map goes back with every such axis in
+// it and without their ends, the droid starts them from the defaults (ADR
+// 0070), and the tile is drawn as one the droid reads.
 test("an axis unread for its ends is mended by a reset", async () => {
   const unread = { read: false, field: "calibration.deadband", reason: "conflict" };
   const posted = [];
@@ -548,7 +548,7 @@ test("an axis unread for its ends is mended by a reset", async () => {
       if (path === "/api/rc/map") {
         return { data: asDroidMap({ ...AXES_MAP, map: [
           { source: "sbus1", channel: 1, action: "drive_speed", ...(mended ? {} : unread) },
-          { source: "sbus1", channel: 2, action: "drive_steer" },
+          { source: "sbus1", channel: 2, action: "drive_steer", ...(mended ? {} : unread) },
         ] }) };
       }
       if (path === "/api/rc") return { data: axesDiag() };
@@ -569,6 +569,9 @@ test("an axis unread for its ends is mended by a reset", async () => {
   assert.equal(posted[0].calibration, undefined, "no ends are posted: the droid takes its defaults");
   assert.deepEqual(posted[0].map.find((entry) => entry.action === "drive_speed"),
     { source: "sbus1", channel: 1, action: "drive_speed" });
+  // Steer, unread for its ends too, goes back with it rather than being dropped.
+  assert.deepEqual(posted[0].map.find((entry) => entry.action === "drive_steer"),
+    { source: "sbus1", channel: 2, action: "drive_steer" });
   tile = tileOf(env.element("rc-axes").innerHTML, "drive_speed");
   assert.match(tile, /data-axis-set="min"/, "read again, its ends are offered");
   assert.match(tile, /Saved the default ends\./);
