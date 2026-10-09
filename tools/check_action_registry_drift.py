@@ -197,6 +197,10 @@ def firmware_action_needs() -> tuple[set[str], set[str]]:
     for call in ("robotActionValidForTier2(target)", "!robotActionIsAnalog(target)"):
         if call not in body:
             raise ValueError(f"robotActionValidForReaction() no longer reads {call}; update this check")
+    # Any other call would be an exclusion this parse cannot see.
+    calls = set(re.findall(r"(\w+)\(target\)", body)) - {"robotActionValidForTier2", "robotActionIsAnalog"}
+    if calls:
+        raise ValueError(f"robotActionValidForReaction() calls {sorted(calls)}; update this check")
     refused = set(re.findall(r"target != (\w+)", body)) - {"ROBOT_ACTION_NONE"}
     reaction = tier2 - stick - refused - {"ROBOT_ACTION_NONE"}
     return stick, reaction

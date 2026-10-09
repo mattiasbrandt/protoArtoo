@@ -605,7 +605,7 @@
     // and an entry of GET /api/rc/map the droid does not read. Which binding a
     // refusal is about is its echoed entry, named by the page; a calibration
     // field is the key alone, on the axis that entry binds (ADR 0070).
-    "map": { word: "RC Map", clash: "is full. Unmap a switch or condition first", refused: "could not be read", missing: "was not sent" },
+    "map": { word: "RC Map", clash: "is full. Unmap one first", refused: "could not be read", missing: "was not sent" },
     "map.source": {
       word: "RC Receiver",
       values: { pwm: "PWM", sbus1: "SBUS1", sbus2: "SBUS2" },
@@ -619,7 +619,7 @@
       clash: "is mapped twice",
       refused: "is not one this binding takes",
     },
-    "map.payload": { word: "target", clash: "already has a puppet string", refused: "is not one this droid takes" },
+    "map.payload": { word: "target", clash: "already has a puppet string", refused: "is not one this droid can send" },
     "map.threshold": { word: "threshold" },
     "map.quietS": { word: "quiet period", unit: " s" },
     "calibration": {

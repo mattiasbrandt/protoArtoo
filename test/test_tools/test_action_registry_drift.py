@@ -710,3 +710,17 @@ class ActionNeedsAreReadFromTheSavesPredicates(unittest.TestCase):
     def test_a_predicate_that_changed_shape_is_refused_rather_than_misread(self):
         with self.assertRaises(ValueError):
             check_action_registry_drift._predicate_body("bool other(int x) {\n}\n", "robotActionIsAnalog")
+
+    def test_an_exclusion_by_a_call_it_cannot_read_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "rc_action_types.cpp"
+            text = check_action_registry_drift.RC_ACTION_TYPES_CPP_PATH.read_text(encoding="utf-8")
+            source.write_text(text.replace("!robotActionIsAnalog(target) &&",
+                                           "!robotActionIsAnalog(target) && !robotActionIsNew(target) &&"))
+            original = check_action_registry_drift.RC_ACTION_TYPES_CPP_PATH
+            check_action_registry_drift.RC_ACTION_TYPES_CPP_PATH = source
+            try:
+                with self.assertRaises(ValueError):
+                    check_action_registry_drift.firmware_action_needs()
+            finally:
+                check_action_registry_drift.RC_ACTION_TYPES_CPP_PATH = original

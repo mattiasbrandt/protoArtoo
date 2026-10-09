@@ -757,6 +757,12 @@
   // is narrower than the catalog; a binding to a catalog name outside it that
   // only a Learned copy made valid, when that copy is left out, is kept here
   // and refused there - and the feedback then says the RC Map did not land.
+  // A binding named as the RC page names it: its RC Channel with its receiver
+  // ("SBUS#2 CH 6"), or a Reaction, which has none.
+  const bindingName = (entry) => (window.PAApi.isRcChannelSource?.(entry?.source)
+    ? window.PAApi.rcChannelTitle(entry.source, entry.channel)
+    : 'A Reaction');
+
   const rcMapToRestore = (rcMap, holds) => {
     const map = Array.isArray(rcMap?.map) ? rcMap.map : [];
     const send = [];
@@ -765,9 +771,9 @@
       // A binding the droid that made the backup did not read ("read": false,
       // ADR 0070) is one a save refuses: sent back, it would refuse the map.
       if (entry?.read === false) {
-        leftOut.push(`RC Channel ${entry.channel}: not read by the droid it came from`);
+        leftOut.push(`${bindingName(entry)}: not read by the droid it came from`);
       } else if (entry?.action === 'dome_seq' && typeof entry.payload === 'string' && !holds(entry.payload)) {
-        leftOut.push(`RC Channel ${entry.channel}: ${entry.payload} is not on this droid`);
+        leftOut.push(`${bindingName(entry)}: ${entry.payload} is not on this droid`);
       } else {
         send.push(entry);
       }
@@ -801,10 +807,12 @@
       } catch (err) {
         const at = err?.entry ? body.map.findIndex((entry) => entry?.source === err.entry.source
           && Number(entry?.channel) === Number(err.entry.channel) && entry?.action === err.entry.action) : -1;
-        if (at < 0) return [failedLine('RC Map', err)];
+        // A calibration refused is this droid's own stored ends, not the
+        // backup's binding: the map is not restored, rather than drop the axis.
+        if (at < 0 || String(err?.field || '').startsWith('calibration')) return [failedLine('RC Map', err)];
         const [dropped] = body.map.splice(at, 1);
         const why = window.PAApi.sayRefusal?.(err) || window.PAApi.messageFor(err);
-        leftOut.push(`RC Channel ${dropped.channel}: ${why}`);
+        leftOut.push(`${bindingName(dropped)}: ${why}`);
       }
     }
     if (leftOut.length === 0) return ['RC Map: restored'];

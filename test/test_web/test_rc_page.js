@@ -734,7 +734,7 @@ test("the Live column says pressed when the droid reads the switch pressed", asy
           raw: { sbus1: Object.assign(sixteen(1000), { 4: raw5 }) },
           rawDigital: { sbus1: [false, false] },
           digital: {},
-          pressed: { "sbus1:5": pressed },
+          pressed: pressed === undefined ? {} : { "sbus1:5": pressed },
         },
       }),
     });
@@ -747,6 +747,8 @@ test("the Live column says pressed when the droid reads the switch pressed", asy
   const row = /SBUS#1 CH 5<\/td>\s*<td><span class="rc-trigger-state"><span class="indicator( ok)?"[^>]*><\/span>(Pressed|Released)/;
   assert.equal(row.exec(await load(1700, false))?.[2], "Released", "far from centre, but the droid reads it released");
   assert.equal(row.exec(await load(1000, true))?.[2], "Pressed", "near centre, but the droid reads it pressed");
+  // Nothing said - a lost receiver, older firmware - is not known, never released.
+  assert.match(await load(1700, undefined), /SBUS#1 CH 5<\/td>\s*<td><span class="rc-trigger-state"><span class="indicator"[^>]*><\/span>—/);
 });
 
 test("Detect lands on CH17 when that switch flips", async () => {
