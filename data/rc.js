@@ -42,6 +42,7 @@
   let confirmedSbusRecvCh2 = null;
   const rcSummaryBody = document.getElementById("rc-summary-body");
   const rcSummaryCount = document.getElementById("rc-summary-count");
+  const rcCapacity = document.getElementById("rc-capacity");
   
   const rcChannelItems = document.getElementById("rc-channel-items");
   const rcLivePreviewContent = document.getElementById("rc-live-preview-content");
@@ -63,6 +64,9 @@
   // Part as far as the stick is pushed (#442). Never fired once, so never
   // tried, and never bound to a droid condition.
   const ANALOG_ACTION_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed', 'puppet_part']);
+  // The three axes: each has a place of its own in the RC Map, outside the 11
+  // trigger bindings (src/web/api_config.cpp, assignRcMapEntryToSnapshot()).
+  const ANALOG_AXIS_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed']);
   // Hardcoded fallback used until GET /api/actions resolves.
   // Matches robotActionIdToString() NVS token keys in rc_mapping.h.
   // It carries no action about one Output (the toggles): those are named by
@@ -962,6 +966,22 @@
     rcSummaryCount.textContent = count === 0 ? "nothing mapped yet" : `${count} mapped`;
   };
 
+  // How many of the RC Map's trigger bindings are used, up front where a
+  // source is picked (operator, 2026-10-09 on #389). GET /api/rc/map's
+  // capacity counts the three axes too, which have places of their own, so
+  // the count is of everything else against what is left of the total. Said
+  // only once the droid has given a total.
+  let mapCapacityTotal = null;
+  const paintCapacity = () => {
+    if (!rcCapacity) return;
+    if (!Number.isFinite(mapCapacityTotal) || mapCapacityTotal <= ANALOG_AXIS_TOKENS.size) {
+      rcCapacity.textContent = '';
+      return;
+    }
+    const used = asMapArray().filter((entry) => !ANALOG_AXIS_TOKENS.has(mapEntryAction(entry))).length;
+    rcCapacity.textContent = `${used} of ${mapCapacityTotal - ANALOG_AXIS_TOKENS.size} used`;
+  };
+
   // The Live cell of one binding: a stick's travel, a switch's press, or what
   // a Reaction is doing.
   const liveCellHtml = (token, channelKey, telemetry) => {
@@ -1746,6 +1766,8 @@
       const mode = typeof payload.mode === 'string' ? payload.mode : getEditorMode();
       channelMap = modeMapFromArray(payload.map);
       channelMapLoaded = true;
+      mapCapacityTotal = Number(payload.capacity?.total);
+      paintCapacity();
       triggerPulseState = {};
       if (rcInputModeHidden?.value !== mode) switchRcMode(mode);
       if (selectedChannel && !sourceAllowedInMode(parseChannelKey(selectedChannel).source, mode)) {
@@ -2088,25 +2110,45 @@
     setEditorFeedback('Saving...');
 
     try {
-      const result = await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify({ map: Object.values(nextMap) }) }, { timeoutMs: 5000 });
-      const serverMap = Array.isArray(result.data?.map) ? result.data.map : Object.values(nextMap);
-      channelMap = modeMapFromArray(serverMap);
-      const savedAt = new Date().toLocaleTimeString();
-      setEditorFeedback(`Saved at ${savedAt}.${moved}`, 'success');
-      markEditorClean(savedAt);
-      renderSummaryTable();
-      renderChannelList();
-      renderLivePreview();
-      renderEditor();
+      await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify({ map: Object.values(nextMap) }) }, { timeoutMs: 5000 });
     } catch (error) {
       setEditorDirtyState('error', 'Save failed — unsaved changes');
       if (rcEditorApply) rcEditorApply.disabled = false;
       if (rcEditorRevert) rcEditorRevert.disabled = false;
-      // Every slot is taken: said in the builder's words, not the droid's.
-      const message = window.PAApi.messageFor(error);
-      setEditorFeedback(/no trigger slot available/.test(message)
-        ? 'No room for one more. Unmap another switch or condition first.'
-        : `Failed to save: ${message}`, 'error');
+      setEditorFeedback(mapRefusalText(error), 'error');
+      return;
+    }
+    const savedAt = new Date().toLocaleTimeString();
+    const shown = await showStoredMap(nextMap);
+    setEditorFeedback(`Saved at ${savedAt}.${moved}${shown.note}`, shown.ok ? 'success' : 'warning');
+    markEditorClean(savedAt);
+  };
+
+  // A refused save, in the builder's words where the droid's are about room.
+  const mapRefusalText = (error) => {
+    const message = window.PAApi.messageFor(error);
+    return /no trigger slot available|exceeds capacity/.test(message)
+      ? 'No room for one more. Unmap another switch or condition first.'
+      : `Failed to save: ${message}`;
+  };
+
+  // After a save the droid answers only {ok:true}, so what it stored is read
+  // back and drawn (GET /api/rc/map), never the page's own copy. A read that
+  // fails leaves the page's copy on screen and says so.
+  const showStoredMap = async (sentMap) => {
+    try {
+      await loadMappings();
+      return { ok: true, note: '' };
+    } catch (error) {
+      // The droid said ok to this map, so it is the one to post next time.
+      channelMap = { ...sentMap };
+      channelMapLoaded = true;
+      paintCapacity();
+      renderSummaryTable();
+      renderChannelList();
+      renderLivePreview();
+      renderEditor();
+      return { ok: false, note: ` The droid's map did not load back: ${window.PAApi.messageFor(error)}.` };
     }
   };
 
@@ -2137,18 +2179,14 @@
     setEditorFeedback('Clearing mappings...');
     try {
       await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify({ map: [] }) }, { timeoutMs: 5000 });
-      channelMap = {};
-      channelMapLoaded = true;
-      const savedAt = new Date().toLocaleTimeString();
-      setEditorFeedback('Cleared all mappings', 'success');
-      markEditorClean(savedAt);
-      renderSummaryTable();
-      renderChannelList();
-      renderLivePreview();
-      renderEditor();
     } catch (error) {
       setEditorFeedback(`Failed to clear mappings: ${window.PAApi.messageFor(error)}`, 'error');
+      return;
     }
+    const savedAt = new Date().toLocaleTimeString();
+    const shown = await showStoredMap({});
+    setEditorFeedback(`Cleared all mappings.${shown.note}`, shown.ok ? 'success' : 'warning');
+    markEditorClean(savedAt);
   };
 
   if (rcEditorApply) {
