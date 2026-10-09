@@ -395,8 +395,14 @@ static_assert(sizeof(ConfigSnapshot) == 944,
 // Public API
 // =============================================================================
 
+// configOpenForLoad: open the config namespace the way the boot load needs it,
+// read-write. configLoad() writes its schema migrations and stamp back
+// through the handle it is given; a read-only one drops every write (#484).
+bool configOpenForLoad(Preferences& prefs);
+
 // configLoad: Load NVS config into a ConfigSnapshot.
-// Caller opens Preferences with begin() before calling.
+// Caller opens Preferences with begin() before calling, read-write
+// (configOpenForLoad()) for a store that may need migrating.
 // On schema version mismatch, fills snapshot with defaults and logs warning.
 // Returns false + logs warning on schema mismatch; true on success.
 bool configLoad(Preferences& prefs, ConfigSnapshot* out);
