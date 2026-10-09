@@ -349,15 +349,25 @@ RcRuleVerdict rcRuleStoredDrive(const RcBindingConfig& speed, const RcBindingCon
     return rcRuleDrive(speed, steer);
 }
 
-size_t rcMapReceivers(RcInputMode type, bool driveOnly, RcBindingSource* out, size_t cap) {
+size_t rcMapReceivers(RcInputMode type, RcMapReceiverUse use, RcBindingSource* out, size_t cap) {
     static constexpr RcBindingSource kReceivers[] = {RC_BINDING_PWM, RC_BINDING_SBUS1, RC_BINDING_SBUS2};
     size_t count = 0;
     for (RcBindingSource source : kReceivers) {
-        if (!receiverTypeReads(source, type)) {
+        // A use is judged as the save judges one entry of it, on the first RC
+        // Channel: the drive as Speed (and the drive pair rule), a cue as a
+        // press, anything else by whether the type reads the receiver.
+        RcMapEntry entry = {};
+        entry.source = source;
+        entry.channel = 1;
+        entry.action = use == RcMapReceiverUse::Drive ? DRIVE_ACTION_SPEED
+                       : use == RcMapReceiverUse::Cue ? SOUND_ACTION_NEXT
+                                                      : DOME_ACTION_SPEED;
+        entry.threshold = kRcMapEntryKeep;
+        entry.quietS = kRcMapEntryKeep;
+        if (!entryRule(entry, type).ok()) {
             continue;
         }
-        // The drive rule judged on one axis there: the receiver it would read.
-        if (driveOnly &&
+        if (use == RcMapReceiverUse::Drive &&
             !rcRuleDrive(makeRcBindingConfig(source, 1, 0, 0, 0, 0, false), disabledRcBinding()).ok()) {
             continue;
         }

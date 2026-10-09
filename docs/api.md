@@ -2371,10 +2371,12 @@ Returns channel-centric map.
 - A Reaction entry also carries `threshold` and `quietS`, the seconds it stays
   quiet after firing (`1..3600`).
 - `receivers`: which RC Receivers a map for the receiver type the droid has
-  saved may bind (`read`), and which of those the drive may use (`drive`), by
-  the rules `POST /api/rc/map` applies (ADR 0070): `{"read":["sbus1","sbus2"],
-  "drive":["sbus1"]}` for two SBUS receivers, `{"read":[],"drive":[]}` with
-  no radio fitted. A Reaction is the droid's own and needs no receiver.
+  saved may bind (`read`), which of those the drive may use (`drive`), and
+  which carry a cue or a puppet string (`cues`; PWM carries none), by the rules
+  `POST /api/rc/map` applies (ADR 0070):
+  `{"read":["sbus1","sbus2"],"drive":["sbus1"],"cues":["sbus1","sbus2"]}` for
+  two SBUS receivers, all three empty with no radio fitted. A Reaction is the
+  droid's own and needs no receiver.
 - An entry the droid does not read carries `"read": false`: a binding stored
   before a rule of `POST /api/rc/map` existed, which a save for the receiver
   type the droid has saved would now refuse (ADR 0070). It stays still. A client

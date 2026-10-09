@@ -465,17 +465,20 @@ void test_every_field_a_rule_names_is_declared(void) {
 // The receivers a map may bind, and those the drive may use (GET /api/rc/map).
 void test_the_receivers_a_map_may_bind_follow_the_receiver_type(void) {
     RcBindingSource out[3] = {};
-    TEST_ASSERT_EQUAL_UINT(2, rcMapReceivers(RC_INPUT_DUAL_SBUS, false, out, 3));
+    TEST_ASSERT_EQUAL_UINT(2, rcMapReceivers(RC_INPUT_DUAL_SBUS, RcMapReceiverUse::Read, out, 3));
     TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, out[0]);
     TEST_ASSERT_EQUAL(RC_BINDING_SBUS2, out[1]);
-    TEST_ASSERT_EQUAL_UINT(1, rcMapReceivers(RC_INPUT_DUAL_SBUS, true, out, 3));
+    TEST_ASSERT_EQUAL_UINT(1, rcMapReceivers(RC_INPUT_DUAL_SBUS, RcMapReceiverUse::Drive, out, 3));
     TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, out[0]);
-    TEST_ASSERT_EQUAL_UINT(1, rcMapReceivers(RC_INPUT_SINGLE_SBUS, false, out, 3));
+    TEST_ASSERT_EQUAL_UINT(2, rcMapReceivers(RC_INPUT_DUAL_SBUS, RcMapReceiverUse::Cue, out, 3));
+    TEST_ASSERT_EQUAL_UINT(1, rcMapReceivers(RC_INPUT_SINGLE_SBUS, RcMapReceiverUse::Read, out, 3));
     TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, out[0]);
-    TEST_ASSERT_EQUAL_UINT(1, rcMapReceivers(RC_INPUT_STANDARD_PWM, true, out, 3));
+    TEST_ASSERT_EQUAL_UINT(1, rcMapReceivers(RC_INPUT_STANDARD_PWM, RcMapReceiverUse::Drive, out, 3));
     TEST_ASSERT_EQUAL(RC_BINDING_PWM, out[0]);
-    TEST_ASSERT_EQUAL_UINT(0, rcMapReceivers(RC_INPUT_NOT_FITTED, false, out, 3));
-    TEST_ASSERT_EQUAL_UINT(0, rcMapReceivers(RC_INPUT_ELRS, true, nullptr, 0));
+    // PWM carries no cue (operator, 2026-10-09 on #486).
+    TEST_ASSERT_EQUAL_UINT(0, rcMapReceivers(RC_INPUT_STANDARD_PWM, RcMapReceiverUse::Cue, out, 3));
+    TEST_ASSERT_EQUAL_UINT(0, rcMapReceivers(RC_INPUT_NOT_FITTED, RcMapReceiverUse::Read, out, 3));
+    TEST_ASSERT_EQUAL_UINT(0, rcMapReceivers(RC_INPUT_ELRS, RcMapReceiverUse::Drive, nullptr, 0));
 }
 
 int main(int, char**) {
