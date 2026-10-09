@@ -507,3 +507,27 @@ test("the droid's refusal of a split drive is shown in the builder's words", asy
   await clickAxis(env, { axis: "drive_steer", axisSet: "max" }, "data-axis-set");
   assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /Not saved: Speed and Steer share one RC Receiver\./);
 });
+
+// A CENTER that leaves one side shorter than the axis's dead zone would move
+// nothing on that side; POST /api/rc/map refuses it ("calibration leaves no
+// travel past the deadband"), so the page does not send it, and words the
+// droid's refusal the same way when it comes back.
+test("a CENTER too close to an end is not sent, and the droid's refusal of one reads the same", async () => {
+  const diag = axesDiag();
+  diag.mappingProfile.channels.driveSteer.deadband = 200;
+  const posted = [];
+  const env = await loadAxes({
+    diag,
+    onPost: (body) => { posted.push(body); throw new ApiError("calibration leaves no travel past the deadband", { kind: "http", status: 400 }); },
+  });
+  // CH2 reads 1700: as CENTER it leaves 111 above it, inside a dead zone of 200.
+  await clickAxis(env, { axis: "drive_steer", axisSet: "center" }, "data-axis-set");
+  assert.equal(posted.length, 0, "never sent");
+  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /Not saved: CENTER sits too close to an end\./);
+
+  // CH1 reads 150 as MIN: the order holds and the dead zone of Speed is 0, so
+  // it goes, and the droid's own refusal is worded the same.
+  await clickAxis(env, { axis: "drive_speed", axisSet: "min" }, "data-axis-set");
+  assert.equal(posted.length, 1);
+  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_speed"), /Not saved: CENTER sits too close to an end\./);
+});
