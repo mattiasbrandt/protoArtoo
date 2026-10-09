@@ -476,7 +476,10 @@
 
   const SOURCE_OPTIONS = {
     standard_pwm: ["pwm"],
-    single_sbus: ["sbus1", "sbus2"],
+    // One receiver, and it is SBUS1 whichever header it is wired to: the
+    // CH2 header pick moves the wire, never the name (operator, 2026-10-09 on
+    // #389). An sbus2 binding reads nothing here.
+    single_sbus: ["sbus1"],
     dual_sbus: ["sbus1", "sbus2"],
     // An ELRS receiver the controller reads nothing from yet (#369): no
     // channel arrives, so there is none to map.
@@ -1028,11 +1031,10 @@
       // fitted: no radio channel arrives, so none is offered to map. The
       // droid's own conditions below still are.
       html = `<p class="hint">${window.PAUtils.escapeHtml(modeLabel(mode))}: no radio channel arrives.</p>`;
-    } else if (mode === 'standard_pwm') {
-      html = renderGroup('PWM', 'pwm', snap?.raw?.pwm, 6);
     } else {
-      html = renderGroup('SBUS1', 'sbus1', snap?.raw?.sbus1, 6)
-           + renderGroup('SBUS2', 'sbus2', snap?.raw?.sbus2, 6);
+      html = SOURCE_OPTIONS[mode]
+        .map((source) => renderGroup(source.toUpperCase(), source, snap?.raw?.[source], 6))
+        .join('');
     }
     html += renderDroidGroup();
 
@@ -1788,11 +1790,7 @@
       .map((entry) => actionLabelFromToken(mapEntryAction(entry)));
   };
 
-  const detectHitLabel = (hit) => {
-    if (!hit) return '';
-    const srcLabel = { sbus1: 'SBUS1', sbus2: 'SBUS2', pwm: 'PWM' }[hit.source] || hit.source.toUpperCase();
-    return `${srcLabel} CH ${hit.channel}`;
-  };
+  const detectHitLabel = (hit) => (hit ? channelTitleFromKey(channelKeyOf(hit.source, hit.channel)) : '');
 
   const applyLearnHighlight = () => {
     if (!rcChannelItems) return;
@@ -1863,7 +1861,12 @@
       exitLearnMode();
       return;
     }
-    const nextHit = computeDetectHit(learnBaseline, currSnapshot);
+    // Only the sources this receiver type reads: a stale sbus2 array on a
+    // single SBUS droid must not win the detect.
+    const allowed = SOURCE_OPTIONS[getEditorMode()] || [];
+    const raw = currSnapshot?.raw && typeof currSnapshot.raw === 'object' ? currSnapshot.raw : {};
+    const heard = { ...currSnapshot, raw: Object.fromEntries(Object.entries(raw).filter(([source]) => allowed.includes(source))) };
+    const nextHit = computeDetectHit(learnBaseline, heard);
     const changed = JSON.stringify(nextHit) !== JSON.stringify(learnHit);
     learnHit = nextHit;
     if (changed) {
