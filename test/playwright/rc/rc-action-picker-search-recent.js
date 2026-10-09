@@ -5,9 +5,11 @@
 // The page used to open the picker from a per-slot list (`.rc-slot-item`,
 // the "sound" slot). Sources are now the left-hand list of channels and
 // conditions (`.rc-channel-item[data-chkey]`, data/rc.js), so the script
-// opens the picker from the first radio channel instead: SBUS1 CH1, since a
-// droid whose config does not answer is shown as the firmware's default
-// receiver type, Dual SBUS (#389). The picker is the same one. With no GET /api/actions answer (the fixture server has none) the
+// opens the picker from the first radio channel instead: SBUS1 CH1. The page
+// offers RC Channels only on the receivers the droid says its map may bind
+// (GET /api/rc/map `receivers`, ADR 0070), so this script answers that read,
+// and the receiver type it follows, as a Dual SBUS droid with an empty map.
+// The picker is the same one. With no GET /api/actions answer (the fixture server has none) the
 // page lists its built-in actions (data/rc.js HARDCODED_ACTION_TARGETS),
 // which carry sound_rand_general.
 const { chromium } = require('playwright');
@@ -25,6 +27,19 @@ const SOURCE = '.rc-channel-item[data-chkey="sbus1:1"]';
   };
 
   try {
+    await page.route('**/api/config*', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ rc: { inputMode: 'dual_sbus', activeInputMode: 'dual_sbus' }, components: {} }),
+    }));
+    await page.route('**/api/rc/map', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        mode: 'dual_sbus', map: [], capacity: { total: 14, used: 0 },
+        receivers: { read: ['sbus1', 'sbus2'], drive: ['sbus1'], cues: ['sbus1', 'sbus2'] },
+      }),
+    }));
     await page.goto(TARGET_URL, { waitUntil: 'networkidle' });
     await page.waitForSelector(SOURCE, { timeout: 10000 });
 

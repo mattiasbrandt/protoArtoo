@@ -666,7 +666,14 @@ const install = async (context, options = {}) => {
       if (apiPath === '/api/servo/outputs') return json(route, outputsAnswer());
       if (apiPath === '/api/rc') return json(route, rcDiagnostics());
       if (apiPath === '/api/rc/map') {
-        return json(route, { mode: state.config.rc?.inputMode || 'standard_pwm', map: [], capacity: { total: 14, used: 0 } });
+        // `receivers` as the droid answers them for its saved type (ADR 0070).
+        const mode = state.config.rc?.inputMode || 'standard_pwm';
+        const receivers = {
+          dual_sbus: { read: ['sbus1', 'sbus2'], drive: ['sbus1'], cues: ['sbus1', 'sbus2'] },
+          single_sbus: { read: ['sbus1'], drive: ['sbus1'], cues: ['sbus1'] },
+          standard_pwm: { read: ['pwm'], drive: ['pwm'], cues: [] },
+        }[mode] || { read: [], drive: [], cues: [] };
+        return json(route, { mode, map: [], capacity: { total: 14, used: 0 }, receivers });
       }
       if (apiPath === '/api/seq/list' || apiPath === '/api/seq/builtins') return json(route, []);
       // Every other read goes to the fixture server, which 404s it the way

@@ -18,7 +18,12 @@ const loadRc = (config, diagnostics) =>
   loadPageModule("rc.js", {
     respond: (path) => {
       if (path === "/api/config") return { data: config };
-      if (path === "/api/rc/map") return { data: { mode: config?.rc?.inputMode, map: config?.__map || [] } };
+      // `receivers` as the droid answers it (ADR 0070): an ELRS or a not
+      // fitted droid reads no receiver, so none is offered.
+      if (path === "/api/rc/map") {
+        const read = { single_sbus: ["sbus1"], dual_sbus: ["sbus1", "sbus2"], standard_pwm: ["pwm"] }[config?.rc?.inputMode] || [];
+        return { data: { mode: config?.rc?.inputMode, map: config?.__map || [], receivers: { read, drive: [], cues: [] } } };
+      }
       if (path === "/api/rc") return { data: diagnostics };
       return { data: {} };
     },

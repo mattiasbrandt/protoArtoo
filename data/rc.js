@@ -63,10 +63,6 @@
   // A stick, not a press: the three axes, and a puppet string, which moves one
   // Part as far as the stick is pushed (#442). Never fired once, so never
   // tried, and never bound to a droid condition.
-  const ANALOG_ACTION_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed', 'puppet_part']);
-  // The three axes: each has a place of its own in the RC Map, outside the 11
-  // trigger bindings (src/web/api_config.cpp, assignRcMapEntryToSnapshot()).
-  const ANALOG_AXIS_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed']);
   // Hardcoded fallback used until GET /api/actions resolves.
   // Matches robotActionIdToString() NVS token keys in rc_mapping.h.
   // It carries no action about one Output (the toggles): those are named by
@@ -134,31 +130,30 @@
   };
   // ==== ACTION TEST OUTCOME (#220) END ====
 
-  // ==== DRIVE ON ONE RECEIVER (#389) BEGIN ====
-  // Speed and Steer read one RC Receiver: POST /api/rc/map refuses a map that
-  // puts them on two sources ("drive speed and steer must be on the same
-  // receiver"). Given the map (channel key -> { source, action }), the drive
-  // axis being bound and the channel key it would go on, this returns the
-  // binding of the OTHER drive axis when it sits on another source, else null.
-  // Pure and DOM-free so test/test_web/test_rc_page.js runs this exact block.
-  const driveSplitWith = (map, token, channelKey) => {
-    const pair = { drive_speed: 'drive_steer', drive_steer: 'drive_speed' };
-    const other = pair[token];
-    if (!other) return null;
-    const source = String(channelKey || '').split(':')[0];
-    const found = Object.entries(map || {})
-      .find(([key, entry]) => key !== channelKey && String(entry?.action || '') === other);
-    return found && found[1].source !== source ? found[1] : null;
-  };
-  // The drive reads SBUS1: only the drive receiver carries the drive
-  // watchdog and the failsafe stop, so the droid refuses a drive axis on SBUS2
-  // (operator, 2026-10-09 on #389).
+  // ==== WHAT THE DROID OFFERS (#486) BEGIN ====
+  // Whether an action may be offered on a radio RC Channel, from the droid's
+  // own answers, never a rule of this page's (ADR 0070): `receivers` is GET
+  // /api/rc/map's - the RC Receivers the saved type reads, those the drive
+  // may use, and those that carry a cue - and `action.rcInput` is GET
+  // /api/actions' rc_input. The three axes have places of their own in the
+  // map; every other action takes a cue slot. Pure and DOM-free so
+  // test/test_web/test_rc_page.js runs this exact block.
   const DRIVE_TOKENS = new Set(['drive_speed', 'drive_steer']);
-  const driveOnSbus2 = (token, channelKey) => DRIVE_TOKENS.has(token)
-    && String(channelKey || '').split(':')[0] === 'sbus2';
-  // ==== DRIVE ON ONE RECEIVER (#389) END ====
+  const AXIS_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed']);
+  const offeredOnRadio = (action, source, onOff, receivers) => {
+    const listed = (use) => Array.isArray(receivers?.[use]) && receivers[use].includes(source);
+    if (action?.rcInput === 'stick' && onOff) return false;
+    if (DRIVE_TOKENS.has(action?.token)) return listed('drive');
+    if (AXIS_TOKENS.has(action?.token)) return listed('read');
+    return listed('cues');
+  };
+  // ==== WHAT THE DROID OFFERS (#486) END ====
 
-  const DRIVE_SBUS2_TEXT = 'Not saved: Speed and Steer read SBUS1.';
+  // GET /api/rc/map's `receivers`, null until the droid has answered, and the
+  // stored bindings it said it does not read, each with its title and why.
+  let mapReceivers = null;
+  let unreadEntries = [];
+  const readReceivers = () => (Array.isArray(mapReceivers?.read) ? mapReceivers.read : []);
 
   // Live action targets — replaced on load from GET /api/actions.
   // Falls back to HARDCODED_ACTION_TARGETS if the request fails.
@@ -254,9 +249,12 @@
       const testable = typeof entry.testable === 'boolean'
         ? entry.testable
         : !NON_TESTABLE_TOKENS.has(token);
+      // What the action needs, as the droid's own rules say (GET /api/actions,
+      // ADR 0070): a stick or a switch, and whether a Reaction may fire it.
+      const rcInput = entry.rc_input === 'stick' ? 'stick' : 'switch';
       const oneShot = typeof entry.one_shot === 'boolean'
         ? entry.one_shot
-        : !ANALOG_ACTION_TOKENS.has(token);
+        : rcInput !== 'stick';
       const label = entry.display_name || entry.name || token;
       targets.push({
         token,
@@ -267,6 +265,8 @@
         testable: testable && !unavail && !safetyCritical,
         safetyCritical,
         oneShot,
+        rcInput,
+        reaction: entry.reaction === true,
       });
     });
     return targets;
@@ -505,35 +505,24 @@
   const DEFAULT_RC_MODE = "dual_sbus";
   const DETECT_ACT = "Detect RC Channel";
 
-  const SOURCE_OPTIONS = {
-    standard_pwm: ["pwm"],
-    // One receiver, and it is SBUS1 whichever header it is wired to: the
-    // CH2 header pick moves the wire, never the name (operator, 2026-10-09 on
-    // #389). An sbus2 binding reads nothing here.
-    single_sbus: ["sbus1"],
-    dual_sbus: ["sbus1", "sbus2"],
-    // An ELRS receiver the controller reads nothing from yet (#369): no
-    // channel arrives, so there is none to map.
-    elrs: [],
-    // No Radio Controller fitted: nothing arrives at all.
-    not_fitted: [],
-  };
 
   // The droid's own conditions (ADR 0053, #450): a binding on one is a
   // Reaction, which the droid fires itself, radio or no radio. So they are
-  // offered in every receiver mode, beside whatever SOURCE_OPTIONS gives it.
+  // offered in every receiver mode, beside the RC Receivers the droid reads.
   // `source` and `channel` are the stored pair (include/rc_binding_types.h); a
   // condition has no channel to ask for, so each row is one pair, named.
   // `threshold` is the one number a condition takes, shown in the builder's
   // unit: `scale` stored units to one of theirs. The list has nothing for the
   // room or for how loud a sound is, because the droid cannot sense either.
-  const SPEED_THRESHOLD = { label: 'Speed at or over', unit: 'of 1000', scale: 1, min: 1, max: 1000, fallback: 300 };
-  const WHEEL_SPEED_THRESHOLD = { label: 'Speed at or over', unit: 'RPM', scale: 1, min: 1, max: 1000, fallback: 30 };
-  const WHEEL_AMPS_THRESHOLD = { label: 'Current at or over', unit: 'A', scale: 100, min: 1, max: 5000, fallback: 300 };
+  // What the page shows a threshold in, never what it accepts: the droid
+  // refuses a number it will not take, and one left empty takes its default.
+  const SPEED_THRESHOLD = { label: 'Speed at or over', unit: 'of 1000', scale: 1 };
+  const WHEEL_SPEED_THRESHOLD = { label: 'Speed at or over', unit: 'RPM', scale: 1 };
+  const WHEEL_AMPS_THRESHOLD = { label: 'Current at or over', unit: 'A', scale: 100 };
   const DROID_CONDITIONS = [
     { source: 'speed', channel: 1, label: 'Drive speed', threshold: SPEED_THRESHOLD },
-    { source: 'hstop', channel: 1, label: 'Hard stop', threshold: { ...SPEED_THRESHOLD, label: 'Stopping from', fallback: 400 } },
-    { source: 'rest', channel: 1, label: 'Comes to rest', threshold: { label: 'At rest for', unit: 's', scale: 10, min: 1, max: 600, fallback: 20 } },
+    { source: 'hstop', channel: 1, label: 'Hard stop', threshold: { ...SPEED_THRESHOLD, label: 'Stopping from' } },
+    { source: 'rest', channel: 1, label: 'Comes to rest', threshold: { label: 'At rest for', unit: 's', scale: 10 } },
     { source: 'track', channel: 1, label: 'Track starts', threshold: null },
     { source: 'wspeed', channel: 1, label: 'Left wheel speed', threshold: WHEEL_SPEED_THRESHOLD },
     { source: 'wspeed', channel: 2, label: 'Right wheel speed', threshold: WHEEL_SPEED_THRESHOLD },
@@ -541,10 +530,6 @@
     { source: 'wamps', channel: 2, label: 'Right wheel current', threshold: WHEEL_AMPS_THRESHOLD },
   ];
   const DROID_SOURCES = new Set(DROID_CONDITIONS.map((condition) => condition.source));
-  const REACTION_QUIET = { min: 1, max: 3600, fallback: 5 };
-  // What a Reaction may not do: the estop, and the two that change how the
-  // droid drives (robotActionValidForReaction(), src/rc_action_types.cpp).
-  const REACTION_BLOCKED_TOKENS = new Set(['estop', 'op_mode', 'speed_preset_cycle']);
 
   const isDroidSource = (source) => DROID_SOURCES.has(source);
 
@@ -553,9 +538,9 @@
   const droidConditionFor = (channelKey) => DROID_CONDITIONS
     .find((condition) => channelKeyOf(condition.source, condition.channel) === channelKey) || null;
 
-  // Whether a source can be bound in this receiver mode.
-  const sourceAllowedInMode = (source, mode) =>
-    isDroidSource(source) || (SOURCE_OPTIONS[mode] || SOURCE_OPTIONS[DEFAULT_RC_MODE]).includes(source);
+  // Whether a source can be bound: a droid condition always, a radio source
+  // when the droid says its saved receiver type reads it (GET /api/rc/map).
+  const sourceOffered = (source) => isDroidSource(source) || readReceivers().includes(source);
 
   const parseChannelKey = (channelKey) => {
     const [source = "", channelValue = "0"] = String(channelKey || "").split(":");
@@ -682,7 +667,9 @@
     return byChannel;
   };
 
-  const isAnalogAction = (token) => ANALOG_ACTION_TOKENS.has(token);
+  // A stick action (an axis or a puppet string) as the droid's actions list
+  // says, never a list of this page's.
+  const isAnalogAction = (token) => actionTargetFromToken(token)?.rcInput === 'stick';
 
   const mapEntryAction = (entry) => String(entry?.action || '');
 
@@ -746,9 +733,9 @@
     }
     const raw = rawForChannel(source, channel);
     if (raw == null) return { raw: null, mapped: 0, pressed: false, pressedLevel: false };
-    const center = source === 'pwm' ? 1500 : 992;
-    const threshold = source === 'pwm' ? 200 : 300;
-    const pressedLevel = Math.abs(raw - center) >= threshold;
+    // Pressed as the droid reads it, by the binding's own calibration (GET
+    // /api/rc `pressed`, ADR 0070); a channel it says nothing of is released.
+    const pressedLevel = rcSnapshot?.pressed?.[channelKey] === true;
     return {
       raw,
       mapped: mappedFromRaw(source, raw),
@@ -1012,12 +999,12 @@
     // Called once the map has answered: a droid that gives no total leaves
     // the head empty, never waiting dots that do not resolve.
     rcCapacity.classList.remove('waiting');
-    if (!Number.isFinite(mapCapacityTotal) || mapCapacityTotal <= ANALOG_AXIS_TOKENS.size) {
+    if (!Number.isFinite(mapCapacityTotal) || mapCapacityTotal <= AXIS_TOKENS.size) {
       rcCapacity.textContent = '';
       return;
     }
-    const used = asMapArray().filter((entry) => !ANALOG_AXIS_TOKENS.has(mapEntryAction(entry))).length;
-    rcCapacity.textContent = `${used} of ${mapCapacityTotal - ANALOG_AXIS_TOKENS.size} used`;
+    const used = asMapArray().filter((entry) => !AXIS_TOKENS.has(mapEntryAction(entry))).length;
+    rcCapacity.textContent = `${used} of ${mapCapacityTotal - AXIS_TOKENS.size} used`;
   };
 
   // The Live cell of one binding: a stick's travel, a switch's press, or what
@@ -1080,12 +1067,6 @@
     { key: 'center', label: 'CENTER' },
     { key: 'max', label: 'MAX' },
   ];
-  const AXIS_ORDER_TEXT = {
-    min: 'Not saved: MIN must read below CENTER.',
-    center: 'Not saved: CENTER must read between MIN and MAX.',
-    max: 'Not saved: MAX must read above CENTER.',
-  };
-  const AXIS_DEADBAND_TEXT = 'Not saved: CENTER sits too close to an end.';
   const rcAxes = document.getElementById('rc-axes');
   const rcAxesSummary = document.getElementById('rc-axes-summary');
   const rcDriveHold = document.getElementById('rc-drive-hold');
@@ -1151,17 +1132,19 @@
     const name = actionLabelFromToken(axis.token);
     const binding = axisBinding(axis);
     if (!binding) {
+      // A binding the droid keeps but does not read (a save would refuse it,
+      // ADR 0070): said on its tile, with the droid's reason.
+      const unread = unreadEntries.find((each) => mapEntryAction(each.entry) === axis.token);
+      if (unread) {
+        return `<div class="rc-axis" data-axis="${axis.token}">
+        <div class="rc-axis-head"><span class="rc-axis-name">${esc(name)}</span>
+          <span class="rc-axis-ch">${esc(unread.title)}</span></div>
+        <p class="rc-axis-warn" role="status">Not read${unread.why ? `: ${esc(unread.why)}` : ''}. Map it again.</p>
+      </div>`;
+      }
       return `<div class="rc-axis" data-axis="${axis.token}">
         <div class="rc-axis-head"><span class="rc-axis-name">${esc(name)}</span></div>
         <p class="hint">Not mapped.</p>
-      </div>`;
-    }
-    // A drive stored on SBUS2 before #483: the droid does not read it.
-    if (driveOnSbus2(axis.token, channelKeyOf(binding.source, binding.channel))) {
-      return `<div class="rc-axis" data-axis="${axis.token}">
-        <div class="rc-axis-head"><span class="rc-axis-name">${esc(name)}</span>
-          <span class="rc-axis-ch">${esc(channelTitleFromKey(channelKeyOf(binding.source, binding.channel)))}</span></div>
-        <p class="rc-axis-warn" role="status">Not read: Speed and Steer read SBUS1. Map it there.</p>
       </div>`;
     }
     const ends = axisEnds(axis, binding);
@@ -1264,24 +1247,8 @@
       renderAxes();
       return;
     }
-    // The order the droid keeps, checked here so a capture the droid would
-    // refuse is never sent.
-    const ends = axisEnds(axis, binding);
-    if (ends) {
-      const next = { ...ends, [key]: raw };
-      if (!(next.min < next.center && next.center < next.max)) {
-        axisNotes[axis.token] = { kind: 'error', text: AXIS_ORDER_TEXT[key] };
-        renderAxes();
-        return;
-      }
-      // A side shorter than the dead zone would move nothing; the droid
-      // refuses it too (src/web/api_rc_map_apply.cpp).
-      if (next.center - next.min <= next.deadband || next.max - next.center <= next.deadband) {
-        axisNotes[axis.token] = { kind: 'error', text: AXIS_DEADBAND_TEXT };
-        renderAxes();
-        return;
-      }
-    }
+    // The droid rules on the order and the dead zone, and words its refusal
+    // (ADR 0068, ADR 0070): no copy of either is kept here.
     saveAxis(axis, { [key]: raw }, `${end.label} ${raw}`);
   };
 
@@ -1357,13 +1324,15 @@
     };
 
     let html = '';
-    if ((SOURCE_OPTIONS[mode] || []).length === 0) {
+    if (mapReceivers === null) {
+      html = '<p class="hint">The RC Channels appear once the droid has sent its RC Map.</p>';
+    } else if (readReceivers().length === 0) {
       // A receiver the controller reads nothing from (ELRS, #369), or none
       // fitted: no radio channel arrives, so none is offered to map. The
       // droid's own conditions below still are.
       html = `<p class="hint">${window.PAUtils.escapeHtml(modeLabel(mode))}: no radio channel arrives.</p>`;
     } else {
-      html = SOURCE_OPTIONS[mode]
+      html = readReceivers()
         .map((source) => renderGroup(source.toUpperCase(), source, source === 'pwm' ? 6 : SBUS_CHANNELS))
         .join('');
     }
@@ -1469,21 +1438,13 @@
       </div>`;
   };
 
-  // What the selected source may be bound to. A radio channel: everything. A
-  // droid condition: no axis, and not the three a Reaction may not do.
+  // What the selected source may be bound to, as the droid says (ADR 0070): a
+  // droid condition takes what a Reaction may fire (GET /api/actions'
+  // `reaction`); a radio RC Channel what offeredOnRadio() allows.
   const actionAllowedOnSelected = (item) => {
-    // A puppet string moves only from an SBUS stick channel: PWM input runs no
-    // string, and CH17/CH18 are on/off (rcPuppetChannelCanMove()).
-    if (item.token === 'puppet_part') {
-      const { source, channel } = parseChannelKey(selectedChannel);
-      return getEditorMode() !== 'standard_pwm' && (source === 'sbus1' || source === 'sbus2')
-        && channel >= 1 && channel <= 16;
-    }
-    // The other drive axis is on another receiver: this one goes beside it.
-    if (driveSplitWith(channelMap, item.token, selectedChannel)) return false;
-    if (driveOnSbus2(item.token, selectedChannel)) return false;
-    if (!droidConditionFor(selectedChannel)) return true;
-    return !ANALOG_ACTION_TOKENS.has(item.token) && !REACTION_BLOCKED_TOKENS.has(item.token);
+    if (droidConditionFor(selectedChannel)) return item.reaction === true;
+    const { source, channel } = parseChannelKey(selectedChannel);
+    return offeredOnRadio(item, source, isOnOffChannel(source, channel), mapReceivers);
   };
 
   const groupedActionTargets = () => {
@@ -1828,18 +1789,19 @@
     // A droid condition has no channel to name. It has a threshold, where the
     // condition takes one, and how long it stays quiet after firing.
     const condition = droidConditionFor(selectedChannel);
-    const numberField = (field, label, value, unit, min, step, max) => `<label class="rc-reaction-field">
+    // No range here: the droid refuses a number it will not take, in words,
+    // and a field left empty takes the droid's own default (ADR 0068).
+    const numberField = (field, label, value, unit, step) => `<label class="rc-reaction-field">
           <span>${window.PAUtils.escapeHtml(label)}</span>
-          <input data-field="${field}" type="number" inputmode="decimal" min="${min}" max="${max}" step="${step}" value="${value}">
+          <input data-field="${field}" type="number" inputmode="decimal" step="${step}" value="${value}">
           <span class="rc-reaction-unit">${window.PAUtils.escapeHtml(unit)}</span>
         </label>`;
     const threshold = condition?.threshold || null;
     const reactionFields = condition
       ? `<div class="rc-reaction-fields">
         ${threshold ? numberField('threshold', threshold.label,
-          (entry.threshold ?? threshold.fallback) / threshold.scale, threshold.unit,
-          threshold.min / threshold.scale, 1 / threshold.scale, threshold.max / threshold.scale) : ''}
-        ${numberField('quietS', 'Quiet after firing', entry.quietS ?? REACTION_QUIET.fallback, 's', REACTION_QUIET.min, 1, REACTION_QUIET.max)}
+          entry.threshold == null ? '' : entry.threshold / threshold.scale, threshold.unit, 1 / threshold.scale) : ''}
+        ${numberField('quietS', 'Quiet after firing', entry.quietS ?? '', 's', 1)}
       </div>`
       : '';
 
@@ -2055,26 +2017,30 @@
       const entries = Array.isArray(payload.map) ? payload.map : [];
       // Each named, with why: the refusal a save would give it, worded by the
       // words table from the field, reason and accepts it carries.
-      const unread = entries.filter((entry) => entry?.read === false).map((entry) => {
-        const title = channelTitleFromKey(channelKeyOf(entry.source, entry.channel));
-        const why = window.PAApi.sayRefusal?.(new window.PAApi.ApiError('', {
+      unreadEntries = entries.filter((entry) => entry?.read === false).map((entry) => ({
+        entry,
+        title: channelTitleFromKey(channelKeyOf(entry.source, entry.channel)),
+        why: window.PAApi.sayRefusal?.(new window.PAApi.ApiError('', {
           kind: 'http', field: entry.field ?? null, reason: entry.reason ?? null, accepts: entry.accepts ?? null,
-        }));
-        return why ? `${title} (${why})` : title;
-      });
+        })) || '',
+      }));
+      const unread = unreadEntries.map(({ title, why }) => (why ? `${title} (${why})` : title));
+      // What a map may bind, as the droid says (ADR 0070); none until it has.
+      mapReceivers = payload.receivers && typeof payload.receivers === 'object' ? payload.receivers : null;
       channelMap = modeMapFromArray(entries.filter((entry) => entry?.read !== false));
       channelMapLoaded = true;
       mapCapacityTotal = Number(payload.capacity?.total);
       paintCapacity();
       triggerPulseState = {};
       if (rcInputModeHidden?.value !== mode) switchRcMode(mode);
-      if (selectedChannel && !sourceAllowedInMode(parseChannelKey(selectedChannel).source, mode)) {
+      if (selectedChannel && !sourceOffered(parseChannelKey(selectedChannel).source)) {
         selectedChannel = null;
       }
       renderSummaryTable();
       renderChannelList();
       renderLivePreview();
       renderEditor();
+      renderAxes();
       if (unread.length > 0) {
         setEditorFeedback(`Not read by the droid: ${unread.join(', ')}. Apply drops ${unread.length === 1 ? 'it' : 'them'}.`, 'warning');
       }
@@ -2252,7 +2218,7 @@
     }
     // Only the sources this receiver type reads: a stale sbus2 array on a
     // single SBUS droid must not win the detect.
-    const allowed = SOURCE_OPTIONS[getEditorMode()] || [];
+    const allowed = readReceivers();
     const raw = currSnapshot?.raw && typeof currSnapshot.raw === 'object' ? currSnapshot.raw : {};
     const heard = { ...currSnapshot, raw: Object.fromEntries(Object.entries(raw).filter(([source]) => allowed.includes(source))) };
     // A CH17/CH18 switch flipped is the plainest press there is: it wins over
@@ -2343,10 +2309,6 @@
     const payloadField = rcEditorContent.querySelector(`.rc-editor-cond[data-cond="${target}"] [data-field="payload"]`);
     const payload = payloadField ? payloadField.value : '';
 
-    if (target === 'cmd' && payload && !/^[:$#]/.test(payload)) {
-      setEditorFeedback('Marcduino command must start with :, $, or #', 'error');
-      return;
-    }
     if (target === 'estop') {
       const confirmCheckbox = rcEditorContent.querySelector('[data-field="estop-confirm"]');
       if (!confirmCheckbox || !confirmCheckbox.checked) {
@@ -2360,31 +2322,24 @@
       return;
     }
 
-    if (!sourceAllowedInMode(source, mode)) {
+    if (!sourceOffered(source)) {
       setEditorFeedback(`${sourceLabel(source)} reads nothing on ${modeLabel(mode)}.`, 'error');
       return;
     }
 
     // A Reaction's two numbers, from the builder's units to the stored ones.
+    // One left empty is not sent: the droid keeps what it holds or its default.
     const reaction = {};
     const condition = droidConditionFor(selectedChannel);
     if (condition && target) {
-      const numberOf = (field) => Number(rcEditorContent.querySelector(`[data-field="${field}"]`)?.value);
-      if (condition.threshold) {
-        const { label, unit, scale, min, max } = condition.threshold;
-        const stored = Math.round(numberOf('threshold') * scale);
-        if (!Number.isFinite(stored) || stored < min || stored > max) {
-          setEditorFeedback(`${label}: ${min / scale} to ${max / scale} ${unit}.`, 'error');
-          return;
-        }
-        reaction.threshold = stored;
-      }
-      const quietS = Math.round(numberOf('quietS'));
-      if (!Number.isFinite(quietS) || quietS < REACTION_QUIET.min || quietS > REACTION_QUIET.max) {
-        setEditorFeedback(`Quiet after firing: ${REACTION_QUIET.min} to ${REACTION_QUIET.max} s.`, 'error');
-        return;
-      }
-      reaction.quietS = quietS;
+      const typed = (field) => {
+        const text = String(rcEditorContent.querySelector(`[data-field="${field}"]`)?.value ?? '').trim();
+        return text === '' ? null : Number(text);
+      };
+      const threshold = typed('threshold');
+      if (condition.threshold && threshold !== null) reaction.threshold = Math.round(threshold * condition.threshold.scale);
+      const quietS = typed('quietS');
+      if (quietS !== null) reaction.quietS = Math.round(quietS);
     }
 
     const nextMap = { ...channelMap };
@@ -2392,17 +2347,6 @@
       delete nextMap[selectedChannel];
     } else {
       nextMap[selectedChannel] = normalizeMapEntry({ source, channel, action: target, payload, ...reaction });
-    }
-
-    // Speed and Steer on SBUS1, and on one RC Receiver, as the droid requires.
-    if (driveOnSbus2(target, selectedChannel)) {
-      setEditorFeedback(DRIVE_SBUS2_TEXT, 'error');
-      return;
-    }
-    const split = driveSplitWith(nextMap, target, selectedChannel);
-    if (split) {
-      setEditorFeedback(`Not saved: ${actionLabelFromToken(split.action)} is on ${sourceLabel(split.source)}. Speed and Steer share one RC Receiver.`, 'error');
-      return;
     }
 
     // One Part, one stick (#442): a Part another channel already moves leaves
