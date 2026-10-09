@@ -698,15 +698,21 @@
   };
 
   // An SBUS frame carries 16 stick channels and two on/off ones, CH17 and
-  // CH18 (GLOSSARY.md "RC Channel"). GET /api/rc sends the 16 in `raw` and
-  // says an on/off one only where a binding in `digital` reads it, so an
-  // unbound CH17 is not known, never "off".
+  // CH18 (GLOSSARY.md "RC Channel"). GET /api/rc sends the 16 in `raw` and the
+  // two in `rawDigital` ([CH17, CH18] per receiver, whatever binds them). A
+  // firmware without `rawDigital` says an on/off one only where a binding in
+  // `digital` reads it, so there an unbound CH17 is not known, never "off".
   const SBUS_CHANNELS = 18;
   const SBUS_ANALOG_CHANNELS = 16;
   const isOnOffChannel = (source, channel) =>
     (source === 'sbus1' || source === 'sbus2') && channel > SBUS_ANALOG_CHANNELS;
 
   const onOffForChannel = (source, channel) => {
+    if (rcSnapshot?.rawDigital && typeof rcSnapshot.rawDigital === 'object') {
+      const pair = rcSnapshot.rawDigital[source];
+      const on = Array.isArray(pair) ? pair[channel - SBUS_ANALOG_CHANNELS - 1] : undefined;
+      return typeof on === 'boolean' ? on : null;
+    }
     const found = Object.values(rcSnapshot?.digital || {})
       .find((entry) => entry?.activeSource === source && Number(entry?.bindingChannel) === channel);
     return found ? Boolean(found.pressed) : null;
@@ -2115,6 +2121,23 @@
     return best;
   };
 
+  // CH17/CH18 have no number to move past a threshold: a hit is either one
+  // reading other than it was when Detect started (GET /api/rc rawDigital).
+  const computeOnOffDetectHit = (baseline, curr, sources) => {
+    const before = baseline?.rawDigital;
+    const now = curr?.rawDigital;
+    if (!before || !now) return null;
+    for (const source of sources) {
+      if (!Array.isArray(before[source]) || !Array.isArray(now[source])) continue;
+      for (let i = 0; i < 2; i += 1) {
+        if (typeof now[source][i] === 'boolean' && typeof before[source][i] === 'boolean' && now[source][i] !== before[source][i]) {
+          return { source, channel: SBUS_ANALOG_CHANNELS + 1 + i, raw: now[source][i] ? 'On' : 'Off', baseline: before[source][i] ? 'On' : 'Off' };
+        }
+      }
+    }
+    return null;
+  };
+
   const mappedActionsForDetectHit = (hit) => {
     if (!hit) return [];
     return asMapArray()
@@ -2201,7 +2224,9 @@
     const allowed = SOURCE_OPTIONS[getEditorMode()] || [];
     const raw = currSnapshot?.raw && typeof currSnapshot.raw === 'object' ? currSnapshot.raw : {};
     const heard = { ...currSnapshot, raw: Object.fromEntries(Object.entries(raw).filter(([source]) => allowed.includes(source))) };
-    const nextHit = computeDetectHit(learnBaseline, heard);
+    // A CH17/CH18 switch flipped is the plainest press there is: it wins over
+    // a stick that has wandered.
+    const nextHit = computeOnOffDetectHit(learnBaseline, currSnapshot, allowed) || computeDetectHit(learnBaseline, heard);
     const changed = JSON.stringify(nextHit) !== JSON.stringify(learnHit);
     learnHit = nextHit;
     if (changed) {
@@ -2211,6 +2236,9 @@
   };
 
   const renderRcDiagnostics = (payload) => {
+    // Detect listens to every reading, polled as much as streamed: without
+    // the stream it never heard a switch at all.
+    if (learnActive) processLearnTick(payload);
     rcSnapshot = payload;
     paintModeSelection(getEditorMode());
     setRcInputsEnabled(rcSourcesEnabled(payload));

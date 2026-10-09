@@ -531,3 +531,66 @@ test("a CENTER too close to an end is not sent, and the droid's refusal of one r
   assert.equal(posted.length, 1);
   assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_speed"), /Not saved: CENTER sits too close to an end\./);
 });
+
+// GET /api/rc rawDigital: [CH17, CH18] per receiver, whatever binds them.
+// The decoy is `digital`, which says the opposite: rawDigital is the one read.
+test("CH17 and CH18 read from rawDigital, in the grid and in the Live column", async () => {
+  const env = loadPageModule("rc.js", {
+    respond: rcDroid({
+      config: { rc: { inputMode: "dual_sbus", activeInputMode: "dual_sbus" }, components: {} },
+      map: { mode: "dual_sbus", map: [{ source: "sbus1", channel: 18, action: "op_mode" }], capacity: { total: 14, used: 1 } },
+      diag: {
+        mode: "dual_sbus",
+        sources: {},
+        raw: { sbus1: sixteen(1000) },
+        rawDigital: { sbus1: [false, true] },
+        digital: { arm1: { activeSource: "sbus1", bindingChannel: 17, pressed: true } },
+      },
+    }),
+  });
+  await env.settle();
+  await env.runSection("rc-mode-mapping");
+  await env.runSection("rc-diagnostics");
+  await env.settle();
+
+  const list = env.element("rc-channel-items").innerHTML;
+  const raw = (key) => {
+    const at = list.indexOf(`data-chkey="${key}"`);
+    return list.slice(at, list.indexOf("</span>", list.indexOf('class="rc-ch-raw"', at)) + 7);
+  };
+  assert.match(raw("sbus1:17"), /<span class="rc-ch-raw">Off<\/span>/, "rawDigital says off, whatever digital says");
+  assert.match(raw("sbus1:18"), /<span class="rc-ch-raw">On<\/span>/, "CH18 bound in no named slot still reads");
+  assert.match(env.element("rc-summary-body").innerHTML, /SBUS#1 CH 18<\/td>\s*<td><span class="rc-trigger-state"><span class="indicator ok"[^>]*><\/span>Pressed/,
+    "the Live column reads the switch on");
+});
+
+test("Detect lands on CH17 when that switch flips", async () => {
+  const reading = (ch17) => ({
+    mode: "dual_sbus",
+    sources: { sbus1: { enabled: true, linked: true, ageMs: 5 } },
+    raw: { sbus1: sixteen(1000) },
+    rawDigital: { sbus1: [ch17, false] },
+    digital: {},
+  });
+  let diag = reading(false);
+  const env = loadPageModule("rc.js", {
+    respond: (path) => (path === "/api/rc" ? { data: diag } : rcDroid({
+      config: { rc: { inputMode: "dual_sbus", activeInputMode: "dual_sbus" }, components: {} },
+      map: { mode: "dual_sbus", map: [], capacity: { total: 14, used: 0 } },
+    })(path)),
+  });
+  await env.settle();
+  await env.runSection("rc-mode-mapping");
+  await env.runSection("rc-diagnostics");
+  await env.settle();
+
+  await env.emitOn("rc-learn-btn", "click");
+  assert.match(env.element("rc-learn-status").textContent, /^Listening\./, "nothing has moved yet");
+
+  diag = reading(true);
+  const poll = env.intervals.filter((timer) => timer.ms === 1000 && !env.cleared.intervals.includes(timer.id));
+  assert.ok(poll.length > 0, "the page polls its readings without a stream");
+  poll.forEach((timer) => env.fireInterval(timer.id));
+  await env.settle();
+  assert.equal(env.element("rc-learn-status").textContent, "Detected SBUS#1 CH 17: not mapped yet.");
+});
