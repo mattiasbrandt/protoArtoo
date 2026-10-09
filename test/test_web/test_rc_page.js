@@ -500,6 +500,29 @@ test("the second drive axis is offered only on the receiver the first one reads"
   assert.equal(driveSplitWith({}, "drive_speed", "sbus2:1"), null, "the first drive axis goes anywhere");
 });
 
+// Only SBUS1 carries the drive watchdog and the failsafe stop, so a drive axis
+// is never offered on SBUS2; the dome is (operator, 2026-10-09 on #389).
+test("a drive axis is not offered on SBUS2, the dome is", () => {
+  const source = readFileSync(new URL("../../data/rc.js", import.meta.url), "utf8");
+  const begin = source.indexOf("// ==== DRIVE ON ONE RECEIVER (#389) BEGIN ====");
+  const end = source.indexOf("// ==== DRIVE ON ONE RECEIVER (#389) END ====");
+  const context = { module: { exports: null } };
+  vm.runInNewContext(`${source.slice(begin, end)}\nmodule.exports = driveOnSbus2;`, context);
+  const driveOnSbus2 = context.module.exports;
+  assert.equal(driveOnSbus2("drive_speed", "sbus2:1"), true);
+  assert.equal(driveOnSbus2("drive_steer", "sbus2:2"), true);
+  assert.equal(driveOnSbus2("drive_speed", "sbus1:1"), false);
+  assert.equal(driveOnSbus2("dome_speed", "sbus2:1"), false);
+});
+
+test("the droid's refusal of a drive on SBUS2 is shown in the builder's words", async () => {
+  const env = await loadAxes({
+    onPost: () => { throw new ApiError("drive reads SBUS1, the drive receiver", { kind: "http", status: 400 }); },
+  });
+  await clickAxis(env, { axis: "drive_steer", axisSet: "max" }, "data-axis-set");
+  assert.match(tileOf(env.element("rc-axes").innerHTML, "drive_steer"), /Not saved: Speed and Steer read SBUS1\./);
+});
+
 test("the droid's refusal of a split drive is shown in the builder's words", async () => {
   const env = await loadAxes({
     onPost: () => { throw new ApiError("drive speed and steer must be on the same receiver", { kind: "http", status: 400 }); },

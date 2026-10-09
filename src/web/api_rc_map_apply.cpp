@@ -322,6 +322,16 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
         setError(result, "drive speed and steer must be on the same receiver", steer);
         return;
     }
+    // The drive reads SBUS1: only the drive receiver carries the drive
+    // watchdog and the hardware-failsafe stop, so a drive on SBUS2 would run
+    // on its last command until the RC staleness timeout (operator,
+    // 2026-10-09 on #389).
+    for (const RcMapEntry* axis : {speed, steer}) {
+        if (axis != nullptr && axis->source == RC_BINDING_SBUS2) {
+            setError(result, "drive reads SBUS1, the drive receiver", axis);
+            return;
+        }
+    }
 
     ConfigSnapshot existing = *working;
     clearRcMapSlots(working);

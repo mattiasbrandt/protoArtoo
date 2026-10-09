@@ -265,6 +265,23 @@ void test_rcMapApply_refuses_drive_split_across_receivers(void) {
     TEST_ASSERT_EQUAL_STRING("drive speed and steer must be on the same receiver", result.errorMessage);
 }
 
+// Only SBUS1 carries the drive watchdog and the hardware-failsafe stop, so a
+// drive axis on SBUS2 is refused (operator, 2026-10-09 on #389). The dome may
+// read SBUS2.
+void test_rcMapApply_refuses_drive_on_sbus2(void) {
+    ConfigSnapshot snap = makeDefaultSnap();
+    RcMapApplyResult result = applyBody(
+        "{\"map\":[{\"source\":\"sbus2\",\"channel\":1,\"action\":\"drive_speed\"},"
+        "{\"source\":\"sbus2\",\"channel\":2,\"action\":\"drive_steer\"}]}",
+        &snap);
+    TEST_ASSERT_FALSE(result.ok);
+    TEST_ASSERT_EQUAL_STRING("drive reads SBUS1, the drive receiver", result.errorMessage);
+
+    ConfigSnapshot dome = makeDefaultSnap();
+    result = applyBody("{\"map\":[{\"source\":\"sbus2\",\"channel\":1,\"action\":\"dome_speed\"}]}", &dome);
+    TEST_ASSERT_TRUE_MESSAGE(result.ok, result.errorMessage);
+}
+
 // --- success path: named trigger action fills its dedicated slot ---
 void test_rcMapApply_arm1_toggle_fills_dedicated_slot(void) {
     std::map<std::string, std::string> m = {
@@ -309,6 +326,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_rcMapApply_calibration_refuses_what_it_cannot_store);
     RUN_TEST(test_rcMapApply_calibration_refuses_a_side_inside_the_deadband);
     RUN_TEST(test_rcMapApply_refuses_drive_split_across_receivers);
+    RUN_TEST(test_rcMapApply_refuses_drive_on_sbus2);
     RUN_TEST(test_rcMapApply_arm1_toggle_fills_dedicated_slot);
     RUN_TEST(test_rcMapApply_unnamed_trigger_spills_to_first_free_slot);
     return UNITY_END();
