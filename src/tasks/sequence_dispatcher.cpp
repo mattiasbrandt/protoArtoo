@@ -1036,7 +1036,32 @@ static const char* bulkCentreName(const SeqBulkCentreRun& run) {
 
 // =============================================================================
 // sequenceStart  --  choke point called from RC and web paths.
+//
+// Its log lines are out of line (the helper below): inline, their 256 B line
+// buffer sat in this frame under domeQueueTx() and its queue-drop log line, on
+// the action door's chain for RCInputTask and ReactionTask (#490).
 // =============================================================================
+
+enum class SeqStartLog : uint8_t { QueueFull, Alias, UnknownLearned, Fallback };
+
+static __attribute__((noinline)) void logSequenceStart(SeqStartLog what, CommandSource src,
+                                                       const char* name, const char* target) {
+    switch (what) {
+        case SeqStartLog::QueueFull:
+            PA_LOG_WARN(TAG, "[%s] seq queue full: %s", commandSourceToString(src), name);
+            break;
+        case SeqStartLog::Alias:
+            PA_LOG_DEBUG(TAG, "[%s] alias %s -> %s", commandSourceToString(src), name, target);
+            break;
+        case SeqStartLog::UnknownLearned:
+            PA_LOG_WARN(TAG, "[%s] unknown DM:* (deleted Learned Sequence?) -> dome: %s",
+                        commandSourceToString(src), name);
+            break;
+        case SeqStartLog::Fallback:
+            PA_LOG_DEBUG(TAG, "[%s] fallback -> dome: %s", commandSourceToString(src), name);
+            break;
+    }
+}
 
 bool sequenceStart(const char* name, CommandSource src) {
     if (name == nullptr || name[0] == '\0') {
@@ -1065,14 +1090,12 @@ bool sequenceStart(const char* name, CommandSource src) {
             req.src = src;
             bool ok = xQueueSend(sequenceQueue, &req, 0) == pdTRUE;
             if (!ok) {
-                PA_LOG_WARN(TAG, "[%s] seq queue full: %s",
-                            commandSourceToString(src), name);
+                logSequenceStart(SeqStartLog::QueueFull, src, name, nullptr);
             }
             return ok;
         }
         case SEQ_ALIAS:
-            PA_LOG_DEBUG(TAG, "[%s] alias %s -> %s",
-                         commandSourceToString(src), name, r.aliasTarget);
+            logSequenceStart(SeqStartLog::Alias, src, name, r.aliasTarget);
             return domeQueueTx(r.aliasTarget);
 
         case SEQ_FALLBACK:
@@ -1082,11 +1105,9 @@ bool sequenceStart(const char* name, CommandSource src) {
                 // almost certainly a deleted Learned Sequence still referenced
                 // by an RC binding. The dome ignores it, so make the no-op
                 // visible to the operator instead of failing silently.
-                PA_LOG_WARN(TAG, "[%s] unknown DM:* (deleted Learned Sequence?) -> dome: %s",
-                            commandSourceToString(src), name);
+                logSequenceStart(SeqStartLog::UnknownLearned, src, name, nullptr);
             } else {
-                PA_LOG_DEBUG(TAG, "[%s] fallback -> dome: %s",
-                             commandSourceToString(src), name);
+                logSequenceStart(SeqStartLog::Fallback, src, name, nullptr);
             }
             return domeQueueTx(name);
     }
