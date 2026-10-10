@@ -356,6 +356,29 @@ void test_populateRcMapJson_widest_map_fits_its_body(void) {
     TEST_ASSERT_EQUAL_STRING("drive_speed,drive_steer,dome_speed", doc["map"][13]["accepts"] | "");
 }
 
+// GET /api/rc/map shows the axis group the droid reads and nothing else: a map
+// stored before a save mirrored every axis into both groups can hold an axis in
+// the PWM group only, which an SBUS droid never moves, so GET shows it unbound
+// rather than borrowing the other group's binding (ADR 0070, amended
+// 2026-10-10, #490).
+void test_populateRcMapJson_shows_an_axis_unbound_when_its_own_group_is_unmapped(void) {
+    ConfigSnapshot snap = makeEmptySnapshot(RC_INPUT_DUAL_SBUS);
+    axisPlace(&snap, RcMapAxisGroup::Sbus, RcMapAxis::DriveSpeed) =
+        defaultSbusBinding(RC_BINDING_SBUS1, 1);
+    axisPlace(&snap, RcMapAxisGroup::Sbus, RcMapAxis::DriveSteer) =
+        defaultSbusBinding(RC_BINDING_SBUS1, 2);
+    axisPlace(&snap, RcMapAxisGroup::Pwm, RcMapAxis::DomeSpeed) = defaultPwmBinding(3);
+
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(populateRcMapJson(doc, snap));
+    JsonArrayConst map = doc["map"].as<JsonArrayConst>();
+    for (JsonObjectConst item : map) {
+        TEST_ASSERT_NOT_EQUAL_MESSAGE(0, strcmp(item["action"] | "", "dome_speed"),
+                                      "the SBUS group's dome axis is unmapped");
+    }
+    TEST_ASSERT_EQUAL_UINT(2, map.size());
+}
+
 // GET /api/rc/map says which RC Receivers the saved type reads and which the
 // drive may use, so the RC page offers exactly what a save takes (ADR 0070).
 void test_populateRcMapJson_says_which_receivers_a_map_may_bind(void) {
@@ -384,6 +407,7 @@ int main(void) {
     RUN_TEST(test_populateRcMapJson_marks_both_bindings_on_one_channel_unread);
     RUN_TEST(test_populateRcMapJson_marks_both_axes_of_a_split_drive_unread);
     RUN_TEST(test_populateRcMapJson_widest_map_fits_its_body);
+    RUN_TEST(test_populateRcMapJson_shows_an_axis_unbound_when_its_own_group_is_unmapped);
     RUN_TEST(test_rcMapStorePlace_a_toggle_takes_its_named_place);
     RUN_TEST(test_rcMapStorePlace_spill_slots_fill_in_order);
     RUN_TEST(test_rcMapStorePlace_applies_sbus_button_reverse_default);
