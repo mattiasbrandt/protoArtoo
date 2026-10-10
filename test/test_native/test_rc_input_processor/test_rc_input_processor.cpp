@@ -710,6 +710,104 @@ void test_a_place_whose_stamp_stayed_keeps_its_state(void) {
     TEST_ASSERT_TRUE_MESSAGE(rig.ticks(4), "an unchanged place lost its switch across a save");
 }
 
+// A puppet string starts afresh with its place (#490): a fresh string takes
+// the stick where it rests as its baseline and sends nothing until the stick
+// moves past RC_PUPPET_PICKUP_PERMILLE from there (include/rc_puppet.h). One
+// string on SBUS1 CH7, frames 20 ms apart, well inside the 500 ms gap; an
+// accepted target is recorded as the caller does (rcPuppetSent()).
+struct PuppetRig {
+    RcInputProcessor proc;
+    RcProcessorConfig cfg;
+    RcProcessorInput input;
+
+    static int rawAt(float share) {
+        return RC_SBUS_DEFAULT_CENTER + (int)(share * (RC_SBUS_DEFAULT_MAX - RC_SBUS_DEFAULT_CENTER));
+    }
+
+    // Engaged, with the stick resting at 75% of the throw and that target sent.
+    void begin() {
+        rcInputProcessorInit(&proc);
+        cfg = buildProcessorConfig();
+        cfg.mapping.domeSpeed = disabledRcBinding();
+        cfg.triggerCount = 2;
+        cfg.triggers[0] = makeRcTriggerBinding(RC_BINDING_SBUS1, 7, SERVO_ACTION_PUPPET_PART,
+                                               "bodyPanel1", RC_SBUS_DEFAULT_MIN,
+                                               RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0, false);
+        cfg.triggers[1] = disabledRcTriggerBinding();
+        cfg.triggerStamps[0] = 4;
+        cfg.triggerStamps[1] = 2;
+        input = {};
+        input.channels = buildChannelSnapshot();
+        input.channels.source = RC_BINDING_SBUS1;
+        input.sourceFilter = RC_BINDING_SBUS1;
+        input.puppetGapMs = 500;
+        input.nowMs = 1000;
+        input.channels.channels[6] = RC_SBUS_DEFAULT_CENTER;
+        tick();  // the baseline, at the close end
+        input.channels.channels[6] = rawAt(0.75f);
+        TEST_ASSERT_TRUE_MESSAGE(tick(), "the string engages past the pickup");
+        TEST_ASSERT_TRUE(proc.puppetStates[0].engaged);
+        TEST_ASSERT_FALSE(tick());
+    }
+
+    // One frame; whether slot 0's string sent a target.
+    bool tick() {
+        input.config = cfg;
+        RcProcessorOutput out = {};
+        rcInputProcessorTick(&proc, input, &out);
+        if (out.puppet[0].send) {
+            rcPuppetSent(&proc.puppetStates[0], out.puppet[0].permille, input.nowMs);
+        }
+        input.nowMs += 20;
+        return out.puppet[0].send;
+    }
+
+    bool ticks(int n) {
+        bool sent = false;
+        for (int i = 0; i < n; ++i) {
+            sent = tick() || sent;
+        }
+        return sent;
+    }
+
+    // The stick moves to `share` of its travel from centre; two frames.
+    bool moveTo(float share) {
+        input.channels.channels[6] = rawAt(share);
+        return ticks(2);
+    }
+};
+
+// Reversing an engaged string - same receiver, RC Channel and Part, only its
+// calibration edited - moves its place's stamp. The resting stick now reads as
+// another target; the Part stays where it is until the stick moves.
+void test_a_puppet_string_whose_calibration_changed_moves_nothing_until_its_stick_moves(void) {
+    PuppetRig rig;
+    rig.begin();
+    rig.cfg.triggers[0].reverse = true;  // the resting stick now reads as the close end
+    rig.cfg.triggerStamps[0]++;
+    TEST_ASSERT_FALSE_MESSAGE(rig.ticks(4), "an edited string moved its Part with the stick still");
+    // 10% the other side of centre: 100 permille from the fresh baseline at 0.
+    TEST_ASSERT_TRUE_MESSAGE(rig.moveTo(-0.10f), "the edited string picks up once the stick moves");
+}
+
+// A string left still by the RC Map's rules for two frames - far inside the
+// gap - while its stick moved, then read again, picks its Part up afresh from
+// where the stick now rests.
+void test_a_puppet_string_read_again_moves_nothing_until_its_stick_moves(void) {
+    PuppetRig rig;
+    rig.begin();
+    rig.cfg.triggers[1] = makeRcTriggerBinding(RC_BINDING_SBUS1, 7, SOUND_ACTION_RANDOM_SAD, nullptr,
+                                               RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
+                                               RC_SBUS_DEFAULT_MAX, 0, false);
+    rig.cfg.triggerStamps[1]++;
+    rig.input.channels.channels[6] = PuppetRig::rawAt(0.40f);
+    TEST_ASSERT_FALSE_MESSAGE(rig.ticks(2), "a string left still sent a target");
+    rig.cfg.triggers[1] = disabledRcTriggerBinding();
+    rig.cfg.triggerStamps[1]++;
+    TEST_ASSERT_FALSE_MESSAGE(rig.ticks(4), "a string read again moved its Part with the stick still");
+    TEST_ASSERT_TRUE_MESSAGE(rig.moveTo(0.30f), "the string read again picks up once the stick moves");
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_init_zeroes_state);
@@ -736,5 +834,7 @@ int main(void) {
     RUN_TEST(test_a_place_whose_stamp_moved_starts_afresh);
     RUN_TEST(test_a_place_read_again_starts_afresh);
     RUN_TEST(test_a_place_whose_stamp_stayed_keeps_its_state);
+    RUN_TEST(test_a_puppet_string_whose_calibration_changed_moves_nothing_until_its_stick_moves);
+    RUN_TEST(test_a_puppet_string_read_again_moves_nothing_until_its_stick_moves);
     return UNITY_END();
 }

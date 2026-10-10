@@ -159,9 +159,13 @@ void rcInputProcessorTick(RcInputProcessor* proc, RcProcessorInput& input,
     // A place starts afresh when its change stamp moved - a save, a restore
     // or a factory reset put another binding there, or edited the one there,
     // calibration included - or when its binding is read again after the RC
-    // Map's rules left it still. Neither ever looks like a switch moving
-    // (ADR 0070, amended 2026-10-10). Judged on every place, whatever receiver
-    // this frame is from; read means bound after rcStoredMapKeepRead() above.
+    // Map's rules left it still. Neither ever looks like a switch moving, and
+    // neither moves a Part: a switch's debounce and a puppet string's pickup
+    // both start over, so the string takes its stick where it rests as a new
+    // baseline rather than sending where an edited calibration, or a stick
+    // moved while nothing read it, now puts the Part (ADR 0070, amended
+    // 2026-10-10). Judged on every place, whatever receiver this frame is
+    // from; read means bound after rcStoredMapKeepRead() above.
     for (size_t i = 0; i < RC_TRIGGER_MAX; ++i) {
         const bool counted = i < input.config.triggerCount;
         const RcTriggerBinding& slot = input.config.triggers[i];
@@ -172,6 +176,7 @@ void rcInputProcessorTick(RcInputProcessor* proc, RcProcessorInput& input,
             (stamp != proc->triggerStamps[i] || (read && !proc->triggerRead[i]))) {
             proc->triggerStates[i] = {};
             proc->triggerBaselinePending[i] = true;
+            proc->puppetStates[i] = {};
         }
         proc->triggerStamps[i] = stamp;
         proc->triggerRead[i] = read;
