@@ -616,6 +616,100 @@ void test_an_on_off_binding_moved_to_another_place_fires_nothing_until_its_switc
     swapSlotsFireNothing(17, 18, 1811, 172);
 }
 
+// The change stamp and the read flag (ADR 0070, amended 2026-10-10, #490).
+// One one-shot cue on SBUS1 CH5, its switch settled up; `tick()` runs one
+// frame 200 ms on, past the one-shot debounce, and says whether a cue fired.
+struct StampRig {
+    RcInputProcessor proc;
+    RcProcessorConfig cfg;
+    RcProcessorInput input;
+
+    void begin() {
+        rcInputProcessorInit(&proc);
+        cfg = buildProcessorConfig();
+        cfg.mapping.domeSpeed = disabledRcBinding();
+        cfg.triggerCount = 2;
+        cfg.triggers[0] = makeRcTriggerBinding(RC_BINDING_SBUS1, 5, SOUND_ACTION_RANDOM_HAPPY,
+                                               nullptr, RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
+                                               RC_SBUS_DEFAULT_MAX, 0, false);
+        cfg.triggers[1] = disabledRcTriggerBinding();
+        cfg.triggerStamps[0] = 7;
+        cfg.triggerStamps[1] = 3;
+        input = {};
+        input.channels = buildChannelSnapshot();
+        input.channels.source = RC_BINDING_SBUS1;
+        input.channels.channels[4] = RC_SBUS_DEFAULT_MAX;
+        input.sourceFilter = RC_BINDING_SBUS1;
+        input.nowMs = 1000;
+        for (int i = 0; i < 6; ++i) {
+            tick();
+        }
+    }
+
+    bool tick() {
+        input.config = cfg;  // the processor leaves still what is not read, in place
+        RcProcessorOutput out = {};
+        rcInputProcessorTick(&proc, input, &out);
+        input.nowMs += 200;
+        return anyTriggerFired(out);
+    }
+
+    bool ticks(int n) {
+        bool fired = false;
+        for (int i = 0; i < n; ++i) {
+            fired = tick() || fired;
+        }
+        return fired;
+    }
+};
+
+// A calibration-only edit moves the place's stamp, and the switch starts
+// afresh where it is: reversing it reads the same position as the other end,
+// which the old state would fire as a move.
+void test_a_place_whose_stamp_moved_starts_afresh(void) {
+    StampRig rig;
+    rig.begin();
+    rig.cfg.triggers[0].reverse = true;
+    rig.cfg.triggerStamps[0]++;
+    TEST_ASSERT_FALSE_MESSAGE(rig.ticks(6), "an edited switch fired with nothing moving");
+    rig.input.channels.channels[4] = RC_SBUS_DEFAULT_MIN;
+    TEST_ASSERT_TRUE_MESSAGE(rig.ticks(4), "the edited switch fires once it moves");
+}
+
+// A place the RC Map's rules left still - here a second cue on its RC
+// Channel, as a save cut short can leave - and read again starts afresh, with
+// its stamp unchanged: the switch moved while nothing read it.
+void test_a_place_read_again_starts_afresh(void) {
+    StampRig rig;
+    rig.begin();
+    rig.cfg.triggers[1] = makeRcTriggerBinding(RC_BINDING_SBUS1, 5, SOUND_ACTION_RANDOM_SAD, nullptr,
+                                               RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
+                                               RC_SBUS_DEFAULT_MAX, 0, false);
+    rig.cfg.triggerStamps[1]++;
+    TEST_ASSERT_FALSE(rig.ticks(2));
+    rig.input.channels.channels[4] = RC_SBUS_DEFAULT_MIN;
+    TEST_ASSERT_FALSE_MESSAGE(rig.ticks(4), "a cue left still fired");
+    rig.cfg.triggers[1] = disabledRcTriggerBinding();
+    rig.cfg.triggerStamps[1]++;
+    TEST_ASSERT_FALSE_MESSAGE(rig.ticks(6), "a cue read again fired for a move nobody read");
+    rig.input.channels.channels[4] = RC_SBUS_DEFAULT_MAX;
+    TEST_ASSERT_TRUE_MESSAGE(rig.ticks(4), "the cue read again fires once its switch moves");
+}
+
+// A place whose stamp stays put keeps its state while another place's stamp
+// moves (a save that added a binding elsewhere): its switch moving in that
+// same frame still fires.
+void test_a_place_whose_stamp_stayed_keeps_its_state(void) {
+    StampRig rig;
+    rig.begin();
+    rig.cfg.triggers[1] = makeRcTriggerBinding(RC_BINDING_SBUS1, 6, SOUND_ACTION_RANDOM_SAD, nullptr,
+                                               RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
+                                               RC_SBUS_DEFAULT_MAX, 0, false);
+    rig.cfg.triggerStamps[1]++;
+    rig.input.channels.channels[4] = RC_SBUS_DEFAULT_MIN;
+    TEST_ASSERT_TRUE_MESSAGE(rig.ticks(4), "an unchanged place lost its switch across a save");
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_init_zeroes_state);
@@ -639,5 +733,8 @@ int main(void) {
     RUN_TEST(test_two_stored_bindings_on_one_channel_both_stay_still);
     RUN_TEST(test_a_binding_moved_to_another_place_fires_nothing_until_its_switch_moves);
     RUN_TEST(test_an_on_off_binding_moved_to_another_place_fires_nothing_until_its_switch_moves);
+    RUN_TEST(test_a_place_whose_stamp_moved_starts_afresh);
+    RUN_TEST(test_a_place_read_again_starts_afresh);
+    RUN_TEST(test_a_place_whose_stamp_stayed_keeps_its_state);
     return UNITY_END();
 }

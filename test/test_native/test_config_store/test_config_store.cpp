@@ -1253,6 +1253,102 @@ void test_configCacheReplace_applies_all_categories() {
     TEST_ASSERT_EQUAL_INT(999, robotState.driveOutputSpeed);
 }
 
+// The RC Map's change stamps (ADR 0070, amended 2026-10-10, #490): every
+// whole-snapshot write into the cache moves the stamp of each trigger place
+// whose binding it changed, and no other.
+static void readStamps(uint16_t* stamps) {
+    RcTriggerBinding slots[RC_TRIGGER_SLOT_COUNT];
+    TEST_ASSERT_EQUAL(RC_TRIGGER_SLOT_COUNT,
+                      configCacheReadRcTriggerSlots(slots, stamps, RC_TRIGGER_SLOT_COUNT));
+}
+
+// Each stamp but `moved` (RC_TRIGGER_SLOT_COUNT: none) is where it was; `moved`
+// went up by one.
+static void assertOnlyMoved(const uint16_t* before, size_t moved, const char* what) {
+    uint16_t after[RC_TRIGGER_SLOT_COUNT];
+    readStamps(after);
+    for (size_t i = 0; i < RC_TRIGGER_SLOT_COUNT; ++i) {
+        char message[96];
+        snprintf(message, sizeof(message), "%s: place %u (%s)", what, (unsigned)i,
+                 RC_MAP_TRIGGER_PLACES[i].key);
+        const uint16_t expected = (uint16_t)(before[i] + (i == moved ? 1 : 0));
+        TEST_ASSERT_EQUAL_UINT16_MESSAGE(expected, after[i], message);
+    }
+}
+
+void test_each_cache_write_moves_only_the_stamps_of_places_it_changed() {
+    ConfigSnapshot snap = {};
+    configSnapshotDefaults(&snap);
+    configCacheReplace(snap);
+    uint16_t stamps[RC_TRIGGER_SLOT_COUNT];
+
+    readStamps(stamps);
+    configCacheReplace(snap);
+    assertOnlyMoved(stamps, RC_TRIGGER_SLOT_COUNT, "Replace, nothing changed");
+
+    readStamps(stamps);
+    snap.system.rc_arm2 = makeRcTriggerBinding(RC_BINDING_SBUS1, 7, SERVO_ACTION_ARM2_TOGGLE,
+                                               nullptr, RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
+                                               RC_SBUS_DEFAULT_MAX, 0, false);
+    configCacheApply(snap);
+    assertOnlyMoved(stamps, 1, "Apply, rc_arm2 moved to CH7");
+
+    readStamps(stamps);
+    snap.system.rc_free2 = makeRcReactionBinding(RC_BINDING_DROID_SPEED, 1,
+                                                 SOUND_ACTION_RANDOM_HAPPY, nullptr, 300, 5);
+    configCacheApplyKeepingLive(snap, true, false);
+    assertOnlyMoved(stamps, 9, "ApplyKeepingLive, a Reaction added in rc_free2");
+
+    readStamps(stamps);
+    snap.system.rc_arm1.deadband += 5;
+    configCacheReplace(snap);
+    assertOnlyMoved(stamps, 0, "Replace, rc_arm1's dead zone alone");
+}
+
+// Any one field of a binding moves its place's stamp: the control, the action,
+// the payload, the calibration and a Reaction's numbers alike. Bytes past the
+// payload's end are not part of it, and move nothing.
+void test_any_field_of_a_binding_moves_its_stamp() {
+    ConfigSnapshot snap = {};
+    configSnapshotDefaults(&snap);
+    const RcTriggerBinding base = makeRcTriggerBinding(
+        RC_BINDING_SBUS1, 9, DOME_ACTION_MARCDUINO_CMD, ":OP01", RC_SBUS_DEFAULT_MIN,
+        RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0, false);
+    snap.system.rc_audio = base;
+    configCacheReplace(snap);
+    uint16_t stamps[RC_TRIGGER_SLOT_COUNT];
+
+    struct Edit {
+        const char* what;
+        void (*apply)(RcTriggerBinding*);
+    };
+    const Edit edits[] = {
+        {"source", [](RcTriggerBinding* b) { b->source = RC_BINDING_SBUS2; }},
+        {"channel", [](RcTriggerBinding* b) { b->channel = 10; }},
+        {"target", [](RcTriggerBinding* b) { b->target = DOME_ACTION_MARCDUINO_SEQ; }},
+        {"payload", [](RcTriggerBinding* b) { b->marcduinoPayload[3] = '2'; }},
+        {"min", [](RcTriggerBinding* b) { b->min += 1; }},
+        {"center", [](RcTriggerBinding* b) { b->center += 1; }},
+        {"max", [](RcTriggerBinding* b) { b->max -= 1; }},
+        {"deadband", [](RcTriggerBinding* b) { b->deadband += 1; }},
+        {"reverse", [](RcTriggerBinding* b) { b->reverse = !b->reverse; }},
+    };
+    for (const Edit& edit : edits) {
+        readStamps(stamps);
+        snap.system.rc_audio = base;
+        edit.apply(&snap.system.rc_audio);
+        configCacheApply(snap);
+        assertOnlyMoved(stamps, 5, edit.what);
+        snap.system.rc_audio = base;
+        configCacheApply(snap);
+    }
+
+    readStamps(stamps);
+    snap.system.rc_audio.marcduinoPayload[sizeof(snap.system.rc_audio.marcduinoPayload) - 1] = 'x';
+    configCacheApply(snap);
+    assertOnlyMoved(stamps, RC_TRIGGER_SLOT_COUNT, "a byte past the payload's end");
+}
+
 // Test: configCacheReplace does not touch runtime fields
 void test_configCacheReplace_does_not_touch_runtime_fields() {
     // Set a non-cfg runtime field to a known value
@@ -1918,6 +2014,8 @@ int main() {
     RUN_TEST(test_active_component_toggles_survive_a_later_saved_write);
     RUN_TEST(test_configCacheRead_save_round_trip);
     RUN_TEST(test_configCacheReplace_applies_all_categories);
+    RUN_TEST(test_each_cache_write_moves_only_the_stamps_of_places_it_changed);
+    RUN_TEST(test_any_field_of_a_binding_moves_its_stamp);
     RUN_TEST(test_configCacheReplace_does_not_touch_runtime_fields);
     RUN_TEST(test_configCacheSetStationary_writes_only_that_field);
     RUN_TEST(test_configCacheSetStationary_does_not_mark_the_rc_mapping_dirty);
