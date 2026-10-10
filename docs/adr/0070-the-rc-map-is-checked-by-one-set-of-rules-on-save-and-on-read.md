@@ -120,3 +120,37 @@ Settled after the Codex review of #486, with the operator.
   same RC Channel carries the old calibration over only when the rules take it;
   otherwise the axis starts from the defaults. Before, the old calibration was
   carried over and refused the whole save, so "map it again" could not mend it.
+
+## Amended 2026-10-10: read means the droid reads it, 11 means any 11, and one switch per toggle
+
+Settled with the operator after the 2026-10-10 architecture review, which found
+the readers of a stored RC Map still each assembling the verdict from the rules.
+
+- **`read` says what the droid reads now, not what a save would keep.** A drive
+  pair the rules refuse leaves both axes still, so `GET /api/rc/map` marks both
+  Speed and Steer unread. The refused axis carries its own refusal; the other
+  carries a reason of its own that names the refused axis, so the builder still
+  sees which one to fix. It does not carry the refused axis's refusal: the RC
+  page acts on a refusal's field (a calibration refusal offers Reset ends), and
+  would act on the wrong axis. Before, only the refused axis was marked and the
+  other read `true` while it moved nothing.
+- **Readers never see a binding the droid does not read.** The rules module takes
+  a stored RC Map and leaves still every binding it refuses, on its own or in a
+  conflict. The input processor, the mapper, the snapshot behind `GET /api/rc` and ReactionTask
+  use what is left and keep no check of their own. Only `GET /api/rc/map` asks
+  why a binding was left still. This runs once a frame on core 1, with no
+  allocation, as the conflict check already did.
+- **Any free stored place takes any trigger binding.** Six of the 11 places were
+  kept for the arm, aux and op mode toggles, so a Sequence, sound or Reaction had
+  five, and the droid refused the sixth while the RC page counted toward 11. The ceiling the droid enforces is now the 11 the glossary states,
+  and it is a rule of this module. Nothing outside storage reads a place by its
+  name.
+- **An arm or aux toggle or the op mode sits on one RC Channel.** This limit came
+  from the reserved places. It is kept as a rule (refused on save, both still on
+  read), because two switches toggling one arm fight each other. A Sequence or
+  sound may still sit on several RC Channels, and a Reaction is not held to it.
+
+Considered and rejected: keeping `read` as "a save would keep it" (the RC Map
+would then say an axis is read that the droid never moves), a verdict list each
+reader applies itself (each would keep a skip step that can drift), and keeping
+the reserved places with a per-kind ceiling on the page (the operator set 11).
