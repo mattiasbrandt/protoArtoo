@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 // What one trigger slot's Reaction is doing (ADR 0053, #450), slot for slot
-// with rcTriggerSlotsCopy() (include/config_store.h; ReactionTask asserts the
+// with rcTriggerSlotsCopy() (include/rc_map_store.h; ReactionTask asserts the
 // counts agree). `source` is RC_BINDING_NONE
 // in a slot that holds no Reaction. This is how "my Reaction never fires" gets
 // an answer on the RC page: it is not armed (`availability`), or it was held

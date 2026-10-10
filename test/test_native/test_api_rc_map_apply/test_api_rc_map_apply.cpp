@@ -14,6 +14,7 @@
 
 #include "api_config_snapshot.h"  // populateRcMapJson(): the map a page reads back
 #include "api_rc_map_apply.h"
+#include "rc_map_store.h"  // rcTriggerSlotsCopy()
 
 namespace {
 

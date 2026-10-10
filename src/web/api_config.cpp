@@ -31,6 +31,7 @@
 #include "api_json_response.h"
 #include "api_rc_map_apply.h"
 #include "rc_map_rules.h"  // what the droid would read of a stored map
+#include "rc_map_store.h"  // rcTriggerSlotPlaces()
 #include "api_status.h"  // captureServoOutputCommanded(), shared with the Console
 #include "api_wifi_apply.h"
 #include "board_outputs.h"  // BOARD_OUTPUTS, boardComponentLabel() - one label source

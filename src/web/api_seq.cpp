@@ -21,11 +21,12 @@
 #include "api_helpers.h"           // trimAsciiWhitespace
 #include "api_json_response.h"
 #include "config.h"                // NVS_NAMESPACE
-#include "config_cache.h"          // ConfigSnapshot, configCacheRead, rcTriggerSlotsCopy
+#include "config_cache.h"          // ConfigSnapshot, configCacheRead
 #include "logging.h"
 #include "protocol_check.h"        // PC_NAME_BODY_MAX, protocolCheckSeqNameValid
 #include "rc_action_types.h"       // RcTriggerBinding
 #include "rc_binding_types.h"      // rcBindingSourceToString
+#include "rc_map_store.h"          // rcTriggerSlotsCopy
 #include "robot_state.h"           // CommandSource
 #include "seq_dangling_bindings.h"
 #include "seq_last_run_json.h"
