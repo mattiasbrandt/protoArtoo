@@ -25,6 +25,8 @@ the patch releases, whose notes live on their own GitHub Release.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-10
+
 ### Added
 
 #### RC
