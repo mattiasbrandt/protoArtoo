@@ -58,8 +58,8 @@ void configCacheReadRcActionContext(RcAudioCategorySnapshot* categories,
 // on the live config.
 size_t configCacheReadRcTriggerSlots(RcTriggerBinding* out, size_t cap);
 // configCacheReadRcAxes: the drive and dome axes the input task reads for the
-// receiver type `mode` - the PWM group on standard_pwm, the SBUS group
-// otherwise (rcBuildMappingConfig(), src/tasks/rc_input.cpp).
+// receiver type `mode`: rcMapReadAxes() (include/rc_map_store.h) on the live
+// config.
 void configCacheReadRcAxes(uint8_t mode, RcBindingConfig* driveSpeed, RcBindingConfig* driveSteer,
                            RcBindingConfig* domeSpeed);
 // configCacheSbusTimeoutMs: drive.sbusTimeoutMs, the RC signal watchdog's

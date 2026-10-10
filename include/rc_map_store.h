@@ -8,6 +8,11 @@
 // the save and the single-SBUS label carry loop over these tables, so a place
 // is named here and in SystemConfig's own fields and nowhere else.
 //
+// The store also decides where a save puts each binding (rcMapStorePlace(),
+// src/rc_map_store.cpp) and which axis group a receiver type reads
+// (rcMapReadAxes()): every reader of the drive and dome axes takes them
+// through that one pick.
+//
 // The legacy PWM and SBUS arm and sound bindings (rc_pwm_arm1/arm2/audio,
 // rc_sbus_arm1/arm2/audio) are not RC Map places and stay outside it.
 //
@@ -18,16 +23,19 @@
 // build it at boot.
 //
 // It sits above include/config_store.h (it needs SystemConfig whole to name its
-// fields), and the RC Map's rules (include/rc_map_rules.h) sit below it.
+// fields), and the RC Map's rules (include/rc_map_rules.h) sit below it: the
+// store includes the rules, never the reverse.
 // =============================================================================
 #pragma once
 
 #include <stddef.h>
 #include <stdint.h>
 
+#include "api_apply_refusal.h"  // ApplyRefusal: how rcMapStorePlace() states a refusal
 #include "config_store.h"     // SystemConfig, RC_TRIGGER_SLOT_COUNT
 #include "rc_action_types.h"  // RcTriggerBinding, makeRcTriggerBinding()
 #include "rc_binding_types.h"  // RcBindingConfig, defaultPwmBinding(), defaultSbusBinding()
+#include "rc_map_rules.h"     // RcMapEntry, kRcMapMaxTriggers
 
 // -----------------------------------------------------------------------------
 // Trigger places
@@ -37,12 +45,18 @@
 // disabled binding (disabledRcTriggerBinding(), with its own PWM-range
 // calibration); any other is bound on that channel with the SBUS calibration
 // and the receiver's idle polarity (rcTriggerDefaultReverse()).
+//
+// `ownAction` is the toggle a save puts here first, when this place is free
+// and the toggle is on a radio (rcMapStorePlace()): a map that fits the older
+// layout of one place per toggle is stored as it always was. ROBOT_ACTION_NONE
+// marks an open place, which a save fills before any place a toggle owns.
 struct RcTriggerPlace {
     const char* key;  // NVS key
     RcTriggerBinding SystemConfig::*place;
     RcBindingSource defaultSource;
     uint8_t defaultChannel;
     RobotActionId defaultAction;
+    RobotActionId ownAction;
 };
 
 // In tier-2 dispatch order. The RC input task, ReactionTask, the RC snapshot,
@@ -51,17 +65,17 @@ struct RcTriggerPlace {
 // added at the end. Note rc_audio's key is "rc_aud": it was carried from
 // "rc_sound" by migrateSchema2To3() (src/config_store.cpp) and is what is stored.
 inline constexpr RcTriggerPlace RC_MAP_TRIGGER_PLACES[] = {
-    {"rc_arm1", &SystemConfig::rc_arm1, RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE},
-    {"rc_arm2", &SystemConfig::rc_arm2, RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM2_TOGGLE},
-    {"rc_aux1", &SystemConfig::rc_aux1, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE},
-    {"rc_aux2", &SystemConfig::rc_aux2, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE},
-    {"rc_aux3", &SystemConfig::rc_aux3, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE},
-    {"rc_aud", &SystemConfig::rc_audio, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE},
-    {"rc_opmode", &SystemConfig::rc_opmode, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE},
-    {"rc_free0", &SystemConfig::rc_free0, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE},
-    {"rc_free1", &SystemConfig::rc_free1, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE},
-    {"rc_free2", &SystemConfig::rc_free2, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE},
-    {"rc_free3", &SystemConfig::rc_free3, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE},
+    {"rc_arm1", &SystemConfig::rc_arm1, RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, SERVO_ACTION_ARM1_TOGGLE},
+    {"rc_arm2", &SystemConfig::rc_arm2, RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM2_TOGGLE, SERVO_ACTION_ARM2_TOGGLE},
+    {"rc_aux1", &SystemConfig::rc_aux1, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE, SERVO_ACTION_AUX1_TOGGLE},
+    {"rc_aux2", &SystemConfig::rc_aux2, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE, SERVO_ACTION_AUX2_TOGGLE},
+    {"rc_aux3", &SystemConfig::rc_aux3, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE, SERVO_ACTION_AUX3_TOGGLE},
+    {"rc_aud", &SystemConfig::rc_audio, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE, ROBOT_ACTION_NONE},
+    {"rc_opmode", &SystemConfig::rc_opmode, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE, SYSTEM_ACTION_OP_MODE},
+    {"rc_free0", &SystemConfig::rc_free0, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE, ROBOT_ACTION_NONE},
+    {"rc_free1", &SystemConfig::rc_free1, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE, ROBOT_ACTION_NONE},
+    {"rc_free2", &SystemConfig::rc_free2, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE, ROBOT_ACTION_NONE},
+    {"rc_free3", &SystemConfig::rc_free3, RC_BINDING_NONE, 0, ROBOT_ACTION_NONE, ROBOT_ACTION_NONE},
 };
 
 static_assert(sizeof(RC_MAP_TRIGGER_PLACES) / sizeof(RC_MAP_TRIGGER_PLACES[0]) == RC_TRIGGER_SLOT_COUNT,
@@ -88,14 +102,6 @@ inline RcTriggerBinding rcTriggerPlaceDefault(const RcTriggerPlace& place) {
                                 nullptr, RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
                                 RC_SBUS_DEFAULT_MAX, 0,
                                 rcTriggerDefaultReverse(place.defaultSource, place.defaultChannel));
-}
-
-// The trigger places of `sys`, in the table's order. A place of a SystemConfig
-// that is not const may be written through its pointer.
-inline void rcTriggerSlotPlaces(const SystemConfig& sys, const RcTriggerBinding* out[RC_TRIGGER_SLOT_COUNT]) {
-    for (size_t i = 0; i < RC_TRIGGER_SLOT_COUNT; ++i) {
-        out[i] = &(sys.*RC_MAP_TRIGGER_PLACES[i].place);
-    }
 }
 
 inline size_t rcTriggerSlotsCopy(const SystemConfig& sys, RcTriggerBinding* out, size_t cap) {
@@ -160,6 +166,84 @@ inline RcBindingConfig rcAxisPlaceDefault(const RcAxisPlace& place) {
     }
     return defaultSbusBinding(place.defaultSource, place.defaultChannel);
 }
+
+// The table holds one place per group and axis, in group-then-axis order, so a
+// place is found by its index rather than by a search that could come up empty.
+constexpr size_t RC_MAP_AXES_PER_GROUP = 3;
+constexpr bool rcMapAxisPlacesIndexed() {
+    for (size_t i = 0; i < RC_MAP_AXIS_PLACE_COUNT; ++i) {
+        const size_t at = (size_t)RC_MAP_AXIS_PLACES[i].group * RC_MAP_AXES_PER_GROUP +
+                          (size_t)RC_MAP_AXIS_PLACES[i].axis;
+        if (at != i) {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(rcMapAxisPlacesIndexed(), "RC_MAP_AXIS_PLACES is in group-then-axis order");
+
+inline const RcBindingConfig& rcMapAxisAt(const SystemConfig& sys, RcMapAxisGroup group, RcMapAxis axis) {
+    return sys.*RC_MAP_AXIS_PLACES[(size_t)group * RC_MAP_AXES_PER_GROUP + (size_t)axis].place;
+}
+
+// The axis group a receiver type reads: a standard PWM receiver reads the PWM
+// group, every other type the SBUS group. The one answer to it (ADR 0070,
+// amended 2026-10-10).
+inline RcMapAxisGroup rcMapAxisGroupRead(RcInputMode mode) {
+    return mode == RC_INPUT_STANDARD_PWM ? RcMapAxisGroup::Pwm : RcMapAxisGroup::Sbus;
+}
+
+// The drive and dome axes a receiver type reads, from the group it reads. A
+// copy of three bindings and nothing else: no allocation, so the RC input task
+// may call it, and the config cache does under its own lock. Every pointer
+// must be valid.
+inline void rcMapReadAxes(const SystemConfig& sys, RcInputMode mode, RcBindingConfig* driveSpeed,
+                          RcBindingConfig* driveSteer, RcBindingConfig* domeSpeed) {
+    const RcMapAxisGroup group = rcMapAxisGroupRead(mode);
+    *driveSpeed = rcMapAxisAt(sys, group, RcMapAxis::DriveSpeed);
+    *driveSteer = rcMapAxisAt(sys, group, RcMapAxis::DriveSteer);
+    *domeSpeed = rcMapAxisAt(sys, group, RcMapAxis::DomeSpeed);
+}
+
+// -----------------------------------------------------------------------------
+// Placement: where a save puts each binding (src/rc_map_store.cpp)
+// -----------------------------------------------------------------------------
+
+static_assert(kRcMapMaxTriggers == RC_TRIGGER_SLOT_COUNT,
+              "the RC Map's rules allow as many trigger bindings as there are stored places");
+
+// The axis an action moves, if it is one of the three.
+bool rcMapAxisOfAction(RobotActionId action, RcMapAxis* axis);
+
+// Every RC Map place of `sys` unbound: the six axis places and the eleven
+// trigger places. The legacy arm and sound bindings are not touched.
+void rcMapStoreClear(SystemConfig* sys);
+
+// Places `binding` on `axis` in every group, so a change of receiver type
+// between the PWM and the SBUS group reads the same stick.
+void rcMapStorePlaceAxis(SystemConfig* sys, RcMapAxis axis, const RcBindingConfig& binding);
+
+// The binding a save placed on `axis`. Every group holds the same one after a
+// save (rcMapStorePlaceAxis()), so this reads one of them.
+const RcBindingConfig& rcMapStorePlacedAxis(const SystemConfig& sys, RcMapAxis axis);
+
+// Places one checked RC Map entry onto `sys`, which a save has cleared
+// (rcMapStoreClear()) and is filling entry by entry. `held` is the map the
+// droid held before the save: an axis or a trigger keeps the calibration a
+// binding on the same RC Channel held there, and a Reaction its numbers where
+// the entry leaves them out.
+//
+// A trigger binding the droid already held stays in its place: a reader keeps
+// a place's state by the place, so a save that moved an unchanged binding
+// would hand it another binding's state (#488). Else a toggle on a radio takes
+// the place it owns (RcTriggerPlace::ownAction) when that is free; else the
+// first free open place; else the first free place a toggle owns.
+//
+// False -> `error` holds the sentence and `refusal`, when given, the field and
+// reason: `map.action` for a binding the stored form will not hold, `map` when
+// no place is left (past what rcRuleMapAdd() lets through).
+bool rcMapStorePlace(const RcMapEntry& entry, const SystemConfig& held, SystemConfig* sys,
+                     char* error, size_t errorSize, ApplyRefusal* refusal = nullptr);
 
 // -----------------------------------------------------------------------------
 // The single-SBUS label carry (#389)

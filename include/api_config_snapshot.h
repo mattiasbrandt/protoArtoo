@@ -25,18 +25,11 @@
 // ConfigSnapshot is canonically defined in config_store.h.
 // (Included above for use by API layer JSON helpers.)
 
-// Pure helpers backing /api/rc/map serialization and slot assignment.
-// Exposed for native regression tests.
-// RcMapEntry, kRcMapMaxEntries and kRcMapEntryKeep: include/rc_map_rules.h.
+// The pure builder behind GET /api/rc/map, exposed for native regression
+// tests. Where a save puts each binding is the RC Map Store's
+// (rcMapStorePlace(), include/rc_map_store.h).
 
 bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap);
-void clearRcMapSlots(ConfigSnapshot* working);
-// `refusal`, when given, states a refusal as data beside `error`: `map` (no
-// slot left) or `map.action` (an action with one slot already in it), or
-// `map.action` out of range for a binding the stored form will not hold.
-bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& existing,
-                                ConfigSnapshot* working, char* error, size_t errorSize,
-                                ApplyRefusal* refusal = nullptr);
 
 // Populates doc from snap. Pure: no globals, no FreeRTOS.
 // Returns false if any binding string format fails.

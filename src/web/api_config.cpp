@@ -31,7 +31,7 @@
 #include "api_json_response.h"
 #include "api_rc_map_apply.h"
 #include "rc_map_rules.h"  // what the droid would read of a stored map
-#include "rc_map_store.h"  // rcTriggerSlotPlaces()
+#include "rc_map_store.h"  // rcTriggerSlotsCopy()
 #include "api_status.h"  // captureServoOutputCommanded(), shared with the Console
 #include "api_wifi_apply.h"
 #include "board_outputs.h"  // BOARD_OUTPUTS, boardComponentLabel() - one label source
@@ -47,7 +47,7 @@
 #include "config_cache.h"
 #include "config_records.h"  // every Record's GET answer and its merge
 #include "config_settings.h"  // every Setting's GET path, and its value
-#include "config_write_lock.h"  // this file implements the config and RC Map Write Windows
+#include "config_write_lock.h"  // this file implements the config Write Window
 #include "console_config_fields.h"  // kComponentToggleFields - the boot mask's bit order
 #include "logging.h"
 #include "robot_state.h"
@@ -82,133 +82,6 @@ bool rcMapBindingIsMapped(const RcBindingConfig& binding) {
 bool rcMapTriggerIsMapped(const RcTriggerBinding& binding) {
     return binding.source != RC_BINDING_NONE && binding.target != ROBOT_ACTION_NONE &&
            rcBindingChannelIsValid(binding.source, binding.channel);
-}
-
-bool rcMapTryReuseCalibration(const ConfigSnapshot& existing, RcBindingSource source, uint8_t channel,
-                              uint16_t* min, uint16_t* center, uint16_t* max,
-                              uint16_t* deadband, bool* reverse) {
-    if (min == nullptr || center == nullptr || max == nullptr || deadband == nullptr ||
-        reverse == nullptr) {
-        return false;
-    }
-
-    const RcBindingConfig backboneBindings[] = {
-        existing.system.rc_pwm_drive_speed, existing.system.rc_pwm_drive_steer, existing.system.rc_pwm_dome_speed,
-        existing.system.rc_pwm_arm1,       existing.system.rc_pwm_arm2,       existing.system.rc_pwm_audio,
-        existing.system.rc_sbus_drive_speed, existing.system.rc_sbus_drive_steer, existing.system.rc_sbus_dome_speed,
-        existing.system.rc_sbus_arm1,      existing.system.rc_sbus_arm2,      existing.system.rc_sbus_audio,
-    };
-    for (size_t i = 0; i < sizeof(backboneBindings) / sizeof(backboneBindings[0]); ++i) {
-        const RcBindingConfig& binding = backboneBindings[i];
-        if (binding.source == source && binding.channel == channel &&
-            rcBindingChannelIsValid(binding.source, binding.channel)) {
-            *min = binding.min;
-            *center = binding.center;
-            *max = binding.max;
-            *deadband = binding.deadband;
-            *reverse = binding.reverse;
-            return true;
-        }
-    }
-
-    const RcTriggerBinding* triggerBindings[RC_TRIGGER_SLOT_COUNT];
-    rcTriggerSlotPlaces(existing.system, triggerBindings);
-    for (const RcTriggerBinding* place : triggerBindings) {
-        const RcTriggerBinding& binding = *place;
-        if (binding.source == source && binding.channel == channel &&
-            rcBindingChannelIsValid(binding.source, binding.channel)) {
-            *min = binding.min;
-            *center = binding.center;
-            *max = binding.max;
-            *deadband = binding.deadband;
-            *reverse = binding.reverse;
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool rcMapBuildBackboneBinding(RobotActionId axis, RcBindingSource source, uint8_t channel,
-                               const ConfigSnapshot& existing, RcBindingConfig* out) {
-    if (out == nullptr || !rcBindingChannelIsValid(source, channel)) {
-        return false;
-    }
-
-    // An axis is a radio channel's and nothing else's. A droid condition has a
-    // legal channel of its own, so it is refused here by what it is.
-    if (rcBindingSourceIsDroidCondition(source)) {
-        return false;
-    }
-
-    RcBindingConfig binding =
-        (source == RC_BINDING_PWM) ? defaultPwmBinding(channel) : defaultSbusBinding(source, channel);
-
-    uint16_t min = binding.min;
-    uint16_t center = binding.center;
-    uint16_t max = binding.max;
-    uint16_t deadband = binding.deadband;
-    bool reverse = binding.reverse;
-    if (rcMapTryReuseCalibration(existing, source, channel, &min, &center, &max, &deadband,
-                                  &reverse)) {
-        RcBindingConfig reused =
-            makeRcBindingConfig(source, channel, min, center, max, deadband, reverse);
-        // Only a calibration the RC Map's rules take is carried over: one they
-        // refuse would refuse the whole save, so mapping the axis again could
-        // never mend it (ADR 0070). It starts from the defaults instead.
-        if (rcBindingIsValid(reused) && rcRuleAxisCalibration(axis, reused).ok()) {
-            binding = reused;
-        }
-    }
-
-    *out = binding;
-    return true;
-}
-
-bool rcMapBuildTriggerBinding(const RcMapEntry& entry, const ConfigSnapshot& existing,
-                              RcTriggerBinding* out) {
-    if (out == nullptr || !rcBindingChannelIsValid(entry.source, entry.channel)) {
-        return false;
-    }
-
-    // A Reaction: its threshold and quiet period as the request gave them,
-    // else as the stored Reaction on this condition holds them, else the
-    // defaults. No calibration to reuse - a droid condition has none.
-    if (rcBindingSourceIsDroidCondition(entry.source)) {
-        uint16_t threshold = rcReactionThresholdDefault(entry.source);
-        uint16_t quietS = RC_REACTION_QUIET_DEFAULT_S;
-        // By pointer, never a copy of the slots: this runs on the HTTP server
-        // task under two ConfigSnapshots already.
-        const RcTriggerBinding* stored[RC_TRIGGER_SLOT_COUNT];
-        rcTriggerSlotPlaces(existing.system, stored);
-        for (const RcTriggerBinding* slot : stored) {
-            if (slot->source == entry.source && slot->channel == entry.channel) {
-                threshold = rcReactionThreshold(*slot);
-                quietS = rcReactionQuietS(*slot);
-                break;
-            }
-        }
-        if (entry.threshold != kRcMapEntryKeep) threshold = entry.threshold;
-        if (entry.quietS != kRcMapEntryKeep) quietS = entry.quietS;
-        *out = makeRcReactionBinding(entry.source, entry.channel, entry.action, entry.payload,
-                                     threshold, quietS);
-        return rcTriggerBindingIsValid(*out);
-    }
-
-    const RcBindingConfig defaults = (entry.source == RC_BINDING_PWM)
-                                         ? defaultPwmBinding(entry.channel)
-                                         : defaultSbusBinding(entry.source, entry.channel);
-    uint16_t min = defaults.min;
-    uint16_t center = defaults.center;
-    uint16_t max = defaults.max;
-    uint16_t deadband = 0;
-    bool reverse = rcTriggerDefaultReverse(entry.source, entry.channel);
-    rcMapTryReuseCalibration(existing, entry.source, entry.channel, &min, &center, &max, &deadband,
-                              &reverse);
-
-    *out = makeRcTriggerBinding(entry.source, entry.channel, entry.action, entry.payload, min,
-                                center, max, deadband, reverse);
-    return rcTriggerBindingIsValid(*out);
 }
 
 RcBindingConfig rcMapSelectBackboneForMode(const ConfigSnapshot& snap, const RcBindingConfig& pwm,
@@ -317,141 +190,6 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
         }
     }
     return !doc.overflowed();
-}
-
-void clearRcMapSlots(ConfigSnapshot* working) {
-    if (working == nullptr) {
-        return;
-    }
-
-    working->system.rc_pwm_drive_speed = disabledRcBinding();
-    working->system.rc_pwm_drive_steer = disabledRcBinding();
-    working->system.rc_pwm_dome_speed = disabledRcBinding();
-    working->system.rc_sbus_drive_speed = disabledRcBinding();
-    working->system.rc_sbus_drive_steer = disabledRcBinding();
-    working->system.rc_sbus_dome_speed = disabledRcBinding();
-
-    const RcTriggerBinding* places[RC_TRIGGER_SLOT_COUNT];
-    rcTriggerSlotPlaces(working->system, places);
-    for (const RcTriggerBinding* place : places) {
-        *const_cast<RcTriggerBinding*>(place) = disabledRcTriggerBinding();
-    }
-}
-
-static_assert(kRcMapMaxTriggers == RC_TRIGGER_SLOT_COUNT,
-              "the RC Map's rules allow as many trigger bindings as there are stored places");
-
-static bool triggerSlotIsFree(const RcTriggerBinding& binding) {
-    return binding.source == RC_BINDING_NONE || binding.target == ROBOT_ACTION_NONE;
-}
-
-// Whether a stored trigger binding is the one a save is placing: the same
-// control firing the same thing. Calibration and a Reaction's numbers may
-// differ; it is still that binding.
-static bool rcMapSameTrigger(const RcTriggerBinding& stored, const RcTriggerBinding& placing) {
-    return !triggerSlotIsFree(stored) && stored.source == placing.source && stored.channel == placing.channel &&
-           stored.target == placing.target &&
-           strncmp(stored.marcduinoPayload, placing.marcduinoPayload, sizeof(stored.marcduinoPayload)) == 0;
-}
-
-bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& existing,
-                                ConfigSnapshot* working, char* error, size_t errorSize,
-                                ApplyRefusal* refusal) {
-    // Each refusal below states its field and reason here too, so a caller
-    // never reads them back out of the sentence (include/api_apply_refusal.h).
-    ApplyRefusal unused;
-    ApplyRefusal* said = refusal != nullptr ? refusal : &unused;
-    if (working == nullptr || error == nullptr || errorSize == 0) {
-        return false;
-    }
-
-    // Where POST /api/rc/map stores each entry.
-    //
-    // An axis mirrors into both persisted profile groups (PWM + SBUS) to keep
-    // runtime mode switching behavior stable:
-    // - drive_speed -> rcPwmDriveSpeed + rcSbusDriveSpeed
-    // - drive_steer -> rcPwmDriveSteer + rcSbusDriveSteer
-    // - dome_speed  -> rcPwmDomeSpeed  + rcSbusDomeSpeed
-    //
-    // A trigger binding takes any free place of the eleven (ADR 0070, amended
-    // 2026-10-10): every reader goes by the binding's own target, never by the
-    // place it sits in. An arm or aux toggle or the op mode on a radio takes
-    // its own named place when that is free, so a map that fits the older
-    // layout is stored as it always was; anything else takes rcSound,
-    // rcFree0..3 first, then a named place nothing has claimed. The RC Map's
-    // rules hold the map to eleven and each toggle to one RC Channel
-    // (rcRuleMapAdd()), so a place is always free here.
-    RcBindingConfig backbone = disabledRcBinding();
-    RcTriggerBinding trigger = disabledRcTriggerBinding();
-
-    if (entry.action == DRIVE_ACTION_SPEED || entry.action == DRIVE_ACTION_STEER ||
-        entry.action == DOME_ACTION_SPEED) {
-        if (!rcMapBuildBackboneBinding(entry.action, entry.source, entry.channel, existing, &backbone)) {
-            snprintf(error, errorSize, "invalid backbone binding");
-            applyRefusalSet(said, ApplyRefusalReason::OutOfRange, "map.action");
-            return false;
-        }
-        if (entry.action == DRIVE_ACTION_SPEED) {
-            working->system.rc_pwm_drive_speed = backbone;
-            working->system.rc_sbus_drive_speed = backbone;
-        } else if (entry.action == DRIVE_ACTION_STEER) {
-            working->system.rc_pwm_drive_steer = backbone;
-            working->system.rc_sbus_drive_steer = backbone;
-        } else {
-            working->system.rc_pwm_dome_speed = backbone;
-            working->system.rc_sbus_dome_speed = backbone;
-        }
-        return true;
-    }
-
-    if (!rcMapBuildTriggerBinding(entry, existing, &trigger)) {
-        snprintf(error, errorSize, "invalid trigger binding");
-        applyRefusalSet(said, ApplyRefusalReason::OutOfRange, "map.action");
-        return false;
-    }
-
-    // A binding the droid already held stays in its place: every reader
-    // keeps a slot's state by its place, so a save that moved an unchanged
-    // binding would hand it another binding's state (Codex review, #488).
-    const RcTriggerBinding* was[RC_TRIGGER_SLOT_COUNT];
-    const RcTriggerBinding* now[RC_TRIGGER_SLOT_COUNT];
-    rcTriggerSlotPlaces(existing.system, was);
-    rcTriggerSlotPlaces(working->system, now);
-    for (size_t i = 0; i < RC_TRIGGER_SLOT_COUNT; ++i) {
-        if (triggerSlotIsFree(*now[i]) && rcMapSameTrigger(*was[i], trigger)) {
-            *const_cast<RcTriggerBinding*>(now[i]) = trigger;
-            return true;
-        }
-    }
-
-    SystemConfig& sys = working->system;
-    RcTriggerBinding* named = nullptr;
-    if (!rcBindingSourceIsDroidCondition(entry.source)) {
-        switch (entry.action) {
-            case SERVO_ACTION_ARM1_TOGGLE: named = &sys.rc_arm1; break;
-            case SERVO_ACTION_ARM2_TOGGLE: named = &sys.rc_arm2; break;
-            case SERVO_ACTION_AUX1_TOGGLE: named = &sys.rc_aux1; break;
-            case SERVO_ACTION_AUX2_TOGGLE: named = &sys.rc_aux2; break;
-            case SERVO_ACTION_AUX3_TOGGLE: named = &sys.rc_aux3; break;
-            case SYSTEM_ACTION_OP_MODE: named = &sys.rc_opmode; break;
-            default: break;
-        }
-    }
-    RcTriggerBinding* const places[] = {
-        named,        &sys.rc_audio, &sys.rc_free0, &sys.rc_free1, &sys.rc_free2, &sys.rc_free3,
-        &sys.rc_arm1, &sys.rc_arm2,  &sys.rc_aux1,  &sys.rc_aux2,  &sys.rc_aux3,  &sys.rc_opmode,
-    };
-    for (RcTriggerBinding* place : places) {
-        if (place != nullptr && triggerSlotIsFree(*place)) {
-            *place = trigger;
-            return true;
-        }
-    }
-
-    // Past what rcRuleMapAdd() lets through: the same refusal it gives.
-    snprintf(error, errorSize, "conflict: map exceeds capacity");
-    applyRefusalSet(said, ApplyRefusalReason::Conflict, "map");
-    return false;
 }
 
 // A component's Board Component Label on the running board (ADR 0033), or
@@ -812,32 +550,6 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap,
     webSendJsonDocument(req, doc, kConfigResponseCeiling, TAG);
 }
 
-// Write Window for POST /api/rc/map (ADR 0011, amended 2026-09-24). The route
-// read-modify-writes the same config cache and the same NVS namespace the
-// config write does, so it is guarded the same way. False -> busy, nothing
-// read or written. True -> `*result` holds rcMapApply()'s answer, and when it
-// is ok the map is in the cache and `*persisted` says whether NVS took it.
-// One adapter today, so it stays in this file.
-bool rcMapWriteWindow(const ConfigParamSource& params, ConfigSnapshot* working,
-                      RcMapApplyResult* result, bool* persisted) {
-    ConfigWriteLock lock;
-    if (!lock.acquired()) {
-        return false;
-    }
-    configCacheRead(working);
-    rcMapApply(params, working, result);
-    if (result->ok) {
-        configCacheApply(*working);
-        // Re-read what the cache actually holds, then persist from that - one
-        // snapshot on the caller's stack, not two. WebRequest-free, as ADR
-        // 0036's Consequences asked of the persistSystemConfig(WebRequest&,
-        // ...) this once was: the caller renders its own failure.
-        configCacheRead(working);
-        *persisted = configPersistSystem(working->system);
-    }
-    return true;
-}
-
 }  // namespace
 
 // See include/api_config.h for the full contract.
@@ -1031,8 +743,8 @@ void handleRcMapPost(WebRequest& req) {
 
     // Answers are rendered after the Write Window returns: nothing below
     // touches config state.
-    bool persisted = false;
-    const bool busy = !rcMapWriteWindow(params, &working, &result, &persisted);
+    RcMapCommitOutcome commit;
+    const bool busy = !rcMapWriteWindow(params, &working, &result, &commit);
     if (busy) {
         webSendJsonError(req, 503, "config write busy");
         return;
@@ -1058,7 +770,7 @@ void handleRcMapPost(WebRequest& req) {
         webSendJsonDocument(req, err, 448, TAG, 400);
         return;
     }
-    if (!persisted) {
+    if (!commit.persisted) {
         webSendJsonError(req, 500, "failed to persist config");
         return;
     }
