@@ -1,7 +1,8 @@
 // =============================================================================
 // src/web/api_rc_map_apply.cpp
 //
-// Apply Core for POST /api/rc/map (ADR 0011). See api_rc_map_apply.h.
+// Apply Core for POST /api/rc/map (ADR 0011), plus its ADR 0036 Commit Step
+// and Write Window. See api_rc_map_apply.h.
 // =============================================================================
 
 #include "api_rc_map_apply.h"
@@ -9,8 +10,11 @@
 #include <ArduinoJson.h>
 #include <string.h>
 
+#include "config_store.h"       // configPersistSystem()
+#include "config_write_lock.h"  // rcMapWriteWindow() is this Apply Core's Write Window
 #include "droid_parts.h"      // droidPartIdIsKnown() - a puppet string's Part
 #include "rc_map_rules.h"     // rcRuleMapAdd(), rcRuleDrive(), rcRuleAxisCalibration()
+#include "rc_map_store.h"     // rcMapStoreClear(), rcMapStorePlace(): where each binding is kept
 #include "seq_store_index.h"  // Learned Sequence names accepted for RC binding
 
 namespace {
@@ -98,9 +102,9 @@ const RcMapEntry* entryFor(RobotActionId axis, const RcMapEntry* entries, size_t
 // The drive and dome axes' calibration, as a request may set it beside the
 // map (#389): {"calibration":{"drive_speed":{"min":..,"center":..,"max":..,
 // "reverse":..}, ...}}. A field left out keeps what the axis already holds
-// (stored or reused, assignRcMapEntryToSnapshot()). An axis the map does not
-// bind cannot be calibrated. Both the PWM and the SBUS slot of an axis hold
-// the same binding, so both take the calibration.
+// (stored or reused, rcMapStorePlace()). An axis the map does not bind cannot
+// be calibrated. The calibrated binding is placed as the map's was, in every
+// group (rcMapStorePlaceAxis()).
 __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration, ConfigSnapshot* working,
                           const RcMapEntry* entries, size_t count, RcMapApplyResult* result) {
     if (calibration.isNull()) {
@@ -113,14 +117,13 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
     struct Axis {
         const char* token;
         RobotActionId action;
-        RcBindingConfig* pwm;
-        RcBindingConfig* sbus;
+        RcMapAxis axis;
     };
     SystemConfig& sys = working->system;
     const Axis axes[] = {
-        {"drive_speed", DRIVE_ACTION_SPEED, &sys.rc_pwm_drive_speed, &sys.rc_sbus_drive_speed},
-        {"drive_steer", DRIVE_ACTION_STEER, &sys.rc_pwm_drive_steer, &sys.rc_sbus_drive_steer},
-        {"dome_speed", DOME_ACTION_SPEED, &sys.rc_pwm_dome_speed, &sys.rc_sbus_dome_speed},
+        {"drive_speed", DRIVE_ACTION_SPEED, RcMapAxis::DriveSpeed},
+        {"drive_steer", DRIVE_ACTION_STEER, RcMapAxis::DriveSteer},
+        {"dome_speed", DOME_ACTION_SPEED, RcMapAxis::DomeSpeed},
     };
     for (JsonPairConst pair : calibration.as<JsonObjectConst>()) {
         const Axis* axis = nullptr;
@@ -134,7 +137,8 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
                      "drive_speed,drive_steer,dome_speed");
             return false;
         }
-        if (axis->sbus->source == RC_BINDING_NONE) {
+        const RcBindingConfig& placed = rcMapStorePlacedAxis(sys, axis->axis);
+        if (placed.source == RC_BINDING_NONE) {
             setError(result, "calibration for an axis the map does not bind", nullptr, ApplyRefusalReason::Conflict, "calibration");
             return false;
         }
@@ -143,7 +147,7 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
             setError(result, "calibration entry must be object", nullptr, ApplyRefusalReason::OutOfRange, "calibration");
             return false;
         }
-        RcBindingConfig binding = *axis->sbus;
+        RcBindingConfig binding = placed;
         const char* const keys[] = {"min", "center", "max"};
         uint16_t* const slots[] = {&binding.min, &binding.center, &binding.max};
         for (size_t i = 0; i < 3; ++i) {
@@ -172,25 +176,23 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
             setRefusal(result, verdict, entryFor(axis->action, entries, count));
             return false;
         }
-        *axis->pwm = binding;
-        *axis->sbus = binding;
+        rcMapStorePlaceAxis(&sys, axis->axis, binding);
     }
     return true;
 }
 
-// Whether each axis the map binds holds a calibration the rules take. Both
-// slots of an axis hold the same binding (assignRcMapEntryToSnapshot()).
+// Whether each axis the map binds holds a calibration the rules take. Every
+// group holds the same binding of an axis after a save (rcMapStorePlaceAxis()).
 bool boundAxesCalibrated(const ConfigSnapshot& working, const RcMapEntry* entries, size_t count,
                          RcMapApplyResult* result) {
     const RobotActionId actions[] = {DRIVE_ACTION_SPEED, DRIVE_ACTION_STEER, DOME_ACTION_SPEED};
-    const RcBindingConfig* const axes[] = {&working.system.rc_sbus_drive_speed,
-                                           &working.system.rc_sbus_drive_steer,
-                                           &working.system.rc_sbus_dome_speed};
+    const RcMapAxis axes[] = {RcMapAxis::DriveSpeed, RcMapAxis::DriveSteer, RcMapAxis::DomeSpeed};
     for (size_t i = 0; i < 3; ++i) {
-        if (axes[i]->source == RC_BINDING_NONE) {
+        const RcBindingConfig& placed = rcMapStorePlacedAxis(working.system, axes[i]);
+        if (placed.source == RC_BINDING_NONE) {
             continue;
         }
-        const RcRuleVerdict verdict = rcRuleAxisCalibration(actions[i], *axes[i]);
+        const RcRuleVerdict verdict = rcRuleAxisCalibration(actions[i], placed);
         if (!verdict.ok()) {
             setRefusal(result, verdict, entryFor(actions[i], entries, count));
             return false;
@@ -301,13 +303,13 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
     }
 
     ConfigSnapshot existing = *working;
-    clearRcMapSlots(working);
+    rcMapStoreClear(&working->system);
 
     for (size_t i = 0; i < count; ++i) {
         char assignErr[96] = {};
         ApplyRefusal slotRefusal;
-        if (!assignRcMapEntryToSnapshot(entries[i], existing, working, assignErr, sizeof(assignErr),
-                                        &slotRefusal)) {
+        if (!rcMapStorePlace(entries[i], existing.system, &working->system, assignErr,
+                             sizeof(assignErr), &slotRefusal)) {
             setError(result, assignErr, &entries[i], slotRefusal.reason, slotRefusal.field);
             return;
         }
@@ -323,4 +325,32 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
     }
 
     result->ok = true;
+}
+
+// See include/api_rc_map_apply.h for the contract.
+RcMapCommitOutcome rcMapCommitApplied(ConfigSnapshot* working) {
+    RcMapCommitOutcome outcome;
+    configCacheApply(*working);
+    // Re-read what the cache actually holds, then persist from that - one
+    // snapshot on the caller's stack, not two. WebRequest-free, as ADR
+    // 0036's Consequences asked of the persistSystemConfig(WebRequest&,
+    // ...) this once was: the caller renders its own failure.
+    configCacheRead(working);
+    outcome.persisted = configPersistSystem(working->system);
+    return outcome;
+}
+
+// See include/api_rc_map_apply.h for the contract.
+bool rcMapWriteWindow(const ConfigParamSource& params, ConfigSnapshot* working,
+                      RcMapApplyResult* result, RcMapCommitOutcome* commit) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return false;
+    }
+    configCacheRead(working);
+    rcMapApply(params, working, result);
+    if (result->ok) {
+        *commit = rcMapCommitApplied(working);
+    }
+    return true;
 }

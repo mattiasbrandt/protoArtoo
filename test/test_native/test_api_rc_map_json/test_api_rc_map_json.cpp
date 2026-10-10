@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "api_config_snapshot.h"
+#include "rc_map_store.h"  // rcMapStorePlace(), rcMapStoreClear(), the place tables
 #include "rc_mapping.h"
 #include "web_request_scratch.h"  // RC_MAP_JSON_BODY_BYTES
 
@@ -20,8 +21,45 @@ RcMapEntry makeEntry(RcBindingSource source, uint8_t channel, RobotActionId acti
 ConfigSnapshot makeEmptySnapshot(RcInputMode mode = RC_INPUT_DUAL_SBUS) {
     ConfigSnapshot snap = {};
     snap.system.rc_input_mode = mode;
-    clearRcMapSlots(&snap);
+    rcMapStoreClear(&snap.system);
     return snap;
+}
+
+// Where a save put a binding, and where a test stores one, read through the
+// store's place tables rather than by SystemConfig field.
+bool place(const RcMapEntry& entry, const ConfigSnapshot& existing, ConfigSnapshot* working,
+           char* err, size_t errSize) {
+    return rcMapStorePlace(entry, existing.system, &working->system, err, errSize);
+}
+
+RcBindingConfig& axisPlace(ConfigSnapshot* snap, RcMapAxisGroup group, RcMapAxis axis) {
+    return const_cast<RcBindingConfig&>(rcMapAxisAt(snap->system, group, axis));
+}
+
+RcTriggerBinding& triggerPlace(ConfigSnapshot* snap, size_t i) {
+    return snap->system.*RC_MAP_TRIGGER_PLACES[i].place;
+}
+
+// The place a toggle owns (RcTriggerPlace::ownAction).
+RcTriggerBinding& ownPlace(ConfigSnapshot* snap, RobotActionId toggle) {
+    size_t i = 0;
+    while (i + 1 < RC_TRIGGER_SLOT_COUNT && RC_MAP_TRIGGER_PLACES[i].ownAction != toggle) {
+        ++i;
+    }
+    TEST_ASSERT_EQUAL_MESSAGE(toggle, RC_MAP_TRIGGER_PLACES[i].ownAction, "a place owns the toggle");
+    return triggerPlace(snap, i);
+}
+
+// The `n`th open place (one no toggle owns), or else the `n`th place a toggle
+// owns, in the table's order.
+RcTriggerBinding& nthPlace(ConfigSnapshot* snap, bool owned, size_t n) {
+    for (size_t i = 0; i < RC_TRIGGER_SLOT_COUNT; ++i) {
+        if ((RC_MAP_TRIGGER_PLACES[i].ownAction != ROBOT_ACTION_NONE) == owned && n-- == 0) {
+            return triggerPlace(snap, i);
+        }
+    }
+    TEST_FAIL_MESSAGE("no such place");
+    return triggerPlace(snap, 0);
 }
 
 }  // namespace
@@ -38,7 +76,7 @@ void test_populateRcMapJson_absence_not_sentinel(void) {
 
     char err[96] = {};
     RcMapEntry entry = makeEntry(RC_BINDING_SBUS2, 6, SOUND_ACTION_RANDOM_HUMMING);
-    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(entry, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_TRUE(place(entry, existing, &working, err, sizeof(err)));
 
     JsonDocument doc;
     TEST_ASSERT_TRUE(populateRcMapJson(doc, working));
@@ -63,7 +101,7 @@ void test_populateRcMapJson_absence_not_sentinel(void) {
 // A toggle on a radio takes its own named place when that is free, so a map
 // that fits the older layout is stored as it always was. A Reaction on the
 // same toggle takes a general place.
-void test_assignRcMapEntryToSnapshot_a_toggle_takes_its_named_place(void) {
+void test_rcMapStorePlace_a_toggle_takes_its_named_place(void) {
     ConfigSnapshot existing = makeEmptySnapshot();
     ConfigSnapshot working = existing;
 
@@ -74,16 +112,18 @@ void test_assignRcMapEntryToSnapshot_a_toggle_takes_its_named_place(void) {
     reaction.threshold = kRcMapEntryKeep;
     reaction.quietS = kRcMapEntryKeep;
 
-    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(arm, existing, &working, err, sizeof(err)));
-    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(opMode, existing, &working, err, sizeof(err)));
-    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(reaction, existing, &working, err, sizeof(err)));
-    TEST_ASSERT_EQUAL_UINT8(SERVO_ACTION_ARM1_TOGGLE, working.system.rc_arm1.target);
-    TEST_ASSERT_EQUAL_UINT8(RC_BINDING_SBUS1, working.system.rc_arm1.source);
-    TEST_ASSERT_EQUAL_UINT8(SYSTEM_ACTION_OP_MODE, working.system.rc_opmode.target);
-    TEST_ASSERT_EQUAL_UINT8(RC_BINDING_DROID_REST, working.system.rc_audio.source);
+    TEST_ASSERT_TRUE(place(arm, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_TRUE(place(opMode, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_TRUE(place(reaction, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_ACTION_ARM1_TOGGLE,
+                            ownPlace(&working, SERVO_ACTION_ARM1_TOGGLE).target);
+    TEST_ASSERT_EQUAL_UINT8(RC_BINDING_SBUS1, ownPlace(&working, SERVO_ACTION_ARM1_TOGGLE).source);
+    TEST_ASSERT_EQUAL_UINT8(SYSTEM_ACTION_OP_MODE,
+                            ownPlace(&working, SYSTEM_ACTION_OP_MODE).target);
+    TEST_ASSERT_EQUAL_UINT8(RC_BINDING_DROID_REST, nthPlace(&working, false, 0).source);
 }
 
-void test_assignRcMapEntryToSnapshot_spill_slots_fill_in_order(void) {
+void test_rcMapStorePlace_spill_slots_fill_in_order(void) {
     ConfigSnapshot existing = makeEmptySnapshot();
     ConfigSnapshot working = existing;
     char err[96] = {};
@@ -95,34 +135,34 @@ void test_assignRcMapEntryToSnapshot_spill_slots_fill_in_order(void) {
     RcMapEntry e4 = makeEntry(RC_BINDING_SBUS2, 9, SOUND_ACTION_RANDOM_SAD);
     RcMapEntry e5 = makeEntry(RC_BINDING_SBUS2, 10, SOUND_ACTION_RANDOM_GENERAL);
 
-    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(e0, existing, &working, err, sizeof(err)));
-    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(e1, existing, &working, err, sizeof(err)));
-    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(e2, existing, &working, err, sizeof(err)));
-    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(e3, existing, &working, err, sizeof(err)));
-    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(e4, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_TRUE(place(e0, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_TRUE(place(e1, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_TRUE(place(e2, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_TRUE(place(e3, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_TRUE(place(e4, existing, &working, err, sizeof(err)));
 
-    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_WHISTLE, working.system.rc_audio.target);
-    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_HUMMING, working.system.rc_free0.target);
-    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_ALERT, working.system.rc_free1.target);
-    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_SNARKY, working.system.rc_free2.target);
-    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_SAD, working.system.rc_free3.target);
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_WHISTLE, nthPlace(&working, false, 0).target);
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_HUMMING, nthPlace(&working, false, 1).target);
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_ALERT, nthPlace(&working, false, 2).target);
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_SNARKY, nthPlace(&working, false, 3).target);
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_SAD, nthPlace(&working, false, 4).target);
 
     // Past the five general places, a binding takes a named place nothing
     // has claimed (ADR 0070, amended 2026-10-10): eleven in all, whatever
     // they fire.
-    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(e5, existing, &working, err, sizeof(err)));
-    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_GENERAL, working.system.rc_arm1.target);
+    TEST_ASSERT_TRUE(place(e5, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_GENERAL, nthPlace(&working, true, 0).target);
     for (uint8_t channel = 11; channel <= 15; ++channel) {
         RcMapEntry more = makeEntry(RC_BINDING_SBUS2, channel, SOUND_ACTION_NEXT);
-        TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(more, existing, &working, err, sizeof(err)));
+        TEST_ASSERT_TRUE(place(more, existing, &working, err, sizeof(err)));
     }
-    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_NEXT, working.system.rc_opmode.target);
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_NEXT, nthPlace(&working, true, 5).target);
     RcMapEntry twelfth = makeEntry(RC_BINDING_SBUS2, 16, SOUND_ACTION_NEXT);
-    TEST_ASSERT_FALSE(assignRcMapEntryToSnapshot(twelfth, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_FALSE(place(twelfth, existing, &working, err, sizeof(err)));
     TEST_ASSERT_NOT_NULL(strstr(err, "map exceeds capacity"));
 }
 
-void test_assignRcMapEntryToSnapshot_applies_sbus_button_reverse_default(void) {
+void test_rcMapStorePlace_applies_sbus_button_reverse_default(void) {
     ConfigSnapshot existing = makeEmptySnapshot();
     ConfigSnapshot working = existing;
     char err[96] = {};
@@ -130,35 +170,38 @@ void test_assignRcMapEntryToSnapshot_applies_sbus_button_reverse_default(void) {
     RcMapEntry ch6 = makeEntry(RC_BINDING_SBUS2, 6, SOUND_ACTION_RANDOM_HUMMING);
     RcMapEntry ch7 = makeEntry(RC_BINDING_SBUS2, 7, SOUND_ACTION_RANDOM_ALERT);
 
-    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(ch6, existing, &working, err, sizeof(err)));
-    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(ch7, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_TRUE(place(ch6, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_TRUE(place(ch7, existing, &working, err, sizeof(err)));
 
-    TEST_ASSERT_TRUE(working.system.rc_audio.reverse);
-    TEST_ASSERT_FALSE(working.system.rc_free0.reverse);
+    TEST_ASSERT_TRUE(nthPlace(&working, false, 0).reverse);
+    TEST_ASSERT_FALSE(nthPlace(&working, false, 1).reverse);
 }
 
-void test_assignRcMapEntryToSnapshot_reuses_existing_dome_calibration(void) {
+void test_rcMapStorePlace_reuses_existing_dome_calibration(void) {
     ConfigSnapshot existing = makeEmptySnapshot();
-    existing.system.rc_sbus_dome_speed = makeRcBindingConfig(RC_BINDING_SBUS2, 1, 260, 1180, 1860, 35, false);
-    existing.system.rc_pwm_dome_speed = disabledRcBinding();
+    axisPlace(&existing, RcMapAxisGroup::Sbus, RcMapAxis::DomeSpeed) =
+        makeRcBindingConfig(RC_BINDING_SBUS2, 1, 260, 1180, 1860, 35, false);
+    axisPlace(&existing, RcMapAxisGroup::Pwm, RcMapAxis::DomeSpeed) = disabledRcBinding();
 
     ConfigSnapshot working = existing;
-    clearRcMapSlots(&working);
+    rcMapStoreClear(&working.system);
 
     char err[96] = {};
     RcMapEntry dome = makeEntry(RC_BINDING_SBUS2, 1, DOME_ACTION_SPEED);
-    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(dome, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_TRUE(place(dome, existing, &working, err, sizeof(err)));
 
-    TEST_ASSERT_EQUAL_UINT8(RC_BINDING_SBUS2, working.system.rc_sbus_dome_speed.source);
-    TEST_ASSERT_EQUAL_UINT8(1, working.system.rc_sbus_dome_speed.channel);
-    TEST_ASSERT_EQUAL_UINT16(260, working.system.rc_sbus_dome_speed.min);
-    TEST_ASSERT_EQUAL_UINT16(1180, working.system.rc_sbus_dome_speed.center);
-    TEST_ASSERT_EQUAL_UINT16(1860, working.system.rc_sbus_dome_speed.max);
-    TEST_ASSERT_EQUAL_UINT16(35, working.system.rc_sbus_dome_speed.deadband);
-    TEST_ASSERT_FALSE(working.system.rc_sbus_dome_speed.reverse);
+    const RcBindingConfig& sbus = axisPlace(&working, RcMapAxisGroup::Sbus, RcMapAxis::DomeSpeed);
+    TEST_ASSERT_EQUAL_UINT8(RC_BINDING_SBUS2, sbus.source);
+    TEST_ASSERT_EQUAL_UINT8(1, sbus.channel);
+    TEST_ASSERT_EQUAL_UINT16(260, sbus.min);
+    TEST_ASSERT_EQUAL_UINT16(1180, sbus.center);
+    TEST_ASSERT_EQUAL_UINT16(1860, sbus.max);
+    TEST_ASSERT_EQUAL_UINT16(35, sbus.deadband);
+    TEST_ASSERT_FALSE(sbus.reverse);
 
-    TEST_ASSERT_EQUAL_UINT16(1180, working.system.rc_pwm_dome_speed.center);
-    TEST_ASSERT_EQUAL_UINT16(35, working.system.rc_pwm_dome_speed.deadband);
+    const RcBindingConfig& pwm = axisPlace(&working, RcMapAxisGroup::Pwm, RcMapAxis::DomeSpeed);
+    TEST_ASSERT_EQUAL_UINT16(1180, pwm.center);
+    TEST_ASSERT_EQUAL_UINT16(35, pwm.deadband);
 }
 
 // An entry the droid would not read says so: a single SBUS droid still holds
@@ -166,10 +209,13 @@ void test_assignRcMapEntryToSnapshot_reuses_existing_dome_calibration(void) {
 // page must not post it back (ADR 0070, #486 review).
 void test_populateRcMapJson_marks_an_entry_the_saved_type_does_not_read(void) {
     ConfigSnapshot snap = makeEmptySnapshot(RC_INPUT_SINGLE_SBUS);
-    snap.system.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 1);
-    snap.system.rc_sbus_drive_steer = defaultSbusBinding(RC_BINDING_SBUS1, 2);
-    snap.system.rc_sbus_dome_speed = defaultSbusBinding(RC_BINDING_SBUS2, 1);
-    snap.system.rc_arm1 = makeRcTriggerBinding(RC_BINDING_SBUS2, 5, SERVO_ACTION_ARM1_TOGGLE, nullptr,
+    axisPlace(&snap, RcMapAxisGroup::Sbus, RcMapAxis::DriveSpeed) =
+        defaultSbusBinding(RC_BINDING_SBUS1, 1);
+    axisPlace(&snap, RcMapAxisGroup::Sbus, RcMapAxis::DriveSteer) =
+        defaultSbusBinding(RC_BINDING_SBUS1, 2);
+    axisPlace(&snap, RcMapAxisGroup::Sbus, RcMapAxis::DomeSpeed) =
+        defaultSbusBinding(RC_BINDING_SBUS2, 1);
+    ownPlace(&snap, SERVO_ACTION_ARM1_TOGGLE) = makeRcTriggerBinding(RC_BINDING_SBUS2, 5, SERVO_ACTION_ARM1_TOGGLE, nullptr,
                                                172, 992, 1811, 0, false);
     JsonDocument doc;
     TEST_ASSERT_TRUE(populateRcMapJson(doc, snap));
@@ -196,8 +242,10 @@ void test_populateRcMapJson_marks_an_entry_the_saved_type_does_not_read(void) {
 // Speed back and mending Steer brings the pair back.
 void test_populateRcMapJson_marks_both_axes_of_a_split_drive_unread(void) {
     ConfigSnapshot snap = makeEmptySnapshot(RC_INPUT_DUAL_SBUS);
-    snap.system.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 1);
-    snap.system.rc_sbus_drive_steer = defaultSbusBinding(RC_BINDING_SBUS2, 2);
+    axisPlace(&snap, RcMapAxisGroup::Sbus, RcMapAxis::DriveSpeed) =
+        defaultSbusBinding(RC_BINDING_SBUS1, 1);
+    axisPlace(&snap, RcMapAxisGroup::Sbus, RcMapAxis::DriveSteer) =
+        defaultSbusBinding(RC_BINDING_SBUS2, 2);
     JsonDocument doc;
     TEST_ASSERT_TRUE(populateRcMapJson(doc, snap));
     JsonArrayConst map = doc["map"].as<JsonArrayConst>();
@@ -218,9 +266,11 @@ void test_populateRcMapJson_marks_both_axes_of_a_split_drive_unread(void) {
 // the rest of the map reads on (ADR 0070).
 void test_populateRcMapJson_marks_both_bindings_on_one_channel_unread(void) {
     ConfigSnapshot snap = makeEmptySnapshot(RC_INPUT_DUAL_SBUS);
-    snap.system.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 4);
-    snap.system.rc_sbus_drive_steer = defaultSbusBinding(RC_BINDING_SBUS1, 2);
-    snap.system.rc_arm1 = makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
+    axisPlace(&snap, RcMapAxisGroup::Sbus, RcMapAxis::DriveSpeed) =
+        defaultSbusBinding(RC_BINDING_SBUS1, 4);
+    axisPlace(&snap, RcMapAxisGroup::Sbus, RcMapAxis::DriveSteer) =
+        defaultSbusBinding(RC_BINDING_SBUS1, 2);
+    ownPlace(&snap, SERVO_ACTION_ARM1_TOGGLE) = makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
                                                172, 992, 1811, 0, false);
     JsonDocument doc;
     TEST_ASSERT_TRUE(populateRcMapJson(doc, snap));
@@ -240,12 +290,8 @@ void test_populateRcMapJson_marks_both_bindings_on_one_channel_unread(void) {
 namespace {
 
 RcTriggerBinding* const* triggerSlots(ConfigSnapshot* snap) {
-    static RcTriggerBinding* slots[11];
-    RcTriggerBinding* const all[] = {&snap->system.rc_arm1,  &snap->system.rc_arm2,  &snap->system.rc_aux1,
-                                     &snap->system.rc_aux2,  &snap->system.rc_aux3,  &snap->system.rc_audio,
-                                     &snap->system.rc_opmode, &snap->system.rc_free0, &snap->system.rc_free1,
-                                     &snap->system.rc_free2, &snap->system.rc_free3};
-    for (size_t i = 0; i < 11; ++i) slots[i] = all[i];
+    static RcTriggerBinding* slots[RC_TRIGGER_SLOT_COUNT];
+    for (size_t i = 0; i < RC_TRIGGER_SLOT_COUNT; ++i) slots[i] = &triggerPlace(snap, i);
     return slots;
 }
 
@@ -260,9 +306,12 @@ const char* const kLongPayload = ":OP01ABCDEFGHIJ";
 // axes) and axes whose dead zone swallows a side.
 void test_populateRcMapJson_widest_map_fits_its_body(void) {
     ConfigSnapshot reactions = makeEmptySnapshot(RC_INPUT_NOT_FITTED);
-    reactions.system.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 16);
-    reactions.system.rc_sbus_drive_steer = defaultSbusBinding(RC_BINDING_SBUS1, 15);
-    reactions.system.rc_sbus_dome_speed = defaultSbusBinding(RC_BINDING_SBUS2, 14);
+    axisPlace(&reactions, RcMapAxisGroup::Sbus, RcMapAxis::DriveSpeed) =
+        defaultSbusBinding(RC_BINDING_SBUS1, 16);
+    axisPlace(&reactions, RcMapAxisGroup::Sbus, RcMapAxis::DriveSteer) =
+        defaultSbusBinding(RC_BINDING_SBUS1, 15);
+    axisPlace(&reactions, RcMapAxisGroup::Sbus, RcMapAxis::DomeSpeed) =
+        defaultSbusBinding(RC_BINDING_SBUS2, 14);
     const struct {
         RcBindingSource source;
         uint8_t channel;
@@ -282,9 +331,12 @@ void test_populateRcMapJson_widest_map_fits_its_body(void) {
     }
 
     ConfigSnapshot unread = makeEmptySnapshot(RC_INPUT_STANDARD_PWM);
-    unread.system.rc_pwm_drive_speed = makeRcBindingConfig(RC_BINDING_PWM, 1, 1000, 1100, 2000, 150, false);
-    unread.system.rc_pwm_drive_steer = makeRcBindingConfig(RC_BINDING_PWM, 2, 1000, 1100, 2000, 150, false);
-    unread.system.rc_pwm_dome_speed = makeRcBindingConfig(RC_BINDING_PWM, 3, 1000, 1100, 2000, 150, false);
+    axisPlace(&unread, RcMapAxisGroup::Pwm, RcMapAxis::DriveSpeed) =
+        makeRcBindingConfig(RC_BINDING_PWM, 1, 1000, 1100, 2000, 150, false);
+    axisPlace(&unread, RcMapAxisGroup::Pwm, RcMapAxis::DriveSteer) =
+        makeRcBindingConfig(RC_BINDING_PWM, 2, 1000, 1100, 2000, 150, false);
+    axisPlace(&unread, RcMapAxisGroup::Pwm, RcMapAxis::DomeSpeed) =
+        makeRcBindingConfig(RC_BINDING_PWM, 3, 1000, 1100, 2000, 150, false);
     slots = triggerSlots(&unread);
     for (i = 0; i < 11; ++i) {
         *slots[i] = makeRcTriggerBinding(RC_BINDING_PWM, (uint8_t)(i % 6 + 1), DROID_SEQ_BEEP_CANTINA,
@@ -332,9 +384,9 @@ int main(void) {
     RUN_TEST(test_populateRcMapJson_marks_both_bindings_on_one_channel_unread);
     RUN_TEST(test_populateRcMapJson_marks_both_axes_of_a_split_drive_unread);
     RUN_TEST(test_populateRcMapJson_widest_map_fits_its_body);
-    RUN_TEST(test_assignRcMapEntryToSnapshot_a_toggle_takes_its_named_place);
-    RUN_TEST(test_assignRcMapEntryToSnapshot_spill_slots_fill_in_order);
-    RUN_TEST(test_assignRcMapEntryToSnapshot_applies_sbus_button_reverse_default);
-    RUN_TEST(test_assignRcMapEntryToSnapshot_reuses_existing_dome_calibration);
+    RUN_TEST(test_rcMapStorePlace_a_toggle_takes_its_named_place);
+    RUN_TEST(test_rcMapStorePlace_spill_slots_fill_in_order);
+    RUN_TEST(test_rcMapStorePlace_applies_sbus_button_reverse_default);
+    RUN_TEST(test_rcMapStorePlace_reuses_existing_dome_calibration);
     return UNITY_END();
 }

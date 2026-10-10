@@ -162,7 +162,8 @@ inline bool robotActionNeedsPayload(RobotActionId target) {
 // fires one once, so neither the REST action test nor the Console runs one, and
 // a droid condition - which has no stick - may not be bound to one. Which slot
 // an analog action is stored in is not this predicate's: the backbone axes have
-// their own fields and a puppet string a trigger slot (assignRcMapEntryToSnapshot()).
+// their own places and a puppet string a trigger place (rcMapStorePlace(),
+// include/rc_map_store.h).
 inline bool robotActionIsAnalog(RobotActionId target) {
     return target == DRIVE_ACTION_SPEED || target == DRIVE_ACTION_STEER ||
            target == DOME_ACTION_SPEED || target == SERVO_ACTION_PUPPET_PART;

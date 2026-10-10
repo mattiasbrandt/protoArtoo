@@ -13,6 +13,7 @@
 #include "../../include/config_cache.h"
 #include "../../include/rc_diagnostics.h"
 #include "../../include/rc_map_rules.h"  // rcReceiverReads(), rcStoredMapKeepRead()
+#include "../../include/rc_map_store.h"  // rcMapReadAxes(): the axis group a receiver type reads
 #include "../../include/reaction_evaluator.h"  // ReactionAvailability and its two spellings
 #include "../../include/robot_state.h"
 
@@ -33,17 +34,14 @@ void loadModeBindingSpecs(RcInputMode mode,
 
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
+    // The axes through the RC Map Store's one pick; the legacy arm and sound
+    // bindings stay outside the RC Map and are picked here.
+    rcMapReadAxes(cfg.system, mode, &specs[0].binding, &specs[1].binding, &specs[2].binding);
     if (mode == RC_INPUT_STANDARD_PWM) {
-        specs[0].binding = cfg.system.rc_pwm_drive_speed;
-        specs[1].binding = cfg.system.rc_pwm_drive_steer;
-        specs[2].binding = cfg.system.rc_pwm_dome_speed;
         specs[3].binding = cfg.system.rc_pwm_arm1;
         specs[4].binding = cfg.system.rc_pwm_arm2;
         specs[5].binding = cfg.system.rc_pwm_audio;
     } else {
-        specs[0].binding = cfg.system.rc_sbus_drive_speed;
-        specs[1].binding = cfg.system.rc_sbus_drive_steer;
-        specs[2].binding = cfg.system.rc_sbus_dome_speed;
         specs[3].binding = cfg.system.rc_sbus_arm1;
         specs[4].binding = cfg.system.rc_sbus_arm2;
         specs[5].binding = cfg.system.rc_sbus_audio;

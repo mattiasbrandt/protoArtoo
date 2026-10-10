@@ -20,7 +20,7 @@
 #include "logging.h"
 #include "output_wire.h"  // outputWireReleaseAfterMs() - the release a light never has
 #include "rc_action_dispatcher.h"  // RcAudioCategorySnapshot - configCacheReadRcActionContext()
-#include "rc_map_store.h"  // the RC Map's places: defaults, the label carry
+#include "rc_map_store.h"  // the RC Map's places: defaults, the label carry, the axis pick
 #include "rc_mapping.h"
 #include "sequence_bulk_centre.h"  // sequenceCadenceFloorInUse() - configCacheCadenceFloorMs()
 #include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
@@ -670,11 +670,8 @@ void configCacheReadRcAxes(uint8_t mode, RcBindingConfig* driveSpeed, RcBindingC
     if (driveSpeed == nullptr || driveSteer == nullptr || domeSpeed == nullptr) {
         return;
     }
-    const bool pwm = mode == RC_INPUT_STANDARD_PWM;
     taskENTER_CRITICAL(&configCacheMux);
-    *driveSpeed = pwm ? configCache.system.rc_pwm_drive_speed : configCache.system.rc_sbus_drive_speed;
-    *driveSteer = pwm ? configCache.system.rc_pwm_drive_steer : configCache.system.rc_sbus_drive_steer;
-    *domeSpeed = pwm ? configCache.system.rc_pwm_dome_speed : configCache.system.rc_sbus_dome_speed;
+    rcMapReadAxes(configCache.system, static_cast<RcInputMode>(mode), driveSpeed, driveSteer, domeSpeed);
     taskEXIT_CRITICAL(&configCacheMux);
 }
 

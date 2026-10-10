@@ -43,6 +43,7 @@
 #include "../../include/rc_input.h"
 #include "../../include/rc_input_processor.h"
 #include "../../include/rc_input_step.h"
+#include "../../include/rc_map_store.h"  // rcMapReadAxes(): the axis group a receiver type reads
 #include "../../include/rc_mapping_cache.h"
 #include "../../include/rc_pwm_helpers.h"
 #include "../../include/robot_state.h"
@@ -137,17 +138,16 @@ static RcMappingConfig rcBuildMappingConfig(const RcInputActiveConfig& active) {
     out.enableArm2 = active.enableArm2;
     out.enableSound = active.enableSound;
     out.maxOut = cfg.drive.speedLimitMax;
+    // The drive and dome axes from the group this receiver type reads (the RC
+    // Map Store's one pick); the legacy arm and sound bindings stay outside the
+    // RC Map and are picked here.
+    rcMapReadAxes(cfg.system, static_cast<RcInputMode>(active.mode), &out.driveSpeed,
+                  &out.driveSteer, &out.domeSpeed);
     if (active.mode == RC_INPUT_STANDARD_PWM) {
-        out.driveSpeed = cfg.system.rc_pwm_drive_speed;
-        out.driveSteer = cfg.system.rc_pwm_drive_steer;
-        out.domeSpeed = cfg.system.rc_pwm_dome_speed;
         out.arm1 = cfg.system.rc_pwm_arm1;
         out.arm2 = cfg.system.rc_pwm_arm2;
         out.sound = cfg.system.rc_pwm_audio;
     } else {
-        out.driveSpeed = cfg.system.rc_sbus_drive_speed;
-        out.driveSteer = cfg.system.rc_sbus_drive_steer;
-        out.domeSpeed = cfg.system.rc_sbus_dome_speed;
         out.arm1 = cfg.system.rc_sbus_arm1;
         out.arm2 = cfg.system.rc_sbus_arm2;
         out.sound = cfg.system.rc_sbus_audio;
