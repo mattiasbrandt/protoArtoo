@@ -154,3 +154,40 @@ Considered and rejected: keeping `read` as "a save would keep it" (the RC Map
 would then say an axis is read that the droid never moves), a verdict list each
 reader applies itself (each would keep a skip step that can drift), and keeping
 the reserved places with a per-kind ceiling on the page (the operator set 11).
+
+## Amended 2026-10-10: one RC Map Store owns the stored places, and a reader's state follows a stamp
+
+Settled with the operator after the second 2026-10-10 architecture review,
+which found three answers to "is this still the same trigger binding?" - the
+save's (control, action and payload), the Reaction evaluator's (those plus a
+Reaction's numbers) and the input processor's (control and action) - each one
+there because a reader keeps its per-switch state by stored place. #488 needed
+a fix in each.
+
+- **One RC Map Store owns where the RC Map is stored.** One table of the 11
+  trigger places and the six drive and dome axes, each with its NVS key
+  unchanged (ADR 0068), which the defaults, the load, the save and the
+  single-SBUS label carry all loop over. The store places a save's bindings,
+  keeping a binding the droid already held in its place, and it is the one
+  answer to which axis group a receiver type reads. The rules stay below it.
+  The legacy PWM and SBUS arm and sound bindings stay outside it.
+- **Every stored place carries a change stamp.** The config cache bumps a
+  place's stamp on any write that changes anything in that binding, whoever
+  writes it: a save, a restore, a factory reset, boot. A reader starts a
+  place's state afresh when its stamp moves, or when the binding there goes
+  from not read to read. Any edit is a new binding, calibration and a
+  Reaction's numbers included; a binding that did not change keeps its state.
+  The stamp lives in RAM and is never stored.
+- **The axis group a receiver type reads has no fallback.** `GET /api/rc/map`
+  shows the group the droid reads. Where that group is unmapped the axis shows
+  unbound, even when the other group holds a binding, because the droid moves
+  nothing from it.
+
+Considered and rejected: one shared identity function that every reader calls
+(each would still keep its own copy of the previous binding to compare with),
+keeping each reader's own definition (it was the source of #488's three fixes),
+the RC Map Commit Step bumping the stamp alone (a restore or a factory reset
+would each have to remember to), the cache holding a second copy of the RC Map
+already judged by the rules (RAM the artoo-esp32 does not have to spare, and a
+re-judge on every change of receiver type), and keeping the GET fallback as a
+display rule (the RC Map would show an axis bound that the droid never moves).

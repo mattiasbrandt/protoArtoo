@@ -745,6 +745,10 @@ _Avoid_: channel (unqualified), button slot (ShadowMD's word, and both counts th
 Which action each **RC Channel** fires, and therefore **what the droid will do tonight** - protoR2 has no separate running order and needs none, because this already is one and already persists. A builder authors a **Sequence**, maps it to an RC Channel, and it appears among the droid's big targets on **Dashboard**: the same list read from two ends, so the **RC Radio** and the browser can never offer different shows. There are **11** trigger bindings against 18 RC Channels, 2 bound by default and 9 free (operator, 2026-09-09). The ceiling is shown up front as how many are used, and the droid refuses a twelfth, because 11 is what it stores (operator, 2026-10-09 on #389, replacing "never used to refuse"). Always qualified, because **Parts** owns the other mapping - which **Output** moves which **Part** (#330).
 _Avoid_: map (unqualified), playlist, loadout, running order as a second object, show (that is what an operator does, not a thing we store)
 
+**RC Map Store**:
+The one module that owns where the **RC Map** is kept: its stored places, each place's change stamp, where a save puts a binding, and which axis group a receiver type reads. Every reader of a stored RC Map takes it from here, and the RC Map's rules sit below it (ADR 0070, amended 2026-10-10).
+_Avoid_: slot table, a reader keeping its own idea of which binding sits where, a stored place read by its name outside storage
+
 **Dome Controller**:
 The separate controller fitted in the dome — an AstroPixelsPlus-class board — which owns the dome's panels and lighting and is reached over **protoR2link**. Not the **Dome ESC**, which the body drives directly, and not **Dome Rotation**, which is the lineup category for what turns the dome.
 _Avoid_: dome lighting (that board does panels too), dome (unqualified), controller (unqualified)
