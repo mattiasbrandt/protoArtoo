@@ -192,17 +192,52 @@ void test_one_part_has_one_puppet_string(void) {
                                                     "bodyPanel2"), RC_INPUT_DUAL_SBUS).ok());
 }
 
-void test_a_map_holds_at_most_fourteen_entries(void) {
+// Eleven trigger bindings, whatever they fire, beside the three axes: the
+// twelfth is refused, as the droid stores eleven (ADR 0070, amended
+// 2026-10-10).
+void test_a_map_holds_eleven_trigger_bindings_beside_the_three_axes(void) {
     RcMapEntry full[kRcMapMaxEntries] = {};
-    for (size_t i = 0; i < kRcMapMaxEntries; ++i) {
-        full[i] = entryOf(RC_BINDING_SBUS1, (uint8_t)(i + 1), SOUND_ACTION_NEXT);
+    for (size_t i = 0; i < kRcMapMaxTriggers; ++i) {
+        full[i] = entryOf(RC_BINDING_SBUS1, (uint8_t)(i + 4), SOUND_ACTION_NEXT);
     }
-    RcRuleVerdict verdict =
-        rcRuleMapAdd(full, kRcMapMaxEntries, entryOf(RC_BINDING_SBUS2, 1, SOUND_ACTION_NEXT), RC_INPUT_DUAL_SBUS);
-    TEST_ASSERT_EQUAL_STRING("conflict: map exceeds capacity", verdict.sentence);
-    TEST_ASSERT_FALSE(verdict.aboutEntry);
-    TEST_ASSERT_TRUE(
-        rcRuleMapAdd(full, kRcMapMaxEntries - 1, entryOf(RC_BINDING_SBUS2, 1, SOUND_ACTION_NEXT), RC_INPUT_DUAL_SBUS).ok());
+    RcRuleVerdict twelfth =
+        rcRuleMapAdd(full, kRcMapMaxTriggers, entryOf(RC_BINDING_SBUS2, 1, SOUND_ACTION_NEXT), RC_INPUT_DUAL_SBUS);
+    TEST_ASSERT_EQUAL_STRING("conflict: map exceeds capacity", twelfth.sentence);
+    TEST_ASSERT_EQUAL_STRING("map", twelfth.field);
+    TEST_ASSERT_FALSE(twelfth.aboutEntry);
+    TEST_ASSERT_TRUE(rcRuleMapAdd(full, kRcMapMaxTriggers - 1, entryOf(RC_BINDING_SBUS2, 1, SOUND_ACTION_NEXT),
+                                  RC_INPUT_DUAL_SBUS).ok());
+    // A Reaction counts as a trigger binding too.
+    TEST_ASSERT_FALSE(rcRuleMapAdd(full, kRcMapMaxTriggers, entryOf(RC_BINDING_DROID_REST, 1, SOUND_ACTION_NEXT),
+                                   RC_INPUT_DUAL_SBUS).ok());
+    // The axes have places of their own: eleven triggers still take all three.
+    full[11] = entryOf(RC_BINDING_SBUS1, 1, DRIVE_ACTION_SPEED);
+    full[12] = entryOf(RC_BINDING_SBUS1, 2, DRIVE_ACTION_STEER);
+    TEST_ASSERT_TRUE(rcRuleMapAdd(full, 13, entryOf(RC_BINDING_SBUS1, 3, DOME_ACTION_SPEED), RC_INPUT_DUAL_SBUS).ok());
+}
+
+// An arm or aux toggle or the op mode sits on one RC Channel: two switches
+// toggling one arm fight each other. A Reaction is not held to it, and a cue
+// may repeat.
+void test_a_toggle_on_a_radio_is_bound_once(void) {
+    const RobotActionId toggles[] = {SERVO_ACTION_ARM1_TOGGLE, SERVO_ACTION_ARM2_TOGGLE, SERVO_ACTION_AUX1_TOGGLE,
+                                     SERVO_ACTION_AUX2_TOGGLE, SERVO_ACTION_AUX3_TOGGLE, SYSTEM_ACTION_OP_MODE};
+    for (RobotActionId toggle : toggles) {
+        const RcMapEntry prior[] = {entryOf(RC_BINDING_SBUS1, 5, toggle)};
+        RcRuleVerdict twice = rcRuleMapAdd(prior, 1, entryOf(RC_BINDING_SBUS2, 6, toggle), RC_INPUT_DUAL_SBUS);
+        TEST_ASSERT_FALSE(twice.ok());
+        TEST_ASSERT_EQUAL_STRING("map.action", twice.field);
+        TEST_ASSERT_TRUE(twice.reason == ApplyRefusalReason::Conflict);
+    }
+    const RcMapEntry arm[] = {entryOf(RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM1_TOGGLE)};
+    TEST_ASSERT_EQUAL_STRING("conflict: arm1_toggle mapped more than once",
+                             rcRuleMapAdd(arm, 1, entryOf(RC_BINDING_SBUS1, 6, SERVO_ACTION_ARM1_TOGGLE),
+                                          RC_INPUT_DUAL_SBUS).sentence);
+    TEST_ASSERT_TRUE(rcRuleMapAdd(arm, 1, entryOf(RC_BINDING_DROID_REST, 1, SERVO_ACTION_ARM1_TOGGLE),
+                                  RC_INPUT_DUAL_SBUS).ok());
+    const RcMapEntry reaction[] = {entryOf(RC_BINDING_DROID_REST, 1, SERVO_ACTION_ARM1_TOGGLE)};
+    TEST_ASSERT_TRUE(rcRuleMapAdd(reaction, 1, entryOf(RC_BINDING_DROID_SPEED, 1, SERVO_ACTION_ARM1_TOGGLE),
+                                  RC_INPUT_DUAL_SBUS).ok());
 }
 
 // --- the drive pair ---
@@ -230,6 +265,32 @@ void test_an_unbound_drive_axis_breaks_no_drive_rule(void) {
 }
 
 // --- an axis's calibration ---
+
+// Each end and the centre within what the receiver reports.
+void test_calibration_stays_within_what_its_receiver_reports(void) {
+    RcBindingConfig sbus = sbusAxis(RC_BINDING_SBUS1, 1);
+    sbus.max = 2047;
+    TEST_ASSERT_TRUE(rcRuleAxisCalibration(DOME_ACTION_SPEED, sbus).ok());
+    sbus.max = 2048;
+    RcRuleVerdict high = rcRuleAxisCalibration(DOME_ACTION_SPEED, sbus);
+    TEST_ASSERT_EQUAL_STRING("calibration.max", high.field);
+    TEST_ASSERT_EQUAL_STRING("out-of-range", applyRefusalReasonToken(high.reason));
+    TEST_ASSERT_EQUAL(DOME_ACTION_SPEED, high.axis);
+
+    RcBindingConfig pwm = defaultPwmBinding(1);
+    pwm.min = 900;
+    pwm.max = 2100;
+    TEST_ASSERT_TRUE(rcRuleAxisCalibration(DRIVE_ACTION_SPEED, pwm).ok());
+    pwm.min = 899;
+    RcRuleVerdict low = rcRuleAxisCalibration(DRIVE_ACTION_SPEED, pwm);
+    TEST_ASSERT_EQUAL_STRING("calibration.min", low.field);
+    // Judged before the order, so the field named is the value out of range.
+    pwm.min = 1000;
+    pwm.center = 0xFFFF;
+    TEST_ASSERT_EQUAL_STRING("calibration.center", rcRuleAxisCalibration(DRIVE_ACTION_SPEED, pwm).field);
+    TEST_ASSERT_EQUAL_STRING("out-of-range",
+                             applyRefusalReasonToken(rcRuleAxisCalibration(DRIVE_ACTION_SPEED, pwm).reason));
+}
 
 void test_calibration_runs_end_centre_end(void) {
     RcBindingConfig binding = sbusAxis(RC_BINDING_SBUS1, 1);
@@ -294,135 +355,241 @@ void test_an_axis_needs_a_stick_channel(void) {
 
 // --- the same rules on read ---
 
+namespace {
+
+constexpr size_t kMaxCues = 16;
+
+// A stored map as a test holds it, with room for its slots: what the droid
+// reads of it is what rcStoredMapKeepRead() leaves.
+struct Stored {
+    RcBindingConfig driveSpeed;
+    RcBindingConfig driveSteer;
+    RcBindingConfig domeSpeed;
+    RcTriggerBinding cues[kMaxCues];
+    size_t cueCount;
+    RcStoredMap map() { return {driveSpeed, driveSteer, domeSpeed, cues, cueCount}; }
+};
+
+Stored storedOf(const RcTriggerBinding* cues, size_t count) {
+    Stored stored = {sbusAxis(RC_BINDING_SBUS1, 1), sbusAxis(RC_BINDING_SBUS1, 2), sbusAxis(RC_BINDING_SBUS1, 3),
+                     {}, count};
+    for (size_t i = 0; i < count && i < kMaxCues; ++i) {
+        stored.cues[i] = cues[i];
+    }
+    return stored;
+}
+
+Stored axesOnly(RcBindingConfig speed, RcBindingConfig steer, RcBindingConfig dome) {
+    Stored stored = {speed, steer, dome, {}, 0};
+    return stored;
+}
+
+// The bits of every bound binding the droid leaves still.
+uint32_t unreadOf(const Stored& stored, RcInputMode type) {
+    Stored read = stored;
+    RcStoredMap map = read.map();
+    rcStoredMapKeepRead(&map, type);
+    uint32_t unread = 0;
+    for (size_t i = 0; i < stored.cueCount; ++i) {
+        if (stored.cues[i].source != RC_BINDING_NONE && map.cues[i].source == RC_BINDING_NONE) {
+            unread |= rcStoredCueBit(i);
+        }
+    }
+    const RcBindingConfig* const before[] = {&stored.driveSpeed, &stored.driveSteer, &stored.domeSpeed};
+    const RcBindingConfig* const after[] = {&map.driveSpeed, &map.driveSteer, &map.domeSpeed};
+    const uint32_t bits[] = {kRcStoredDriveSpeedBit, kRcStoredDriveSteerBit, kRcStoredDomeSpeedBit};
+    for (size_t i = 0; i < 3; ++i) {
+        if (before[i]->source != RC_BINDING_NONE && after[i]->source == RC_BINDING_NONE) {
+            unread |= bits[i];
+        }
+    }
+    return unread;
+}
+
+RcRuleVerdict whyOf(Stored stored, RcInputMode type, uint32_t bit) {
+    return rcStoredMapWhy(stored.map(), type, bit);
+}
+
+RcTriggerBinding cueOn(uint8_t channel, RobotActionId action, const char* payload = nullptr,
+                       RcBindingSource source = RC_BINDING_SBUS1) {
+    return makeRcTriggerBinding(source, channel, action, payload, 172, 992, 1811, 0, false);
+}
+
+}  // namespace
+
 void test_a_stored_axis_is_judged_as_a_save_would_judge_it(void) {
-    RcBindingConfig dome = sbusAxis(RC_BINDING_SBUS2, 1);
-    TEST_ASSERT_TRUE(rcRuleStoredAxis(DOME_ACTION_SPEED, dome, RC_INPUT_DUAL_SBUS).ok());
-    TEST_ASSERT_FALSE(rcRuleStoredAxis(DOME_ACTION_SPEED, dome, RC_INPUT_SINGLE_SBUS).ok());
-    RcBindingConfig onOff = sbusAxis(RC_BINDING_SBUS1, 17);
+    const RcBindingConfig speed = sbusAxis(RC_BINDING_SBUS1, 1);
+    const RcBindingConfig steer = sbusAxis(RC_BINDING_SBUS1, 2);
+    Stored dome = axesOnly(speed, steer, sbusAxis(RC_BINDING_SBUS2, 1));
+    TEST_ASSERT_EQUAL_HEX32(0, unreadOf(dome, RC_INPUT_DUAL_SBUS));
+    TEST_ASSERT_EQUAL_HEX32(kRcStoredDomeSpeedBit, unreadOf(dome, RC_INPUT_SINGLE_SBUS));
+    TEST_ASSERT_EQUAL_STRING("map.source", whyOf(dome, RC_INPUT_SINGLE_SBUS, kRcStoredDomeSpeedBit).field);
+    Stored onOff = axesOnly(speed, steer, sbusAxis(RC_BINDING_SBUS1, 17));
     TEST_ASSERT_EQUAL_STRING("an axis needs a stick channel",
-                             rcRuleStoredAxis(DOME_ACTION_SPEED, onOff, RC_INPUT_DUAL_SBUS).sentence);
+                             whyOf(onOff, RC_INPUT_DUAL_SBUS, kRcStoredDomeSpeedBit).sentence);
     // A stored dead zone that swallows one side: the stored form takes it,
     // the rules do not.
     RcBindingConfig swallowed = sbusAxis(RC_BINDING_SBUS1, 3);
     swallowed.center = 300;
     swallowed.deadband = 200;
     TEST_ASSERT_TRUE(rcBindingIsValid(swallowed));
+    Stored dz = axesOnly(speed, steer, swallowed);
+    TEST_ASSERT_EQUAL_HEX32(kRcStoredDomeSpeedBit, unreadOf(dz, RC_INPUT_DUAL_SBUS));
     TEST_ASSERT_EQUAL_STRING("calibration leaves no travel past the deadband",
-                             rcRuleStoredAxis(DOME_ACTION_SPEED, swallowed, RC_INPUT_DUAL_SBUS).sentence);
+                             whyOf(dz, RC_INPUT_DUAL_SBUS, kRcStoredDomeSpeedBit).sentence);
+    // A read binding, and an unbound one, carry no refusal.
+    TEST_ASSERT_TRUE(whyOf(dz, RC_INPUT_DUAL_SBUS, kRcStoredDriveSpeedBit).ok());
+    TEST_ASSERT_TRUE(whyOf(axesOnly(speed, steer, disabledRcBinding()), RC_INPUT_DUAL_SBUS,
+                           kRcStoredDomeSpeedBit).ok());
 }
 
-void test_a_stored_drive_names_the_axis_a_rule_refuses(void) {
+// The drive moves on both sticks or neither, so `read` says both are still
+// when one is refused (ADR 0070, amended 2026-10-10). The refused axis carries
+// its own refusal; the other waits on it, under a field of its own, so the RC
+// page never acts on the wrong axis.
+void test_a_drive_axis_whose_partner_is_refused_stays_still_too(void) {
     RcBindingConfig steer = sbusAxis(RC_BINDING_SBUS1, 2);
     steer.deadband = 900;
-    RcRuleVerdict verdict = rcRuleStoredDrive(sbusAxis(RC_BINDING_SBUS1, 1), steer, RC_INPUT_DUAL_SBUS);
-    TEST_ASSERT_EQUAL_STRING("calibration leaves no travel past the deadband", verdict.sentence);
-    TEST_ASSERT_EQUAL(DRIVE_ACTION_STEER, verdict.axis);
-    RcRuleVerdict sbus2 = rcRuleStoredDrive(sbusAxis(RC_BINDING_SBUS2, 1), sbusAxis(RC_BINDING_SBUS2, 2),
-                                            RC_INPUT_DUAL_SBUS);
-    TEST_ASSERT_EQUAL_STRING("drive reads SBUS1, the drive receiver", sbus2.sentence);
-    TEST_ASSERT_TRUE(rcRuleStoredDrive(sbusAxis(RC_BINDING_SBUS1, 1), sbusAxis(RC_BINDING_SBUS1, 2),
-                                       RC_INPUT_SINGLE_SBUS).ok());
-    TEST_ASSERT_TRUE(rcRuleStoredDrive(disabledRcBinding(), disabledRcBinding(), RC_INPUT_DUAL_SBUS).ok());
+    Stored ends = axesOnly(sbusAxis(RC_BINDING_SBUS1, 1), steer, disabledRcBinding());
+    TEST_ASSERT_EQUAL_HEX32(kRcStoredDriveSpeedBit | kRcStoredDriveSteerBit, unreadOf(ends, RC_INPUT_DUAL_SBUS));
+    TEST_ASSERT_EQUAL_STRING("calibration.deadband", whyOf(ends, RC_INPUT_DUAL_SBUS, kRcStoredDriveSteerBit).field);
+    RcRuleVerdict waits = whyOf(ends, RC_INPUT_DUAL_SBUS, kRcStoredDriveSpeedBit);
+    TEST_ASSERT_EQUAL_STRING("map.drive", waits.field);
+    TEST_ASSERT_EQUAL_STRING("conflict", applyRefusalReasonToken(waits.reason));
+    TEST_ASSERT_EQUAL(DRIVE_ACTION_SPEED, waits.axis);
+
+    // Both on SBUS2: Speed is refused for the receiver, Steer waits on it.
+    Stored sbus2 = axesOnly(sbusAxis(RC_BINDING_SBUS2, 1), sbusAxis(RC_BINDING_SBUS2, 2), disabledRcBinding());
+    TEST_ASSERT_EQUAL_HEX32(kRcStoredDriveSpeedBit | kRcStoredDriveSteerBit, unreadOf(sbus2, RC_INPUT_DUAL_SBUS));
+    TEST_ASSERT_EQUAL_STRING("drive reads SBUS1, the drive receiver",
+                             whyOf(sbus2, RC_INPUT_DUAL_SBUS, kRcStoredDriveSpeedBit).sentence);
+    TEST_ASSERT_EQUAL_STRING("map.drive", whyOf(sbus2, RC_INPUT_DUAL_SBUS, kRcStoredDriveSteerBit).field);
+
+    // Split across the two SBUS receivers: the pair rule names Steer, and
+    // Speed waits on it.
+    Stored split = axesOnly(sbusAxis(RC_BINDING_SBUS1, 1), sbusAxis(RC_BINDING_SBUS2, 2), disabledRcBinding());
+    TEST_ASSERT_EQUAL_HEX32(kRcStoredDriveSpeedBit | kRcStoredDriveSteerBit, unreadOf(split, RC_INPUT_DUAL_SBUS));
+    TEST_ASSERT_EQUAL_STRING("drive speed and steer must be on the same receiver",
+                             whyOf(split, RC_INPUT_DUAL_SBUS, kRcStoredDriveSteerBit).sentence);
+    TEST_ASSERT_EQUAL_STRING("map.drive", whyOf(split, RC_INPUT_DUAL_SBUS, kRcStoredDriveSpeedBit).field);
+
+    // A good pair reads; the dome is no part of it.
+    Stored good = axesOnly(sbusAxis(RC_BINDING_SBUS1, 1), sbusAxis(RC_BINDING_SBUS1, 2), sbusAxis(RC_BINDING_SBUS2, 3));
+    TEST_ASSERT_EQUAL_HEX32(0, unreadOf(good, RC_INPUT_DUAL_SBUS));
+    TEST_ASSERT_EQUAL_HEX32(kRcStoredDomeSpeedBit, unreadOf(good, RC_INPUT_SINGLE_SBUS));
+}
+
+// One drive axis with no partner moves nothing, so it is not read either.
+void test_a_lone_drive_axis_waits_on_the_other(void) {
+    Stored lone = axesOnly(sbusAxis(RC_BINDING_SBUS1, 1), disabledRcBinding(), disabledRcBinding());
+    TEST_ASSERT_EQUAL_HEX32(kRcStoredDriveSpeedBit, unreadOf(lone, RC_INPUT_DUAL_SBUS));
+    TEST_ASSERT_EQUAL_STRING("map.drive", whyOf(lone, RC_INPUT_DUAL_SBUS, kRcStoredDriveSpeedBit).field);
+    TEST_ASSERT_TRUE(whyOf(lone, RC_INPUT_DUAL_SBUS, kRcStoredDriveSteerBit).ok());
 }
 
 void test_a_stored_cue_is_judged_as_a_save_would_judge_it(void) {
-    RcTriggerBinding arm = makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
-                                                172, 992, 1811, 0, false);
-    TEST_ASSERT_TRUE(rcRuleStoredCue(arm, RC_INPUT_DUAL_SBUS).ok());
-    arm.source = RC_BINDING_PWM;
+    const RcTriggerBinding arm[] = {cueOn(4, SERVO_ACTION_ARM1_TOGGLE)};
+    TEST_ASSERT_EQUAL_HEX32(0, unreadOf(storedOf(arm, 1), RC_INPUT_DUAL_SBUS));
+    const RcTriggerBinding pwm[] = {cueOn(4, SERVO_ACTION_ARM1_TOGGLE, nullptr, RC_BINDING_PWM)};
+    Stored onPwm = storedOf(pwm, 1);
+    onPwm.driveSpeed = defaultPwmBinding(1);
+    onPwm.driveSteer = defaultPwmBinding(2);
+    onPwm.domeSpeed = disabledRcBinding();
     TEST_ASSERT_EQUAL_STRING("PWM carries only the drive and dome axes",
-                             rcRuleStoredCue(arm, RC_INPUT_STANDARD_PWM).sentence);
-    RcTriggerBinding sm = makeRcTriggerBinding(RC_BINDING_SBUS1, 6, DOME_ACTION_MARCDUINO_CMD, ":SM01",
-                                               172, 992, 1811, 0, false);
+                             whyOf(onPwm, RC_INPUT_STANDARD_PWM, rcStoredCueBit(0)).sentence);
+    const RcTriggerBinding sm[] = {cueOn(6, DOME_ACTION_MARCDUINO_CMD, ":SM01")};
     TEST_ASSERT_EQUAL_STRING(":SM is diagnostic only and cannot be saved as an RC binding",
-                             rcRuleStoredCue(sm, RC_INPUT_DUAL_SBUS).sentence);
+                             whyOf(storedOf(sm, 1), RC_INPUT_DUAL_SBUS, rcStoredCueBit(0)).sentence);
     // A stored Reaction is judged on the numbers its calibration fields carry.
-    RcTriggerBinding rest = makeRcReactionBinding(RC_BINDING_DROID_REST, 1, SOUND_ACTION_NEXT, nullptr, 20, 5);
-    TEST_ASSERT_TRUE(rcRuleStoredCue(rest, RC_INPUT_NOT_FITTED).ok());
+    const RcTriggerBinding rest[] = {makeRcReactionBinding(RC_BINDING_DROID_REST, 1, SOUND_ACTION_NEXT, nullptr, 20, 5)};
+    TEST_ASSERT_EQUAL_HEX32(0, unreadOf(storedOf(rest, 1), RC_INPUT_NOT_FITTED) & rcStoredCueBit(0));
 }
 
 // --- a stored map, its bindings against each other ---
-
-namespace {
-RcTriggerBinding cueOn(uint8_t channel, RobotActionId action, const char* payload = nullptr) {
-    return makeRcTriggerBinding(RC_BINDING_SBUS1, channel, action, payload, 172, 992, 1811, 0, false);
-}
-RcStoredMap storedOf(const RcTriggerBinding* cues, size_t count) {
-    return {sbusAxis(RC_BINDING_SBUS1, 1), sbusAxis(RC_BINDING_SBUS1, 2), sbusAxis(RC_BINDING_SBUS1, 3),
-            cues, count};
-}
-}  // namespace
 
 // A save cut short by a power loss can leave two bindings on one control:
 // both are left still, and the rest of the map reads on.
 void test_two_stored_bindings_on_one_rc_channel_both_stay_still(void) {
     const RcTriggerBinding cues[] = {cueOn(4, SERVO_ACTION_ARM1_TOGGLE), cueOn(5, SOUND_ACTION_NEXT)};
-    RcStoredMap map = storedOf(cues, 2);
-    TEST_ASSERT_EQUAL_HEX32(0, rcStoredMapConflicts(map, RC_INPUT_DUAL_SBUS));
+    Stored stored = storedOf(cues, 2);
+    TEST_ASSERT_EQUAL_HEX32(0, unreadOf(stored, RC_INPUT_DUAL_SBUS));
 
-    map.driveSpeed = sbusAxis(RC_BINDING_SBUS1, 4);
-    TEST_ASSERT_EQUAL_HEX32(kRcStoredDriveSpeedBit | rcStoredCueBit(0),
-                            rcStoredMapConflicts(map, RC_INPUT_DUAL_SBUS));
-    RcRuleVerdict verdict = rcRuleStoredConflict(map, RC_INPUT_DUAL_SBUS, kRcStoredDriveSpeedBit);
+    // Speed on the arm's channel: both still, and Steer waits on Speed.
+    stored.driveSpeed = sbusAxis(RC_BINDING_SBUS1, 4);
+    TEST_ASSERT_EQUAL_HEX32(kRcStoredDriveSpeedBit | kRcStoredDriveSteerBit | rcStoredCueBit(0),
+                            unreadOf(stored, RC_INPUT_DUAL_SBUS));
+    RcRuleVerdict verdict = whyOf(stored, RC_INPUT_DUAL_SBUS, kRcStoredDriveSpeedBit);
     TEST_ASSERT_EQUAL_STRING("conflict: source+channel mapped more than once", verdict.sentence);
     TEST_ASSERT_EQUAL_STRING("map.channel", verdict.field);
-    TEST_ASSERT_TRUE(rcRuleStoredConflict(map, RC_INPUT_DUAL_SBUS, rcStoredCueBit(0)).reason ==
-                     ApplyRefusalReason::Conflict);
-    TEST_ASSERT_TRUE(rcRuleStoredConflict(map, RC_INPUT_DUAL_SBUS, rcStoredCueBit(1)).ok());
+    TEST_ASSERT_TRUE(whyOf(stored, RC_INPUT_DUAL_SBUS, rcStoredCueBit(0)).reason == ApplyRefusalReason::Conflict);
+    TEST_ASSERT_EQUAL_STRING("map.drive", whyOf(stored, RC_INPUT_DUAL_SBUS, kRcStoredDriveSteerBit).field);
+    TEST_ASSERT_TRUE(whyOf(stored, RC_INPUT_DUAL_SBUS, rcStoredCueBit(1)).ok());
     // The same channel number on the other receiver is another control.
-    map.driveSpeed = sbusAxis(RC_BINDING_SBUS1, 1);
-    map.domeSpeed = sbusAxis(RC_BINDING_SBUS2, 4);
-    TEST_ASSERT_EQUAL_HEX32(0, rcStoredMapConflicts(map, RC_INPUT_DUAL_SBUS));
+    stored.driveSpeed = sbusAxis(RC_BINDING_SBUS1, 1);
+    stored.domeSpeed = sbusAxis(RC_BINDING_SBUS2, 4);
+    TEST_ASSERT_EQUAL_HEX32(0, unreadOf(stored, RC_INPUT_DUAL_SBUS));
 }
 
 void test_two_stored_puppet_strings_on_one_part_both_stay_still(void) {
     const RcTriggerBinding cues[] = {cueOn(7, SERVO_ACTION_PUPPET_PART, "bodyPanel1"),
                                      cueOn(8, SERVO_ACTION_PUPPET_PART, "bodyPanel1"),
                                      cueOn(9, SERVO_ACTION_PUPPET_PART, "bodyPanel2")};
-    const RcStoredMap map = storedOf(cues, 3);
-    TEST_ASSERT_EQUAL_HEX32(rcStoredCueBit(0) | rcStoredCueBit(1),
-                            rcStoredMapConflicts(map, RC_INPUT_DUAL_SBUS));
+    const Stored stored = storedOf(cues, 3);
+    TEST_ASSERT_EQUAL_HEX32(rcStoredCueBit(0) | rcStoredCueBit(1), unreadOf(stored, RC_INPUT_DUAL_SBUS));
     TEST_ASSERT_EQUAL_STRING("conflict: a Part on two puppet strings",
-                             rcRuleStoredConflict(map, RC_INPUT_DUAL_SBUS, rcStoredCueBit(1)).sentence);
+                             whyOf(stored, RC_INPUT_DUAL_SBUS, rcStoredCueBit(1)).sentence);
+}
+
+// Two stored bindings of one toggle on a radio both stay still, as a save
+// refuses them; a Reaction on the same toggle is not held to it.
+void test_a_toggle_stored_twice_on_a_radio_stays_still(void) {
+    const RcTriggerBinding cues[] = {cueOn(5, SERVO_ACTION_ARM1_TOGGLE), cueOn(6, SERVO_ACTION_ARM1_TOGGLE),
+                                     makeRcReactionBinding(RC_BINDING_DROID_REST, 1, SERVO_ACTION_ARM1_TOGGLE,
+                                                           nullptr, 20, 5)};
+    const Stored stored = storedOf(cues, 3);
+    TEST_ASSERT_EQUAL_HEX32(rcStoredCueBit(0) | rcStoredCueBit(1), unreadOf(stored, RC_INPUT_DUAL_SBUS));
+    RcRuleVerdict verdict = whyOf(stored, RC_INPUT_DUAL_SBUS, rcStoredCueBit(1));
+    TEST_ASSERT_EQUAL_STRING("conflict: arm1_toggle mapped more than once", verdict.sentence);
+    TEST_ASSERT_EQUAL_STRING("map.action", verdict.field);
+    TEST_ASSERT_TRUE(whyOf(stored, RC_INPUT_DUAL_SBUS, rcStoredCueBit(2)).ok());
 }
 
 // A binding the rules refuse on its own is not read, so it takes no control
 // from another: only the read ones are judged against each other.
 void test_an_unread_binding_takes_no_control_from_another(void) {
-    const RcTriggerBinding cues[] = {makeRcTriggerBinding(RC_BINDING_SBUS1, 1, DOME_ACTION_MARCDUINO_CMD,
-                                                          ":SM01", 172, 992, 1811, 0, false)};
-    const RcStoredMap map = storedOf(cues, 1);
-    TEST_ASSERT_EQUAL_HEX32(0, rcStoredMapConflicts(map, RC_INPUT_DUAL_SBUS));
-    TEST_ASSERT_TRUE(rcRuleStoredConflict(map, RC_INPUT_DUAL_SBUS, kRcStoredDriveSpeedBit).ok());
-    // An SBUS2 axis on one SBUS receiver is unread, and so frees its channel.
-    const RcTriggerBinding sbus2[] = {makeRcTriggerBinding(RC_BINDING_SBUS2, 3, SOUND_ACTION_NEXT, nullptr,
-                                                           172, 992, 1811, 0, false)};
-    RcStoredMap single = storedOf(sbus2, 1);
+    const RcTriggerBinding cues[] = {cueOn(1, DOME_ACTION_MARCDUINO_CMD, ":SM01")};
+    const Stored stored = storedOf(cues, 1);
+    TEST_ASSERT_EQUAL_HEX32(rcStoredCueBit(0), unreadOf(stored, RC_INPUT_DUAL_SBUS));
+    TEST_ASSERT_TRUE(whyOf(stored, RC_INPUT_DUAL_SBUS, kRcStoredDriveSpeedBit).ok());
+    // An SBUS2 dome on one SBUS receiver is unread, and so frees its channel.
+    const RcTriggerBinding sbus2[] = {cueOn(3, SOUND_ACTION_NEXT, nullptr, RC_BINDING_SBUS2)};
+    Stored single = storedOf(sbus2, 1);
     single.domeSpeed = sbusAxis(RC_BINDING_SBUS2, 3);
-    TEST_ASSERT_EQUAL_HEX32(0, rcStoredMapConflicts(single, RC_INPUT_SINGLE_SBUS));
-    TEST_ASSERT_EQUAL_HEX32(kRcStoredDomeSpeedBit | rcStoredCueBit(0),
-                            rcStoredMapConflicts(single, RC_INPUT_DUAL_SBUS));
+    TEST_ASSERT_EQUAL_HEX32(kRcStoredDomeSpeedBit | rcStoredCueBit(0), unreadOf(single, RC_INPUT_SINGLE_SBUS));
+    TEST_ASSERT_EQUAL_STRING("map.source", whyOf(single, RC_INPUT_SINGLE_SBUS, kRcStoredDomeSpeedBit).field);
+    TEST_ASSERT_EQUAL_HEX32(kRcStoredDomeSpeedBit | rcStoredCueBit(0), unreadOf(single, RC_INPUT_DUAL_SBUS));
+    TEST_ASSERT_EQUAL_STRING("map.channel", whyOf(single, RC_INPUT_DUAL_SBUS, kRcStoredDomeSpeedBit).field);
 }
 
 // ReactionTask reads only the Reactions a save would take: one the rules
-// refuse leaves its slot, and so do two on one droid condition. Radio slots
-// are left as they are.
+// refuse leaves its slot, and so do two on one droid condition.
 void test_a_reaction_the_rules_refuse_leaves_its_slot(void) {
     RcTriggerBinding slots[] = {
         makeRcReactionBinding(RC_BINDING_DROID_TRACK, 1, DOME_ACTION_MARCDUINO_CMD, ":SM0,150,2200", 0, 5),
         makeRcReactionBinding(RC_BINDING_DROID_REST, 1, SOUND_ACTION_NEXT, nullptr, 20, 5),
         makeRcReactionBinding(RC_BINDING_DROID_TRACK, 1, DOME_ACTION_MARCDUINO_CMD, "OP01", 0, 5),
-        makeRcTriggerBinding(RC_BINDING_SBUS1, 6, DOME_ACTION_MARCDUINO_CMD, ":SM01", 172, 992, 1811, 0, false),
+        cueOn(6, SOUND_ACTION_NEXT),
         makeRcReactionBinding(RC_BINDING_DROID_SPEED, 1, SOUND_ACTION_NEXT, nullptr, 50, 5),
         makeRcReactionBinding(RC_BINDING_DROID_SPEED, 1, SOUND_ACTION_RANDOM_HAPPY, nullptr, 50, 5),
     };
     // The stored form's own check lets the :SM Reaction load.
     TEST_ASSERT_TRUE(rcTriggerBindingIsValid(slots[0]));
-    rcStoredReactionsKeepRead(slots, 6, RC_INPUT_DUAL_SBUS);
+    RcStoredMap map = {disabledRcBinding(), disabledRcBinding(), disabledRcBinding(), slots, 6};
+    rcStoredMapKeepRead(&map, RC_INPUT_DUAL_SBUS);
     TEST_ASSERT_EQUAL(RC_BINDING_NONE, slots[0].source);   // :SM
     TEST_ASSERT_EQUAL(RC_BINDING_DROID_REST, slots[1].source);
     TEST_ASSERT_EQUAL(RC_BINDING_NONE, slots[2].source);   // a command that starts no :, $ or #
-    TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, slots[3].source);  // a radio slot is the processor's
+    TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, slots[3].source);  // a radio cue the rules take
     TEST_ASSERT_EQUAL(RC_BINDING_NONE, slots[4].source);   // two on one condition
     TEST_ASSERT_EQUAL(RC_BINDING_NONE, slots[5].source);
 }
@@ -517,6 +684,10 @@ void test_every_field_a_rule_names_is_declared(void) {
     swallowed.deadband = 900;
     RcBindingConfig crossed = sbusAxis(RC_BINDING_SBUS1, 1);
     crossed.center = crossed.max;
+    RcBindingConfig outOfRange = sbusAxis(RC_BINDING_SBUS1, 1);
+    outOfRange.max = 2048;
+    const RcMapEntry toggle[] = {entryOf(RC_BINDING_SBUS1, 8, SERVO_ACTION_AUX1_TOGGLE)};
+    Stored lone = axesOnly(sbusAxis(RC_BINDING_SBUS1, 1), disabledRcBinding(), disabledRcBinding());
     const RcMapEntry prior[] = {entryOf(RC_BINDING_SBUS1, 7, SERVO_ACTION_PUPPET_PART, "bodyPanel1"),
                                 entryOf(RC_BINDING_SBUS1, 1, DRIVE_ACTION_SPEED)};
     RcMapEntry full[kRcMapMaxEntries] = {};
@@ -540,6 +711,9 @@ void test_every_field_a_rule_names_is_declared(void) {
         rcRuleDrive(sbusAxis(RC_BINDING_SBUS2, 1), disabledRcBinding()),
         rcRuleAxisCalibration(DRIVE_ACTION_SPEED, swallowed),
         rcRuleAxisCalibration(DRIVE_ACTION_SPEED, crossed),
+        rcRuleAxisCalibration(DRIVE_ACTION_SPEED, outOfRange),
+        rcRuleMapAdd(toggle, 1, entryOf(RC_BINDING_SBUS1, 9, SERVO_ACTION_AUX1_TOGGLE), RC_INPUT_DUAL_SBUS),
+        rcStoredMapWhy(lone.map(), RC_INPUT_DUAL_SBUS, kRcStoredDriveSpeedBit),
     };
     for (const RcRuleVerdict& verdict : verdicts) {
         TEST_ASSERT_FALSE_MESSAGE(verdict.ok(), "each case is a refusal");
@@ -577,9 +751,8 @@ void test_a_payload_that_fires_nothing_is_refused(void) {
     TEST_ASSERT_EQUAL_STRING("map.payload", cmd.field);
     TEST_ASSERT_TRUE(addAlone(entryOf(RC_BINDING_SBUS1, 5, DOME_ACTION_MARCDUINO_CMD, "$87")).ok());
     // A stored one is judged the same: not read.
-    RcTriggerBinding stored = makeRcTriggerBinding(RC_BINDING_SBUS1, 5, DOME_ACTION_MARCDUINO_CMD, "OP01",
-                                                   172, 992, 1811, 0, false);
-    TEST_ASSERT_FALSE(rcRuleStoredCue(stored, RC_INPUT_DUAL_SBUS).ok());
+    const RcTriggerBinding stored[] = {cueOn(5, DOME_ACTION_MARCDUINO_CMD, "OP01")};
+    TEST_ASSERT_EQUAL_HEX32(rcStoredCueBit(0), unreadOf(storedOf(stored, 1), RC_INPUT_DUAL_SBUS));
 }
 
 int main(int, char**) {
@@ -597,20 +770,24 @@ int main(int, char**) {
     RUN_TEST(test_one_rc_channel_holds_one_job);
     RUN_TEST(test_each_axis_is_bound_once);
     RUN_TEST(test_one_part_has_one_puppet_string);
-    RUN_TEST(test_a_map_holds_at_most_fourteen_entries);
+    RUN_TEST(test_a_map_holds_eleven_trigger_bindings_beside_the_three_axes);
+    RUN_TEST(test_a_toggle_on_a_radio_is_bound_once);
     RUN_TEST(test_the_drive_reads_one_receiver);
     RUN_TEST(test_the_drive_reads_sbus1_never_sbus2);
     RUN_TEST(test_an_unbound_drive_axis_breaks_no_drive_rule);
+    RUN_TEST(test_calibration_stays_within_what_its_receiver_reports);
     RUN_TEST(test_calibration_runs_end_centre_end);
     RUN_TEST(test_the_dead_zone_leaves_travel_on_both_sides);
     RUN_TEST(test_a_map_binds_only_receivers_its_receiver_type_reads);
     RUN_TEST(test_pwm_carries_only_the_drive_and_dome_axes);
     RUN_TEST(test_an_axis_needs_a_stick_channel);
     RUN_TEST(test_a_stored_axis_is_judged_as_a_save_would_judge_it);
-    RUN_TEST(test_a_stored_drive_names_the_axis_a_rule_refuses);
+    RUN_TEST(test_a_drive_axis_whose_partner_is_refused_stays_still_too);
+    RUN_TEST(test_a_lone_drive_axis_waits_on_the_other);
     RUN_TEST(test_a_stored_cue_is_judged_as_a_save_would_judge_it);
     RUN_TEST(test_two_stored_bindings_on_one_rc_channel_both_stay_still);
     RUN_TEST(test_two_stored_puppet_strings_on_one_part_both_stay_still);
+    RUN_TEST(test_a_toggle_stored_twice_on_a_radio_stays_still);
     RUN_TEST(test_an_unread_binding_takes_no_control_from_another);
     RUN_TEST(test_a_reaction_the_rules_refuse_leaves_its_slot);
     RUN_TEST(test_a_refusal_names_its_field_reason_and_what_it_accepts);

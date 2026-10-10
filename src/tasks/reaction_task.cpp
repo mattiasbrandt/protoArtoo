@@ -37,7 +37,7 @@
 #include "marcduino_helpers.h"
 #include "marcduino_ownership.h"  // marcduinoCommandOwner()
 #include "rc_input.h"             // dispatchReactionAction()
-#include "rc_map_rules.h"         // rcStoredReactionsKeepRead()
+#include "rc_map_rules.h"         // rcStoredMapKeepRead()
 #include "reaction_evaluator.h"
 #include "robot_state.h"
 #include "seq_store.h"            // seqStoreMayOpenBodyPart()
@@ -160,6 +160,7 @@ void reactionTask(void* /*pvParameters*/) {
     // few hundred bytes this task would otherwise carry under the action door.
     static ReactionEvaluator evaluator;
     static RcTriggerBinding bindings[RC_TRIGGER_SLOT_COUNT];
+    static RcStoredMap stored;
     static ReactionOutput output;
 
     reactionEvaluatorInit(&evaluator);
@@ -169,10 +170,12 @@ void reactionTask(void* /*pvParameters*/) {
         const size_t count = configCacheReadRcTriggerSlots(bindings, RC_TRIGGER_SLOT_COUNT);
         // A Reaction the RC Map's rules refuse is not read (ADR 0070): it
         // leaves its slot, so a press it holds is released and it fires no
-        // more, though the stored form's own check let it load.
+        // more, though the stored form's own check let it load. No axis reads
+        // a droid condition, so the axes are left out.
         RcInputActiveConfig active = {};
         configCacheReadActiveRcInput(&active);
-        rcStoredReactionsKeepRead(bindings, count, static_cast<RcInputMode>(active.mode));
+        stored = {disabledRcBinding(), disabledRcBinding(), disabledRcBinding(), bindings, count};
+        rcStoredMapKeepRead(&stored, static_cast<RcInputMode>(active.mode));
         ReactionInputs in = {};
         readInputs(&in);
 

@@ -301,9 +301,11 @@ struct SystemConfig {
 };
 
 // Canonical enumeration of the RC trigger binding slots above, in tier-2
-// dispatch order. Every consumer that scans "all trigger slots" (the RC input
-// task, the sequence dangling-binding scan) copies through here, so adding a
-// slot field is a one-place change plus this list.
+// dispatch order. The RC input task, ReactionTask, the RC snapshot and the
+// sequence dangling-binding scan copy through here. The NVS key table, the
+// defaults, the serializer and the RC Map's save and GET
+// (src/web/api_config.cpp) still list the slots by name, so adding a slot
+// field touches each of them as well as this list.
 static constexpr size_t RC_TRIGGER_SLOT_COUNT = 11;
 
 inline size_t rcTriggerSlotsCopy(const SystemConfig& sys, RcTriggerBinding* out, size_t cap) {

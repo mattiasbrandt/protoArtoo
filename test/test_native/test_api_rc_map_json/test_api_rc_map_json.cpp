@@ -60,17 +60,27 @@ void test_populateRcMapJson_absence_not_sentinel(void) {
     TEST_ASSERT_NULL(strstr(payload, "\"disabled\""));
 }
 
-void test_assignRcMapEntryToSnapshot_rejects_duplicate_named_slot(void) {
+// A toggle on a radio takes its own named place when that is free, so a map
+// that fits the older layout is stored as it always was. A Reaction on the
+// same toggle takes a general place.
+void test_assignRcMapEntryToSnapshot_a_toggle_takes_its_named_place(void) {
     ConfigSnapshot existing = makeEmptySnapshot();
     ConfigSnapshot working = existing;
 
     char err[96] = {};
-    RcMapEntry first = makeEntry(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE);
-    RcMapEntry second = makeEntry(RC_BINDING_SBUS2, 5, SERVO_ACTION_ARM1_TOGGLE);
+    RcMapEntry arm = makeEntry(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE);
+    RcMapEntry opMode = makeEntry(RC_BINDING_SBUS1, 5, SYSTEM_ACTION_OP_MODE);
+    RcMapEntry reaction = makeEntry(RC_BINDING_DROID_REST, 1, SERVO_ACTION_ARM1_TOGGLE);
+    reaction.threshold = kRcMapEntryKeep;
+    reaction.quietS = kRcMapEntryKeep;
 
-    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(first, existing, &working, err, sizeof(err)));
-    TEST_ASSERT_FALSE(assignRcMapEntryToSnapshot(second, existing, &working, err, sizeof(err)));
-    TEST_ASSERT_NOT_NULL(strstr(err, "arm1_toggle mapped more than once"));
+    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(arm, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(opMode, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(reaction, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_ACTION_ARM1_TOGGLE, working.system.rc_arm1.target);
+    TEST_ASSERT_EQUAL_UINT8(RC_BINDING_SBUS1, working.system.rc_arm1.source);
+    TEST_ASSERT_EQUAL_UINT8(SYSTEM_ACTION_OP_MODE, working.system.rc_opmode.target);
+    TEST_ASSERT_EQUAL_UINT8(RC_BINDING_DROID_REST, working.system.rc_audio.source);
 }
 
 void test_assignRcMapEntryToSnapshot_spill_slots_fill_in_order(void) {
@@ -97,8 +107,19 @@ void test_assignRcMapEntryToSnapshot_spill_slots_fill_in_order(void) {
     TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_SNARKY, working.system.rc_free2.target);
     TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_SAD, working.system.rc_free3.target);
 
-    TEST_ASSERT_FALSE(assignRcMapEntryToSnapshot(e5, existing, &working, err, sizeof(err)));
-    TEST_ASSERT_NOT_NULL(strstr(err, "no trigger slot available"));
+    // Past the five general places, a binding takes a named place nothing
+    // has claimed (ADR 0070, amended 2026-10-10): eleven in all, whatever
+    // they fire.
+    TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(e5, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_GENERAL, working.system.rc_arm1.target);
+    for (uint8_t channel = 11; channel <= 15; ++channel) {
+        RcMapEntry more = makeEntry(RC_BINDING_SBUS2, channel, SOUND_ACTION_NEXT);
+        TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(more, existing, &working, err, sizeof(err)));
+    }
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_NEXT, working.system.rc_opmode.target);
+    RcMapEntry twelfth = makeEntry(RC_BINDING_SBUS2, 16, SOUND_ACTION_NEXT);
+    TEST_ASSERT_FALSE(assignRcMapEntryToSnapshot(twelfth, existing, &working, err, sizeof(err)));
+    TEST_ASSERT_NOT_NULL(strstr(err, "map exceeds capacity"));
 }
 
 void test_assignRcMapEntryToSnapshot_applies_sbus_button_reverse_default(void) {
@@ -169,9 +190,11 @@ void test_populateRcMapJson_marks_an_entry_the_saved_type_does_not_read(void) {
     }
 }
 
-// A drive split across receivers loses only the axis a save would refuse
-// (steer), so posting the rest back saves.
-void test_populateRcMapJson_narrows_a_split_drive_to_the_axis_a_save_refuses(void) {
+// A drive split across receivers moves neither stick, so both are unread
+// (ADR 0070, amended 2026-10-10): Steer with the refusal a save gives it,
+// Speed waiting on it under map.drive, which no save refuses, so a page posts
+// Speed back and mending Steer brings the pair back.
+void test_populateRcMapJson_marks_both_axes_of_a_split_drive_unread(void) {
     ConfigSnapshot snap = makeEmptySnapshot(RC_INPUT_DUAL_SBUS);
     snap.system.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 1);
     snap.system.rc_sbus_drive_steer = defaultSbusBinding(RC_BINDING_SBUS2, 2);
@@ -180,9 +203,12 @@ void test_populateRcMapJson_narrows_a_split_drive_to_the_axis_a_save_refuses(voi
     JsonArrayConst map = doc["map"].as<JsonArrayConst>();
     TEST_ASSERT_EQUAL_UINT(2, map.size());
     TEST_ASSERT_EQUAL_STRING("drive_speed", map[0]["action"] | "");
-    TEST_ASSERT_TRUE(map[0]["read"].isNull());
+    TEST_ASSERT_FALSE(map[0]["read"] | true);
+    TEST_ASSERT_EQUAL_STRING("map.drive", map[0]["field"] | "");
+    TEST_ASSERT_EQUAL_STRING("conflict", map[0]["reason"] | "");
     TEST_ASSERT_EQUAL_STRING("drive_steer", map[1]["action"] | "");
     TEST_ASSERT_FALSE(map[1]["read"] | true);
+    TEST_ASSERT_EQUAL_STRING("map.source", map[1]["field"] | "");
     TEST_ASSERT_EQUAL_STRING("conflict", map[1]["reason"] | "");
     TEST_ASSERT_TRUE(map[1]["accepts"].isNull());
 }
@@ -201,14 +227,13 @@ void test_populateRcMapJson_marks_both_bindings_on_one_channel_unread(void) {
     JsonArrayConst map = doc["map"].as<JsonArrayConst>();
     TEST_ASSERT_EQUAL_UINT(3, map.size());
     for (JsonObjectConst item : map) {
+        // Every entry is unread: the two on CH4 for the conflict, and Steer
+        // because Speed, its partner, is one of them.
+        TEST_ASSERT_FALSE_MESSAGE(item["read"] | true, item["action"] | "");
         const bool onCh4 = (item["channel"] | 0) == 4;
-        TEST_ASSERT_EQUAL_MESSAGE(onCh4, item["read"].is<bool>(), item["action"] | "");
-        if (onCh4) {
-            TEST_ASSERT_FALSE(item["read"].as<bool>());
-            TEST_ASSERT_EQUAL_STRING("map.channel", item["field"] | "");
-            TEST_ASSERT_EQUAL_STRING("conflict", item["reason"] | "");
-            TEST_ASSERT_TRUE(item["accepts"].isNull());
-        }
+        TEST_ASSERT_EQUAL_STRING(onCh4 ? "map.channel" : "map.drive", item["field"] | "");
+        TEST_ASSERT_EQUAL_STRING("conflict", item["reason"] | "");
+        TEST_ASSERT_TRUE(item["accepts"].isNull());
     }
 }
 
@@ -305,9 +330,9 @@ int main(void) {
     RUN_TEST(test_populateRcMapJson_says_which_receivers_a_map_may_bind);
     RUN_TEST(test_populateRcMapJson_marks_an_entry_the_saved_type_does_not_read);
     RUN_TEST(test_populateRcMapJson_marks_both_bindings_on_one_channel_unread);
-    RUN_TEST(test_populateRcMapJson_narrows_a_split_drive_to_the_axis_a_save_refuses);
+    RUN_TEST(test_populateRcMapJson_marks_both_axes_of_a_split_drive_unread);
     RUN_TEST(test_populateRcMapJson_widest_map_fits_its_body);
-    RUN_TEST(test_assignRcMapEntryToSnapshot_rejects_duplicate_named_slot);
+    RUN_TEST(test_assignRcMapEntryToSnapshot_a_toggle_takes_its_named_place);
     RUN_TEST(test_assignRcMapEntryToSnapshot_spill_slots_fill_in_order);
     RUN_TEST(test_assignRcMapEntryToSnapshot_applies_sbus_button_reverse_default);
     RUN_TEST(test_assignRcMapEntryToSnapshot_reuses_existing_dome_calibration);
