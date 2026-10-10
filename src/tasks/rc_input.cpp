@@ -213,12 +213,13 @@ static void buildRcProcessorConfig(const RcInputActiveConfig& active, RcProcesso
 // servoCmdQueue places a puppet string never takes: a cue pressed in the same
 // frame as several strings move, and a sequence's moves, always find room. The
 // queue holds 8 (src/main.cpp) and ServoTask empties it every 20 ms frame; the
-// RC Map holds at most five strings (they share the five spill slots,
-// assignRcMapEntryToSnapshot()), each sending at most once a frame
-// (RC_PUPPET_MIN_INTERVAL_MS), so strings alone could fill five of the eight.
-// A target turned away here is not recorded as sent, so it goes on the next
-// frame. The estop's release never rides this queue: ServoTask lets every
-// Output go on the halt edge itself.
+// RC Map holds up to eleven strings (any trigger place takes one, ADR 0070
+// amended 2026-10-10), each sending at most once a frame
+// (RC_PUPPET_MIN_INTERVAL_MS), so strings alone could fill the queue. With the
+// reserve they take at most four places a frame, and a target turned away
+// here is not recorded as sent, so it goes on the next frame. The estop's
+// release never rides this queue: ServoTask lets every Output go on the halt
+// edge itself.
 static constexpr UBaseType_t kPuppetQueueReserve = 4;
 
 // -----------------------------------------------------------------------------

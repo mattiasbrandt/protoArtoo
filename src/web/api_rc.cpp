@@ -34,8 +34,8 @@ static constexpr size_t RC_DEBUG_BODY_MAX = 128;
 // the analog and digital channel buckets both.
 //
 // `reactions` rides on top of that (#450): at most 128 bytes an entry with
-// every field at its widest. POST /api/rc/map puts a Reaction in one of the
-// five spill slots, 640 more; a stored map with one in all eleven slots is
+// every field at its widest. POST /api/rc/map puts a Reaction in any of the
+// eleven trigger places (ADR 0070, amended 2026-10-10): one in each is
 // 1408 more, 4081 on the largest payload the capture path builds. The ceiling
 // is 4608 so that sum keeps a margin (#389 added the RC task's own state); it
 // costs nothing below it, since the body is allocated at its measured size.

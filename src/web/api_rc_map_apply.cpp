@@ -11,7 +11,6 @@
 
 #include "droid_parts.h"      // droidPartIdIsKnown() - a puppet string's Part
 #include "rc_map_rules.h"     // rcRuleMapAdd(), rcRuleDrive(), rcRuleAxisCalibration()
-#include "rc_pwm_helpers.h"   // RC_PWM_VALID_MIN_US / MAX_US
 #include "seq_store_index.h"  // Learned Sequence names accepted for RC binding
 
 namespace {
@@ -123,7 +122,6 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
         {"drive_steer", DRIVE_ACTION_STEER, &sys.rc_pwm_drive_steer, &sys.rc_sbus_drive_steer},
         {"dome_speed", DOME_ACTION_SPEED, &sys.rc_pwm_dome_speed, &sys.rc_sbus_dome_speed},
     };
-    char field[APPLY_REFUSAL_FIELD_MAX] = {};
     for (JsonPairConst pair : calibration.as<JsonObjectConst>()) {
         const Axis* axis = nullptr;
         for (const Axis& candidate : axes) {
@@ -146,9 +144,6 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
             return false;
         }
         RcBindingConfig binding = *axis->sbus;
-        const bool pwm = binding.source == RC_BINDING_PWM;
-        const uint32_t lo = pwm ? RC_PWM_VALID_MIN_US : 0;
-        const uint32_t hi = pwm ? RC_PWM_VALID_MAX_US : 2047;
         const char* const keys[] = {"min", "center", "max"};
         uint16_t* const slots[] = {&binding.min, &binding.center, &binding.max};
         for (size_t i = 0; i < 3; ++i) {
@@ -156,16 +151,12 @@ __attribute__((noinline)) bool applyAxisCalibration(JsonVariantConst calibration
             if (value.isNull()) {
                 continue;
             }
+            // What a receiver reports is the rules' to judge
+            // (rcRuleAxisCalibration()). A value no receiver reports (not a
+            // whole number, or past 16 bits) is held at 0xFFFF, which every
+            // receiver's range refuses, so it cannot wrap into range.
             const uint32_t v = value | 0xFFFFFFFFu;
-            if (!value.is<uint32_t>() || v < lo || v > hi) {
-                char accepts[24] = {};
-                snprintf(accepts, sizeof(accepts), "%u..%u", (unsigned)lo, (unsigned)hi);
-                snprintf(field, sizeof(field), "calibration.%s", keys[i]);
-                setError(result, "calibration out of range", entryFor(axis->action, entries, count),
-                         ApplyRefusalReason::OutOfRange, field, accepts);
-                return false;
-            }
-            *slots[i] = (uint16_t)v;
+            *slots[i] = (!value.is<uint32_t>() || v > 0xFFFFu) ? (uint16_t)0xFFFFu : (uint16_t)v;
         }
         JsonVariantConst reverse = fields["reverse"];
         if (!reverse.isNull()) {

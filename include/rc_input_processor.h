@@ -82,5 +82,10 @@ struct RcInputProcessor {
 };
 
 void rcInputProcessorInit(RcInputProcessor* proc);
-void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
+// One frame. First leaves still, in `input.config`, every stored binding the
+// droid does not read (rcStoredMapKeepRead(), the RC Map's rules on the
+// receiver type of this frame), so nothing below judges a rule of its own;
+// the input is rebuilt every frame, and changing it in place costs this
+// core-1 tick no copy of the trigger slots.
+void rcInputProcessorTick(RcInputProcessor* proc, RcProcessorInput& input,
                           RcProcessorOutput* out);

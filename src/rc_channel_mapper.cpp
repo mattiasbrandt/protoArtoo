@@ -105,12 +105,11 @@ bool rcMapDriveControls(const RcChannelSnapshot& snap, const RcMappingConfig& cf
     bool steerActive = false;
 
     // Check if drive mappings are valid. A drive the RC Map's rules refuse
-    // never reads, the same rules a save holds it to (ADR 0070): a drive a
-    // droid stored on SBUS2 before #483 stays still rather than running on a
-    // receiver without the drive watchdog and the hardware-failsafe stop, and
-    // so does an axis whose dead zone swallows one side of its stick.
-    if (rcBindingIsValid(cfg.driveSpeed) && rcBindingIsValid(cfg.driveSteer) &&
-        rcRuleStoredDrive(cfg.driveSpeed, cfg.driveSteer, snap.mode).ok()) {
+    // arrives here unbound: the input processor leaves still what the droid
+    // does not read (rcStoredMapKeepRead(), ADR 0070), such as a drive a droid
+    // stored on SBUS2 before #483, which would run on a receiver without the
+    // drive watchdog and the hardware-failsafe stop.
+    if (rcBindingIsValid(cfg.driveSpeed) && rcBindingIsValid(cfg.driveSteer)) {
         // Check if speed binding is active for this mode
         if (bindingSourceActiveForMode(cfg.driveSpeed, snap, cfg) &&
             readChannelRaw(snap, cfg.driveSpeed, &rawSpeed)) {
@@ -152,7 +151,6 @@ bool rcMapDomeControl(const RcChannelSnapshot& snap, const RcMappingConfig& cfg,
                       RcControlIntent* intent) {
     int rawDome = 0;
     if (cfg.enableDome && rcBindingIsValid(cfg.domeSpeed) &&
-        rcRuleStoredAxis(DOME_ACTION_SPEED, cfg.domeSpeed, snap.mode).ok() &&
         bindingSourceActiveForMode(cfg.domeSpeed, snap, cfg) &&
         readChannelRaw(snap, cfg.domeSpeed, &rawDome)) {
         float normalizedDome = applyRcAnalogCalibration(rawDome, cfg.domeSpeed, nullptr);

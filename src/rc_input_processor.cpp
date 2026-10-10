@@ -6,7 +6,7 @@
 
 #include "rc_input_processor.h"
 
-#include "rc_map_rules.h"  // rcRuleStoredDrive(), rcRuleStoredAxis(), rcRuleStoredCue()
+#include "rc_map_rules.h"  // rcStoredMapKeepRead()
 
 static constexpr uint32_t kOneShotEdgeDebounceMs = 120;
 static constexpr uint8_t kSwitchEdgeConfirmFrames = 2;
@@ -40,8 +40,7 @@ static bool readsAnotherReceiver(const RcBindingConfig& binding, const RcChannel
 // Whether both drive bindings, on one receiver, read some frame this mode
 // takes - this one or the drive receiver's.
 static bool driveCanBeRead(const RcChannelSnapshot& snap, const RcMappingConfig& mapping) {
-    if (mapping.driveSpeed.source == RC_BINDING_NONE ||
-        !rcRuleStoredDrive(mapping.driveSpeed, mapping.driveSteer, snap.mode).ok()) {
+    if (mapping.driveSpeed.source == RC_BINDING_NONE) {
         return false;
     }
     RcChannelSnapshot probe = snap;
@@ -77,7 +76,7 @@ static bool axisAtCentre(const RcBindingConfig& binding, const RcChannelSnapshot
     return distance * 1000 <= half * RC_DRIVE_CENTRE_TOLERANCE_PERMILLE;
 }
 
-void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
+void rcInputProcessorTick(RcInputProcessor* proc, RcProcessorInput& input,
                           RcProcessorOutput* out) {
     *out = {};
 
@@ -87,27 +86,24 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
 
     RcProcessorOutput& output = *out;
 
+    // What the droid does not read stays still (ADR 0070): a binding the RC
+    // Map's rules refuse, on its own or in a conflict, and a drive axis whose
+    // partner is not read. An axis left still reads as unbound, so the drive
+    // sends zero; a slot left still is empty and fires nothing.
+    RcMappingConfig& mapping = input.config.mapping;
+    RcStoredMap stored = {mapping.driveSpeed, mapping.driveSteer, mapping.domeSpeed,
+                          input.config.triggers,
+                          input.config.triggerCount < RC_TRIGGER_MAX ? input.config.triggerCount
+                                                                     : RC_TRIGGER_MAX};
+    rcStoredMapKeepRead(&stored, input.channels.mode);
+    mapping.driveSpeed = stored.driveSpeed;
+    mapping.driveSteer = stored.driveSteer;
+    mapping.domeSpeed = stored.domeSpeed;
+
     // Copy mapping config and preserve sound edge state
-    RcMappingConfig localMapping = input.config.mapping;
+    RcMappingConfig localMapping = mapping;
     bool prevSoundPressed = proc->lastSoundPressed;
     localMapping.prevSoundPressed = prevSoundPressed;
-
-    // Two stored bindings on one control (a save cut short by a power loss
-    // can leave them) are both left still, as a save would refuse them (ADR
-    // 0070): an axis among them reads as unbound, so the drive sends zero.
-    const RcStoredMap stored = {localMapping.driveSpeed, localMapping.driveSteer,
-                                localMapping.domeSpeed, input.config.triggers,
-                                input.config.triggerCount};
-    const uint32_t conflicts = rcStoredMapConflicts(stored, input.channels.mode);
-    if ((conflicts & kRcStoredDriveSpeedBit) != 0) {
-        localMapping.driveSpeed = disabledRcBinding();
-    }
-    if ((conflicts & kRcStoredDriveSteerBit) != 0) {
-        localMapping.driveSteer = disabledRcBinding();
-    }
-    if ((conflicts & kRcStoredDomeSpeedBit) != 0) {
-        localMapping.domeSpeed = disabledRcBinding();
-    }
 
     // Map channel snapshot to control intent (pure function)
     RcControlIntent intent = rcMapChannels(input.channels, localMapping);
@@ -144,9 +140,7 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
     // own receiver only: on another receiver's frame (or an SBUS2 binding in
     // single_sbus) the filter keeps its state and nothing is sent (#389).
     RcBindingConfig domeBinding = localMapping.domeSpeed;
-    if (localMapping.enableDome &&
-        rcRuleStoredAxis(DOME_ACTION_SPEED, domeBinding, input.channels.mode).ok() &&
-        rcMapBindingReadsSnapshot(domeBinding, input.channels, localMapping)) {
+    if (localMapping.enableDome && rcMapBindingReadsSnapshot(domeBinding, input.channels, localMapping)) {
         int raw = input.channels.channels[domeBinding.channel - 1];
         DomeInputFilterResult filterResult =
             domeInputFilterUpdate(&proc->domeInputFilter, raw, (int)domeBinding.center, 140, 90,
@@ -179,14 +173,6 @@ void rcInputProcessorTick(RcInputProcessor* proc, const RcProcessorInput& input,
 
         // Filter triggers by source (SBUS1, SBUS2, PWM)
         if (input.sourceFilter != RC_BINDING_NONE && binding.source != input.sourceFilter) {
-            continue;
-        }
-
-        // A stored binding the RC Map's rules refuse, on its own or in a
-        // conflict, is not read (ADR 0070): a save would not take it, so it
-        // fires nothing.
-        if (!rcRuleStoredCue(binding, input.channels.mode).ok() ||
-            (conflicts & rcStoredCueBit(i)) != 0) {
             continue;
         }
 

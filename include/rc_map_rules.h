@@ -2,9 +2,11 @@
 // include/rc_map_rules.h
 //
 // The RC Map's rules, in one place (ADR 0070): what an RC Map may hold, and
-// which RC Receivers a receiver type reads. The save (rcMapApply()), the
-// channel mapper, the input processor and the RC and validation snapshots ask
-// here; none of them keeps a copy of a rule.
+// which RC Receivers a receiver type reads. The save (rcMapApply()) asks here
+// of what it is given; every reader of a stored RC Map - the input processor,
+// ReactionTask, the RC snapshot and GET /api/rc/map - asks here which of its
+// bindings the droid reads (rcStoredMapKeepRead(), rcStoredMapWhy()). None of
+// them keeps a copy of a rule.
 //
 // Pure: no FreeRTOS call, no RobotState read, no config cache (the .cpp
 // includes robot_state.h only for RcInputMode's values). A rule that needs live
@@ -48,8 +50,11 @@ struct RcMapEntry {
     uint16_t quietS;
 };
 
-// The most entries one RC Map holds: the three axes and the eleven trigger slots.
-static constexpr size_t kRcMapMaxEntries = 14;
+// The most entries one RC Map holds: the three axes and the eleven trigger
+// bindings. Any trigger binding may take any of the eleven stored places
+// (ADR 0070, amended 2026-10-10), so the twelfth is what a save refuses.
+static constexpr size_t kRcMapMaxTriggers = 11;
+static constexpr size_t kRcMapMaxEntries = kRcMapMaxTriggers + 3;
 
 // Past every threshold and quiet period a Reaction accepts.
 static constexpr uint16_t kRcMapEntryKeep = 0xFFFF;
@@ -106,6 +111,7 @@ constexpr const char* kRcMapRefusalFields[] = {
     "map.payload",
     "map.threshold",
     "map.quietS",
+    "map.drive",
     "calibration",
     "calibration.min",
     "calibration.center",
@@ -121,9 +127,11 @@ bool rcRuleFormatAccepts(const RcRuleVerdict& verdict, char* buf, size_t bufSize
 // Whether `next` may join the `count` entries already in an RC Map for the
 // receiver type `type`: its RC Channel, that the type reads its receiver, that
 // a cue is not on PWM and an axis sits on a stick, what a droid condition may
-// fire and the numbers it carries, a puppet string's stick, and the conflicts
-// with the entries before it. A payload that must name something that exists
-// (a Part, a dome sequence) is the caller's to check.
+// fire and the numbers it carries, a puppet string's stick, the eleven trigger
+// bindings, and the conflicts with the entries before it: one RC Channel, one
+// job; one Part, one puppet string; and an axis, or an arm or aux toggle or the
+// op mode on a radio, bound once. A payload that must name something that
+// exists (a Part, a dome sequence) is the caller's to check.
 RcRuleVerdict rcRuleMapAdd(const RcMapEntry* prior, size_t count, const RcMapEntry& next,
                            RcInputMode type);
 
@@ -135,8 +143,10 @@ RcRuleVerdict rcRuleMapAdd(const RcMapEntry* prior, size_t count, const RcMapEnt
 RcRuleVerdict rcRuleDrive(const RcBindingConfig& speed, const RcBindingConfig& steer);
 
 // An axis's calibration (`axis` names which, and the verdict's `axis` says it
-// again): end, centre and end in order, and a dead zone that leaves stick
-// travel on both sides of the centre.
+// again): each end and the centre within what its receiver reports (PWM
+// RC_PWM_VALID_MIN_US..RC_PWM_VALID_MAX_US, SBUS 0..2047), end, centre and end
+// in order, and a dead zone that leaves stick travel on both sides of the
+// centre.
 RcRuleVerdict rcRuleAxisCalibration(RobotActionId axis, const RcBindingConfig& binding);
 
 // What a receiver may carry, for rcMapReceivers().
@@ -154,27 +164,13 @@ size_t rcMapReceivers(RcInputMode type, RcMapReceiverUse use, RcBindingSource* o
 
 // ---------------------------------------------------------------------------
 // The same rules on read (ADR 0070): a stored binding a save would refuse is
-// not read, so it stays still. Each is judged on its own against the receiver
-// type the droid runs, and then against the others (rcStoredMapConflicts()):
-// NVS commits each key on its own, so a save cut short by a power loss can
-// leave two bindings on one control that no save would have taken together.
+// not read, so it stays still. `read` means what the droid reads now (amended
+// 2026-10-10): each binding is judged on its own against the receiver type the
+// droid runs, then against the others - NVS commits each key on its own, so a
+// save cut short by a power loss can leave two bindings on one control that no
+// save would have taken together - and the drive pair last, since the drive
+// moves only on both sticks.
 // ---------------------------------------------------------------------------
-
-// A stored drive or dome axis (`axis` names which), its calibration included.
-RcRuleVerdict rcRuleStoredAxis(RobotActionId axis, const RcBindingConfig& binding,
-                               RcInputMode type);
-
-// A stored trigger slot: a cue, a puppet string or a Reaction. An empty slot
-// holds. The input processor reads radio cues through it and ReactionTask
-// reads Reactions through rcStoredReactionsKeepRead(): the stored form's own
-// check (rcTriggerBindingIsValid()) does not hold a Reaction's payload to the
-// RC Map's rules, so a Marcduino :SM line passes it.
-RcRuleVerdict rcRuleStoredCue(const RcTriggerBinding& binding, RcInputMode type);
-
-// The stored drive pair: each bound axis, then the pair (rcRuleDrive()). The
-// verdict's `axis` says which axis a refusal is about.
-RcRuleVerdict rcRuleStoredDrive(const RcBindingConfig& speed, const RcBindingConfig& steer,
-                                RcInputMode type);
 
 // The stored map as a reader holds it: the three axes, and the trigger slots
 // in whatever order the reader keeps them. An unbound axis is
@@ -183,18 +179,32 @@ struct RcStoredMap {
     RcBindingConfig driveSpeed;
     RcBindingConfig driveSteer;
     RcBindingConfig domeSpeed;
-    const RcTriggerBinding* cues;
+    RcTriggerBinding* cues;
     size_t cueCount;
 };
 
-// Which stored bindings a reader leaves still because they conflict, as a bit
-// each: trigger slot i is bit i (rcStoredCueBit()), the axes the three bits
-// below. Two bindings conflict on one RC Channel (one control, one job) or on
-// one Part (one Part, one puppet string), as a save refuses them; both are
-// left still, since neither is the one the operator meant. Only bindings that
-// hold their own rules are judged: one that is not read already fires nothing,
-// so it takes nothing from another. No allocation, no copy of a slot: the
-// input processor asks once a frame on core 1.
+// Leaves still every binding of `map` the droid does not read: a slot becomes
+// disabledRcTriggerBinding(), an axis disabledRcBinding(). What is left is what
+// the droid reads, so a reader that takes it keeps no check of its own. A
+// binding is not read when:
+//   - it breaks a rule on its own (rcRuleMapAdd()'s entry rules, an axis's
+//     calibration included);
+//   - it holds its own rules and conflicts with another that does - one RC
+//     Channel, one job; one Part, one puppet string; a toggle or the op mode
+//     bound twice on a radio. Both stay still, since neither is known to be the
+//     one the operator meant;
+//   - it is a drive axis whose partner is not read, or is unbound, or the pair
+//     breaks rcRuleDrive(): the drive moves only on both sticks.
+// No allocation and no copy of a slot: the input processor asks once a frame
+// on core 1.
+void rcStoredMapKeepRead(RcStoredMap* map, RcInputMode type);
+
+// Why rcStoredMapKeepRead() would leave one binding still, as a save would
+// word it, the binding named by its bit: trigger slot i is rcStoredCueBit(i),
+// the axes the three bits below. Holds for a binding the droid reads and for
+// an unbound one. A drive axis left still only for its partner says so
+// ("map.drive"), never with the partner's own refusal: the RC page acts on a
+// refusal's field. For GET /api/rc/map.
 static constexpr size_t kRcStoredCueBitMax = 29;
 static constexpr uint32_t kRcStoredDriveSpeedBit = 1u << 29;
 static constexpr uint32_t kRcStoredDriveSteerBit = 1u << 30;
@@ -202,15 +212,4 @@ static constexpr uint32_t kRcStoredDomeSpeedBit = 1u << 31;
 inline uint32_t rcStoredCueBit(size_t slot) {
     return slot < kRcStoredCueBitMax ? (1u << slot) : 0u;
 }
-uint32_t rcStoredMapConflicts(const RcStoredMap& map, RcInputMode type);
-
-// The refusal a conflicting stored binding (`bit`, as above) carries, as a
-// save would word it; holds when it conflicts with nothing. For GET /api/rc/map.
-RcRuleVerdict rcRuleStoredConflict(const RcStoredMap& map, RcInputMode type, uint32_t bit);
-
-// ReactionTask's read of the trigger slots: a Reaction the rules refuse, on
-// its own or in a conflict with another Reaction, is emptied, so the
-// evaluator releases a press it still holds and fires it no more. A radio
-// slot is left as it is: its condition is not ReactionTask's to read, and no
-// radio binding shares an RC Channel with a droid condition.
-void rcStoredReactionsKeepRead(RcTriggerBinding* slots, size_t count, RcInputMode type);
+RcRuleVerdict rcStoredMapWhy(const RcStoredMap& map, RcInputMode type, uint32_t bit);

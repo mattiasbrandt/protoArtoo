@@ -12,7 +12,7 @@
 
 #include "../../include/config_cache.h"
 #include "../../include/rc_diagnostics.h"
-#include "../../include/rc_map_rules.h"  // rcReceiverReads(), rcRuleStoredCue(), rcStoredMapConflicts()
+#include "../../include/rc_map_rules.h"  // rcReceiverReads(), rcStoredMapKeepRead()
 #include "../../include/reaction_evaluator.h"  // ReactionAvailability and its two spellings
 #include "../../include/robot_state.h"
 
@@ -475,10 +475,9 @@ bool appendRcTaskStateJson(JsonDocument& doc) {
 // bit, any other channel by its binding's own calibration - so the RC page
 // need not decide it from a threshold of its own. A level, not a firing: a
 // one-shot cue fires on each confirmed change of it. Only a cue the droid reads
-// (rcRuleStoredCue() on the receiver type it runs) on a receiver it has heard
-// and that conflicts with no other (rcStoredMapConflicts()) is said; a
-// puppet string is a stick, not a press, and a Reaction has no RC
-// Channel. Its own frame, like appendRcReactionsJson(): the eleven slots are a
+// (rcStoredMapKeepRead() on the receiver type it runs) on a receiver it has
+// heard is said; a puppet string is a stick, not a press, and a Reaction has
+// no RC Channel. Its own frame, like appendRcReactionsJson(): the eleven slots are a
 // local here, never on the SSE task's root frame.
 bool appendRcCuePressedJson(JsonDocument& doc) {
     RcTriggerBinding slots[RC_TRIGGER_SLOT_COUNT];
@@ -490,7 +489,7 @@ bool appendRcCuePressedJson(JsonDocument& doc) {
     configCacheReadRcAxes(active.mode, &stored.driveSpeed, &stored.driveSteer, &stored.domeSpeed);
     stored.cues = slots;
     stored.cueCount = count;
-    const uint32_t conflicts = rcStoredMapConflicts(stored, mode);
+    rcStoredMapKeepRead(&stored, mode);
 
     uint16_t raw[2][RC_DIAGNOSTICS_SBUS_RAW_CAPACITY];
     bool digital[2][2];
@@ -517,8 +516,7 @@ bool appendRcCuePressedJson(JsonDocument& doc) {
     for (size_t i = 0; i < count; ++i) {
         const RcTriggerBinding& binding = slots[i];
         const bool sbus1 = binding.source == RC_BINDING_SBUS1;
-        if ((!sbus1 && binding.source != RC_BINDING_SBUS2) || binding.target == SERVO_ACTION_PUPPET_PART ||
-            !rcRuleStoredCue(binding, mode).ok() || (conflicts & rcStoredCueBit(i)) != 0) {
+        if ((!sbus1 && binding.source != RC_BINDING_SBUS2) || binding.target == SERVO_ACTION_PUPPET_PART) {
             continue;
         }
         const size_t receiver = sbus1 ? 0 : 1;

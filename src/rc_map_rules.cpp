@@ -9,8 +9,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "rc_puppet.h"    // rcPuppetChannelCanMove()
-#include "robot_state.h"  // RcInputMode
+#include "rc_puppet.h"       // rcPuppetChannelCanMove()
+#include "rc_pwm_helpers.h"  // RC_PWM_VALID_MIN_US / MAX_US
+#include "robot_state.h"     // RcInputMode
 
 namespace {
 
@@ -25,6 +26,7 @@ constexpr const char* kFieldAction = "map.action";
 constexpr const char* kFieldPayload = "map.payload";
 constexpr const char* kFieldThreshold = "map.threshold";
 constexpr const char* kFieldQuietS = "map.quietS";
+constexpr const char* kFieldDrive = "map.drive";
 
 // A refusal. `aboutEntry` echoes the entry; the accepts are a range lo..hi
 // (hi 0 for none) or the words given.
@@ -171,7 +173,11 @@ RcRuleVerdict entryRule(const RcMapEntry& entry, RcInputMode type) {
     return kHolds;
 }
 
-const char* axisConflict(RobotActionId action) {
+// An action the RC Map binds once, and the refusal of a second: an axis, and
+// on a radio an arm or aux toggle or the op mode, since two switches toggling
+// one arm fight each other (ADR 0070, amended 2026-10-10). A Reaction is not
+// held to it. Null for any other action, which may sit on several RC Channels.
+const char* onceOnlyConflict(RobotActionId action, RcBindingSource source) {
     switch (action) {
         case DRIVE_ACTION_SPEED:
             return "conflict: drive_speed mapped more than once";
@@ -179,6 +185,25 @@ const char* axisConflict(RobotActionId action) {
             return "conflict: drive_steer mapped more than once";
         case DOME_ACTION_SPEED:
             return "conflict: dome_speed mapped more than once";
+        default:
+            break;
+    }
+    if (rcBindingSourceIsDroidCondition(source)) {
+        return nullptr;
+    }
+    switch (action) {
+        case SERVO_ACTION_ARM1_TOGGLE:
+            return "conflict: arm1_toggle mapped more than once";
+        case SERVO_ACTION_ARM2_TOGGLE:
+            return "conflict: arm2_toggle mapped more than once";
+        case SERVO_ACTION_AUX1_TOGGLE:
+            return "conflict: aux1_toggle mapped more than once";
+        case SERVO_ACTION_AUX2_TOGGLE:
+            return "conflict: aux2_toggle mapped more than once";
+        case SERVO_ACTION_AUX3_TOGGLE:
+            return "conflict: aux3_toggle mapped more than once";
+        case SYSTEM_ACTION_OP_MODE:
+            return "conflict: op_mode mapped more than once";
         default:
             return nullptr;
     }
@@ -202,9 +227,9 @@ RcRuleVerdict conflictRule(const RcMapEntry* prior, size_t count, const RcMapEnt
                            ApplyRefusalReason::Conflict);
         }
     }
-    if (const char* conflict = axisConflict(next.action)) {
+    if (const char* conflict = onceOnlyConflict(next.action, next.source)) {
         for (size_t i = 0; i < count; ++i) {
-            if (prior[i].action == next.action) {
+            if (prior[i].action == next.action && onceOnlyConflict(prior[i].action, prior[i].source)) {
                 return refusal(conflict, true, kFieldAction, ApplyRefusalReason::Conflict);
             }
         }
@@ -263,7 +288,13 @@ bool rcReceiverReads(RcBindingSource source, const RcReceiverSetup& setup) {
 
 RcRuleVerdict rcRuleMapAdd(const RcMapEntry* prior, size_t count, const RcMapEntry& next,
                            RcInputMode type) {
-    if (count >= kRcMapMaxEntries) {
+    // Eleven trigger bindings, whatever they fire; the three axes have places
+    // of their own, and binding one twice is a conflict below.
+    size_t triggers = 0;
+    for (size_t i = 0; i < count; ++i) {
+        triggers += isAxis(prior[i].action) ? 0 : 1;
+    }
+    if (count >= kRcMapMaxEntries || (!isAxis(next.action) && triggers >= kRcMapMaxTriggers)) {
         return refusal("conflict: map exceeds capacity", false, kFieldMap, ApplyRefusalReason::Conflict);
     }
     const RcRuleVerdict own = entryRule(next, type);
@@ -293,6 +324,24 @@ RcRuleVerdict rcRuleDrive(const RcBindingConfig& speed, const RcBindingConfig& s
 }
 
 RcRuleVerdict rcRuleAxisCalibration(RobotActionId axis, const RcBindingConfig& binding) {
+    // Each value within what the receiver reports: a pulse width on PWM, an
+    // SBUS channel's 11 bits otherwise.
+    const bool pwm = binding.source == RC_BINDING_PWM;
+    const uint16_t lo = pwm ? RC_PWM_VALID_MIN_US : 0;
+    const uint16_t hi = pwm ? RC_PWM_VALID_MAX_US : 2047;
+    const struct {
+        uint16_t value;
+        const char* field;
+    } values[] = {{binding.min, "calibration.min"},
+                  {binding.center, "calibration.center"},
+                  {binding.max, "calibration.max"}};
+    for (const auto& each : values) {
+        if (each.value < lo || each.value > hi) {
+            return onAxis(refusal("calibration out of range", true, each.field, ApplyRefusalReason::OutOfRange,
+                                  lo, hi),
+                          axis);
+        }
+    }
     if (!(binding.min < binding.center && binding.center < binding.max)) {
         return onAxis(refusal("calibration needs min < center < max", true, "calibration.center",
                               ApplyRefusalReason::Conflict),
@@ -307,57 +356,6 @@ RcRuleVerdict rcRuleAxisCalibration(RobotActionId axis, const RcBindingConfig& b
                       axis);
     }
     return kHolds;
-}
-
-RcRuleVerdict rcRuleStoredAxis(RobotActionId axis, const RcBindingConfig& binding,
-                               RcInputMode type) {
-    RcMapEntry entry = {};
-    entry.source = binding.source;
-    entry.channel = binding.channel;
-    entry.action = axis;
-    entry.threshold = kRcMapEntryKeep;
-    entry.quietS = kRcMapEntryKeep;
-    const RcRuleVerdict own = entryRule(entry, type);
-    if (!own.ok()) {
-        return own;
-    }
-    return rcRuleAxisCalibration(axis, binding);
-}
-
-RcRuleVerdict rcRuleStoredCue(const RcTriggerBinding& binding, RcInputMode type) {
-    if (binding.source == RC_BINDING_NONE || binding.target == ROBOT_ACTION_NONE) {
-        return kHolds;  // an empty slot binds nothing to judge
-    }
-    RcMapEntry entry = {};
-    entry.source = binding.source;
-    entry.channel = binding.channel;
-    entry.action = binding.target;
-    static_assert(sizeof(entry.payload) == sizeof(binding.marcduinoPayload),
-                  "a stored payload is an entry's payload");
-    memcpy(entry.payload, binding.marcduinoPayload, sizeof(entry.payload));
-    entry.payload[sizeof(entry.payload) - 1] = '\0';
-    // A stored Reaction carries its numbers in the calibration fields
-    // (include/rc_action_types.h); a radio cue carries none.
-    const bool reaction = rcBindingSourceIsDroidCondition(binding.source);
-    entry.threshold = reaction ? rcReactionThreshold(binding) : kRcMapEntryKeep;
-    entry.quietS = reaction ? rcReactionQuietS(binding) : kRcMapEntryKeep;
-    return entryRule(entry, type);
-}
-
-RcRuleVerdict rcRuleStoredDrive(const RcBindingConfig& speed, const RcBindingConfig& steer,
-                                RcInputMode type) {
-    const RobotActionId axes[] = {DRIVE_ACTION_SPEED, DRIVE_ACTION_STEER};
-    const RcBindingConfig* const bindings[] = {&speed, &steer};
-    for (size_t i = 0; i < 2; ++i) {
-        if (bindings[i]->source == RC_BINDING_NONE) {
-            continue;
-        }
-        const RcRuleVerdict own = rcRuleStoredAxis(axes[i], *bindings[i], type);
-        if (!own.ok()) {
-            return onAxis(own, axes[i]);
-        }
-    }
-    return rcRuleDrive(speed, steer);
 }
 
 size_t rcMapReceivers(RcInputMode type, RcMapReceiverUse use, RcBindingSource* out, size_t cap) {
@@ -392,6 +390,41 @@ size_t rcMapReceivers(RcInputMode type, RcMapReceiverUse use, RcBindingSource* o
 
 namespace {
 
+// A stored drive or dome axis (`axis` names which), its calibration included.
+RcRuleVerdict storedAxisRule(RobotActionId axis, const RcBindingConfig& binding, RcInputMode type) {
+    RcMapEntry entry = {};
+    entry.source = binding.source;
+    entry.channel = binding.channel;
+    entry.action = axis;
+    entry.threshold = kRcMapEntryKeep;
+    entry.quietS = kRcMapEntryKeep;
+    const RcRuleVerdict own = entryRule(entry, type);
+    if (!own.ok()) {
+        return onAxis(own, axis);
+    }
+    return rcRuleAxisCalibration(axis, binding);
+}
+
+// A stored trigger slot: a cue, a puppet string or a Reaction. The stored
+// form's own check (rcTriggerBindingIsValid()) does not hold a Reaction's
+// payload to the RC Map's rules, so a Marcduino :SM line passes it; this does.
+RcRuleVerdict storedCueRule(const RcTriggerBinding& binding, RcInputMode type) {
+    RcMapEntry entry = {};
+    entry.source = binding.source;
+    entry.channel = binding.channel;
+    entry.action = binding.target;
+    static_assert(sizeof(entry.payload) == sizeof(binding.marcduinoPayload),
+                  "a stored payload is an entry's payload");
+    memcpy(entry.payload, binding.marcduinoPayload, sizeof(entry.payload));
+    entry.payload[sizeof(entry.payload) - 1] = '\0';
+    // A stored Reaction carries its numbers in the calibration fields
+    // (include/rc_action_types.h); a radio cue carries none.
+    const bool reaction = rcBindingSourceIsDroidCondition(binding.source);
+    entry.threshold = reaction ? rcReactionThreshold(binding) : kRcMapEntryKeep;
+    entry.quietS = reaction ? rcReactionQuietS(binding) : kRcMapEntryKeep;
+    return entryRule(entry, type);
+}
+
 // One stored binding of an RcStoredMap, by index: the trigger slots first,
 // then the three axes. Points into the map; copies no payload.
 struct StoredRef {
@@ -402,13 +435,22 @@ struct StoredRef {
     uint32_t bit;
 };
 
-size_t storedCount(const RcStoredMap& map) {
-    const size_t cues = map.cueCount < kRcStoredCueBitMax ? map.cueCount : kRcStoredCueBitMax;
-    return cues + 3;
+constexpr size_t kAxisCount = 3;
+
+size_t storedCueCount(const RcStoredMap& map) {
+    if (map.cues == nullptr) {
+        return 0;
+    }
+    return map.cueCount < kRcStoredCueBitMax ? map.cueCount : kRcStoredCueBitMax;
+}
+
+const RcBindingConfig& storedAxis(const RcStoredMap& map, size_t axis) {
+    const RcBindingConfig* const axes[] = {&map.driveSpeed, &map.driveSteer, &map.domeSpeed};
+    return *axes[axis];
 }
 
 StoredRef storedRef(const RcStoredMap& map, size_t index) {
-    const size_t cues = storedCount(map) - 3;
+    const size_t cues = storedCueCount(map);
     if (index < cues) {
         const RcTriggerBinding& cue = map.cues[index];
         return {cue.source, cue.channel, cue.target, cue.marcduinoPayload, rcStoredCueBit(index)};
@@ -416,27 +458,28 @@ StoredRef storedRef(const RcStoredMap& map, size_t index) {
     static constexpr RobotActionId kAxes[] = {DRIVE_ACTION_SPEED, DRIVE_ACTION_STEER, DOME_ACTION_SPEED};
     static constexpr uint32_t kBits[] = {kRcStoredDriveSpeedBit, kRcStoredDriveSteerBit,
                                          kRcStoredDomeSpeedBit};
-    const RcBindingConfig* const axes[] = {&map.driveSpeed, &map.driveSteer, &map.domeSpeed};
     const size_t axis = index - cues;
-    return {axes[axis]->source, axes[axis]->channel, kAxes[axis], "", kBits[axis]};
+    const RcBindingConfig& binding = storedAxis(map, axis);
+    return {binding.source, binding.channel, kAxes[axis], "", kBits[axis]};
 }
 
-// Whether a stored binding binds anything and holds its own rules: only such
-// a binding is read, so only it can take a control from another.
-bool storedReads(const RcStoredMap& map, size_t index, RcInputMode type) {
-    const size_t cues = storedCount(map) - 3;
+// Whether a stored binding binds anything: an empty slot or an unbound axis
+// has nothing to read.
+bool storedBound(const StoredRef& ref) {
+    return ref.source != RC_BINDING_NONE && ref.action != ROBOT_ACTION_NONE;
+}
+
+// A bound stored binding's own rules.
+RcRuleVerdict storedOwnRule(const RcStoredMap& map, size_t index, RcInputMode type) {
+    const size_t cues = storedCueCount(map);
     if (index < cues) {
-        const RcTriggerBinding& cue = map.cues[index];
-        return cue.source != RC_BINDING_NONE && cue.target != ROBOT_ACTION_NONE &&
-               rcRuleStoredCue(cue, type).ok();
+        return storedCueRule(map.cues[index], type);
     }
     const StoredRef ref = storedRef(map, index);
-    const RcBindingConfig* const axes[] = {&map.driveSpeed, &map.driveSteer, &map.domeSpeed};
-    return ref.source != RC_BINDING_NONE &&
-           rcRuleStoredAxis(ref.action, *axes[index - cues], type).ok();
+    return storedAxisRule(ref.action, storedAxis(map, index - cues), type);
 }
 
-// The save's conflict between two entries (conflictRule()), on stored ones.
+// The save's conflicts between two entries (conflictRule()), on stored ones.
 RcRuleVerdict storedPairConflict(const StoredRef& a, const StoredRef& b) {
     if (a.action == SERVO_ACTION_PUPPET_PART && b.action == SERVO_ACTION_PUPPET_PART &&
         strncmp(a.payload, b.payload, sizeof(RcMapEntry::payload)) == 0) {
@@ -447,37 +490,101 @@ RcRuleVerdict storedPairConflict(const StoredRef& a, const StoredRef& b) {
         return refusal("conflict: source+channel mapped more than once", true, kFieldChannel,
                        ApplyRefusalReason::Conflict);
     }
+    if (a.action == b.action && onceOnlyConflict(b.action, b.source) != nullptr) {
+        if (const char* conflict = onceOnlyConflict(a.action, a.source)) {
+            return refusal(conflict, true, kFieldAction, ApplyRefusalReason::Conflict);
+        }
+    }
     return kHolds;
 }
 
-}  // namespace
+// The drive axis left still only for its partner: the drive moves on both
+// sticks or on neither.
+RcRuleVerdict drivePairWaits(RobotActionId axis) {
+    return onAxis(refusal("drive waits on its other stick", true, kFieldDrive, ApplyRefusalReason::Conflict),
+                  axis);
+}
 
-uint32_t rcStoredMapConflicts(const RcStoredMap& map, RcInputMode type) {
-    const size_t count = storedCount(map);
-    uint32_t reads = 0;
+// Every stored binding's verdict, as bits: `own` the bound ones that break a
+// rule on their own, `conflicts` the ones that hold their own rules and
+// conflict with another that does, and `drive` both drive axes when the pair
+// does not read. Their union is what the droid does not read.
+struct StoredVerdicts {
+    uint32_t own;
+    uint32_t conflicts;
+    uint32_t drive;
+    uint32_t unread() const { return own | conflicts | drive; }
+};
+
+StoredVerdicts judgeStored(const RcStoredMap& map, RcInputMode type) {
+    StoredVerdicts verdicts = {0, 0, 0};
+    const size_t count = storedCueCount(map) + kAxisCount;
+    uint32_t holds = 0;
     for (size_t i = 0; i < count; ++i) {
-        if (storedReads(map, i, type)) {
-            reads |= storedRef(map, i).bit;
+        const StoredRef ref = storedRef(map, i);
+        if (!storedBound(ref)) {
+            continue;
+        }
+        if (storedOwnRule(map, i, type).ok()) {
+            holds |= ref.bit;
+        } else {
+            verdicts.own |= ref.bit;
         }
     }
-    uint32_t conflicts = 0;
+    // Only bindings that hold their own rules are judged against each other:
+    // one that is not read takes no control from another.
     for (size_t i = 0; i < count; ++i) {
         const StoredRef a = storedRef(map, i);
-        if ((reads & a.bit) == 0) {
+        if ((holds & a.bit) == 0) {
             continue;
         }
         for (size_t j = i + 1; j < count; ++j) {
             const StoredRef b = storedRef(map, j);
-            if ((reads & b.bit) != 0 && !storedPairConflict(a, b).ok()) {
-                conflicts |= a.bit | b.bit;
+            if ((holds & b.bit) != 0 && !storedPairConflict(a, b).ok()) {
+                verdicts.conflicts |= a.bit | b.bit;
             }
         }
     }
-    return conflicts;
+    const uint32_t pair = kRcStoredDriveSpeedBit | kRcStoredDriveSteerBit;
+    const uint32_t bound = (map.driveSpeed.source != RC_BINDING_NONE ? kRcStoredDriveSpeedBit : 0u) |
+                           (map.driveSteer.source != RC_BINDING_NONE ? kRcStoredDriveSteerBit : 0u);
+    const uint32_t pairReads = holds & ~verdicts.conflicts & pair;
+    if (bound != 0 && (pairReads != pair || !rcRuleDrive(map.driveSpeed, map.driveSteer).ok())) {
+        verdicts.drive = bound;
+    }
+    return verdicts;
 }
 
-RcRuleVerdict rcRuleStoredConflict(const RcStoredMap& map, RcInputMode type, uint32_t bit) {
-    const size_t count = storedCount(map);
+}  // namespace
+
+void rcStoredMapKeepRead(RcStoredMap* map, RcInputMode type) {
+    if (map == nullptr) {
+        return;
+    }
+    // Judged on the map as stored, then left still: a binding blanked first
+    // would free a control for another that conflicts with it.
+    const uint32_t unread = judgeStored(*map, type).unread();
+    const size_t cues = storedCueCount(*map);
+    for (size_t i = 0; i < cues; ++i) {
+        if ((unread & rcStoredCueBit(i)) != 0) {
+            map->cues[i] = disabledRcTriggerBinding();
+        }
+    }
+    RcBindingConfig* const axes[] = {&map->driveSpeed, &map->driveSteer, &map->domeSpeed};
+    const uint32_t bits[] = {kRcStoredDriveSpeedBit, kRcStoredDriveSteerBit, kRcStoredDomeSpeedBit};
+    for (size_t axis = 0; axis < kAxisCount; ++axis) {
+        if ((unread & bits[axis]) != 0) {
+            *axes[axis] = disabledRcBinding();
+        }
+    }
+}
+
+RcRuleVerdict rcStoredMapWhy(const RcStoredMap& map, RcInputMode type, uint32_t bit) {
+    const StoredVerdicts verdicts = judgeStored(map, type);
+    if (bit == 0 || (verdicts.unread() & bit) == 0) {
+        return kHolds;
+    }
+    const size_t count = storedCueCount(map) + kAxisCount;
     size_t self = count;
     for (size_t i = 0; i < count; ++i) {
         if (storedRef(map, i).bit == bit) {
@@ -485,36 +592,32 @@ RcRuleVerdict rcRuleStoredConflict(const RcStoredMap& map, RcInputMode type, uin
             break;
         }
     }
-    if (self == count || !storedReads(map, self, type)) {
+    if (self == count) {
         return kHolds;
     }
-    const StoredRef a = storedRef(map, self);
-    for (size_t j = 0; j < count; ++j) {
-        if (j == self || !storedReads(map, j, type)) {
-            continue;
-        }
-        const RcRuleVerdict verdict = storedPairConflict(a, storedRef(map, j));
-        if (!verdict.ok()) {
-            return verdict;
+    if ((verdicts.own & bit) != 0) {
+        return storedOwnRule(map, self, type);
+    }
+    if ((verdicts.conflicts & bit) != 0) {
+        const StoredRef a = storedRef(map, self);
+        for (size_t j = 0; j < count; ++j) {
+            const StoredRef b = storedRef(map, j);
+            if (j == self || !storedBound(b) || (verdicts.own & b.bit) != 0) {
+                continue;
+            }
+            const RcRuleVerdict verdict = storedPairConflict(a, b);
+            if (!verdict.ok()) {
+                return verdict;
+            }
         }
     }
-    return kHolds;
-}
-
-void rcStoredReactionsKeepRead(RcTriggerBinding* slots, size_t count, RcInputMode type) {
-    if (slots == nullptr) {
-        return;
+    // The drive pair. The axis the pair rule names carries its refusal; the
+    // other, and an axis left still because its partner is unbound or not
+    // read, waits on its partner.
+    const RobotActionId axis = bit == kRcStoredDriveSpeedBit ? DRIVE_ACTION_SPEED : DRIVE_ACTION_STEER;
+    const RcRuleVerdict pair = rcRuleDrive(map.driveSpeed, map.driveSteer);
+    if (!pair.ok() && pair.axis == axis) {
+        return pair;
     }
-    // No axis reads a droid condition, so the axes are left out.
-    const RcStoredMap map = {disabledRcBinding(), disabledRcBinding(), disabledRcBinding(), slots,
-                             count};
-    const uint32_t conflicts = rcStoredMapConflicts(map, type);
-    for (size_t i = 0; i < count; ++i) {
-        if (!rcBindingSourceIsDroidCondition(slots[i].source)) {
-            continue;
-        }
-        if (!rcRuleStoredCue(slots[i], type).ok() || (conflicts & rcStoredCueBit(i)) != 0) {
-            slots[i] = disabledRcTriggerBinding();
-        }
-    }
+    return drivePairWaits(axis);
 }

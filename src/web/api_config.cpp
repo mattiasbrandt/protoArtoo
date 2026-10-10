@@ -63,10 +63,6 @@ static const char* TAG = "WebServer";
 
 namespace {
 
-bool triggerTargetAllowedByRuntime(const RcTriggerBinding& binding) {
-    return true;
-}
-
 const char* wifiModeToString(WifiMode mode) {
     switch (mode) {
         case WifiMode::STANDALONE_AP:
@@ -205,14 +201,12 @@ bool rcMapBuildTriggerBinding(const RcMapEntry& entry, const ConfigSnapshot& exi
         return rcTriggerBindingIsValid(*out);
     }
 
-    uint16_t min = 1000;
-    uint16_t center = 1500;
-    uint16_t max = 2000;
-    if (entry.source == RC_BINDING_SBUS1 || entry.source == RC_BINDING_SBUS2) {
-        min = RC_SBUS_DEFAULT_MIN;
-        center = RC_SBUS_DEFAULT_CENTER;
-        max = RC_SBUS_DEFAULT_MAX;
-    }
+    const RcBindingConfig defaults = (entry.source == RC_BINDING_PWM)
+                                         ? defaultPwmBinding(entry.channel)
+                                         : defaultSbusBinding(entry.source, entry.channel);
+    uint16_t min = defaults.min;
+    uint16_t center = defaults.center;
+    uint16_t max = defaults.max;
     uint16_t deadband = 0;
     bool reverse = rcTriggerDefaultReverse(entry.source, entry.channel);
     rcMapTryReuseCalibration(existing, entry.source, entry.channel, &min, &center, &max, &deadband,
@@ -220,10 +214,7 @@ bool rcMapBuildTriggerBinding(const RcMapEntry& entry, const ConfigSnapshot& exi
 
     *out = makeRcTriggerBinding(entry.source, entry.channel, entry.action, entry.payload, min,
                                 center, max, deadband, reverse);
-    if (!rcTriggerBindingIsValid(*out)) {
-        return false;
-    }
-    return triggerTargetAllowedByRuntime(*out);
+    return rcTriggerBindingIsValid(*out);
 }
 
 RcBindingConfig rcMapSelectBackboneForMode(const ConfigSnapshot& snap, const RcBindingConfig& pwm,
@@ -244,26 +235,6 @@ JsonObject rcMapAppendEntry(JsonArray map, RcBindingSource source, uint8_t chann
         item["payload"] = payload;
     }
     return item;
-}
-
-// Which of the stored drive axes a save would keep, and why not. A pair the
-// rules refuse is narrowed one axis at a time - the axis the refusal names -
-// so a split pair loses the axis a save would have refused, not both.
-void rcMapDriveVerdicts(RcBindingConfig speed, RcBindingConfig steer, RcInputMode type,
-                        RcRuleVerdict* speedVerdict, RcRuleVerdict* steerVerdict) {
-    for (int pass = 0; pass < 2; ++pass) {
-        const RcRuleVerdict verdict = rcRuleStoredDrive(speed, steer, type);
-        if (verdict.ok()) {
-            return;
-        }
-        if (verdict.axis == DRIVE_ACTION_SPEED) {
-            *speedVerdict = verdict;
-            speed = disabledRcBinding();
-        } else {
-            *steerVerdict = verdict;
-            steer = disabledRcBinding();
-        }
-    }
 }
 
 // An entry the droid does not read: "read": false, and the refusal a save
@@ -295,40 +266,29 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     RcBindingConfig domeSpeed =
         rcMapSelectBackboneForMode(snap, snap.system.rc_pwm_dome_speed, snap.system.rc_sbus_dome_speed);
 
-    // An entry the droid would not read - one a save for the receiver type it
-    // has saved would refuse - says so, so a page never posts it back into a
-    // map the droid then refuses whole (ADR 0070).
+    // An entry the droid does not read says so and why (rcStoredMapWhy()),
+    // so a page never posts a refused one back into a map the droid then
+    // refuses whole (ADR 0070).
     const RcInputMode type = snap.system.rc_input_mode;
-    RcRuleVerdict speedVerdict = {};
-    RcRuleVerdict steerVerdict = {};
-    rcMapDriveVerdicts(driveSpeed, driveSteer, type, &speedVerdict, &steerVerdict);
-
-    const RcTriggerBinding namedSlots[] = {snap.system.rc_arm1, snap.system.rc_arm2, snap.system.rc_aux1, snap.system.rc_aux2,
-                                           snap.system.rc_aux3, snap.system.rc_opmode, snap.system.rc_audio, snap.system.rc_free0,
-                                           snap.system.rc_free1, snap.system.rc_free2, snap.system.rc_free3};
-    // A binding that holds its own rules but shares a control with another
-    // is not read either (rcStoredMapConflicts()): both say so.
-    const RcStoredMap stored = {driveSpeed, driveSteer, domeSpeed, namedSlots,
-                                sizeof(namedSlots) / sizeof(namedSlots[0])};
-    const auto orConflict = [&](const RcRuleVerdict& own, uint32_t bit) {
-        return own.ok() ? rcRuleStoredConflict(stored, type, bit) : own;
-    };
+    RcTriggerBinding slots[RC_TRIGGER_SLOT_COUNT];
+    const size_t slotCount = rcTriggerSlotsCopy(snap.system, slots, RC_TRIGGER_SLOT_COUNT);
+    const RcStoredMap stored = {driveSpeed, driveSteer, domeSpeed, slots, slotCount};
 
     if (rcMapBindingIsMapped(driveSpeed)) {
         rcMapMarkUnread(rcMapAppendEntry(map, driveSpeed.source, driveSpeed.channel, DRIVE_ACTION_SPEED, nullptr),
-                        orConflict(speedVerdict, kRcStoredDriveSpeedBit));
+                        rcStoredMapWhy(stored, type, kRcStoredDriveSpeedBit));
     }
     if (rcMapBindingIsMapped(driveSteer)) {
         rcMapMarkUnread(rcMapAppendEntry(map, driveSteer.source, driveSteer.channel, DRIVE_ACTION_STEER, nullptr),
-                        orConflict(steerVerdict, kRcStoredDriveSteerBit));
+                        rcStoredMapWhy(stored, type, kRcStoredDriveSteerBit));
     }
     if (rcMapBindingIsMapped(domeSpeed)) {
         rcMapMarkUnread(rcMapAppendEntry(map, domeSpeed.source, domeSpeed.channel, DOME_ACTION_SPEED, nullptr),
-                        orConflict(rcRuleStoredAxis(DOME_ACTION_SPEED, domeSpeed, type), kRcStoredDomeSpeedBit));
+                        rcStoredMapWhy(stored, type, kRcStoredDomeSpeedBit));
     }
 
-    for (size_t i = 0; i < sizeof(namedSlots) / sizeof(namedSlots[0]); ++i) {
-        const RcTriggerBinding& binding = namedSlots[i];
+    for (size_t i = 0; i < slotCount; ++i) {
+        const RcTriggerBinding& binding = slots[i];
         if (!rcMapTriggerIsMapped(binding)) {
             continue;
         }
@@ -338,7 +298,7 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
             item["threshold"] = rcReactionThreshold(binding);
             item["quietS"] = rcReactionQuietS(binding);
         }
-        rcMapMarkUnread(item, orConflict(rcRuleStoredCue(binding, type), rcStoredCueBit(i)));
+        rcMapMarkUnread(item, rcStoredMapWhy(stored, type, rcStoredCueBit(i)));
     }
 
     JsonObject capacity = doc["capacity"].to<JsonObject>();
@@ -390,6 +350,9 @@ void clearRcMapSlots(ConfigSnapshot* working) {
     working->system.rc_free3 = disabledRcTriggerBinding();
 }
 
+static_assert(kRcMapMaxTriggers == RC_TRIGGER_SLOT_COUNT,
+              "the RC Map's rules allow as many trigger bindings as there are stored places");
+
 static bool triggerSlotIsFree(const RcTriggerBinding& binding) {
     return binding.source == RC_BINDING_NONE || binding.target == ROBOT_ACTION_NONE;
 }
@@ -405,32 +368,22 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         return false;
     }
 
-    // Slot-assignment algorithm for POST /api/rc/map
+    // Where POST /api/rc/map stores each entry.
     //
-    // Backbone actions are exclusive logical slots and mirror into both persisted
-    // profile groups (PWM + SBUS) to keep runtime mode switching behavior stable.
-    //
+    // An axis mirrors into both persisted profile groups (PWM + SBUS) to keep
+    // runtime mode switching behavior stable:
     // - drive_speed -> rcPwmDriveSpeed + rcSbusDriveSpeed
     // - drive_steer -> rcPwmDriveSteer + rcSbusDriveSteer
     // - dome_speed  -> rcPwmDomeSpeed  + rcSbusDomeSpeed
     //
-    // Named trigger actions map to dedicated trigger slots:
-    // - arm1_toggle -> rcArm1
-    // - arm2_toggle -> rcArm2
-    // - aux1_toggle -> rcAux1
-    // - aux2_toggle -> rcAux2
-    // - aux3_toggle -> rcAux3
-    // - op_mode     -> rcOpmode
-    //
-    // All remaining trigger actions fill first-free in this order:
-    // rcSound, rcFree0, rcFree1, rcFree2, rcFree3. A puppet string (#442) is
-    // one of them, so the droid holds at most five strings, shared with every
-    // other cue that has no slot of its own.
-    //
-    // A Reaction (a droid-condition source, #450) always fills first-free in
-    // that same order, whatever its action: a named slot is one action's radio
-    // binding, and a Reaction on arm1_toggle must not take rcArm1 from the
-    // switch that also toggles it.
+    // A trigger binding takes any free place of the eleven (ADR 0070, amended
+    // 2026-10-10): every reader goes by the binding's own target, never by the
+    // place it sits in. An arm or aux toggle or the op mode on a radio takes
+    // its own named place when that is free, so a map that fits the older
+    // layout is stored as it always was; anything else takes rcSound,
+    // rcFree0..3 first, then a named place nothing has claimed. The RC Map's
+    // rules hold the map to eleven and each toggle to one RC Channel
+    // (rcRuleMapAdd()), so a place is always free here.
     RcBindingConfig backbone = disabledRcBinding();
     RcTriggerBinding trigger = disabledRcTriggerBinding();
 
@@ -460,73 +413,32 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         return false;
     }
 
-    const bool reaction = rcBindingSourceIsDroidCondition(entry.source);
-
-    if (!reaction && entry.action == SERVO_ACTION_ARM1_TOGGLE) {
-        if (!triggerSlotIsFree(working->system.rc_arm1)) {
-            snprintf(error, errorSize, "conflict: arm1_toggle mapped more than once");
-            applyRefusalSet(said, ApplyRefusalReason::Conflict, "map.action");
-            return false;
+    SystemConfig& sys = working->system;
+    RcTriggerBinding* named = nullptr;
+    if (!rcBindingSourceIsDroidCondition(entry.source)) {
+        switch (entry.action) {
+            case SERVO_ACTION_ARM1_TOGGLE: named = &sys.rc_arm1; break;
+            case SERVO_ACTION_ARM2_TOGGLE: named = &sys.rc_arm2; break;
+            case SERVO_ACTION_AUX1_TOGGLE: named = &sys.rc_aux1; break;
+            case SERVO_ACTION_AUX2_TOGGLE: named = &sys.rc_aux2; break;
+            case SERVO_ACTION_AUX3_TOGGLE: named = &sys.rc_aux3; break;
+            case SYSTEM_ACTION_OP_MODE: named = &sys.rc_opmode; break;
+            default: break;
         }
-        working->system.rc_arm1 = trigger;
-        return true;
     }
-    if (!reaction && entry.action == SERVO_ACTION_ARM2_TOGGLE) {
-        if (!triggerSlotIsFree(working->system.rc_arm2)) {
-            snprintf(error, errorSize, "conflict: arm2_toggle mapped more than once");
-            applyRefusalSet(said, ApplyRefusalReason::Conflict, "map.action");
-            return false;
-        }
-        working->system.rc_arm2 = trigger;
-        return true;
-    }
-    if (!reaction && entry.action == SERVO_ACTION_AUX1_TOGGLE) {
-        if (!triggerSlotIsFree(working->system.rc_aux1)) {
-            snprintf(error, errorSize, "conflict: aux1_toggle mapped more than once");
-            applyRefusalSet(said, ApplyRefusalReason::Conflict, "map.action");
-            return false;
-        }
-        working->system.rc_aux1 = trigger;
-        return true;
-    }
-    if (!reaction && entry.action == SERVO_ACTION_AUX2_TOGGLE) {
-        if (!triggerSlotIsFree(working->system.rc_aux2)) {
-            snprintf(error, errorSize, "conflict: aux2_toggle mapped more than once");
-            applyRefusalSet(said, ApplyRefusalReason::Conflict, "map.action");
-            return false;
-        }
-        working->system.rc_aux2 = trigger;
-        return true;
-    }
-    if (!reaction && entry.action == SERVO_ACTION_AUX3_TOGGLE) {
-        if (!triggerSlotIsFree(working->system.rc_aux3)) {
-            snprintf(error, errorSize, "conflict: aux3_toggle mapped more than once");
-            applyRefusalSet(said, ApplyRefusalReason::Conflict, "map.action");
-            return false;
-        }
-        working->system.rc_aux3 = trigger;
-        return true;
-    }
-    if (entry.action == SYSTEM_ACTION_OP_MODE) {
-        if (!triggerSlotIsFree(working->system.rc_opmode)) {
-            snprintf(error, errorSize, "conflict: op_mode mapped more than once");
-            applyRefusalSet(said, ApplyRefusalReason::Conflict, "map.action");
-            return false;
-        }
-        working->system.rc_opmode = trigger;
-        return true;
-    }
-
-    RcTriggerBinding* spillSlots[] = {&working->system.rc_audio, &working->system.rc_free0, &working->system.rc_free1,
-                                      &working->system.rc_free2, &working->system.rc_free3};
-    for (size_t i = 0; i < sizeof(spillSlots) / sizeof(spillSlots[0]); ++i) {
-        if (triggerSlotIsFree(*spillSlots[i])) {
-            *spillSlots[i] = trigger;
+    RcTriggerBinding* const places[] = {
+        named,        &sys.rc_audio, &sys.rc_free0, &sys.rc_free1, &sys.rc_free2, &sys.rc_free3,
+        &sys.rc_arm1, &sys.rc_arm2,  &sys.rc_aux1,  &sys.rc_aux2,  &sys.rc_aux3,  &sys.rc_opmode,
+    };
+    for (RcTriggerBinding* place : places) {
+        if (place != nullptr && triggerSlotIsFree(*place)) {
+            *place = trigger;
             return true;
         }
     }
 
-    snprintf(error, errorSize, "conflict: no trigger slot available");
+    // Past what rcRuleMapAdd() lets through: the same refusal it gives.
+    snprintf(error, errorSize, "conflict: map exceeds capacity");
     applyRefusalSet(said, ApplyRefusalReason::Conflict, "map");
     return false;
 }
