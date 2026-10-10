@@ -2552,7 +2552,9 @@ Returns live RC diagnostics snapshot.
   back because firing would have opened a body Part while the droid was
   driving. The droid is driving while the drive output is not zero, while a
   wheel reports turning, and for 1.5 s after the output reaches zero. Counts
-  restart when the Reaction is edited and at boot.
+  restart when the Reaction is edited, when a restore or a factory reset moves
+  it to another place, when it is read again after the RC Map's rules left it
+  still, and at boot; a save that leaves it unchanged keeps them.
 - Errors: `500` `{"ok":false,"error":"rc json build failed"}`, or `payload too large` /
   `response buffer alloc failed` from the buffered send (no stream)
 
