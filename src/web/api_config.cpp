@@ -110,13 +110,10 @@ bool rcMapTryReuseCalibration(const ConfigSnapshot& existing, RcBindingSource so
         }
     }
 
-    const RcTriggerBinding triggerBindings[] = {
-        existing.system.rc_arm1, existing.system.rc_arm2, existing.system.rc_aux1, existing.system.rc_aux2, existing.system.rc_aux3,
-        existing.system.rc_audio, existing.system.rc_opmode, existing.system.rc_free0, existing.system.rc_free1, existing.system.rc_free2,
-        existing.system.rc_free3,
-    };
-    for (size_t i = 0; i < sizeof(triggerBindings) / sizeof(triggerBindings[0]); ++i) {
-        const RcTriggerBinding& binding = triggerBindings[i];
+    const RcTriggerBinding* triggerBindings[RC_TRIGGER_SLOT_COUNT];
+    rcTriggerSlotPlaces(existing.system, triggerBindings);
+    for (const RcTriggerBinding* place : triggerBindings) {
+        const RcTriggerBinding& binding = *place;
         if (binding.source == source && binding.channel == channel &&
             rcBindingChannelIsValid(binding.source, binding.channel)) {
             *min = binding.min;
@@ -181,12 +178,8 @@ bool rcMapBuildTriggerBinding(const RcMapEntry& entry, const ConfigSnapshot& exi
         uint16_t quietS = RC_REACTION_QUIET_DEFAULT_S;
         // By pointer, never a copy of the slots: this runs on the HTTP server
         // task under two ConfigSnapshots already.
-        const SystemConfig& sys = existing.system;
-        const RcTriggerBinding* stored[RC_TRIGGER_SLOT_COUNT] = {
-            &sys.rc_arm1,  &sys.rc_arm2,  &sys.rc_aux1,  &sys.rc_aux2,
-            &sys.rc_aux3,  &sys.rc_audio, &sys.rc_opmode, &sys.rc_free0,
-            &sys.rc_free1, &sys.rc_free2, &sys.rc_free3,
-        };
+        const RcTriggerBinding* stored[RC_TRIGGER_SLOT_COUNT];
+        rcTriggerSlotPlaces(existing.system, stored);
         for (const RcTriggerBinding* slot : stored) {
             if (slot->source == entry.source && slot->channel == entry.channel) {
                 threshold = rcReactionThreshold(*slot);
@@ -337,17 +330,11 @@ void clearRcMapSlots(ConfigSnapshot* working) {
     working->system.rc_sbus_drive_steer = disabledRcBinding();
     working->system.rc_sbus_dome_speed = disabledRcBinding();
 
-    working->system.rc_arm1 = disabledRcTriggerBinding();
-    working->system.rc_arm2 = disabledRcTriggerBinding();
-    working->system.rc_aux1 = disabledRcTriggerBinding();
-    working->system.rc_aux2 = disabledRcTriggerBinding();
-    working->system.rc_aux3 = disabledRcTriggerBinding();
-    working->system.rc_opmode = disabledRcTriggerBinding();
-    working->system.rc_audio = disabledRcTriggerBinding();
-    working->system.rc_free0 = disabledRcTriggerBinding();
-    working->system.rc_free1 = disabledRcTriggerBinding();
-    working->system.rc_free2 = disabledRcTriggerBinding();
-    working->system.rc_free3 = disabledRcTriggerBinding();
+    const RcTriggerBinding* places[RC_TRIGGER_SLOT_COUNT];
+    rcTriggerSlotPlaces(working->system, places);
+    for (const RcTriggerBinding* place : places) {
+        *const_cast<RcTriggerBinding*>(place) = disabledRcTriggerBinding();
+    }
 }
 
 static_assert(kRcMapMaxTriggers == RC_TRIGGER_SLOT_COUNT,
@@ -355,6 +342,15 @@ static_assert(kRcMapMaxTriggers == RC_TRIGGER_SLOT_COUNT,
 
 static bool triggerSlotIsFree(const RcTriggerBinding& binding) {
     return binding.source == RC_BINDING_NONE || binding.target == ROBOT_ACTION_NONE;
+}
+
+// Whether a stored trigger binding is the one a save is placing: the same
+// control firing the same thing. Calibration and a Reaction's numbers may
+// differ; it is still that binding.
+static bool rcMapSameTrigger(const RcTriggerBinding& stored, const RcTriggerBinding& placing) {
+    return !triggerSlotIsFree(stored) && stored.source == placing.source && stored.channel == placing.channel &&
+           stored.target == placing.target &&
+           strncmp(stored.marcduinoPayload, placing.marcduinoPayload, sizeof(stored.marcduinoPayload)) == 0;
 }
 
 bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& existing,
@@ -411,6 +407,20 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         snprintf(error, errorSize, "invalid trigger binding");
         applyRefusalSet(said, ApplyRefusalReason::OutOfRange, "map.action");
         return false;
+    }
+
+    // A binding the droid already held stays in its place: every reader
+    // keeps a slot's state by its place, so a save that moved an unchanged
+    // binding would hand it another binding's state (Codex review, #488).
+    const RcTriggerBinding* was[RC_TRIGGER_SLOT_COUNT];
+    const RcTriggerBinding* now[RC_TRIGGER_SLOT_COUNT];
+    rcTriggerSlotPlaces(existing.system, was);
+    rcTriggerSlotPlaces(working->system, now);
+    for (size_t i = 0; i < RC_TRIGGER_SLOT_COUNT; ++i) {
+        if (triggerSlotIsFree(*now[i]) && rcMapSameTrigger(*was[i], trigger)) {
+            *const_cast<RcTriggerBinding*>(now[i]) = trigger;
+            return true;
+        }
     }
 
     SystemConfig& sys = working->system;

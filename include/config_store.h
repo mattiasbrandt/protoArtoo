@@ -301,19 +301,28 @@ struct SystemConfig {
 };
 
 // Canonical enumeration of the RC trigger binding slots above, in tier-2
-// dispatch order. The RC input task, ReactionTask, the RC snapshot and the
-// sequence dangling-binding scan copy through here. The NVS key table, the
-// defaults, the serializer and the RC Map's save and GET
-// (src/web/api_config.cpp) still list the slots by name, so adding a slot
-// field touches each of them as well as this list.
+// dispatch order, as the places themselves. The RC input task, ReactionTask,
+// the RC snapshot, the RC Map's save and GET, the single-SBUS carry and the
+// sequence dangling-binding scan go through here. The NVS key table, the
+// defaults and the serializer still list the slots by name, so adding a slot
+// field touches each of them as well as this list. A place of a SystemConfig
+// that is not const may be written through its pointer.
 static constexpr size_t RC_TRIGGER_SLOT_COUNT = 11;
 
-inline size_t rcTriggerSlotsCopy(const SystemConfig& sys, RcTriggerBinding* out, size_t cap) {
-    const RcTriggerBinding* slots[RC_TRIGGER_SLOT_COUNT] = {
+inline void rcTriggerSlotPlaces(const SystemConfig& sys, const RcTriggerBinding* out[RC_TRIGGER_SLOT_COUNT]) {
+    const RcTriggerBinding* const slots[RC_TRIGGER_SLOT_COUNT] = {
         &sys.rc_arm1,  &sys.rc_arm2,  &sys.rc_aux1,  &sys.rc_aux2,
         &sys.rc_aux3,  &sys.rc_audio, &sys.rc_opmode, &sys.rc_free0,
         &sys.rc_free1, &sys.rc_free2, &sys.rc_free3,
     };
+    for (size_t i = 0; i < RC_TRIGGER_SLOT_COUNT; ++i) {
+        out[i] = slots[i];
+    }
+}
+
+inline size_t rcTriggerSlotsCopy(const SystemConfig& sys, RcTriggerBinding* out, size_t cap) {
+    const RcTriggerBinding* slots[RC_TRIGGER_SLOT_COUNT];
+    rcTriggerSlotPlaces(sys, slots);
     const size_t n = (cap < RC_TRIGGER_SLOT_COUNT) ? cap : RC_TRIGGER_SLOT_COUNT;
     for (size_t i = 0; i < n; ++i) {
         out[i] = *slots[i];
@@ -334,13 +343,11 @@ inline size_t rcCarrySingleSbusCh2TriggerLabels(SystemConfig* sys) {
     if (sys == nullptr || sys->rc_input_mode != RC_INPUT_SINGLE_SBUS || !sys->single_sbus_use_ch2) {
         return 0;
     }
-    RcTriggerBinding* slots[RC_TRIGGER_SLOT_COUNT] = {
-        &sys->rc_arm1,  &sys->rc_arm2,  &sys->rc_aux1,  &sys->rc_aux2,
-        &sys->rc_aux3,  &sys->rc_audio, &sys->rc_opmode, &sys->rc_free0,
-        &sys->rc_free1, &sys->rc_free2, &sys->rc_free3,
-    };
+    const RcTriggerBinding* places[RC_TRIGGER_SLOT_COUNT];
+    rcTriggerSlotPlaces(*sys, places);
     size_t changed = 0;
-    for (RcTriggerBinding* slot : slots) {
+    for (const RcTriggerBinding* place : places) {
+        RcTriggerBinding* slot = const_cast<RcTriggerBinding*>(place);
         if (slot->source == RC_BINDING_SBUS1) {
             slot->source = RC_BINDING_SBUS2;
             ++changed;
