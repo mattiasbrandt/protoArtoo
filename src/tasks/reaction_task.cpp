@@ -155,12 +155,24 @@ static __attribute__((noinline)) void logFiring(const ReactionFiring& firing, bo
                 carriedOut ? "" : " (not carried out)");
 }
 
+// A Reaction the RC Map's rules refuse is not read (ADR 0070): it leaves its
+// slot, so a press it holds is released and it fires no more, though the
+// stored form's own check let it load. No axis reads a droid condition, so the
+// axes are left out. Out of line, so the stored map is in a frame of its own
+// that returns before the action door rather than on this task's root frame,
+// and not a static the boot heap carries (#488).
+static __attribute__((noinline)) void keepReadReactions(RcTriggerBinding* bindings, size_t count) {
+    RcInputActiveConfig active = {};
+    configCacheReadActiveRcInput(&active);
+    RcStoredMap stored = {disabledRcBinding(), disabledRcBinding(), disabledRcBinding(), bindings, count};
+    rcStoredMapKeepRead(&stored, static_cast<RcInputMode>(active.mode));
+}
+
 void reactionTask(void* /*pvParameters*/) {
     // Static, not stack: the evaluator's state and one tick's scratch are a
     // few hundred bytes this task would otherwise carry under the action door.
     static ReactionEvaluator evaluator;
     static RcTriggerBinding bindings[RC_TRIGGER_SLOT_COUNT];
-    static RcStoredMap stored;
     static ReactionOutput output;
 
     reactionEvaluatorInit(&evaluator);
@@ -168,14 +180,7 @@ void reactionTask(void* /*pvParameters*/) {
 
     while (true) {
         const size_t count = configCacheReadRcTriggerSlots(bindings, RC_TRIGGER_SLOT_COUNT);
-        // A Reaction the RC Map's rules refuse is not read (ADR 0070): it
-        // leaves its slot, so a press it holds is released and it fires no
-        // more, though the stored form's own check let it load. No axis reads
-        // a droid condition, so the axes are left out.
-        RcInputActiveConfig active = {};
-        configCacheReadActiveRcInput(&active);
-        stored = {disabledRcBinding(), disabledRcBinding(), disabledRcBinding(), bindings, count};
-        rcStoredMapKeepRead(&stored, static_cast<RcInputMode>(active.mode));
+        keepReadReactions(bindings, count);
         ReactionInputs in = {};
         readInputs(&in);
 
