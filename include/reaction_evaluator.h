@@ -162,7 +162,9 @@ inline const char* reactionAvailabilityReason(ReactionAvailability availability)
 }
 
 struct ReactionSlotState {
-    RcTriggerBinding binding;  // the Reaction this state was armed for
+    // The Reaction this state was armed for: a press it holds is released for
+    // this action, even when the place now holds another binding or none.
+    RcTriggerBinding binding;
     uint32_t armedAtMs;
     uint32_t lastFiredMs;
     uint16_t fires;            // firings the action door carried out
@@ -189,6 +191,13 @@ struct ReactionMotion {
 
 struct ReactionEvaluator {
     ReactionSlotState slots[REACTION_SLOT_MAX];
+    // Per trigger place, outside the slot state so starting a slot afresh
+    // does not forget them: the change stamp its state was taken at
+    // (configCacheReadRcTriggerSlots()), and whether a Reaction was read there
+    // last tick. A place starts afresh when its stamp moves or a Reaction is
+    // read there again (ADR 0070, amended 2026-10-10).
+    uint16_t stamps[REACTION_SLOT_MAX];
+    bool read[REACTION_SLOT_MAX];
     ReactionMotion motion;
     DriveMotion drive;    // this task's own reading of "driving"
     bool wasDriving;
@@ -198,7 +207,7 @@ struct ReactionEvaluator {
 
 // One thing to send through the action door. It carries its own action,
 // because a release may be for a Reaction that is no longer in its slot: one
-// that was edited or deleted while its press was held.
+// that was edited, moved or deleted while its press was held.
 struct ReactionFiring {
     uint8_t slot;
     bool pressed;  // false: the release of a press this Reaction sent earlier
@@ -223,12 +232,6 @@ struct ReactionOutput {
 inline uint16_t reactionMagnitude(int16_t value) {
     const int32_t wide = value;
     return (uint16_t)(wide < 0 ? -wide : wide);
-}
-
-inline bool reactionSameBinding(const RcTriggerBinding& a, const RcTriggerBinding& b) {
-    return a.source == b.source && a.channel == b.channel && a.target == b.target &&
-           strncmp(a.marcduinoPayload, b.marcduinoPayload, sizeof(a.marcduinoPayload)) == 0 &&
-           a.min == b.min && a.max == b.max;
 }
 
 inline bool reactionIsReaction(const RcTriggerBinding& binding) {
@@ -380,30 +383,6 @@ inline bool reactionElapsed(uint32_t nowMs, uint32_t sinceMs, uint32_t periodMs)
     return (uint32_t)(nowMs - sinceMs) >= periodMs;
 }
 
-// A Reaction is known by its binding, not by the slot it sits in: a save that
-// removes some other binding moves it to an earlier slot, and it is the same
-// Reaction there - still inside its quiet period, with the counts it had. So
-// before a tick reads the slots, each state follows its binding to wherever
-// that now is. What is left unmatched is a Reaction that is new or was edited.
-inline void reactionReseatStates(ReactionEvaluator* ev, const RcTriggerBinding* bindings,
-                                 size_t count) {
-    for (size_t i = 0; i < count; ++i) {
-        if (!reactionIsReaction(bindings[i]) ||
-            reactionSameBinding(ev->slots[i].binding, bindings[i])) {
-            continue;
-        }
-        for (size_t j = 0; j < count; ++j) {
-            if (j != i && reactionSameBinding(ev->slots[j].binding, bindings[i]) &&
-                !reactionSameBinding(ev->slots[j].binding, bindings[j])) {
-                const ReactionSlotState moved = ev->slots[j];
-                ev->slots[j] = ev->slots[i];
-                ev->slots[i] = moved;
-                break;
-            }
-        }
-    }
-}
-
 inline void reactionEvaluatorInit(ReactionEvaluator* ev) {
     if (ev != nullptr) {
         *ev = {};
@@ -422,9 +401,15 @@ inline void reactionEvaluatorFired(ReactionEvaluator* ev, const ReactionFiring& 
     }
 }
 
-// One tick. `bindings` are the trigger slots as they stand; a slot whose
-// source is not a droid condition is not a Reaction and is left alone.
-// `out` lists what to send through the action door, in order.
+// One tick. `bindings` are the trigger slots as they stand, after the RC Map's
+// rules left still what the droid does not read, and `stamps` each slot's
+// change stamp, read with them (configCacheReadRcTriggerSlots()). A slot whose
+// source is not a droid condition is not a Reaction and is left alone. A
+// Reaction keeps its state - its quiet period, its counts, a press it holds -
+// while its stamp stays put, which a save that leaves it unchanged keeps in
+// its place; it starts afresh when the stamp moves (edited, or another binding
+// put there) or when it is read again. `out` lists what to send through the
+// action door, in order.
 //
 // `opensBodyPart(target, payload)` answers whether firing that action would
 // open a body Part. It is asked only when a Reaction is about to fire while
@@ -435,10 +420,10 @@ inline void reactionEvaluatorFired(ReactionEvaluator* ev, const ReactionFiring& 
 // follows (tools/check_task_stack_chains.py does not follow an indirect call).
 template <typename OpensBodyPart>
 inline void reactionEvaluatorTick(ReactionEvaluator* ev, const RcTriggerBinding* bindings,
-                                  size_t count, const ReactionInputs& in,
+                                  const uint16_t* stamps, size_t count, const ReactionInputs& in,
                                   OpensBodyPart opensBodyPart, ReactionOutput* out) {
     out->count = 0;
-    if (ev == nullptr || bindings == nullptr) {
+    if (ev == nullptr || bindings == nullptr || stamps == nullptr) {
         return;
     }
     if (count > REACTION_SLOT_MAX) {
@@ -458,19 +443,22 @@ inline void reactionEvaluatorTick(ReactionEvaluator* ev, const RcTriggerBinding*
     // one firing.
     const ReactionAvailability hold = reactionGateHold(in);
 
-    reactionReseatStates(ev, bindings, count);
-
     for (size_t i = 0; i < count; ++i) {
         ReactionSlotState& slot = ev->slots[i];
 
-        // A Reaction that was deleted or edited is gone, and a press it still
-        // held is released first, for the action it pressed: an Output it
-        // opened is not left open with nothing to close it.
-        if (!reactionIsReaction(bindings[i]) ||
-            !reactionSameBinding(slot.binding, bindings[i])) {
+        // A Reaction that is no longer read here - deleted, moved, or left
+        // still by the RC Map's rules - is gone, and so is one whose stamp
+        // moved: it was edited, or another binding took its place. A press
+        // it still held is released first, for the action it pressed: an
+        // Output it opened is not left open with nothing to close it.
+        const bool read = reactionIsReaction(bindings[i]);
+        const bool afresh = stamps[i] != ev->stamps[i] || (read && !ev->read[i]);
+        ev->stamps[i] = stamps[i];
+        ev->read[i] = read;
+        if (!read || afresh) {
             reactionRelease(out, i, &slot);
             slot = {};
-            if (!reactionIsReaction(bindings[i])) {
+            if (!read) {
                 continue;
             }
             slot.binding = bindings[i];

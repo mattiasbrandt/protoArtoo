@@ -55,8 +55,12 @@ void configCacheReadWifi(WifiConfig* out);
 void configCacheReadRcActionContext(RcAudioCategorySnapshot* categories,
                                     SpeedPresetId* speedPresetActive);
 // configCacheReadRcTriggerSlots: rcTriggerSlotsCopy() (include/rc_map_store.h)
-// on the live config.
-size_t configCacheReadRcTriggerSlots(RcTriggerBinding* out, size_t cap);
+// on the live config, and, when `stamps` is not null, each place's change stamp
+// beside it (rcMapStoreStampChanges()), both in one configCacheMux section so a
+// binding never arrives with another binding's stamp. A reader that keeps
+// per-place state starts a place afresh when its stamp moves; one that keeps
+// none passes null.
+size_t configCacheReadRcTriggerSlots(RcTriggerBinding* out, uint16_t* stamps, size_t cap);
 // configCacheReadRcAxes: the drive and dome axes the input task reads for the
 // receiver type `mode`: rcMapReadAxes() (include/rc_map_store.h) on the live
 // config.
@@ -213,7 +217,10 @@ uint8_t configCacheAddServoOutputRows(ServoOutputDriver driver, uint8_t channelC
 // the fields RC input also writes at runtime - the speed group
 // (drive.speedLimitMax, drive.speedPresetActive) and system.stationary - which
 // keep their live value. It is configCacheApplyKeepingLive(snap, false, false).
-// Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
+// Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config,
+// and moves the change stamp of every RC Map trigger place whose binding the
+// snapshot changes (configCacheReadRcTriggerSlots() above), as
+// configCacheApplyKeepingLive() and configCacheReplace() do too.
 //
 // The write every Write Window after boot makes (#420). Each one writes back a
 // whole snapshot it read when it took the config write lock, and RC input on
