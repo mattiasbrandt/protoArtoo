@@ -545,6 +545,73 @@ void test_two_stored_bindings_on_one_channel_both_stay_still(void) {
     TEST_ASSERT_TRUE(arm2Fired);
 }
 
+// A save may move bindings between trigger places (Codex review, #488): a
+// slot's debounce state then belongs to another switch. A one-shot cue fires
+// on either confirmed edge, so with one switch held up and the other down,
+// swapping the two slots must fire nothing while no switch moves.
+static bool anyTriggerFired(const RcProcessorOutput& out) {
+    for (size_t i = 0; i < RC_TRIGGER_MAX; ++i) {
+        if (out.triggerPressed[i]) return true;
+    }
+    return false;
+}
+
+static void swapSlotsFireNothing(uint8_t upChannel, uint8_t downChannel, uint16_t up, uint16_t down) {
+    RcInputProcessor proc = {};
+    rcInputProcessorInit(&proc);
+    RcProcessorConfig cfg = buildProcessorConfig();
+    cfg.mapping.domeSpeed = disabledRcBinding();
+    cfg.triggerCount = 2;
+    cfg.triggers[0] = makeRcTriggerBinding(RC_BINDING_SBUS1, upChannel, SOUND_ACTION_RANDOM_HAPPY, nullptr,
+                                           RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
+                                           false);
+    cfg.triggers[1] = makeRcTriggerBinding(RC_BINDING_SBUS1, downChannel, SOUND_ACTION_RANDOM_SAD, nullptr,
+                                           RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
+                                           false);
+    RcProcessorInput input = {};
+    input.channels = buildChannelSnapshot();
+    input.channels.source = RC_BINDING_SBUS1;
+    input.channels.channels[upChannel - 1] = up;
+    input.channels.channels[downChannel - 1] = down;
+    input.sourceFilter = RC_BINDING_SBUS1;
+    input.nowMs = 1000;
+    RcProcessorOutput out = {};
+    // Settle: the switches have been where they are since boot.
+    for (int tick = 0; tick < 6; ++tick) {
+        input.config = cfg;
+        rcInputProcessorTick(&proc, input, &out);
+        input.nowMs += 20;
+    }
+    // The save swaps the two places; nothing on the radio moves.
+    RcTriggerBinding held = cfg.triggers[0];
+    cfg.triggers[0] = cfg.triggers[1];
+    cfg.triggers[1] = held;
+    for (int tick = 0; tick < 6; ++tick) {
+        input.config = cfg;
+        rcInputProcessorTick(&proc, input, &out);
+        input.nowMs += 200;
+        TEST_ASSERT_FALSE_MESSAGE(anyTriggerFired(out), "a moved binding fired with no switch moving");
+    }
+    // A real move of the switch still fires, from its new place.
+    input.channels.channels[downChannel - 1] = up;
+    bool fired = false;
+    for (int tick = 0; tick < 4; ++tick) {
+        input.config = cfg;
+        rcInputProcessorTick(&proc, input, &out);
+        input.nowMs += 200;
+        fired = fired || out.triggerPressed[0];
+    }
+    TEST_ASSERT_TRUE_MESSAGE(fired, "the switch that moved fires");
+}
+
+void test_a_binding_moved_to_another_place_fires_nothing_until_its_switch_moves(void) {
+    swapSlotsFireNothing(5, 6, RC_SBUS_DEFAULT_MAX, RC_SBUS_DEFAULT_MIN);
+}
+
+void test_an_on_off_binding_moved_to_another_place_fires_nothing_until_its_switch_moves(void) {
+    swapSlotsFireNothing(17, 18, 1811, 172);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_init_zeroes_state);
@@ -566,5 +633,7 @@ int main(void) {
     RUN_TEST(test_a_drive_whose_dead_zone_swallows_a_side_stays_still);
     RUN_TEST(test_a_stored_cue_the_rules_refuse_fires_nothing);
     RUN_TEST(test_two_stored_bindings_on_one_channel_both_stay_still);
+    RUN_TEST(test_a_binding_moved_to_another_place_fires_nothing_until_its_switch_moves);
+    RUN_TEST(test_an_on_off_binding_moved_to_another_place_fires_nothing_until_its_switch_moves);
     return UNITY_END();
 }
