@@ -2381,9 +2381,15 @@ Returns channel-centric map.
   before a rule of `POST /api/rc/map` existed, which a save for the receiver
   type the droid has saved would now refuse (ADR 0070). It stays still. A client
   leaves it out of the map it posts back, or the droid refuses that map whole.
-  A drive split across receivers is marked on the axis a save would refuse.
-  Two entries on one control (one RC Channel, or one Part on two puppet
-  strings), which a save cut short by a power loss can leave, are both marked,
+  `read` says what the droid reads now (ADR 0070, amended 2026-10-10). The
+  drive moves on both sticks or neither, so when one drive axis is refused,
+  unbound or not read, both are marked: the refused axis with its own refusal
+  (a drive split across receivers on the axis a save would refuse), the other
+  with `field` `map.drive`, `reason` `conflict`. An entry marked `map.drive`
+  alone is not refused by a save: a client posts it back, so mending its
+  partner brings the pair back. Two entries on one control (one RC Channel, one
+  Part on two puppet strings, or a toggle or `op_mode` bound twice on a
+  radio), which a save cut short by a power loss can leave, are both marked,
   with the conflict a save would refuse them for. An axis marked for its ends
   alone (`field` `calibration.*`) is mended by posting it back without them:
   the droid then starts it from the default ends.
@@ -2459,8 +2465,10 @@ Replaces entire RC map.
   and on `pwm` a string is a cue PWM does not carry
 - one Part has one string: a map naming one Part on two `puppet_part` entries
   is refused
-- strings share the five general trigger slots with every action that has no
-  slot of its own, so a map holds at most five strings
+- a map holds at most eleven trigger bindings, whatever they fire: a twelfth
+  is refused (`conflict: map exceeds capacity`, field `map`). An arm or aux
+  toggle or `op_mode` on a radio is bound once (`conflict: arm1_toggle mapped
+  more than once`, field `map.action`); a Reaction is not held to it
 - a Reaction's `threshold` and `quietS` are optional: one left out keeps what
   the stored Reaction on that condition holds, or takes its default
 - optional `calibration` object beside `map` (#389), keyed by axis
