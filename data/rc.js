@@ -1143,6 +1143,19 @@
   // axis from the default ends (ADR 0070), so a reset mends it.
   const unreadForEnds = (unread) => String(unread?.entry?.field || '').startsWith('calibration');
 
+  // A drive axis the droid leaves still only because the other one is not
+  // read (GET /api/rc/map field map.drive): no save refuses it, so it stays in
+  // the map the page posts back, and mending the other axis brings both back.
+  const waitsOnPartner = (entry) => entry?.read === false && entry?.field === 'map.drive';
+
+  // An axis tile's warning: why the droid leaves it still, else where the
+  // stick rests.
+  const axisWarning = (axis, ends, raw) => {
+    const unread = axisUnread(axis);
+    if (unread && waitsOnPartner(unread.entry)) return `Not read${unread.why ? `: ${unread.why}` : ''}.`;
+    return axisRestWarning(ends, raw);
+  };
+
   const axisTileHtml = (axis) => {
     const esc = window.PAUtils.escapeHtml;
     const name = actionLabelFromToken(axis.token);
@@ -1192,7 +1205,7 @@
         <button class="sleep-switch" id="${switchId}" type="button" role="switch" aria-checked="${ends?.reverse ? 'true' : 'false'}" aria-labelledby="${switchId}-label" data-axis="${axis.token}" data-axis-reverse${idle || !ends ? ' disabled' : ''}><span class="sleep-switch-knob"></span></button>
         <span id="${switchId}-label">Reversed</span>
       </div>
-      <p class="rc-axis-warn" role="status">${esc(axisRestWarning(ends, raw))}</p>
+      <p class="rc-axis-warn" role="status">${esc(axisWarning(axis, ends, raw))}</p>
       ${noteHtml}
     </div>`;
   };
@@ -1226,7 +1239,7 @@
       const rawEl = tile.querySelector('.rc-axis-raw');
       if (rawEl) rawEl.textContent = raw == null ? '—' : String(raw);
       const warnEl = tile.querySelector('.rc-axis-warn');
-      if (warnEl) warnEl.textContent = axisRestWarning(axisEnds(axis, binding), raw);
+      if (warnEl) warnEl.textContent = axisWarning(axis, axisEnds(axis, binding), raw);
       tile.querySelectorAll('[data-axis-set]').forEach((button) => {
         button.disabled = axisSaveInFlight || mapWriteInFlight || !channelMapLoaded || raw == null;
       });
@@ -2061,7 +2074,8 @@
       const mode = typeof payload.mode === 'string' ? payload.mode : getEditorMode();
       // An entry the droid says it does not read ("read": false - a save would
       // refuse it, ADR 0070) is left out of the map this page posts, or the
-      // droid would refuse the whole map over it.
+      // droid would refuse the whole map over it. A drive axis that only waits
+      // on the other one is no save's to refuse, so it stays (waitsOnPartner()).
       const entries = Array.isArray(payload.map) ? payload.map : [];
       // Each named, with why: the refusal a save would give it, worded by the
       // words table from the field, reason and accepts it carries.
@@ -2075,7 +2089,7 @@
       const unread = unreadEntries.map(({ title, why }) => (why ? `${title} (${why})` : title));
       // What a map may bind, as the droid says (ADR 0070); none until it has.
       mapReceivers = payload.receivers && typeof payload.receivers === 'object' ? payload.receivers : null;
-      channelMap = modeMapFromArray(entries.filter((entry) => entry?.read !== false));
+      channelMap = modeMapFromArray(entries.filter((entry) => entry?.read !== false || waitsOnPartner(entry)));
       channelMapLoaded = true;
       mapCapacityTotal = Number(payload.capacity?.total);
       paintCapacity();
@@ -2090,7 +2104,13 @@
       renderEditor();
       renderAxes();
       if (unread.length > 0) {
-        setEditorFeedback(`Not read by the droid: ${unread.join(', ')}. Apply drops ${unread.length === 1 ? 'it' : 'them'}.`, 'warning');
+        // A drive axis waiting on the other one goes back with Apply; only
+        // the rest are dropped.
+        const dropped = unreadEntries.filter(({ entry }) => !waitsOnPartner(entry));
+        let drops = '';
+        if (dropped.length === unreadEntries.length) drops = ` Apply drops ${unread.length === 1 ? 'it' : 'them'}.`;
+        else if (dropped.length > 0) drops = ` Apply drops ${dropped.map(({ title }) => title).join(', ')}.`;
+        setEditorFeedback(`Not read by the droid: ${unread.join(', ')}.${drops}`, 'warning');
       }
     } catch (error) {
       // The last map the droid answered with is kept: an empty one here was
