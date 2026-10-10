@@ -71,8 +71,24 @@ struct RcProcessorOutput {
 // for the boot hold to release.
 static constexpr int16_t RC_DRIVE_CENTRE_TOLERANCE_PERMILLE = 100;
 
+// Which binding a trigger slot's state was taken for. A save may put another
+// binding in the slot, or the RC Map's rules may leave one still and later
+// read it again; the state of the switch that was there is not this one's.
+struct RcTriggerOwner {
+    uint8_t source;   // RcBindingSource
+    uint8_t channel;
+    uint8_t target;   // RobotActionId
+};
+
 struct RcInputProcessor {
     TriggerDebounceState triggerStates[RC_TRIGGER_MAX];
+    // Each slot's owner, and whether an on/off slot (CH17/CH18) still has to
+    // take its first position as given, without an edge: the analog debounce
+    // does that on its own from a fresh state. Learned on the first tick
+    // after init, so a switch held at boot behaves as it always has (#488).
+    RcTriggerOwner triggerOwners[RC_TRIGGER_MAX];
+    bool triggerBaselinePending[RC_TRIGGER_MAX];
+    bool triggerOwnersKnown;
     RcPuppetState puppetStates[RC_TRIGGER_MAX];
     DomeInputFilter domeInputFilter;
     bool lastSoundPressed;
