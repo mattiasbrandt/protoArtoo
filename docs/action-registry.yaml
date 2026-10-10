@@ -4094,10 +4094,10 @@ entries:
   # which #206's document/bulk-transfer exclusion names alongside sequence and
   # configuration documents. Unlike dome.api.list-sequences, which reads a real
   # item-indexed accessor (seqStoreIndexAt()), there is no per-binding accessor
-  # here at all: populateRcMapJson() (src/web/api_config.cpp:229) assembles the
-  # whole document, choosing each backbone binding by input mode
-  # (rcMapSelectBackboneForMode()) and walking eleven named trigger slots. An
-  # item-record answer would have to reproduce that selection rule - a second
+  # here at all: populateRcMapJson() (src/web/api_config.cpp) assembles the
+  # whole document, taking each axis from the group the receiver type reads
+  # (rcMapReadAxes(), include/rc_map_store.h) and walking the eleven trigger
+  # places. An item-record answer would have to reproduce that selection - a second
   # implementation of a real rule, which is the duplication this epic exists to
   # avoid - or render through the JSON builder, which the Console's status
   # executors do not do. rc.status.snapshot answers live RC state; the binding
