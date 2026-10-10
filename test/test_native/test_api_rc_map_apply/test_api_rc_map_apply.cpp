@@ -427,6 +427,41 @@ void test_rcMapApply_unnamed_trigger_spills_to_first_free_slot(void) {
     TEST_ASSERT_EQUAL(RC_BINDING_SBUS1, snap.system.rc_opmode.source);
 }
 
+// Eleven trigger bindings, whatever they fire (ADR 0070, amended 2026-10-10):
+// beside the three axes and the two arm switches, nine sounds save, where the
+// five general places used to refuse the sixth; the twelfth is refused.
+void test_rcMapApply_holds_eleven_trigger_bindings_and_refuses_a_twelfth(void) {
+    std::string body = "{\"map\":["
+                       "{\"source\":\"sbus1\",\"channel\":1,\"action\":\"drive_speed\"},"
+                       "{\"source\":\"sbus1\",\"channel\":2,\"action\":\"drive_steer\"},"
+                       "{\"source\":\"sbus1\",\"channel\":3,\"action\":\"dome_speed\"},"
+                       "{\"source\":\"sbus1\",\"channel\":5,\"action\":\"arm1_toggle\"},"
+                       "{\"source\":\"sbus1\",\"channel\":6,\"action\":\"arm2_toggle\"}";
+    for (int channel = 7; channel <= 15; ++channel) {
+        body += ",{\"source\":\"sbus1\",\"channel\":" + std::to_string(channel) + ",\"action\":\"sound_next\"}";
+    }
+    std::map<std::string, std::string> m = {{"plain", body + "]}"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    RcMapApplyResult result;
+    rcMapApply(makeSource(&m), &snap, &result);
+    TEST_ASSERT_TRUE_MESSAGE(result.ok, result.errorMessage);
+    RcTriggerBinding slots[RC_TRIGGER_SLOT_COUNT];
+    const size_t count = rcTriggerSlotsCopy(snap.system, slots, RC_TRIGGER_SLOT_COUNT);
+    size_t sounds = 0;
+    for (size_t i = 0; i < count; ++i) {
+        sounds += slots[i].target == SOUND_ACTION_NEXT ? 1 : 0;
+    }
+    TEST_ASSERT_EQUAL_UINT(9, sounds);
+    TEST_ASSERT_EQUAL(SERVO_ACTION_ARM1_TOGGLE, snap.system.rc_arm1.target);
+
+    m["plain"] = body + ",{\"source\":\"sbus1\",\"channel\":16,\"action\":\"sound_next\"}]}";
+    ConfigSnapshot full = makeDefaultSnap();
+    rcMapApply(makeSource(&m), &full, &result);
+    TEST_ASSERT_FALSE(result.ok);
+    TEST_ASSERT_EQUAL_STRING("conflict: map exceeds capacity", result.errorMessage);
+    TEST_ASSERT_EQUAL_STRING("map", result.refusal.field);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -455,5 +490,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_rcMapApply_refuses_drive_on_sbus2);
     RUN_TEST(test_rcMapApply_arm1_toggle_fills_dedicated_slot);
     RUN_TEST(test_rcMapApply_unnamed_trigger_spills_to_first_free_slot);
+    RUN_TEST(test_rcMapApply_holds_eleven_trigger_bindings_and_refuses_a_twelfth);
     return UNITY_END();
 }
