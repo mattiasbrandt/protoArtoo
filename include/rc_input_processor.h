@@ -23,6 +23,11 @@ static constexpr size_t RC_TRIGGER_MAX = 11;
 struct RcProcessorConfig {
     RcMappingConfig mapping;
     RcTriggerBinding triggers[RC_TRIGGER_MAX];
+    // Each trigger place's change stamp, read with the bindings in one
+    // config-cache section (configCacheReadRcTriggerSlots()). A place whose
+    // stamp moved holds another binding than last frame, or the same one
+    // edited, and starts afresh.
+    uint16_t triggerStamps[RC_TRIGGER_MAX];
     size_t triggerCount;
     RcAudioCategorySnapshot categories;
     bool estopActive;
@@ -71,24 +76,24 @@ struct RcProcessorOutput {
 // for the boot hold to release.
 static constexpr int16_t RC_DRIVE_CENTRE_TOLERANCE_PERMILLE = 100;
 
-// Which binding a trigger slot's state was taken for. A save may put another
-// binding in the slot, or the RC Map's rules may leave one still and later
-// read it again; the state of the switch that was there is not this one's.
-struct RcTriggerOwner {
-    uint8_t source;   // RcBindingSource
-    uint8_t channel;
-    uint8_t target;   // RobotActionId
-};
-
 struct RcInputProcessor {
     TriggerDebounceState triggerStates[RC_TRIGGER_MAX];
-    // Each slot's owner, and whether an on/off slot (CH17/CH18) still has to
-    // take its first position as given, without an edge: the analog debounce
-    // does that on its own from a fresh state. Learned on the first tick
-    // after init, so a switch held at boot behaves as it always has (#488).
-    RcTriggerOwner triggerOwners[RC_TRIGGER_MAX];
+    // Each place's state is kept while its binding is the one it was taken
+    // for, which the place's change stamp answers (ADR 0070, amended
+    // 2026-10-10): a place starts afresh when its stamp moves, or when its
+    // binding goes from not read to read (rcStoredMapKeepRead() left it still
+    // last frame). So a save that moves or edits a binding, calibration
+    // included, never looks like a switch moving.
+    uint16_t triggerStamps[RC_TRIGGER_MAX];  // the stamp each place's state was taken at
+    bool triggerRead[RC_TRIGGER_MAX];        // the place was read last frame
+    // Whether an on/off slot (CH17/CH18) still has to take its first position
+    // as given, without an edge: the analog debounce does that on its own from
+    // a fresh state.
     bool triggerBaselinePending[RC_TRIGGER_MAX];
-    bool triggerOwnersKnown;
+    // The stamps and read flags above are learned on the first tick after
+    // init, without a fresh start, so a switch held at boot behaves as it
+    // always has (#488).
+    bool triggerPlacesLearned;
     RcPuppetState puppetStates[RC_TRIGGER_MAX];
     DomeInputFilter domeInputFilter;
     bool lastSoundPressed;

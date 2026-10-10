@@ -262,8 +262,9 @@ bool rcMapStorePlace(const RcMapEntry& entry, const SystemConfig& held, SystemCo
     }
 
     // A binding the droid already held stays in its place: every reader
-    // keeps a slot's state by its place, so a save that moved an unchanged
-    // binding would hand it another binding's state (Codex review, #488).
+    // keeps a place's state while its change stamp stays put, so an
+    // unchanged binding kept in its place keeps its state, where one moved
+    // would start afresh (Codex review, #488; #490).
     for (const RcTriggerPlace& place : RC_MAP_TRIGGER_PLACES) {
         RcTriggerBinding& now = sys->*place.place;
         if (triggerSlotIsFree(now) && rcMapSameTrigger(held.*place.place, trigger)) {

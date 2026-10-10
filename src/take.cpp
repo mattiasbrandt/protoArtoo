@@ -157,7 +157,8 @@ const char* takeArm(const char* seqName, char* refusal, size_t refusalCap) {
     // The strings, as the RC Map holds them now: an SBUS channel that can
     // move, set to Perform a Part, naming one (include/rc_puppet.h).
     RcTriggerBinding slots[RC_TRIGGER_SLOT_COUNT];
-    const size_t slotCount = configCacheReadRcTriggerSlots(slots, RC_TRIGGER_SLOT_COUNT);
+    const size_t slotCount =
+        configCacheReadRcTriggerSlots(slots, nullptr, RC_TRIGGER_SLOT_COUNT);
     bool onSbus1 = false;
     bool onSbus2 = false;
     uint8_t strings = 0;

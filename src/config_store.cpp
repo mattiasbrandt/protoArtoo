@@ -237,6 +237,16 @@ uint8_t activeSoundMember = 0;
 uint8_t activeBodyServoMember = 0;
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 
+// One change stamp per RC Map trigger place, in the place table's order
+// (include/rc_map_store.h), guarded by configCacheMux like the cache itself.
+// Moved by rcMapStoreStampChanges() wherever a whole snapshot is written into
+// the cache - configCacheApplyKeepingLive(), the one write of configCache.system's
+// trigger places, which configCacheApply() and configCacheReplace() go through
+// too - so a save, a restore, a factory reset and the boot load all move it.
+// RAM only, never stored, and kept beside the cache rather than in
+// ConfigSnapshot so no snapshot copy on a task's stack carries it (#490).
+static uint16_t s_rcTriggerStamps[RC_TRIGGER_SLOT_COUNT] = {};
+
 // The addressed Servo Output rows, live (ADR 0041).
 //
 // Zero-initialised like configCache above, and filled by configLoadServoOutputs()
@@ -655,12 +665,17 @@ void configCacheReadRcActionContext(RcAudioCategorySnapshot* categories,
     taskEXIT_CRITICAL(&configCacheMux);
 }
 
-size_t configCacheReadRcTriggerSlots(RcTriggerBinding* out, size_t cap) {
+size_t configCacheReadRcTriggerSlots(RcTriggerBinding* out, uint16_t* stamps, size_t cap) {
     if (out == nullptr) {
         return 0;
     }
     taskENTER_CRITICAL(&configCacheMux);
     const size_t count = rcTriggerSlotsCopy(configCache.system, out, cap);
+    if (stamps != nullptr) {
+        for (size_t i = 0; i < count; ++i) {
+            stamps[i] = s_rcTriggerStamps[i];
+        }
+    }
     taskEXIT_CRITICAL(&configCacheMux);
     return count;
 }
@@ -879,6 +894,7 @@ void configCacheApplyKeepingLive(const ConfigSnapshot& snap, bool speedLimitStat
     const int16_t liveLimit = configCache.drive.speedLimitMax;
     const SpeedPresetId livePreset = configCache.drive.speedPresetActive;
     const bool liveStationary = configCache.system.stationary;
+    rcMapStoreStampChanges(configCache.system, snap.system, s_rcTriggerStamps);
     configCache = snap;
     if (!speedLimitStated) {
         configCache.drive.speedLimitMax = liveLimit;

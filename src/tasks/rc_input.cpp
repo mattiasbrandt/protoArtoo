@@ -183,20 +183,22 @@ static RcMappingConfig rcGetMappingConfig(const RcInputActiveConfig& active) {
     return cached;
 }
 
-static void loadTier2TriggerBindings(RcTriggerBinding* bindings, size_t* count) {
-    if (bindings == nullptr || count == nullptr) {
+// The trigger places and their change stamps, in one config-cache section, so
+// the input processor keeps each place's state by its stamp (#490).
+static void loadTier2TriggerBindings(RcTriggerBinding* bindings, uint16_t* stamps, size_t* count) {
+    if (bindings == nullptr || stamps == nullptr || count == nullptr) {
         return;
     }
 
     static_assert(RC_TRIGGER_MAX >= RC_TRIGGER_SLOT_COUNT,
                   "trigger buffer must hold every config slot");
-    *count = configCacheReadRcTriggerSlots(bindings, RC_TRIGGER_MAX);
+    *count = configCacheReadRcTriggerSlots(bindings, stamps, RC_TRIGGER_MAX);
 }
 
 static void buildRcProcessorConfig(const RcInputActiveConfig& active, RcProcessorConfig* out) {
     *out = {};
     out->mapping = rcGetMappingConfig(active);
-    loadTier2TriggerBindings(out->triggers, &out->triggerCount);
+    loadTier2TriggerBindings(out->triggers, out->triggerStamps, &out->triggerCount);
 
     // By field, not a whole ConfigSnapshot: the ranges and the preset are all
     // a dispatch reads of it (#428).

@@ -173,19 +173,22 @@ void reactionTask(void* /*pvParameters*/) {
     // few hundred bytes this task would otherwise carry under the action door.
     static ReactionEvaluator evaluator;
     static RcTriggerBinding bindings[RC_TRIGGER_SLOT_COUNT];
+    static uint16_t stamps[RC_TRIGGER_SLOT_COUNT];
     static ReactionOutput output;
 
     reactionEvaluatorInit(&evaluator);
     PA_LOG_INFO(TAG, "active");
 
     while (true) {
-        const size_t count = configCacheReadRcTriggerSlots(bindings, RC_TRIGGER_SLOT_COUNT);
+        // The bindings and their change stamps in one read: the evaluator
+        // keeps a Reaction's state while its stamp stays put (#490).
+        const size_t count = configCacheReadRcTriggerSlots(bindings, stamps, RC_TRIGGER_SLOT_COUNT);
         keepReadReactions(bindings, count);
         ReactionInputs in = {};
         readInputs(&in);
 
         reactionEvaluatorTick(
-            &evaluator, bindings, count, in,
+            &evaluator, bindings, stamps, count, in,
             [](RobotActionId target, const char* payload) {
                 return reactionOpensBodyPart(target, payload);
             },

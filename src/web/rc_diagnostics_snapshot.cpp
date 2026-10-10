@@ -479,7 +479,7 @@ bool appendRcTaskStateJson(JsonDocument& doc) {
 // local here, never on the SSE task's root frame.
 bool appendRcCuePressedJson(JsonDocument& doc) {
     RcTriggerBinding slots[RC_TRIGGER_SLOT_COUNT];
-    const size_t count = configCacheReadRcTriggerSlots(slots, RC_TRIGGER_SLOT_COUNT);
+    const size_t count = configCacheReadRcTriggerSlots(slots, nullptr, RC_TRIGGER_SLOT_COUNT);
     RcInputActiveConfig active = {};
     configCacheReadActiveRcInput(&active);
     const RcInputMode mode = static_cast<RcInputMode>(active.mode);

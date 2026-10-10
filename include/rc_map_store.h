@@ -30,6 +30,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>  // strncmp() - rcTriggerPlaceUnchanged()
 
 #include "api_apply_refusal.h"  // ApplyRefusal: how rcMapStorePlace() states a refusal
 #include "config_store.h"     // SystemConfig, RC_TRIGGER_SLOT_COUNT
@@ -110,6 +111,42 @@ inline size_t rcTriggerSlotsCopy(const SystemConfig& sys, RcTriggerBinding* out,
         out[i] = sys.*RC_MAP_TRIGGER_PLACES[i].place;
     }
     return n;
+}
+
+// -----------------------------------------------------------------------------
+// Change stamps (ADR 0070, amended 2026-10-10, #490)
+// -----------------------------------------------------------------------------
+
+// Whether two stored trigger bindings are the same binding in every field: the
+// control, the action, the payload, the calibration, and a Reaction's numbers
+// (its threshold and quiet period ride in min and max). Field by field, never a
+// memcmp: the struct carries padding, and the payload's bytes past its end are
+// not part of it. Not the placement rule: rcMapStorePlace() keeps a binding in
+// its place on control, action and payload alone.
+inline bool rcTriggerPlaceUnchanged(const RcTriggerBinding& was, const RcTriggerBinding& now) {
+    return was.source == now.source && was.channel == now.channel && was.target == now.target &&
+           strncmp(was.marcduinoPayload, now.marcduinoPayload, sizeof(was.marcduinoPayload)) == 0 &&
+           was.min == now.min && was.center == now.center && was.max == now.max &&
+           was.deadband == now.deadband && was.reverse == now.reverse;
+}
+
+// Moves the change stamp of every trigger place whose binding differs between
+// `was` and `now` in any field (rcTriggerPlaceUnchanged()), and leaves every
+// other stamp where it is. `stamps` holds RC_TRIGGER_SLOT_COUNT, in the table's
+// order. A reader keeps a place's state while its stamp stays put and starts it
+// afresh when the stamp moves, so "is this still the same binding?" has this one
+// answer. The config cache calls it on every write of a whole snapshot, under
+// its own lock (configCacheApplyKeepingLive(), src/config_store.cpp). A stamp
+// lives in RAM and is never stored; it wraps, and a reader only asks whether
+// it moved.
+inline void rcMapStoreStampChanges(const SystemConfig& was, const SystemConfig& now,
+                                   uint16_t* stamps) {
+    for (size_t i = 0; i < RC_TRIGGER_SLOT_COUNT; ++i) {
+        const RcTriggerBinding SystemConfig::*place = RC_MAP_TRIGGER_PLACES[i].place;
+        if (!rcTriggerPlaceUnchanged(was.*place, now.*place)) {
+            ++stamps[i];
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -234,10 +271,12 @@ const RcBindingConfig& rcMapStorePlacedAxis(const SystemConfig& sys, RcMapAxis a
 // the entry leaves them out.
 //
 // A trigger binding the droid already held stays in its place: a reader keeps
-// a place's state by the place, so a save that moved an unchanged binding
-// would hand it another binding's state (#488). Else a toggle on a radio takes
-// the place it owns (RcTriggerPlace::ownAction) when that is free; else the
-// first free open place; else the first free place a toggle owns.
+// a place's state while the place's change stamp stays put, so an unchanged
+// binding left in its place keeps its state (a Reaction its quiet period and
+// counts), where one moved would start afresh in its new place (#488, #490).
+// Else a toggle on a radio takes the place it owns (RcTriggerPlace::ownAction)
+// when that is free; else the first free open place; else the first free place
+// a toggle owns.
 //
 // False -> `error` holds the sentence and `refusal`, when given, the field and
 // reason: `map.action` for a binding the stored form will not hold, `map` when

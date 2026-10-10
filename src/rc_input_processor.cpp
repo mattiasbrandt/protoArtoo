@@ -18,10 +18,11 @@ void rcInputProcessorInit(RcInputProcessor* proc) {
     for (size_t i = 0; i < RC_TRIGGER_MAX; ++i) {
         proc->triggerStates[i] = {};
         proc->puppetStates[i] = {};
-        proc->triggerOwners[i] = {};
+        proc->triggerStamps[i] = 0;
+        proc->triggerRead[i] = false;
         proc->triggerBaselinePending[i] = false;
     }
-    proc->triggerOwnersKnown = false;
+    proc->triggerPlacesLearned = false;
     proc->domeInputFilter = {};
     proc->lastSoundPressed = false;
     proc->stationaryLocked = false;
@@ -155,25 +156,27 @@ void rcInputProcessorTick(RcInputProcessor* proc, RcProcessorInput& input,
         output.domeRawFiltered = 0;
     }
 
-    // A slot whose binding is not the one its state was taken for starts
-    // afresh: a save that moved bindings between places, or a binding left
-    // still and read again, never looks like a switch moving (Codex review,
-    // #488). Judged on every slot, whatever receiver this frame is from.
+    // A place starts afresh when its change stamp moved - a save, a restore
+    // or a factory reset put another binding there, or edited the one there,
+    // calibration included - or when its binding is read again after the RC
+    // Map's rules left it still. Neither ever looks like a switch moving
+    // (ADR 0070, amended 2026-10-10). Judged on every place, whatever receiver
+    // this frame is from; read means bound after rcStoredMapKeepRead() above.
     for (size_t i = 0; i < RC_TRIGGER_MAX; ++i) {
-        const bool bound = i < input.config.triggerCount;
+        const bool counted = i < input.config.triggerCount;
         const RcTriggerBinding& slot = input.config.triggers[i];
-        const RcTriggerOwner owner = {bound ? (uint8_t)slot.source : (uint8_t)RC_BINDING_NONE,
-                                      bound ? slot.channel : (uint8_t)0,
-                                      bound ? (uint8_t)slot.target : (uint8_t)ROBOT_ACTION_NONE};
-        RcTriggerOwner& was = proc->triggerOwners[i];
-        if (proc->triggerOwnersKnown &&
-            (was.source != owner.source || was.channel != owner.channel || was.target != owner.target)) {
+        const bool read =
+            counted && slot.source != RC_BINDING_NONE && slot.target != ROBOT_ACTION_NONE;
+        const uint16_t stamp = counted ? input.config.triggerStamps[i] : 0;
+        if (proc->triggerPlacesLearned &&
+            (stamp != proc->triggerStamps[i] || (read && !proc->triggerRead[i]))) {
             proc->triggerStates[i] = {};
             proc->triggerBaselinePending[i] = true;
         }
-        was = owner;
+        proc->triggerStamps[i] = stamp;
+        proc->triggerRead[i] = read;
     }
-    proc->triggerOwnersKnown = true;
+    proc->triggerPlacesLearned = true;
 
     // Process Tier 2 trigger bindings
     for (size_t i = 0; i < input.config.triggerCount && i < RC_TRIGGER_MAX; ++i) {
@@ -224,7 +227,7 @@ void rcInputProcessorTick(RcInputProcessor* proc, RcProcessorInput& input,
         if (rcBindingIsDigital(backbone)) {
             bool pressed = (raw >= 992);
             if (proc->triggerBaselinePending[i]) {
-                // A new owner takes the switch where it is: no edge.
+                // A place started afresh takes the switch where it is: no edge.
                 proc->triggerStates[i].lastPressed = pressed;
             }
             dr = triggerDebounceDigital(&proc->triggerStates[i], pressed);

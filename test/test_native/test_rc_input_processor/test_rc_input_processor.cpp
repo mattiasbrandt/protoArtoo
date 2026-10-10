@@ -546,7 +546,8 @@ void test_two_stored_bindings_on_one_channel_both_stay_still(void) {
 }
 
 // A save may move bindings between trigger places (Codex review, #488): a
-// slot's debounce state then belongs to another switch. A one-shot cue fires
+// slot's debounce state then belongs to another switch, and the moved places'
+// stamps start them afresh (#490). A one-shot cue fires
 // on either confirmed edge, so with one switch held up and the other down,
 // swapping the two slots must fire nothing while no switch moves.
 static bool anyTriggerFired(const RcProcessorOutput& out) {
@@ -582,10 +583,13 @@ static void swapSlotsFireNothing(uint8_t upChannel, uint8_t downChannel, uint16_
         rcInputProcessorTick(&proc, input, &out);
         input.nowMs += 20;
     }
-    // The save swaps the two places; nothing on the radio moves.
+    // The save swaps the two places, and the config cache moves both places'
+    // change stamps (rcMapStoreStampChanges()); nothing on the radio moves.
     RcTriggerBinding held = cfg.triggers[0];
     cfg.triggers[0] = cfg.triggers[1];
     cfg.triggers[1] = held;
+    cfg.triggerStamps[0]++;
+    cfg.triggerStamps[1]++;
     for (int tick = 0; tick < 6; ++tick) {
         input.config = cfg;
         rcInputProcessorTick(&proc, input, &out);
