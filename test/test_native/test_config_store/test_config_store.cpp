@@ -17,6 +17,7 @@
 #include "config_cache.h"
 #include "config_nvsio.h"
 #include "config_serializer.h"
+#include "rc_map_store.h"  // rcCarrySingleSbusCh2TriggerLabels(), CONFIG_RC_SINGLE_LABELS_KEY
 #include "output_wire.h"
 #include "robot_state.h"
 #include "servo_legacy_field_sets.h"

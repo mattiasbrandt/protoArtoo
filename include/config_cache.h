@@ -54,7 +54,8 @@ void configCacheReadWifi(WifiConfig* out);
 // configCacheMux section. Either pointer may be null.
 void configCacheReadRcActionContext(RcAudioCategorySnapshot* categories,
                                     SpeedPresetId* speedPresetActive);
-// configCacheReadRcTriggerSlots: rcTriggerSlotsCopy() on the live config.
+// configCacheReadRcTriggerSlots: rcTriggerSlotsCopy() (include/rc_map_store.h)
+// on the live config.
 size_t configCacheReadRcTriggerSlots(RcTriggerBinding* out, size_t cap);
 // configCacheReadRcAxes: the drive and dome axes the input task reads for the
 // receiver type `mode` - the PWM group on standard_pwm, the SBUS group

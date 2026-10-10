@@ -12,6 +12,7 @@
 #include "config.h"
 #include "config_settings.h"  // every Setting's NVS key, its check and its default
 #include "dome_math.h"  // domePulsesInOrder()
+#include "rc_map_store.h"  // the RC Map's places and their NVS keys
 #include "rc_mapping.h"
 #include "board_outputs.h"            // which Output a retired aux_led_pin slot named
 #include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
@@ -306,30 +307,18 @@ void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemCon
     // default.
     configSettingsRead(SettingSection::System, r, out);
 
-    out->rc_pwm_drive_speed  = loadRcBinding(r, "rcp_drv", def.rc_pwm_drive_speed);
-    out->rc_pwm_drive_steer  = loadRcBinding(r, "rcp_str", def.rc_pwm_drive_steer);
-    out->rc_pwm_dome_speed   = loadRcBinding(r, "rcp_dom", def.rc_pwm_dome_speed);
+    for (const RcAxisPlace& place : RC_MAP_AXIS_PLACES) {
+        out->*place.place = loadRcBinding(r, place.key, def.*place.place);
+    }
     out->rc_pwm_arm1         = loadRcBinding(r, "rcp_a1",  def.rc_pwm_arm1);
     out->rc_pwm_arm2         = loadRcBinding(r, "rcp_a2",  def.rc_pwm_arm2);
     out->rc_pwm_audio        = loadRcBinding(r, "rcp_aud", def.rc_pwm_audio);
-    out->rc_sbus_drive_speed = loadRcBinding(r, "rcs_drv", def.rc_sbus_drive_speed);
-    out->rc_sbus_drive_steer = loadRcBinding(r, "rcs_str", def.rc_sbus_drive_steer);
-    out->rc_sbus_dome_speed  = loadRcBinding(r, "rcs_dom", def.rc_sbus_dome_speed);
     out->rc_sbus_arm1        = loadRcBinding(r, "rcs_a1",  def.rc_sbus_arm1);
     out->rc_sbus_arm2        = loadRcBinding(r, "rcs_a2",  def.rc_sbus_arm2);
     out->rc_sbus_audio       = loadRcBinding(r, "rcs_aud", def.rc_sbus_audio);
-
-    out->rc_arm1   = loadRcTrigger(r, "rc_arm1",  def.rc_arm1);
-    out->rc_arm2   = loadRcTrigger(r, "rc_arm2",  def.rc_arm2);
-    out->rc_aux1   = loadRcTrigger(r, "rc_aux1",  def.rc_aux1);
-    out->rc_aux2   = loadRcTrigger(r, "rc_aux2",  def.rc_aux2);
-    out->rc_aux3   = loadRcTrigger(r, "rc_aux3",  def.rc_aux3);
-    out->rc_audio  = loadRcTrigger(r, "rc_aud", def.rc_audio);
-    out->rc_opmode = loadRcTrigger(r, "rc_opmode",def.rc_opmode);
-    out->rc_free0  = loadRcTrigger(r, "rc_free0", def.rc_free0);
-    out->rc_free1  = loadRcTrigger(r, "rc_free1", def.rc_free1);
-    out->rc_free2  = loadRcTrigger(r, "rc_free2", def.rc_free2);
-    out->rc_free3  = loadRcTrigger(r, "rc_free3", def.rc_free3);
+    for (const RcTriggerPlace& place : RC_MAP_TRIGGER_PLACES) {
+        out->*place.place = loadRcTrigger(r, place.key, def.*place.place);
+    }
 }
 
 void deserializeWifi(const ConfigReader& r, WifiConfig* out, const WifiConfig& def) {
@@ -438,16 +427,14 @@ bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w) {
     ok = w.writeBool("mdns_use_name", cfg.mdns_use_name) && ok;
     ok = configSettingsWrite(SettingSection::System, &cfg, w) && ok;
 
-    // RC bindings  --  format and write as strings
+    // RC bindings  --  format and write as strings. The RC Map's axes and
+    // trigger places under the place table's keys (include/rc_map_store.h);
+    // the legacy arm and sound bindings, which are not RC Map places, by name.
     char encoded[48] = {};
-    if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_pwm_drive_speed)) {
-        ok = w.writeStr("rcp_drv", encoded) && ok;
-    }
-    if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_pwm_drive_steer)) {
-        ok = w.writeStr("rcp_str", encoded) && ok;
-    }
-    if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_pwm_dome_speed)) {
-        ok = w.writeStr("rcp_dom", encoded) && ok;
+    for (const RcAxisPlace& place : RC_MAP_AXIS_PLACES) {
+        if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.*place.place)) {
+            ok = w.writeStr(place.key, encoded) && ok;
+        }
     }
     if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_pwm_arm1)) {
         ok = w.writeStr("rcp_a1", encoded) && ok;
@@ -457,15 +444,6 @@ bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w) {
     }
     if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_pwm_audio)) {
         ok = w.writeStr("rcp_aud", encoded) && ok;
-    }
-    if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_sbus_drive_speed)) {
-        ok = w.writeStr("rcs_drv", encoded) && ok;
-    }
-    if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_sbus_drive_steer)) {
-        ok = w.writeStr("rcs_str", encoded) && ok;
-    }
-    if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_sbus_dome_speed)) {
-        ok = w.writeStr("rcs_dom", encoded) && ok;
     }
     if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_sbus_arm1)) {
         ok = w.writeStr("rcs_a1", encoded) && ok;
@@ -479,38 +457,10 @@ bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w) {
 
     // RC trigger bindings
     char triggerEncoded[64] = {};
-    if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_arm1)) {
-        ok = w.writeStr("rc_arm1", triggerEncoded) && ok;
-    }
-    if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_arm2)) {
-        ok = w.writeStr("rc_arm2", triggerEncoded) && ok;
-    }
-    if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_aux1)) {
-        ok = w.writeStr("rc_aux1", triggerEncoded) && ok;
-    }
-    if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_aux2)) {
-        ok = w.writeStr("rc_aux2", triggerEncoded) && ok;
-    }
-    if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_aux3)) {
-        ok = w.writeStr("rc_aux3", triggerEncoded) && ok;
-    }
-    if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_audio)) {
-        ok = w.writeStr("rc_aud", triggerEncoded) && ok;
-    }
-    if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_opmode)) {
-        ok = w.writeStr("rc_opmode", triggerEncoded) && ok;
-    }
-    if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_free0)) {
-        ok = w.writeStr("rc_free0", triggerEncoded) && ok;
-    }
-    if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_free1)) {
-        ok = w.writeStr("rc_free1", triggerEncoded) && ok;
-    }
-    if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_free2)) {
-        ok = w.writeStr("rc_free2", triggerEncoded) && ok;
-    }
-    if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_free3)) {
-        ok = w.writeStr("rc_free3", triggerEncoded) && ok;
+    for (const RcTriggerPlace& place : RC_MAP_TRIGGER_PLACES) {
+        if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.*place.place)) {
+            ok = w.writeStr(place.key, triggerEncoded) && ok;
+        }
     }
 
     return ok;

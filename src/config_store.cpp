@@ -20,6 +20,7 @@
 #include "logging.h"
 #include "output_wire.h"  // outputWireReleaseAfterMs() - the release a light never has
 #include "rc_action_dispatcher.h"  // RcAudioCategorySnapshot - configCacheReadRcActionContext()
+#include "rc_map_store.h"  // the RC Map's places: defaults, the label carry
 #include "rc_mapping.h"
 #include "sequence_bulk_centre.h"  // sequenceCadenceFloorInUse() - configCacheCadenceFloorMs()
 #include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
@@ -81,12 +82,13 @@ bool migrateSchema2To3(Preferences& prefs) {
 }
 
 // The one-time carry of #389 (rcCarrySingleSbusCh2TriggerLabels()), written
-// back slot by slot, then the marker. Through a handle of its own opened for
-// writing: configLoad()'s caller opens the store read-only
-// (loadConfigToState()), and a read-only handle drops every write. The marker
-// lands only when every slot write did, so a carry cut short runs again next
-// boot rather than leaving half the labels swapped. Out of line, by pointer,
-// so configLoad()'s frame on loopTask's measured chain carries none of it.
+// back place by place under the place table's keys (include/rc_map_store.h),
+// then the marker. Through a handle of its own opened for writing:
+// configLoad()'s caller opens the store read-only (loadConfigToState()), and a
+// read-only handle drops every write. The marker lands only when every slot
+// write did, so a carry cut short runs again next boot rather than leaving half
+// the labels swapped. Out of line, by pointer, so configLoad()'s frame on
+// loopTask's measured chain carries none of it.
 //
 // The labels are carried in RAM first, whatever the store does: this boot runs
 // on the carried labels even when nothing can be written, and the next boot
@@ -101,28 +103,20 @@ __attribute__((noinline)) void persistSingleSbusLabelCarry(SystemConfig* sys) {
         PA_LOG_WARN("config", "single SBUS label carry not saved: namespace did not open");
         return;
     }
-    const struct {
-        const char* key;
-        const RcTriggerBinding* slot;
-    } slots[RC_TRIGGER_SLOT_COUNT] = {
-        {"rc_arm1", &sys->rc_arm1},   {"rc_arm2", &sys->rc_arm2},   {"rc_aux1", &sys->rc_aux1},
-        {"rc_aux2", &sys->rc_aux2},   {"rc_aux3", &sys->rc_aux3},   {"rc_aud", &sys->rc_audio},
-        {"rc_opmode", &sys->rc_opmode}, {"rc_free0", &sys->rc_free0}, {"rc_free1", &sys->rc_free1},
-        {"rc_free2", &sys->rc_free2}, {"rc_free3", &sys->rc_free3},
-    };
     // NVS has no transaction across keys: a write that fails part way takes
     // back the slots already written, so the store holds either every label
     // carried and the marker, or the labels as they were and no marker.
     bool written = true;
     size_t landed = 0;
     for (; landed < RC_TRIGGER_SLOT_COUNT && written && carried > 0; ++landed) {
-        const RcTriggerBinding& slot = *slots[landed].slot;
+        const RcTriggerPlace& place = RC_MAP_TRIGGER_PLACES[landed];
+        const RcTriggerBinding& slot = sys->*place.place;
         if (slot.source != RC_BINDING_SBUS1 && slot.source != RC_BINDING_SBUS2) {
             continue;
         }
         char encoded[64] = {};
         written = formatRcTriggerBinding(encoded, sizeof(encoded), slot) &&
-                  rw.putString(slots[landed].key, encoded) > 0;
+                  rw.putString(place.key, encoded) > 0;
     }
     if (written) {
         written = rw.putBool(CONFIG_RC_SINGLE_LABELS_KEY, true) > 0;
@@ -130,14 +124,15 @@ __attribute__((noinline)) void persistSingleSbusLabelCarry(SystemConfig* sys) {
     bool restored = true;
     if (!written && carried > 0) {
         for (size_t i = 0; i < landed; ++i) {
-            RcTriggerBinding before = *slots[i].slot;
+            const RcTriggerPlace& place = RC_MAP_TRIGGER_PLACES[i];
+            RcTriggerBinding before = sys->*place.place;
             if (before.source != RC_BINDING_SBUS1 && before.source != RC_BINDING_SBUS2) {
                 continue;
             }
             before.source = before.source == RC_BINDING_SBUS1 ? RC_BINDING_SBUS2 : RC_BINDING_SBUS1;
             char encoded[64] = {};
             restored = formatRcTriggerBinding(encoded, sizeof(encoded), before) &&
-                       rw.putString(slots[i].key, encoded) > 0 && restored;
+                       rw.putString(place.key, encoded) > 0 && restored;
         }
     }
     rw.end();
@@ -186,37 +181,22 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snprintf(snap->wifi.ap_password, sizeof(snap->wifi.ap_password), "%s", WIFI_DEFAULT_AP_PASSWORD);
 
 
-    snap->system.rc_pwm_drive_speed = defaultPwmBinding(1);
-    snap->system.rc_pwm_drive_steer = defaultPwmBinding(2);
-    snap->system.rc_pwm_dome_speed = defaultPwmBinding(3);
+    // The RC Map's places take their defaults from the place table
+    // (include/rc_map_store.h); the legacy arm and sound bindings below are
+    // not RC Map places.
+    for (const RcAxisPlace& place : RC_MAP_AXIS_PLACES) {
+        snap->system.*place.place = rcAxisPlaceDefault(place);
+    }
+    for (const RcTriggerPlace& place : RC_MAP_TRIGGER_PLACES) {
+        snap->system.*place.place = rcTriggerPlaceDefault(place);
+    }
+
     snap->system.rc_pwm_arm1 = defaultPwmBinding(4);
     snap->system.rc_pwm_arm2 = defaultPwmBinding(5);
     snap->system.rc_pwm_audio = defaultPwmBinding(6);
-
-    snap->system.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 1);
-    snap->system.rc_sbus_drive_steer = defaultSbusBinding(RC_BINDING_SBUS1, 2);
-    snap->system.rc_sbus_dome_speed = defaultSbusBinding(RC_BINDING_SBUS2, 1);
     snap->system.rc_sbus_arm1 = defaultSbusBinding(RC_BINDING_SBUS2, 2);
     snap->system.rc_sbus_arm2 = defaultSbusBinding(RC_BINDING_SBUS2, 3);
     snap->system.rc_sbus_audio = disabledRcBinding();
-
-    snap->system.rc_arm1 = makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
-                                         RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
-                                         RC_SBUS_DEFAULT_MAX, 0,
-                                         rcTriggerDefaultReverse(RC_BINDING_SBUS1, 4));
-    snap->system.rc_arm2 = makeRcTriggerBinding(RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM2_TOGGLE, nullptr,
-                                         RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
-                                         RC_SBUS_DEFAULT_MAX, 0,
-                                         rcTriggerDefaultReverse(RC_BINDING_SBUS1, 5));
-    snap->system.rc_aux1 = disabledRcTriggerBinding();
-    snap->system.rc_aux2 = disabledRcTriggerBinding();
-    snap->system.rc_aux3 = disabledRcTriggerBinding();
-    snap->system.rc_audio = disabledRcTriggerBinding();
-    snap->system.rc_opmode = disabledRcTriggerBinding();
-    snap->system.rc_free0 = disabledRcTriggerBinding();
-    snap->system.rc_free1 = disabledRcTriggerBinding();
-    snap->system.rc_free2 = disabledRcTriggerBinding();
-    snap->system.rc_free3 = disabledRcTriggerBinding();
 }
 
 // =============================================================================
