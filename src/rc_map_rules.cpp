@@ -445,8 +445,14 @@ size_t storedCueCount(const RcStoredMap& map) {
 }
 
 const RcBindingConfig& storedAxis(const RcStoredMap& map, size_t axis) {
-    const RcBindingConfig* const axes[] = {&map.driveSpeed, &map.driveSteer, &map.domeSpeed};
-    return *axes[axis];
+    switch (axis) {
+        case 0:
+            return map.driveSpeed;
+        case 1:
+            return map.driveSteer;
+        default:
+            return map.domeSpeed;
+    }
 }
 
 StoredRef storedRef(const RcStoredMap& map, size_t index) {
