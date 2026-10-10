@@ -530,6 +530,33 @@ test("a drive axis stored on SBUS2 says it is not read", async () => {
   assert.doesNotMatch(tile, /data-axis-set/, "no ends are offered");
 });
 
+// A drive axis the droid leaves still only because the other one is not read
+// (field map.drive, ADR 0070 amended 2026-10-10) says why on its tile, and goes
+// back with Apply: no save refuses it, so mending the other axis brings the
+// pair back. The refused axis is still dropped.
+test("a drive axis waiting on the other is kept in what the page posts, and says why", async () => {
+  const posted = [];
+  const map = {
+    ...AXES_MAP,
+    map: AXES_MAP.map.map((entry) => {
+      if (entry.action === "drive_speed") {
+        return { ...entry, source: "sbus2", read: false, field: "map.source", reason: "out-of-range", accepts: "sbus1" };
+      }
+      if (entry.action === "drive_steer") return { ...entry, read: false, field: "map.drive", reason: "conflict" };
+      return entry;
+    }),
+  };
+  const env = await loadAxes({ map, onPost: (body) => { posted.push(body); return { ok: true }; } });
+  const tile = tileOf(env.element("rc-axes").innerHTML, "drive_steer");
+  assert.match(tile, /Not read: Drive waits on the other stick\./);
+  assert.match(env.element("rc-editor-feedback").textContent, /Apply drops SBUS#2 CH 1\.$/);
+  await clickAxis(env, { axis: "drive_steer", axisSet: "max" }, "data-axis-set");
+
+  assert.equal(posted.length, 1);
+  assert.deepEqual(posted[0].map.map((entry) => `${entry.source}:${entry.channel}:${entry.action}`),
+    ["sbus1:2:drive_steer", "sbus1:7:sleep_toggle"]);
+});
+
 // An axis unread for its ends alone (a dead zone that swallows a side, stored
 // before the rule) offers a reset: the map goes back with every such axis in
 // it and without their ends, the droid starts them from the defaults (ADR

@@ -622,6 +622,7 @@
     "map.payload": { word: "target", clash: "already has a puppet string", refused: "is not one this droid can send" },
     "map.threshold": { word: "threshold" },
     "map.quietS": { word: "quiet period", unit: " s" },
+    "map.drive": { word: "drive", clash: "waits on the other stick" },
     "calibration": {
       word: "calibration",
       values: { drive_speed: "Speed", drive_steer: "Steer", dome_speed: "Dome" },
