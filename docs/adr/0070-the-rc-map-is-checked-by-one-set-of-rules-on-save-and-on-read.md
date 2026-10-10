@@ -129,8 +129,8 @@ the readers of a stored RC Map still each assembling the verdict from the rules.
 - **`read` says what the droid reads now, not what a save would keep.** A drive
   pair the rules refuse leaves both axes still, so `GET /api/rc/map` marks both
   Speed and Steer unread. The refused axis carries its own refusal; the other
-  carries a reason of its own that names the refused axis, so the builder still
-  sees which one to fix. It does not carry the refused axis's refusal: the RC
+  carries a reason of its own (`map.drive`, "Drive waits on the other stick"),
+  so the builder still sees which one to fix. It does not carry the refused axis's refusal: the RC
   page acts on a refusal's field (a calibration refusal offers Reset ends), and
   would act on the wrong axis. Before, only the refused axis was marked and the
   other read `true` while it moved nothing.
