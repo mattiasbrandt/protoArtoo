@@ -31,7 +31,7 @@
 #include "api_json_response.h"
 #include "api_rc_map_apply.h"
 #include "rc_map_rules.h"  // what the droid would read of a stored map
-#include "rc_map_store.h"  // rcTriggerSlotsCopy()
+#include "rc_map_store.h"  // rcTriggerSlotsCopy(), rcMapReadAxes()
 #include "api_status.h"  // captureServoOutputCommanded(), shared with the Console
 #include "api_wifi_apply.h"
 #include "board_outputs.h"  // BOARD_OUTPUTS, boardComponentLabel() - one label source
@@ -84,14 +84,6 @@ bool rcMapTriggerIsMapped(const RcTriggerBinding& binding) {
            rcBindingChannelIsValid(binding.source, binding.channel);
 }
 
-RcBindingConfig rcMapSelectBackboneForMode(const ConfigSnapshot& snap, const RcBindingConfig& pwm,
-                                           const RcBindingConfig& sbus) {
-    if (snap.system.rc_input_mode == RC_INPUT_STANDARD_PWM) {
-        return rcMapBindingIsMapped(pwm) ? pwm : sbus;
-    }
-    return rcMapBindingIsMapped(sbus) ? sbus : pwm;
-}
-
 JsonObject rcMapAppendEntry(JsonArray map, RcBindingSource source, uint8_t channel,
                             RobotActionId action, const char* payload) {
     JsonObject item = map.add<JsonObject>();
@@ -126,12 +118,14 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
 
     JsonArray map = doc["map"].to<JsonArray>();
 
-    RcBindingConfig driveSpeed =
-        rcMapSelectBackboneForMode(snap, snap.system.rc_pwm_drive_speed, snap.system.rc_sbus_drive_speed);
-    RcBindingConfig driveSteer =
-        rcMapSelectBackboneForMode(snap, snap.system.rc_pwm_drive_steer, snap.system.rc_sbus_drive_steer);
-    RcBindingConfig domeSpeed =
-        rcMapSelectBackboneForMode(snap, snap.system.rc_pwm_dome_speed, snap.system.rc_sbus_dome_speed);
+    // The axes of the group this receiver type reads, and only those: where
+    // that group is unmapped an axis shows unbound, even when the other group
+    // holds a binding, because the droid moves nothing from it (ADR 0070,
+    // amended 2026-10-10).
+    RcBindingConfig driveSpeed;
+    RcBindingConfig driveSteer;
+    RcBindingConfig domeSpeed;
+    rcMapReadAxes(snap.system, snap.system.rc_input_mode, &driveSpeed, &driveSteer, &domeSpeed);
 
     // An entry the droid does not read says so and why (rcStoredMapWhy()),
     // so a page never posts a refused one back into a map the droid then

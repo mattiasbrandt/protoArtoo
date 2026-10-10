@@ -2396,6 +2396,12 @@ Returns channel-centric map.
   Beside `read` it carries the refusal a save would give it as data: `field`,
   `reason` and, where one applies, `accepts`, as `POST /api/rc/map` refuses:
   `{"source":"sbus2","channel":1,"action":"dome_speed","read":false,"field":"map.source","reason":"out-of-range","accepts":"sbus1"}`
+- The drive and dome axes listed are those the droid reads: a save stores each
+  axis for both a PWM receiver and an SBUS one, and the droid reads the PWM
+  copy on `standard_pwm` and the SBUS copy on every other type. An axis whose
+  copy for the saved type is unbound is left out of `map`, even when the other
+  copy holds a binding, because the droid moves nothing from it (ADR 0070,
+  amended 2026-10-10).
 
 #### Example request
 
