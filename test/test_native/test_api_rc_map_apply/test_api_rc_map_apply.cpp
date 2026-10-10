@@ -12,6 +12,7 @@
 #include <map>
 #include <string>
 
+#include "api_config_snapshot.h"  // populateRcMapJson(): the map a page reads back
 #include "api_rc_map_apply.h"
 
 namespace {
@@ -462,6 +463,42 @@ void test_rcMapApply_holds_eleven_trigger_bindings_and_refuses_a_twelfth(void) {
     TEST_ASSERT_EQUAL_STRING("map", result.refusal.field);
 }
 
+// A page posts back the map it read (Codex review, #488): with six cues past
+// the five general places, GET lists them in another order than they were
+// stored. Saved again unchanged, every binding keeps its place, so no reader
+// hands one binding another's state.
+void test_rcMapApply_an_unchanged_map_saved_again_keeps_every_place(void) {
+    std::string body = "{\"map\":[";
+    for (int channel = 5; channel <= 10; ++channel) {
+        if (channel > 5) body += ",";
+        body += "{\"source\":\"sbus1\",\"channel\":" + std::to_string(channel) + ",\"action\":\"sound_next\"}";
+    }
+    std::map<std::string, std::string> m = {{"plain", body + "]}"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    RcMapApplyResult result;
+    rcMapApply(makeSource(&m), &snap, &result);
+    TEST_ASSERT_TRUE_MESSAGE(result.ok, result.errorMessage);
+    RcTriggerBinding before[RC_TRIGGER_SLOT_COUNT];
+    rcTriggerSlotsCopy(snap.system, before, RC_TRIGGER_SLOT_COUNT);
+
+    JsonDocument read;
+    TEST_ASSERT_TRUE(populateRcMapJson(read, snap));
+    JsonDocument back;
+    back["map"] = read["map"];
+    std::string again;
+    serializeJson(back, again);
+    m["plain"] = again;
+    rcMapApply(makeSource(&m), &snap, &result);
+    TEST_ASSERT_TRUE_MESSAGE(result.ok, result.errorMessage);
+    RcTriggerBinding after[RC_TRIGGER_SLOT_COUNT];
+    rcTriggerSlotsCopy(snap.system, after, RC_TRIGGER_SLOT_COUNT);
+    for (size_t i = 0; i < RC_TRIGGER_SLOT_COUNT; ++i) {
+        TEST_ASSERT_EQUAL_MESSAGE(before[i].source, after[i].source, "the same place holds the same binding");
+        TEST_ASSERT_EQUAL_UINT8(before[i].channel, after[i].channel);
+        TEST_ASSERT_EQUAL(before[i].target, after[i].target);
+    }
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -491,5 +528,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_rcMapApply_arm1_toggle_fills_dedicated_slot);
     RUN_TEST(test_rcMapApply_unnamed_trigger_spills_to_first_free_slot);
     RUN_TEST(test_rcMapApply_holds_eleven_trigger_bindings_and_refuses_a_twelfth);
+    RUN_TEST(test_rcMapApply_an_unchanged_map_saved_again_keeps_every_place);
     return UNITY_END();
 }
