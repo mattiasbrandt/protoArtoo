@@ -59,6 +59,27 @@ static const char* TAG = "MARCDUINO";
 // stated here: two seconds, at full throw (operator, 2026-10-02 on #453).
 static const uint16_t MARCDUINO_BODY_FLUTTER_MS = 2000;
 
+// Out of line so the log's 256 B line buffer is not in handlePanelCommand()'s
+// frame under logQueueDrop() and sequenceFlutterRequest(), on the action door's
+// chain for RCInputTask and ReactionTask (#490).
+static __attribute__((noinline)) void logPanel(const char* cmd, bool heldByEstop) {
+    if (heldByEstop) {
+        PA_LOG_WARN(TAG, "[SERVO] panel command rejected - estop active");
+    } else {
+        PA_LOG_INFO(TAG, "[SERVO] panel command: %s", cmd);
+    }
+}
+
+// Out of line for the same reason: executeMarcduinoBodyCommand() sits above
+// both handlers on that chain (#490).
+static __attribute__((noinline)) void logBodyHash(bool heartbeat, bool syncSleep) {
+    if (heartbeat) {
+        PA_LOG_DEBUG(TAG, "[HB] body heartbeat echo ignored");
+    } else {
+        PA_LOG_INFO(TAG, "[SYSTEM] sleep sync from dome: %s", syncSleep ? "sleep" : "wake");
+    }
+}
+
 MarcduinoBodyOutcome handlePanelCommand(const char* cmd) {
     const ServoOutputAddress output = marcduino_panel_command_output(cmd);
     if (output == SERVO_OUTPUT_NONE) {
@@ -70,13 +91,13 @@ MarcduinoBodyOutcome handlePanelCommand(const char* cmd) {
     taskEXIT_CRITICAL(&robotStateMux);
 
     if (estop) {
-        PA_LOG_WARN(TAG, "[SERVO] panel command rejected - estop active");
+        logPanel(cmd, true);
         return MarcduinoBodyOutcome::BlockedByEstop;
     }
 
     if (strncmp(cmd, ":OF", 3) == 0) {
         sequenceFlutterRequest(output, MARCDUINO_BODY_FLUTTER_MS);
-        PA_LOG_INFO(TAG, "[SERVO] panel command: %s", cmd);
+        logPanel(cmd, false);
         return MarcduinoBodyOutcome::Applied;
     }
 
@@ -100,7 +121,7 @@ MarcduinoBodyOutcome handlePanelCommand(const char* cmd) {
         logQueueDrop(QUEUE_SERVO_CMD, "servo panel command");
         return MarcduinoBodyOutcome::QueueFull;
     }
-    PA_LOG_INFO(TAG, "[SERVO] panel command: %s", cmd);
+    logPanel(cmd, false);
     return MarcduinoBodyOutcome::Applied;
 }
 
@@ -120,7 +141,29 @@ MarcduinoBodyOutcome handlePanelCommand(const char* cmd) {
 // A full-droid half that could do nothing at all - no audio in it, and its body
 // routine held by estop - answers BlockedByEstop; one that played its audio
 // with the routine held answers Applied, as the RC droid_seq_* tokens do.
+//
+// Its log lines are out of line (the four helpers below): inline, their 256 B
+// line buffer sat in this frame under sequenceStart() and audioQueueDollar(), on
+// the action door's chain for RCInputTask and ReactionTask (#490).
 // -----------------------------------------------------------------------------
+static __attribute__((noinline)) void logSeqAudioDropped(const char* audioCmd) {
+    PA_LOG_WARN(TAG, "[AUDIO] queue full, dropped: %s", audioCmd);
+}
+
+static __attribute__((noinline)) void logSeqHeldByEstop() {
+    PA_LOG_WARN(TAG, "[SEQ] body routine rejected - estop active");
+}
+
+static __attribute__((noinline)) void logSeqNotStarted(int bodySeqId) {
+    PA_LOG_WARN(TAG, "[SEQ] body routine :SE%02d not started - sequence queue full", bodySeqId);
+}
+
+static __attribute__((noinline)) void logSeqOutcome(int seqId, const char* audioCmd,
+                                                    int queuedSeqId) {
+    PA_LOG_INFO(TAG, "[MARCDUINO] SE%02d -> audio=%s seq=%d", seqId,
+                audioCmd != nullptr ? audioCmd : "none", queuedSeqId);
+}
+
 MarcduinoBodyOutcome handleSequenceCommand(const char* cmd) {
     if (cmd[0] != ':' || cmd[1] != 'S' || cmd[2] != 'E') {
         return MarcduinoBodyOutcome::NotHandled;
@@ -145,7 +188,7 @@ MarcduinoBodyOutcome handleSequenceCommand(const char* cmd) {
         if (audioQueueDollar(bodyAction.audioDollarCmd, SRC_INTERNAL)) {
             acted = true;
         } else {
-            PA_LOG_WARN(TAG, "[AUDIO] queue full, dropped: %s", bodyAction.audioDollarCmd);
+            logSeqAudioDropped(bodyAction.audioDollarCmd);
             queueFull = true;
         }
     }
@@ -161,11 +204,10 @@ MarcduinoBodyOutcome handleSequenceCommand(const char* cmd) {
         taskEXIT_CRITICAL(&robotStateMux);
 
         if (estop) {
-            PA_LOG_WARN(TAG, "[SEQ] body routine rejected - estop active");
+            logSeqHeldByEstop();
             heldByEstop = true;
         } else if (!sequenceStart(sequenceBodyRoutineName(bodyAction.bodySeqId), SRC_INTERNAL)) {
-            PA_LOG_WARN(TAG, "[SEQ] body routine :SE%02d not started - sequence queue full",
-                        bodyAction.bodySeqId);
+            logSeqNotStarted(bodyAction.bodySeqId);
             queueFull = true;
         } else {
             acted = true;
@@ -173,9 +215,7 @@ MarcduinoBodyOutcome handleSequenceCommand(const char* cmd) {
         }
     }
 
-    PA_LOG_INFO(TAG, "[MARCDUINO] SE%02d -> audio=%s seq=%d", seqId,
-                bodyAction.audioDollarCmd != nullptr ? bodyAction.audioDollarCmd : "none",
-                queuedSeqId);
+    logSeqOutcome(seqId, bodyAction.audioDollarCmd, queuedSeqId);
     if (queueFull) {
         return MarcduinoBodyOutcome::QueueFull;
     }
@@ -206,13 +246,13 @@ MarcduinoBodyOutcome executeMarcduinoBodyCommand(const char* line) {
             return MarcduinoBodyOutcome::NotHandled;
         }
         if (strcmp(line, "#PAHB") == 0) {
-            PA_LOG_DEBUG(TAG, "[HB] body heartbeat echo ignored");
+            logBodyHash(true, false);
             return MarcduinoBodyOutcome::Applied;
         }
         const bool syncSleep = strcmp(line, "#APSL") == 0;
         if (commandedSetSleep(syncSleep, SRC_INTERNAL)) {
             requestStatusBroadcastNow();
-            PA_LOG_INFO(TAG, "[SYSTEM] sleep sync from dome: %s", syncSleep ? "sleep" : "wake");
+            logBodyHash(false, syncSleep);
         }
         return MarcduinoBodyOutcome::Applied;
     }
